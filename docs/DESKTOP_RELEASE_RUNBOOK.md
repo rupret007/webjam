@@ -601,8 +601,10 @@ Do not move this administration check into tag CI: the repository-scoped
 Draft status is the only period in which assets and notes may still be
 assembled. Final promotion must prove the published release reports
 `immutable=true`, `draft=false`, `prerelease=false`, exact tag `v0.22.3`, and
-the exact eight-asset inventory above through both the tag endpoint and
-`/releases/latest`.
+the exact title, required trust/security warning text, and eight-asset
+inventory above through the draft, publish response, and `/releases/latest`.
+Any title, body, or asset mutation after the initial draft verification must
+fail closed before publication.
 
 The Jamulus catalog is a separate, public non-Latest prerelease. Starting from
 the independently verified public sequence 3 for exact WebJam 0.22.2, generate
@@ -615,7 +617,8 @@ sequence-4 bytes are equivocation.
 
 Only after the four native tag packages, exact architectures and metadata,
 embedded Jamulus inventories/checksums, signed catalog, TLS behavior,
-redaction, package launches, and checksum manifest pass may a maintainer run
+redaction, Linux plus native Windows/Apple-silicon/Intel package launches, and
+checksum manifest pass may a maintainer run
 **Publish Verified WebJam Release** for `v0.22.3`. The publisher must discover
 the unique successful tag-CI run dynamically and must not accept manually
 entered run, artifact, size, or digest identities.

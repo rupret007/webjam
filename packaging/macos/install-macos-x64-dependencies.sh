@@ -209,6 +209,7 @@ wheel_dir="$work_dir/wheel"
 verification_dir="$work_dir/wheel-verification"
 mkdir "$wheel_dir" "$verification_dir"
 PIP_NO_INDEX=1 PIP_CONFIG_FILE=/dev/null \
+  PATH="$build_venv/bin:$PATH" \
   "$build_python" -m pip wheel --no-deps --no-index --no-build-isolation \
     --no-cache-dir --wheel-dir "$wheel_dir" "$cryptography_archive"
 wheel="$(find "$wheel_dir" -maxdepth 1 -type f \

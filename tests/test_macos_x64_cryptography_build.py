@@ -121,6 +121,8 @@ def test_build_tool_lock_is_exact_hash_locked_and_binary_installed() -> None:
     assert '"$python_bin" -m venv "$build_venv"' in SCRIPT
     assert 'build_python="$build_venv/bin/python"' in SCRIPT
     assert '"maturin": "1.14.1"' in SCRIPT
+    assert 'PATH="$build_venv/bin:$PATH"' in SCRIPT
+    assert SCRIPT.count('PATH="$build_venv/bin:$PATH"') == 1
     assert 'find_spec("maturin") is not None' in SCRIPT
 
 

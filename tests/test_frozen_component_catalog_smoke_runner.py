@@ -19,6 +19,7 @@ from core.jamulus_compatibility import ComponentTarget, JamulusRole
 from tests.support.run_frozen_component_catalog_smoke import (
     _extract_webjam_archive,
     _read_result,
+    _runtime_environment,
 )
 
 
@@ -373,6 +374,42 @@ def test_runner_uses_clean_environment_and_exact_catalog_identity(
     )
 
     assert smoke_runner.main() == 0
+
+
+def test_windows_runtime_environment_is_isolated_and_minimal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    directory = tmp_path / "runtime"
+    runtime_home = directory / "home"
+    directory.mkdir()
+    runtime_home.mkdir()
+    monkeypatch.setenv("SystemRoot", r"C:\Windows")
+    monkeypatch.setenv("WINDIR", r"C:\Windows")
+    monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
+    monkeypatch.setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+    monkeypatch.setenv("GITHUB_TOKEN", "must-not-reach-frozen-process")
+    monkeypatch.setenv("HTTPS_PROXY", "http://must-not-reach.example")
+    monkeypatch.setenv("SSL_CERT_FILE", "caller-controlled.pem")
+
+    environment = _runtime_environment(
+        directory,
+        runtime_home,
+        platform_name="nt",
+    )
+
+    assert environment["USERPROFILE"] == str(runtime_home)
+    assert environment["APPDATA"] == str(runtime_home / "AppData" / "Roaming")
+    assert environment["LOCALAPPDATA"] == str(runtime_home / "AppData" / "Local")
+    assert Path(environment["APPDATA"]).is_dir()
+    assert Path(environment["LOCALAPPDATA"]).is_dir()
+    assert environment["SystemRoot"] == r"C:\Windows"
+    assert environment["WINDIR"] == r"C:\Windows"
+    assert environment["COMSPEC"] == r"C:\Windows\System32\cmd.exe"
+    assert environment["PATHEXT"] == ".COM;.EXE;.BAT;.CMD"
+    assert "GITHUB_TOKEN" not in environment
+    assert "HTTPS_PROXY" not in environment
+    assert environment["SSL_CERT_FILE"].endswith("not-trusted.pem")
 
 
 def test_runner_rejects_direct_binary_symlink(

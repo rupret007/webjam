@@ -607,9 +607,151 @@ jobs:
             --expected-catalog-payload-sha256 "$CATALOG_PAYLOAD_SHA256" \
             --expected-signer-fingerprint-sha256 "$SIGNER_FINGERPRINT_SHA256"
 
+  frozen-package-smoke-native:
+    name: Prove live catalog from frozen ${{ matrix.target }} package
+    needs: frozen-package-smoke
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            target: windows-x64
+            artifact: webjam-windows-x64
+            package: WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip
+          - os: macos-14
+            target: macos-arm64
+            artifact: webjam-macos-arm64
+            package: WebJam-macos-arm64-ADHOC-TEST-ONLY.zip
+          - os: macos-15-intel
+            target: macos-x64
+            artifact: webjam-macos-x64
+            package: WebJam-macos-x64-ADHOC-TEST-ONLY.zip
+    steps:
+      - name: Checkout exact frozen release source without credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ needs['frozen-package-smoke'].outputs.tag_commit }}
+          persist-credentials: false
+
+      - name: Set up isolated smoke runner
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Download exact native tag-build artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ runner.temp }}/frozen-target-artifact
+          repository: ${{ github.repository }}
+          run-id: ${{ needs['frozen-package-smoke'].outputs.tag_ci_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Rebind selected package to the read-only proof
+        shell: bash
+        env:
+          EXPECTED_TAG_COMMIT: ${{ needs['frozen-package-smoke'].outputs.tag_commit }}
+          EXPECTED_PACKAGE_BINDINGS: ${{ needs['frozen-package-smoke'].outputs.package_bindings }}
+          ARTIFACT_DIRECTORY: ${{ runner.temp }}/frozen-target-artifact
+          PACKAGE_NAME: ${{ matrix.package }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_TAG_COMMIT" ]]
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          bindings = json.loads(os.environ["EXPECTED_PACKAGE_BINDINGS"])
+          package_name = os.environ["PACKAGE_NAME"]
+          matches = [item for item in bindings if item.get("name") == package_name]
+          if len(matches) != 1:
+              raise SystemExit("Native package has no unique frozen binding.")
+          package = Path(os.environ["ARTIFACT_DIRECTORY"]) / package_name
+          if package.is_symlink() or not package.is_file():
+              raise SystemExit("Native frozen package is missing or not a file.")
+          details = package.stat()
+          expected = matches[0]
+          if details.st_size != expected.get("size"):
+              raise SystemExit("Native frozen package size changed.")
+          with package.open("rb") as package_file:
+              digest = hashlib.file_digest(package_file, "sha256").hexdigest()
+          if digest != expected.get("sha256"):
+              raise SystemExit("Native frozen package checksum changed.")
+          PY
+
+      - name: Launch exact Windows package against live signed catalog
+        if: matrix.target == 'windows-x64'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs['frozen-package-smoke'].outputs.version }}
+          CATALOG_SEQUENCE: ${{ needs['frozen-package-smoke'].outputs.catalog_sequence }}
+          CATALOG_ENVELOPE_SHA256: ${{ needs['frozen-package-smoke'].outputs.catalog_envelope_sha256 }}
+          CATALOG_PAYLOAD_SHA256: ${{ needs['frozen-package-smoke'].outputs.catalog_payload_sha256 }}
+          SIGNER_FINGERPRINT_SHA256: ${{ needs['frozen-package-smoke'].outputs.signer_fingerprint_sha256 }}
+          PACKAGE_NAME: ${{ matrix.package }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $archive = Join-Path $env:RUNNER_TEMP "frozen-target-artifact/$env:PACKAGE_NAME"
+          $destination = Join-Path $env:RUNNER_TEMP "frozen-target-app"
+          New-Item -ItemType Directory -Path $destination | Out-Null
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination
+          $binary = Join-Path $destination "WebJam/WebJam.exe"
+          if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
+            throw "Frozen Windows app binary is missing."
+          }
+          python tests/support/run_frozen_component_catalog_smoke.py `
+            --binary $binary `
+            --cwd (Join-Path $destination "WebJam") `
+            --expected-version $env:VERSION `
+            --expected-sequence $env:CATALOG_SEQUENCE `
+            --expected-target windows-x64 `
+            --expected-jamulus-version 3.12.3 `
+            --expected-catalog-envelope-sha256 $env:CATALOG_ENVELOPE_SHA256 `
+            --expected-catalog-payload-sha256 $env:CATALOG_PAYLOAD_SHA256 `
+            --expected-signer-fingerprint-sha256 $env:SIGNER_FINGERPRINT_SHA256
+
+      - name: Launch exact macOS package against live signed catalog
+        if: startsWith(matrix.target, 'macos-')
+        shell: bash
+        env:
+          VERSION: ${{ needs['frozen-package-smoke'].outputs.version }}
+          CATALOG_SEQUENCE: ${{ needs['frozen-package-smoke'].outputs.catalog_sequence }}
+          CATALOG_ENVELOPE_SHA256: ${{ needs['frozen-package-smoke'].outputs.catalog_envelope_sha256 }}
+          CATALOG_PAYLOAD_SHA256: ${{ needs['frozen-package-smoke'].outputs.catalog_payload_sha256 }}
+          SIGNER_FINGERPRINT_SHA256: ${{ needs['frozen-package-smoke'].outputs.signer_fingerprint_sha256 }}
+          PACKAGE_NAME: ${{ matrix.package }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/frozen-target-artifact/$PACKAGE_NAME"
+          destination="$RUNNER_TEMP/frozen-target-app"
+          mkdir "$destination"
+          ditto -x -k "$archive" "$destination"
+          app="$destination/WebJam.app"
+          binary="$app/Contents/MacOS/WebJam"
+          codesign --verify --deep --strict "$app"
+          [[ -x "$binary" && ! -L "$binary" ]]
+          python tests/support/run_frozen_component_catalog_smoke.py \
+            --binary "$binary" \
+            --cwd "$app/Contents/MacOS" \
+            --expected-version "$VERSION" \
+            --expected-sequence "$CATALOG_SEQUENCE" \
+            --expected-target "$TARGET" \
+            --expected-jamulus-version 3.12.3 \
+            --expected-catalog-envelope-sha256 "$CATALOG_ENVELOPE_SHA256" \
+            --expected-catalog-payload-sha256 "$CATALOG_PAYLOAD_SHA256" \
+            --expected-signer-fingerprint-sha256 "$SIGNER_FINGERPRINT_SHA256"
+
   publish-latest:
     name: Revalidate proof and publish as Latest
-    needs: frozen-package-smoke
+    needs: [frozen-package-smoke, frozen-package-smoke-native]
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     permissions:
@@ -729,6 +871,8 @@ jobs:
             > "$RUNNER_TEMP/release-pages-before.json"
           jq -e \
             --arg tag "$TAG" \
+            --arg expected_name \
+              "WebJam v${VERSION} — unsigned private test candidate." \
             '
               [ .[][] | select(.tag_name == $tag) ] as $matches
               | if ($matches | length) != 1 then
@@ -736,8 +880,37 @@ jobs:
                 elif (
                   $matches[0].draft != true
                   or $matches[0].prerelease != false
+                  or $matches[0].name != $expected_name
+                  or ($matches[0].body | type) != "string"
                 ) then
-                  error("release is not an unpublished non-prerelease draft")
+                  error("release draft state, name, or body type is invalid")
+                elif (
+                  ($matches[0].body | contains(
+                    "This is an unsigned private test candidate, not a production-trusted release."
+                  ) | not)
+                  or ($matches[0].body | contains(
+                    "Windows packages are unsigned."
+                  ) | not)
+                  or ($matches[0].body | contains(
+                    "macOS packages are ad-hoc signed"
+                  ) | not)
+                  or ($matches[0].body | contains(
+                    "notarized or reviewed by Apple"
+                  ) | not)
+                  or ($matches[0].body | contains(
+                    "gates remain **NOT RUN**"
+                  ) | not)
+                  or ($matches[0].body | contains(
+                    "cryptography to 50.0.0"
+                  ) | not)
+                  or ($matches[0].body | contains(
+                    "CVE-2026-69247, CVE-2026-69248, and CVE-2026-69249"
+                  ) | not)
+                  or ($matches[0].body | contains(
+                    "Jamulus 3.12.3 updates are authorized"
+                  ) | not)
+                ) then
+                  error("release draft is missing required trust or security notes")
                 else
                   $matches[0]
                 end
@@ -997,10 +1170,10 @@ jobs:
             > "$RUNNER_TEMP/release-immediately-before.json"
           diff -u \
             <(jq -S \
-              '{id,tag_name,draft,prerelease,assets:([.assets[]|{id,name,size,digest}]|sort_by(.name))}' \
+              '{id,tag_name,name,body,draft,prerelease,assets:([.assets[]|{id,name,size,digest}]|sort_by(.name))}' \
               "$RUNNER_TEMP/release-before.json") \
             <(jq -S \
-              '{id,tag_name,draft,prerelease,assets:([.assets[]|{id,name,size,digest}]|sort_by(.name))}' \
+              '{id,tag_name,name,body,draft,prerelease,assets:([.assets[]|{id,name,size,digest}]|sort_by(.name))}' \
               "$RUNNER_TEMP/release-immediately-before.json")
 
           component_tag="jamulus-components-v1"
@@ -1081,8 +1254,26 @@ jobs:
             -f make_latest=true \
             > "$RUNNER_TEMP/release-publish-response.json"
           jq -e \
-            '.draft == false and .prerelease == false and .immutable == true' \
+            --arg tag "$TAG" \
+            --argjson release_id "$EXPECTED_RELEASE_ID" \
+            --arg expected_name \
+              "WebJam v${VERSION} — unsigned private test candidate." \
+            '
+              .id == $release_id
+              and .tag_name == $tag
+              and .name == $expected_name
+              and .draft == false
+              and .prerelease == false
+              and .immutable == true
+            ' \
             "$RUNNER_TEMP/release-publish-response.json" >/dev/null
+          diff -u \
+            <(jq -S \
+              '{id,tag_name,name,body,assets:([.assets[]|{id,name,size,digest}]|sort_by(.name))}' \
+              "$RUNNER_TEMP/release-before.json") \
+            <(jq -S \
+              '{id,tag_name,name,body,assets:([.assets[]|{id,name,size,digest}]|sort_by(.name))}' \
+              "$RUNNER_TEMP/release-publish-response.json")
 
       - name: Redownload and verify published Latest bytes and identity
         shell: bash
@@ -1100,9 +1291,12 @@ jobs:
           jq -e \
             --arg tag "$TAG" \
             --argjson release_id "$EXPECTED_RELEASE_ID" \
+            --arg expected_name \
+              "WebJam v${VERSION} — unsigned private test candidate." \
             '
               .id == $release_id
               and .tag_name == $tag
+              and .name == $expected_name
               and .draft == false
               and .prerelease == false
               and .immutable == true
@@ -1110,10 +1304,10 @@ jobs:
             "$RUNNER_TEMP/release-latest.json" >/dev/null
           diff -u \
             <(jq -S \
-              '{id,tag_name,assets:([.assets[]|{id,name,size,digest}]|sort_by(.name))}' \
+              '{id,tag_name,name,body,assets:([.assets[]|{id,name,size,digest}]|sort_by(.name))}' \
               "$RUNNER_TEMP/release-before.json") \
             <(jq -S \
-              '{id,tag_name,assets:([.assets[]|{id,name,size,digest}]|sort_by(.name))}' \
+              '{id,tag_name,name,body,assets:([.assets[]|{id,name,size,digest}]|sort_by(.name))}' \
               "$RUNNER_TEMP/release-latest.json")
 
           mkdir published-release-assets

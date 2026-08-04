@@ -23,6 +23,53 @@ MAX_RESULT_BYTES = 16 * 1024
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
+def _runtime_environment(
+    directory: Path,
+    runtime_home: Path,
+    *,
+    platform_name: str | None = None,
+) -> dict[str, str]:
+    """Return the minimal isolated environment required by the frozen app."""
+
+    platform_name = os.name if platform_name is None else platform_name
+    environment = {
+        "HOME": str(runtime_home),
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "PATH": os.defpath,
+        "QT_QPA_PLATFORM": "offscreen",
+        "TEMP": str(directory.parent),
+        "TMP": str(directory.parent),
+        "TMPDIR": str(directory.parent),
+        "WEBJAM_SMOKE_COMPONENT_CATALOG_RUNTIME": "1",
+        "WEBJAM_SMOKE_COMPONENT_CATALOG_RESULT": str(directory / "result.json"),
+        # Prove that launch-environment CA overrides cannot replace WebJam's
+        # release-locked Certifi trust data.
+        "SSL_CERT_FILE": str(directory / "not-trusted.pem"),
+        "SSL_CERT_DIR": str(directory / "not-trusted-dir"),
+    }
+    if platform_name == "nt":
+        roaming = runtime_home / "AppData" / "Roaming"
+        local = runtime_home / "AppData" / "Local"
+        roaming.mkdir(mode=0o700, parents=True)
+        local.mkdir(mode=0o700, parents=True)
+        environment.update(
+            {
+                "USERPROFILE": str(runtime_home),
+                "APPDATA": str(roaming),
+                "LOCALAPPDATA": str(local),
+            }
+        )
+        # Windows process initialization needs these OS-owned values. Copy
+        # only this explicit allowlist; tokens, proxies, caller CA settings,
+        # and every other CI variable remain excluded.
+        for key in ("SystemRoot", "WINDIR", "COMSPEC", "PATHEXT"):
+            value = os.environ.get(key)
+            if value:
+                environment[key] = value
+    return environment
+
+
 def _extract_webjam_archive(archive: Path, destination: Path) -> Path:
     """Safely extract one verified Linux package and return its app binary."""
 
@@ -170,30 +217,7 @@ def main() -> int:
         result_path = Path(directory) / "result.json"
         runtime_home = Path(directory) / "home"
         runtime_home.mkdir(mode=0o700)
-        temporary_root = str(Path(directory).parent)
-        environment = {
-            "HOME": str(runtime_home),
-            "LANG": "C.UTF-8",
-            "LC_ALL": "C.UTF-8",
-            "PATH": os.defpath,
-            "QT_QPA_PLATFORM": "offscreen",
-            "TEMP": temporary_root,
-            "TMP": temporary_root,
-            "TMPDIR": temporary_root,
-        }
-        environment["WEBJAM_SMOKE_COMPONENT_CATALOG_RUNTIME"] = "1"
-        environment["WEBJAM_SMOKE_COMPONENT_CATALOG_RESULT"] = str(result_path)
-        # Prove that launch-environment CA overrides cannot replace WebJam's
-        # release-locked Certifi trust data.
-        environment["SSL_CERT_FILE"] = str(Path(directory) / "not-trusted.pem")
-        environment["SSL_CERT_DIR"] = str(Path(directory) / "not-trusted-dir")
-        for key in (
-            "WEBJAM_SMOKE_REFERENCE_STUDIO_RUNTIME",
-            "WEBJAM_SMOKE_POCKET_STAGE_RUNTIME",
-            "WEBJAM_SMOKE_LAUNCH_ONLY",
-            "WEBJAM_SMOKE_AUTOSTART_AUDIO",
-        ):
-            environment.pop(key, None)
+        environment = _runtime_environment(Path(directory), runtime_home)
         try:
             completed = subprocess.run(
                 [str(binary)],

@@ -31,12 +31,14 @@ def test_latest_promotion_is_manual_serialized_and_permission_bounded() -> None:
     assert "  frozen-package-smoke:" in JOBS
     assert "    permissions:\n      contents: read" in SMOKE_JOB
     assert "      actions: read" in SMOKE_JOB
-    assert "    needs: frozen-package-smoke" in PUBLISH_JOB
+    assert "    needs: [frozen-package-smoke, frozen-package-smoke-native]" in (
+        PUBLISH_JOB
+    )
     assert "    permissions:\n      contents: write" in PUBLISH_JOB
     assert "      actions: read" not in PUBLISH_JOB
     assert "environment:\n      name: release-latest" not in SMOKE_JOB
     assert "environment:\n      name: release-latest" in PUBLISH_JOB
-    assert WORKFLOW.count("persist-credentials: false") == 2
+    assert WORKFLOW.count("persist-credentials: false") == 3
     assert "persist-credentials: true" not in WORKFLOW
 
 
@@ -198,6 +200,35 @@ def test_read_only_job_binds_all_tag_packages_before_linux_smoke() -> None:
     assert "apt-get" not in PUBLISH_JOB
 
 
+def test_read_only_native_matrix_launches_all_other_frozen_targets() -> None:
+    assert "  frozen-package-smoke-native:" in SMOKE_JOB
+    assert "    needs: frozen-package-smoke" in SMOKE_JOB
+    for expected in (
+        "windows-2025",
+        "windows-x64",
+        "macos-14",
+        "macos-arm64",
+        "macos-15-intel",
+        "macos-x64",
+        "webjam-windows-x64",
+        "webjam-macos-arm64",
+        "webjam-macos-x64",
+    ):
+        assert expected in SMOKE_JOB
+    assert "actions/download-artifact@3e5f45b" in SMOKE_JOB
+    assert "run-id: ${{ needs['frozen-package-smoke'].outputs.tag_ci_run_id }}" in (
+        SMOKE_JOB
+    )
+    assert "EXPECTED_PACKAGE_BINDINGS" in SMOKE_JOB
+    assert "Native frozen package checksum changed." in SMOKE_JOB
+    assert "Expand-Archive -LiteralPath" in SMOKE_JOB
+    assert 'codesign --verify --deep --strict "$app"' in SMOKE_JOB
+    assert "--expected-target windows-x64" in SMOKE_JOB
+    assert '--expected-target "$TARGET"' in SMOKE_JOB
+    assert "    permissions:\n      contents: read\n      actions: read" in SMOKE_JOB
+    assert "environment:\n      name: release-latest" not in SMOKE_JOB
+
+
 def test_catalog_proof_binds_envelope_payload_signer_and_asset_identity() -> None:
     assert "Verify and bind the live signed Jamulus catalog" in SMOKE_JOB
     assert 'component_tag="jamulus-components-v1"' in SMOKE_JOB
@@ -286,6 +317,19 @@ def test_write_job_revalidates_read_only_proof_before_publication() -> None:
     )
     assert "$matches[0].draft != true" in PUBLISH_JOB
     assert "$matches[0].prerelease != false" in PUBLISH_JOB
+    assert "$matches[0].name != $expected_name" in PUBLISH_JOB
+    assert '($matches[0].body | type) != "string"' in PUBLISH_JOB
+    for required_note in (
+        "This is an unsigned private test candidate, not a production-trusted release.",
+        "Windows packages are unsigned.",
+        "macOS packages are ad-hoc signed",
+        "notarized or reviewed by Apple",
+        "gates remain **NOT RUN**",
+        "cryptography to 50.0.0",
+        "CVE-2026-69247, CVE-2026-69248, and CVE-2026-69249",
+        "Jamulus 3.12.3 updates are authorized",
+    ):
+        assert required_note in PUBLISH_JOB
     assert (
         '"sha256:$EXPECTED_LINUX_PACKAGE_SHA256"' in PUBLISH_JOB
     )
@@ -344,19 +388,20 @@ def test_latest_promotion_sets_and_independently_verifies_latest() -> None:
     assert "repos/$GITHUB_REPOSITORY/releases/latest" in PUBLISH_JOB
     assert ".draft == false" in PUBLISH_JOB
     assert ".prerelease == false" in PUBLISH_JOB
-    assert (
-        ".draft == false and .prerelease == false and .immutable == true"
-        in PUBLISH_JOB
-    )
     assert "release-publish-response.json" in PUBLISH_JOB
     assert PUBLISH_JOB.count(".immutable == true") == 2
+    assert PUBLISH_JOB.count(
+        '"WebJam v${VERSION} — unsigned private test candidate."'
+    ) == 3
+    assert PUBLISH_JOB.count("{id,tag_name,name,body,assets:") == 4
+    assert PUBLISH_JOB.count("{id,tag_name,name,body,draft,prerelease,assets:") == 2
     assert "{id,name,size,digest}" in PUBLISH_JOB
     assert "published-release-assets" in PUBLISH_JOB
     assert '"$RUNNER_TEMP/release-assets-before.sha256"' in PUBLISH_JOB
 
 
 def test_catalog_verifier_uses_only_its_minimal_hash_locked_environment() -> None:
-    assert WORKFLOW.count('python-version: "3.12"') == 2
+    assert WORKFLOW.count('python-version: "3.12"') == 3
     assert WORKFLOW.count(
         "component-catalog-verifier-linux-x64.txt"
     ) == 2
