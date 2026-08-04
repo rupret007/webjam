@@ -162,6 +162,15 @@ grep -Fqx 'PATCH=7' "$openssl_source/VERSION.dat" || die "OpenSSL patch mismatch
 
 export MACOSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
 export CC="$(xcrun -f clang)"
+sdk_root_candidate="$(xcrun --sdk macosx --show-sdk-path)"
+[[ -d "$sdk_root_candidate" ]] || die "the selected macOS SDK is missing"
+SDKROOT="$(cd "$sdk_root_candidate" && pwd -P)"
+[[ -f "$SDKROOT/usr/include/stdlib.h" ]] || \
+  die "the selected macOS SDK lacks standard C headers"
+export SDKROOT
+export CFLAGS="-isysroot $SDKROOT"
+export CPPFLAGS="-isysroot $SDKROOT"
+export LDFLAGS="-isysroot $SDKROOT"
 jobs="$(sysctl -n hw.logicalcpu)"
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || die "could not determine build parallelism"
 (

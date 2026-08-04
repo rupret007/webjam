@@ -22,6 +22,8 @@ Reviewed inputs
 Build and verification contract
 -------------------------------
 - Python is exactly 3.11.9 and the build host is native x86_64 macOS.
+- The Xcode-selected macOS SDK is resolved to its physical path and supplied
+  explicitly as the compiler, preprocessor, and linker sysroot.
 - PEP 517 build isolation is disabled only after all build tools are installed
   into a disposable build virtual environment from
   requirements-lock/macos-x64-cryptography-build.txt with hashes, no

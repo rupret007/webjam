@@ -89,6 +89,14 @@ def test_reviewed_toolchain_and_source_identities_are_exact() -> None:
     assert "channel-rust-$RUST_VERSION.toml" in SCRIPT
     assert 'EXPECTED_RUSTC="rustc 1.88.0 (6b00bc388 2025-06-23)"' in SCRIPT
     assert 'EXPECTED_CARGO="cargo 1.88.0 (873a06493 2025-05-10)"' in SCRIPT
+    assert "xcrun --sdk macosx --show-sdk-path" in SCRIPT
+    assert '[[ -f "$SDKROOT/usr/include/stdlib.h" ]]' in SCRIPT
+    assert 'export CFLAGS="-isysroot $SDKROOT"' in SCRIPT
+    assert 'export CPPFLAGS="-isysroot $SDKROOT"' in SCRIPT
+    assert 'export LDFLAGS="-isysroot $SDKROOT"' in SCRIPT
+    assert SCRIPT.index("xcrun --sdk macosx --show-sdk-path") < SCRIPT.index(
+        "./Configure darwin64-x86_64-cc"
+    )
 
 
 def test_build_tool_lock_is_exact_hash_locked_and_binary_installed() -> None:

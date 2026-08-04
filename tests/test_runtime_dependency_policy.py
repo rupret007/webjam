@@ -341,7 +341,7 @@ def test_reviewed_cryptography_openssl_license_and_provenance_are_exact() -> Non
         / "packaging"
         / "macos"
         / "CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt": (
-            "ccb4c67a88cda7e5ff3cea340bef12b2ca4e9035fd7a91e54123824b9672d52f"
+            "20c2e0ac6f8714038fa0cbb70ee74bb3e4c1f7aa22837b7e3e94a83a0a27cd93"
         ),
         ROOT / "packaging" / "CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt": (
             "774757f50ed9ea59229b02906bdc6cf7fa23b883a37b1cda0dd1e0e18b292350"
