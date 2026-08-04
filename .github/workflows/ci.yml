@@ -3233,15 +3233,6 @@ jobs:
         run: |
           set -euo pipefail
           gh api \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "repos/$GITHUB_REPOSITORY/immutable-releases" \
-            > "$RUNNER_TEMP/immutable-release-policy.json"
-          jq -e '.enabled == true' \
-            "$RUNNER_TEMP/immutable-release-policy.json" >/dev/null || {
-              echo "Repository immutable releases must be enabled before tag packaging." >&2
-              exit 1
-            }
-          gh api \
             --paginate \
             --slurp \
             -H "X-GitHub-Api-Version: 2022-11-28" \

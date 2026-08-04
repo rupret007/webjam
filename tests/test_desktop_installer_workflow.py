@@ -674,16 +674,13 @@ def test_release_generates_and_verifies_checksum_manifest_for_exact_assets() -> 
     )
 
 
-def test_release_refuses_every_existing_draft_or_published_match() -> None:
+def test_release_refuses_existing_matches_without_unavailable_admin_scope() -> None:
     release_job = WORKFLOW.split("  release:\n", 1)[1]
     probe = release_job.split(
         "      - name: Refuse any existing draft or published release\n", 1
     )[1].split("\n      - name:", 1)[0]
     assert "gh api" in probe
-    assert "repos/$GITHUB_REPOSITORY/immutable-releases" in probe
-    assert "immutable-release-policy.json" in probe
-    assert ".enabled == true" in probe
-    assert "Repository immutable releases must be enabled" in probe
+    assert "immutable-releases" not in release_job
     assert "--paginate" in probe
     assert "--slurp" in probe
     assert "repos/$GITHUB_REPOSITORY/releases?per_page=100" in probe
@@ -691,7 +688,10 @@ def test_release_refuses_every_existing_draft_or_published_match() -> None:
     assert "draft or published release already uses" in probe
     assert "releases/tags/$GITHUB_REF_NAME" not in probe
     assert "|| true" not in probe
-    assert probe.index("immutable-releases") < probe.index("releases?per_page=100")
+    assert "gh api --method PUT" in DESKTOP_RELEASE_RUNBOOK
+    assert "repos/rupret007/webjam/immutable-releases" in DESKTOP_RELEASE_RUNBOOK
+    assert "--jq .enabled" in DESKTOP_RELEASE_RUNBOOK
+    assert "GITHUB_TOKEN` has no Administration permission" in DESKTOP_RELEASE_RUNBOOK
 
 
 def test_linux_release_claims_only_the_certified_ubuntu_target() -> None:

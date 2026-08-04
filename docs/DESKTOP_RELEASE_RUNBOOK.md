@@ -584,9 +584,22 @@ not a production-trusted release, and remaining physical and credentialed
 gates are **NOT RUN**. No Apple Developer account or notarization result is
 claimed.
 
-Before tag CI creates the draft, require repository immutable releases to be
-enabled. Draft status is the only period in which assets and notes may still
-be assembled. Final promotion must prove the published release reports
+Before tag CI creates the draft, an admin-authenticated maintainer must enable
+repository immutable releases and read the setting back successfully:
+
+```bash
+gh api --method PUT \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  repos/rupret007/webjam/immutable-releases
+test "$(gh api \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  repos/rupret007/webjam/immutable-releases --jq .enabled)" = true
+```
+
+Do not move this administration check into tag CI: the repository-scoped
+`GITHUB_TOKEN` has no Administration permission and cannot read this setting.
+Draft status is the only period in which assets and notes may still be
+assembled. Final promotion must prove the published release reports
 `immutable=true`, `draft=false`, `prerelease=false`, exact tag `v0.22.3`, and
 the exact eight-asset inventory above through both the tag endpoint and
 `/releases/latest`.
