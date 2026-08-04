@@ -386,8 +386,11 @@ def test_windows_runtime_environment_is_isolated_and_minimal(
     runtime_home.mkdir()
     monkeypatch.setenv("SystemRoot", r"C:\Windows")
     monkeypatch.setenv("WINDIR", r"C:\Windows")
+    monkeypatch.setenv("SystemDrive", "C:")
     monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
     monkeypatch.setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+    monkeypatch.setenv("PROCESSOR_ARCHITECTURE", "AMD64")
+    monkeypatch.setenv("PROCESSOR_ARCHITEW6432", "AMD64")
     monkeypatch.setenv("GITHUB_TOKEN", "must-not-reach-frozen-process")
     monkeypatch.setenv("HTTPS_PROXY", "http://must-not-reach.example")
     monkeypatch.setenv("SSL_CERT_FILE", "caller-controlled.pem")
@@ -405,8 +408,11 @@ def test_windows_runtime_environment_is_isolated_and_minimal(
     assert Path(environment["LOCALAPPDATA"]).is_dir()
     assert environment["SystemRoot"] == r"C:\Windows"
     assert environment["WINDIR"] == r"C:\Windows"
+    assert environment["SystemDrive"] == "C:"
     assert environment["COMSPEC"] == r"C:\Windows\System32\cmd.exe"
     assert environment["PATHEXT"] == ".COM;.EXE;.BAT;.CMD"
+    assert environment["PROCESSOR_ARCHITECTURE"] == "AMD64"
+    assert environment["PROCESSOR_ARCHITEW6432"] == "AMD64"
     assert "GITHUB_TOKEN" not in environment
     assert "HTTPS_PROXY" not in environment
     assert environment["SSL_CERT_FILE"].endswith("not-trusted.pem")

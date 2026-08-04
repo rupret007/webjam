@@ -216,6 +216,11 @@ def test_read_only_native_matrix_launches_all_other_frozen_targets() -> None:
     ):
         assert expected in SMOKE_JOB
     assert "actions/download-artifact@3e5f45b" in SMOKE_JOB
+    assert "artifact-ids: ${{ steps.artifact.outputs.artifact_id }}" in SMOKE_JOB
+    assert "digest-mismatch: error" in SMOKE_JOB
+    assert "merge-multiple: true" in SMOKE_JOB
+    assert "EXPECTED_ARTIFACT_BINDINGS" in SMOKE_JOB
+    assert "Native artifact has no unique frozen binding." in SMOKE_JOB
     assert "run-id: ${{ needs['frozen-package-smoke'].outputs.tag_ci_run_id }}" in (
         SMOKE_JOB
     )
@@ -243,7 +248,8 @@ def test_catalog_proof_binds_envelope_payload_signer_and_asset_identity() -> Non
         '--minimum-sequence "$MINIMUM_COMPONENT_CATALOG_SEQUENCE"'
         in SMOKE_JOB
     )
-    assert ".sequence >= $minimum" in SMOKE_JOB
+    assert ".sequence == $minimum" in SMOKE_JOB
+    assert ".sequence >= $minimum" not in SMOKE_JOB
     assert ".webjam_version == $version" in SMOKE_JOB
     assert ".component_count == 8" in SMOKE_JOB
     assert ".payload_sha256" in SMOKE_JOB

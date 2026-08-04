@@ -43,11 +43,11 @@ def _runtime_environment(
         "TMPDIR": str(directory.parent),
         "WEBJAM_SMOKE_COMPONENT_CATALOG_RUNTIME": "1",
         "WEBJAM_SMOKE_COMPONENT_CATALOG_RESULT": str(directory / "result.json"),
-        # Prove that launch-environment CA overrides cannot replace WebJam's
-        # release-locked Certifi trust data.
-        "SSL_CERT_FILE": str(directory / "not-trusted.pem"),
-        "SSL_CERT_DIR": str(directory / "not-trusted-dir"),
     }
+    # Prove that launch-environment CA overrides cannot replace WebJam's
+    # release-locked Certifi trust data.
+    environment["SSL_CERT_FILE"] = str(directory / "not-trusted.pem")
+    environment["SSL_CERT_DIR"] = str(directory / "not-trusted-dir")
     if platform_name == "nt":
         roaming = runtime_home / "AppData" / "Roaming"
         local = runtime_home / "AppData" / "Local"
@@ -63,7 +63,15 @@ def _runtime_environment(
         # Windows process initialization needs these OS-owned values. Copy
         # only this explicit allowlist; tokens, proxies, caller CA settings,
         # and every other CI variable remain excluded.
-        for key in ("SystemRoot", "WINDIR", "COMSPEC", "PATHEXT"):
+        for key in (
+            "SystemRoot",
+            "WINDIR",
+            "SystemDrive",
+            "COMSPEC",
+            "PATHEXT",
+            "PROCESSOR_ARCHITECTURE",
+            "PROCESSOR_ARCHITEW6432",
+        ):
             value = os.environ.get(key)
             if value:
                 environment[key] = value

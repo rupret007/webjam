@@ -373,7 +373,7 @@ jobs:
             --arg version "$VERSION" \
             --argjson minimum "$MINIMUM_COMPONENT_CATALOG_SEQUENCE" \
             '
-              .sequence >= $minimum
+              .sequence == $minimum
               and .webjam_version == $version
               and .component_count == 8
             ' \
@@ -643,14 +643,51 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Select exact bound native artifact identity
+        id: artifact
+        shell: bash
+        env:
+          EXPECTED_ARTIFACT_BINDINGS: ${{ needs['frozen-package-smoke'].outputs.release_artifact_bindings }}
+          ARTIFACT_NAME: ${{ matrix.artifact }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import re
+
+          bindings = json.loads(os.environ["EXPECTED_ARTIFACT_BINDINGS"])
+          name = os.environ["ARTIFACT_NAME"]
+          matches = [item for item in bindings if item.get("name") == name]
+          if len(matches) != 1:
+              raise SystemExit("Native artifact has no unique frozen binding.")
+          binding = matches[0]
+          artifact_id = binding.get("id")
+          digest = binding.get("digest")
+          size = binding.get("size_in_bytes")
+          if (
+              not isinstance(artifact_id, int)
+              or artifact_id <= 0
+              or not isinstance(size, int)
+              or size <= 0
+              or not isinstance(digest, str)
+              or re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None
+          ):
+              raise SystemExit("Native artifact binding is malformed.")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"artifact_id={artifact_id}\n")
+          PY
+
       - name: Download exact native tag-build artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: ${{ matrix.artifact }}
+          artifact-ids: ${{ steps.artifact.outputs.artifact_id }}
           path: ${{ runner.temp }}/frozen-target-artifact
           repository: ${{ github.repository }}
           run-id: ${{ needs['frozen-package-smoke'].outputs.tag_ci_run_id }}
           github-token: ${{ github.token }}
+          merge-multiple: true
+          digest-mismatch: error
 
       - name: Rebind selected package to the read-only proof
         shell: bash
