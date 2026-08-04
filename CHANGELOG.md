@@ -4,6 +4,31 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [Unreleased]
+
+### Reference Studio — DAW-style editing and overdub
+
+- Reference Studio now supports multi-region selection. Shift-click or
+  Ctrl/Cmd-click regions to build a selection, or use **Select All**
+  (⌘/Ctrl+A). Cut, Copy, Paste, and Delete act on the whole selection as one
+  undoable edit. Paste lands the earliest copied region at the playhead and
+  preserves every other copy's exact relative offset, so a multi-track phrase
+  pastes as one phrase; a paste whose destination track no longer exists fails
+  closed. Copies use new durable IDs and never rewrite source recordings or
+  tombstones. The **Select All** command is no longer a disabled placeholder.
+- Added first-class **Overdub** loop recording (Transport menu, shortcut
+  **O**, and a transport-bar toggle). With a loop set, Record loops the cycle
+  range and stacks each complete pass as its own take lane with no pass-count
+  dialog; comp the result with the existing Option/Alt-drag or Quick-Swipe
+  flow. Overdub reuses the sample-accurate, crash-safe project recorder and
+  take-lane commit unchanged, so recording identity, durable evidence, and the
+  non-destructive boundary are preserved. With no loop set, Record explains how
+  to set one rather than recording a straight punch.
+- These are source and machine-test improvements for the private candidate.
+  Two-endpoint physical overdub monitoring and audibility remain **NOT RUN**.
+
+---
+
 ## [0.22.3] — 2026-08-04 security and reliability private test candidate
 
 ### Release and dependency security

@@ -19,7 +19,7 @@ from core.project_recording_commit import (
 )
 from core.song_project import InputMapping
 from core.song_studio_reconcile import reconcile_song_studio_document
-from core.studio_project import SnapMode
+from core.studio_project import SnapMode, StudioCycleRange
 from core.take_player import TakePlayer
 from webjam_qt.controllers.reference_studio_application import (
     ReferenceStudioApplicationController,
@@ -418,4 +418,110 @@ def test_input_mapping_uses_selected_device_and_rejects_oversized_maps(
     assert unchanged.tracks[0].input_mapping == mapped.tracks[0].input_mapping
     assert "one mono channel or two stereo channels" in controller._status
     assert controller.close_project(choice="discard")
+    assert controller.shutdown()
+
+
+class _PlayingProjectOutput:
+    """A project output that permits playback (overdub monitors the take)."""
+
+    sample_rate = 48_000
+    block_frames = 256
+
+    def __init__(self) -> None:
+        self.callback = None
+
+    def start(self, callback) -> None:
+        self.callback = callback
+
+    def stop(self) -> None:
+        self.callback = None
+
+    def abort(self) -> None:
+        self.callback = None
+
+
+def test_overdub_cycle_records_dialog_free_and_stacks_take_lanes(
+    tmp_path: Path,
+    qapp: QApplication,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Overdub monitors the existing take while it records, so this controller
+    # uses an output that allows playback rather than the empty-first-take
+    # guard used elsewhere in this module.
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Ok,
+    )
+    factory = _InputFactory()
+    controller = ReferenceStudioApplicationController(
+        _shell(),
+        config_file=tmp_path / "settings.json",
+        output_backend=_PlayingProjectOutput(),
+        input_backend_factory=factory,
+    )
+    project = controller.create_project(tmp_path / "Overdub.webjam", "Overdub")
+    _wait_until(qapp, lambda: controller._renderer is not None)
+    track = project.tracks[0]
+    controller.project_controller.set_track_input_mapping(
+        track.track_id,
+        InputMapping("system-default-input", (1,)),
+    )
+    snapshot = controller.project_controller.set_track_armed(track.track_id, True)
+    assert snapshot.project is not None
+    assert controller._apply_studio_edit(
+        "Prepared recording track",
+        lambda document: reconcile_song_studio_document(snapshot.project, document),
+        rebuild=False,
+    )
+    monkeypatch.setattr(
+        QInputDialog,
+        "getInt",
+        lambda *_args, **_kwargs: (1, True),
+    )
+    controller._start_recording()
+    assert controller._is_recording, controller._status
+    factory.instances[0].pump(blocks=8)
+    controller._stop_recording_async()
+    _wait_until(qapp, lambda: controller._recording_commit_future is None)
+    # The recorded media re-enters through the catalog asynchronously; the
+    # project is no longer empty once its renderer spans the committed take.
+    _wait_until(
+        qapp,
+        lambda: (
+            controller._renderer is not None
+            and controller._renderer.timeline_end_frame > 0
+        ),
+    )
+
+    # Loop a short cycle over the committed first take and turn Overdub on.
+    assert controller._apply_studio_edit(
+        "Set overdub loop",
+        lambda document: document.set_cycle_range(
+            StudioCycleRange(start_frame=0, end_frame=512)
+        ),
+        rebuild=False,
+    )
+    controller._count_in = False
+    controller._dispatch_command("toggle_overdub")
+    assert controller.workspace.overdub_box.isChecked()
+    assert controller.workspace.actions["toggle_overdub"].isChecked()
+
+    def _no_dialog(*_args, **_kwargs):
+        raise AssertionError("Overdub recording must not open a pass-count dialog")
+
+    monkeypatch.setattr(QInputDialog, "getInt", _no_dialog)
+    controller._start_recording()
+    assert controller._is_recording, controller._status
+    assert len(factory.instances) == 2
+    factory.instances[1].pump(blocks=4)
+    controller._stop_recording_async()
+    _wait_until(qapp, lambda: controller._recording_commit_future is None)
+
+    document = controller.studio_controller.document
+    lanes = tuple(item for item in document.take_lanes if not item.deleted)
+    assert lanes, controller._status
+    assert "take lane" in controller._status
+    assert "Overdub passes are stacked" in controller._status
+    assert controller.save()
     assert controller.shutdown()

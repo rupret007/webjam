@@ -640,3 +640,99 @@ def test_mixer_and_automation_commands_persist_complete_mix_state(
     )
     assert controller.save()
     assert controller.shutdown()
+
+
+def test_multi_region_selection_batches_clipboard_and_undoes_atomically(
+    tmp_path: Path,
+    qapp: QApplication,
+) -> None:
+    shell = _shell()
+    controller = ReferenceStudioApplicationController(
+        shell,
+        config_file=tmp_path / "settings.json",
+        output_backend=_ProjectOutput(),
+    )
+    controller.create_project(tmp_path / "Multi.webjam", "Multi")
+    backing = tmp_path / "source.wav"
+    sf.write(backing, np.zeros(9_600, dtype=np.float32), 48_000, subtype="FLOAT")
+    controller.import_backing(backing)
+    _wait_until(qapp, lambda: controller._renderer is not None)
+    original = next(
+        item
+        for item in controller.studio_controller.document.regions
+        if item.enabled and not item.deleted
+    )
+    controller.workspace.arrange.set_selection(
+        track_id=original.track_id,
+        region_id=original.region_id,
+    )
+    controller.workspace.arrange.set_playhead(4_800)
+    controller._split_selected()
+
+    def active_regions():
+        return sorted(
+            (
+                item
+                for item in controller.studio_controller.document.regions
+                if item.enabled and not item.deleted
+            ),
+            key=lambda item: (item.timeline_start_frame, item.region_id),
+        )
+
+    left, right = active_regions()
+
+    controller.workspace.arrange.set_selection(
+        track_id=left.track_id,
+        region_id=left.region_id,
+    )
+    controller.workspace.arrange._user_select_region(right, extend=True)
+    assert controller.workspace.arrange.selected_region_ids == (
+        left.region_id,
+        right.region_id,
+    )
+
+    controller._copy_selected()
+    assert "Copied 2 regions" in controller._status
+    controller.workspace.arrange.set_playhead(6_000)
+    controller._paste_region()
+    regions = active_regions()
+    assert len(regions) == 4
+    pasted = sorted(
+        (
+            item
+            for item in regions
+            if item.region_id not in {left.region_id, right.region_id}
+        ),
+        key=lambda item: item.timeline_start_frame,
+    )
+    # The earliest copy lands at the playhead; the phrase keeps its shape.
+    assert pasted[0].timeline_start_frame == 6_000
+    assert pasted[1].timeline_start_frame == 6_000 + (
+        right.timeline_start_frame - left.timeline_start_frame
+    )
+    assert {item.source_media_id for item in pasted} == {
+        left.source_media_id,
+        right.source_media_id,
+    }
+
+    controller.workspace.arrange.set_selection(
+        track_id=left.track_id,
+        region_id=left.region_id,
+    )
+    controller.workspace.arrange._user_select_region(right, extend=True)
+    controller._delete_selected()
+    document = controller.studio_controller.document
+    assert document.region_for(left.region_id).deleted
+    assert document.region_for(right.region_id).deleted
+
+    # One undo restores the whole batch: the multi-delete is a single edit.
+    controller._undo()
+    document = controller.studio_controller.document
+    assert not document.region_for(left.region_id).deleted
+    assert not document.region_for(right.region_id).deleted
+
+    controller._select_all_regions()
+    assert len(controller.workspace.arrange.selected_region_ids) == 4
+    assert "Selected all 4 regions" in controller._status
+    assert controller.save()
+    assert controller.shutdown()

@@ -55,8 +55,8 @@ def test_menu_copy_does_not_promise_unimplemented_mutations() -> None:
     assert workspace.actions["toggle_ruler"].text().replace("&", "") == (
         "Toggle Time / Bars and Beats"
     )
-    assert not workspace.actions["select_all"].isEnabled()
-    assert "one selected region" in workspace.actions["select_all"].toolTip()
+    assert workspace.actions["select_all"].isEnabled()
+    assert "every active region" in workspace.actions["select_all"].toolTip()
 
 
 @pytest.mark.parametrize(
@@ -212,6 +212,7 @@ def test_workspace_has_accessible_controls_and_compact_arrange_floor() -> None:
         workspace.cycle_box,
         workspace.metronome_box,
         workspace.count_in_box,
+        workspace.overdub_box,
         workspace.tempo,
         workspace.time_signature,
         workspace.snap,
@@ -228,6 +229,7 @@ def test_workspace_has_accessible_controls_and_compact_arrange_floor() -> None:
             workspace.cycle_box,
             workspace.metronome_box,
             workspace.count_in_box,
+            workspace.overdub_box,
         )
     )
     assert all(
@@ -236,7 +238,29 @@ def test_workspace_has_accessible_controls_and_compact_arrange_floor() -> None:
             "toggle_cycle",
             "toggle_metronome",
             "toggle_count_in",
+            "toggle_overdub",
         )
     )
     assert workspace.minimumWidth() <= 640
     assert workspace.minimumHeight() <= 360
+
+
+def test_overdub_control_renders_controller_state_without_emitting() -> None:
+    workspace = ReferenceStudioWorkspace()
+    emitted: list[str] = []
+    workspace.command_requested.connect(emitted.append)
+    workspace.set_project_controls(
+        tempo_bpm=120.0,
+        numerator=4,
+        denominator=4,
+        snap_mode="bar",
+        metronome=False,
+        cycle=True,
+        count_in=False,
+        overdub=True,
+    )
+    assert workspace.overdub_box.isChecked()
+    assert workspace.actions["toggle_overdub"].isChecked()
+    assert emitted == []
+    workspace.overdub_box.click()
+    assert emitted == ["toggle_overdub"]

@@ -156,6 +156,9 @@ _BUNDLE_SUFFIX = ".webjam"
 _PREPARE_WORKERS = 3
 _NAMESPACE = uuid.UUID("43144e08-821a-448e-bf93-a5d36d3c7f12")
 _FIRST_TAKE_DEFAULT_MINUTES = 5
+# Overdub loop-records without a pass-count dialog; the musician presses Stop
+# when done. This ceiling matches the maximum the cycle dialog offers.
+_OVERDUB_MAX_PASSES = 20
 _FIRST_TAKE_MAX_MINUTES = 120
 
 
@@ -259,7 +262,8 @@ class ReferenceStudioApplicationController(QObject):
         self._status = "Choose Play Along / Record, New Project, or Open Project."
         self._metronome = False
         self._count_in = True
-        self._clipboard_region: StudioRegion | None = None
+        self._overdub = False
+        self._clipboard_regions: tuple[StudioRegion, ...] = ()
         self._last_waveform_error_generation = -1
         self._mixer_dialog: ReferenceStudioMixerDialog | None = None
         self._automation_dialog: ReferenceStudioAutomationDialog | None = None
@@ -1679,6 +1683,7 @@ class ReferenceStudioApplicationController(QObject):
             "toggle_metronome": self._toggle_metronome,
             "toggle_cycle": self._toggle_cycle,
             "toggle_count_in": self._toggle_count_in,
+            "toggle_overdub": self._toggle_overdub,
             "new_audio_track": self._new_track_dialog,
             "rename_track": self._rename_track_dialog,
             "duplicate_track": self._duplicate_track,
@@ -1700,7 +1705,7 @@ class ReferenceStudioApplicationController(QObject):
             "analyze_tempo": self._analyze_tempo,
             "latency_calibration": self._latency_calibration_dialog,
             "open_guide": self._show_guide,
-            "select_all": self._select_first_region,
+            "select_all": self._select_all_regions,
             "show_media_bin": self._show_media_bin,
             "save_project_as": self._save_as_dialog,
             "relink_media": self._relink_backing_dialog,
@@ -2233,6 +2238,7 @@ class ReferenceStudioApplicationController(QObject):
             metronome=self._metronome,
             cycle=document.cycle_range is not None and document.cycle_range.enabled,
             count_in=self._count_in,
+            overdub=self._overdub,
         )
         if self.workspace.arrange.ruler_mode == "bars":
             self.workspace.arrange.set_ruler_mode(
@@ -2461,17 +2467,22 @@ class ReferenceStudioApplicationController(QObject):
         cycle_enabled = not first_take and cycle is not None and cycle.enabled
         if cycle_enabled:
             assert cycle is not None
-            cycle_count, accepted = QInputDialog.getInt(
-                self.shell,
-                "Cycle Recording Passes",
-                "Number of complete takes:",
-                3,
-                2,
-                20,
-                1,
-            )
-            if not accepted:
-                return
+            if self._overdub:
+                # Overdub is dialog-free: loop until the musician presses
+                # Stop, bounded by the same ceiling the cycle dialog offers.
+                cycle_count = _OVERDUB_MAX_PASSES
+            else:
+                cycle_count, accepted = QInputDialog.getInt(
+                    self.shell,
+                    "Cycle Recording Passes",
+                    "Number of complete takes:",
+                    3,
+                    2,
+                    20,
+                    1,
+                )
+                if not accepted:
+                    return
             punch_in = cycle.start_frame
             punch_out = cycle.end_frame
             cycle_start = cycle.start_frame
@@ -2497,6 +2508,15 @@ class ReferenceStudioApplicationController(QObject):
             cycle_start = None
             cycle_end = None
         else:
+            if self._overdub:
+                self._status = (
+                    "Overdub records over a loop. Select a region and use "
+                    "Region > Loop Selected Region (or drag a cycle range), "
+                    "then press Record — or turn Overdub off for a straight "
+                    "punch from the playhead."
+                )
+                self._refresh()
+                return
             cycle_count = 1
             punch_in = self.workspace.arrange.playhead_frame
             punch_out = renderer.timeline_end_frame
@@ -2879,6 +2899,12 @@ class ReferenceStudioApplicationController(QObject):
                 else "; no capture dropout intervals were reported."
             )
             + ("" if cleaned else " Temporary capture cleanup needs review.")
+            + (
+                " Overdub passes are stacked as take lanes: Option-drag a "
+                "lane to comp, or use Region > Quick-Swipe Comp."
+                if self._overdub and committed.lane_ids
+                else ""
+            )
         )
         self._clear_recording_context()
         self._refresh()
@@ -3037,6 +3063,26 @@ class ReferenceStudioApplicationController(QObject):
             return
         self._count_in = not self._count_in
         self._status = "Count-in on." if self._count_in else "Count-in off."
+        self._refresh()
+
+    def _toggle_overdub(self) -> None:
+        if self._reject_recording_change("changing overdub"):
+            return
+        self._overdub = not self._overdub
+        if not self._overdub:
+            self._status = "Overdub off."
+        else:
+            document = self.studio_controller.document
+            cycle = document.cycle_range
+            cycle_ready = cycle is not None and cycle.enabled
+            self._status = (
+                "Overdub on. Record loops the cycle range and lands each pass "
+                "in a new take lane; press Stop when you have enough."
+                if cycle_ready
+                else "Overdub on. Set a loop first: select a region, use "
+                "Region > Loop Selected Region (or drag a cycle range), then "
+                "press Record."
+            )
         self._refresh()
 
     def _toggle_cycle(self) -> None:
@@ -3429,6 +3475,29 @@ class ReferenceStudioApplicationController(QObject):
             return None
         return region if not region.deleted else None
 
+    def _selected_regions(self) -> tuple[StudioRegion, ...]:
+        """Every selected active region in timeline order."""
+
+        document = self.studio_controller.document
+        regions = []
+        for region_id in self.workspace.arrange.selected_region_ids:
+            try:
+                region = document.region_for(region_id)
+            except StudioProjectError:
+                continue
+            if not region.deleted:
+                regions.append(region)
+        if not regions:
+            single = self._selected_region()
+            if single is not None:
+                regions.append(single)
+        return tuple(
+            sorted(
+                regions,
+                key=lambda item: (item.timeline_start_frame, item.region_id),
+            )
+        )
+
     def _split_selected(self) -> None:
         region = self._selected_region()
         if region is not None:
@@ -3534,58 +3603,105 @@ class ReferenceStudioApplicationController(QObject):
         self._apply_studio_edit("Joined adjacent source regions", join)
 
     def _delete_selected(self) -> None:
-        region = self._selected_region()
-        if region is not None:
-            self._delete_region(region.region_id)
+        regions = self._selected_regions()
+        if not regions:
+            return
+        if len(regions) == 1:
+            self._delete_region(regions[0].region_id)
+            return
+        region_ids = tuple(item.region_id for item in regions)
+
+        def delete(document: StudioDocument) -> StudioDocument:
+            for region_id in region_ids:
+                document = document.delete_region(region_id)
+            return document
+
+        self._apply_studio_edit(
+            f"Deleted {len(region_ids)} regions non-destructively",
+            delete,
+        )
 
     def _copy_selected(self) -> None:
-        self._clipboard_region = self._selected_region()
+        self._clipboard_regions = self._selected_regions()
+        count = len(self._clipboard_regions)
         self._status = (
-            "Region copied."
-            if self._clipboard_region is not None
-            else "Select a region to copy."
+            "Select a region to copy."
+            if not count
+            else "Region copied."
+            if count == 1
+            else f"Copied {count} regions."
         )
         self._refresh()
 
     def _cut_selected(self) -> None:
-        region = self._selected_region()
-        if region is None:
+        regions = self._selected_regions()
+        if not regions:
             return
-        self._clipboard_region = region
-        self._delete_region(region.region_id)
+        self._clipboard_regions = regions
+        if len(regions) == 1:
+            self._delete_region(regions[0].region_id)
+            return
+        region_ids = tuple(item.region_id for item in regions)
+
+        def cut(document: StudioDocument) -> StudioDocument:
+            for region_id in region_ids:
+                document = document.delete_region(region_id)
+            return document
+
+        self._apply_studio_edit(
+            f"Cut {len(region_ids)} regions to the Studio clipboard",
+            cut,
+        )
 
     def _paste_region(self) -> None:
-        copied = self._clipboard_region
-        if copied is None:
+        copied = self._clipboard_regions
+        if not copied:
             self._status = "Copy a region before pasting."
             self._refresh()
             return
         target = self.workspace.arrange.playhead_frame
+        # The earliest copied region lands at the playhead; every other copy
+        # keeps its exact relative offset, so a multi-track phrase pastes as
+        # one phrase.
+        anchor = min(item.timeline_start_frame for item in copied)
 
         def paste(document: StudioDocument) -> StudioDocument:
-            if all(item.track_id != copied.track_id for item in document.tracks):
+            track_ids = {item.track_id for item in document.tracks}
+            missing = tuple(
+                item for item in copied if item.track_id not in track_ids
+            )
+            if missing:
                 raise StudioProjectError(
                     "The copied region's destination track no longer exists."
+                    if len(copied) == 1
+                    else "A copied region's destination track no longer exists."
                 )
-            delta = target - copied.timeline_start_frame
-            duplicate = replace(
-                copied,
-                region_id=str(uuid.uuid4()),
-                timeline_start_frame=target,
-                mapping_timeline_start_frame=(
-                    int(copied.mapping_timeline_start_frame) + delta
-                ),
-                enabled=True,
-                deleted=False,
-            )
+            duplicates = []
+            for item in copied:
+                start = target + (item.timeline_start_frame - anchor)
+                delta = start - item.timeline_start_frame
+                duplicates.append(
+                    replace(
+                        item,
+                        region_id=str(uuid.uuid4()),
+                        timeline_start_frame=start,
+                        mapping_timeline_start_frame=(
+                            int(item.mapping_timeline_start_frame) + delta
+                        ),
+                        enabled=True,
+                        deleted=False,
+                    )
+                )
             return replace(
                 document,
                 revision=document.revision + 1,
-                regions=(*document.regions, duplicate),
+                regions=(*document.regions, *duplicates),
             )
 
         self._apply_studio_edit(
-            "Pasted region",
+            "Pasted region"
+            if len(copied) == 1
+            else f"Pasted {len(copied)} regions",
             paste,
         )
 
@@ -3665,17 +3781,17 @@ class ReferenceStudioApplicationController(QObject):
             rebuild=False,
         )
 
-    def _select_first_region(self) -> None:
-        document = self.studio_controller.document
-        region = next(
-            (item for item in document.regions if item.enabled and not item.deleted),
-            None,
+    def _select_all_regions(self) -> None:
+        self.workspace.arrange.select_all_regions()
+        count = len(self.workspace.arrange.selected_region_ids)
+        self._status = (
+            "There are no regions to select yet."
+            if not count
+            else "Selected the only region."
+            if count == 1
+            else f"Selected all {count} regions."
         )
-        if region is not None:
-            self.workspace.arrange.set_selection(
-                track_id=region.track_id,
-                region_id=region.region_id,
-            )
+        self._refresh()
 
     def _project_settings_dialog(self) -> None:
         project, _bundle = self._open_identity()

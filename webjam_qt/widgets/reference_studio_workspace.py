@@ -140,6 +140,7 @@ class ReferenceStudioWorkspace(QWidget):
             "toggle_cycle",
             "toggle_metronome",
             "toggle_count_in",
+            "toggle_overdub",
             "toggle_ruler",
             "latency_calibration",
             "analyze_tempo",
@@ -252,9 +253,15 @@ class ReferenceStudioWorkspace(QWidget):
         self.count_in_box = self._transport_check(
             "Count-in", "Play a count-in before recording", "toggle_count_in"
         )
+        self.overdub_box = self._transport_check(
+            "Overdub",
+            "Loop-record each cycle pass into a new take lane",
+            "toggle_overdub",
+        )
         transport_layout.addWidget(self.cycle_box)
         transport_layout.addWidget(self.metronome_box)
         transport_layout.addWidget(self.count_in_box)
+        transport_layout.addWidget(self.overdub_box)
         transport_layout.addSpacing(Space.SM)
         self.position = QLabel("1 1 1 000")
         self.position.setObjectName("ReferenceStudioPosition")
@@ -408,7 +415,8 @@ class ReferenceStudioWorkspace(QWidget):
         QWidget.setTabOrder(self.record_button, self.cycle_box)
         QWidget.setTabOrder(self.cycle_box, self.metronome_box)
         QWidget.setTabOrder(self.metronome_box, self.count_in_box)
-        QWidget.setTabOrder(self.count_in_box, self.tempo)
+        QWidget.setTabOrder(self.count_in_box, self.overdub_box)
+        QWidget.setTabOrder(self.overdub_box, self.tempo)
         QWidget.setTabOrder(self.tempo, self.time_signature)
         QWidget.setTabOrder(self.time_signature, self.snap)
         QWidget.setTabOrder(self.snap, self.track_list)
@@ -488,9 +496,9 @@ class ReferenceStudioWorkspace(QWidget):
             "Select &All",
             QKeySequence.StandardKey.SelectAll,
         )
-        select_all.setEnabled(False)
         select_all.setToolTip(
-            "Reference Studio currently edits one selected region at a time."
+            "Select every active region in the arrangement. Shift-click or "
+            "Ctrl-click regions to build a partial selection."
         )
 
         track_menu = self.menu_bar.addMenu("&Track")
@@ -538,6 +546,13 @@ class ReferenceStudioWorkspace(QWidget):
             transport_menu,
             "toggle_count_in",
             "Count-&in",
+            checkable=True,
+        )
+        self._action(
+            transport_menu,
+            "toggle_overdub",
+            "&Overdub",
+            "O",
             checkable=True,
         )
 
@@ -677,6 +692,7 @@ class ReferenceStudioWorkspace(QWidget):
         metronome: bool,
         cycle: bool,
         count_in: bool,
+        overdub: bool = False,
     ) -> None:
         """Render controller-owned settings without emitting edit requests."""
 
@@ -687,6 +703,7 @@ class ReferenceStudioWorkspace(QWidget):
             self.metronome_box,
             self.cycle_box,
             self.count_in_box,
+            self.overdub_box,
         )
         for control in controls:
             control.blockSignals(True)
@@ -704,10 +721,12 @@ class ReferenceStudioWorkspace(QWidget):
             self.metronome_box.setChecked(bool(metronome))
             self.cycle_box.setChecked(bool(cycle))
             self.count_in_box.setChecked(bool(count_in))
+            self.overdub_box.setChecked(bool(overdub))
             for command, checked in (
                 ("toggle_metronome", metronome),
                 ("toggle_cycle", cycle),
                 ("toggle_count_in", count_in),
+                ("toggle_overdub", overdub),
             ):
                 self._actions[command].setChecked(bool(checked))
         finally:
@@ -733,6 +752,7 @@ class ReferenceStudioWorkspace(QWidget):
             self.cycle_box,
             self.metronome_box,
             self.count_in_box,
+            self.overdub_box,
         ):
             control.setVisible(not compact)
         self.splitter.setSizes([150, 610, 0] if compact else [190, 760, 230])

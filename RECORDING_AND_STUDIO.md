@@ -63,6 +63,8 @@ It does not store source file paths in the arrangement. The timeline supports:
 
 - moving and edge-trimming regions by drag;
 - split, duplicate, disable/enable, and delete actions for a selected region;
+- multi-region selection with Shift-click or Ctrl/Cmd-click, **Select All**,
+  and one-step Cut/Copy/Paste that keeps a copied phrase's shape and offsets;
 - per-region fades, validated same-track crossfades, markers/sections,
   cycle/loop playback ranges, and time/marker snapping;
 - track trim, fader, pan, mute, solo, and export-inclusion choices;
@@ -76,6 +78,15 @@ regions at the move seams without changing their source mapping, moves contained
 arrangement choices with the block, reloads playback, and refuses the move
 atomically when an interval cannot cross a seam safely. Source recordings and
 existing tombstones remain unchanged.
+
+Shift-click or Ctrl/Cmd-click regions to build a selection, or press
+**Select All** (⌘/Ctrl+A) to select every active region. Cut, Copy, Paste, and
+Delete then act on the whole selection as one undoable edit: Paste lands the
+earliest copied region at the playhead and preserves every other copy's exact
+relative offset, so a multi-track phrase pastes as one phrase. A copied region
+whose destination track no longer exists fails the paste closed rather than
+inventing a track. Copies are new durable IDs; the source recordings and any
+tombstones are never rewritten.
 
 The familiar Undo/Redo shortcuts restore exact immutable snapshots, including
 durable IDs. Adjacent continuous-control changes are coalesced into a useful
@@ -111,6 +122,22 @@ has recorded media without changing the saved comp. Option/Alt-drag a lane to
 select a comp range. A newer range cleanly splits prior overlapping selections
 and uses short equal-power boundaries. Removing a lane removes only its Studio
 inventory and comp choices; the repeated take remains unchanged in Takes.
+
+### Overdub loop recording
+
+Turn on **Overdub** in the Transport menu (shortcut **O**) or the transport bar
+to loop-record over a chosen range. First set a loop: select a region and use
+**Region ▸ Loop Selected Region**, or drag a cycle range. With Overdub on,
+**Record** then loops that range and lands each complete pass in its own new
+take lane, with no pass-count dialog — press **Stop** when you have enough. Comp
+the result exactly like any repeated take: Option/Alt-drag a lane to pick the
+keeper range, or use **Region ▸ Quick-Swipe Comp**. Overdub uses the same
+sample-accurate, crash-safe project recorder and take-lane commit as a manual
+cycle take, so every pass carries the same durable evidence; nothing about the
+underlying recording identity or non-destructive boundary changes. With Overdub
+on but no loop set, Record explains how to set one instead of recording a
+straight punch. Two-endpoint physical overdub monitoring remains a **NOT RUN**
+observation.
 
 ### Waveforms
 

@@ -1012,7 +1012,10 @@ class _ArrangeScrollArea(QAbstractScrollArea):
             timeline_end=end,
         )
 
-        selected = region.region_id == self._arrange._selected_region_id
+        selected = (
+            region.region_id == self._arrange._selected_region_id
+            or region.region_id in self._arrange._selected_region_ids
+        )
         painter.setPen(
             QPen(
                 QColor(Color.ACCENT_PRIMARY if selected else Color.TEXT_MUTED),
@@ -1524,7 +1527,19 @@ class _ArrangeScrollArea(QAbstractScrollArea):
             event.accept()
             return
 
-        self._arrange._user_select_region(region)
+        extend = bool(
+            event.modifiers()
+            & (
+                Qt.KeyboardModifier.ShiftModifier
+                | Qt.KeyboardModifier.ControlModifier
+            )
+        )
+        self._arrange._user_select_region(region, extend=extend)
+        if extend:
+            # Building a multi-region selection is a selection gesture only;
+            # never begin a move/trim drag from a modifier click.
+            event.accept()
+            return
         frame = self.frame_at_x(point.x())
         row_id = self._row_at_y(layout, point.y())
         if (
@@ -1803,6 +1818,11 @@ class StudioArrange(QWidget):
         self._track_names: dict[str, str] = {}
         self._selected_track_id: str | None = None
         self._selected_region_id: str | None = None
+        # Ordered multi-selection. The primary region
+        # (``_selected_region_id``) is always the last entry, so every
+        # existing single-region gesture keeps operating on the region the
+        # musician touched most recently.
+        self._selected_region_ids: tuple[str, ...] = ()
         self._selected_lane_id: str | None = None
         self._audition_lane_id: str | None = None
         # Cached identity of the named section containing the playhead.
@@ -1855,6 +1875,12 @@ class StudioArrange(QWidget):
     @property
     def selected_region_id(self) -> str | None:
         return self._selected_region_id
+
+    @property
+    def selected_region_ids(self) -> tuple[str, ...]:
+        """Every selected active region, oldest first, primary last."""
+
+        return self._selected_region_ids
 
     @property
     def selected_lane_id(self) -> str | None:
@@ -1936,6 +1962,7 @@ class StudioArrange(QWidget):
             self._region_by_id = {}
             self._selected_track_id = None
             self._selected_region_id = None
+            self._selected_region_ids = ()
             self._selected_lane_id = None
             self._audition_lane_id = None
         else:
@@ -1946,7 +1973,19 @@ class StudioArrange(QWidget):
                 item.region_id: item for item in document.regions if not item.deleted
             }
             self._region_by_id = active_regions
+            self._selected_region_ids = tuple(
+                region_id
+                for region_id in self._selected_region_ids
+                if region_id in active_regions
+            )
             selected_region = active_regions.get(self._selected_region_id or "")
+            if selected_region is None:
+                self._selected_region_id = (
+                    self._selected_region_ids[-1]
+                    if self._selected_region_ids
+                    else None
+                )
+                selected_region = active_regions.get(self._selected_region_id or "")
             if selected_region is None:
                 self._selected_region_id = None
             else:
@@ -2020,6 +2059,7 @@ class StudioArrange(QWidget):
                 raise ValueError("No Studio arrangement is open.")
             self._selected_track_id = None
             self._selected_region_id = None
+            self._selected_region_ids = ()
             self._selected_lane_id = None
         elif region_id is not None:
             region = next(
@@ -2036,6 +2076,7 @@ class StudioArrange(QWidget):
                 raise ValueError("track_id does not own region_id.")
             self._selected_track_id = region.track_id
             self._selected_region_id = region.region_id
+            self._selected_region_ids = (region.region_id,)
             self._selected_lane_id = next(
                 (
                     item.lane_id
@@ -2049,10 +2090,12 @@ class StudioArrange(QWidget):
                 raise ValueError("track_id is not part of this Studio arrangement.")
             self._selected_track_id = track_id
             self._selected_region_id = None
+            self._selected_region_ids = ()
             self._selected_lane_id = None
         else:
             self._selected_track_id = None
             self._selected_region_id = None
+            self._selected_region_ids = ()
             self._selected_lane_id = None
         self._refresh_accessible_state()
         self._headers.update()
@@ -2339,6 +2382,7 @@ class StudioArrange(QWidget):
     def _user_select_track(self, track_id: str) -> None:
         self._selected_track_id = track_id
         self._selected_region_id = None
+        self._selected_region_ids = ()
         self._selected_lane_id = None
         self._refresh_accessible_state()
         self._headers.update()
@@ -2348,6 +2392,7 @@ class StudioArrange(QWidget):
     def _user_select_lane(self, track_id: str, lane_id: str) -> None:
         self._selected_track_id = track_id
         self._selected_region_id = None
+        self._selected_region_ids = ()
         self._selected_lane_id = lane_id
         self._refresh_accessible_state()
         self._headers.update()
@@ -2355,15 +2400,66 @@ class StudioArrange(QWidget):
         self.track_selected.emit(track_id)
         self.lane_selected.emit(lane_id)
 
-    def _user_select_region(self, region: StudioRegion) -> None:
-        self._selected_track_id = region.track_id
-        self._selected_region_id = region.region_id
-        self._selected_lane_id = self._canvas._lane_by_region.get(region.region_id)
+    def _user_select_region(
+        self,
+        region: StudioRegion,
+        *,
+        extend: bool = False,
+    ) -> None:
+        if extend and self._selected_region_ids:
+            ids = [
+                item
+                for item in self._selected_region_ids
+                if item != region.region_id
+            ]
+            if len(ids) == len(self._selected_region_ids):
+                # Not previously selected: add it as the new primary.
+                ids.append(region.region_id)
+            if not ids:
+                # Toggling away the only selected region keeps its track
+                # selected, exactly like clicking empty lane space.
+                self._user_select_track(region.track_id)
+                return
+            self._selected_region_ids = tuple(ids)
+        else:
+            self._selected_region_ids = (region.region_id,)
+        primary_id = self._selected_region_ids[-1]
+        primary = self._region_by_id.get(primary_id, region)
+        self._selected_track_id = primary.track_id
+        self._selected_region_id = primary.region_id
+        self._selected_lane_id = self._canvas._lane_by_region.get(primary.region_id)
         self._refresh_accessible_state()
         self._headers.update()
         self._canvas.viewport().update()
-        self.track_selected.emit(region.track_id)
-        self.region_selected.emit(region.region_id)
+        self.track_selected.emit(primary.track_id)
+        self.region_selected.emit(primary.region_id)
+
+    def select_all_regions(self) -> None:
+        """Select every active region, keeping the earliest as scroll anchor."""
+
+        document = self._document
+        if document is None:
+            return
+        active = sorted(
+            (
+                item
+                for item in document.regions
+                if item.enabled and not item.deleted
+            ),
+            key=lambda item: (item.timeline_start_frame, item.region_id),
+        )
+        if not active:
+            return
+        self._selected_region_ids = tuple(item.region_id for item in active)
+        primary = active[-1]
+        self._selected_track_id = primary.track_id
+        self._selected_region_id = primary.region_id
+        self._selected_lane_id = self._canvas._lane_by_region.get(primary.region_id)
+        self._refresh_accessible_state()
+        self._headers.update()
+        self._canvas.viewport().update()
+        self.track_selected.emit(primary.track_id)
+        self.region_selected.emit(primary.region_id)
 
     @staticmethod
     def _section_containing(

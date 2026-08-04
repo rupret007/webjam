@@ -1205,3 +1205,89 @@ def test_scroll_and_scrub_preserve_frames_beyond_qt_int_range(
     assert scrubbed[-1] > 2**31
     assert abs(scrubbed[-1] - distant_frame) <= 8
     arrange.close()
+
+
+def test_modifier_clicks_build_and_prune_a_multi_region_selection(
+    qapp: QApplication,
+) -> None:
+    document = _document()
+    arrange = _shown_arrange(qapp, document)
+    arrange.set_zoom(480)
+    arrange.scroll_to_frame(0, center=False)
+    viewport = arrange._canvas.viewport()
+    first_region, overlap_region = document.regions[0], document.regions[1]
+    row_y = _main_row_y(arrange, first_region.track_id)
+
+    QTest.mouseClick(
+        viewport,
+        Qt.MouseButton.LeftButton,
+        pos=QPoint(round(arrange._canvas.x_for_frame(12_000)), row_y),
+    )
+    assert arrange.selected_region_ids == (first_region.region_id,)
+
+    QTest.mouseClick(
+        viewport,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.ShiftModifier,
+        pos=QPoint(round(arrange._canvas.x_for_frame(70_000)), row_y),
+    )
+    assert arrange.selected_region_ids == (
+        first_region.region_id,
+        overlap_region.region_id,
+    )
+    assert arrange.selected_region_id == overlap_region.region_id
+
+    # A modifier click toggles an already-selected region back out.
+    QTest.mouseClick(
+        viewport,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.ControlModifier,
+        pos=QPoint(round(arrange._canvas.x_for_frame(70_000)), row_y),
+    )
+    assert arrange.selected_region_ids == (first_region.region_id,)
+    assert arrange.selected_region_id == first_region.region_id
+
+    # A plain click replaces the whole selection.
+    QTest.mouseClick(
+        viewport,
+        Qt.MouseButton.LeftButton,
+        pos=QPoint(round(arrange._canvas.x_for_frame(70_000)), row_y),
+    )
+    assert arrange.selected_region_ids == (overlap_region.region_id,)
+
+    arrange.select_all_regions()
+    selected = set(arrange.selected_region_ids)
+    assert selected == {
+        item.region_id
+        for item in document.regions
+        if item.enabled and not item.deleted
+    }
+    assert len(selected) == 3
+
+    # Replacing the document prunes tombstoned regions from the selection
+    # and promotes the latest survivor to primary.
+    pruned = replace(
+        document,
+        revision=document.revision + 1,
+        regions=tuple(
+            replace(item, enabled=False, deleted=True)
+            if item.region_id == overlap_region.region_id
+            else item
+            for item in document.regions
+        ),
+        # The document validator correctly refuses an active crossfade into a
+        # tombstoned region, so the seam is removed with its region.
+        crossfades=(),
+    )
+    arrange.set_document(pruned)
+    assert overlap_region.region_id not in arrange.selected_region_ids
+    assert len(arrange.selected_region_ids) == 2
+    assert arrange.selected_region_id == arrange.selected_region_ids[-1]
+
+    # Controller-owned sync collapses back to a single-region selection.
+    arrange.set_selection(
+        track_id=first_region.track_id,
+        region_id=first_region.region_id,
+    )
+    assert arrange.selected_region_ids == (first_region.region_id,)
+    arrange.close()
