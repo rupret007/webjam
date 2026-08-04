@@ -1,7 +1,7 @@
 # WebJam quick help — v0.22.3
 
-> **Pre-publication candidate:** these labels describe v0.22.3. The immutable
-> v0.22.2 packages remain GitHub Latest until verified v0.22.3 promotion.
+> **Published private test candidate:** these labels describe immutable v0.22.3,
+> now GitHub Latest.
 
 | Need | Use |
 | --- | --- |

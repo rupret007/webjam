@@ -1,8 +1,8 @@
 # Pocket Stage v1 developer-preview implementation and validation plan
 
-> **v0.22.3 pre-publication boundary:** the current menu label is part of this
-> candidate and is absent from the immutable published v0.22.2 packages.
-> Physical validation remains **NOT RUN**.
+> **v0.22.3 published boundary:** the current menu label is included in the
+> immutable published v0.22.3 private test candidate. Physical validation
+> remains **NOT RUN**.
 
 - Date: 2026-07-21
 - Status: Reproducible app vertical slice implemented; physical validation **NOT RUN**

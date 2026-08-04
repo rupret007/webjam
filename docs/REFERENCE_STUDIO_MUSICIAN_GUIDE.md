@@ -5,7 +5,7 @@ a backing track. It can open without a WebJam session, Webex, or Jamulus. Its
 local playback and recording choices do not change the device, buffer, mix, or
 connection owned by Jamulus.
 
-This guide describes the pre-publication v0.22.3 private test candidate.
+This guide describes the published, immutable v0.22.3 private test candidate.
 Windows packages are unsigned. Mac packages are ad-hoc signed and unnotarized.
 Automated checks do not prove that a particular interface, driver, speaker, or
 headphone path is
@@ -167,12 +167,11 @@ Do not route Reference Studio into Jamulus by assumption. A future explicit
 feature would need to prove ownership, feedback isolation, return-fader state,
 and teardown. The standalone workflow makes no such claim.
 
-## v0.22.3 pre-publication candidate checklist
+## v0.22.3 published candidate record
 
-The v0.22.3 source is eligible for an exact tag build and reviewable draft; it
-is not a published download until the checksums, signed sequence-4 Jamulus
-catalog for exact WebJam 0.22.3, frozen-package gates, and verified promotion
-pass. Its required draft inventory is:
+The v0.22.3 source, checksums, signed sequence-4 Jamulus catalog, four-platform
+frozen-package gates, and verified promotion passed before publication. Its
+exact immutable release inventory is:
 
 - `WebJam-v0.22.3-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`
 - `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip`
@@ -194,8 +193,9 @@ SmartScreen, Gatekeeper, signing, and notarization gates remain **NOT RUN**.
 
 The
 [v0.22.2 GitHub release](https://github.com/rupret007/webjam/releases/tag/v0.22.2)
-is now published as a non-prerelease marked **Latest**. Its verified inventory
-is exactly these seven packages plus the checksum manifest:
+was published as a non-prerelease marked **Latest** at that time and is now
+superseded by immutable v0.22.3. Its verified inventory is exactly these seven
+packages plus the checksum manifest:
 
 - `WebJam-v0.22.2-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`
 - `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip`

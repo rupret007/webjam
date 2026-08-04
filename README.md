@@ -1,10 +1,9 @@
 # WebJam v0.22.3 unsigned private test candidate
 
-> **Pre-publication candidate:** this source reports v0.22.3. The immutable
-> published v0.22.2 release remains GitHub **Latest** until the exact v0.22.3
-> tag build, draft inventory, signed component catalog, and verified promotion
-> gates pass. Physical and credentialed gates remain **NOT RUN** unless exact
-> v0.22.3 asset evidence says otherwise.
+> **Published private test candidate:** v0.22.3 is GitHub **Latest** and its
+> tag, title, warning text, and eight release assets are immutable. Windows is
+> unsigned; macOS is ad-hoc signed and unnotarized. Physical and credentialed
+> gates remain **NOT RUN** unless exact v0.22.3 asset evidence says otherwise.
 
 WebJam has two deliberately separate musician workflows:
 
@@ -63,10 +62,9 @@ process ID/liveness, finite RPC freshness category, and finite RPC age. It
 never includes the Jamulus profile path, RPC secret, invitation, meeting link,
 or raw exception.
 
-This recovery work is part of the pre-publication v0.22.3 candidate. GitHub
-**Latest** and the immutable downloadable assets remain **v0.22.2** until the
-exact draft passes the automated release gates and verified promotion.
-Publication does not convert any physical gate to PASS.
+This recovery work ships in the immutable v0.22.3 private test candidate,
+which is GitHub **Latest**. Publication does not convert any physical gate to
+PASS.
 
 ## Jamulus updates without rebuilding WebJam
 
@@ -379,21 +377,14 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Published source and candidate state
 
-The source tree reports **v0.22.3** as a pre-publication private test candidate.
-GitHub **Latest** remains **v0.22.2** until the exact v0.22.3 draft is verified
-and promoted. The
-[published release](https://github.com/rupret007/webjam/releases/tag/v0.22.2)
-is a non-prerelease explicitly titled as an unsigned private test candidate. It
-adds direct Live access to Webex,
-host-only Reference Track, and Studio; side-effect-free Conversation
-navigation; truthful native-app focus/mute guidance; source-first Reference
-Track loading and redacted route diagnostics; and a generation guard that
-prevents reconnect supervision from cancelling a slow manual Jamulus launch.
-It retains the signed Jamulus component updater, exact Jamulus-name
-preview/validation, standalone Reference Studio, Pocket Stage, the
-capability-gated macOS Reference Track pilot, session Studio, the Trinity
-three-loop identity, and the reviewed unsigned-candidate packaging described
-above.
+The source tree and [published release](https://github.com/rupret007/webjam/releases/tag/v0.22.3)
+report **v0.22.3**, an immutable non-prerelease explicitly titled as an
+unsigned private test candidate and marked GitHub **Latest**. It includes the
+cryptography security remediation and bounded Jamulus recovery described
+below while retaining direct Live access to Webex, host-only Reference Track,
+standalone Reference Studio, session Studio, Pocket Stage, the Trinity
+three-loop identity, and the reviewed unsigned/ad-hoc candidate packaging
+described above.
 
 Published tags and assets remain immutable historical evidence. In particular,
 v0.20.0 history must not be moved. The v0.21.0 history must not be moved or
@@ -411,7 +402,10 @@ exception with static OpenSSL 3.5.7 LTS; CI verifies its official inputs,
 architecture, linkage, installed runtime, license evidence, and package
 inventory. No other target is permitted to use that exception.
 
-The v0.22.2 workflow built four targets from one source identity: Windows x64,
+The published v0.22.3 tag, title, warning text, assets, and checksums are now
+immutable and must never be rebuilt or replaced.
+
+The v0.22.3 workflow built four targets from one source identity: Windows x64,
 Ubuntu 22.04 x64, Intel Mac, and Apple-silicon Mac. The published release
 contains exactly seven packages—the Windows Setup and ZIP, two Mac DMGs and two
 Mac ZIPs, and the Linux ZIP—plus one exact SHA-256 manifest. It was promoted
@@ -422,7 +416,8 @@ alone is still not a published Latest release.
 The Jamulus catalog is intentionally **not** one of those desktop assets. It is
 published under a separate non-Latest component release, signed by an offline
 release key, expires within 31 days, and carries a monotonically increasing
-sequence. The desktop updater embeds only the matching public key and rejects
+sequence. Its immutable sequence 4 authorizes exact WebJam 0.22.3 through
+2026-09-03. The desktop updater embeds only the matching public key and rejects
 expired, replayed, downgraded, equivocated, wrong-target, wrong-architecture,
 wrong-size, wrong-hash, wrong-publisher, or unexpected-inventory content.
 Support Bundles record only the finite catalog connection category and packaged
@@ -491,7 +486,7 @@ promote a package or claim audibility.
 
 ## Guides
 
-- [v0.22.3 candidate notes and changelog](CHANGELOG.md)
+- [v0.22.3 release notes and changelog](CHANGELOG.md)
 - [v0.18 unified-guidance pilot checklist](V018_UNIFIED_GUIDANCE_PILOT.md)
 - [First jam](FIRST_JAM.md)
 - [Musician guide](USER_GUIDE.md)

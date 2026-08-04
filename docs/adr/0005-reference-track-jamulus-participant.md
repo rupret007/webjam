@@ -8,9 +8,9 @@
   two-endpoint audibility, independent musician mixes, real server recording,
   route removal, and long-rehearsal behavior are **NOT RUN**.
 
-> **v0.22.3 pre-publication boundary:** the callback and source-load changes
-> below are part of this candidate and are absent from the immutable published
-> v0.22.2 packages. Physical audibility and isolation remain **NOT RUN**.
+> **v0.22.3 published boundary:** the callback and source-load changes below
+> are included in the immutable published v0.22.3 private test candidate.
+> Physical audibility and isolation remain **NOT RUN**.
 
 ## Context
 

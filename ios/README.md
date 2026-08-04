@@ -1,9 +1,8 @@
 # Pocket Stage iPhone app
 
-> **Pre-publication candidate:** these setup instructions describe the v0.22.3
-> source kit. The immutable v0.22.2 packages remain GitHub Latest until the
-> exact v0.22.3 draft passes verified promotion. Physical iPhone installation
-> and pairing remain **NOT RUN**.
+> **Published private test candidate:** these setup instructions describe the
+> source kit shipped with immutable v0.22.3, now GitHub Latest. Physical iPhone
+> installation and pairing remain **NOT RUN**.
 
 This folder contains a reproducible XcodeGen app specification, the complete
 iPhone SwiftUI source, and a strict cross-platform protocol package. Generated

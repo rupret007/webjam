@@ -1,11 +1,11 @@
 # WebJam closed-pilot handoff
 
-> **Pre-publication candidate:** this pilot describes v0.22.3. The immutable
-> v0.22.2 packages remain GitHub Latest until verified v0.22.3 promotion.
+> **Published private test candidate:** this pilot describes immutable v0.22.3,
+> now GitHub Latest.
 
-The current v0.22.3 private test candidate is pending its exact tag build,
-draft verification, and promotion. It is intended to validate a simple live
-rehearsal, session-arranging, and standalone Reference Studio experience:
+The current v0.22.3 private test candidate passed its exact tag build, draft
+verification, and protected promotion. It is intended to validate a simple
+live rehearsal, session-arranging, and standalone Reference Studio experience:
 
 1. Host or Join.
 2. Native Jamulus sound setup; WebJam moves into the session automatically

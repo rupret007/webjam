@@ -4,9 +4,9 @@
 - Date: 2026-07-28
 - Scope: Optional in-meeting companion surface
 
-> **v0.22.3 pre-publication boundary:** the current desktop labels and
-> activation behavior are part of this candidate and are absent from the
-> immutable published v0.22.2 packages.
+> **v0.22.3 published boundary:** the current desktop labels and activation
+> behavior are included in the immutable published v0.22.3 private test
+> candidate.
 
 ## Context
 

@@ -4,9 +4,9 @@
 - Date: 2026-07-29
 - Scope: Optional Webex conversation/video companion
 
-> **v0.22.3 pre-publication boundary:** the current decision is part of this
-> candidate and is absent from the immutable published v0.22.2 packages.
-> External Webex behavior remains a separate physical gate.
+> **v0.22.3 published boundary:** the current decision is included in the
+> immutable published v0.22.3 private test candidate. External Webex behavior
+> remains a separate physical gate.
 
 ## Context
 

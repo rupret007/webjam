@@ -4,7 +4,7 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
-## [0.22.3] — 2026-08-03 security and reliability private test candidate
+## [0.22.3] — 2026-08-04 security and reliability private test candidate
 
 ### Release and dependency security
 
@@ -18,10 +18,10 @@ All notable improvements and features for the WebJam music collaboration platfor
   source archives, build inputs, resulting architecture, OpenSSL identity,
   static linkage, installed runtime paths, license evidence, and final package
   inventory. This exception does not loosen any other target to source builds.
-- v0.22.3 is prepared for an exact four-platform tag build and reviewable
-  GitHub draft. It is not published until tag CI, the exact sequence-4
-  Jamulus catalog for WebJam 0.22.3, frozen-package checks, checksums, and the
-  verified Latest-promotion workflow all pass.
+- Published v0.22.3 as GitHub's immutable **Latest** release after exact
+  four-platform tag CI, the signed sequence-4 Jamulus catalog, frozen-package
+  launches on all four targets, checksum verification, and protected
+  promotion all passed.
 - The release remains an unsigned Windows and ad-hoc-signed, unnotarized
   macOS private test candidate. Physical two-Mac audio, interface and hardware
   recovery, sleep/wake, long-session, Reference Track audibility/isolation,
@@ -106,10 +106,8 @@ All notable improvements and features for the WebJam music collaboration platfor
   maximum, in-flight/exhausted state, process ID/liveness, RPC freshness, and
   finite RPC age. Monotonic deadlines, paths, profiles, secrets, invitations,
   meeting links, and raw exceptions are excluded.
-- This work is part of the v0.22.3 pre-publication candidate. The immutable
-  **Latest** GitHub release and downloadable assets remain **v0.22.2** until
-  the exact v0.22.3 draft passes its release gates and verified promotion;
-  publication does not convert any remaining physical gate to PASS.
+- This work ships in the immutable v0.22.3 **Latest** private test candidate.
+  Publication does not convert any remaining physical gate to PASS.
 
 ### Webex native-show reliability
 

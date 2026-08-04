@@ -1,15 +1,15 @@
 # WebJam, simply
 
-> **Pre-publication candidate:** this source guide describes v0.22.3. The
-> immutable published v0.22.2 downloads remain GitHub **Latest** until the
-> exact v0.22.3 draft passes its release and verified-promotion gates.
+> **Published private test candidate:** this source guide describes the
+> immutable v0.22.3 release now marked GitHub **Latest**. Windows is unsigned;
+> macOS is ad-hoc signed and unnotarized.
 
 WebJam helps a band start playing together. It keeps the session, invite, and
 recordings organized. Jamulus handles the music. Webex is optional for talking
 or video.
 
-Current source candidate: **v0.22.3 unsigned private test candidate**. Its
-four-platform draft covers Windows, Ubuntu 22.04, Intel Mac, and
+Current published candidate: **v0.22.3 unsigned private test candidate**. Its
+four-platform release covers Windows, Ubuntu 22.04, Intel Mac, and
 Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc
 signed and not notarized. v0.22.3 upgrades `cryptography` to 50.0.0 for three
 audited CVE fixes. Intel macOS uses the one documented, hash-locked native

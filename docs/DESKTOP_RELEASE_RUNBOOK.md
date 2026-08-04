@@ -1,9 +1,9 @@
 # Desktop release runbook
 
-> **v0.22.3 pre-publication candidate:** current workflow facts describe the
-> next exact draft. The immutable published v0.22.2 assets remain GitHub Latest
-> until verified v0.22.3 promotion. The historical v0.22.2 release record below
-> remains unchanged release evidence.
+> **v0.22.3 published candidate:** the exact eight-asset release is immutable,
+> non-prerelease, and GitHub Latest. Windows remains unsigned; macOS remains
+> ad-hoc signed and unnotarized. The historical records below remain unchanged
+> release evidence.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version
@@ -482,10 +482,10 @@ It retains the same unsigned Windows and Linux/private portable trust boundary,
 ad-hoc-signed and unnotarized Mac boundary, Trinity identity, immutable
 Jamulus 3.12.2 fallback, and draft-first publication controls.
 
-The verified publisher completed this procedure. GitHub now reports
+The verified publisher completed this procedure. GitHub reported
 [`v0.22.2`](https://github.com/rupret007/webjam/releases/tag/v0.22.2) as a
-published, non-prerelease **Latest** release with the exact inventory below.
-The separate non-Latest `jamulus-components-v1` release contains signed
+published, non-prerelease **Latest** release at that time; immutable v0.22.3
+now supersedes it as Latest. The separate component release carried signed
 sequence 3 for exact WebJam 0.22.2. The remaining text in this subsection is
 the immutable release procedure and evidence boundary, not a pending
 publication instruction.
@@ -547,13 +547,12 @@ Verified WebJam Release** for v0.22.2. Independently prove that GitHub
 the seven packages plus checksum manifest. Never publish the draft directly
 from the web page.
 
-### v0.22.3 security and reliability candidate — pre-publication record
+### v0.22.3 security and reliability candidate — published record
 
 v0.22.3 is a new patch identity after immutable v0.22.2. Never move, replace,
-rebuild, delete, or retag v0.22.2 or any earlier published release. The source
-is eligible for an exact annotated tag build and reviewable draft; it is not a
-published release until every automated package, catalog, checksum,
-provenance, and verified-promotion gate below passes.
+rebuild, delete, or retag either release. Its exact annotated tag, package,
+catalog, checksum, provenance, and verified-promotion gates passed before it
+became immutable GitHub Latest.
 
 This candidate upgrades `cryptography` to 50.0.0, remediating
 CVE-2026-69247, CVE-2026-69248, and CVE-2026-69249. Windows, Linux, and
@@ -565,7 +564,7 @@ LTS prefix from its verified source, and proves architecture, OpenSSL identity,
 static linkage, installed runtime paths, license evidence, and final frozen
 inventory. No other target or dependency may use that exception.
 
-The exact v0.22.3 draft inventory is:
+The exact v0.22.3 published inventory is:
 
 - `WebJam-v0.22.3-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`
 - `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip`
@@ -622,6 +621,20 @@ checksum manifest pass may a maintainer run
 **Publish Verified WebJam Release** for `v0.22.3`. The publisher must discover
 the unique successful tag-CI run dynamically and must not accept manually
 entered run, artifact, size, or digest identities.
+
+Publication completed on 2026-08-04 UTC. Feature run `30879823262`, master run
+`30881094293`, tag run `30882232394`, and protected promotion run
+`30884167136` all passed for commit
+`19ae56905d1a770ba310534126b7a568d313aec3`. Release ID `364655595` is
+immutable and Latest with the exact inventory above. The separate component
+release is an immutable non-Latest prerelease carrying signed sequence 4 for
+exact WebJam 0.22.3.
+
+The sealed package-internal Windows, macOS, and Linux read-me files retain
+their pre-publication header. Their stated condition—use only after checksum
+and verified promotion pass—is now satisfied, but immutable package bytes must
+not be rewritten. Update that header before tagging the next version; never
+rebuild or replace v0.22.3 to correct copy.
 
 Publishing this explicitly untrusted private candidate does not convert
 physical evidence to PASS. Two-Mac audibility, physical interface

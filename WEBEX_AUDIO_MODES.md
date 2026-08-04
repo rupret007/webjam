@@ -1,8 +1,7 @@
 # Webex companion guidance — v0.22.3
 
-> **Pre-publication candidate:** this guide describes v0.22.3. The immutable
-> v0.22.2 packages remain GitHub Latest until the exact v0.22.3 draft passes
-> verified promotion. External Webex behavior remains a separate physical gate.
+> **Published private test candidate:** this guide describes immutable v0.22.3,
+> now GitHub Latest. External Webex behavior remains a separate physical gate.
 
 Webex is optional for talking or video. Jamulus carries the music.
 

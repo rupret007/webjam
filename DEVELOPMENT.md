@@ -1,8 +1,7 @@
 # Developing WebJam v0.22.3
 
-> **Pre-publication candidate:** this guide describes v0.22.3 source. The
-> immutable v0.22.2 release remains GitHub Latest until the exact v0.22.3
-> draft passes verified promotion.
+> **Published private test candidate:** this guide describes the source for the
+> immutable v0.22.3 release now marked GitHub Latest.
 
 ## Local setup
 
@@ -156,13 +155,11 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree reports `0.22.3`. It is eligible only for an exact tag build,
-reviewable draft, and verified promotion. Until that completes,
-[`v0.22.2`](https://github.com/rupret007/webjam/releases/tag/v0.22.2) is the
-published non-prerelease GitHub **Latest** release, clearly labeled as an
+The source tree reports `0.22.3`. Its exact tag and eight-asset release passed
+verified promotion and are immutable GitHub **Latest**, clearly labeled as an
 unsigned/unnotarized private test candidate. Published v0.20.0, v0.21.0,
-v0.22.0, v0.22.1, and v0.22.2 tags and assets remain immutable historical
-evidence and must never be overwritten or served under a moved tag.
+v0.22.0, v0.22.1, v0.22.2, and v0.22.3 tags and assets remain immutable
+historical evidence and must never be overwritten or served under a moved tag.
 
 The v0.22.3 locks select `cryptography` 50.0.0 for the three audited CVE
 remediations. Windows, Linux, and Apple-silicon macOS install exact upstream

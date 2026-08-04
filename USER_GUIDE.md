@@ -1,8 +1,7 @@
 # WebJam musician guide — v0.22.3
 
-> **Pre-publication candidate:** this guide describes v0.22.3. The immutable
-> v0.22.2 packages remain GitHub Latest until the exact v0.22.3 draft passes
-> verified promotion. Physical and platform-trust gates remain **NOT RUN**.
+> **Published private test candidate:** this guide describes immutable v0.22.3,
+> now GitHub Latest. Physical and platform-trust gates remain **NOT RUN**.
 
 ## Follow the current guide
 
@@ -233,7 +232,7 @@ permission to route audio. Production refuses before scanning devices. There is
 no user or environment override, and installing BlackHole, running setup, or
 choosing **Recheck Route** cannot unlock downloaded v0.22.2.
 
-In the current unreleased source, the production Mac backend derives initial
+In published v0.22.3, the production Mac backend derives initial
 route authority from the machine. It requires macOS 14.2 or later and one
 official, unambiguous BlackHole 16ch/64ch device at 48 kHz. Passing those
 read-only prerequisite checks may make Play available; choosing Play then

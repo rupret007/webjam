@@ -1,8 +1,8 @@
 # WebJam v0.22.3 source and physical test procedure
 
-> The source tree reports v0.22.3 as a pre-publication private test candidate.
-> The immutable published GitHub **Latest** release remains v0.22.2 until the
-> exact v0.22.3 draft passes its release and verified-promotion gates. Physical
+> The source tree and immutable GitHub **Latest** release report v0.22.3 as an
+> unsigned private test candidate. Its exact eight-asset release and signed
+> sequence-4 component catalog passed automated publication gates. Physical
 > Pocket Stage installation/pairing, standalone Reference Studio audio,
 > external Webex behavior, and Reference Track routing remain **NOT RUN**.
 

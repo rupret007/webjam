@@ -1,8 +1,8 @@
 # WebJam architecture — v0.22.3
 
-> **Pre-publication candidate:** this document describes v0.22.3 source. The
-> immutable v0.22.2 assets remain GitHub Latest until the exact v0.22.3 draft
-> passes verified promotion. Remaining physical gates stay **NOT RUN**.
+> **Published private test candidate:** this document describes the source for
+> immutable v0.22.3, now GitHub Latest. Remaining physical gates stay
+> **NOT RUN**.
 
 ## Product boundary
 
@@ -128,10 +128,10 @@ Reference Track also separates source and route authority. A host can load,
 decode the first bounded block, and inspect a source while route capability is
 unavailable. The immutable v0.22.2 production backend refused route capability
 before device scanning, so BlackHole setup and **Recheck Route** cannot unlock
-that downloaded package. The current unreleased production factory instead
+that downloaded package. The published v0.22.3 production factory instead
 derives prerequisite authority from an official, unambiguous 48-kHz BlackHole
-16ch/64ch route on the Mac. That machine check may make Play available; it
-does not start playback or bypass the exact live-process proofs at startup.
+16ch/64ch route on the Mac. That machine check may make Play available; it does
+not start playback or bypass the exact live-process proofs at startup.
 The support projection exports allowlisted source format/rate/channel/duration
 and finite route state, never a source name or path.
 

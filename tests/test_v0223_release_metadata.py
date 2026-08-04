@@ -102,13 +102,13 @@ def test_signed_catalog_has_every_v0223_client_server_target_once() -> None:
     assert all(component["variant"] == "official" for component in components)
 
 
-def test_current_candidate_guides_report_v0223_consistently() -> None:
+def test_current_release_guides_report_v0223_consistently() -> None:
     expected = {
         "ARCHITECTURE.md": "# WebJam architecture — v0.22.3",
         "CLOSED_PILOT_PLAYBOOK.md": "current v0.22.3 private test candidate",
         "DEVELOPMENT.md": "# Developing WebJam v0.22.3",
         "FIRST_JAM.md": "# First Jam — WebJam v0.22.3",
-        "README_SIMPLE.md": "Current source candidate: **v0.22.3",
+        "README_SIMPLE.md": "Current published candidate: **v0.22.3",
         "TEST_PROCEDURE.md": "# WebJam v0.22.3 source and physical test procedure",
         "USER_GUIDE.md": "# WebJam musician guide — v0.22.3",
         "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.22.3 UX acceptance checklist",
@@ -133,7 +133,7 @@ def test_candidate_package_copy_is_explicit_about_platform_trust() -> None:
     assert "unsigned private test candidate" in windows_readme
     assert "ad-hoc signed and is NOT notarized" in macos_readme
     inventory = runbook.split(
-        "The exact v0.22.3 draft inventory is:\n", 1
+        "The exact v0.22.3 published inventory is:\n", 1
     )[1].split("\nThe checksum manifest", 1)[0]
     assert re.findall(r"(?m)^- `([^`]+)`$", inventory) == [
         "WebJam-v0.22.3-windows-x64-UNSIGNED-TEST-ONLY-setup.exe",
@@ -148,7 +148,24 @@ def test_candidate_package_copy_is_explicit_about_platform_trust() -> None:
     assert "explicit **Latest** setting" in runbook
 
 
-def test_component_catalog_is_live_and_verified_before_latest_promotion() -> None:
+def test_component_catalog_current_public_state_is_sealed() -> None:
+    normalized = " ".join(COMPONENT_RUNBOOK.split())
+    assert (
+        "current public component release is immutable sequence 4 for exact "
+        "WebJam 0.22.3"
+    ) in normalized
+    assert "2026-09-03T06:27:28Z" in COMPONENT_RUNBOOK
+    assert (
+        "9f70bfedbb3236e6d6446db92449c27001070f5e94a0287255bfbf499e5d769a"
+        in COMPONENT_RUNBOOK
+    )
+    assert "one immutable asset" in normalized
+    assert "non-Latest prerelease" in normalized
+    assert "new fixed catalog URL" in normalized
+    assert "Never move or replace that tag" in normalized
+
+
+def test_component_catalog_historical_promotion_record_is_preserved() -> None:
     normalized = " ".join(COMPONENT_RUNBOOK.split())
     assert "creates the unpublished desktop draft" in normalized
     assert "Do not run **Publish Verified WebJam Release** yet." in normalized
