@@ -91,7 +91,7 @@ def test_reviewed_toolchain_and_source_identities_are_exact() -> None:
     assert 'EXPECTED_CARGO="cargo 1.88.0 (873a06493 2025-05-10)"' in SCRIPT
     assert "xcrun --sdk macosx --show-sdk-path" in SCRIPT
     assert '[[ -f "$SDKROOT/usr/include/stdlib.h" ]]' in SCRIPT
-    assert 'export CFLAGS="-isysroot $SDKROOT"' in SCRIPT
+    assert 'export CFLAGS="-O3 -Wall -isysroot $SDKROOT"' in SCRIPT
     assert 'export CPPFLAGS="-isysroot $SDKROOT"' in SCRIPT
     assert 'export LDFLAGS="-isysroot $SDKROOT"' in SCRIPT
     assert SCRIPT.index("xcrun --sdk macosx --show-sdk-path") < SCRIPT.index(

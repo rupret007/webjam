@@ -168,7 +168,7 @@ SDKROOT="$(cd "$sdk_root_candidate" && pwd -P)"
 [[ -f "$SDKROOT/usr/include/stdlib.h" ]] || \
   die "the selected macOS SDK lacks standard C headers"
 export SDKROOT
-export CFLAGS="-isysroot $SDKROOT"
+export CFLAGS="-O3 -Wall -isysroot $SDKROOT"
 export CPPFLAGS="-isysroot $SDKROOT"
 export LDFLAGS="-isysroot $SDKROOT"
 jobs="$(sysctl -n hw.logicalcpu)"
