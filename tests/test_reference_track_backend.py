@@ -2558,3 +2558,16 @@ def test_audience_bridge_conflict_fails_before_process_or_files(
         backend.prepare(_context(binary, audience_bridge_active=True))
     assert not launches
     assert not reference_track_runtime_directory(tmp_path).exists()
+
+
+def test_route_proof_budget_absorbs_one_timeout_bounded_proof_round() -> None:
+    # One honest monitor cycle can take a full wait period plus a fader-proof
+    # RPC round bounded by the socket timeout. The freshness budget must not
+    # latch a permanent fault for that; it must still bound unproved playback
+    # to a few seconds after a genuine monitor stall.
+    assert reference_backend._ROUTE_PROOF_MAX_AGE_SECONDS >= (
+        reference_backend._FADER_RECHECK_SECONDS
+        + reference_backend._ROUTE_RECHECK_SECONDS
+        + reference_backend._RPC_CALL_TIMEOUT_S
+    )
+    assert reference_backend._ROUTE_PROOF_MAX_AGE_SECONDS <= 5.0

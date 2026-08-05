@@ -89,7 +89,15 @@ _RPC_READY_TIMEOUT_S = 12.0
 _RPC_CALL_TIMEOUT_S = 1.5
 _FADER_RECHECK_SECONDS = 0.4
 _ROUTE_RECHECK_SECONDS = 0.4
-_ROUTE_PROOF_MAX_AGE_SECONDS = 1.2
+# The proof-freshness budget must absorb the monitor's worst honest cycle:
+# a 0.4 s wait plus one fader-proof RPC batch (2 + roster RPC calls, each
+# bounded by the 1.5 s socket timeout) plus two CoreAudio scans. At 1.2 s a
+# single slow RPC round or a busy CoreAudio scan mid-jam latched a permanent
+# fault and silenced the band's song even though every proof still succeeded.
+# 3.0 s tolerates one full timeout-bounded round while still silencing the
+# stream within three seconds of a monitor stall; actual route *failures*
+# still stop audio immediately via the safety epoch, not this budget.
+_ROUTE_PROOF_MAX_AGE_SECONDS = 3.0
 _MAX_CLIENT_ROWS = 64
 _MAX_OWNED_PROFILE_BYTES = 2 * 1024 * 1024
 _MAX_OWNED_SECRET_BYTES = 512
