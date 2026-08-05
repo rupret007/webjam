@@ -7,7 +7,14 @@ from time import monotonic
 from typing import Optional
 
 from PySide6.QtCore import QUrl, Qt, Signal
-from PySide6.QtGui import QAccessible, QAccessibleEvent, QDesktopServices
+from PySide6.QtGui import (
+    QAccessible,
+    QAccessibleEvent,
+    QDesktopServices,
+    QDragEnterEvent,
+    QDragMoveEvent,
+    QDropEvent,
+)
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -26,10 +33,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.reference_track import reference_track_file_filter
+from core.reference_track import (
+    reference_track_file_filter,
+    reference_track_supported_extensions,
+)
 from webjam_qt.theme.tokens import Space
 
 _BLACKHOLE_SETUP_URL = "https://existential.audio/blackhole/"
+
+# Cumulative zero-filled frames (at 48 kHz) before the dialog warns about
+# audible dropouts. 4,800 frames is 100 ms of missing audio — clearly audible,
+# comfortably past any benign startup jitter.
+_UNDERRUN_ALERT_FRAMES = 4_800
 
 
 class ReferenceTrackPrimaryGate(StrEnum):
@@ -98,6 +113,10 @@ class ReferenceTrackDialog(QDialog):
         self.setObjectName("ReferenceTrackDialog")
         self.setWindowTitle("Reference Track")
         self.setModal(False)
+        # Accept one dragged local audio file as an alternative to the file
+        # picker. The dropped path goes through the same load_requested path,
+        # so every decoder and routing safety check still applies.
+        self.setAcceptDrops(True)
         # Keep the complete dialog inside WebJam's supported 760×600 screen
         # floor after the macOS title bar is added.
         self.setMinimumSize(500, 500)
@@ -139,7 +158,8 @@ class ReferenceTrackDialog(QDialog):
 
         intro = QLabel(
             "Play a song into the jam. Everyone hears it and sets its level "
-            "in their own mix."
+            "in their own mix. Load a song below, or drop an audio file "
+            "anywhere on this window."
         )
         intro.setObjectName("SimpleSettingsSubtitle")
         intro.setWordWrap(True)
@@ -356,6 +376,46 @@ class ReferenceTrackDialog(QDialog):
             button.setDefault(False)
 
         self._set_controls_enabled(False, state="unavailable")
+
+    @staticmethod
+    def _dropped_audio_path(mime_data) -> str:
+        """Return the single dropped local audio path, or an empty string."""
+
+        if mime_data is None or not mime_data.hasUrls():
+            return ""
+        urls = list(mime_data.urls())
+        if len(urls) != 1 or not urls[0].isLocalFile():
+            return ""
+        path = urls[0].toLocalFile()
+        if not path:
+            return ""
+        suffix = ""
+        dot = path.rfind(".")
+        if dot >= 0:
+            suffix = path[dot:].casefold()
+        if suffix not in reference_track_supported_extensions():
+            return ""
+        return path
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
+        if self._dropped_audio_path(event.mimeData()):
+            event.acceptProposedAction()
+            return
+        event.ignore()
+
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # noqa: N802
+        if self._dropped_audio_path(event.mimeData()):
+            event.acceptProposedAction()
+            return
+        event.ignore()
+
+    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
+        path = self._dropped_audio_path(event.mimeData())
+        if not path:
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        self.load_requested.emit(path)
 
     def _choose_source(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -636,6 +696,10 @@ class ReferenceTrackDialog(QDialog):
         source_channels = max(
             0, int(getattr(snapshot, "source_channels", 0) or 0)
         )
+        try:
+            underrun_frames = max(0, int(getattr(snapshot, "underrun_frames", 0)))
+        except (TypeError, ValueError):
+            underrun_frames = 0
 
         state_labels = {
             "unavailable": "Ready to load a song",
@@ -705,6 +769,18 @@ class ReferenceTrackDialog(QDialog):
             )
         if error:
             status = f"{status}. {error}"
+        if (
+            state in {"playing", "paused"}
+            and underrun_frames >= _UNDERRUN_ALERT_FRAMES
+        ):
+            # A growing underrun counter is the one signal that playback is
+            # emitting silence while the transport still reports progress.
+            # Surface it instead of letting the band hear gaps with no clue.
+            status = (
+                f"{status}. Audio dropouts detected — the song decoder fell "
+                "behind. Close heavy apps, or convert the song to WAV and "
+                "reload it."
+            )
         self._set_dynamic_status(self._status, status)
         route_prefix = (
             "Playback locked—finish stopping. "

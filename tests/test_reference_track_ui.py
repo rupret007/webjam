@@ -942,3 +942,103 @@ def test_dialog_opens_clear_of_the_stage_then_respects_the_host() -> None:
     finally:
         dialog.close()
         parent.close()
+
+
+def _drop_mime(paths: list[str], *, local: bool = True):
+    from PySide6.QtCore import QMimeData, QUrl
+
+    mime = QMimeData()
+    urls = []
+    for path in paths:
+        if local:
+            urls.append(QUrl.fromLocalFile(path))
+        else:
+            urls.append(QUrl(path))
+    mime.setUrls(urls)
+    return mime
+
+
+def test_dropped_single_supported_audio_file_requests_load(tmp_path) -> None:
+    dialog = ReferenceTrackDialog()
+    try:
+        assert dialog.acceptDrops()
+        song = tmp_path / "Band Reference.flac"
+        song.write_bytes(b"")
+        received: list[str] = []
+        dialog.load_requested.connect(received.append)
+
+        for suffix in (".wav", ".wave", ".aif", ".aiff", ".flac"):
+            candidate = tmp_path / f"song{suffix}"
+            candidate.write_bytes(b"")
+            assert dialog._dropped_audio_path(
+                _drop_mime([str(candidate)])
+            ) == str(candidate)
+
+        from PySide6.QtCore import QPointF
+        from PySide6.QtGui import QDropEvent
+
+        # QDropEvent stores a raw pointer to the mime data; keep the Python
+        # reference alive for the lifetime of the event.
+        mime = _drop_mime([str(song)])
+        event = QDropEvent(
+            QPointF(10, 10),
+            Qt.DropAction.CopyAction,
+            mime,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        dialog.dropEvent(event)
+        assert received == [str(song)]
+    finally:
+        dialog.deleteLater()
+
+
+def test_drop_rejects_multi_file_remote_and_unsupported_payloads(
+    tmp_path,
+) -> None:
+    dialog = ReferenceTrackDialog()
+    try:
+        received: list[str] = []
+        dialog.load_requested.connect(received.append)
+        song_a = tmp_path / "a.wav"
+        song_b = tmp_path / "b.wav"
+        text = tmp_path / "notes.txt"
+        for item in (song_a, song_b, text):
+            item.write_bytes(b"")
+
+        assert dialog._dropped_audio_path(None) == ""
+        from PySide6.QtCore import QMimeData
+
+        assert dialog._dropped_audio_path(QMimeData()) == ""
+        assert dialog._dropped_audio_path(
+            _drop_mime([str(song_a), str(song_b)])
+        ) == ""
+        assert dialog._dropped_audio_path(_drop_mime([str(text)])) == ""
+        assert dialog._dropped_audio_path(
+            _drop_mime(["https://example.com/song.wav"], local=False)
+        ) == ""
+        assert received == []
+    finally:
+        dialog.deleteLater()
+
+
+def test_playing_snapshot_with_underruns_warns_about_dropouts() -> None:
+    dialog = ReferenceTrackDialog()
+    try:
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.READY)
+        quiet = _snapshot(_State.PLAYING)
+        quiet.underrun_frames = 0
+        dialog.set_snapshot(quiet)
+        assert "dropouts" not in dialog._status.text().lower()
+
+        noisy = _snapshot(_State.PLAYING)
+        noisy.underrun_frames = 48_000
+        dialog.set_snapshot(noisy)
+        assert "dropouts" in dialog._status.text().lower()
+
+        idle = _snapshot(_State.READY)
+        idle.underrun_frames = 48_000
+        dialog.set_snapshot(idle)
+        assert "dropouts" not in dialog._status.text().lower()
+    finally:
+        dialog.deleteLater()

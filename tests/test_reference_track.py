@@ -1554,3 +1554,20 @@ def test_controller_seeking_is_paused_only(tmp_path: Path) -> None:
     with pytest.raises(ReferenceTrackError, match="Pause"):
         controller.seek(0.1)
     controller.close()
+
+
+def test_snapshot_surfaces_bounded_underrun_frames(tmp_path: Path) -> None:
+    backend = _Backend()
+    controller = ReferenceTrackController(backend, is_host=lambda: True)
+    controller.load(_audio_file(tmp_path / "underrun-snapshot.wav"))
+    assert controller.snapshot.underrun_frames == 0
+
+    controller.play(_context())
+    stream = controller._stream  # type: ignore[attr-defined]
+    assert stream is not None
+    stream._ring.underrun_frames = 9_600  # type: ignore[attr-defined]
+    assert controller.snapshot.underrun_frames == 9_600
+
+    stream._ring.underrun_frames = -5  # type: ignore[attr-defined]
+    assert controller.snapshot.underrun_frames == 0
+    controller.close()

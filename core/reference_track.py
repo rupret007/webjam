@@ -259,6 +259,7 @@ class ReferenceTrackSnapshot:
     error: str = ""
     warning: str = _ROUTE_WARNING
     cleanup_pending: bool = False
+    underrun_frames: int = 0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "state", ReferenceTrackState(self.state))
@@ -318,6 +319,11 @@ class ReferenceTrackSnapshot:
                 raise ValueError(f"{name} is too long")
             object.__setattr__(self, name, value)
         object.__setattr__(self, "cleanup_pending", bool(self.cleanup_pending))
+        object.__setattr__(
+            self,
+            "underrun_frames",
+            _bounded_diagnostic_counter(self.underrun_frames),
+        )
 
     @property
     def loaded(self) -> bool:
@@ -460,12 +466,19 @@ class ReferenceTrackDecoder:
 
         try:
             decoder = ProjectAudioDecoder(candidate)
-        except ProjectAudioError:
-            raise ReferenceTrackError(
-                "WebJam couldn't safely read that song. Check that it is a "
-                "valid one- or two-channel local audio file whose format "
-                "matches its filename."
-            ) from None
+        except ProjectAudioError as exc:
+            # ProjectAudioError messages are fixed, bounded, path-free user
+            # sentences; passing the exact one through tells the musician
+            # what to do (e.g. which MP3 structural check failed) instead of
+            # a single opaque rejection.
+            detail = str(exc).strip()
+            if not detail:
+                detail = (
+                    "WebJam couldn't safely read that song. Check that it is "
+                    "a valid one- or two-channel local audio file whose "
+                    "format matches its filename."
+                )
+            raise ReferenceTrackError(detail) from None
 
         probe = decoder.probe
         source_rate = int(probe.source_sample_rate)
@@ -1907,6 +1920,9 @@ class ReferenceTrackController:
 
     def _snapshot_locked(self) -> ReferenceTrackSnapshot:
         position = self._stream.position_s if self._stream is not None else 0.0
+        underruns = 0
+        if self._stream is not None:
+            underruns = self._stream.realtime_stats().get("underrun_frames", 0)
         return ReferenceTrackSnapshot(
             state=self._state,
             capability=self._capability,
@@ -1930,6 +1946,7 @@ class ReferenceTrackController:
                 )
                 or self._capability.reason_code == "cleanup_pending"
             ),
+            underrun_frames=underruns,
         )
 
     def _fail_locked(
