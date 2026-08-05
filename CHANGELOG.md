@@ -10,6 +10,45 @@ All notable improvements and features for the WebJam music collaboration platfor
 > v0.22.4 release is the current public test line and is immutable once
 > published.
 
+### Reference Track — real-world MP3 acceptance and honest playback state
+
+- Fixed the near-universal MP3 rejection: the structural scan now parses the
+  gapless (encoder delay/padding) extension for LAME-, Lavc-, and
+  Lavf-tagged writers, matching what mpg123 — the decoder inside the locked
+  libsndfile build — actually honors, so ffmpeg-encoded MP3s reconcile and
+  load. The decoder-side cross-check is unchanged and still fails closed on
+  disagreement.
+- One trailing APEv2/APEv1 tag (as written by mp3gain and common tag
+  editors), before the optional ID3v1 trailer, is now excluded from the
+  physical frame walk exactly like ID3v1. Malformed APE tags still reject.
+- Every MP3 structural rejection now names its exact bounded, path-free
+  reason ("WebJam couldn't validate that MP3 (…)") instead of one generic
+  sentence, and Reference Track load failures pass the decoder's message
+  through to the panel.
+- The Reference Track panel accepts one dragged local audio file anywhere on
+  the window as an alternative to the file picker, through the same
+  validation and routing-safety path. Multi-file, remote-URL, and
+  unsupported payloads are ignored.
+- Playback that starves and emits silence is no longer invisible: the
+  snapshot carries the stream's bounded underrun counter and the panel warns
+  about audible dropouts after 100 ms of cumulative zero-fill while the
+  transport reports playing or paused.
+- The realtime route-proof freshness budget was raised from 1.2 s to 3.0 s
+  so one honest timeout-bounded fader-proof round (2 + roster RPC calls plus
+  two CoreAudio scans) cannot latch a permanent mid-song fault on a busy
+  multi-musician session. A stalled monitor still silences the stream within
+  three seconds, and genuine route failures still stop audio immediately
+  through the safety epoch.
+
+### Presentation and packaging text
+
+- The Studio return button is labelled "Back to Live" instead of "Live".
+- The three platform package read-me sources now describe v0.22.4 as the
+  published test release verified by `WebJam-v0.22.4-SHA256SUMS.txt`,
+  replacing the stale "PRE-PUBLICATION CANDIDATE" header, as the desktop
+  release runbook schedules before the next tag. Published v0.22.4 assets
+  are immutable and unchanged.
+
 ## [0.22.4] — 2026-08-04 DAW and reliability private test candidate
 
 ### Release and presentation

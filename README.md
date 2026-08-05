@@ -289,11 +289,15 @@ and [threat model](docs/security/pocket-stage-mobile-threat-model.md).
 The source tree contains a macOS-first Reference Track engine. During a hosted
 session the direct **Reference Track** action opens it; **More → Reference Track…** routes
 to the same panel. Loading is deliberately separate from routing: a host can
-load and inspect WAV/WAVE, AIFF, or FLAC even while playback is locked.
+load and inspect WAV/WAVE, AIFF, or FLAC even while playback is locked, via
+the file picker or by dropping one local audio file on the panel.
 MP3 appears in the picker only when the packaged decoder proves support.
 Loading decodes the first bounded audio block; MP3 sources also receive a
-bounded structural frame and duration check. Malformed, truncated,
-metadata-conflicting, or unusable input fails before playback is considered.
+bounded structural frame and duration check that accepts real-world encoder
+gapless headers (LAME and ffmpeg's Lavc/Lavf) and one trailing APE tag.
+Malformed, truncated, metadata-conflicting, or unusable input fails before
+playback is considered, and the rejection names its bounded structural
+reason without the file path.
 **Recheck Route** refreshes route evidence without starting playback.
 
 Its intended route sends the decoded source through a separately owned

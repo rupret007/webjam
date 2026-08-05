@@ -76,7 +76,8 @@ does not start, stop, configure, or feed Jamulus.
   recording only or also keep this Mac’s separate Local Originals.
 - **Reference Track:** during a hosted session choose **Reference Track**. You can load
   and inspect WAV/WAVE, AIFF, or FLAC even when the playback route is not
-  ready; MP3 is shown only when this package proves decoder support. **Recheck
+  ready — use **Load Song…** or drop the file onto the panel; MP3 is shown
+  only when this package proves decoder support. **Recheck
   Route** starts no playback. Downloaded v0.22.2 remains locked before route
   scanning. In current source on Mac, an official 48-kHz BlackHole 16ch/64ch
   route may make Play available only after machine certification; choosing

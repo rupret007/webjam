@@ -207,9 +207,16 @@ until recorded against exact builds.
 The host can choose the direct **Reference Track** action or **More → Reference Track…**
 and inspect the same song-transport panel. Loading and route readiness are
 independent: **Load Song…** accepts validated WAV/WAVE, AIFF, or FLAC even when
-no playback route is ready. MP3 appears only when the packaged decoder reports
-support. Loading decodes the first bounded audio block, so a source that cannot
-produce usable audio fails during load. The panel shows source format, sample
+no playback route is ready, and one local audio file can also be dropped
+anywhere on the panel — the dropped file goes through exactly the same
+validation. MP3 appears only when the packaged decoder reports support. The
+structural MP3 scan accepts the gapless headers real-world encoders write
+(LAME, and ffmpeg's Lavc/Lavf) and one trailing APE tag before the optional
+ID3v1 trailer; a file that still fails names its exact structural reason
+without exposing the file path. Loading decodes the first bounded audio
+block, so a source that cannot produce usable audio fails during load. If
+playback ever starves and emits silence, the panel reports audible dropouts
+instead of silently claiming clean playback. The panel shows source format, sample
 rate, channels, duration, and a separate route state; **Recheck Route** refreshes
 route evidence without starting playback. Play, pause, restart, paused seeking,
 loop in/out, source trim, and an audible count-in remain transport controls.
