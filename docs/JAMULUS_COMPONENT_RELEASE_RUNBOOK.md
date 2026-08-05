@@ -27,6 +27,9 @@ signed payload SHA-256
 `c5b034dad933a7ffea670cccecaf308947f5ab93f7fedeb0cde0ce8f9e34e83f`.
 Both component releases are non-Latest prereleases, and GitHub's
 immutable-release policy prevents replacing either asset in place.
+The v2 tag is anchored at commit
+`fd1d8cbd80e76cdfb257f26894de452f191e15fa`; release ID `365297898` was
+published on 2026-08-05 UTC and is immutable.
 
 ## Trust boundary
 

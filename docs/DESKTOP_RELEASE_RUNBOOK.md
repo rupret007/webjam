@@ -671,3 +671,11 @@ remain historical. The v0.22.4 package remains unsigned on Windows and
 ad-hoc signed and unnotarized on macOS; physical audio, hardware, Webex,
 Pocket Stage, Gatekeeper, SmartScreen, signing, and notarization gates remain
 **NOT RUN** unless recorded against the exact published asset and checksum.
+
+Publication completed on 2026-08-05 UTC. Tag CI run `30979207513`, source
+master CI run `30978055097`, and protected promotion run `30980588968` passed
+for commit `9baed5329984ee48591f75a86cb42cebc1e3a62f`. Release ID `365318104`
+is immutable and GitHub **Latest** at
+https://github.com/rupret007/webjam/releases/tag/v0.22.4. Its checksum
+manifest is `WebJam-v0.22.4-SHA256SUMS.txt`; the separate component release is
+ID `365297898` at the immutable `jamulus-components-v2` tag.
