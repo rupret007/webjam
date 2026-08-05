@@ -390,7 +390,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         title_block.addWidget(self._title)
         title_block.addWidget(self._subtitle)
         top.addLayout(title_block, 1)
-        self._live_btn = QPushButton("Live")
+        self._live_btn = QPushButton("Back to Live")
         self._live_btn.setObjectName("GhostButton")
         self._live_btn.setAccessibleName("Return to live room")
         self._live_btn.clicked.connect(self.return_live_requested.emit)
