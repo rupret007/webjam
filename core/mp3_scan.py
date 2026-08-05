@@ -450,7 +450,16 @@ def _first_frame_xing(
         raise Mp3ScanError("MP3 Xing metadata is invalid.")
 
     gapless = None
-    if cursor + 4 <= frame_end and data[cursor : cursor + 4] == b"LAME":
+    # mpg123 (the runtime decoder inside the locked libsndfile build) honors
+    # the encoder-delay/padding fields of this extension for both LAME- and
+    # Lavc/Lavf-tagged writers (ffmpeg). Parsing the same set keeps this scan
+    # and the runtime decoder in agreement about the trimmed content length;
+    # the decoder-side reconciliation still cross-checks either outcome.
+    if cursor + 4 <= frame_end and data[cursor : cursor + 4] in (
+        b"LAME",
+        b"Lavc",
+        b"Lavf",
+    ):
         if cursor + 36 > frame_end:
             raise Mp3ScanError("MP3 LAME metadata ended unexpectedly.")
         delay = (data[cursor + 21] << 4) | (data[cursor + 22] >> 4)
@@ -472,6 +481,44 @@ def _first_frame_xing(
         audio_bytes=audio_bytes,
         gapless=gapless,
     )
+
+
+_APE_PREAMBLE: Final = b"APETAGEX"
+_APE_HAS_HEADER_FLAG: Final = 0x8000_0000
+
+
+def _without_trailing_ape_tag(
+    data: _DescriptorView,
+    audio_start: int,
+    audio_end: int,
+) -> int:
+    """Return ``audio_end`` with one trailing APE tag excluded, if present.
+
+    mp3gain and common tag editors append an APEv2 (or legacy APEv1) tag
+    directly after the last audio frame, before the optional ID3v1 trailer.
+    The runtime decoder ignores that tag, so the physical frame walk must
+    exclude it too. The tag is parsed strictly and bounded; a malformed tag
+    rejects the file rather than being skipped over.
+    """
+
+    if audio_end - audio_start < 32:
+        return audio_end
+    footer = data[audio_end - 32 : audio_end]
+    if footer[:8] != _APE_PREAMBLE:
+        return audio_end
+    version = int.from_bytes(footer[8:12], "little")
+    tag_size = int.from_bytes(footer[12:16], "little")
+    flags = int.from_bytes(footer[20:24], "little")
+    if version not in (1000, 2000) or tag_size < 32:
+        raise Mp3ScanError("MP3 APE tag is invalid.")
+    total = tag_size + (32 if flags & _APE_HAS_HEADER_FLAG else 0)
+    if total > audio_end - audio_start:
+        raise Mp3ScanError("MP3 APE tag is invalid.")
+    if flags & _APE_HAS_HEADER_FLAG:
+        header = data[audio_end - total : audio_end - total + 8]
+        if header != _APE_PREAMBLE:
+            raise Mp3ScanError("MP3 APE tag is invalid.")
+    return audio_end - total
 
 
 def scan_mp3_descriptor(
@@ -518,6 +565,7 @@ def scan_mp3_descriptor(
             and view[audio_end - 128 : audio_end - 125] == b"TAG"
         ):
             audio_end -= 128
+        audio_end = _without_trailing_ape_tag(view, audio_start, audio_end)
         if audio_end - audio_start < 4:
             raise Mp3ScanError("MP3 contains no complete audio frame.")
 

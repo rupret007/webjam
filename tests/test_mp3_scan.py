@@ -423,7 +423,7 @@ def test_reconciliation_fails_closed_on_duration_or_seek_disagreement(
     else:
         reader.nonexact_reset = True
 
-    with pytest.raises(ValueError):
+    with pytest.raises(Mp3ScanError):
         project_audio._reconcile_mp3_source_frames(
             reader,
             report,
@@ -518,3 +518,147 @@ def test_ordinary_decode_rejects_nonexact_seek_and_zeroes_output(
         assert np.count_nonzero(output) == 0
     finally:
         decoder.close()
+
+
+def _patch_first_tag(path: Path, replacement: bytes) -> None:
+    data = path.read_bytes()
+    index = data.find(b"LAME")
+    assert index > 0, "expected a LAME extension in the written file"
+    path.write_bytes(data[:index] + replacement + data[index + 4 :])
+
+
+@pytest.mark.parametrize("writer_tag", (b"Lavc", b"Lavf"))
+def test_lavc_and_lavf_tagged_gapless_extensions_match_lame(
+    tmp_path: Path,
+    writer_tag: bytes,
+) -> None:
+    source = _write_mp3(tmp_path / "writer-tag.mp3")
+    lame = _scan(source)
+    assert lame.gapless is not None
+
+    _patch_first_tag(source, writer_tag)
+    patched = _scan(source)
+
+    assert patched.gapless == lame.gapless
+    assert patched.raw_frames == lame.raw_frames
+    assert patched.physical_frames == lame.physical_frames
+
+    # End to end: the runtime decoder honors the same writers, so the
+    # decoder-side reconciliation must agree with the scan.
+    decoder = ProjectAudioDecoder(source)
+    try:
+        assert decoder.output_frames > 0
+    finally:
+        decoder.close()
+
+
+def test_unknown_writer_tagged_extension_is_not_parsed_as_gapless(
+    tmp_path: Path,
+) -> None:
+    source = _write_mp3(tmp_path / "unknown-tag.mp3")
+    _patch_first_tag(source, b"XXXX")
+    assert _scan(source).gapless is None
+
+
+def _ape_tag(*, version: int = 2000, with_header: bool = True) -> bytes:
+    key = b"MP3GAIN_MINMAX"
+    value = b"128,128"
+    item = (
+        len(value).to_bytes(4, "little")
+        + (0).to_bytes(4, "little")
+        + key
+        + b"\0"
+        + value
+    )
+    tag_size = 32 + len(item)
+
+    def block(flags: int) -> bytes:
+        return (
+            b"APETAGEX"
+            + version.to_bytes(4, "little")
+            + tag_size.to_bytes(4, "little")
+            + (1).to_bytes(4, "little")
+            + flags.to_bytes(4, "little")
+            + b"\0" * 8
+        )
+
+    if with_header:
+        return block(0xA000_0000) + item + block(0x8000_0000)
+    return item + block(0)
+
+
+@pytest.mark.parametrize(
+    ("tag", "trailer"),
+    (
+        ("apev2", b""),
+        ("apev2", b"TAG" + b"\0" * 125),
+        ("apev1", b""),
+    ),
+)
+def test_trailing_ape_tags_are_excluded_from_the_frame_walk(
+    tmp_path: Path,
+    tag: str,
+    trailer: bytes,
+) -> None:
+    source = _write_mp3(tmp_path / f"{tag}.mp3")
+    before = _scan(source)
+    ape = _ape_tag(
+        version=2000 if tag == "apev2" else 1000,
+        with_header=tag == "apev2",
+    )
+    source.write_bytes(source.read_bytes() + ape + trailer)
+
+    after = _scan(source)
+    assert after.physical_frames == before.physical_frames
+    assert after.audio_bytes == before.audio_bytes
+    assert after.raw_frames == before.raw_frames
+    assert after.gapless == before.gapless
+
+    decoder = ProjectAudioDecoder(source)
+    try:
+        assert decoder.output_frames > 0
+    finally:
+        decoder.close()
+
+
+@pytest.mark.parametrize("damage", ("version", "undersize", "overrun", "header"))
+def test_malformed_trailing_ape_tags_are_rejected_path_free(
+    tmp_path: Path,
+    damage: str,
+) -> None:
+    source = _write_mp3(tmp_path / f"ape-{damage}.mp3")
+    ape = bytearray(_ape_tag())
+    if damage == "version":
+        ape[-24:-20] = (3000).to_bytes(4, "little")
+    elif damage == "undersize":
+        ape[-20:-16] = (16).to_bytes(4, "little")
+    elif damage == "overrun":
+        ape[-20:-16] = (2**24).to_bytes(4, "little")
+    elif damage == "header":
+        ape[0:8] = b"APETAGEY"
+    source.write_bytes(source.read_bytes() + bytes(ape))
+
+    with pytest.raises(ProjectAudioError) as caught:
+        ProjectAudioDecoder(source)
+    _assert_path_free(caught.value, source)
+
+
+def test_trailing_garbage_is_still_rejected(tmp_path: Path) -> None:
+    source = _write_mp3(tmp_path / "garbage.mp3")
+    source.write_bytes(source.read_bytes() + b"\0" * 16)
+
+    with pytest.raises(ProjectAudioError) as caught:
+        ProjectAudioDecoder(source)
+    _assert_path_free(caught.value, source)
+
+
+def test_mp3_rejections_carry_the_bounded_scan_reason(tmp_path: Path) -> None:
+    source = _write_mp3(tmp_path / "truncated.mp3", seconds=2.0)
+    source.write_bytes(source.read_bytes()[:-1])
+
+    with pytest.raises(ProjectAudioError) as caught:
+        ProjectAudioDecoder(source)
+    message = str(caught.value)
+    assert "couldn't validate that MP3" in message
+    assert "(" in message and ")" in message
+    _assert_path_free(caught.value, source)

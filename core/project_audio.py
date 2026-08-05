@@ -32,6 +32,7 @@ import numpy as np
 from core.mp3_scan import (
     MP3_MAX_TRAILING_REPORT_FRAMES,
     Mp3Scan,
+    Mp3ScanError,
     scan_mp3_descriptor,
 )
 
@@ -205,9 +206,9 @@ def _reconcile_mp3_source_frames(
         try:
             landed = reader.seek(position)  # type: ignore[attr-defined]
         except Exception:
-            raise ValueError("MP3 decoder seek failed") from None
+            raise Mp3ScanError("MP3 decoder seek failed.") from None
         if int(landed) != position:
-            raise ValueError("MP3 decoder seek was not exact")
+            raise Mp3ScanError("MP3 decoder seek was not exact.")
 
     def require_exact_boundary(boundary: int) -> None:
         tail_frames = min(576, boundary)
@@ -218,18 +219,18 @@ def _reconcile_mp3_source_frames(
                 out=tail[:tail_frames]
             )
         except Exception:
-            raise ValueError("MP3 decoder tail read failed") from None
+            raise Mp3ScanError("MP3 decoder tail read failed.") from None
         if len(decoded_tail) != tail_frames:
-            raise ValueError("MP3 decoder ended before the scanned boundary")
+            raise Mp3ScanError("MP3 decoder ended before the scanned boundary.")
         exact_seek(boundary)
         try:
             decoded_after = reader.read(  # type: ignore[attr-defined]
                 out=sample
             )
         except Exception:
-            raise ValueError("MP3 decoder EOF probe failed") from None
+            raise Mp3ScanError("MP3 decoder EOF probe failed.") from None
         if len(decoded_after) != 0:
-            raise ValueError("MP3 decoder continued beyond the scanned boundary")
+            raise Mp3ScanError("MP3 decoder continued beyond the scanned boundary.")
 
     try:
         gapless = scan.gapless
@@ -243,7 +244,7 @@ def _reconcile_mp3_source_frames(
             or reported_frames - raw_frames
             > MP3_MAX_TRAILING_REPORT_FRAMES
         ):
-            raise ValueError("MP3 decoder duration disagrees with the frame scan")
+            raise Mp3ScanError("MP3 decoder duration disagrees with the frame scan.")
         require_exact_boundary(raw_frames)
         if gapless is None:
             return 0, raw_frames
@@ -252,9 +253,31 @@ def _reconcile_mp3_source_frames(
         try:
             reset = reader.seek(0)  # type: ignore[attr-defined]
         except Exception:
-            raise ValueError("MP3 decoder could not reset after validation") from None
+            raise Mp3ScanError("MP3 decoder could not reset after validation.") from None
         if int(reset) != 0:
-            raise ValueError("MP3 decoder reset was not exact")
+            raise Mp3ScanError("MP3 decoder reset was not exact.")
+
+
+def _close_quietly(
+    reader: object,
+    source_file: object,
+    descriptor: int,
+) -> None:
+    if reader is not None:
+        try:
+            reader.close()  # type: ignore[attr-defined]
+        except Exception:
+            pass
+    if source_file is not None:
+        try:
+            source_file.close()  # type: ignore[attr-defined]
+        except Exception:
+            pass
+    if descriptor >= 0:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
 
 
 def _bounded_int(
@@ -369,8 +392,8 @@ class ProjectAudioDecoder:
                     or mp3_scan.source_sample_rate != source_rate
                     or mp3_scan.channels != channels
                 ):
-                    raise ValueError(
-                        "MP3 decoder format disagrees with the frame scan"
+                    raise Mp3ScanError(
+                        "MP3 decoder format disagrees with the frame scan."
                     )
                 (
                     source_start_frame,
@@ -396,22 +419,19 @@ class ProjectAudioDecoder:
                 raise OSError("source changed during decoder validation")
         except ProjectAudioError:
             raise
+        except Mp3ScanError as exc:
+            _close_quietly(reader, source_file, descriptor)
+            # The scan reasons are fixed, bounded sentences that never carry
+            # file paths; surfacing the exact one turns an opaque rejection
+            # into an actionable message.
+            reason = str(exc).strip().rstrip(".")
+            raise ProjectAudioError(
+                "WebJam couldn't validate that MP3 "
+                f"({reason}). Re-export the song as a fresh MP3, or convert "
+                "it to WAV, AIFF, or FLAC, and try again."
+            ) from None
         except Exception:
-            if reader is not None:
-                try:
-                    reader.close()
-                except Exception:
-                    pass
-            if source_file is not None:
-                try:
-                    source_file.close()
-                except Exception:
-                    pass
-            if descriptor >= 0:
-                try:
-                    os.close(descriptor)
-                except OSError:
-                    pass
+            _close_quietly(reader, source_file, descriptor)
             raise ProjectAudioError(
                 "WebJam couldn't safely read that audio file. Check that it is "
                 "a valid one- or two-channel local audio file."
