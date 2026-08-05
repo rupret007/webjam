@@ -7,13 +7,9 @@ from __future__ import annotations
 import sys
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from core.audio_routing import (
     AudioRoutingStatus,
     LoopbackDevice,
-    find_device_index,
-    list_input_devices,
     scan_loopback_devices,
 )
 

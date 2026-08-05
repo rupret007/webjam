@@ -1,7 +1,7 @@
 # Pocket Stage v1 developer-preview implementation and validation plan
 
-> **v0.22.3 published boundary:** the current menu label is included in the
-> immutable published v0.22.3 private test candidate. Physical validation
+> **v0.22.4 published boundary:** the current menu label is included in the
+> immutable published v0.22.4 private test candidate. Physical validation
 > remains **NOT RUN**.
 
 - Date: 2026-07-21

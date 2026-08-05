@@ -1,6 +1,6 @@
-# WebJam musician guide — v0.22.3
+# WebJam musician guide — v0.22.4
 
-> **Published private test candidate:** this guide describes immutable v0.22.3,
+> **Published private test candidate:** this guide describes immutable v0.22.4,
 > now GitHub Latest. Physical and platform-trust gates remain **NOT RUN**.
 
 ## Follow the current guide
@@ -143,7 +143,7 @@ value Jamulus would silently shorten.
 ## Use iPhone as Pocket Stage — developer preview
 
 Pocket Stage is currently an owner-device Xcode developer preview, not a
-pre-signed iPhone binary. A v0.22.3 Mac DMG or ZIP includes **Pocket
+pre-signed iPhone binary. A v0.22.4 Mac DMG or ZIP includes **Pocket
 Stage iPhone Setup** with the exact generated, CI-compiled Xcode project and
 an optional **Open Pocket Stage in Xcode.command** convenience helper. Open
 `WebJamPocketStage.xcodeproj` directly; if its file association fails, use
@@ -232,7 +232,7 @@ permission to route audio. Production refuses before scanning devices. There is
 no user or environment override, and installing BlackHole, running setup, or
 choosing **Recheck Route** cannot unlock downloaded v0.22.2.
 
-In published v0.22.3, the production Mac backend derives initial
+In published v0.22.4, the production Mac backend derives initial
 route authority from the machine. It requires macOS 14.2 or later and one
 official, unambiguous BlackHole 16ch/64ch device at 48 kHz. Passing those
 read-only prerequisite checks may make Play available; choosing Play then
@@ -303,7 +303,7 @@ and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
 manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
-v0.22.3 source tree.
+v0.22.4 source tree.
 
 Edited Studio packages require the secure descriptor-relative export available
 on macOS/Linux. On Windows, Studio instead labels the action **Export Aligned

@@ -236,14 +236,14 @@ def test_read_only_native_matrix_launches_all_other_frozen_targets() -> None:
 
 def test_catalog_proof_binds_envelope_payload_signer_and_asset_identity() -> None:
     assert "Verify and bind the live signed Jamulus catalog" in SMOKE_JOB
-    assert 'component_tag="jamulus-components-v1"' in SMOKE_JOB
+    assert 'component_tag="$COMPONENT_CHANNEL_TAG"' in SMOKE_JOB
     assert 'component_asset="WebJam-Jamulus-components-v1.json"' in SMOKE_JOB
     assert "$matches[0].draft != false" in SMOKE_JOB
     assert "$matches[0].prerelease != true" in SMOKE_JOB
     assert "$matches[0].assets[0].size <= 0" in SMOKE_JOB
     assert "tools.verify_jamulus_component_catalog" in SMOKE_JOB
     assert "--webjam-version \"$VERSION\"" in SMOKE_JOB
-    assert "MINIMUM_COMPONENT_CATALOG_SEQUENCE: 4" in WORKFLOW_HEADER
+    assert "MINIMUM_COMPONENT_CATALOG_SEQUENCE: 5" in WORKFLOW_HEADER
     assert (
         '--minimum-sequence "$MINIMUM_COMPONENT_CATALOG_SEQUENCE"'
         in SMOKE_JOB

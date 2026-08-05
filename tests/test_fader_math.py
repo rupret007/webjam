@@ -12,7 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication
 _app = QApplication.instance() or QApplication([])
 
-from webjam_qt.widgets.participant_card import ParticipantCard
+from webjam_qt.widgets.participant_card import ParticipantCard  # noqa: E402
 
 
 class TestFormatFader:

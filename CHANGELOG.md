@@ -6,6 +6,21 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ## [Unreleased]
 
+> Future work after the v0.22.4 private test candidate belongs here. The
+> v0.22.4 release is the current public test line and is immutable once
+> published.
+
+## [0.22.4] — 2026-08-04 DAW and reliability private test candidate
+
+### Release and presentation
+
+- Published the Reference Studio multi-region editing and loop Overdub work
+  as a new versioned test candidate without moving the immutable v0.22.3 tag.
+- Added a versioned Jamulus component-catalog channel for exact v0.22.4
+  compatibility while retaining the sealed v1 catalog for v0.22.3.
+- Hardened macOS disk-image creation against transient `hdiutil` resource-busy
+  failures with verified temporary output and bounded retry.
+
 ### Reference Studio — DAW-style editing and overdub
 
 - Reference Studio now supports multi-region selection. Shift-click or
@@ -24,8 +39,7 @@ All notable improvements and features for the WebJam music collaboration platfor
   take-lane commit unchanged, so recording identity, durable evidence, and the
   non-destructive boundary are preserved. With no loop set, Record explains how
   to set one rather than recording a straight punch.
-- These are source and machine-test improvements for the private candidate.
-  Two-endpoint physical overdub monitoring and audibility remain **NOT RUN**.
+- Two-endpoint physical overdub monitoring and audibility remain **NOT RUN**.
 
 ---
 

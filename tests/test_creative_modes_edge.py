@@ -4,7 +4,6 @@ import unittest
 
 from core.creative_modes import (
     CREATIVE_MODES,
-    CreativeMode,
     get_mode_by_key,
     get_mode_by_key_or_default,
     get_mode_by_label,

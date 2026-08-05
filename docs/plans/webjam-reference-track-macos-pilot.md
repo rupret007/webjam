@@ -1,16 +1,16 @@
 # Reference Track macOS physical pilot
 
-> **v0.22.3 published boundary:** the callback and source-load changes are
-> included in the immutable published v0.22.3 private test candidate. This
+> **v0.22.4 published boundary:** the callback and source-load changes are
+> included in the immutable published v0.22.4 private test candidate. This
 > pilot remains physical evidence, not an audibility claim.
 
 This runbook records the gates automation cannot prove. Do not convert a
 connection, moving meter, decoded waveform, process state, or server roster
 entry into an audibility result.
 
-The immutable v0.22.3 packages keep playback fail-closed unless the production
+The immutable v0.22.4 packages keep playback fail-closed unless the production
 factory proves the local BlackHole route on that Mac. Run this procedure only
-against an exact published v0.22.3 package and record its filename and SHA-256
+against an exact published v0.22.4 package and record its filename and SHA-256
 with the evidence. Do not use the constructor's test-only
 `physical_route_certified` override, and never add an environment variable,
 setting, command-line flag, or user-facing bypass to a downloadable package.

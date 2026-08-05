@@ -1,7 +1,7 @@
 # ADR 0003: Pocket Stage native iPhone companion
 
-> **v0.22.3 published boundary:** the current menu label is included in the
-> immutable published v0.22.3 private test candidate. Physical owner-device
+> **v0.22.4 published boundary:** the current menu label is included in the
+> immutable published v0.22.4 private test candidate. Physical owner-device
 > installation and pairing remain **NOT RUN**.
 
 - Status: Accepted; owner-device developer-preview vertical slice implemented

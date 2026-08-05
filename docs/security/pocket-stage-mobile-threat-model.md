@@ -1,7 +1,7 @@
 # Pocket Stage developer-preview threat model
 
-> **v0.22.3 published boundary:** the current menu label is included in the
-> immutable published v0.22.3 private test candidate.
+> **v0.22.4 published boundary:** the current menu label is included in the
+> immutable published v0.22.4 private test candidate.
 
 - Date: 2026-07-21
 - Applies to: implemented Pocket Stage v1 generated native-app vertical slice

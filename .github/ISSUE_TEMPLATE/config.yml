@@ -1,5 +1,11 @@
 blank_issues_enabled: true
 contact_links:
+  - name: WebJam support and troubleshooting
+    url: https://github.com/rupret007/webjam/blob/master/SUPPORT.md
+    about: Start here for version, package, log-redaction, and product troubleshooting guidance.
+  - name: Private security report
+    url: https://github.com/rupret007/webjam/security/advisories/new
+    about: Do not disclose credentials, paths, or security vulnerabilities in a public issue.
   - name: Jamulus help
     url: https://jamulus.io/wiki/Getting-Started
     about: Issues with the Jamulus client itself (audio device, server connection) are best resolved upstream.

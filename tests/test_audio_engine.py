@@ -2,7 +2,6 @@
 and the synthetic fallback — all without real audio hardware."""
 from __future__ import annotations
 
-import time
 import unittest
 from types import SimpleNamespace
 from unittest import mock

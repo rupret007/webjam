@@ -1,17 +1,20 @@
 # WebJam, simply
 
 > **Published private test candidate:** this source guide describes the
-> immutable v0.22.3 release now marked GitHub **Latest**. Windows is unsigned;
+> immutable v0.22.4 release now marked GitHub **Latest**. Windows is unsigned;
 > macOS is ad-hoc signed and unnotarized.
+
+> **Development note:** `master` contains unreleased Reference Studio editing
+> and Overdub work. The download linked below is v0.22.4.
 
 WebJam helps a band start playing together. It keeps the session, invite, and
 recordings organized. Jamulus handles the music. Webex is optional for talking
 or video.
 
-Current published candidate: **v0.22.3 unsigned private test candidate**. Its
+Current published candidate: **v0.22.4 unsigned private test candidate**. Its
 four-platform release covers Windows, Ubuntu 22.04, Intel Mac, and
 Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc
-signed and not notarized. v0.22.3 upgrades `cryptography` to 50.0.0 for three
+signed and not notarized. v0.22.4 upgrades `cryptography` to 50.0.0 for three
 audited CVE fixes. Intel macOS uses the one documented, hash-locked native
 x86_64 source-build exception because upstream no longer publishes that wheel;
 the other targets remain hash-locked to upstream wheels.
@@ -95,9 +98,12 @@ does not start, stop, configure, or feed Jamulus.
 WebJam uses black, white, neutral gray, and burnt orange. The three-loop mark
 means musicians playing together; it does not represent a Logic integration.
 
+For the technical overview, evidence boundary, architecture, and roadmap, see
+the [project brief](docs/PROJECT_BRIEF.md) and [documentation index](docs/README.md).
+
 Waveforms load in the background and recorded gaps remain silence. Studio
 autosaves choices to a separate file; a failed save keeps the edit pending and
 the recorded take safe. Real two-Mac output, hardware interruption/recovery,
 external-editor import, physical Reference Studio audio, and signed-install
-gates are **NOT RUN** for v0.22.3. Publishing a private candidate does not
+gates are **NOT RUN** for v0.22.4. Publishing a private candidate does not
 convert them to PASS.

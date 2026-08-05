@@ -1,7 +1,7 @@
-WebJam v0.22.3 for Windows x64
+WebJam v0.22.4 for Windows x64
 ==============================
 
-PRE-PUBLICATION CANDIDATE: use only the exact v0.22.3 asset after its draft,
+PRE-PUBLICATION CANDIDATE: use only the exact v0.22.4 asset after its draft,
 checksum, and verified GitHub promotion gates pass. Physical audio, hardware,
 SmartScreen, publisher-signing, and managed-device gates remain NOT RUN unless
 the release evidence names this exact file and SHA-256.

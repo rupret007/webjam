@@ -366,6 +366,10 @@ class ProjectPlaybackEngine:
         with self._control_lock:
             self._require_open()
             self._stop_run(abort=False)
+            # A clean user stop ends the failed run as well as the transport
+            # thread.  Do not let a stale producer/device error overwrite a
+            # later recording or arrangement success message on every poll.
+            self._error = ""
             self._position_frame = 0
             self._state = (
                 ProjectPlaybackState.READY

@@ -1,6 +1,6 @@
-# Recording and Studio — v0.22.3
+# Recording and Studio — v0.22.4
 
-> **Published private test candidate:** this guide describes immutable v0.22.3,
+> **Published private test candidate:** this guide describes immutable v0.22.4,
 > now GitHub Latest. Physical
 > recording, playback, recovery, long-session, and external-editor gates remain
 > **NOT RUN** until exact package evidence is recorded.
@@ -226,14 +226,14 @@ requested operation.
 
 Export never rewrites the original take.
 
-## v0.22.3 evidence boundary
+## v0.22.4 evidence boundary
 
 Automated source tests cover the arrangement model, persistence/recovery,
 history/controller behavior, renderer, comping, source catalog, waveform
 pipeline, export transaction, and headless Qt interactions. Those checks do not
 prove that musicians heard the result through physical interfaces.
 
-For the published v0.22.3 private test candidate, real two-Mac listening,
+For the published v0.22.4 private test candidate, real two-Mac listening,
 interface disconnect/reconnect, sleep/wake, interruption and long-recording
 recovery, Studio playback through physical outputs, external-editor import of
 an exported package, signed clean installation, and platform

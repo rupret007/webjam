@@ -297,6 +297,12 @@ def test_start_failure_is_path_redacted_and_fail_closed(tmp_path: Path) -> None:
     assert "/private/device/name" not in str(caught.value)
     assert engine.state is ProjectPlaybackState.FAILED
     assert backend.aborted == 1
+    # A later clean stop must retire the failed run so its stale error cannot
+    # overwrite a subsequent successful Studio/recording status update.
+    backend.fail_start = False
+    engine.stop()
+    assert engine.state is ProjectPlaybackState.READY
+    assert engine.snapshot().error == ""
 
 
 def test_replaced_media_never_reaches_output(tmp_path: Path) -> None:

@@ -70,8 +70,8 @@ def test_current_candidate_identity_cannot_be_confused_with_latest_old_release()
     match = re.search(r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$', VERSION_SOURCE, re.M)
     assert match is not None
     version = match.group(1)
-    assert version == "0.22.3"
-    assert PROJECT_README.startswith(f"# WebJam v{version} unsigned private test candidate")
+    assert version == "0.22.4"
+    assert PROJECT_README.startswith("# WebJam\n\n## Unified creative collaboration for live music")
     assert f"## [{version}]" in CHANGELOG
     assert "v0.20.0 history must not be moved" in PROJECT_README
     assert "standalone Reference Studio" in PROJECT_README
@@ -89,6 +89,9 @@ def test_macos_dmg_builder_is_executable_and_preserves_the_app_bundle() -> None:
     assert "Open Pocket Stage in Xcode.command" in DMG_SCRIPT
     assert "Pocket Stage iPhone setup kit contains a symbolic link" in DMG_SCRIPT
     assert "-format UDZO" in DMG_SCRIPT
+    assert 'temporary_dmg="${output_dmg}.tmp.$$"' in DMG_SCRIPT
+    assert "hdiutil reported a busy resource; retrying" in DMG_SCRIPT
+    assert 'mv -- "$temporary_dmg" "$output_dmg"' in DMG_SCRIPT
     assert 'hdiutil verify "$output_dmg"' in DMG_SCRIPT
 
 

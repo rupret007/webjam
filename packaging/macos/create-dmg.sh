@@ -98,8 +98,10 @@ output_parent=$(dirname "$output_dmg")
 
 stage_root=$(mktemp -d "${TMPDIR:-/tmp}/webjam-dmg.XXXXXX")
 image_complete=0
+temporary_dmg="${output_dmg}.tmp.$$"
 cleanup() {
   rm -rf -- "$stage_root"
+  rm -f -- "$temporary_dmg"
   if [[ "$image_complete" != 1 ]]; then
     rm -f -- "$output_dmg"
   fi
@@ -123,13 +125,33 @@ if [[ -n "$candidate_extras" ]]; then
 fi
 ln -s /Applications "$stage_root/Applications"
 
-hdiutil create \
-  -volname "$volume_name" \
-  -fs HFS+ \
-  -format UDZO \
-  -imagekey zlib-level=9 \
-  -srcfolder "$stage_root" \
-  "$output_dmg"
+# macOS runners can briefly report the output resource as busy while a prior
+# filesystem operation has drained. Build into a unique sibling and retry only
+# that transient container operation; the final path is published atomically
+# after verification and is never overwritten.
+for attempt in 1 2 3; do
+  rm -f -- "$temporary_dmg"
+  if hdiutil create \
+    -volname "$volume_name" \
+    -fs HFS+ \
+    -format UDZO \
+    -imagekey zlib-level=9 \
+    -srcfolder "$stage_root" \
+    "$temporary_dmg"; then
+    break
+  fi
+  if [[ "$attempt" == 3 ]]; then
+    printf 'hdiutil could not create the disk image after %s attempts.\n' \
+      "$attempt" >&2
+    exit 1
+  fi
+  printf 'hdiutil reported a busy resource; retrying (%s/3).\n' "$attempt" >&2
+  sync
+  sleep $((attempt * 2))
+done
+
+hdiutil verify "$temporary_dmg"
+mv -- "$temporary_dmg" "$output_dmg"
 
 hdiutil verify "$output_dmg"
 image_complete=1

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import time
 import unittest
-from unittest.mock import patch
-
 from core.jamulus_rpc_client import JamulusRpcClient
 
 

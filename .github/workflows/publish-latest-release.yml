@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Exact existing draft candidate tag to publish (for example v0.22.3)"
+        description: "Exact existing draft candidate tag to publish (for example v0.22.4)"
         required: true
         type: string
 
@@ -20,7 +20,8 @@ env:
   V0220_TAG_OBJECT: 663075ec53aab36cc9de5d1b84aaec0b3733290b
   V0220_TAG_COMMIT: bf64c1165486a654d923c4e3cb6ede69e6458320
   COMPONENT_CHANNEL_ANCHOR: bf64c1165486a654d923c4e3cb6ede69e6458320
-  MINIMUM_COMPONENT_CATALOG_SEQUENCE: 4
+  COMPONENT_CHANNEL_TAG: jamulus-components-v2
+  MINIMUM_COMPONENT_CATALOG_SEQUENCE: 5
 
 jobs:
   frozen-package-smoke:
@@ -288,7 +289,7 @@ jobs:
           EXPECTED_DESKTOP_COMMIT: ${{ steps.release.outputs.tag_commit }}
         run: |
           set -euo pipefail
-          component_tag="jamulus-components-v1"
+          component_tag="$COMPONENT_CHANNEL_TAG"
           component_asset="WebJam-Jamulus-components-v1.json"
           gh api \
             --paginate \
@@ -828,9 +829,9 @@ jobs:
             "refs/tags/v0.22.0:${historical_ref}"
           tag_ref="refs/webjam-release-tags/${TAG}"
           git fetch --no-tags origin "refs/tags/${TAG}:${tag_ref}"
-          component_ref="refs/webjam-component-tags/jamulus-components-v1"
+          component_ref="refs/webjam-component-tags/$COMPONENT_CHANNEL_TAG"
           git fetch --no-tags origin \
-            "refs/tags/jamulus-components-v1:${component_ref}"
+            "refs/tags/$COMPONENT_CHANNEL_TAG:${component_ref}"
           [[ "$(git cat-file -t "$tag_ref")" == "tag" ]]
           [[ "$(git rev-parse "$tag_ref")" == "$EXPECTED_TAG_OBJECT" ]]
           [[ "$(git rev-parse "${tag_ref}^{commit}")" == \
@@ -857,7 +858,7 @@ jobs:
           [[ "$EXPECTED_COMPONENT_TAG_OBJECT" == "$COMPONENT_CHANNEL_ANCHOR" ]]
           [[ "$EXPECTED_COMPONENT_TAG_COMMIT" == "$COMPONENT_CHANNEL_ANCHOR" ]]
           [[ "$(git ls-remote --refs origin \
-            refs/tags/jamulus-components-v1 | awk 'NR == 1 {print $1}')" == \
+            "refs/tags/$COMPONENT_CHANNEL_TAG" | awk 'NR == 1 {print $1}')" == \
             "$EXPECTED_COMPONENT_TAG_OBJECT" ]]
           git merge-base --is-ancestor \
             "$EXPECTED_COMPONENT_TAG_COMMIT" "$EXPECTED_TAG_COMMIT"
@@ -1073,7 +1074,7 @@ jobs:
           EXPECTED_SIGNER_FINGERPRINT_SHA256: ${{ needs['frozen-package-smoke'].outputs.signer_fingerprint_sha256 }}
         run: |
           set -euo pipefail
-          component_tag="jamulus-components-v1"
+          component_tag="$COMPONENT_CHANNEL_TAG"
           component_asset="WebJam-Jamulus-components-v1.json"
           jq -e \
             --arg tag "$component_tag" \
@@ -1161,7 +1162,7 @@ jobs:
           remote_master_commit="$(git ls-remote --refs origin \
             refs/heads/master | awk 'NR == 1 {print $1}')"
           remote_component_tag_object="$(git ls-remote --refs origin \
-            refs/tags/jamulus-components-v1 | awk 'NR == 1 {print $1}')"
+            "refs/tags/$COMPONENT_CHANNEL_TAG" | awk 'NR == 1 {print $1}')"
           [[ "$remote_tag_object" == "$EXPECTED_TAG_OBJECT" ]]
           [[ "$remote_master_commit" == "$EXPECTED_MASTER_COMMIT" ]]
           [[ "$remote_component_tag_object" == \
@@ -1213,7 +1214,7 @@ jobs:
               '{id,tag_name,name,body,draft,prerelease,assets:([.assets[]|{id,name,size,digest}]|sort_by(.name))}' \
               "$RUNNER_TEMP/release-immediately-before.json")
 
-          component_tag="jamulus-components-v1"
+          component_tag="$COMPONENT_CHANNEL_TAG"
           component_asset="WebJam-Jamulus-components-v1.json"
           jq -e \
             --arg tag "$component_tag" \

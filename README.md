@@ -1,9 +1,36 @@
-# WebJam v0.22.3 unsigned private test candidate
+# WebJam
 
-> **Published private test candidate:** v0.22.3 is GitHub **Latest** and its
-> tag, title, warning text, and eight release assets are immutable. Windows is
-> unsigned; macOS is ad-hoc signed and unnotarized. Physical and credentialed
-> gates remain **NOT RUN** unless exact v0.22.3 asset evidence says otherwise.
+## Unified creative collaboration for live music
+
+WebJam is a musician-first desktop conductor for low-latency rehearsal,
+recording, arrangement, and creative review. It brings the session lifecycle,
+Jamulus, optional Webex conversation, Reference Studio, and an owner-controlled
+iPhone companion into one understandable workflow—without pretending to own
+the systems that should remain independent.
+
+[![WebJam CI](https://github.com/rupret007/webjam/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/rupret007/webjam/actions/workflows/ci.yml)
+[![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/rupret007/webjam?label=Latest%20test%20candidate)](https://github.com/rupret007/webjam/releases/latest)
+
+> **Published download:** [v0.22.4](https://github.com/rupret007/webjam/releases/tag/v0.22.4)
+> is GitHub **Latest** and immutable. It is an unsigned private test candidate:
+> Windows is unsigned; macOS is ad-hoc signed and unnotarized. Physical and
+> credentialed gates remain **NOT RUN** unless exact asset evidence says otherwise.
+
+> **Development boundary:** master is the v0.22.4 test line. Future work
+> belongs in [Unreleased](CHANGELOG.md#unreleased); do not treat an untagged
+> checkout as a downloadable release.
+
+## At a glance
+
+| Area | Current state |
+| --- | --- |
+| Product | Musician-facing desktop conductor around Jamulus, Webex, Studio, and Pocket Stage |
+| Published line | v0.22.4 private test candidate, four-platform immutable release |
+| Active development | DAW-style multi-region editing and Overdub work |
+| Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
+| License | [MIT](LICENSE), with third-party notices shipped separately |
+| Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
 
 WebJam has two deliberately separate musician workflows:
 
@@ -13,8 +40,21 @@ WebJam has two deliberately separate musician workflows:
   playing with a backing track, recording ideas, arranging takes, mixing, and
   bouncing a demo. It does not require or alter a Jamulus session.
 
-WebJam is still a conductor, not a replacement for the tools musicians already
-trust.
+WebJam is a conductor, not a replacement for the tools musicians already trust.
+
+## Five-minute demo
+
+1. Open WebJam and choose **Host a Jam** or **Join a Jam**.
+2. Configure interface, channels, headphones, and buffer in Jamulus.
+3. Confirm the authenticated music connection, then use **Band Check / Verify
+   Sound** if needed.
+4. Open **Webex Controls** only when conversation or video is wanted; use
+   **Join / Open Meeting** for an explicit meeting-link handoff.
+5. Open **Reference Studio** for local songwriting and arrangement. The
+   v0.22.4 candidate includes DAW-style multi-region editing and loop Overdub;
+   read the release notes before the first take.
+
+## System ownership
 
 | Product | Owns |
 | --- | --- |
@@ -22,7 +62,7 @@ trust.
 | Jamulus | Live interface, input/output channels, buffer, jitter, musician mix, and music connection |
 | Webex | Optional talking/video meeting and its own microphone, camera, speaker, and participant state |
 
-## The normal flow
+## Live rehearsal flow
 
 1. Open WebJam and choose **Host a Jam** or **Join a Jam**.
 2. WebJam starts the private session or consumes the invitation.
@@ -43,9 +83,9 @@ trust.
 There is no WebJam input/output picker, server field, port field, or Band
 Check gate in Host/Join.
 
-## Bounded Jamulus recovery in the v0.22.3 candidate
+## Bounded Jamulus recovery in the v0.22.4 candidate
 
-The v0.22.3 source treats a running Jamulus process as necessary but not
+The v0.22.4 source treats a running Jamulus process as necessary but not
 sufficient recovery evidence. Each replacement is bound to the exact recovery
 generation, process generation, and process ID that WebJam launched. WebJam
 returns to Connected only after that same process has fresh authenticated RPC
@@ -62,13 +102,13 @@ process ID/liveness, finite RPC freshness category, and finite RPC age. It
 never includes the Jamulus profile path, RPC secret, invitation, meeting link,
 or raw exception.
 
-This recovery work ships in the immutable v0.22.3 private test candidate,
+This recovery work ships in the immutable v0.22.4 private test candidate,
 which is GitHub **Latest**. Publication does not convert any physical gate to
 PASS.
 
 ## Jamulus updates without rebuilding WebJam
 
-WebJam v0.22.3 keeps its reviewed Jamulus 3.12.2 client, server, and isolated
+WebJam v0.22.4 keeps its reviewed Jamulus 3.12.2 client, server, and isolated
 Reference Track companion as an offline fallback. In the background it checks
 a separately published, Ed25519-signed component catalog for Jamulus versions
 that have passed WebJam's exact routing, RPC, recording, and packaging
@@ -204,7 +244,7 @@ playhead, animation, audio, capture, or playback callbacks.
 
 ## Pocket Stage iPhone owner-device preview
 
-The v0.22.3 candidate retains the narrow Pocket Stage v1 vertical slice
+The v0.22.4 candidate retains the narrow Pocket Stage v1 vertical slice
 introduced in v0.19.0 for an owner's iPhone. On the desktop, choose
 **More → Use iPhone as Pocket Stage…** after both devices are on the same
 private Wi-Fi.
@@ -271,7 +311,7 @@ variable, command-line switch, or UI override. Installing BlackHole, running its
 setup guidance, or choosing **Recheck Route** cannot unlock a downloaded
 v0.22.2 package.
 
-The v0.22.3 candidate derives route authority on the Mac instead of
+The v0.22.4 candidate derives route authority on the Mac instead of
 requiring a constructor-only grant. An official, unambiguous 48-kHz BlackHole
 16ch/64ch route is necessary; when the production factory's read-only local
 checks certify that prerequisite, Play may become available. Choosing Play
@@ -377,8 +417,13 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Published source and candidate state
 
-The source tree and [published release](https://github.com/rupret007/webjam/releases/tag/v0.22.3)
-report **v0.22.3**, an immutable non-prerelease explicitly titled as an
+The published release and the development checkout are intentionally different
+identities. `master` is the v0.22.4 test line; future work listed under
+[Unreleased](CHANGELOG.md#unreleased) is not part of the downloadable release.
+Do not use an untagged source checkout as evidence for the immutable download.
+
+The source tree and [published release](https://github.com/rupret007/webjam/releases/tag/v0.22.4)
+report **v0.22.4**, an immutable non-prerelease explicitly titled as an
 unsigned private test candidate and marked GitHub **Latest**. It includes the
 cryptography security remediation and bounded Jamulus recovery described
 below while retaining direct Live access to Webex, host-only Reference Track,
@@ -393,7 +438,8 @@ remain immutable. The published v0.22.1 tag, assets, and checksums likewise
 remain immutable; v0.22.2 is a new patch identity, never a moved tag or rebuilt
 v0.22.1 asset.
 
-v0.22.3 is likewise a new source and package identity. It upgrades
+v0.22.4 is likewise a new source and package identity. It carries the
+Reference Studio editing and Overdub line and upgrades
 `cryptography` to 50.0.0 to remediate CVE-2026-69247, CVE-2026-69248, and
 CVE-2026-69249. Windows, Linux, and Apple-silicon macOS use hash-locked
 upstream wheels. Because upstream no longer publishes an Intel macOS wheel,
@@ -402,10 +448,10 @@ exception with static OpenSSL 3.5.7 LTS; CI verifies its official inputs,
 architecture, linkage, installed runtime, license evidence, and package
 inventory. No other target is permitted to use that exception.
 
-The published v0.22.3 tag, title, warning text, assets, and checksums are now
+The published v0.22.4 tag, title, warning text, assets, and checksums are now
 immutable and must never be rebuilt or replaced.
 
-The v0.22.3 workflow built four targets from one source identity: Windows x64,
+The v0.22.4 workflow built four targets from one source identity: Windows x64,
 Ubuntu 22.04 x64, Intel Mac, and Apple-silicon Mac. The published release
 contains exactly seven packages—the Windows Setup and ZIP, two Mac DMGs and two
 Mac ZIPs, and the Linux ZIP—plus one exact SHA-256 manifest. It was promoted
@@ -416,7 +462,7 @@ alone is still not a published Latest release.
 The Jamulus catalog is intentionally **not** one of those desktop assets. It is
 published under a separate non-Latest component release, signed by an offline
 release key, expires within 31 days, and carries a monotonically increasing
-sequence. Its immutable sequence 4 authorizes exact WebJam 0.22.3 through
+sequence. Its immutable sequence 5 authorizes exact WebJam 0.22.4 through
 2026-09-03. The desktop updater embeds only the matching public key and rejects
 expired, replayed, downgraded, equivocated, wrong-target, wrong-architecture,
 wrong-size, wrong-hash, wrong-publisher, or unexpected-inventory content.
@@ -475,7 +521,7 @@ Windows PC may still require IT approval even after valid publisher signing;
 candidate packages must never be described as production-trusted installers.
 
 Automated source and package checks are evidence for code and archive
-integrity—not a substitute for musicians hearing one another. For v0.22.3,
+integrity—not a substitute for musicians hearing one another. For v0.22.4,
 real two-Mac audio, physical interface disconnect/reconnect, sleep/wake,
 interruption and recording recovery, long-session operation, external-editor
 import of the evidence-rich session export, physical Reference Studio
@@ -486,7 +532,9 @@ promote a package or claim audibility.
 
 ## Guides
 
-- [v0.22.3 release notes and changelog](CHANGELOG.md)
+- [Documentation index](docs/README.md)
+- [Project brief for technical stakeholders](docs/PROJECT_BRIEF.md)
+- [v0.22.4 release notes and changelog](CHANGELOG.md)
 - [v0.18 unified-guidance pilot checklist](V018_UNIFIED_GUIDANCE_PILOT.md)
 - [First jam](FIRST_JAM.md)
 - [Musician guide](USER_GUIDE.md)

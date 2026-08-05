@@ -1,7 +1,7 @@
-# WebJam v0.22.3 UX acceptance checklist
+# WebJam v0.22.4 UX acceptance checklist
 
 > **Published private test candidate:** this checklist describes immutable
-> v0.22.3, now GitHub Latest. Unperformed physical and platform-trust gates
+> v0.22.4, now GitHub Latest. Unperformed physical and platform-trust gates
 > stay **NOT RUN**.
 
 ## Unified guidance
@@ -94,7 +94,7 @@
       decoder proves support, and load decodes the first bounded audio block.
 - [ ] Source and route states remain distinct. **Recheck Route** starts no
       playback, and BlackHole setup or Recheck cannot unlock a downloaded
-      v0.22.2 package. In published v0.22.3, Play may become available only after
+      v0.22.2 package. In published v0.22.4, Play may become available only after
       the production Mac path certifies an official 48-kHz BlackHole 16ch/64ch
       route; exact live isolation is still rechecked at startup and uncertainty
       fails closed. This machine result is not physical audibility proof.
@@ -165,7 +165,7 @@
       extraction.
 - [ ] Physical two-Mac and hardware evidence is listed separately as PASS,
       FAIL, or NOT RUN.
-- [ ] v0.22.3 remains a private test candidate until real-output guidance
+- [ ] v0.22.4 remains a private test candidate until real-output guidance
       review, Arrange/comp playback, physical Reference Studio playback and
       recording, external-editor import, signed clean installation, and
       platform trust gates have evidence; all currently remain **NOT RUN**.

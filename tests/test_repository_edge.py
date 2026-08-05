@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import threading
 import unittest
 from pathlib import Path
@@ -146,7 +145,7 @@ class TestRepositoryCohortEvents(unittest.TestCase):
         for i in range(WebJamRepository._MAX_COHORT_EVENTS + 50):
             self.repo.append_cohort_event("test", "click", {"n": str(i)})
         import json
-        raw = self.repo.get_setting(f"cohort_events_test")
+        raw = self.repo.get_setting("cohort_events_test")
         events = json.loads(raw)
         self.assertEqual(len(events), WebJamRepository._MAX_COHORT_EVENTS)
 
@@ -184,7 +183,7 @@ class TestRepositoryArtifacts(unittest.TestCase):
         cleanup_temp_file(self.db)
 
     def test_invalid_artifact_type_falls_back_to_note(self):
-        aid = self.repo.add_session_artifact("room1", "Test", "invalid_type", "ref")
+        self.repo.add_session_artifact("room1", "Test", "invalid_type", "ref")
         artifacts = self.repo.list_session_artifacts("room1")
         self.assertEqual(len(artifacts), 1)
         self.assertEqual(artifacts[0]["artifact_type"], "note")

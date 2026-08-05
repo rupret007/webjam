@@ -1,6 +1,6 @@
-# WebJam quick help — v0.22.3
+# WebJam quick help — v0.22.4
 
-> **Published private test candidate:** these labels describe immutable v0.22.3,
+> **Published private test candidate:** these labels describe immutable v0.22.4,
 > now GitHub Latest.
 
 | Need | Use |

@@ -1,7 +1,7 @@
-# First Jam — WebJam v0.22.3
+# First Jam — WebJam v0.22.4
 
 > **Published private test candidate:** these instructions describe immutable
-> v0.22.3, now GitHub Latest. Physical rehearsal gates remain **NOT RUN**.
+> v0.22.4, now GitHub Latest. Physical rehearsal gates remain **NOT RUN**.
 
 ## Host
 

@@ -1,12 +1,9 @@
 # Jamulus component catalog release runbook
 
-> **v0.22.3 published state:** the public component release is sealed and
-> immutable with signed sequence 4 for exact WebJam 0.22.3. The desktop release
-> is also immutable and GitHub Latest. The component release remains a
-> non-Latest prerelease and its stable channel tag was not moved.
+> **v0.22.4 published state:** the public component release is sealed and immutable with signed sequence 5 for exact WebJam 0.22.4. The desktop release is also immutable and GitHub Latest. The component release remains a public non-Latest prerelease and its stable channel tag was not moved.
 
-This runbook records the sealed v1 catalog history and defines the boundary
-for a future versioned catalog channel. The catalog tells WebJam which exact
+This runbook records the sealed v1 history and current v2 catalog channel. The
+catalog tells WebJam which exact
 Jamulus client/server packages are approved. It does not publish WebJam,
 redistribute Jamulus packages, approve HEADLESS, or make a desktop release
 Latest.
@@ -20,14 +17,15 @@ tag. v0.22.1 authorization came from signature-valid sequence 2. Sequence 3,
 independently reverified on 2026-07-29, authorized exact WebJam 0.22.2 through
 `2026-08-28T15:03:21Z`.
 
-The current public component release is immutable sequence 4 for exact WebJam
-0.22.3, with eight Jamulus 3.12.3 client/server entries and expiry
-`2026-09-03T06:27:28Z`. Its sole asset has SHA-256
-`9f70bfedbb3236e6d6446db92449c27001070f5e94a0287255bfbf499e5d769a`;
-the signed payload SHA-256 is
-`1ca543363d006e0e3c66747257f18946f0e1cc0f43f22f9841ddfc9365d9bc08`.
-The component release is a non-Latest prerelease, and GitHub's immutable-release
-policy now prevents replacing that asset in place.
+The sealed v1 channel remains immutable sequence 4 for exact WebJam 0.22.3.
+The current public v2 channel is immutable sequence 5 for exact WebJam 0.22.4,
+with eight Jamulus 3.12.3 client/server entries and expiry
+`2026-09-03T12:00:00Z`. Its sole asset is
+`WebJam-Jamulus-components-v1.json`, with envelope SHA-256
+`RECORD_AFTER_PUBLIC_UPLOAD` and signed payload SHA-256
+`c5b034dad933a7ff670cccecaf308947f5ab93f7fedeb0cde0ce8f9e34e83f`.
+Both component releases are non-Latest prereleases, and GitHub's
+immutable-release policy prevents replacing either asset in place.
 
 ## Trust boundary
 
@@ -41,12 +39,13 @@ policy now prevents replacing that asset in place.
   HEADLESS role.
 - Every catalog targets one exact WebJam version, expires within 31 days, and
   uses a sequence exactly one greater than the current public catalog.
-- `jamulus-components-v1` remains a public non-Latest prerelease with exactly
-  one immutable asset: `WebJam-Jamulus-components-v1.json`.
+- `jamulus-components-v1` remains the sealed v0.22.3 channel.
+- `jamulus-components-v2` is the current public non-Latest prerelease with
+  exactly one immutable asset: `WebJam-Jamulus-components-v1.json`.
 - A future desktop draft remains unpublished if catalog generation, public
   redownload, frozen-runtime verification, or UI verification fails.
 
-## Future renewal after the sequence-4 seal
+## Future renewal after the sequence-5 seal
 
 Do not attempt to replace the sealed `jamulus-components-v1` asset or move its
 tag. A future desktop release that needs a renewed catalog must introduce a
@@ -54,7 +53,7 @@ reviewed, versioned channel boundary: a new fixed catalog URL, new release and
 tag identity, explicit desktop compatibility migration, and the complete
 signature, expiry, downgrade, privacy, and four-platform frozen-package proof.
 The new channel must remain non-Latest and must not alter historical sequence-4
-bytes or either v0.22.3 release.
+or sequence-5 bytes or either desktop release.
 
 ## Historical mutable-channel renewal procedure: sequence N to N+1
 

@@ -1,9 +1,9 @@
 # WebJam closed-pilot handoff
 
-> **Published private test candidate:** this pilot describes immutable v0.22.3,
+> **Published private test candidate:** this pilot describes immutable v0.22.4,
 > now GitHub Latest.
 
-The current v0.22.3 private test candidate passed its exact tag build, draft
+The current v0.22.4 private test candidate passed its exact tag build, draft
 verification, and protected promotion. It is intended to validate a simple
 live rehearsal, session-arranging, and standalone Reference Studio experience:
 

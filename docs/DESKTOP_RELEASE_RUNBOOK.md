@@ -1,6 +1,6 @@
 # Desktop release runbook
 
-> **v0.22.3 published candidate:** the exact eight-asset release is immutable,
+> **v0.22.4 published candidate:** the exact eight-asset release is immutable,
 > non-prerelease, and GitHub Latest. Windows remains unsigned; macOS remains
 > ad-hoc signed and unnotarized. The historical records below remain unchanged
 > release evidence.
@@ -646,3 +646,28 @@ pairing, SmartScreen, Gatekeeper, publisher signing, Developer ID,
 notarization, and managed-device policy remain **NOT RUN** until dated evidence
 names an exact v0.22.3 asset, build ID, SHA-256, environment, and evidence
 location.
+
+### v0.22.4 DAW and reliability candidate — current published record
+
+v0.22.4 is a new immutable patch identity after v0.22.3. Never move, replace,
+rebuild, delete, or retag either release. It carries the Reference Studio
+multi-region editing and loop Overdub work, the stale playback-status fix, and
+the bounded macOS disk-image retry.
+
+The exact v0.22.4 published inventory is:
+
+- `WebJam-v0.22.4-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`
+- `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip`
+- `WebJam-v0.22.4-macos-arm64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-macos-arm64-ADHOC-TEST-ONLY.zip`
+- `WebJam-v0.22.4-macos-x64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-macos-x64-ADHOC-TEST-ONLY.zip`
+- `WebJam-linux-x64.zip`
+- `WebJam-v0.22.4-SHA256SUMS.txt`
+
+The separate `jamulus-components-v2` prerelease carries signed sequence 5
+for exact WebJam 0.22.4. The sealed v1 catalog and its v0.22.3 authorization
+remain historical. The v0.22.4 package remains unsigned on Windows and
+ad-hoc signed and unnotarized on macOS; physical audio, hardware, Webex,
+Pocket Stage, Gatekeeper, SmartScreen, signing, and notarization gates remain
+**NOT RUN** unless recorded against the exact published asset and checksum.

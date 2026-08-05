@@ -76,7 +76,7 @@ from services.jamulus_component_platform import (
 
 DEFAULT_COMPONENT_CATALOG_URL = (
     "https://github.com/rupret007/webjam/releases/download/"
-    "jamulus-components-v1/WebJam-Jamulus-components-v1.json"
+    "jamulus-components-v2/WebJam-Jamulus-components-v1.json"
 )
 EMBEDDED_FALLBACK_VERSION = "3.12.2"
 _CLIENT_EXECUTION_CAPABILITIES = frozenset(
