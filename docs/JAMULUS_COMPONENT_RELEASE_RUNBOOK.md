@@ -22,8 +22,9 @@ The current public v2 channel is immutable sequence 5 for exact WebJam 0.22.4,
 with eight Jamulus 3.12.3 client/server entries and expiry
 `2026-09-03T12:00:00Z`. Its sole asset is
 `WebJam-Jamulus-components-v1.json`, with envelope SHA-256
-`RECORD_AFTER_PUBLIC_UPLOAD` and signed payload SHA-256
-`c5b034dad933a7ff670cccecaf308947f5ab93f7fedeb0cde0ce8f9e34e83f`.
+`670746cd925fadc62a57e7dfd24a7d67c50a412ab82bf25d1e0295be567294e3` and
+signed payload SHA-256
+`c5b034dad933a7ffea670cccecaf308947f5ab93f7fedeb0cde0ce8f9e34e83f`.
 Both component releases are non-Latest prereleases, and GitHub's
 immutable-release policy prevents replacing either asset in place.
 

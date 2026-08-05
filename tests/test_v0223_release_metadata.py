@@ -158,7 +158,7 @@ def test_component_catalog_current_public_state_is_sealed() -> None:
     ) in normalized
     assert "2026-09-03T12:00:00Z" in COMPONENT_RUNBOOK
     assert (
-        "c5b034dad933a7ff670cccecaf308947f5ab93f7fedeb0cde0ce8f9e34e83f"
+        "c5b034dad933a7ffea670cccecaf308947f5ab93f7fedeb0cde0ce8f9e34e83f"
         in COMPONENT_RUNBOOK
     )
     assert "one immutable asset" in normalized
