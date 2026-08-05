@@ -89,7 +89,7 @@ def test_macos_dmg_builder_is_executable_and_preserves_the_app_bundle() -> None:
     assert "Open Pocket Stage in Xcode.command" in DMG_SCRIPT
     assert "Pocket Stage iPhone setup kit contains a symbolic link" in DMG_SCRIPT
     assert "-format UDZO" in DMG_SCRIPT
-    assert 'temporary_dmg="${output_dmg}.tmp.$$"' in DMG_SCRIPT
+    assert 'temporary_dmg="${output_dmg}.tmp.$$.dmg"' in DMG_SCRIPT
     assert "hdiutil reported a busy resource; retrying" in DMG_SCRIPT
     assert 'mv -- "$temporary_dmg" "$output_dmg"' in DMG_SCRIPT
     assert 'hdiutil verify "$output_dmg"' in DMG_SCRIPT

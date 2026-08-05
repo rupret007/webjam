@@ -98,7 +98,10 @@ output_parent=$(dirname "$output_dmg")
 
 stage_root=$(mktemp -d "${TMPDIR:-/tmp}/webjam-dmg.XXXXXX")
 image_complete=0
-temporary_dmg="${output_dmg}.tmp.$$"
+# Keep the temporary path's .dmg suffix: hdiutil appends .dmg when it is
+# omitted, which would otherwise leave verification looking at the wrong
+# filename on a successful build.
+temporary_dmg="${output_dmg}.tmp.$$.dmg"
 cleanup() {
   rm -rf -- "$stage_root"
   rm -f -- "$temporary_dmg"
