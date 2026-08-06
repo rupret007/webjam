@@ -66,11 +66,96 @@ expiry, downgrade, privacy, and four-platform frozen-package proof. The new
 channel must remain non-Latest and must not alter historical sequence-4 or
 sequence-5 bytes or either desktop release.
 
-The exact v3 preparation commit and publication commands are pinned in the
-follow-up release-control commit after the version/URL change receives its
-stable local object ID. Do not create or push a component tag, generate signed
-bytes, or publish the prerelease before that pin is reviewed and the user gives
-explicit approval.
+### Prepared v3 anchor — not yet tagged or published
+
+The reviewed v3 preparation object is
+`b1de2d826afe01d6696677b14c2dd5efafa87b5b`. It reports WebJam 0.22.5, selects
+the fixed `jamulus-components-v3` URL, requires sequence 6 for promotion, and
+descends from both sealed component histories. The intended
+`jamulus-components-v3` tag is lightweight and must point to that exact commit.
+The following release-control commit pins the same object in the promotion
+workflow. A mismatch or an existing remote tag/release stops the transition.
+
+No component tag, signed sequence-6 bytes, or v3 release is created by source
+preparation. Each external mutation below requires explicit user approval.
+
+1. Push the reviewed release-prep history to `master`, then require green source
+   CI on the final commit. Verify the prepared anchor remains its ancestor and
+   that neither the tag nor release already exists.
+2. After separate tag approval, create the lightweight tag at the exact anchor,
+   verify its object type is `commit`, and push only that new tag:
+
+   ```bash
+   set -euo pipefail
+   v3_anchor=b1de2d826afe01d6696677b14c2dd5efafa87b5b
+   git merge-base --is-ancestor "$v3_anchor" origin/master
+   test -z "$(git ls-remote --refs origin refs/tags/jamulus-components-v3)"
+   git tag jamulus-components-v3 "$v3_anchor"
+   test "$(git cat-file -t refs/tags/jamulus-components-v3)" = commit
+   test "$(git rev-parse refs/tags/jamulus-components-v3)" = "$v3_anchor"
+   git push origin refs/tags/jamulus-components-v3
+   ```
+
+3. On the trusted release workstation, verify the owner-private signing key as
+   a regular non-symlink file with mode `0600` and confirm it matches embedded
+   key ID `webjam-component-2026-07`. Generate sequence 6 exactly once into a
+   new private evidence directory. Never print, copy, upload, or log the key:
+
+   ```bash
+   set -euo pipefail
+   v3_anchor=b1de2d826afe01d6696677b14c2dd5efafa87b5b
+   key="$HOME/.config/webjam-release/component-catalog-ed25519-private.pem"
+   output_directory="$HOME/private-webjam-evidence/catalog-sequence-6-v0225"
+   catalog="$output_directory/WebJam-Jamulus-components-v1.json"
+   test -f "$key" && test ! -L "$key"
+   test "$(stat -f '%Lp' "$key" 2>/dev/null || stat -c '%a' "$key")" = 600
+   test "$(git show "$v3_anchor:webjam_qt/__init__.py" | \
+     sed -n 's/^__version__ = "\([0-9.]*\)"$/\1/p')" = 0.22.5
+   git diff --quiet "$v3_anchor" HEAD -- \
+     core/jamulus_compatibility.py tools/create_jamulus_component_catalog.py
+   test ! -e "$output_directory"
+   mkdir -m 700 "$output_directory"
+   .venv/bin/python -m tools.create_jamulus_component_catalog \
+     --sequence 6 \
+     --validity-days 30 \
+     --private-key "$key" \
+     --output "$catalog"
+   .venv/bin/python -m tools.verify_jamulus_component_catalog \
+     --webjam-version 0.22.5 \
+     --minimum-sequence 6 \
+     "$catalog" > "$output_directory/verification.json"
+   jq -e \
+     '.sequence == 6 and .webjam_version == "0.22.5" and .component_count == 8' \
+     "$output_directory/verification.json" >/dev/null
+   shasum -a 256 "$catalog" > "$output_directory/envelope-sha256.txt"
+   ```
+
+4. Inspect and retain the private verification result. Require exactly eight
+   official Jamulus 3.12.3 client/server entries, no HEADLESS role, an expiry
+   no more than 31 days away, the embedded signer fingerprint, and no path,
+   meeting, credential, or environment data. Different sequence-6 bytes from
+   any prior attempt are equivocation and stop the release.
+5. After separate component-publication approval, publish exactly one asset as
+   a non-Latest prerelease on the already-pushed lightweight tag:
+
+   ```bash
+   gh release create jamulus-components-v3 "$catalog" \
+     --repo rupret007/webjam \
+     --verify-tag \
+     --prerelease \
+     --latest=false \
+     --title "WebJam Jamulus component catalog v3" \
+     --notes "Signed, expiring Jamulus compatibility catalog sequence 6 for exact WebJam v0.22.5. This is not a desktop release."
+   ```
+
+6. Download the public asset into a second new directory through the GitHub API.
+   Require one release, one non-empty asset, `draft=false`, `prerelease=true`,
+   exclusion from `/releases/latest`, the exact lightweight anchor, matching
+   GitHub/local SHA-256, signature-valid sequence 6, exact WebJam 0.22.5, exact
+   eight-entry inventory, and future expiry. Record release/asset IDs, digests,
+   catalog hashes, signer fingerprint, and expiry in a new follow-up commit.
+7. Only after that public evidence and all four frozen packages pass the fixed
+   v3 URL may the annotated desktop tag and verified Latest promotion proceed.
 
 ## Historical mutable-channel renewal procedure: sequence N to N+1
 

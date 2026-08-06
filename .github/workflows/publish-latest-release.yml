@@ -19,7 +19,7 @@ concurrency:
 env:
   V0220_TAG_OBJECT: 663075ec53aab36cc9de5d1b84aaec0b3733290b
   V0220_TAG_COMMIT: bf64c1165486a654d923c4e3cb6ede69e6458320
-  COMPONENT_CHANNEL_ANCHOR: fd1d8cbd80e76cdfb257f26894de452f191e15fa
+  COMPONENT_CHANNEL_ANCHOR: b1de2d826afe01d6696677b14c2dd5efafa87b5b
   COMPONENT_CHANNEL_TAG: jamulus-components-v3
   MINIMUM_COMPONENT_CATALOG_SEQUENCE: 6
 
@@ -309,7 +309,7 @@ jobs:
           component_tag_commit="$(git rev-parse "${component_tag_ref}^{commit}")"
           if [[ "$component_tag_object" != "$COMPONENT_CHANNEL_ANCHOR" || \
                 "$component_tag_commit" != "$COMPONENT_CHANNEL_ANCHOR" ]]; then
-            echo "Component channel tag moved from its immutable v0.22.0 anchor." >&2
+            echo "Component channel tag moved from its reviewed immutable anchor." >&2
             exit 1
           fi
           if ! git merge-base --is-ancestor \

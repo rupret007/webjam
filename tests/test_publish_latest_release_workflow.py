@@ -279,7 +279,7 @@ def test_component_channel_tag_is_immutable_and_ancestry_bounded() -> None:
         'component_tag_commit="$(git rev-parse "${component_tag_ref}^{commit}")"'
         in SMOKE_JOB
     )
-    anchor = "fd1d8cbd80e76cdfb257f26894de452f191e15fa"
+    anchor = "b1de2d826afe01d6696677b14c2dd5efafa87b5b"
     assert f"COMPONENT_CHANNEL_ANCHOR: {anchor}" in WORKFLOW_HEADER
     assert '"$component_tag_object" != "$COMPONENT_CHANNEL_ANCHOR"' in SMOKE_JOB
     assert '"$component_tag_commit" != "$COMPONENT_CHANNEL_ANCHOR"' in SMOKE_JOB
