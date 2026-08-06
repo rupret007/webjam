@@ -358,8 +358,13 @@ class TestConductorPracticeEntry(unittest.TestCase):
         c = self.controller
         c.bridge.jamulus_state = "Running"
         c.bridge.launch_practice_session = MagicMock()
-        c._on_practice_requested()
+        with patch.object(
+            c,
+            "_feedback_guard_allows_audio_start",
+        ) as feedback_guard:
+            c._on_practice_requested()
         c.bridge.launch_practice_session.assert_not_called()
+        feedback_guard.assert_not_called()
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
         self.assertTrue(any("End the current session" in m for m in msgs), msgs)
 

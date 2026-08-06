@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
+import threading
 from unittest import mock
 
 from core.audio_feedback_guard import AudioFeedbackRisk
@@ -81,6 +82,58 @@ def test_system_default_selector_resolves_current_coreaudio_defaults(
         result = bridge.prelaunch_audio_feedback_assessment()
 
     assert result.risk is AudioFeedbackRisk.BUILTIN_MIC_AND_SPEAKERS
+
+
+def test_missing_first_run_profile_uses_current_coreaudio_defaults(
+    tmp_path: Path,
+) -> None:
+    manager = JamulusNativeProfileManager(home=tmp_path, platform="darwin")
+    bridge = BridgeService.__new__(BridgeService)
+    bridge._native_profile_manager = manager
+    bridge._active_native_profile = None
+    bridge._last_resolved_client_component = None
+    scan = CoreAudioScan(
+        devices=(
+            _device("mic", "MacBook Pro Microphone", inputs=2),
+            _device("speakers", "MacBook Pro Speakers", outputs=2),
+        ),
+        default_input_uid="mic",
+        default_output_uid="speakers",
+    )
+
+    with mock.patch("services.bridge_service.sys.platform", "darwin"), mock.patch(
+        "core.coreaudio_devices.scan_coreaudio_devices",
+        return_value=scan,
+    ):
+        result = bridge.prelaunch_audio_feedback_assessment()
+
+    assert result.risk is AudioFeedbackRisk.BUILTIN_MIC_AND_SPEAKERS
+
+
+def test_slow_coreaudio_scan_is_bounded_and_remains_unknown(tmp_path: Path) -> None:
+    bridge = _bridge_with_profile(tmp_path, "System Default In/Out Devices")
+    release_scan = threading.Event()
+    scan_finished = threading.Event()
+
+    def blocked_scan() -> CoreAudioScan:
+        try:
+            release_scan.wait(timeout=1.0)
+            return CoreAudioScan(error="late")
+        finally:
+            scan_finished.set()
+
+    with mock.patch("services.bridge_service.sys.platform", "darwin"), mock.patch(
+        "core.coreaudio_devices.scan_coreaudio_devices",
+        side_effect=blocked_scan,
+    ), mock.patch(
+        "services.bridge_service._AUDIO_FEEDBACK_SCAN_TIMEOUT_SECONDS",
+        0.01,
+    ):
+        result = bridge.prelaunch_audio_feedback_assessment()
+
+    release_scan.set()
+    assert scan_finished.wait(timeout=1.0)
+    assert result.risk is AudioFeedbackRisk.UNKNOWN
 
 
 def test_external_system_default_output_does_not_warn(tmp_path: Path) -> None:

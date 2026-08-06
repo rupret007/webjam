@@ -76,6 +76,41 @@ _REFERENCE_HEADLESS_MANIFEST_TARGET = (
 )
 _HASH_CHUNK_BYTES = 1024 * 1024
 _EMBEDDED_JAMULUS_VERSION = "3.12.2"
+_AUDIO_FEEDBACK_SCAN_TIMEOUT_SECONDS = 0.5
+_AUDIO_FEEDBACK_SCAN_LOCK = threading.Lock()
+
+
+def _bounded_audio_feedback_scan(scanner: Callable[[], object]) -> object | None:
+    """Run one advisory CoreAudio scan without ever holding the UI open.
+
+    A misbehaving HAL driver can block a device query. The worker is daemonized
+    and globally serialized so a timed-out scan cannot create an unbounded
+    collection of additional scans on repeated clicks. Timeout and failure
+    both mean unknown; neither is evidence that the route is safe.
+    """
+
+    results: list[object | None] = []
+
+    def worker() -> None:
+        if not _AUDIO_FEEDBACK_SCAN_LOCK.acquire(blocking=False):
+            results.append(None)
+            return
+        try:
+            try:
+                results.append(scanner())
+            except Exception:  # noqa: BLE001 - advisory evidence stays optional
+                results.append(None)
+        finally:
+            _AUDIO_FEEDBACK_SCAN_LOCK.release()
+
+    thread = threading.Thread(
+        target=worker,
+        daemon=True,
+        name="webjam-audio-feedback-scan",
+    )
+    thread.start()
+    thread.join(_AUDIO_FEEDBACK_SCAN_TIMEOUT_SECONDS)
+    return results[0] if results else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1758,6 +1793,7 @@ class BridgeService:
         try:
             from core.coreaudio_devices import (
                 CoreAudioDirection,
+                CoreAudioScan,
                 scan_coreaudio_devices,
             )
             from core.jamulus_profile import read_native_audio_device_selector
@@ -1770,10 +1806,14 @@ class BridgeService:
                 or _EMBEDDED_JAMULUS_VERSION
             )
             plan = self._native_profile_manager.plan(jamulus_version=version)
-            selector = read_native_audio_device_selector(plan)
-            if selector.uses_system_defaults:
-                scan = scan_coreaudio_devices()
-                if not scan.available:
+            selector = (
+                read_native_audio_device_selector(plan)
+                if plan.profile_exists
+                else None
+            )
+            if selector is None or selector.uses_system_defaults:
+                scan = _bounded_audio_feedback_scan(scan_coreaudio_devices)
+                if not isinstance(scan, CoreAudioScan) or not scan.available:
                     return AudioFeedbackAssessment()
 
                 def default_name(direction: CoreAudioDirection) -> str:

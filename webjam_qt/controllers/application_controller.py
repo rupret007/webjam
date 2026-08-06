@@ -8741,6 +8741,11 @@ class ApplicationController(QObject):
                 ms=6000,
             )
             return
+        if self._is_jamulus_running():
+            # Let the practice coordinator show its ordinary live-session
+            # guidance. There is no prospective launch to warn about yet.
+            self.audio.on_practice_requested()
+            return
         if not self._feedback_guard_allows_audio_start():
             self.window.flash_message(
                 "Connect wired headphones or an audio interface before "

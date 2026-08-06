@@ -6,7 +6,7 @@ from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
 from core.band_check import BandCheckMode  # noqa: E402
 from core.jamulus_profile import (  # noqa: E402
@@ -63,6 +63,41 @@ def test_live_end_action_never_opens_a_pre_session_gate() -> None:
 
     controller._on_launch_audio.assert_called_once_with()
     controller.start_session_or_band_check.assert_not_called()
+
+
+def test_feedback_warning_is_default_safe_and_requires_explicit_override() -> None:
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Feedback Guard",
+    )
+    controller = ApplicationController.__new__(ApplicationController)
+    controller.window = window
+    captured: dict[str, object] = {}
+
+    def inspect_and_cancel(box: QMessageBox) -> int:
+        start_anyway = box.button(QMessageBox.StandardButton.Yes)
+        go_back = box.button(QMessageBox.StandardButton.Cancel)
+        captured.update(
+            start_text=start_anyway.text(),
+            back_text=go_back.text(),
+            default_is_back=box.defaultButton() is go_back,
+            escape_is_back=box.escapeButton() is go_back,
+        )
+        return int(QMessageBox.StandardButton.Cancel)
+
+    try:
+        with mock.patch.object(QMessageBox, "exec", inspect_and_cancel):
+            assert controller._confirm_builtin_audio_feedback_risk() is False
+    finally:
+        window.close()
+
+    assert captured == {
+        "start_text": "Start Anyway",
+        "back_text": "Go Back",
+        "default_is_back": True,
+        "escape_is_back": True,
+    }
 
 
 def test_existing_manual_band_check_is_promoted_without_losing_progress() -> None:
