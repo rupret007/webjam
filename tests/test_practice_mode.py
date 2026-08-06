@@ -338,6 +338,22 @@ class TestConductorPracticeEntry(unittest.TestCase):
         c._on_practice_requested()
         c.bridge.launch_practice_session.assert_called_once()
 
+    def test_practice_feedback_warning_decline_blocks_launch(self):
+        c = self.controller
+        c.bridge.launch_practice_session = MagicMock(return_value=True)
+        with patch.object(
+            c,
+            "_feedback_guard_allows_audio_start",
+            return_value=False,
+        ):
+            c._on_practice_requested()
+
+        c.bridge.launch_practice_session.assert_not_called()
+        self.assertIn(
+            "headphones",
+            c.window.flash_message.call_args.args[0],
+        )
+
     def test_practice_refused_while_running(self):
         c = self.controller
         c.bridge.jamulus_state = "Running"

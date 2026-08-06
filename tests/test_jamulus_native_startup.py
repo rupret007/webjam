@@ -12,6 +12,10 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from core.settings import AppSettings
+from core.audio_feedback_guard import (
+    AudioFeedbackAssessment,
+    AudioFeedbackRisk,
+)
 from core.session_conductor import (
     EvidenceState,
     FailureDisposition,
@@ -515,6 +519,72 @@ def test_native_launch_requests_the_bounded_human_setup_window() -> None:
         100.0 + NATIVE_SOUND_SETUP_GRACE_SECONDS
     )
     controller._connection_timer.start.assert_called_once_with()
+
+
+def test_builtin_feedback_warning_decline_blocks_native_launch() -> None:
+    controller = _controller(hosting=True)
+    controller._startup_attempt = {
+        "generation": 3,
+        "role": "host",
+        "phase": "launching_client",
+        "cancel_event": threading.Event(),
+    }
+    controller._feedback_guard_allows_audio_start = mock.Mock(return_value=False)
+    controller._fail_startup_journey = mock.Mock()
+
+    controller._launch_native_jamulus_for_startup(3)
+
+    controller.bridge.launch_jamulus.assert_not_called()
+    controller._fail_startup_journey.assert_called_once()
+    assert "headphones" in controller._fail_startup_journey.call_args.args[1]
+
+
+def test_feedback_assessment_requires_explicit_confirmation_only_for_risk() -> None:
+    controller = _controller(hosting=True)
+    controller._confirm_builtin_audio_feedback_risk = mock.Mock(return_value=False)
+    controller.bridge.prelaunch_audio_feedback_assessment = mock.Mock(
+        return_value=AudioFeedbackAssessment(
+            AudioFeedbackRisk.BUILTIN_MIC_AND_SPEAKERS
+        )
+    )
+
+    assert controller._feedback_guard_allows_audio_start() is False
+    controller._confirm_builtin_audio_feedback_risk.assert_called_once_with()
+
+    controller._confirm_builtin_audio_feedback_risk.reset_mock()
+    controller.bridge.prelaunch_audio_feedback_assessment.return_value = (
+        AudioFeedbackAssessment(AudioFeedbackRisk.NOT_DETECTED)
+    )
+    assert controller._feedback_guard_allows_audio_start() is True
+    controller._confirm_builtin_audio_feedback_risk.assert_not_called()
+
+
+def test_feedback_guard_rechecks_on_a_fresh_retry() -> None:
+    controller = _controller(hosting=False)
+    controller._is_jamulus_running = mock.Mock(return_value=False)
+    controller._accept_explicit_primary_launch = mock.Mock()
+    controller._schedule_startup_poll = mock.Mock()
+    controller._fail_startup_journey = mock.Mock()
+    controller._feedback_guard_allows_audio_start = mock.Mock(
+        side_effect=(False, True)
+    )
+
+    for generation in (8, 9):
+        controller._startup_attempt = {
+            "generation": generation,
+            "role": "guest",
+            "phase": "launching_client",
+            "cancel_event": threading.Event(),
+            "explicit_launch_authorization_generation": 0,
+        }
+        with mock.patch(
+            "webjam_qt.controllers.application_controller.sys.platform",
+            "linux",
+        ):
+            controller._launch_native_jamulus_for_startup(generation)
+
+    assert controller._feedback_guard_allows_audio_start.call_count == 2
+    controller.bridge.launch_jamulus.assert_called_once_with(manual=True)
 
 
 def test_non_macos_native_launch_keeps_ordinary_connection_timeout() -> None:

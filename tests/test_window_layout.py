@@ -7,12 +7,13 @@ anywhere, including headless CI.
 from __future__ import annotations
 
 import pytest
-from PySide6.QtCore import QRect
+from PySide6.QtCore import QRect, QSize
 
 from webjam_qt.controllers.window_layout import (
     DEFAULT_WEBJAM_FRACTION,
     MINIMUM_WEBEX_WIDTH,
     MINIMUM_WEBJAM_WIDTH,
+    centered_window_rect,
     split_screen,
 )
 
@@ -89,6 +90,23 @@ def test_empty_available_area_places_nothing() -> None:
 
     assert layout.webjam.isEmpty()
     assert layout.places_webex is False
+
+
+def test_centered_window_rect_stays_inside_offset_available_geometry() -> None:
+    available = QRect(1920, 24, 1440, 876)
+
+    placed = centered_window_rect(available, QSize(620, 540))
+
+    assert placed == QRect(2330, 192, 620, 540)
+    assert available.contains(placed)
+
+
+def test_centered_window_rect_bounds_an_oversized_dialog() -> None:
+    available = QRect(-1280, 0, 1280, 720)
+
+    placed = centered_window_rect(available, QSize(2000, 900))
+
+    assert placed == available
 
 
 @pytest.mark.parametrize(

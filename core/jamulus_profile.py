@@ -67,6 +67,20 @@ class NativeProfileAccess(str, Enum):
     WEBJAM_READABLE = "webjam_readable"
 
 
+@dataclass(frozen=True, slots=True)
+class NativeAudioDeviceSelector:
+    """One validated Jamulus selector without retaining it beyond this read."""
+
+    input_name: str = ""
+    output_name: str = ""
+    uses_system_defaults: bool = False
+
+    def __post_init__(self) -> None:
+        explicit = bool(self.input_name and self.output_name)
+        if explicit == bool(self.uses_system_defaults):
+            raise ValueError("selector must be explicit or system-default")
+
+
 class StartupRole(str, Enum):
     """The only two roles that can reuse startup readiness."""
 
@@ -731,9 +745,9 @@ class JamulusNativeProfileManager:
             "again."
         ) from None
 
-def read_native_audio_device_names(
+def read_native_audio_device_selector(
     plan: JamulusNativeProfilePlan,
-) -> tuple[str, str]:
+) -> NativeAudioDeviceSelector:
     """Read the active Jamulus-owned CoreAudio selector without persisting it.
 
     This is a narrow optional consistency check for the WebJam-owned profile
@@ -783,6 +797,8 @@ def read_native_audio_device_names(
             encoded.encode("ascii"),
             validate=True,
         ).decode("utf-8")
+        if selector.casefold() == "system default in/out devices".casefold():
+            return NativeAudioDeviceSelector(uses_system_defaults=True)
         prefix = "in: "
         separator = "/out: "
         if not selector.startswith(prefix) or selector.count(separator) != 1:
@@ -808,7 +824,26 @@ def read_native_audio_device_names(
         raise JamulusNativeProfileError(
             "WebJam couldn't verify the primary Jamulus audio route."
         ) from None
-    return input_name, output_name
+    return NativeAudioDeviceSelector(
+        input_name=input_name,
+        output_name=output_name,
+    )
+
+
+def read_native_audio_device_names(
+    plan: JamulusNativeProfilePlan,
+) -> tuple[str, str]:
+    """Return explicit names for live route proof, rejecting default aliases."""
+
+    try:
+        selector = read_native_audio_device_selector(plan)
+        if selector.uses_system_defaults:
+            raise ValueError("system defaults are not explicit route proof")
+    except (JamulusNativeProfileError, ValueError):
+        raise JamulusNativeProfileError(
+            "WebJam couldn't verify the primary Jamulus audio route."
+        ) from None
+    return selector.input_name, selector.output_name
 
 
 class StartupReadinessStore:

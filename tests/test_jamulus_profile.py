@@ -32,6 +32,7 @@ from core.jamulus_profile import (
     StartupServerPhase,
     default_jamulus_version_probe,
     native_profile_fingerprint,
+    read_native_audio_device_selector,
     read_native_audio_device_names,
 )
 
@@ -256,6 +257,24 @@ def test_macos_read_native_audio_device_names_uses_webjam_owned_profile(
         "Built-in Microphone",
         "Built-in Output",
     )
+
+
+def test_system_default_selector_is_valid_but_not_explicit_route_proof(
+    tmp_path: Path,
+) -> None:
+    plan = _manager(tmp_path).plan(jamulus_version=PINNED_JAMULUS_VERSION)
+    selector = base64.b64encode(b"System Default In/Out Devices").decode("ascii")
+    plan.profile_path.write_text(
+        f"<client><auddev_base64>{selector}</auddev_base64></client>",
+        encoding="utf-8",
+    )
+
+    parsed = read_native_audio_device_selector(plan)
+    assert parsed.uses_system_defaults is True
+    assert parsed.input_name == ""
+    assert parsed.output_name == ""
+    with pytest.raises(JamulusNativeProfileError):
+        read_native_audio_device_names(plan)
 
 
 def test_device_name_reader_rejects_even_forged_jamulus_container_plan(

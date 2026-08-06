@@ -129,6 +129,30 @@ def test_styled_reference_track_controls_remain_reachable_at_compact_size() -> N
         dialog.close()
 
 
+def test_unloaded_transport_buttons_share_one_disabled_visual_state() -> None:
+    dialog = ReferenceTrackDialog()
+    try:
+        dialog.setStyleSheet(load_stylesheet())
+        dialog.set_snapshot(_snapshot(_State.IDLE))
+        dialog.show()
+        _app.processEvents()
+
+        transport = (
+            dialog._play,
+            dialog._pause,
+            dialog._restart,
+            dialog._stop,
+        )
+        assert all(not button.isEnabled() for button in transport)
+        fills = {
+            button.grab().toImage().pixelColor(button.width() // 2, 4).name()
+            for button in transport
+        }
+        assert len(fills) == 1, f"disabled transport fills differ: {fills}"
+    finally:
+        dialog.close()
+
+
 def test_unavailable_route_allows_loading_but_keeps_playback_fail_closed() -> None:
     dialog = ReferenceTrackDialog()
     try:

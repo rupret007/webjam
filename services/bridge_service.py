@@ -1739,6 +1739,67 @@ class BridgeService:
         self._active_native_profile = refreshed
         return refreshed
 
+    def prelaunch_audio_feedback_assessment(self):
+        """Return an advisory, name-free assessment of the saved Mac route.
+
+        Jamulus remains the device owner. This read-only check warns only when
+        its WebJam-owned profile clearly selects a built-in microphone and
+        built-in speakers. Unsupported platforms and uncertain evidence stay
+        unknown and never become a false safety claim.
+        """
+
+        from core.audio_feedback_guard import (
+            AudioFeedbackAssessment,
+            assess_audio_feedback_risk,
+        )
+
+        if sys.platform != "darwin" or self._native_profile_manager is None:
+            return AudioFeedbackAssessment()
+        try:
+            from core.coreaudio_devices import (
+                CoreAudioDirection,
+                scan_coreaudio_devices,
+            )
+            from core.jamulus_profile import read_native_audio_device_selector
+
+            active = self._active_native_profile
+            component = getattr(self, "_last_resolved_client_component", None)
+            version = str(
+                getattr(active, "jamulus_version", "")
+                or getattr(component, "version", "")
+                or _EMBEDDED_JAMULUS_VERSION
+            )
+            plan = self._native_profile_manager.plan(jamulus_version=version)
+            selector = read_native_audio_device_selector(plan)
+            if selector.uses_system_defaults:
+                scan = scan_coreaudio_devices()
+                if not scan.available:
+                    return AudioFeedbackAssessment()
+
+                def default_name(direction: CoreAudioDirection) -> str:
+                    uid = scan.default_uid(direction)
+                    matches = [
+                        device
+                        for device in scan.devices
+                        if uid
+                        and device.uid == uid
+                        and device.supports(direction)
+                    ]
+                    return matches[0].name if len(matches) == 1 else ""
+
+                input_name = default_name(CoreAudioDirection.INPUT)
+                output_name = default_name(CoreAudioDirection.OUTPUT)
+            else:
+                input_name = selector.input_name
+                output_name = selector.output_name
+            return assess_audio_feedback_risk(input_name, output_name)
+        except Exception as exc:  # noqa: BLE001 - advisory evidence is optional
+            LOGGER.debug(
+                "Prelaunch audio feedback assessment was unavailable (%s).",
+                type(exc).__name__,
+            )
+            return AudioFeedbackAssessment()
+
     @property
     def jamulus_foreground_reason_code(self) -> str:
         """Return the last bounded foreground result without process identity."""

@@ -337,6 +337,16 @@ def test_v2_guest_peer_waits_for_post_gate_audio_start(tmp_path) -> None:
         )
     try:
         guest.start.assert_not_called()
+        controller.audio.on_launch_toggle = mock.Mock(return_value=True)
+        with mock.patch.object(
+            controller,
+            "_feedback_guard_allows_audio_start",
+            return_value=False,
+        ):
+            controller._on_launch_audio()
+        controller.audio.on_launch_toggle.assert_not_called()
+        guest.start.assert_not_called()
+
         events: list[str] = []
         guest.start.side_effect = lambda: events.append("peer")
 

@@ -192,6 +192,12 @@ QPushButton#GhostButton:checked, QToolButton#GhostButton:checked {
     border-color: ${COLOR_ACCENT_PRIMARY};
 }
 
+QPushButton#GhostButton:disabled, QToolButton#GhostButton:disabled {
+    background-color: ${COLOR_BG_PANEL};
+    color: ${COLOR_TEXT_MUTED};
+    border-color: ${COLOR_BORDER_SUBTLE};
+}
+
 QPushButton#QuietButton {
     background-color: transparent;
     color: ${COLOR_TEXT_SECONDARY};

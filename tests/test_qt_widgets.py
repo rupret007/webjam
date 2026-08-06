@@ -1156,6 +1156,57 @@ class TestConductorWindow(unittest.TestCase):
             if not target.startswith("macos-"):
                 self.assertNotIn("Apple-notarized", body)
 
+    def test_about_uses_parentless_screen_executor(self):
+        w = self._window()
+        from unittest import mock
+
+        with mock.patch.object(
+            w,
+            "_exec_message_box_on_screen",
+            return_value=0,
+        ) as execute:
+            w.show_about()
+
+        box = execute.call_args.args[0]
+        try:
+            self.assertIsNone(box.parent())
+            # The executor, not Cocoa's parent-sheet placement, owns final
+            # modality and screen clamping. Prove About did not regain the
+            # off-screen main window as its native parent.
+            execute.assert_called_once_with(box)
+        finally:
+            box.close()
+
+    def test_message_box_executor_is_application_modal_and_on_screen(self):
+        w = self._window()
+        from unittest import mock
+
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        from PySide6.QtWidgets import QMessageBox
+
+        box = QMessageBox()
+        box.setText("Visible package information")
+        with mock.patch(
+            "PySide6.QtWidgets.QMessageBox.exec",
+            return_value=0,
+        ), mock.patch(
+            "webjam_qt.windows.conductor_window.QTimer.singleShot",
+            side_effect=lambda _delay, callback: callback(),
+        ):
+            w._exec_message_box_on_screen(box)
+
+        screen = QGuiApplication.primaryScreen()
+        try:
+            self.assertEqual(
+                box.windowModality(),
+                Qt.WindowModality.ApplicationModal,
+            )
+            if screen is not None:
+                self.assertTrue(screen.availableGeometry().contains(box.geometry()))
+        finally:
+            box.close()
+
     def test_fullscreen_toggle_roundtrip(self):
         w = self._window()
         # just ensure the methods exist and don't raise

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import QRect
+from PySide6.QtCore import QRect, QSize
 
 
 # WebJam owns the mixer, transport, and take list; the meeting only needs to
@@ -87,3 +87,21 @@ def split_screen(
         QRect(left, top, webjam_width, height),
         QRect(left + webjam_width, top, webex_width, height),
     )
+
+
+def centered_window_rect(available: QRect, requested: QSize) -> QRect:
+    """Return a visible, centered top-level window rectangle.
+
+    Native macOS sheets follow their parent, including when a stale saved
+    window position leaves that parent outside every connected display. Help
+    and About use this pure geometry helper to remain entirely inside the
+    chosen screen's available area.
+    """
+
+    if available.isEmpty():
+        return QRect()
+    width = min(available.width(), max(1, int(requested.width())))
+    height = min(available.height(), max(1, int(requested.height())))
+    left = available.x() + (available.width() - width) // 2
+    top = available.y() + (available.height() - height) // 2
+    return QRect(left, top, width, height)

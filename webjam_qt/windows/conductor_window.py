@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QCloseEvent, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFrame,
@@ -487,14 +487,14 @@ class ConductorWindow(QMainWindow):
                 f"{reset_shortcut} — Reset every fader to 0 dB<br>"
                 "F11 / Esc — Enter / leave full screen"
             )
-        box = QMessageBox(self)
+        box = QMessageBox()
         box.setWindowTitle("WebJam Help")
         box.setTextFormat(Qt.TextFormat.RichText)
         box.setText(body)
         from webjam_qt.theme.brand import render_brand_pixmap
 
         box.setIconPixmap(render_brand_pixmap(64))
-        box.exec()
+        self._exec_message_box_on_screen(box)
 
     def show_about(self) -> None:
         """Show privacy-safe package identity and the candidate trust boundary."""
@@ -532,7 +532,7 @@ class ConductorWindow(QMainWindow):
             "<b>Trust:</b> Private test candidate<br><br>"
             f"{trust_detail}"
         )
-        box = QMessageBox(self)
+        box = QMessageBox()
         box.setWindowTitle("About WebJam")
         box.setTextFormat(Qt.TextFormat.RichText)
         box.setText(body)
@@ -541,7 +541,42 @@ class ConductorWindow(QMainWindow):
         from webjam_qt.theme.brand import render_brand_pixmap
 
         box.setIconPixmap(render_brand_pixmap(64))
-        box.exec()
+        self._exec_message_box_on_screen(box)
+
+    def _exec_message_box_on_screen(self, box) -> int:
+        """Execute Help/About visibly even if the main window is off-screen."""
+
+        from webjam_qt.controllers.window_layout import centered_window_rect
+
+        box.setWindowModality(Qt.WindowModality.ApplicationModal)
+        box.ensurePolished()
+        box.adjustSize()
+
+        # Prefer the display that really contains WebJam. A stale geometry
+        # from a disconnected monitor has no screenAt() result, so fall back
+        # to the current primary display rather than attaching a Cocoa sheet
+        # to an unreachable parent.
+        screen = QGuiApplication.screenAt(self.frameGeometry().center())
+        if screen is None:
+            screen = QGuiApplication.primaryScreen()
+
+        def place_and_foreground() -> None:
+            if screen is not None:
+                target = centered_window_rect(
+                    screen.availableGeometry(),
+                    box.sizeHint().expandedTo(box.minimumSizeHint()),
+                )
+                if not target.isEmpty():
+                    box.resize(target.size())
+                    box.move(target.topLeft())
+            box.raise_()
+            box.activateWindow()
+
+        place_and_foreground()
+        # Cocoa may finish native window sizing only when exec() starts. Clamp
+        # once more on its first event-loop turn, then bring it forward.
+        QTimer.singleShot(0, place_and_foreground)
+        return int(box.exec())
 
     def fit_to_screen(self):
         """Snap WebJam onto its share of the usable screen.

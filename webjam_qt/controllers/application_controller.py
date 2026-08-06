@@ -3762,6 +3762,14 @@ class ApplicationController(QObject):
             or bool(getattr(attempt.get("cancel_event"), "is_set", lambda: False)())
         ):
             return
+        if not self._feedback_guard_allows_audio_start():
+            self._fail_startup_journey(
+                generation,
+                "Connect wired headphones or an audio interface, then choose "
+                "Try Again. You can also explicitly choose Start Anyway in "
+                "the feedback warning.",
+            )
+            return
         attempt["phase"] = "native_sound_setup"
         if sys.platform == "darwin":
             attempt["native_setup_deadline"] = (
@@ -5515,6 +5523,20 @@ class ApplicationController(QObject):
             # failure into a legacy Jamulus launch.
             self._render_remote_fresh_invitation_hud()
             return
+        if (
+            not self._is_jamulus_running()
+            and not self._feedback_guard_allows_audio_start()
+        ):
+            self._transition_lifecycle(
+                SessionLifecyclePhase.FAILED_RECOVERABLE,
+                "Built-in microphone and speaker feedback warning declined",
+            )
+            self.window.session_hud.set_state(
+                "Connect headphones before starting",
+                "Choose wired headphones or an audio interface, then press "
+                "Start Session again.",
+            )
+            return
         if not self._is_jamulus_running():
             self._transition_lifecycle(
                 (
@@ -5578,6 +5600,55 @@ class ApplicationController(QObject):
                 # authorized this production-audio attempt and microphone
                 # preflight allows it, never at app boot or inside either gate.
                 guest.start()
+
+    def _feedback_guard_allows_audio_start(self) -> bool:
+        """Require consent only for a clearly detected built-in feedback route."""
+
+        provider = getattr(
+            self.bridge,
+            "prelaunch_audio_feedback_assessment",
+            None,
+        )
+        if not callable(provider):
+            return True
+        try:
+            assessment = provider()
+        except Exception as exc:  # noqa: BLE001 - advisory evidence stays optional
+            LOGGER.debug(
+                "Audio feedback preflight was unavailable (%s).",
+                type(exc).__name__,
+            )
+            return True
+        if not bool(getattr(assessment, "should_warn", False)):
+            return True
+        return self._confirm_builtin_audio_feedback_risk()
+
+    def _confirm_builtin_audio_feedback_risk(self) -> bool:
+        """Show one non-persistent, default-safe confirmation."""
+
+        box = QMessageBox(self.window)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Prevent audio feedback")
+        box.setText("Use headphones before starting this jam")
+        box.setInformativeText(
+            "WebJam sees a built-in microphone and built-in speaker output. "
+            "Speakers can feed the band audio back into the microphone. "
+            "Connect wired headphones or an audio interface, or choose Start "
+            "Anyway if your output is already isolated. WebJam cannot verify "
+            "what you can hear."
+        )
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
+        )
+        start_anyway = box.button(QMessageBox.StandardButton.Yes)
+        go_back = box.button(QMessageBox.StandardButton.Cancel)
+        if start_anyway is not None:
+            start_anyway.setText("Start Anyway")
+        if go_back is not None:
+            go_back.setText("Go Back")
+        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        box.setEscapeButton(QMessageBox.StandardButton.Cancel)
+        return box.exec() == QMessageBox.StandardButton.Yes
 
     def _install_remote_invite_owner(self, owner: object) -> None:
         """Install the v3 host owner and arm loopback binding in memory only.
@@ -8668,6 +8739,13 @@ class ApplicationController(QObject):
                 "Wait for the current session cleanup to finish before "
                 "starting practice.",
                 ms=6000,
+            )
+            return
+        if not self._feedback_guard_allows_audio_start():
+            self.window.flash_message(
+                "Connect wired headphones or an audio interface before "
+                "starting practice.",
+                ms=7000,
             )
             return
         started = bool(self.audio.on_practice_requested())
