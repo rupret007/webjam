@@ -154,8 +154,40 @@ preparation. Each external mutation below requires explicit user approval.
    GitHub/local SHA-256, signature-valid sequence 6, exact WebJam 0.22.5, exact
    eight-entry inventory, and future expiry. Record release/asset IDs, digests,
    catalog hashes, signer fingerprint, and expiry in a new follow-up commit.
-7. Only after that public evidence and all four frozen packages pass the fixed
-   v3 URL may the annotated desktop tag and verified Latest promotion proceed.
+   Review that evidence diff and obtain separate approval before pushing the
+   follow-up commit to `master`.
+7. Wait for WebJam CI to succeed on that exact post-evidence `origin/master`
+   commit, including all four desktop builds. After separate explicit approval
+   for this read-only verification dispatch, run from exact `master`:
+
+   ```bash
+   gh workflow run verify-component-candidate.yml \
+     --repo rupret007/webjam \
+     --ref master \
+     -f source_run_id=<successful-master-ci-run-id> \
+     -f expected_sha=<exact-40-character-origin-master-sha>
+   ```
+
+   The workflow accepts no operator-supplied catalog tag, URL, version,
+   sequence, key, or trust path. It requires that run to be a successful push
+   CI run for exact current `master`, permits only the four named desktop
+   artifacts plus that SHA's Pocket Stage artifact, binds every artifact ID and
+   wrapper digest, and verifies immutable `jamulus-components-v3` sequence 6.
+   It records the size and SHA-256 of every contained release file. The DMG and
+   Windows Setup containers are inventory- and hash-bound but are not launched
+   by this gate; only the four portable ZIP packages are live-launched on their
+   native Ubuntu, Windows, Apple-silicon Mac, and Intel Mac runners.
+8. Require all four native jobs and the final read-only identity-revalidation
+   job to pass. If any source commit follows the evidence commit, discard this
+   proof, obtain a new green CI run, and dispatch it again. The proof must run
+   again on the post-evidence final master CI SHA without another source commit
+   between that proof and desktop tagging.
+   A CI run created before `verify-component-candidate.yml` landed cannot pass
+   the exact-current-master policy and is not eligible release evidence.
+9. Only after that public evidence and read-only fixed-v3 package proof pass may
+   the annotated desktop tag and verified Latest promotion proceed. Preserve
+   the successful run ID and all four bounded package summaries as evidence
+   before the annotated desktop tag.
 
 ## Historical mutable-channel renewal procedure: sequence N to N+1
 

@@ -1,0 +1,1022 @@
+name: Verify Component Candidate Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Exact successful master WebJam CI run ID whose packages will be tested
+        required: true
+        type: string
+      expected_sha:
+        description: Exact 40-character current master commit built by that run
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: verify-component-candidate-${{ inputs.expected_sha }}
+  cancel-in-progress: false
+
+env:
+  EXPECTED_WEBJAM_VERSION: 0.22.5
+  EXPECTED_CATALOG_SEQUENCE: 6
+  EXPECTED_JAMULUS_VERSION: 3.12.3
+  EXPECTED_COMPONENT_CATALOG_URL: https://github.com/rupret007/webjam/releases/download/jamulus-components-v3/WebJam-Jamulus-components-v1.json
+  COMPONENT_CHANNEL_TAG: jamulus-components-v3
+  COMPONENT_CHANNEL_ANCHOR: b1de2d826afe01d6696677b14c2dd5efafa87b5b
+
+jobs:
+  bind-candidate:
+    name: Bind exact master CI and immutable component catalog
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      source_run_id: ${{ steps.source.outputs.run_id }}
+      expected_sha: ${{ steps.source.outputs.expected_sha }}
+      artifact_bindings: ${{ steps.artifacts.outputs.bindings }}
+      catalog_sequence: ${{ steps.component.outputs.catalog_sequence }}
+      catalog_expires_at: ${{ steps.component.outputs.catalog_expires_at }}
+      catalog_envelope_sha256: ${{ steps.component.outputs.catalog_envelope_sha256 }}
+      catalog_payload_sha256: ${{ steps.component.outputs.catalog_payload_sha256 }}
+      signer_fingerprint_sha256: ${{ steps.component.outputs.signer_fingerprint_sha256 }}
+      component_release_id: ${{ steps.component.outputs.release_id }}
+      component_asset_id: ${{ steps.component.outputs.asset_id }}
+      component_asset_digest: ${{ steps.component.outputs.asset_digest }}
+      component_asset_size: ${{ steps.component.outputs.asset_size }}
+    steps:
+      - name: Checkout exact workflow source without persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind dispatch to exact current master and successful push CI
+        id: source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_RUN_ID: ${{ inputs.source_run_id }}
+          REQUESTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/master" ]]; then
+            echo "Candidate verification must be dispatched from master." >&2
+            exit 1
+          fi
+          if [[ ! "$REQUESTED_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+            echo "source_run_id must be one canonical positive integer." >&2
+            exit 1
+          fi
+          if [[ ! "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "expected_sha must be one lowercase 40-character commit ID." >&2
+            exit 1
+          fi
+
+          workflow_commit="$(git rev-parse HEAD)"
+          git fetch --no-tags origin \
+            "+refs/heads/master:refs/remotes/origin/master"
+          master_commit="$(git rev-parse refs/remotes/origin/master)"
+          [[ "$workflow_commit" == "$REQUESTED_SHA" ]]
+          [[ "$master_commit" == "$REQUESTED_SHA" ]]
+          [[ -z "$(git status --porcelain)" ]]
+
+          gh api \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml" \
+            > "$RUNNER_TEMP/ci-workflow.json"
+          jq -e '
+            .name == "WebJam CI"
+            and .path == ".github/workflows/ci.yml"
+            and .state == "active"
+            and (.id | type == "number")
+            and .id > 0
+          ' "$RUNNER_TEMP/ci-workflow.json" >/dev/null
+          ci_workflow_id="$(jq -r '.id' "$RUNNER_TEMP/ci-workflow.json")"
+
+          gh api \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$REQUESTED_RUN_ID" \
+            > "$RUNNER_TEMP/source-run.json"
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg sha "$REQUESTED_SHA" \
+            --argjson run_id "$REQUESTED_RUN_ID" \
+            --argjson workflow_id "$ci_workflow_id" \
+            '
+              .id == $run_id
+              and .workflow_id == $workflow_id
+              and .path == ".github/workflows/ci.yml"
+              and .event == "push"
+              and .head_branch == "master"
+              and .head_sha == $sha
+              and .status == "completed"
+              and .conclusion == "success"
+              and (.run_attempt | type == "number")
+              and .run_attempt >= 1
+              and .repository.full_name == $repository
+              and .head_repository.full_name == $repository
+            ' \
+            "$RUNNER_TEMP/source-run.json" >/dev/null
+
+          unset GH_TOKEN GITHUB_TOKEN
+          version_source="$(git show "${REQUESTED_SHA}:webjam_qt/__init__.py")"
+          packaged_version="$(sed -n \
+            's/^__version__ = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' \
+            <<<"$version_source")"
+          [[ "$packaged_version" == "$EXPECTED_WEBJAM_VERSION" ]]
+          python -I - <<'PY'
+          import ast
+          import os
+          from pathlib import Path
+
+          source = Path("services/jamulus_component_update.py").read_text(
+              encoding="utf-8"
+          )
+          tree = ast.parse(source)
+          values = []
+          for node in ast.walk(tree):
+              if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+                  continue
+              targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+              if not any(
+                  isinstance(target, ast.Name)
+                  and target.id == "DEFAULT_COMPONENT_CATALOG_URL"
+                  for target in targets
+              ):
+                  continue
+              values.append(ast.literal_eval(node.value))
+          if values != [os.environ["EXPECTED_COMPONENT_CATALOG_URL"]]:
+              raise SystemExit("Frozen source component-catalog URL is not exact.")
+          PY
+          echo "run_id=$REQUESTED_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "expected_sha=$REQUESTED_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Bind exactly four unexpired desktop artifacts
+        id: artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ steps.source.outputs.run_id }}
+          EXPECTED_SHA: ${{ steps.source.outputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          gh api \
+            --paginate \
+            --slurp \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100" \
+            > "$RUNNER_TEMP/source-artifact-pages.json"
+          jq -e \
+            --arg sha "$EXPECTED_SHA" \
+            --arg pocket_stage "webjam-pocket-stage-ios-setup-$EXPECTED_SHA" \
+            --argjson run_id "$SOURCE_RUN_ID" \
+            --argjson expected '[
+              "webjam-windows-x64",
+              "webjam-macos-arm64",
+              "webjam-macos-x64",
+              "webjam-linux-x64"
+            ]' \
+            '
+              [ .[].artifacts[] ] as $all
+              | [
+                $all[]
+                | select(.name as $name | $expected | index($name))
+              ] as $matches
+              | [ $all[] | select(.name == $pocket_stage) ] as $pocket_matches
+              | if (
+                  ($all | length) != 5
+                  or
+                  ($matches | length) != 4
+                  or ([$matches[].name] | sort) != ($expected | sort)
+                  or ([$matches[].name] | unique | length) != 4
+                  or ([$matches[].id] | unique | length) != 4
+                  or ([$matches[].digest] | unique | length) != 4
+                  or any($matches[];
+                    .expired != false
+                    or (.id | type != "number")
+                    or .id <= 0
+                    or (.size_in_bytes | type != "number")
+                    or .size_in_bytes <= 0
+                    or (.expires_at | type != "string")
+                    or (.expires_at | fromdateiso8601) <= now
+                    or (.digest | type != "string")
+                    or (.digest | test("^sha256:[0-9a-f]{64}$") | not)
+                    or .workflow_run.id != $run_id
+                    or .workflow_run.head_branch != "master"
+                    or .workflow_run.head_sha != $sha
+                  )
+                  or ($pocket_matches | length) != 1
+                  or any($pocket_matches[];
+                    .expired != false
+                    or (.id | type != "number")
+                    or .id <= 0
+                    or (.size_in_bytes | type != "number")
+                    or .size_in_bytes <= 0
+                    or (.expires_at | type != "string")
+                    or (.expires_at | fromdateiso8601) <= now
+                    or (.digest | type != "string")
+                    or (.digest | test("^sha256:[0-9a-f]{64}$") | not)
+                    or .workflow_run.id != $run_id
+                    or .workflow_run.head_branch != "master"
+                    or .workflow_run.head_sha != $sha
+                  )
+                ) then
+                  error("expected four desktop artifacts plus only Pocket Stage")
+                else
+                  [
+                    $matches[]
+                    | {
+                        name,
+                        id,
+                        digest,
+                        size_in_bytes,
+                        expires_at,
+                        source_run_id: $run_id,
+                        source_sha: $sha
+                      }
+                  ]
+                  | sort_by(.name)
+                end
+            ' \
+            "$RUNNER_TEMP/source-artifact-pages.json" \
+            > "$RUNNER_TEMP/artifact-bindings.json"
+          bindings="$(jq -c . "$RUNNER_TEMP/artifact-bindings.json")"
+          [[ "$(jq 'length' "$RUNNER_TEMP/artifact-bindings.json")" == 4 ]]
+          echo "bindings=$bindings" >> "$GITHUB_OUTPUT"
+
+      - name: Set up isolated catalog verifier
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install hash-locked catalog verifier dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install \
+            --disable-pip-version-check \
+            --require-hashes \
+            --only-binary=:all: \
+            --no-deps \
+            --requirement \
+            requirements-lock/component-catalog-verifier-linux-x64.txt
+          python -m pip check
+
+      - name: Verify immutable v3 release and signed sequence 6
+        id: component
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ steps.source.outputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          component_ref="refs/webjam-component-tags/$COMPONENT_CHANNEL_TAG"
+          git fetch --no-tags origin \
+            "refs/tags/${COMPONENT_CHANNEL_TAG}:${component_ref}"
+          [[ "$(git cat-file -t "$component_ref")" == commit ]]
+          component_tag_object="$(git rev-parse "$component_ref")"
+          component_tag_commit="$(git rev-parse "${component_ref}^{commit}")"
+          [[ "$component_tag_object" == "$COMPONENT_CHANNEL_ANCHOR" ]]
+          [[ "$component_tag_commit" == "$COMPONENT_CHANNEL_ANCHOR" ]]
+          [[ "$(git ls-remote --refs origin \
+            "refs/tags/$COMPONENT_CHANNEL_TAG" | awk 'NR == 1 {print $1}')" == \
+            "$COMPONENT_CHANNEL_ANCHOR" ]]
+          git merge-base --is-ancestor \
+            "$COMPONENT_CHANNEL_ANCHOR" "$EXPECTED_SHA"
+
+          gh api \
+            --paginate \
+            --slurp \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            > "$RUNNER_TEMP/public-release-pages.json"
+          jq -e \
+            --arg tag "$COMPONENT_CHANNEL_TAG" \
+            '
+              [ .[][] | select(.tag_name == $tag) ] as $matches
+              | if (
+                  ($matches | length) != 1
+                  or ($matches[0].id | type != "number")
+                  or $matches[0].id <= 0
+                  or $matches[0].name != "WebJam Jamulus component catalog v3"
+                  or $matches[0].draft != false
+                  or $matches[0].prerelease != true
+                  or $matches[0].immutable != true
+                  or ($matches[0].assets | length) != 1
+                  or $matches[0].assets[0].name != "WebJam-Jamulus-components-v1.json"
+                  or ($matches[0].assets[0].id | type != "number")
+                  or $matches[0].assets[0].id <= 0
+                  or $matches[0].assets[0].state != "uploaded"
+                  or ($matches[0].assets[0].size | type != "number")
+                  or $matches[0].assets[0].size <= 0
+                  or $matches[0].assets[0].size > 1048576
+                  or ($matches[0].assets[0].digest | type != "string")
+                  or ($matches[0].assets[0].digest
+                    | test("^sha256:[0-9a-f]{64}$") | not)
+                ) then
+                  error("immutable v3 component release identity is invalid")
+                else
+                  $matches[0]
+                end
+            ' \
+            "$RUNNER_TEMP/public-release-pages.json" \
+            > "$RUNNER_TEMP/component-release.json"
+          [[ "$(gh api \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')" != \
+            "$COMPONENT_CHANNEL_TAG" ]]
+
+          release_id="$(jq -r '.id' "$RUNNER_TEMP/component-release.json")"
+          asset_id="$(jq -r '.assets[0].id' \
+            "$RUNNER_TEMP/component-release.json")"
+          asset_digest="$(jq -r '.assets[0].digest' \
+            "$RUNNER_TEMP/component-release.json")"
+          asset_size="$(jq -r '.assets[0].size' \
+            "$RUNNER_TEMP/component-release.json")"
+          mkdir "$RUNNER_TEMP/component-catalog"
+          catalog="$RUNNER_TEMP/component-catalog/WebJam-Jamulus-components-v1.json"
+          gh api \
+            -H "Accept: application/octet-stream" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
+            > "$catalog"
+          [[ -s "$catalog" && ! -L "$catalog" ]]
+          [[ "$(stat -c '%s' "$catalog")" == "$asset_size" ]]
+          [[ "$asset_size" -le 1048576 ]]
+          catalog_envelope_sha256="$(sha256sum -- "$catalog" | awk '{print $1}')"
+          [[ "sha256:$catalog_envelope_sha256" == "$asset_digest" ]]
+          unset GH_TOKEN GITHUB_TOKEN
+          python -m tools.verify_jamulus_component_catalog \
+            --webjam-version "$EXPECTED_WEBJAM_VERSION" \
+            --minimum-sequence "$EXPECTED_CATALOG_SEQUENCE" \
+            "$catalog" \
+            > "$RUNNER_TEMP/verified-catalog.json"
+          jq -e \
+            --arg version "$EXPECTED_WEBJAM_VERSION" \
+            --argjson sequence "$EXPECTED_CATALOG_SEQUENCE" \
+            '
+              .sequence == $sequence
+              and .webjam_version == $version
+              and .component_count == 8
+              and (.expires_at | fromdateiso8601) > (now + 3600)
+            ' \
+            "$RUNNER_TEMP/verified-catalog.json" >/dev/null
+          catalog_sequence="$(jq -r '.sequence' \
+            "$RUNNER_TEMP/verified-catalog.json")"
+          catalog_expires_at="$(jq -r '.expires_at' \
+            "$RUNNER_TEMP/verified-catalog.json")"
+          catalog_payload_sha256="$(jq -r '.payload_sha256' \
+            "$RUNNER_TEMP/verified-catalog.json")"
+          signer_fingerprint_sha256="$(jq -r '.signer_fingerprint_sha256' \
+            "$RUNNER_TEMP/verified-catalog.json")"
+          [[ "$catalog_payload_sha256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$signer_fingerprint_sha256" =~ ^[0-9a-f]{64}$ ]]
+
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+          echo "asset_id=$asset_id" >> "$GITHUB_OUTPUT"
+          echo "asset_digest=$asset_digest" >> "$GITHUB_OUTPUT"
+          echo "asset_size=$asset_size" >> "$GITHUB_OUTPUT"
+          echo "catalog_sequence=$catalog_sequence" >> "$GITHUB_OUTPUT"
+          echo "catalog_expires_at=$catalog_expires_at" >> "$GITHUB_OUTPUT"
+          echo "catalog_envelope_sha256=$catalog_envelope_sha256" \
+            >> "$GITHUB_OUTPUT"
+          echo "catalog_payload_sha256=$catalog_payload_sha256" \
+            >> "$GITHUB_OUTPUT"
+          echo "signer_fingerprint_sha256=$signer_fingerprint_sha256" \
+            >> "$GITHUB_OUTPUT"
+
+  frozen-package-smoke:
+    name: Live catalog from ${{ matrix.target }} package
+    needs: bind-candidate
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: linux-x64
+            artifact: webjam-linux-x64
+            package: WebJam-linux-x64.zip
+            inventory: '["WebJam-linux-x64.zip"]'
+          - os: windows-2025
+            target: windows-x64
+            artifact: webjam-windows-x64
+            package: WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip
+            inventory: '["WebJam-v0.22.5-windows-x64-UNSIGNED-TEST-ONLY-setup.exe","WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip","WebJam-v0.22.5-windows-x64-SHA256SUMS.txt"]'
+          - os: macos-14
+            target: macos-arm64
+            artifact: webjam-macos-arm64
+            package: WebJam-macos-arm64-ADHOC-TEST-ONLY.zip
+            inventory: '["WebJam-v0.22.5-macos-arm64-ADHOC-TEST-ONLY.dmg","WebJam-macos-arm64-ADHOC-TEST-ONLY.zip"]'
+          - os: macos-15-intel
+            target: macos-x64
+            artifact: webjam-macos-x64
+            package: WebJam-macos-x64-ADHOC-TEST-ONLY.zip
+            inventory: '["WebJam-v0.22.5-macos-x64-ADHOC-TEST-ONLY.dmg","WebJam-macos-x64-ADHOC-TEST-ONLY.zip"]'
+    steps:
+      - name: Checkout exact candidate source without persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ needs['bind-candidate'].outputs.expected_sha }}
+          persist-credentials: false
+
+      - name: Set up isolated smoke runner
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Select exact artifact binding
+        id: artifact
+        shell: bash
+        env:
+          ARTIFACT_BINDINGS: ${{ needs['bind-candidate'].outputs.artifact_bindings }}
+          ARTIFACT_NAME: ${{ matrix.artifact }}
+          EXPECTED_RUN_ID: ${{ needs['bind-candidate'].outputs.source_run_id }}
+          EXPECTED_SHA: ${{ needs['bind-candidate'].outputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
+          python - <<'PY'
+          import json
+          import os
+          import re
+
+          bindings = json.loads(os.environ["ARTIFACT_BINDINGS"])
+          name = os.environ["ARTIFACT_NAME"]
+          run_id = int(os.environ["EXPECTED_RUN_ID"])
+          sha = os.environ["EXPECTED_SHA"]
+          matches = [item for item in bindings if item.get("name") == name]
+          if len(matches) != 1:
+              raise SystemExit("Native artifact has no unique candidate binding.")
+          binding = matches[0]
+          artifact_id = binding.get("id")
+          digest = binding.get("digest")
+          size = binding.get("size_in_bytes")
+          if (
+              not isinstance(artifact_id, int)
+              or artifact_id <= 0
+              or not isinstance(size, int)
+              or size <= 0
+              or not isinstance(digest, str)
+              or re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None
+              or binding.get("source_run_id") != run_id
+              or binding.get("source_sha") != sha
+          ):
+              raise SystemExit("Native artifact binding is malformed.")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"artifact_id={artifact_id}\n")
+              output.write(f"artifact_digest={digest}\n")
+              output.write(f"artifact_size={size}\n")
+          PY
+
+      - name: Revalidate selected artifact before download
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.artifact.outputs.artifact_id }}
+          EXPECTED_NAME: ${{ matrix.artifact }}
+          EXPECTED_DIGEST: ${{ steps.artifact.outputs.artifact_digest }}
+          EXPECTED_SIZE: ${{ steps.artifact.outputs.artifact_size }}
+          EXPECTED_RUN_ID: ${{ needs['bind-candidate'].outputs.source_run_id }}
+          EXPECTED_SHA: ${{ needs['bind-candidate'].outputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          gh api \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" \
+            > "$RUNNER_TEMP/native-artifact.json"
+          jq -e \
+            --arg name "$EXPECTED_NAME" \
+            --arg digest "$EXPECTED_DIGEST" \
+            --arg sha "$EXPECTED_SHA" \
+            --argjson size "$EXPECTED_SIZE" \
+            --argjson run_id "$EXPECTED_RUN_ID" \
+            '
+              .name == $name
+              and .digest == $digest
+              and .size_in_bytes == $size
+              and .expired == false
+              and .workflow_run.id == $run_id
+              and .workflow_run.head_branch == "master"
+              and .workflow_run.head_sha == $sha
+            ' \
+            "$RUNNER_TEMP/native-artifact.json" >/dev/null
+
+      - name: Download exact candidate artifact with digest enforcement
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.artifact.outputs.artifact_id }}
+          path: ${{ runner.temp }}/candidate-artifact
+          repository: ${{ github.repository }}
+          run-id: ${{ needs['bind-candidate'].outputs.source_run_id }}
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Bind exact artifact inventory and selected portable ZIP
+        id: package
+        shell: bash
+        env:
+          ARTIFACT_DIRECTORY: ${{ runner.temp }}/candidate-artifact
+          EXPECTED_INVENTORY: ${{ matrix.inventory }}
+          PACKAGE_NAME: ${{ matrix.package }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import stat
+
+          root = Path(os.environ["ARTIFACT_DIRECTORY"])
+          expected = json.loads(os.environ["EXPECTED_INVENTORY"])
+          package_name = os.environ["PACKAGE_NAME"]
+          if (
+              not root.is_dir()
+              or root.is_symlink()
+              or len(expected) != len(set(expected))
+              or package_name not in expected
+          ):
+              raise SystemExit("Candidate artifact inventory contract is invalid.")
+          entries = list(root.iterdir())
+          if sorted(entry.name for entry in entries) != sorted(expected):
+              raise SystemExit("Candidate artifact inventory is not exact.")
+          file_bindings = []
+          total_size = 0
+          for entry in entries:
+              details = entry.lstat()
+              if (
+                  not stat.S_ISREG(details.st_mode)
+                  or not 0 < details.st_size <= 2 * 1024 * 1024 * 1024
+              ):
+                  raise SystemExit("Candidate artifact contains an invalid entry.")
+              total_size += details.st_size
+              if total_size > 4 * 1024 * 1024 * 1024:
+                  raise SystemExit("Candidate artifact inventory is too large.")
+              with entry.open("rb") as source:
+                  entry_digest = hashlib.file_digest(source, "sha256").hexdigest()
+              file_bindings.append(
+                  {
+                      "name": entry.name,
+                      "sha256": entry_digest,
+                      "size": details.st_size,
+                  }
+              )
+          package = root / package_name
+          details = package.stat()
+          binding = next(item for item in file_bindings if item["name"] == package_name)
+          digest = binding["sha256"]
+          binding_path = Path(os.environ["RUNNER_TEMP"]) / "package-binding.json"
+          binding_path.write_text(
+              json.dumps(
+                  sorted(file_bindings, key=lambda item: item["name"]),
+                  sort_keys=True,
+                  separators=(",", ":"),
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          inventory_binding_sha256 = hashlib.sha256(
+              binding_path.read_bytes()
+          ).hexdigest()
+          serialized_bindings = binding_path.read_text(encoding="utf-8").strip()
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"package_sha256={digest}\n")
+              output.write(f"package_size={details.st_size}\n")
+              output.write(
+                  f"inventory_binding_sha256={inventory_binding_sha256}\n"
+              )
+              output.write(f"file_bindings={serialized_bindings}\n")
+          PY
+
+      - name: Reverify selected portable ZIP binding before launch
+        shell: bash
+        env:
+          ARTIFACT_DIRECTORY: ${{ runner.temp }}/candidate-artifact
+          PACKAGE_NAME: ${{ matrix.package }}
+          EXPECTED_PACKAGE_SHA256: ${{ steps.package.outputs.package_sha256 }}
+          EXPECTED_PACKAGE_SIZE: ${{ steps.package.outputs.package_size }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["ARTIFACT_DIRECTORY"])
+          binding_path = Path(os.environ["RUNNER_TEMP"]) / "package-binding.json"
+          bindings = json.loads(binding_path.read_text(encoding="utf-8"))
+          if sorted(entry.name for entry in root.iterdir()) != sorted(
+              item["name"] for item in bindings
+          ):
+              raise SystemExit("Bound artifact inventory changed.")
+          for binding in bindings:
+              entry = root / binding["name"]
+              if entry.is_symlink() or not entry.is_file():
+                  raise SystemExit("Bound artifact entry is missing.")
+              if entry.stat().st_size != binding["size"]:
+                  raise SystemExit("Bound artifact entry size changed.")
+              with entry.open("rb") as source:
+                  digest = hashlib.file_digest(source, "sha256").hexdigest()
+              if digest != binding["sha256"]:
+                  raise SystemExit("Bound artifact entry checksum changed.")
+          package = root / os.environ["PACKAGE_NAME"]
+          if package.stat().st_size != int(os.environ["EXPECTED_PACKAGE_SIZE"]):
+              raise SystemExit("Bound portable package size changed.")
+          with package.open("rb") as source:
+              package_digest = hashlib.file_digest(source, "sha256").hexdigest()
+          if package_digest != os.environ["EXPECTED_PACKAGE_SHA256"]:
+              raise SystemExit("Bound portable package checksum changed.")
+          PY
+
+      - name: Preflight portable ZIP paths, types, symlinks, and size bounds
+        if: matrix.target != 'linux-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/support/verify_frozen_portable_archive.py \
+            --archive "$RUNNER_TEMP/candidate-artifact/${{ matrix.package }}" \
+            --platform "${{ matrix.target }}"
+
+      - name: Verify exact Windows two-entry checksum manifest
+        if: matrix.target == 'windows-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/candidate-artifact"
+          checksum="WebJam-v0.22.5-windows-x64-SHA256SUMS.txt"
+          test -s "$checksum" && test ! -L "$checksum"
+          test "$(wc -l < "$checksum")" -eq 2
+          test "$(sed -n '1s/^[^*]*\*//p' "$checksum")" = \
+            "WebJam-v0.22.5-windows-x64-UNSIGNED-TEST-ONLY-setup.exe"
+          test "$(sed -n '2s/^[^*]*\*//p' "$checksum")" = \
+            "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip"
+          sha256sum --check --strict "$checksum"
+
+      - name: Install Linux frozen-runtime libraries
+        if: matrix.target == 'linux-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            --no-install-recommends \
+            libasound2 libbrotli1 libcups2 libdbus-1-3 libegl1 \
+            libfontconfig1 libfreetype6 libgbm1 libgl1 libglib2.0-0 \
+            libgtk-3-0 libnspr4 libnss3 libportaudio2 libpulse0 libtiff5 \
+            libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 \
+            libxkbcommon-x11-0 libxkbfile1 libxrandr2 libxtst6 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1
+
+      - name: Launch Linux package against live signed catalog
+        if: matrix.target == 'linux-x64'
+        shell: bash
+        env:
+          CATALOG_SEQUENCE: ${{ needs['bind-candidate'].outputs.catalog_sequence }}
+          CATALOG_ENVELOPE_SHA256: ${{ needs['bind-candidate'].outputs.catalog_envelope_sha256 }}
+          CATALOG_PAYLOAD_SHA256: ${{ needs['bind-candidate'].outputs.catalog_payload_sha256 }}
+          SIGNER_FINGERPRINT_SHA256: ${{ needs['bind-candidate'].outputs.signer_fingerprint_sha256 }}
+        run: |
+          set -euo pipefail
+          python tests/support/run_frozen_component_catalog_smoke.py \
+            --archive "$RUNNER_TEMP/candidate-artifact/${{ matrix.package }}" \
+            --expected-version "$EXPECTED_WEBJAM_VERSION" \
+            --expected-sequence "$CATALOG_SEQUENCE" \
+            --expected-target linux-x64 \
+            --expected-jamulus-version "$EXPECTED_JAMULUS_VERSION" \
+            --expected-catalog-envelope-sha256 "$CATALOG_ENVELOPE_SHA256" \
+            --expected-catalog-payload-sha256 "$CATALOG_PAYLOAD_SHA256" \
+            --expected-signer-fingerprint-sha256 "$SIGNER_FINGERPRINT_SHA256"
+
+      - name: Launch Windows package against live signed catalog
+        if: matrix.target == 'windows-x64'
+        shell: pwsh
+        env:
+          CATALOG_SEQUENCE: ${{ needs['bind-candidate'].outputs.catalog_sequence }}
+          CATALOG_ENVELOPE_SHA256: ${{ needs['bind-candidate'].outputs.catalog_envelope_sha256 }}
+          CATALOG_PAYLOAD_SHA256: ${{ needs['bind-candidate'].outputs.catalog_payload_sha256 }}
+          SIGNER_FINGERPRINT_SHA256: ${{ needs['bind-candidate'].outputs.signer_fingerprint_sha256 }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $archive = Join-Path $env:RUNNER_TEMP "candidate-artifact/${{ matrix.package }}"
+          $destination = Join-Path $env:RUNNER_TEMP "candidate-app"
+          New-Item -ItemType Directory -Path $destination | Out-Null
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination
+          $binary = Join-Path $destination "WebJam/WebJam.exe"
+          if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
+            throw "Frozen Windows app binary is missing."
+          }
+          python tests/support/verify_frozen_portable_archive.py `
+            --archive $archive `
+            --platform windows-x64 `
+            --extracted-parent $destination
+          python tests/support/run_frozen_component_catalog_smoke.py `
+            --binary $binary `
+            --cwd (Join-Path $destination "WebJam") `
+            --expected-version $env:EXPECTED_WEBJAM_VERSION `
+            --expected-sequence $env:CATALOG_SEQUENCE `
+            --expected-target windows-x64 `
+            --expected-jamulus-version $env:EXPECTED_JAMULUS_VERSION `
+            --expected-catalog-envelope-sha256 $env:CATALOG_ENVELOPE_SHA256 `
+            --expected-catalog-payload-sha256 $env:CATALOG_PAYLOAD_SHA256 `
+            --expected-signer-fingerprint-sha256 $env:SIGNER_FINGERPRINT_SHA256
+
+      - name: Launch macOS package against live signed catalog
+        if: startsWith(matrix.target, 'macos-')
+        shell: bash
+        env:
+          CATALOG_SEQUENCE: ${{ needs['bind-candidate'].outputs.catalog_sequence }}
+          CATALOG_ENVELOPE_SHA256: ${{ needs['bind-candidate'].outputs.catalog_envelope_sha256 }}
+          CATALOG_PAYLOAD_SHA256: ${{ needs['bind-candidate'].outputs.catalog_payload_sha256 }}
+          SIGNER_FINGERPRINT_SHA256: ${{ needs['bind-candidate'].outputs.signer_fingerprint_sha256 }}
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/candidate-artifact/${{ matrix.package }}"
+          destination="$RUNNER_TEMP/candidate-app"
+          mkdir "$destination"
+          ditto -x -k "$archive" "$destination"
+          app="$destination/WebJam.app"
+          binary="$app/Contents/MacOS/WebJam"
+          python tests/support/verify_frozen_portable_archive.py \
+            --archive "$archive" \
+            --platform "${{ matrix.target }}" \
+            --extracted-parent "$destination"
+          codesign --verify --deep --strict "$app"
+          [[ -x "$binary" && ! -L "$binary" ]]
+          python tests/support/run_frozen_component_catalog_smoke.py \
+            --binary "$binary" \
+            --cwd "$app/Contents/MacOS" \
+            --expected-version "$EXPECTED_WEBJAM_VERSION" \
+            --expected-sequence "$CATALOG_SEQUENCE" \
+            --expected-target "${{ matrix.target }}" \
+            --expected-jamulus-version "$EXPECTED_JAMULUS_VERSION" \
+            --expected-catalog-envelope-sha256 "$CATALOG_ENVELOPE_SHA256" \
+            --expected-catalog-payload-sha256 "$CATALOG_PAYLOAD_SHA256" \
+            --expected-signer-fingerprint-sha256 "$SIGNER_FINGERPRINT_SHA256"
+
+      - name: Record bounded read-only proof summary
+        if: success()
+        shell: bash
+        env:
+          ARTIFACT_DIGEST: ${{ steps.artifact.outputs.artifact_digest }}
+          FILE_BINDINGS: ${{ steps.package.outputs.file_bindings }}
+          INVENTORY_BINDING_SHA256: ${{ steps.package.outputs.inventory_binding_sha256 }}
+          PACKAGE_SHA256: ${{ steps.package.outputs.package_sha256 }}
+          PACKAGE_SIZE: ${{ steps.package.outputs.package_size }}
+          COMPONENT_RELEASE_ID: ${{ needs['bind-candidate'].outputs.component_release_id }}
+          COMPONENT_ASSET_ID: ${{ needs['bind-candidate'].outputs.component_asset_id }}
+          COMPONENT_ASSET_DIGEST: ${{ needs['bind-candidate'].outputs.component_asset_digest }}
+          COMPONENT_ASSET_SIZE: ${{ needs['bind-candidate'].outputs.component_asset_size }}
+          CATALOG_EXPIRES_AT: ${{ needs['bind-candidate'].outputs.catalog_expires_at }}
+          CATALOG_ENVELOPE_SHA256: ${{ needs['bind-candidate'].outputs.catalog_envelope_sha256 }}
+          CATALOG_PAYLOAD_SHA256: ${{ needs['bind-candidate'].outputs.catalog_payload_sha256 }}
+          SIGNER_FINGERPRINT_SHA256: ${{ needs['bind-candidate'].outputs.signer_fingerprint_sha256 }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### ${{ matrix.target }} frozen component proof"
+            echo
+            echo "- source SHA: \`${{ needs['bind-candidate'].outputs.expected_sha }}\`"
+            echo "- source run: \`${{ needs['bind-candidate'].outputs.source_run_id }}\`"
+            echo "- artifact ID: \`${{ steps.artifact.outputs.artifact_id }}\`"
+            echo "- artifact digest: \`$ARTIFACT_DIGEST\`"
+            echo "- complete file-inventory binding: \`$INVENTORY_BINDING_SHA256\`"
+            echo "- package: \`${{ matrix.package }}\`"
+            echo "- package size: \`$PACKAGE_SIZE\`"
+            echo "- package SHA-256: \`$PACKAGE_SHA256\`"
+            echo "- catalog sequence: \`${{ needs['bind-candidate'].outputs.catalog_sequence }}\`"
+            echo "- component release ID: \`$COMPONENT_RELEASE_ID\`"
+            echo "- component asset ID: \`$COMPONENT_ASSET_ID\`"
+            echo "- component asset size: \`$COMPONENT_ASSET_SIZE\`"
+            echo "- component asset digest: \`$COMPONENT_ASSET_DIGEST\`"
+            echo "- catalog envelope SHA-256: \`$CATALOG_ENVELOPE_SHA256\`"
+            echo "- catalog expires at: \`$CATALOG_EXPIRES_AT\`"
+            echo "- catalog payload SHA-256: \`$CATALOG_PAYLOAD_SHA256\`"
+            echo "- signer fingerprint SHA-256: \`$SIGNER_FINGERPRINT_SHA256\`"
+            echo "- result: PASS"
+            echo
+            echo "| Bound file | Bytes | SHA-256 |"
+            echo "| --- | ---: | --- |"
+            jq -r '.[] | "| `\(.name)` | \(.size) | `\(.sha256)` |"' \
+              <<<"$FILE_BINDINGS"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  revalidate-candidate:
+    name: Revalidate all read-only identities after native proofs
+    needs: [bind-candidate, frozen-package-smoke]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout exact final master without persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Revalidate source run, artifacts, component tag, and release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_RUN_ID: ${{ needs['bind-candidate'].outputs.source_run_id }}
+          EXPECTED_SHA: ${{ needs['bind-candidate'].outputs.expected_sha }}
+          EXPECTED_ARTIFACT_BINDINGS: ${{ needs['bind-candidate'].outputs.artifact_bindings }}
+          EXPECTED_COMPONENT_RELEASE_ID: ${{ needs['bind-candidate'].outputs.component_release_id }}
+          EXPECTED_COMPONENT_ASSET_ID: ${{ needs['bind-candidate'].outputs.component_asset_id }}
+          EXPECTED_COMPONENT_ASSET_DIGEST: ${{ needs['bind-candidate'].outputs.component_asset_digest }}
+          EXPECTED_COMPONENT_ASSET_SIZE: ${{ needs['bind-candidate'].outputs.component_asset_size }}
+          EXPECTED_CATALOG_SEQUENCE: ${{ needs['bind-candidate'].outputs.catalog_sequence }}
+          EXPECTED_CATALOG_EXPIRES_AT: ${{ needs['bind-candidate'].outputs.catalog_expires_at }}
+          EXPECTED_CATALOG_ENVELOPE_SHA256: ${{ needs['bind-candidate'].outputs.catalog_envelope_sha256 }}
+          EXPECTED_CATALOG_PAYLOAD_SHA256: ${{ needs['bind-candidate'].outputs.catalog_payload_sha256 }}
+          EXPECTED_SIGNER_FINGERPRINT_SHA256: ${{ needs['bind-candidate'].outputs.signer_fingerprint_sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == "refs/heads/master" ]]
+          git fetch --no-tags origin \
+            "+refs/heads/master:refs/remotes/origin/master"
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
+          [[ "$(git rev-parse refs/remotes/origin/master)" == "$EXPECTED_SHA" ]]
+          [[ -z "$(git status --porcelain)" ]]
+
+          gh api \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml" \
+            > "$RUNNER_TEMP/final-ci-workflow.json"
+          ci_workflow_id="$(jq -r \
+            'select(
+              .name == "WebJam CI"
+              and .path == ".github/workflows/ci.yml"
+              and .state == "active"
+              and (.id | type == "number")
+              and .id > 0
+            ) | .id' \
+            "$RUNNER_TEMP/final-ci-workflow.json")"
+          [[ "$ci_workflow_id" =~ ^[1-9][0-9]*$ ]]
+          gh api \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$EXPECTED_RUN_ID" \
+            > "$RUNNER_TEMP/final-source-run.json"
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg sha "$EXPECTED_SHA" \
+            --argjson run_id "$EXPECTED_RUN_ID" \
+            --argjson workflow_id "$ci_workflow_id" \
+            '
+              .id == $run_id
+              and .workflow_id == $workflow_id
+              and .path == ".github/workflows/ci.yml"
+              and .event == "push"
+              and .head_branch == "master"
+              and .head_sha == $sha
+              and .status == "completed"
+              and .conclusion == "success"
+              and .repository.full_name == $repository
+              and .head_repository.full_name == $repository
+            ' \
+            "$RUNNER_TEMP/final-source-run.json" >/dev/null
+
+          gh api \
+            --paginate \
+            --slurp \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$EXPECTED_RUN_ID/artifacts?per_page=100" \
+            > "$RUNNER_TEMP/final-artifact-pages.json"
+          jq -e \
+            --arg sha "$EXPECTED_SHA" \
+            --arg pocket_stage "webjam-pocket-stage-ios-setup-$EXPECTED_SHA" \
+            --argjson run_id "$EXPECTED_RUN_ID" \
+            --argjson expected_names '[
+              "webjam-windows-x64",
+              "webjam-macos-arm64",
+              "webjam-macos-x64",
+              "webjam-linux-x64"
+            ]' \
+            --argjson expected_bindings "$EXPECTED_ARTIFACT_BINDINGS" \
+            '
+              [ .[].artifacts[] ] as $all
+              | [
+                  $all[]
+                  | select(.name as $name | $expected_names | index($name))
+                ] as $desktop
+              | [ $all[] | select(.name == $pocket_stage) ] as $pocket
+              | [
+                  $desktop[]
+                  | {
+                      name,
+                      id,
+                      digest,
+                      size_in_bytes,
+                      expires_at,
+                      source_run_id: $run_id,
+                      source_sha: $sha
+                    }
+                ]
+                | sort_by(.name) as $current_bindings
+              | ($all | length) == 5
+                and ($desktop | length) == 4
+                and ($pocket | length) == 1
+                and all($all[];
+                  .expired == false
+                  and (.expires_at | type == "string")
+                  and (.expires_at | fromdateiso8601) > now
+                  and .workflow_run.id == $run_id
+                  and .workflow_run.head_branch == "master"
+                  and .workflow_run.head_sha == $sha
+                )
+                and $current_bindings == $expected_bindings
+            ' \
+            "$RUNNER_TEMP/final-artifact-pages.json" >/dev/null
+
+          component_ref="refs/webjam-final-component-tags/$COMPONENT_CHANNEL_TAG"
+          git fetch --no-tags origin \
+            "refs/tags/${COMPONENT_CHANNEL_TAG}:${component_ref}"
+          [[ "$(git cat-file -t "$component_ref")" == commit ]]
+          [[ "$(git rev-parse "$component_ref")" == "$COMPONENT_CHANNEL_ANCHOR" ]]
+          [[ "$(git rev-parse "${component_ref}^{commit}")" == \
+            "$COMPONENT_CHANNEL_ANCHOR" ]]
+          [[ "$(git ls-remote --refs origin \
+            "refs/tags/$COMPONENT_CHANNEL_TAG" | awk 'NR == 1 {print $1}')" == \
+            "$COMPONENT_CHANNEL_ANCHOR" ]]
+          git merge-base --is-ancestor \
+            "$COMPONENT_CHANNEL_ANCHOR" "$EXPECTED_SHA"
+
+          gh api \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$COMPONENT_CHANNEL_TAG" \
+            > "$RUNNER_TEMP/final-component-release.json"
+          jq -e \
+            --arg tag "$COMPONENT_CHANNEL_TAG" \
+            --arg digest "$EXPECTED_COMPONENT_ASSET_DIGEST" \
+            --argjson release_id "$EXPECTED_COMPONENT_RELEASE_ID" \
+            --argjson asset_id "$EXPECTED_COMPONENT_ASSET_ID" \
+            --argjson asset_size "$EXPECTED_COMPONENT_ASSET_SIZE" \
+            '
+              .id == $release_id
+              and .tag_name == $tag
+              and .name == "WebJam Jamulus component catalog v3"
+              and .draft == false
+              and .prerelease == true
+              and .immutable == true
+              and (.assets | length) == 1
+              and .assets[0].id == $asset_id
+              and .assets[0].name == "WebJam-Jamulus-components-v1.json"
+              and .assets[0].state == "uploaded"
+              and .assets[0].size == $asset_size
+              and .assets[0].digest == $digest
+            ' \
+            "$RUNNER_TEMP/final-component-release.json" >/dev/null
+          [[ "$(gh api \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')" != \
+            "$COMPONENT_CHANNEL_TAG" ]]
+          mkdir "$RUNNER_TEMP/final-component-catalog"
+          catalog="$RUNNER_TEMP/final-component-catalog/WebJam-Jamulus-components-v1.json"
+          gh api \
+            -H "Accept: application/octet-stream" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$EXPECTED_COMPONENT_ASSET_ID" \
+            > "$catalog"
+          [[ -s "$catalog" && ! -L "$catalog" ]]
+          [[ "$(stat -c '%s' "$catalog")" == \
+            "$EXPECTED_COMPONENT_ASSET_SIZE" ]]
+          [[ "$(sha256sum -- "$catalog" | awk '{print $1}')" == \
+            "$EXPECTED_CATALOG_ENVELOPE_SHA256" ]]
+          jq -e \
+            --arg expires_at "$EXPECTED_CATALOG_EXPIRES_AT" \
+            '
+              .payload.expires_at == $expires_at
+              and (.payload.expires_at | fromdateiso8601) > (now + 3600)
+            ' \
+            "$catalog" >/dev/null
+          {
+            echo "### Final candidate identity revalidation"
+            echo
+            echo "- source SHA: \`$EXPECTED_SHA\`"
+            echo "- source run: \`$EXPECTED_RUN_ID\`"
+            echo "- component release ID: \`$EXPECTED_COMPONENT_RELEASE_ID\`"
+            echo "- component asset ID: \`$EXPECTED_COMPONENT_ASSET_ID\`"
+            echo "- component asset size: \`$EXPECTED_COMPONENT_ASSET_SIZE\`"
+            echo "- component asset digest: \`$EXPECTED_COMPONENT_ASSET_DIGEST\`"
+            echo "- catalog sequence: \`$EXPECTED_CATALOG_SEQUENCE\`"
+            echo "- catalog expires at: \`$EXPECTED_CATALOG_EXPIRES_AT\`"
+            echo "- catalog envelope SHA-256: \`$EXPECTED_CATALOG_ENVELOPE_SHA256\`"
+            echo "- catalog payload SHA-256: \`$EXPECTED_CATALOG_PAYLOAD_SHA256\`"
+            echo "- signer fingerprint SHA-256: \`$EXPECTED_SIGNER_FINGERPRINT_SHA256\`"
+            echo "- result: PASS — all identities remained exact after native proofs"
+          } >> "$GITHUB_STEP_SUMMARY"

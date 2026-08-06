@@ -708,17 +708,41 @@ Before the desktop tag is approved, complete the new fixed
 Require signed sequence 6 for exact WebJam 0.22.5, its independently verified
 one-asset non-Latest prerelease, and the final pinned channel anchor. Then:
 
-1. Require a clean final `master`, exact v0.22.5 metadata, and green source CI
-   including all four desktop targets. Keep `master` frozen through promotion.
-2. After explicit approval, create and verify an annotated `v0.22.5` tag at
+1. Record the independently verified v3 release IDs, catalog hashes, signer,
+   expiry, and asset evidence in the required follow-up commit. After separate
+   approval to push that evidence, require a clean post-evidence final `master`,
+   exact v0.22.5 metadata, and green source CI including all four desktop
+   targets.
+2. After separate explicit verification-dispatch approval, run this read-only
+   gate with the successful final-master CI run and its exact commit:
+
+   ```bash
+   gh workflow run verify-component-candidate.yml \
+     --repo rupret007/webjam \
+     --ref master \
+     -f source_run_id=<successful-master-ci-run-id> \
+     -f expected_sha=<exact-40-character-origin-master-sha>
+   ```
+
+   Require all four native jobs and the final read-only identity-revalidation
+   job to pass. They bind each Actions artifact ID and wrapper digest, then hash
+   and size every contained release file. The DMG and Windows Setup containers
+   are inventory- and hash-bound; only the four portable ZIP packages are
+   live-launched against immutable v3 sequence 6.
+   If `master` changes, run CI and this proof again. Preserve the successful
+   post-evidence proof and freeze `master` without another source commit through
+   the desktop tag, draft, and promotion. A CI run from before this verification
+   workflow landed is stale by construction; use a new green push run from the
+   exact current-master commit.
+3. After explicit approval, create and verify an annotated `v0.22.5` tag at
    exact `origin/master`; after separate approval, push only that tag.
-3. Let tag CI create the draft. Never create, upload, replace, or publish the
+4. Let tag CI create the draft. Never create, upload, replace, or publish the
    desktop release manually.
-4. Verify the draft has the title/trust warning above, exactly the eight assets
+5. Verify the draft has the title/trust warning above, exactly the eight assets
    listed here, and seven checksum-manifest entries matching fresh downloads.
-5. After explicit publication approval, dispatch **Publish Verified WebJam
+6. After explicit publication approval, dispatch **Publish Verified WebJam
    Release** for `v0.22.5`; require success before calling it public or Latest.
-6. Re-read the public API and require immutable, non-draft, non-prerelease,
+7. Re-read the public API and require immutable, non-draft, non-prerelease,
    Latest state plus the same asset IDs, sizes, digests, and checksums.
 
 Windows remains unsigned. macOS remains ad-hoc signed and unnotarized. Physical
