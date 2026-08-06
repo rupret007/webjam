@@ -1,7 +1,7 @@
-# WebJam help routing — v0.22.4
+# WebJam help routing — v0.22.5
 
-> **Published private test candidate:** these answers describe immutable
-> v0.22.4, now GitHub Latest.
+> **Pre-publication candidate help:** these answers target v0.22.5. GitHub
+> Latest remains immutable v0.22.4 until promotion.
 
 | Musician says | Answer / action |
 | --- | --- |

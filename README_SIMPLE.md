@@ -1,11 +1,11 @@
 # WebJam, simply
 
-> **Published private test candidate:** this source guide describes the
-> immutable v0.22.4 release now marked GitHub **Latest**. Windows is unsigned;
-> macOS is ad-hoc signed and unnotarized.
+> **Pre-publication candidate source:** this guide describes v0.22.5. The
+> immutable v0.22.4 release remains GitHub **Latest** until verified promotion.
+> Windows is unsigned; macOS is ad-hoc signed and unnotarized.
 
-> **Development note:** `master` contains unreleased Reference Studio editing
-> and Overdub work. The download linked below is v0.22.4.
+> **Development note:** `master` is the v0.22.5 candidate line. The currently
+> published download remains v0.22.4.
 
 WebJam helps a band start playing together. It keeps the session, invite, and
 recordings organized. Jamulus handles the music. Webex is optional for talking

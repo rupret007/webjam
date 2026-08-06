@@ -1,7 +1,7 @@
-# Recording and Studio — v0.22.4
+# Recording and Studio — v0.22.5
 
-> **Published private test candidate:** this guide describes immutable v0.22.4,
-> now GitHub Latest. Physical
+> **Pre-publication candidate guide:** this document targets v0.22.5. GitHub
+> Latest remains immutable v0.22.4 until promotion. Physical
 > recording, playback, recovery, long-session, and external-editor gates remain
 > **NOT RUN** until exact package evidence is recorded.
 

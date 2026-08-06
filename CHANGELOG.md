@@ -6,9 +6,24 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ## [Unreleased]
 
-> Future work after the v0.22.4 private test candidate belongs here. The
-> v0.22.4 release is the current public test line and is immutable once
-> published.
+> Future work after the v0.22.5 private test candidate belongs here. The
+> published v0.22.4 release remains immutable historical evidence.
+
+## [0.22.5] — 2026-08-05 reference-demo reliability private test candidate
+
+### Demo safety and presentation
+
+- Added a default-safe pre-start warning when macOS can clearly prove that
+  Jamulus will use both a built-in microphone and built-in speakers. The check
+  covers first run and saved system defaults, never changes a device, never
+  stores or reports hardware names, and times out to an honest unknown state.
+- Kept external interfaces, headphones, virtual routes, uncertain evidence,
+  and already-running sessions out of the warning path. Declining leaves audio
+  stopped; **Start Anyway** is a fresh, non-persistent decision.
+- Made Help and About application-modal top-level dialogs that are clamped to
+  an available display even when WebJam was restored partly off-screen.
+- Aligned every disabled Reference Track transport button to one visual state
+  so unavailable actions no longer look brighter than their peers.
 
 ### Reference Track — real-world MP3 acceptance and honest playback state
 
@@ -43,11 +58,10 @@ All notable improvements and features for the WebJam music collaboration platfor
 ### Presentation and packaging text
 
 - The Studio return button is labelled "Back to Live" instead of "Live".
-- The three platform package read-me sources now describe v0.22.4 as the
-  published test release verified by `WebJam-v0.22.4-SHA256SUMS.txt`,
-  replacing the stale "PRE-PUBLICATION CANDIDATE" header, as the desktop
-  release runbook schedules before the next tag. Published v0.22.4 assets
-  are immutable and unchanged.
+- The three platform package read-me sources identify exact v0.22.5
+  pre-publication packages and require the future
+  `WebJam-v0.22.5-SHA256SUMS.txt` plus verified promotion before use.
+  Published v0.22.4 package bytes remain immutable and unchanged.
 
 ## [0.22.4] — 2026-08-04 DAW and reliability private test candidate
 

@@ -36,6 +36,8 @@ keeps the product story and five-minute demo intentionally short.
 - [Test procedure](../TEST_PROCEDURE.md) — automated evidence and the physical /
   credentialed ledger. **NOT RUN** is not a claim of failure; it means evidence
   has not yet been collected against an exact package.
+- [v0.22.5 demo readiness](../WEBJAM_V0225_DEMO_READINESS.md) — the exact
+  two-musician Reference Track/Webex scorecard in musician order.
 - [Desktop release runbook](DESKTOP_RELEASE_RUNBOOK.md) — draft-first,
   checksum-bound, immutable release process.
 - [Jamulus component catalog runbook](JAMULUS_COMPONENT_RELEASE_RUNBOOK.md) —

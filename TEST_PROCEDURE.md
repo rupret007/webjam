@@ -1,10 +1,11 @@
-# WebJam v0.22.4 source and physical test procedure
+# WebJam v0.22.5 source and physical test procedure
 
-> The source tree and immutable GitHub **Latest** release report v0.22.4 as an
-> unsigned private test candidate. Its exact eight-asset release and signed
-> sequence-5 component catalog passed automated publication gates. Physical
-> Pocket Stage installation/pairing, standalone Reference Studio audio,
-> external Webex behavior, and Reference Track routing remain **NOT RUN**.
+> The source tree reports v0.22.5 as a pre-publication unsigned private test
+> candidate. GitHub **Latest** remains immutable v0.22.4 until the exact
+> eight-asset release and signed sequence-6 component catalog pass every
+> publication gate. Physical Pocket Stage installation/pairing, standalone
+> Reference Studio audio, external Webex behavior, and Reference Track routing
+> remain **NOT RUN**.
 
 ## Scope
 
@@ -12,7 +13,7 @@ This procedure distinguishes automated source/package evidence from physical
 musician evidence. A passing source suite does not certify two-Mac audibility,
 hardware changes, sleep/wake, interruption recovery, or external-editor import.
 
-The v0.22.4 dependency gate pins `cryptography` 50.0.0 for
+The v0.22.5 dependency gate pins `cryptography` 50.0.0 for
 CVE-2026-69247, CVE-2026-69248, and CVE-2026-69249. Windows, Linux, and
 Apple-silicon macOS use exact upstream wheels. Intel macOS uses only the
 documented, hash-locked native x86_64 source-build exception with static
@@ -221,7 +222,7 @@ Review at minimum:
 6. Preserve the current rollback package before installing any freshly verified
    candidate app.
 
-## v0.22.4 permissionless macOS Jamulus profile gate
+## v0.22.5 permissionless macOS Jamulus profile gate
 
 Run this gate against each exact Intel and Apple-silicon DMG and portable ZIP,
 not an adjacent source build. Record the package name, SHA-256, app build ID,
@@ -271,14 +272,14 @@ Mac model, architecture, and macOS version.
   Jamulus/JamulusServer verification, transport checks, and a frozen Host smoke.
   Keep a rollback package on hand before installing this verified candidate.
 
-## v0.22.4 physical and credentialed ledger
+## v0.22.5 physical and credentialed ledger
 
 The source suite does not replace this ledger. Every item remains **NOT RUN**
-for v0.22.4 until a dated exact asset name, build ID, SHA-256, test environment,
+for v0.22.5 until a dated exact asset name, build ID, SHA-256, test environment,
 and evidence location are recorded. Draft creation or publication as a private
 candidate does not convert any row to PASS.
 
-| Gate | v0.22.4 status |
+| Gate | v0.22.5 status |
 | --- | --- |
 | Two Macs hear each other through physical Jamulus interfaces | **NOT RUN** |
 | Host/guest native setup and returning path on both Macs | **NOT RUN** |

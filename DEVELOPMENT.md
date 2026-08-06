@@ -1,10 +1,10 @@
-# Developing WebJam v0.22.4
+# Developing WebJam v0.22.5
 
-> **Published private test candidate:** this guide describes the source for the
-> immutable v0.22.4 release now marked GitHub Latest.
+> **Pre-publication candidate source:** this guide describes v0.22.5. The
+> immutable v0.22.4 release remains GitHub Latest until promotion succeeds.
 
-> **Current source boundary:** `master` is the v0.22.4 test line. Future work
-> belongs in the `Unreleased` changelog and is not part of the published download.
+> **Current source boundary:** `master` is the v0.22.5 release-candidate line
+> and is not itself a published download.
 
 ## Local setup
 
@@ -21,7 +21,7 @@ Use the repository virtual environment:
 For Studio arrangement changes, run the focused model, persistence, history,
 controller, renderer, comping, waveform, export, and Qt integration modules in
 addition to the full suite. The physical-output and external-editor gates in
-`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.22.4.
+`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.22.5.
 
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
@@ -30,7 +30,7 @@ jitter settings.
 ## Pocket Stage developer preview
 
 Pocket Stage is owner-device development work, not a distributed or pre-signed
-iOS binary. The v0.22.4 Mac packages include the generated, CI-compiled
+iOS binary. The v0.22.5 Mac candidates include the generated, CI-compiled
 Xcode project and setup kit; physical installation and pairing remain
 owner-performed and **NOT RUN**. Run the focused desktop tests with:
 
@@ -158,14 +158,15 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree's package identity is `0.22.4`. Its exact tag and eight-asset
-release passed verified promotion and are immutable GitHub
-**Latest**, clearly labeled as an unsigned/unnotarized private test candidate.
+The source tree's package identity is `0.22.5`. It remains pre-publication until
+its exact tag, eight-asset draft, checksums, v3 component catalog, and verified
+promotion pass. v0.22.4 is the immutable GitHub **Latest** release, clearly
+labeled as an unsigned/unnotarized private test candidate.
 Published v0.20.0, v0.21.0,
-v0.22.0, v0.22.1, v0.22.2, and v0.22.3 tags and assets remain immutable
+v0.22.0, v0.22.1, v0.22.2, v0.22.3, and v0.22.4 tags and assets remain immutable
 historical evidence and must never be overwritten or served under a moved tag.
 
-The v0.22.4 locks select `cryptography` 50.0.0 for the three audited CVE
+The v0.22.5 locks select `cryptography` 50.0.0 for the three audited CVE
 remediations. Windows, Linux, and Apple-silicon macOS install exact upstream
 wheels. Intel macOS alone uses the reviewed, hash-locked native x86_64
 source-build helper with static OpenSSL 3.5.7 LTS because upstream removed the

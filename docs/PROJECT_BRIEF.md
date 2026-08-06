@@ -1,8 +1,8 @@
 # WebJam project brief
 
-**Review date:** 2026-08-04
-**Status:** Active development; v0.22.4 is the immutable GitHub Latest private
-test candidate. `master` is the current test line.
+**Review date:** 2026-08-05
+**Status:** v0.22.5 is the pre-publication candidate on `master`; v0.22.4
+remains the immutable GitHub Latest private test candidate until promotion.
 
 ## Executive summary
 
@@ -103,9 +103,10 @@ claimed as implemented in this repository.
 
 - No Apple Developer account is currently available, so macOS remains ad-hoc
   signed and unnotarized.
-- The v2 Jamulus component catalog is sealed for v0.22.4; a future renewal
-  needs a new, versioned channel boundary rather than replacing sequence 5 in
-  place. The v1/v0.22.3 channel remains historical.
+- The v2 Jamulus component catalog is sealed for v0.22.4. The v0.22.5
+  candidate introduces a separate v3 boundary and cannot promote until its
+  exact sequence-6 catalog is published and independently verified. The
+  v1/v0.22.3 and v2/v0.22.4 channels remain historical.
 - A v0.23 release cut should first decide the DAW feature scope, complete the
   physical Studio/Reference Track gates, choose the Webex integration boundary,
   and establish protected-branch and release-environment ownership.

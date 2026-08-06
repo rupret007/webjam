@@ -243,7 +243,8 @@ def test_catalog_proof_binds_envelope_payload_signer_and_asset_identity() -> Non
     assert "$matches[0].assets[0].size <= 0" in SMOKE_JOB
     assert "tools.verify_jamulus_component_catalog" in SMOKE_JOB
     assert "--webjam-version \"$VERSION\"" in SMOKE_JOB
-    assert "MINIMUM_COMPONENT_CATALOG_SEQUENCE: 5" in WORKFLOW_HEADER
+    assert "MINIMUM_COMPONENT_CATALOG_SEQUENCE: 6" in WORKFLOW_HEADER
+    assert "COMPONENT_CHANNEL_TAG: jamulus-components-v3" in WORKFLOW_HEADER
     assert (
         '--minimum-sequence "$MINIMUM_COMPONENT_CATALOG_SEQUENCE"'
         in SMOKE_JOB

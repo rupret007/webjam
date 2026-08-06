@@ -5,6 +5,11 @@
 > ad-hoc signed and unnotarized. The historical records below remain unchanged
 > release evidence.
 
+> **v0.22.5 pre-publication candidate:** source/package identity is being
+> prepared separately. It is not a release until the new v3 component catalog,
+> exact four-platform tag build, draft inventory, checksums, and protected
+> promotion all pass. Do not describe it as Latest before that event.
+
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version
 tags may promote its explicitly unsigned/ad-hoc outputs as a private test
@@ -679,3 +684,44 @@ is immutable and GitHub **Latest** at
 https://github.com/rupret007/webjam/releases/tag/v0.22.4. Its checksum
 manifest is `WebJam-v0.22.4-SHA256SUMS.txt`; the separate component release is
 ID `365297898` at the immutable `jamulus-components-v2` tag.
+
+### v0.22.5 reference-demo reliability candidate — pre-publication contract
+
+v0.22.5 is a new patch identity. It carries the real-world MP3 and Reference
+Track acceptance work plus bounded first-demo safety/presentation fixes. It
+must not move or replace v0.22.4 or either sealed component channel.
+
+The draft and final release inventory must be exactly:
+
+- `WebJam-v0.22.5-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`
+- `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip`
+- `WebJam-v0.22.5-macos-arm64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-macos-arm64-ADHOC-TEST-ONLY.zip`
+- `WebJam-v0.22.5-macos-x64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-macos-x64-ADHOC-TEST-ONLY.zip`
+- `WebJam-linux-x64.zip`
+- `WebJam-v0.22.5-SHA256SUMS.txt`
+
+Before the desktop tag is approved, complete the new fixed
+`jamulus-components-v3` boundary in
+[`JAMULUS_COMPONENT_RELEASE_RUNBOOK.md`](JAMULUS_COMPONENT_RELEASE_RUNBOOK.md).
+Require signed sequence 6 for exact WebJam 0.22.5, its independently verified
+one-asset non-Latest prerelease, and the final pinned channel anchor. Then:
+
+1. Require a clean final `master`, exact v0.22.5 metadata, and green source CI
+   including all four desktop targets. Keep `master` frozen through promotion.
+2. After explicit approval, create and verify an annotated `v0.22.5` tag at
+   exact `origin/master`; after separate approval, push only that tag.
+3. Let tag CI create the draft. Never create, upload, replace, or publish the
+   desktop release manually.
+4. Verify the draft has the title/trust warning above, exactly the eight assets
+   listed here, and seven checksum-manifest entries matching fresh downloads.
+5. After explicit publication approval, dispatch **Publish Verified WebJam
+   Release** for `v0.22.5`; require success before calling it public or Latest.
+6. Re-read the public API and require immutable, non-draft, non-prerelease,
+   Latest state plus the same asset IDs, sizes, digests, and checksums.
+
+Windows remains unsigned. macOS remains ad-hoc signed and unnotarized. Physical
+two-musician audio, real Reference Track audibility/isolation, Webex behavior,
+Pocket Stage, Gatekeeper, SmartScreen, signing, and notarization remain
+**NOT RUN** until dated evidence names an exact v0.22.5 asset and SHA-256.

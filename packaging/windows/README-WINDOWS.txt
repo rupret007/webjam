@@ -1,9 +1,9 @@
-WebJam v0.22.4 for Windows x64
+WebJam v0.22.5 for Windows x64
 ==============================
 
-PUBLISHED TEST RELEASE: v0.22.4 passed its draft, checksum, and verified
-GitHub promotion gates and is published. Install only the exact asset listed
-in WebJam-v0.22.4-SHA256SUMS.txt whose SHA-256 matches your download.
+PRE-PUBLICATION TEST CANDIDATE: use this v0.22.5 package only after its draft,
+checksum, and verified GitHub promotion gates pass. Install only the exact
+asset listed in WebJam-v0.22.5-SHA256SUMS.txt whose SHA-256 matches your download.
 Physical audio, hardware, SmartScreen, publisher-signing, and managed-device
 gates remain NOT RUN unless the release evidence names this exact file and
 SHA-256.

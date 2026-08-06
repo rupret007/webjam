@@ -1,7 +1,8 @@
-# WebJam architecture — v0.22.4
+# WebJam architecture — v0.22.5
 
-> **Published private test candidate:** this document describes the source for
-> immutable v0.22.4, now GitHub Latest. Remaining physical gates stay
+> **Pre-publication candidate source:** this document describes v0.22.5.
+> GitHub Latest remains immutable v0.22.4 until the new tag, package, checksum,
+> component-catalog, and promotion gates pass. Remaining physical gates stay
 > **NOT RUN**.
 
 ## Product boundary
@@ -200,7 +201,7 @@ participants into session-local slots. Neither surface receives notes, titles,
 musician names, channel IDs, invitations, addresses, device names, paths,
 tokens, credentials, or raw exceptions.
 
-No model SDK or cloud assistant is part of v0.22.4. A future model-assisted
+No model SDK or cloud assistant is part of v0.22.5. A future model-assisted
 creative feature may be considered only as explicit opt-in, off the real-time
 path, read-only, privacy-gated, unable to issue session commands or create
 operational facts, and visibly labeled as a suggestion. The deterministic
@@ -208,7 +209,7 @@ offline path must remain available.
 
 ## Frozen dependency boundary
 
-v0.22.4 pins `cryptography` 50.0.0 to remediate CVE-2026-69247,
+v0.22.5 pins `cryptography` 50.0.0 to remediate CVE-2026-69247,
 CVE-2026-69248, and CVE-2026-69249. Windows, Linux, and Apple-silicon macOS
 use exact upstream wheels. Intel macOS has one explicit native x86_64
 source-build exception because upstream removed that wheel: WebJam verifies

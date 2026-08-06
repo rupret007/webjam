@@ -2,6 +2,11 @@
 
 > **v0.22.4 published state:** the public component release is sealed and immutable with signed sequence 5 for exact WebJam 0.22.4. The desktop release is also immutable and GitHub Latest. The component release remains a public non-Latest prerelease and its stable channel tag was not moved.
 
+> **v0.22.5 pre-publication state:** candidate source selects a new fixed
+> `jamulus-components-v3` URL and exact sequence 6. No v3 catalog is trusted or
+> public until its separate lightweight tag, one-asset prerelease, signature,
+> public redownload, and frozen-package proofs complete with explicit approval.
+
 This runbook records the sealed v1 history and current v2 catalog channel. The
 catalog tells WebJam which exact
 Jamulus client/server packages are approved. It does not publish WebJam,
@@ -46,18 +51,26 @@ published on 2026-08-05 UTC and is immutable.
 - `jamulus-components-v1` remains the sealed v0.22.3 channel.
 - `jamulus-components-v2` is the current public non-Latest prerelease with
   exactly one immutable asset: `WebJam-Jamulus-components-v1.json`.
-- A future desktop draft remains unpublished if catalog generation, public
+- `jamulus-components-v3` is a new boundary for exact WebJam 0.22.5; it must
+  never move or replace v1/v2 and must remain non-Latest.
+- The v0.22.5 desktop draft remains unpublished if catalog generation, public
   redownload, frozen-runtime verification, or UI verification fails.
 
-## Future renewal after the sequence-5 seal
+## v0.22.5 versioned-channel transition after the sequence-5 seal
 
 Do not attempt to replace the sealed `jamulus-components-v1` asset or move its
-tag. A future desktop release that needs a renewed catalog must introduce a
-reviewed, versioned channel boundary: a new fixed catalog URL, new release and
-tag identity, explicit desktop compatibility migration, and the complete
-signature, expiry, downgrade, privacy, and four-platform frozen-package proof.
-The new channel must remain non-Latest and must not alter historical sequence-4
-or sequence-5 bytes or either desktop release.
+tag, and do not replace or move `jamulus-components-v2`. v0.22.5 introduces a
+reviewed, versioned v3 boundary: a new fixed catalog URL, new release and tag
+identity, explicit desktop compatibility migration, and the complete signature,
+expiry, downgrade, privacy, and four-platform frozen-package proof. The new
+channel must remain non-Latest and must not alter historical sequence-4 or
+sequence-5 bytes or either desktop release.
+
+The exact v3 preparation commit and publication commands are pinned in the
+follow-up release-control commit after the version/URL change receives its
+stable local object ID. Do not create or push a component tag, generate signed
+bytes, or publish the prerelease before that pin is reviewed and the user gives
+explicit approval.
 
 ## Historical mutable-channel renewal procedure: sequence N to N+1
 

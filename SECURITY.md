@@ -30,8 +30,9 @@ support bundles, or unredacted local paths.
 Jamulus, Webex, Python dependencies, Qt, and operating-system trust systems
 have their own upstream security channels. WebJam-specific orchestration,
 privacy projection, package verification, updater, transport, and lifecycle
-issues belong here. The v0.22.4 downloads are private test candidates:
-Windows is unsigned and macOS is ad-hoc signed and unnotarized.
+issues belong here. Published v0.22.4 downloads and the pre-publication
+v0.22.5 candidate share this test-only trust boundary: Windows is unsigned and
+macOS is ad-hoc signed and unnotarized.
 
 ## Disclosure
 

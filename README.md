@@ -17,9 +17,10 @@ the systems that should remain independent.
 > Windows is unsigned; macOS is ad-hoc signed and unnotarized. Physical and
 > credentialed gates remain **NOT RUN** unless exact asset evidence says otherwise.
 
-> **Development boundary:** master is the v0.22.4 test line. Future work
-> belongs in [Unreleased](CHANGELOG.md#unreleased); do not treat an untagged
-> checkout as a downloadable release.
+> **Development boundary:** master is the v0.22.5 release-candidate line. It is
+> not a downloadable release until exact tag CI, draft verification, checksums,
+> and protected promotion pass. Do not substitute an untagged checkout for the
+> published v0.22.4 package.
 
 ## At a glance
 
@@ -27,7 +28,7 @@ the systems that should remain independent.
 | --- | --- |
 | Product | Musician-facing desktop conductor around Jamulus, Webex, Studio, and Pocket Stage |
 | Published line | v0.22.4 private test candidate, four-platform immutable release |
-| Active development | DAW-style multi-region editing and Overdub work |
+| Active candidate | v0.22.5 Reference Track and first-demo reliability closeout |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -422,18 +423,18 @@ credentials, device identifiers, raw paths, or notes.
 ## Published source and candidate state
 
 The published release and the development checkout are intentionally different
-identities. `master` is the v0.22.4 test line; future work listed under
-[Unreleased](CHANGELOG.md#unreleased) is not part of the downloadable release.
-Do not use an untagged source checkout as evidence for the immutable download.
+identities. `master` is the v0.22.5 release-candidate line; it is not part of
+the downloadable release until the exact tag, draft, checksums, component
+catalog, and promotion all pass. Do not use an untagged source checkout as
+evidence for the immutable download.
 
-The source tree and [published release](https://github.com/rupret007/webjam/releases/tag/v0.22.4)
-report **v0.22.4**, an immutable non-prerelease explicitly titled as an
-unsigned private test candidate and marked GitHub **Latest**. It includes the
-cryptography security remediation and bounded Jamulus recovery described
-below while retaining direct Live access to Webex, host-only Reference Track,
-standalone Reference Studio, session Studio, Pocket Stage, the Trinity
-three-loop identity, and the reviewed unsigned/ad-hoc candidate packaging
-described above.
+The source tree reports **v0.22.5**. The
+[published release](https://github.com/rupret007/webjam/releases/tag/v0.22.4)
+remains **v0.22.4**, an immutable non-prerelease explicitly titled as an
+unsigned private test candidate and marked GitHub **Latest**. It retains direct
+Live access to Webex, host-only Reference Track, standalone Reference Studio,
+session Studio, Pocket Stage, the Trinity three-loop identity, and the reviewed
+unsigned/ad-hoc candidate packaging described above.
 
 Published tags and assets remain immutable historical evidence. In particular,
 v0.20.0 history must not be moved. The v0.21.0 history must not be moved or
@@ -451,6 +452,10 @@ that target uses one documented, hash-locked native x86_64 source-build
 exception with static OpenSSL 3.5.7 LTS; CI verifies its official inputs,
 architecture, linkage, installed runtime, license evidence, and package
 inventory. No other target is permitted to use that exception.
+
+v0.22.5 is a new candidate source and package identity for the real-world MP3,
+Reference Track, and first-demo reliability closeout. It does not move or
+replace v0.22.4 and is not public until its separate release gates pass.
 
 The published v0.22.4 tag, title, warning text, assets, and checksums are now
 immutable and must never be rebuilt or replaced.
@@ -473,6 +478,13 @@ wrong-size, wrong-hash, wrong-publisher, or unexpected-inventory content.
 Support Bundles record only the finite catalog connection category and packaged
 TLS trust state, which helps distinguish ordinary offline access from a broken
 package without copying URLs, paths, credentials, or raw exceptions.
+
+The v0.22.5 candidate uses a new fixed `jamulus-components-v3` boundary. It
+cannot be promoted until a public, independently redownloaded, signature-valid
+sequence-6 catalog authorizes exact WebJam 0.22.5. The v1 and v2 component tags,
+assets, and signed bytes remain immutable; they are never moved or replaced to
+make the new candidate work. Missing, invalid, expired, or wrong-target v3
+metadata leaves WebJam on its reviewed embedded 3.12.2 fallback.
 
 Successful branch and pull-request workflows also retain the unsigned Windows
 x64 candidate on GitHub for 90 days as `webjam-windows-x64`. It contains
@@ -538,7 +550,7 @@ promote a package or claim audibility.
 
 - [Documentation index](docs/README.md)
 - [Project brief for technical stakeholders](docs/PROJECT_BRIEF.md)
-- [v0.22.4 release notes and changelog](CHANGELOG.md)
+- [v0.22.5 candidate notes and release history](CHANGELOG.md)
 - [v0.18 unified-guidance pilot checklist](V018_UNIFIED_GUIDANCE_PILOT.md)
 - [First jam](FIRST_JAM.md)
 - [Musician guide](USER_GUIDE.md)
@@ -553,6 +565,7 @@ promote a package or claim audibility.
 - [Reference Track macOS physical pilot](docs/plans/webjam-reference-track-macos-pilot.md)
 - [Webex sandbox demo gate](docs/plans/webjam-webex-sandbox-demo-gate.md)
 - [Dual-musician rehearsal lab](DUAL_MUSICIAN_REHEARSAL_LAB.md)
+- [v0.22.5 two-musician demo readiness scorecard](WEBJAM_V0225_DEMO_READINESS.md)
 - [Webex companion guidance](WEBEX_AUDIO_MODES.md)
 - [Jamulus component catalog release runbook](docs/JAMULUS_COMPONENT_RELEASE_RUNBOOK.md)
 - [Test procedure](TEST_PROCEDURE.md)
