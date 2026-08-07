@@ -9,6 +9,7 @@ keeps the product story and five-minute demo intentionally short.
 | Audience | Read | Outcome |
 | --- | --- | --- |
 | Evaluator or stakeholder | [Project brief](PROJECT_BRIEF.md) | Understand the product thesis, architecture, evidence, and roadmap |
+| New musician | [Simple-language guide](../README_SIMPLE.md) | Understand WebJam in plain words before anything technical |
 | Musician | [Musician guide](../USER_GUIDE.md) | Host, join, use Webex, record, and recover a session |
 | First-time demo | [First Jam](../FIRST_JAM.md) | Follow the shortest live-rehearsal path |
 | Reference Studio user | [Reference Studio musician guide](REFERENCE_STUDIO_MUSICIAN_GUIDE.md) | Write, arrange, record, and bounce a local project |
@@ -28,6 +29,12 @@ keeps the product story and five-minute demo intentionally short.
   — iPhone owner-device preview and its trust model.
 - [Webex decision record](adr/0004-webex-external-launch-and-future-oauth.md)
   — external handoff today; OAuth or an embedded companion remains future work.
+- [Webex companion guidance](../WEBEX_AUDIO_MODES.md) — the canonical
+  description of the Conversation controls and what WebJam does and does not
+  claim about the external Webex app.
+- [Quick help map](../QUICK_HELP_MAP.md) and
+  [help routing map](../HELP_ROUTING_MAP.md) — need→action and
+  musician-question→answer tables for support conversations.
 
 ## Evidence, releases, and operations
 

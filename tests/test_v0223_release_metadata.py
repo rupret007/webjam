@@ -124,9 +124,43 @@ def test_current_release_guides_report_v0225_consistently() -> None:
         "ios/README.md": "matching v0.22.5 Mac candidate",
         "requirements-lock/README.md": "The v0.22.5 candidate locks",
         "WEBJAM_V0225_DEMO_READINESS.md": "# WebJam v0.22.5 two-musician demo readiness",
+        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": (
+            "this document targets the v0.22.5"
+        ),
     }
     for relative_path, marker in expected.items():
         assert marker in (ROOT / relative_path).read_text(encoding="utf-8")
+
+
+def test_reference_track_play_story_is_route_gated_not_locked() -> None:
+    """Current guides must tell one story: Play is route-proof gated.
+
+    Through v0.22.2 playback was locked outright; since v0.22.4 it is
+    fail-closed behind machine-derived route proof.  A current document
+    claiming playback simply "remains locked" would send a release run or a
+    musician chasing behavior the source no longer has.
+    """
+
+    current_documents = (
+        "README.md",
+        "USER_GUIDE.md",
+        "HELP_ROUTING_MAP.md",
+        "QUICK_HELP_MAP.md",
+        "docs/DESKTOP_RELEASE_RUNBOOK.md",
+        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md",
+    )
+    for relative_path in current_documents:
+        text = (ROOT / relative_path).read_text(encoding="utf-8")
+        normalized = " ".join(text.split())
+        assert "remains deliberately **locked" not in normalized, relative_path
+        assert "Play remains locked" not in normalized, relative_path
+        assert "playback remains locked" not in normalized, relative_path
+
+
+def test_changelog_marks_the_candidate_unreleased() -> None:
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "## [0.22.5] — UNRELEASED" in changelog
+    assert "## [0.22.4] — 2026-08-04" in changelog
 
 
 def test_candidate_package_copy_is_explicit_about_platform_trust() -> None:

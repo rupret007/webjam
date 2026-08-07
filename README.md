@@ -22,6 +22,9 @@ the systems that should remain independent.
 > and protected promotion pass. Do not substitute an untagged checkout for the
 > published v0.22.4 package.
 
+New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
+[First Jam](FIRST_JAM.md); this README is the complete technical story.
+
 ## At a glance
 
 | Area | Current state |
@@ -51,8 +54,8 @@ WebJam is a conductor, not a replacement for the tools musicians already trust.
    Sound** if needed.
 4. Open **Webex Controls** only when conversation or video is wanted; use
    **Join / Open Meeting** for an explicit meeting-link handoff.
-5. Open **Reference Studio** for local songwriting and arrangement. The
-   v0.22.4 candidate includes DAW-style multi-region editing and loop Overdub;
+5. Open **Reference Studio** for local songwriting and arrangement. It
+   includes DAW-style multi-region editing and loop Overdub (since v0.22.4);
    read the release notes before the first take.
 
 ## System ownership
@@ -84,9 +87,9 @@ WebJam is a conductor, not a replacement for the tools musicians already trust.
 There is no WebJam input/output picker, server field, port field, or Band
 Check gate in Host/Join.
 
-## Bounded Jamulus recovery in the v0.22.4 candidate
+## Bounded Jamulus recovery
 
-The v0.22.4 source treats a running Jamulus process as necessary but not
+Since v0.22.4, the source treats a running Jamulus process as necessary but not
 sufficient recovery evidence. Each replacement is bound to the exact recovery
 generation, process generation, and process ID that WebJam launched. WebJam
 returns to Connected only after that same process has fresh authenticated RPC
@@ -109,7 +112,7 @@ PASS.
 
 ## Jamulus updates without rebuilding WebJam
 
-WebJam v0.22.4 keeps its reviewed Jamulus 3.12.2 client, server, and isolated
+WebJam keeps its reviewed Jamulus 3.12.2 client, server, and isolated
 Reference Track companion as an offline fallback. In the background it checks
 a separately published, Ed25519-signed component catalog for Jamulus versions
 that have passed WebJam's exact routing, RPC, recording, and packaging
@@ -245,8 +248,8 @@ playhead, animation, audio, capture, or playback callbacks.
 
 ## Pocket Stage iPhone owner-device preview
 
-The v0.22.4 candidate retains the narrow Pocket Stage v1 vertical slice
-introduced in v0.19.0 for an owner's iPhone. On the desktop, choose
+The current source retains the narrow Pocket Stage v1 vertical slice
+introduced in v0.19.0 for an owner's iPhone, unchanged since v0.22.4. On the desktop, choose
 **More → Use iPhone as Pocket Stage…** after both devices are on the same
 private Wi-Fi.
 WebJam displays a one-use QR code that expires after two minutes and starts a
@@ -305,18 +308,18 @@ Its intended route sends the decoded source through a separately owned
 `WebJam Track` Jamulus client, so the song becomes one participant with an
 independent level and recording stem.
 
-Playback remains deliberately **locked in the v0.22.2 private test candidate**.
-Apple's CoreAudio process-device property has a reported case where its input
-result becomes the process's output device after an input switch. Jamulus
-3.12.2 has no independent live-device RPC, and its saved profile is not
-sufficient proof. Because physical BlackHole isolation and direct-monitor
-tests are also **NOT RUN**, production wiring refuses playback before scanning,
-launching a backing client, or opening audio. There is no setting, environment
-variable, command-line switch, or UI override. Installing BlackHole, running its
-setup guidance, or choosing **Recheck Route** cannot unlock a downloaded
-v0.22.2 package.
+Playback is **fail-closed behind machine-derived route proof** in the current
+v0.22.5 source, exactly as in published v0.22.4: Play stays refused until the
+Mac proves the required isolated route, and any missing, changed, or ambiguous
+evidence returns it to silence. Earlier candidates through v0.22.2 instead
+shipped with playback locked outright — Apple's CoreAudio process-device
+property has a reported case where its input result becomes the process's
+output device after an input switch, Jamulus 3.12.2 has no independent
+live-device RPC, and its saved profile is not sufficient proof — so in a
+downloaded v0.22.2 package no setting, environment variable, command-line
+switch, or UI action, including **Recheck Route**, can unlock playback.
 
-The v0.22.4 candidate derives route authority on the Mac instead of
+Since v0.22.4, route authority is derived on the Mac instead of
 requiring a constructor-only grant. An official, unambiguous 48-kHz BlackHole
 16ch/64ch route is necessary; when the production factory's read-only local
 checks certify that prerequisite, Play may become available. Choosing Play
@@ -537,7 +540,8 @@ Windows PC may still require IT approval even after valid publisher signing;
 candidate packages must never be described as production-trusted installers.
 
 Automated source and package checks are evidence for code and archive
-integrity—not a substitute for musicians hearing one another. For v0.22.4,
+integrity—not a substitute for musicians hearing one another. For published
+v0.22.4 and the v0.22.5 source line alike,
 real two-Mac audio, physical interface disconnect/reconnect, sleep/wake,
 interruption and recording recovery, long-session operation, external-editor
 import of the evidence-rich session export, physical Reference Studio

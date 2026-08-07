@@ -5,7 +5,10 @@ a backing track. It can open without a WebJam session, Webex, or Jamulus. Its
 local playback and recording choices do not change the device, buffer, mix, or
 connection owned by Jamulus.
 
-This guide describes the published, immutable v0.22.4 private test candidate.
+> **Pre-publication candidate guide:** this document targets the v0.22.5
+> source line. GitHub Latest remains the published, immutable v0.22.4 private
+> test candidate — those packages are what a musician can download today.
+
 Windows packages are unsigned. Mac packages are ad-hoc signed and unnotarized.
 Automated checks do not prove that a particular interface, driver, speaker, or
 headphone path is
@@ -161,7 +164,7 @@ and license-policy self-tests. Use WAV or FLAC for a lossless handoff.
 | Host/Join | Jamulus | Live low-latency rehearsal; WebJam observes and conducts the private session |
 | Session recording and Studio | WebJam recorder plus immutable completed-take evidence | Review, arrange, comp, and export a recorded rehearsal |
 | Standalone Reference Studio | Local Reference Studio playback/recording backend | Write, play along, record local ideas, arrange, mix, and bounce without joining |
-| Reference Track pilot | Separate `WebJam Track` Jamulus participant | Capability-gated host source pilot; packaged playback remains locked pending physical isolation proof |
+| Reference Track pilot | Separate `WebJam Track` Jamulus participant | Capability-gated host source pilot; packaged Play stays fail-closed until the Mac proves the isolated route, and physical audibility remains **NOT RUN** |
 
 Do not route Reference Studio into Jamulus by assumption. A future explicit
 feature would need to prove ownership, feedback isolation, return-fader state,
@@ -188,8 +191,6 @@ Reference Studio input/output, latency, recovery, external-editor, hardware,
 SmartScreen, Gatekeeper, signing, and notarization gates remain **NOT RUN**.
 
 ## Historical v0.22.2 record
-
-## Candidate download checklist
 
 The
 [v0.22.2 GitHub release](https://github.com/rupret007/webjam/releases/tag/v0.22.2)

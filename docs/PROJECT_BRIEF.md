@@ -71,11 +71,16 @@ the full contract.
 
 ## Current development line
 
-The current `master` line adds DAW-style multi-region editing and first-class
-loop Overdub in Reference Studio. The changes are covered by machine tests but
-are part of the immutable v0.22.4 test download. Future changes should be
-treated as candidates for a new versioned release after product review and
-physical validation, not as silent patches to the published artifact.
+The current `master` line is the unreleased v0.22.5 candidate focused on
+first-demo reliability: real-world MP3 acceptance with exact, path-free
+rejection reasons, drag-and-drop Reference Track loading, audible-dropout
+surfacing, a 3.0 s route-proof freshness budget, a default-safe built-in
+mic/speaker warning before audio starts, and the Studio return button
+labelled "Back to Live". DAW-style multi-region editing and loop Overdub
+shipped in the immutable v0.22.4 test download and are unchanged here.
+Future changes are candidates for a new versioned release after product
+review and physical validation, not silent patches to the published
+artifact.
 
 ## Why this may matter to Cisco
 

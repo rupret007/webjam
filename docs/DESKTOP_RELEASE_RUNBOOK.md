@@ -529,8 +529,9 @@ UI, verify:
 - **Open Webex to Mute** focuses Webex for its own control without claiming mute or
   changing Jamulus;
 - direct **Studio** reaches the existing live/offline Studio route;
-- host-only **Reference Track** can load and inspect a source while Play remains locked,
-  and **Recheck Route** starts no playback;
+- host-only **Reference Track** can load and inspect a source; **Play** stays
+  fail-closed unless the machine-derived isolated-route proof is current, and
+  **Recheck Route** starts no playback;
 - a deliberately slow hosted-server start does not let reconnect supervision
   cancel the manual Jamulus launch generation.
 

@@ -9,7 +9,10 @@ All notable improvements and features for the WebJam music collaboration platfor
 > Future work after the v0.22.5 private test candidate belongs here. The
 > published v0.22.4 release remains immutable historical evidence.
 
-## [0.22.5] — 2026-08-05 reference-demo reliability private test candidate
+## [0.22.5] — UNRELEASED reference-demo reliability candidate (2026-08-05)
+
+> Not published. GitHub Latest remains immutable v0.22.4 until this candidate
+> passes tag CI, draft verification, and protected promotion.
 
 ### Demo safety and presentation
 
