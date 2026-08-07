@@ -12,7 +12,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
-LOGGER = logging.getLogger(__name__)
+# Stay inside the ``webjam`` logger namespace so the redaction filter that
+# ``core.logging_config`` attaches to the app's handlers covers this module.
+# This file logs the bootstrap credentials file path and usernames on failure
+# branches; ``__name__`` (``storage.repository``) would bypass redaction.
+LOGGER = logging.getLogger("webjam.storage.repository")
 
 # Must match ALLOWED_ARTIFACT_TYPES in ui/views/session_canvas.py
 VALID_ARTIFACT_TYPES = {"image", "link", "note", "doc", "board"}

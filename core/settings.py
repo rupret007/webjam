@@ -12,7 +12,11 @@ from core.jamulus_name import (
     validate_jamulus_name,
 )
 
-_logger = logging.getLogger(__name__)
+# Stay inside the ``webjam`` logger namespace so the redaction filter that
+# ``core.logging_config`` attaches to the app's handlers covers this module;
+# ``__name__`` (``core.settings``) would propagate to the root logger and
+# reach stderr unredacted.
+_logger = logging.getLogger("webjam.core.settings")
 
 WEBEX_AUDIO_MODES = ("talkback", "video_only", "audience_bridge")
 

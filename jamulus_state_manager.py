@@ -52,7 +52,9 @@ class ParticipantStateManager:
         self._set_cached_participants = set_cached_participants
         self._send_rpc_gain = send_rpc_gain
         self._notify_callbacks = notify_callbacks
-        self._logger = logger or logging.getLogger(__name__)
+        # The fallback stays inside the ``webjam`` namespace so participant
+        # names never reach an unredacted root-logger handler.
+        self._logger = logger or logging.getLogger("webjam.jamulus_state")
 
     def get_participants(self) -> List[JamulusParticipant]:
         with self._participants_lock:

@@ -5,7 +5,9 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Optional
 
-_LOGGER = logging.getLogger(__name__)
+# Stay inside the ``webjam`` logger namespace so the redaction filter that
+# ``core.logging_config`` attaches to the app's handlers covers this module.
+_LOGGER = logging.getLogger("webjam.api.local_bridge")
 
 
 class LocalApiBridge:

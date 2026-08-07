@@ -28,7 +28,11 @@ class SessionPersistence:
     def __init__(self, session_strip, session_canvas, logger: Optional[logging.Logger] = None) -> None:
         self._strip = session_strip
         self._canvas = session_canvas
-        self._log = logger or logging.getLogger(__name__)
+        # The fallback stays inside the ``webjam`` namespace so session
+        # titles never reach an unredacted root-logger handler.
+        self._log = logger or logging.getLogger(
+            "webjam.qt.session_persistence"
+        )
         # A joined session shows the name whoever sent the invitation chose.
         # That is not the musician's own title, so it must never overwrite
         # the one on disk -- otherwise a guest session's name follows them

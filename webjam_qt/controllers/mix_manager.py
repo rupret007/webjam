@@ -42,7 +42,9 @@ class MixManager:
     ) -> None:
         self._jamulus = jamulus_controller
         self._flash = flash_callback
-        self._log = logger or logging.getLogger(__name__)
+        # The fallback stays inside the ``webjam`` namespace so take titles
+        # and mix paths never reach an unredacted root-logger handler.
+        self._log = logger or logging.getLogger("webjam.qt.mix_manager")
         self._metrics = metrics
 
     # ------------------------------------------------------------------
