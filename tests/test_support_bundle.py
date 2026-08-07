@@ -469,6 +469,49 @@ class TestSupportArtifact(unittest.TestCase):
         ):
             self.assertIn(expected, safe_log)
 
+    def test_log_lines_keep_timestamp_severity_and_component(self):
+        """The app's own formatter prefix must survive bundling.
+
+        ``%(asctime)s %(levelname)s %(name)s`` with a dotted logger such as
+        ``webjam.qt.diagnostics`` must not be mistaken for a filename with an
+        unknown extension; losing it strips time ordering, severity, and
+        origin from every bundled log line.  Message bodies keep the full
+        redaction treatment.
+        """
+
+        raw = (
+            "2026-08-07T10:00:00 ERROR webjam.qt.diagnostics Export failed\n"
+            "2026-08-07T10:00:01 INFO webjam Session started\n"
+            "2026-08-07T10:00:02 WARNING webjam.core.take_library "
+            "Take /Users/jeff/Music/My Band Take 3.wav missing\n"
+            "2026-08-07 10:00:03,123 CRITICAL webjam.services.bridge_service "
+            "Jamulus exited with code 0\n"
+            "2026-08-07T10:00:04 ERROR /Users/jeff/Music/Loud Song.wav boom\n"
+        )
+        artifact = build_support_bundle(
+            SupportFacts(),
+            log_excerpts={"webjam": raw},
+            created_at=CREATED_AT,
+        )
+
+        safe_log = artifact.read_archive_file("logs/webjam.log").decode("utf-8")
+        for private in ("jeff", "My Band Take 3.wav", "Loud Song.wav"):
+            self.assertNotIn(private, safe_log)
+        for expected in (
+            "2026-08-07T10:00:00 ERROR webjam.qt.diagnostics Export failed",
+            "2026-08-07T10:00:01 INFO webjam Session started",
+            "2026-08-07T10:00:02 WARNING webjam.core.take_library "
+            "Take [redacted-path]",
+            "2026-08-07 10:00:03,123 CRITICAL webjam.services.bridge_service "
+            "Jamulus exited with code 0",
+        ):
+            self.assertIn(expected, safe_log)
+        # A prefix whose component slot is a rooted path is not a structural
+        # prefix; the rooted-path rule still redacts it and its conservative
+        # end-of-path scan may swallow the trailing message text.
+        self.assertIn("2026-08-07T10:00:04 ERROR [redacted-path]", safe_log)
+        self.assertNotIn("10:00:04 ERROR /Users", safe_log)
+
     def test_path_scrubbing_bounds_adversarial_log_work(self):
         bounded_slash_heavy = "/a " * 2_700
         slash_heavy = "/a " * ((128 * 1024) // 3)

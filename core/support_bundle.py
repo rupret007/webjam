@@ -78,6 +78,21 @@ _SUPPORT_EXTENSION_RE = re.compile(
 _SUPPORT_PRIVATE_KEY_MARKER_RE = re.compile(
     r"(?i)-----(?P<kind>BEGIN|END) [^-\r\n]*PRIVATE KEY-----"
 )
+# The app's own log formatter is ``%(asctime)s %(levelname)s %(name)s
+# %(message)s`` with dotted logger names such as ``webjam.qt.diagnostics``.
+# That dotted name looks like an unknown file extension to the conservative
+# filename scanner below, which would redact from the start of the line and
+# strip the timestamp, severity, and component from every bundled log line.
+# The prefix matched here cannot carry private data by construction: a strict
+# timestamp, a fixed severity word, and a dotted identifier chain with no
+# spaces, separators, or userinfo. Only this structural prefix is preserved;
+# the message body keeps the full redaction treatment.
+_SUPPORT_LOG_LINE_PREFIX_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d{1,6})?"
+    r"[ \t]+(?:DEBUG|INFO|WARNING|ERROR|CRITICAL)"
+    r"[ \t]+[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*"
+    r"(?=[ \t]|$)"
+)
 _SUPPORT_ASSIGNMENT_PREFIX_RE = re.compile(
     r"(?i)(?<![A-Za-z0-9_.-])"
     r"(?P<key>[\"']?[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}[\"']?)"
@@ -1555,6 +1570,11 @@ def _sanitize_support_uri(value: str, scheme: str) -> str:
 
 
 def _redact_support_line(text: str) -> str:
+    prefix = ""
+    prefix_match = _SUPPORT_LOG_LINE_PREFIX_RE.match(text)
+    if prefix_match is not None:
+        prefix = text[: prefix_match.end()]
+        text = text[prefix_match.end() :]
     parts: list[str] = []
     previous_end = 0
     for match in _SUPPORT_URI_RE.finditer(text):
@@ -1565,7 +1585,7 @@ def _redact_support_line(text: str) -> str:
     safe = "".join(parts)
     while _REDACTED_PATH + _REDACTED_PATH in safe:
         safe = safe.replace(_REDACTED_PATH + _REDACTED_PATH, _REDACTED_PATH)
-    return safe
+    return prefix + safe
 
 
 def _redact_support_paths(text: str) -> str:
