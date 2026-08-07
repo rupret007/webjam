@@ -469,6 +469,49 @@ class TestSupportArtifact(unittest.TestCase):
         ):
             self.assertIn(expected, safe_log)
 
+    def test_readme_names_the_bundle_and_identifies_the_build(self):
+        """README.txt opens with a quotable Bundle ID and an identity block.
+
+        A musician reads the Bundle ID over the phone; a technician matches
+        it against ``manifest.json`` without comparing whole archives.  The
+        at-a-glance block renders only facts the report actually contains.
+        """
+
+        artifact = build_support_bundle(
+            SupportFacts(
+                webjam_version="0.22.5",
+                build_id="abc1234",
+                jamulus_version="3.12.2",
+                jamulus_state="connected",
+                os_name="Darwin 24.5.0",
+                architecture="arm64",
+            ),
+            created_at=CREATED_AT,
+        )
+        summary = artifact.read_archive_file("README.txt").decode("utf-8")
+        manifest = json.loads(
+            artifact.read_archive_file("manifest.json").decode("utf-8")
+        )
+
+        bundle_id = manifest["bundle_id"]
+        self.assertRegex(bundle_id, r"^[0-9a-f]{10}$")
+        self.assertIn(f"Bundle ID: {bundle_id}", summary)
+        expected_id = hashlib.sha256(
+            artifact.read_archive_file("support.json")
+        ).hexdigest()[:10]
+        self.assertEqual(bundle_id, expected_id)
+        self.assertIn("## At a glance", summary)
+        self.assertIn("- WebJam: 0.22.5 (build abc1234)", summary)
+        self.assertIn("- Jamulus: 3.12.2 — state: connected", summary)
+        self.assertIn("- System: Darwin 24.5.0 (arm64)", summary)
+
+        # An empty report renders no fabricated glance facts.
+        empty = build_support_bundle(SupportFacts(), created_at=CREATED_AT)
+        empty_summary = empty.read_archive_file("README.txt").decode("utf-8")
+        self.assertNotIn("- WebJam:", empty_summary)
+        self.assertNotIn("- System:", empty_summary)
+        self.assertIn("Bundle ID: ", empty_summary)
+
     def test_log_lines_keep_timestamp_severity_and_component(self):
         """The app's own formatter prefix must survive bundling.
 

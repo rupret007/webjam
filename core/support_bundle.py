@@ -683,15 +683,23 @@ def build_support_bundle(
     )
 
     sanitized_logs = _sanitize_logs(log_excerpts or {})
-    summary = _render_summary(report, tuple(sorted(sanitized_logs)))
+    report_payload = _json_bytes(report)
+    # A short, stable name for this exact artifact.  A musician can read it
+    # from README.txt over the phone and a technician can match it against
+    # the manifest without comparing whole archives.
+    bundle_id = hashlib.sha256(report_payload).hexdigest()[:10]
+    summary = _render_summary(
+        report, tuple(sorted(sanitized_logs)), bundle_id=bundle_id
+    )
     files: dict[str, bytes] = {
         "README.txt": summary.encode("utf-8"),
-        "support.json": _json_bytes(report),
+        "support.json": report_payload,
     }
     files.update(sanitized_logs)
 
     manifest = {
         "schema_version": SCHEMA_VERSION,
+        "bundle_id": bundle_id,
         "created_at_utc": report["created_at_utc"],
         "privacy": {
             "collection": "allowlist-only",
@@ -1771,17 +1779,72 @@ def _looks_like_log_text(text: str) -> bool:
     return control_count / len(sample) < 0.02
 
 
-def _render_summary(report: Mapping[str, Any], log_names: tuple[str, ...]) -> str:
+def _summary_glance_lines(report: Mapping[str, Any]) -> list[str]:
+    """Render only facts the report actually contains, in plain language."""
+
+    def _lookup(*path: str) -> Any:
+        value: Any = report
+        for key in path:
+            if not isinstance(value, Mapping) or key not in value:
+                return None
+            value = value[key]
+        return value
+
+    lines: list[str] = []
+    webjam = _lookup("versions", "webjam")
+    build = _lookup("versions", "build")
+    if webjam:
+        suffix = f" (build {build})" if build else ""
+        lines.append(f"- WebJam: {webjam}{suffix}")
+    jamulus_version = _lookup("versions", "jamulus")
+    jamulus_state = _lookup("jamulus", "state")
+    if jamulus_version or jamulus_state:
+        parts = []
+        if jamulus_version:
+            parts.append(str(jamulus_version))
+        if jamulus_state:
+            parts.append(f"state: {jamulus_state}")
+        lines.append(f"- Jamulus: {' — '.join(parts)}")
+    os_name = _lookup("system", "os")
+    architecture = _lookup("system", "architecture")
+    if os_name:
+        suffix = f" ({architecture})" if architecture else ""
+        lines.append(f"- System: {os_name}{suffix}")
+    update_status = _lookup("jamulus_update", "status")
+    if update_status:
+        lines.append(f"- Jamulus component update: {update_status}")
+    return lines
+
+
+def _render_summary(
+    report: Mapping[str, Any],
+    log_names: tuple[str, ...],
+    *,
+    bundle_id: str,
+) -> str:
     lines = [
         "# WebJam Diagnostics",
         "Privacy-safe support report",
         "",
+        f"Bundle ID: {bundle_id}",
         f"Created (UTC): {report['created_at_utc']}",
-        f"Sensitive values are {REDACTED}. Audio, databases, notes, transcripts,",
-        "settings, environment variables, private invites, and arbitrary files are excluded.",
-        "",
-        "## Diagnostic facts",
     ]
+    glance = _summary_glance_lines(report)
+    if glance:
+        lines.extend(["", "## At a glance"])
+        lines.extend(glance)
+    lines.extend(
+        [
+            "",
+            "Quote the Bundle ID when reporting a problem so support can",
+            "match this exact bundle.",
+            "",
+            f"Sensitive values are {REDACTED}. Audio, databases, notes, transcripts,",
+            "settings, environment variables, private invites, and arbitrary files are excluded.",
+            "",
+            "## Diagnostic facts",
+        ]
+    )
     fact_lines = []
     for path, value in _iter_leaves(report):
         if path in {"schema_version", "created_at_utc"}:

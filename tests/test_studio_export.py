@@ -12,6 +12,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -408,6 +409,15 @@ def test_export_is_authoritative_equal_length_and_evidence_complete(
 
     provenance = json.loads(result.provenance.read_text(encoding="utf-8"))
     assert provenance["schema_version"] == 1
+    # The package must identify the producing build and moment on its own.
+    produced_by = provenance["produced_by"]
+    assert produced_by["application"] == "WebJam"
+    from webjam_qt import __version__ as _webjam_version
+
+    assert produced_by["version"] == _webjam_version
+    exported_at = produced_by["exported_at_utc"]
+    assert exported_at.endswith("Z")
+    datetime.fromisoformat(exported_at.replace("Z", "+00:00"))
     assert provenance["studio_document_revision"] == document.revision
     assert provenance["take_manifest"]["sha256"] == manifest_hash
     assert provenance["studio_state_file"]["sha256"] == state_hash

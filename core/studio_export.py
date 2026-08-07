@@ -23,6 +23,7 @@ import threading
 import uuid
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import BinaryIO, Iterator, Protocol, Sequence
 
@@ -2381,6 +2382,22 @@ def _track_provenance(
     return values
 
 
+def _producing_application_version() -> str:
+    """Read the canonical application version without importing any Qt code.
+
+    ``webjam_qt/__init__.py`` holds the single release-audited version
+    string and imports nothing.  The guard keeps export usable in stripped
+    deployments where the UI package is absent; evidence then says so
+    explicitly instead of failing the export.
+    """
+
+    try:
+        from webjam_qt import __version__
+    except Exception:  # noqa: BLE001 - identity evidence must not block export
+        return "unknown"
+    return str(__version__)
+
+
 def _provenance_payload(
     *,
     project: TakeProject,
@@ -2440,6 +2457,17 @@ def _provenance_payload(
     return {
         "schema_version": STUDIO_EXPORT_SCHEMA_VERSION,
         "export_type": "webjam_studio_arrangement",
+        # A technician receiving an export package must be able to tell
+        # which WebJam build produced it and when, from the package alone.
+        "produced_by": {
+            "application": "WebJam",
+            "version": _producing_application_version(),
+            "exported_at_utc": (
+                datetime.now(timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z")
+            ),
+        },
         "session_id": project.session_id,
         "take_id": project.take_id,
         "take_project_revision": project.revision,
