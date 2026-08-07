@@ -42,7 +42,7 @@
 - Do not select Jamulus music devices in WebJam; Jamulus owns them.
 - Do not expect Webex to carry the music; it is optional conversation/video.
 - **Show Webex App** activates or launches the verified app itself without a
-  meeting link or browser; Webex chooses its own screen. **Mute in Webex** shows
+  meeting link or browser; Webex chooses its own screen. **Open Webex to Mute** shows
   the verified app for its own Mute control; WebJam does not claim to change or
   verify Webex mute. Those focus actions are currently macOS-only; Windows and
   Linux use **Join / Open Meeting**.

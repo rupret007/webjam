@@ -75,7 +75,7 @@
       never claims that it joined a meeting or changed mute.
 - [ ] Windows/Linux keep native focus unavailable without publisher proof and
       still provide the truthful **Join / Open Meeting** handoff.
-- [ ] **Mute in Webex** shows the verified app for its own Mute control and
+- [ ] **Open Webex to Mute** shows the verified app for its own Mute control and
       truthfully says that WebJam neither changes nor verifies external mute or
       Jamulus.
 - [ ] Webex link is optional, external, persisted without credentials, and

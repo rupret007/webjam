@@ -118,7 +118,7 @@ Review at minimum:
   and foreground state; request acceptance alone is not success. Webex chooses
   its own screen. Windows/Linux native activation remains disabled without
   publisher proof.
-- **Mute in Webex** shows the verified external app for its own control and
+- **Open Webex to Mute** shows the verified external app for its own control and
   never sends a blind shortcut, reports mute success, or changes Jamulus.
 - The Jamulus updater verifies the catalog signature, exact WebJam version,
   expiry, monotonic sequence, target/architecture/roles/capabilities, HTTPS

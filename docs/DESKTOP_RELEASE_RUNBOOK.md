@@ -526,7 +526,7 @@ UI, verify:
 - **Show Webex App** activates verified running Webex or launches the verified
   app itself when stopped, with no URL/document, browser, or meeting handoff;
 - **Join / Open Meeting** performs only one explicit URL handoff;
-- **Mute in Webex** focuses Webex for its own control without claiming mute or
+- **Open Webex to Mute** focuses Webex for its own control without claiming mute or
   changing Jamulus;
 - direct **Studio** reaches the existing live/offline Studio route;
 - host-only **Reference Track** can load and inspect a source while Play remains locked,

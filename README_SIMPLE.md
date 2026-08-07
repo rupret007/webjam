@@ -63,7 +63,7 @@ does not start, stop, configure, or feed Jamulus.
   re-verifies and activates the exact Cisco process when running. If stopped,
   it launches the verified app itself with no URL or browser; Webex chooses its
   own screen. Only **Join / Open Meeting** performs the one explicit
-  meeting-link handoff. **Mute in Webex** shows the verified app so you can use
+  meeting-link handoff. **Open Webex to Mute** shows the verified app so you can use
   its own Mute control; WebJam never claims it changed Webex or Jamulus.
   Windows and Linux use **Join / Open Meeting** because their current packages
   do not verify the native app publisher. If the app is missing, WebJam can

@@ -170,7 +170,7 @@ operating system or supported browser.
 
 Webex owns sign-in, camera, microphone, speakers, participants, mute, and
 meeting state. Because the external native app does not expose verifiable mute
-control to this integration, **Mute in Webex** shows the verified Webex app so
+control to this integration, **Open Webex to Mute** shows the verified Webex app so
 the musician can use its own Mute control and explicitly does not claim it
 changed Webex or Jamulus.
 WebJam detects the native Webex app and, when it is missing or invalid, offers

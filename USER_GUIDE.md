@@ -92,7 +92,7 @@ request. Webex chooses which of its screens appears. This action never opens a
 browser, hands off the meeting link, joins a meeting, or treats native request
 acceptance as success. **Join / Open Meeting** is the only action that
 hands the saved link to the operating system, once per click. **Change Link**
-opens Settings. **Mute in Webex** shows the verified external app so you can
+opens Settings. **Open Webex to Mute** shows the verified external app so you can
 use its own Mute control; WebJam cannot verify or change Webex mute and does
 not send a blind shortcut or touch Jamulus. Windows and Linux keep these
 native-focus actions unavailable because their current packages do not verify

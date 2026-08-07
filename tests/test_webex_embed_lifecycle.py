@@ -232,6 +232,10 @@ def test_conversation_actions_are_distinct_and_truthful():
     mute_description = embed.mute_button().accessibleDescription()
     assert "cannot verify or change mute" in mute_description
     assert "Jamulus" not in embed.mute_button().text()
+    # The label describes the real action (bringing Webex forward), not a
+    # mute WebJam can neither perform nor verify.
+    assert embed.mute_button().text() == "Open Webex to Mute"
+    assert embed.mute_button().accessibleName() == "Open Webex to Mute"
 
 
 def test_join_open_requires_a_configured_link_and_is_single_flight():

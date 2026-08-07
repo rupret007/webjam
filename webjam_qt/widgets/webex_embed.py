@@ -104,9 +104,12 @@ class WebexEmbed(QFrame):
         )
         self._bring_forward_btn.setEnabled(False)
 
-        self._mute_btn = QPushButton("Mute in Webex")
+        # The label must describe what WebJam actually does — bring the
+        # external app forward — not claim a mute action WebJam can neither
+        # perform nor verify.
+        self._mute_btn = QPushButton("Open Webex to Mute")
         self._mute_btn.setObjectName("GhostButton")
-        self._mute_btn.setAccessibleName("Mute in Webex")
+        self._mute_btn.setAccessibleName("Open Webex to Mute")
         self._mute_btn.setAccessibleDescription(
             "Show the verified Webex app so you can use its Mute control. "
             "WebJam cannot verify or change mute in the external Webex app."

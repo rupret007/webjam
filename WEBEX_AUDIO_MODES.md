@@ -22,7 +22,7 @@ with no URL or document argument. Fresh observations then prove exact object
 identity, PID, publisher, and foreground state; request acceptance alone is not
 success. Webex chooses its own screen.
 Only **Join / Open Meeting** performs the one explicit meeting-link handoff.
-**Change Link** returns to Settings. **Mute in Webex** shows the verified native
+**Change Link** returns to Settings. **Open Webex to Mute** shows the verified native
 app for its own Mute control. WebJam cannot verify or change mute in an
 externally owned meeting, so it never sends a blind shortcut or reports
 Webex—or Jamulus—as muted.

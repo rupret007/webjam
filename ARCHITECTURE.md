@@ -110,7 +110,7 @@ WebJam then proves the exact path identity, PID, Cisco publisher, and foreground
 state; pathname replacement cannot redirect launch, and native request
 acceptance is not success. Webex decides which of its screens appears. This
 action passes no meeting URL and opens no browser; **Join / Open Meeting**
-performs the sole explicit URL handoff. **Mute in Webex** can
+performs the sole explicit URL handoff. **Open Webex to Mute** can
 only show the verified app for its own Mute control because this external-app
 integration cannot verify mute state.
 Windows and Linux currently detect only an executable location, not a verified
