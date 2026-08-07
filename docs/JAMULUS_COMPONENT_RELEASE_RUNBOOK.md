@@ -2,10 +2,10 @@
 
 > **v0.22.4 published state:** the public component release is sealed and immutable with signed sequence 5 for exact WebJam 0.22.4. The desktop release is also immutable and GitHub Latest. The component release remains a public non-Latest prerelease and its stable channel tag was not moved.
 
-> **v0.22.5 pre-publication state:** candidate source selects a new fixed
-> `jamulus-components-v3` URL and exact sequence 6. No v3 catalog is trusted or
-> public until its separate lightweight tag, one-asset prerelease, signature,
-> public redownload, and frozen-package proofs complete with explicit approval.
+> **v0.22.5 component state:** the fixed `jamulus-components-v3` URL now points
+> to a public, immutable, non-Latest prerelease carrying signed exact sequence 6 for
+> exact WebJam 0.22.5. The desktop candidate remains pre-publication until the
+> post-evidence CI, frozen-package proof, draft, and protected promotion pass.
 
 This runbook records the sealed v1 history and current v2 catalog channel. The
 catalog tells WebJam which exact
@@ -35,6 +35,18 @@ immutable-release policy prevents replacing either asset in place.
 The v2 tag is anchored at commit
 `fd1d8cbd80e76cdfb257f26894de452f191e15fa`; release ID `365297898` was
 published on 2026-08-05 UTC and is immutable.
+The public v3 channel is immutable sequence 6 for exact WebJam 0.22.5, with
+eight Jamulus 3.12.3 client/server entries and expiry
+`2026-09-05T14:13:12Z`. Its lightweight tag is anchored at commit
+`b1de2d826afe01d6696677b14c2dd5efafa87b5b`; release ID `366930115` has one
+asset, `WebJam-Jamulus-components-v1.json`, asset ID `505491011`, size `17247`,
+and GitHub digest
+`sha256:7aa43866b701b4ed609e3837ff548eea16126d2b06c3023fbc34254aa9f84a62`.
+The independently downloaded public bytes match the private evidence bytes
+with envelope SHA-256
+`7aa43866b701b4ed609e3837ff548eea16126d2b06c3023fbc34254aa9f84a62` and
+signed payload SHA-256
+`57eed122607c0859e82c4b7121cd5e4aaba397f4722b18c36189f1660225eb68`.
 
 ## Trust boundary
 
@@ -51,8 +63,8 @@ published on 2026-08-05 UTC and is immutable.
 - `jamulus-components-v1` remains the sealed v0.22.3 channel.
 - `jamulus-components-v2` is the current public non-Latest prerelease with
   exactly one immutable asset: `WebJam-Jamulus-components-v1.json`.
-- `jamulus-components-v3` is a new boundary for exact WebJam 0.22.5; it must
-  never move or replace v1/v2 and must remain non-Latest.
+- `jamulus-components-v3` is the public versioned boundary for exact WebJam
+  0.22.5; it must never move or replace v1/v2 and must remain non-Latest.
 - The v0.22.5 desktop draft remains unpublished if catalog generation, public
   redownload, frozen-runtime verification, or UI verification fails.
 
@@ -66,24 +78,30 @@ expiry, downgrade, privacy, and four-platform frozen-package proof. The new
 channel must remain non-Latest and must not alter historical sequence-4 or
 sequence-5 bytes or either desktop release.
 
-### Prepared v3 anchor — not yet tagged or published
+### Published v3 catalog — desktop remains pre-publication
 
-The reviewed v3 preparation object is
+The reviewed v3 preparation object was
 `b1de2d826afe01d6696677b14c2dd5efafa87b5b`. It reports WebJam 0.22.5, selects
 the fixed `jamulus-components-v3` URL, requires sequence 6 for promotion, and
 descends from both sealed component histories. The intended
-`jamulus-components-v3` tag is lightweight and must point to that exact commit.
-The following release-control commit pins the same object in the promotion
-workflow. A mismatch or an existing remote tag/release stops the transition.
+`jamulus-components-v3` tag is lightweight and remains pinned to that exact
+commit. The release-control workflow pins the same object. A mismatch or any
+attempt to move the tag stops the transition.
 
-No component tag, signed sequence-6 bytes, or v3 release is created by source
-preparation. Each external mutation below requires explicit user approval.
+The tag, signed sequence-6 bytes, one-asset v3 prerelease, and public
+redownload were completed on 2026-08-07. The v3 release is a machine-consumed
+catalog channel, not an application download. The desktop release remains
+unpublished until the remaining gates below pass.
 
-1. Push the reviewed release-prep history to `master`, then require green source
-   CI on the final commit. Verify the prepared anchor remains its ancestor and
-   that neither the tag nor release already exists.
-2. After separate tag approval, create the lightweight tag at the exact anchor,
-   verify its object type is `commit`, and push only that new tag:
+1. **PASS — source and CI boundary.** The reviewed release-prep history is on
+   `master` at `35426b1f14bc9c09c5207d5d7a5dd5cb79351f0c`; green CI run
+   `31191519170` covers tests, transport, reference service, Pocket Stage,
+   real Jamulus integrations, and all four desktop builds. The prepared anchor
+   remains an ancestor and neither the v3 tag nor release was moved.
+2. **PASS — lightweight tag.** The tag was verified as object type `commit`
+   at the exact anchor and only that new tag was pushed:
+   The one-time command below is retained as historical evidence; do not rerun
+   it or move the immutable channel tag.
 
    ```bash
    set -euo pipefail
@@ -96,10 +114,12 @@ preparation. Each external mutation below requires explicit user approval.
    git push origin refs/tags/jamulus-components-v3
    ```
 
-3. On the trusted release workstation, verify the owner-private signing key as
-   a regular non-symlink file with mode `0600` and confirm it matches embedded
-   key ID `webjam-component-2026-07`. Generate sequence 6 exactly once into a
-   new private evidence directory. Never print, copy, upload, or log the key:
+3. **PASS — private sequence-6 generation.** On the trusted release
+   workstation, the owner-private Ed25519 key was verified as a regular,
+   non-symlink file with mode `0600`, matched key ID
+   `webjam-component-2026-07`, and generated sequence 6 exactly once. The key
+   and its path are not recorded here. The one-time command below is retained
+   as historical evidence; do not regenerate sequence 6:
 
    ```bash
    set -euo pipefail
@@ -130,13 +150,16 @@ preparation. Each external mutation below requires explicit user approval.
    shasum -a 256 "$catalog" > "$output_directory/envelope-sha256.txt"
    ```
 
-4. Inspect and retain the private verification result. Require exactly eight
-   official Jamulus 3.12.3 client/server entries, no HEADLESS role, an expiry
-   no more than 31 days away, the embedded signer fingerprint, and no path,
-   meeting, credential, or environment data. Different sequence-6 bytes from
-   any prior attempt are equivocation and stop the release.
-5. After separate component-publication approval, publish exactly one asset as
-   a non-Latest prerelease on the already-pushed lightweight tag:
+4. **PASS — private verification.** The retained snapshot required exactly
+   eight official Jamulus 3.12.3 client/server entries, no HEADLESS role, a
+   30-day expiry, signer fingerprint
+   `ea6ba7a52aa37c0d289f5258d34134d11063e5697ce26fd039c2431d3546a687`, and
+   no path, meeting, credential, or environment data. Only one sequence-6 byte
+   set exists in the private evidence directory.
+5. **PASS — public component release.** Exactly one asset was published as a
+   non-Latest prerelease on the already-pushed lightweight tag. The original
+   publication command is retained as historical evidence; do not rerun it or
+   replace the immutable release asset:
 
    ```bash
    gh release create jamulus-components-v3 "$catalog" \
@@ -148,14 +171,14 @@ preparation. Each external mutation below requires explicit user approval.
      --notes "Signed, expiring Jamulus compatibility catalog sequence 6 for exact WebJam v0.22.5. This is not a desktop release."
    ```
 
-6. Download the public asset into a second new directory through the GitHub API.
-   Require one release, one non-empty asset, `draft=false`, `prerelease=true`,
-   exclusion from `/releases/latest`, the exact lightweight anchor, matching
-   GitHub/local SHA-256, signature-valid sequence 6, exact WebJam 0.22.5, exact
-   eight-entry inventory, and future expiry. Record release/asset IDs, digests,
-   catalog hashes, signer fingerprint, and expiry in a new follow-up commit.
-   Review that evidence diff and obtain separate approval before pushing the
-   follow-up commit to `master`.
+6. **PASS — public redownload and identity binding.** The public asset was
+   downloaded into a new private evidence directory through GitHub, then
+   independently checked as one immutable release asset with `draft=false`,
+   `prerelease=true`, exclusion from `/releases/latest`, the exact lightweight
+   anchor, matching GitHub/local SHA-256, signature-valid sequence 6, exact
+   WebJam 0.22.5, exact eight-entry inventory, and future expiry. The release
+   and asset IDs, digests, catalog hashes, signer fingerprint, and expiry are
+   recorded above and in this follow-up commit.
 7. Wait for WebJam CI to succeed on that exact post-evidence `origin/master`
    commit, including all four desktop builds. After separate explicit approval
    for this read-only verification dispatch, run from exact `master`:
