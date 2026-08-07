@@ -123,6 +123,47 @@ def peer(tmp_path: Path):
         server.stop()
 
 
+# A clock value where ``(now + 15.0) - now`` exceeds 15.0 by one float ulp.
+# ``math.ceil`` amplifies that sub-nanosecond artifact into one extra whole
+# millisecond — the exact 15 001 ms vs 15 000 ms pair observed in the flaky
+# tag-CI failure — unless the registry caps the report at the granted lease.
+_ULP_ARTIFACT_NOW = 4086.3516785314346
+
+
+@pytest.fixture
+def frozen_peer(tmp_path: Path):
+    """A peer whose registry clock is frozen at the ulp-artifact instant.
+
+    HTTP round-trip equality assertions must not depend on how much wall
+    time elapses between minting a challenge and fetching it; the frozen
+    clock makes the comparison deterministic while still exercising the
+    float-artifact regression.
+    """
+
+    credentials = SessionCredentials.create()
+    root = tmp_path / "host"
+    registry = EnrollmentRegistry(
+        root,
+        credentials,
+        presence_clock=lambda: _ULP_ARTIFACT_NOW,
+    )
+    server = SessionPeerServer(
+        "127.0.0.1",
+        0,
+        registry=registry,
+        control=SessionControlState(root, credentials.session_id),
+        transfers=TransferStore(root, credentials.session_id),
+    )
+    server.start()
+    client = SessionPeerClient(
+        "127.0.0.1", server.address[1], credentials=credentials
+    )
+    try:
+        yield credentials, registry, server, client
+    finally:
+        server.stop()
+
+
 def test_two_client_local_channel_zero_bind_to_distinct_server_ordinals(
     tmp_path: Path,
 ) -> None:
@@ -347,11 +388,45 @@ def test_expired_challenge_clears_claims_and_cannot_be_replayed(
     assert refreshed.lease_ms == 2000
 
 
+def test_fresh_challenge_never_reports_more_than_granted_lease(
+    tmp_path: Path,
+) -> None:
+    """A one-ulp float artifact must not inflate the reported lease.
+
+    ``(now + lease) - now`` can exceed the lease by one ulp of ``now``;
+    ``math.ceil`` would amplify that into one extra whole millisecond (the
+    15 001 ms tag-CI observation).  The reported lease is capped at the
+    granted total and only ever decreases while the same epoch ages.
+    """
+
+    now = [_ULP_ARTIFACT_NOW]
+    credentials = SessionCredentials.create()
+    registry = EnrollmentRegistry(
+        tmp_path, credentials, presence_clock=lambda: now[0]
+    )
+    created = _install(registry, _digest(), 1)
+    assert created.lease_ms == 15_000
+
+    now[0] += 0.0004  # under one elapsed millisecond: ceil rounds back up
+    aged = registry.current_presence_v2_challenge()
+    assert aged.challenge == created.challenge
+    assert aged.lease_ms == 15_000
+
+    now[0] += 0.0011  # past one elapsed millisecond: strictly decreasing
+    older = registry.current_presence_v2_challenge()
+    assert older.challenge == created.challenge
+    assert 1 <= older.lease_ms < 15_000
+
+
 def test_private_host_roster_fingerprint_rotates_identical_public_roster(
     tmp_path: Path,
 ) -> None:
     credentials = SessionCredentials.create()
-    registry = EnrollmentRegistry(tmp_path, credentials)
+    # The byte-identical-refresh assertion below compares whole challenges,
+    # including the remaining lease; a frozen clock keeps that deterministic.
+    registry = EnrollmentRegistry(
+        tmp_path, credentials, presence_clock=lambda: 100.0
+    )
     musician = registry.enroll(
         _id(), "Same Name", invite_token=credentials.invite_token
     )
@@ -693,12 +768,15 @@ def test_v2_is_memory_only_and_repr_and_wire_shape_are_privacy_bounded(
 
 
 def test_http_v2_requires_complete_authenticated_payload_and_round_trips(
-    peer,
+    frozen_peer,
 ) -> None:
-    credentials, registry, _server, client = peer
+    credentials, registry, _server, client = frozen_peer
     enrollment = client.enroll(_id(), "Alex")
     host_challenge = _install(registry, _digest(), 1)
     fetched = client.presence_v2_challenge(enrollment)
+    # The frozen clock sits on the ulp artifact; without the granted-lease
+    # cap both sides would report 15 001 ms on a 15 000 ms grant.
+    assert fetched.lease_ms == 15_000
     assert fetched == host_challenge
 
     proof = client.bind_presence_v2(

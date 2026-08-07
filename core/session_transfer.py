@@ -984,8 +984,15 @@ class EnrollmentRegistry:
             raise TransferConflictError(
                 "Recorder presence requires a proven host roster."
             )
+        # ``expires_at - now`` is a float difference; at the creation instant
+        # ``(now + lease) - now`` can exceed the granted lease by one ulp, and
+        # ``math.ceil`` amplifies that sub-nanosecond artifact into a full
+        # extra millisecond (a 15 000 ms lease reported as 15 001 ms).  Never
+        # promise more remaining time than this registry actually granted;
+        # the constructor already bounds the grant by PRESENCE_V2_MAX_LEASE_S.
+        granted_lease_ms = int(round(self._presence_v2_lease_s * 1000))
         remaining_ms = min(
-            int(PRESENCE_V2_MAX_LEASE_S * 1000),
+            granted_lease_ms,
             max(
                 PRESENCE_V2_MIN_REMAINING_LEASE_MS,
                 math.ceil((epoch.expires_at - now) * 1000),
