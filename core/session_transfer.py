@@ -36,7 +36,7 @@ import tempfile
 import threading
 import time
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -57,6 +57,8 @@ _TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,256}$")
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _MAX_DESCRIPTOR_GAPS = 128
 _MAX_DESCRIPTOR_GAP_REASON = 120
+_MAX_DECLARED_INPUTS = 32
+_MAX_DECLARED_SEGMENTS = 128
 _PEER_REQUEST_READ_TIMEOUT_S = 30.0
 PRESENCE_V2_DEFAULT_LEASE_S = 15.0
 PRESENCE_V2_MIN_LEASE_S = 1.0
@@ -1528,6 +1530,204 @@ class RecordingSignal(str, Enum):
     NEEDS_ATTENTION = "needs_attention"
 
 
+class SharedTrackPlaybackState(str, Enum):
+    """Bounded host-owned Shared Track truth that guests may render.
+
+    This is deliberately presentation state, not evidence that a guest can
+    hear the route and not authority to operate the host's transport.
+    """
+
+    IDLE = "idle"
+    READY = "ready"
+    ROUTING = "routing"
+    PLAYING = "playing"
+    PAUSED = "paused"
+    STOPPING = "stopping"
+    FAILED = "failed"
+
+
+_SHARED_TRACK_SCHEMA = 1
+_MAX_SHARED_TRACK_GENERATION = (1 << 63) - 1
+_MAX_SHARED_TRACK_DURATION_S = 24.0 * 60.0 * 60.0
+_MAX_SHARED_TRACK_NAME_CHARS = 255
+_MAX_SHARED_TRACK_NAME_BYTES = 1_024
+
+
+def _shared_track_generation(value: object, label: str) -> int:
+    if type(value) is not int or not 0 <= value <= _MAX_SHARED_TRACK_GENERATION:
+        raise ValueError(f"{label} is outside the supported range.")
+    return value
+
+
+def _shared_track_bool(value: object, label: str) -> bool:
+    if type(value) is not bool:
+        raise ValueError(f"{label} must be a boolean.")
+    return value
+
+
+def _shared_track_seconds(value: object, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be a finite non-negative number.")
+    parsed = float(value)
+    if (
+        not math.isfinite(parsed)
+        or parsed < 0.0
+        or parsed > _MAX_SHARED_TRACK_DURATION_S
+    ):
+        raise ValueError(f"{label} is outside the supported range.")
+    return parsed
+
+
+def _shared_track_display_name(value: object) -> str:
+    if type(value) is not str:
+        raise ValueError("source_display_name must be text.")
+    if any(not character.isprintable() for character in value):
+        raise ValueError("source_display_name contains unsupported characters.")
+    if any(character in value for character in ("\0", "\r", "\n", "/", "\\")):
+        raise ValueError("source_display_name must not contain a path.")
+    normalized = " ".join(value.split())
+    if (
+        len(normalized) > _MAX_SHARED_TRACK_NAME_CHARS
+        or len(normalized.encode("utf-8")) > _MAX_SHARED_TRACK_NAME_BYTES
+    ):
+        raise ValueError("source_display_name is too long.")
+    return normalized
+
+
+@dataclass(frozen=True, slots=True)
+class SharedTrackSessionSnapshot:
+    """Path-free Shared Track projection carried by the private peer plane.
+
+    The object intentionally has no control capability and no audibility
+    claim.  Guests may use it only to mirror host-published transport state.
+    ``generation`` orders projection changes; ``playback_generation`` groups
+    routing/playing/position updates that belong to one playback attempt.
+    """
+
+    generation: int = 0
+    playback_generation: int = 0
+    state: SharedTrackPlaybackState = SharedTrackPlaybackState.IDLE
+    loaded: bool = False
+    source_display_name: str = ""
+    position_s: float = 0.0
+    duration_s: float = 0.0
+    loop_start_s: float = 0.0
+    loop_end_s: float | None = None
+    count_in_active: bool = False
+    cleanup_pending: bool = False
+    needs_attention: bool = False
+
+    def __post_init__(self) -> None:
+        generation = _shared_track_generation(self.generation, "generation")
+        playback_generation = _shared_track_generation(
+            self.playback_generation, "playback_generation"
+        )
+        state = SharedTrackPlaybackState(self.state)
+        loaded = _shared_track_bool(self.loaded, "loaded")
+        source_name = _shared_track_display_name(self.source_display_name)
+        position = _shared_track_seconds(self.position_s, "position_s")
+        duration = _shared_track_seconds(self.duration_s, "duration_s")
+        loop_start = _shared_track_seconds(self.loop_start_s, "loop_start_s")
+        loop_end = self.loop_end_s
+        if loop_end is not None:
+            loop_end = _shared_track_seconds(loop_end, "loop_end_s")
+            if loop_end <= loop_start:
+                raise ValueError("loop_end_s must be after loop_start_s.")
+            if loop_end > duration:
+                raise ValueError("loop_end_s must not exceed duration_s.")
+        count_in = _shared_track_bool(self.count_in_active, "count_in_active")
+        cleanup = _shared_track_bool(self.cleanup_pending, "cleanup_pending")
+        attention = _shared_track_bool(self.needs_attention, "needs_attention")
+
+        if not loaded:
+            if (
+                source_name
+                or position != 0.0
+                or duration != 0.0
+                or loop_start != 0.0
+                or loop_end is not None
+                or count_in
+            ):
+                raise ValueError("An unloaded Shared Track cannot expose media facts.")
+            if state not in {
+                SharedTrackPlaybackState.IDLE,
+                SharedTrackPlaybackState.FAILED,
+            }:
+                raise ValueError("That Shared Track state requires loaded media.")
+        else:
+            if state is SharedTrackPlaybackState.IDLE:
+                raise ValueError("A loaded Shared Track cannot be idle.")
+            if duration <= 0.0:
+                raise ValueError("A loaded Shared Track requires a duration.")
+            if position > duration:
+                raise ValueError("position_s must not exceed duration_s.")
+            if loop_start > duration:
+                raise ValueError("loop_start_s must not exceed duration_s.")
+        if count_in and state not in {
+            SharedTrackPlaybackState.ROUTING,
+            SharedTrackPlaybackState.PLAYING,
+        }:
+            raise ValueError("count_in_active requires active playback.")
+
+        object.__setattr__(self, "generation", generation)
+        object.__setattr__(self, "playback_generation", playback_generation)
+        object.__setattr__(self, "state", state)
+        object.__setattr__(self, "loaded", loaded)
+        object.__setattr__(self, "source_display_name", source_name)
+        object.__setattr__(self, "position_s", position)
+        object.__setattr__(self, "duration_s", duration)
+        object.__setattr__(self, "loop_start_s", loop_start)
+        object.__setattr__(self, "loop_end_s", loop_end)
+        object.__setattr__(self, "count_in_active", count_in)
+        object.__setattr__(self, "cleanup_pending", cleanup)
+        object.__setattr__(self, "needs_attention", attention)
+
+    @classmethod
+    def from_mapping(cls, value: object) -> "SharedTrackSessionSnapshot":
+        """Parse a peer payload, treating absence as a legacy idle host."""
+
+        if value is None:
+            return cls()
+        if not isinstance(value, Mapping):
+            raise ValueError("shared_track must be an object.")
+        if value.get("schema") != _SHARED_TRACK_SCHEMA:
+            raise ValueError("shared_track schema is not supported.")
+        required = {
+            "generation",
+            "playback_generation",
+            "state",
+            "loaded",
+            "source_display_name",
+            "position_s",
+            "duration_s",
+            "loop_start_s",
+            "loop_end_s",
+            "count_in_active",
+            "cleanup_pending",
+            "needs_attention",
+        }
+        if not required.issubset(value):
+            raise ValueError("shared_track is incomplete.")
+        return cls(**{key: value[key] for key in required})
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "schema": _SHARED_TRACK_SCHEMA,
+            "generation": self.generation,
+            "playback_generation": self.playback_generation,
+            "state": self.state.value,
+            "loaded": self.loaded,
+            "source_display_name": self.source_display_name,
+            "position_s": self.position_s,
+            "duration_s": self.duration_s,
+            "loop_start_s": self.loop_start_s,
+            "loop_end_s": self.loop_end_s,
+            "count_in_active": self.count_in_active,
+            "cleanup_pending": self.cleanup_pending,
+            "needs_attention": self.needs_attention,
+        }
+
+
 @dataclass(frozen=True)
 class SessionStateSnapshot:
     session_id: str
@@ -1537,6 +1737,9 @@ class SessionStateSnapshot:
     started_utc: str = ""
     stopped_utc: str = ""
     message: str = ""
+    shared_track: SharedTrackSessionSnapshot = field(
+        default_factory=SharedTrackSessionSnapshot
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -1546,6 +1749,31 @@ class SessionStateSnapshot:
             object.__setattr__(self, "take_id", _uuid_text(self.take_id, "take_id"))
         if self.generation < 0:
             raise ValueError("generation cannot be negative.")
+        shared_track = self.shared_track
+        if isinstance(shared_track, Mapping):
+            shared_track = SharedTrackSessionSnapshot.from_mapping(shared_track)
+        if not isinstance(shared_track, SharedTrackSessionSnapshot):
+            raise ValueError("shared_track must be a SharedTrackSessionSnapshot.")
+        object.__setattr__(self, "shared_track", shared_track)
+
+
+def _session_state_mapping(
+    snapshot: SessionStateSnapshot,
+    *,
+    include_shared_track: bool,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "session_id": snapshot.session_id,
+        "generation": snapshot.generation,
+        "signal": snapshot.signal.value,
+        "take_id": snapshot.take_id,
+        "started_utc": snapshot.started_utc,
+        "stopped_utc": snapshot.stopped_utc,
+        "message": snapshot.message,
+    }
+    if include_shared_track:
+        payload["shared_track"] = snapshot.shared_track.to_mapping()
+    return payload
 
 
 class SessionControlState:
@@ -1593,14 +1821,16 @@ class SessionControlState:
 
     def _publish(self, **changes: Any) -> SessionStateSnapshot:
         current = self._snapshot
-        values = asdict(current)
-        values.update(changes)
-        values["generation"] = current.generation + 1
-        values["signal"] = RecordingSignal(values["signal"])
-        snapshot = SessionStateSnapshot(**values)
+        changes["generation"] = current.generation + 1
+        if "signal" in changes:
+            changes["signal"] = RecordingSignal(changes["signal"])
+        snapshot = replace(current, **changes)
         _write_json_secure(
             self.path,
-            {"schema": 1, **asdict(snapshot), "signal": snapshot.signal.value},
+            {
+                "schema": 1,
+                **_session_state_mapping(snapshot, include_shared_track=False),
+            },
         )
         self._snapshot = snapshot
         return snapshot
@@ -1631,6 +1861,94 @@ class SessionControlState:
                 stopped_utc="",
                 message="",
             )
+
+    def begin_finalizing(
+        self,
+        take_id: str,
+        *,
+        stopped_utc: str,
+        message: str = "",
+    ) -> SessionStateSnapshot:
+        """Publish stop truth before slow host validation or guest uploads."""
+
+        take_id = _uuid_text(take_id, "take_id")
+        with self._lock:
+            current = self._snapshot
+            if current.take_id != take_id:
+                raise TransferConflictError("That stop does not match the active take.")
+            if current.signal in {
+                RecordingSignal.FINALIZING,
+                RecordingSignal.COMPLETE,
+                RecordingSignal.NEEDS_ATTENTION,
+            }:
+                return current
+            if current.signal is not RecordingSignal.RECORDING:
+                raise TransferConflictError("No matching recording is active.")
+            return self._publish(
+                signal=RecordingSignal.FINALIZING,
+                stopped_utc=str(stopped_utc)[:64],
+                message=" ".join(str(message).split())[:240],
+            )
+
+    def publish_shared_track(
+        self,
+        *,
+        state: SharedTrackPlaybackState | str,
+        loaded: bool,
+        source_display_name: str = "",
+        position_s: float = 0.0,
+        duration_s: float = 0.0,
+        loop_start_s: float = 0.0,
+        loop_end_s: float | None = None,
+        count_in_active: bool = False,
+        cleanup_pending: bool = False,
+        needs_attention: bool = False,
+        playback_generation: int | None = None,
+    ) -> SharedTrackSessionSnapshot:
+        """Publish one idempotent, memory-only guest rendering projection.
+
+        Position changes are intentionally not fsynced into the durable
+        recording-state journal. A restarted host begins at the conservative
+        idle projection until its Shared Track owner publishes fresh truth.
+        """
+
+        with self._lock:
+            current = self._snapshot.shared_track
+            parsed_state = SharedTrackPlaybackState(state)
+            if playback_generation is None:
+                playback_generation = current.playback_generation
+                active = {
+                    SharedTrackPlaybackState.ROUTING,
+                    SharedTrackPlaybackState.PLAYING,
+                }
+                if parsed_state in active and current.state not in active:
+                    playback_generation += 1
+            parsed_playback_generation = _shared_track_generation(
+                playback_generation, "playback_generation"
+            )
+            if parsed_playback_generation < current.playback_generation:
+                raise TransferConflictError(
+                    "A newer Shared Track playback is already published."
+                )
+            candidate = SharedTrackSessionSnapshot(
+                generation=current.generation,
+                playback_generation=parsed_playback_generation,
+                state=parsed_state,
+                loaded=loaded,
+                source_display_name=source_display_name,
+                position_s=position_s,
+                duration_s=duration_s,
+                loop_start_s=loop_start_s,
+                loop_end_s=loop_end_s,
+                count_in_active=count_in_active,
+                cleanup_pending=cleanup_pending,
+                needs_attention=needs_attention,
+            )
+            if candidate == current:
+                return current
+            candidate = replace(candidate, generation=current.generation + 1)
+            self._snapshot = replace(self._snapshot, shared_track=candidate)
+            return candidate
 
     def finish(
         self,
@@ -1794,6 +2112,8 @@ class TransferDescriptor:
     gap_frames: int = 0
     capture_errors: tuple[str, ...] = ()
     gaps: tuple[TransferGap, ...] = ()
+    inventory_input_count: int = 0
+    inventory_segment_count: int = 0
 
     def __post_init__(self) -> None:
         for field_name in ("session_id", "take_id", "participant_id", "segment_id"):
@@ -1818,9 +2138,31 @@ class TransferDescriptor:
         object.__setattr__(self, "subtype", subtype)
         object.__setattr__(self, "device_id", str(self.device_id or "").strip()[:256])
         source_channel = int(self.source_channel)
+        inventory_input_count = _gap_integer(
+            self.inventory_input_count,
+            "inventory_input_count",
+        )
+        inventory_segment_count = _gap_integer(
+            self.inventory_segment_count,
+            "inventory_segment_count",
+        )
         gap_frames = int(self.gap_frames)
         if source_channel < 0:
             raise ValueError("source_channel cannot be negative.")
+        if bool(inventory_input_count) != bool(inventory_segment_count):
+            raise ValueError(
+                "Inventory input and segment counts must both be declared."
+            )
+        if inventory_input_count > _MAX_DECLARED_INPUTS:
+            raise ValueError("inventory_input_count is outside the supported range.")
+        if inventory_segment_count > _MAX_DECLARED_SEGMENTS:
+            raise ValueError("inventory_segment_count is outside the supported range.")
+        if inventory_input_count > inventory_segment_count:
+            raise ValueError(
+                "inventory_segment_count cannot be smaller than the input count."
+            )
+        if inventory_input_count and source_channel >= inventory_input_count:
+            raise ValueError("source_channel is outside the declared input inventory.")
         if gap_frames < 0 or gap_frames > int(self.frame_count):
             raise ValueError("gap_frames is outside the segment timeline.")
         if not isinstance(self.gaps, (list, tuple)):
@@ -1851,6 +2193,8 @@ class TransferDescriptor:
             # now derived from exact intervals whenever they are available.
             gap_frames = structured_gap_frames
         object.__setattr__(self, "source_channel", source_channel)
+        object.__setattr__(self, "inventory_input_count", inventory_input_count)
+        object.__setattr__(self, "inventory_segment_count", inventory_segment_count)
         object.__setattr__(self, "gap_frames", gap_frames)
         object.__setattr__(self, "gaps", tuple(structured_gaps))
         object.__setattr__(
@@ -1881,6 +2225,8 @@ class TransferDescriptor:
             started_utc=str(value.get("started_utc", ""))[:64],
             device_id=str(value.get("device_id", "")),
             source_channel=int(value.get("source_channel", 0)),
+            inventory_input_count=value.get("inventory_input_count", 0),
+            inventory_segment_count=value.get("inventory_segment_count", 0),
             gap_frames=int(value.get("gap_frames", 0)),
             capture_errors=tuple(value.get("capture_errors", ()))
             if isinstance(value.get("capture_errors", ()), (list, tuple))
@@ -2488,7 +2834,10 @@ class SessionPeerServer:
                     snapshot = owner.control.snapshot()
                     self._json(
                         HTTPStatus.OK,
-                        {**asdict(snapshot), "signal": snapshot.signal.value},
+                        _session_state_mapping(
+                            snapshot,
+                            include_shared_track=True,
+                        ),
                     )
                     return
                 if parsed.path == "/v1/transfer-status":
@@ -2728,6 +3077,9 @@ class SessionPeerClient:
             started_utc=str(payload.get("started_utc", "")),
             stopped_utc=str(payload.get("stopped_utc", "")),
             message=str(payload.get("message", "")),
+            shared_track=SharedTrackSessionSnapshot.from_mapping(
+                payload.get("shared_track")
+            ),
         )
 
     def bind_presence(

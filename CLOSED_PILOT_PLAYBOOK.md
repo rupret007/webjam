@@ -1,10 +1,10 @@
 # WebJam closed-pilot handoff
 
-> **Pre-publication pilot:** this worksheet targets v0.22.5 candidate packages.
-> GitHub Latest remains immutable v0.22.4 until verified promotion succeeds.
+> **Published candidate pilot:** this worksheet targets the exact immutable
+> v0.22.5 GitHub **Latest** packages. Verify the downloaded checksum before use.
 
-The v0.22.5 private test candidate must pass its exact tag build, draft
-verification, and protected promotion before distribution. It is intended to
+The v0.22.5 private test candidate passed its exact tag build, draft
+verification, and protected promotion before publication. It is intended to
 validate a simple
 live rehearsal, session-arranging, and standalone Reference Studio experience:
 

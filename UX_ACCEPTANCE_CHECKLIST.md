@@ -1,8 +1,8 @@
-# WebJam v0.22.5 UX acceptance checklist
+# WebJam v0.23.0 UX acceptance checklist
 
-> **Pre-publication candidate checklist:** this checklist targets v0.22.5.
-> GitHub Latest remains immutable v0.22.4 until promotion. Unperformed physical
-> and platform-trust gates stay **NOT RUN**.
+> v0.23.0 is unpublished source; immutable v0.22.5 remains GitHub **Latest**.
+> Every physical and platform-trust gate stays **NOT RUN** until recorded
+> against an exact v0.23.0 asset.
 
 ## Unified guidance
 
@@ -58,8 +58,9 @@
 ## Optional features
 
 - [ ] Direct **Webex Controls** and **Studio** actions remain visible on the main
-      session rail; hosts also see **Reference Track**, with no clipping or lost
-      Record, Copy Invite, or End/Leave action at the supported compact sizes.
+      session rail; hosts also see the compact **Shared Track** deck and
+      **Record Session**, with no clipping or lost Copy Invite or End/Leave
+      action at the supported compact sizes.
 - [ ] Direct **Webex Controls** and **More → Webex Controls** reveal and focus
       the same panel without opening a URL; repeated navigation remains
       side-effect free.
@@ -82,16 +83,34 @@
       never auto-opened.
 - [ ] UI says Jamulus carries music and reminds musicians to mute Webex while
       playing.
-- [ ] Recording starts only when Record is pressed.
-- [ ] First host Record offers shared-only or Local Originals.
+- [ ] Recording starts only when **Record Session** is pressed.
+- [ ] First host **Record Session** offers shared-only or Local Originals.
 - [ ] Local Originals selection is clearly separate from Jamulus setup.
+- [ ] Record Session plainly distinguishes Preparing, Count-in, Recording,
+      Stopping, Finalizing, Ready, Needs attention, and cleanup pending; Stop is
+      never presented as immediate completion.
+- [ ] A ready Shared Track begins its count-in/play transition only after the
+      recorder generation is confirmed. One **Stop Recording** action requests
+      both stops without hiding either owner's failure or pending cleanup.
+- [ ] Guests see bounded recording state but no host recorder control.
 - [ ] Studio playback output is shown only in Studio review.
 - [ ] Direct **Studio** and Cmd/Ctrl+3 reuse the existing
       live-take/offline-project route and preserve a working return to Live;
       Studio is intentionally absent from More.
-- [ ] A host can load and inspect WAV/WAVE, AIFF, or FLAC in **Reference Track** while
-      route readiness is unavailable; MP3 is offered only when the packaged
-      decoder proves support, and load decodes the first bounded audio block.
+- [ ] A host can use **Add Shared Track** or drop WAV/WAVE, AIFF, or FLAC on the
+      live session while route readiness is unavailable; MP3 is offered only
+      when the packaged decoder proves support, and picker/drop both decode the
+      first bounded audio block through the same validation.
+- [ ] The compact live deck and complete Shared Track transport show the
+      path-free name, duration, progressive waveform/playhead, loop, count-in,
+      route, dropout, and cleanup state without turning the live screen into a
+      full DAW.
+- [ ] **Replace…** and **Remove** work while safely stopped and are visibly
+      unavailable during route ownership, playback, stopping, or cleanup.
+- [ ] Guests receive authenticated, bounded, path-free Shared Track state with
+      monotonic generation handling but no transport authority or audibility
+      field. Legacy `WebJam Track` presence fallback is never described as
+      synchronized, isolated, healthy, or audible.
 - [ ] Source and route states remain distinct. **Recheck Route** starts no
       playback, and BlackHole setup or Recheck cannot unlock a downloaded
       v0.22.2 package. In published v0.22.4, Play may become available only after
@@ -102,6 +121,10 @@
       trefoil/trinity mark, and never changes a Jamulus session or settings.
 - [ ] Studio feels like a compact multitrack workspace and does not claim
       Logic integration.
+- [ ] Every authoritative musician appears once, the recorded Shared Track is
+      distinctly named and typed, and Local Originals appear only after
+      explicit opt-in and real-media evidence; no stereo mix is duplicated to
+      imitate multitrack recording.
 - [ ] Arrange exposes visible timeline/ruler, fixed track headers, zoom/scroll,
       accessible selection, and semantic region actions without clipping at the
       supported compact size.
@@ -141,17 +164,18 @@
 - [ ] Cancel, retry, End, and Leave preserve safe process/recording truth.
 - [ ] Recovery data contains no invitation, URL, credential, device, path, or
       note content.
-- [ ] Support diagnostics expose only bounded Reference Track source/route
-      facts—never its source name, folder path, or a raw backend error.
+- [ ] Support diagnostics expose only bounded Shared Track source/route,
+      count-in, dropout, cleanup, recording-generation, and take facts—never
+      its source name, folder path, participant names, or a raw backend error.
 
 ## End, leave, and cleanup truth
 
 - [ ] Cancel during startup cannot leave a late Jamulus client or private
       server running.
-- [ ] A concurrent Reference Track Close cannot report `closed` before an
+- [ ] A concurrent Shared Track Close cannot report `closed` before an
       in-flight backing-client start has either retired cleanly or exposed
       retryable cleanup pending.
-- [ ] Reference Track cleanup retains its owned process, RPC, session-unique
+- [ ] Shared Track cleanup retains its owned process, RPC, session-unique
       profile/secret, and global 16ch/64ch lifecycle claim until every step is
       proved; **Stop** retries and shutdown remains blocked on uncertainty.
 - [ ] End/Leave stops only owned processes and preserves an unfinished local
@@ -165,7 +189,8 @@
       extraction.
 - [ ] Physical two-Mac and hardware evidence is listed separately as PASS,
       FAIL, or NOT RUN.
-- [ ] v0.22.5 remains a private test candidate until real-output guidance
-      review, Arrange/comp playback, physical Reference Studio playback and
-      recording, external-editor import, signed clean installation, and
-      platform trust gates have evidence; all currently remain **NOT RUN**.
+- [ ] No v0.23.0 release claim is made until the dedicated
+      [physical checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
+      records exact-asset results. Two-machine music, Shared Track, recording,
+      Studio, external-editor, accessibility, signing, installation, and
+      platform-trust gates all currently remain **NOT RUN**.

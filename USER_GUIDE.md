@@ -1,8 +1,9 @@
-# WebJam musician guide — v0.22.5
+# WebJam musician guide — v0.23.0 source candidate
 
-> **Pre-publication candidate guide:** this document targets verified v0.22.5
-> packages. GitHub Latest remains immutable v0.22.4 until promotion. Physical
-> and platform-trust gates remain **NOT RUN**.
+> v0.23.0 is unpublished source. GitHub **Latest** remains the exact immutable
+> v0.22.5 package. The Shared Track, Record Session, and revised Studio flow in
+> this guide require an exact v0.23.0 test build; all physical and
+> platform-trust gates remain **NOT RUN**.
 
 ## Follow the current guide
 
@@ -64,7 +65,7 @@ The main session rail keeps the everyday destinations visible:
 | Action | What it does |
 | --- | --- |
 | Webex Controls | Shows Conversation controls without opening the saved link |
-| Reference Track | Host-only song source and route panel; loading never starts playback |
+| Shared Track | Host-only live waveform and transport; loading never starts playback |
 | Studio | Opens live completed-take review, or the current song workspace when WebJam was opened in Reference Studio |
 
 Studio is intentionally absent from More. Use the direct **Studio** control or
@@ -76,7 +77,7 @@ Cmd/Ctrl+3 so there is one obvious route to the existing workspace.
 | Webex Controls | Routes to the same Conversation panel as the direct action; it has no launch side effect |
 | Jamulus Updates… | Checks WebJam's signed compatibility catalog, downloads an approved update, waits until the session is idle, and offers explicit OS approval; managed previous-version rollback is macOS-only |
 | Recording Setup | Sets Local Originals and takes storage; it does not alter Jamulus music routing |
-| Reference Track… | Routes to the same host-only Track panel; source loading is independent, and current-source Play becomes eligible only after the Mac proves the required local BlackHole route |
+| Shared Track… | Routes to the same host-only transport; source loading is independent, and current-source Play becomes eligible only after the Mac proves the required local BlackHole route |
 | Use iPhone as Pocket Stage… | Starts an explicit, private-Wi-Fi developer-preview pairing window; it does not put phone audio in the jam |
 | Notes | Opens session notes |
 | Band Check / Verify Sound | Observes an already-live session without restarting it |
@@ -104,12 +105,12 @@ WebJam includes Jamulus 3.12.2 so a known-good version remains available
 offline. **More → Jamulus Updates…** checks only WebJam's signed compatibility
 catalog. It may download an approved version in the background, but it will not
 install, activate, or roll back while music, hosting, practice, recording,
-Reference Track, reconnection, or launch is active.
+Shared Track, reconnection, or launch is active.
 
 Jamulus may show its own red upgrade link before WebJam has approved that
 release. Do not use that link for a WebJam-managed session; return to
 **Jamulus Updates…**. WebJam keeps the known-good version until the newer one
-passes its routing, RPC, recording, and Reference Track compatibility gates.
+passes its routing, RPC, recording, and Shared Track compatibility gates.
 
 The dialog distinguishes **Available** (not downloaded), **Ready** (verified
 bytes awaiting approval), **Deferred** (waiting for a clean stop), **Fallback**
@@ -203,32 +204,38 @@ Physical iPhone pairing, OS permission/firewall recovery, interruption,
 accessibility, mix correctness, recording, and rehearsal tests are **NOT RUN**
 until recorded against exact builds.
 
-## Reference Track — macOS source pilot
+## Shared Track — macOS source candidate
 
-The host can choose the direct **Reference Track** action or **More → Reference Track…**
-and inspect the same song-transport panel. Loading and route readiness are
-independent: **Load Song…** accepts validated WAV/WAVE, AIFF, or FLAC even when
-no playback route is ready, and one local audio file can also be dropped
-anywhere on the panel — the dropped file goes through exactly the same
-validation. MP3 appears only when the packaged decoder reports support. The
+The host can choose **Add Shared Track**, drop one supported local file on the
+live-session surface, or open **Shared Track** / **More → Shared Track…** for
+the same complete transport. Loading and route readiness are independent:
+**Add Track…** accepts validated WAV/WAVE, AIFF, or FLAC even when no playback
+route is ready. Picker and drop use exactly the same validation. MP3 appears
+only when the packaged decoder reports support. The
 structural MP3 scan accepts the gapless headers real-world encoders write
 (LAME, and ffmpeg's Lavc/Lavf) and one trailing APE tag before the optional
 ID3v1 trailer; a file that still fails names its exact structural reason
 without exposing the file path. Loading decodes the first bounded audio
 block, so a source that cannot produce usable audio fails during load. If
 playback ever starves and emits silence, the panel reports audible dropouts
-instead of silently claiming clean playback. The panel shows source format, sample
-rate, channels, duration, and a separate route state; **Recheck Route** refreshes
-route evidence without starting playback. Play, pause, restart, paused seeking,
+instead of silently claiming clean playback. The live deck and full transport
+show the path-free source name, duration, progressive waveform, playhead,
+count-in, and separate route/cleanup state. **Recheck Route** refreshes route
+evidence without starting playback. Play, pause, stop, restart, paused seeking,
 loop in/out, source trim, and an audible count-in remain transport controls.
-Guests do not get the transport.
+**Replace…** and **Remove** require a safe stopped state; an attempted change
+during playback is refused. Guests do not get the transport.
 
-Reference Track is not Studio playback. Once the route is certified, its design
+Shared Track is not Studio playback. Once the route is certified, its design
 streams the song at 48 kHz into BlackHole channels 1/2, launches a separately
 owned Jamulus client named `WebJam Track`, and isolates that client's returns
 on BlackHole channels 3/4. The host must then hear it only through the normal
 primary Jamulus mix, and every musician can adjust the `WebJam Track`
-participant independently.
+participant independently in Jamulus. Guest WebJam surfaces receive bounded,
+path-free state through the authenticated peer session but do not receive
+transport authority. Older peer state may expose only the dedicated channel;
+WebJam does not infer synchronization, isolation, or audibility from roster
+presence.
 
 The v0.22.2 private test candidate keeps playback locked even on a Mac with
 BlackHole installed. CoreAudio has a reported device-switch failure where its
@@ -256,12 +263,13 @@ cannot bypass the production machine checks.
 
 If private process, RPC, profile, secret, or route cleanup cannot be proved,
 the panel reports cleanup pending. Choose **Stop** to retry. WebJam will not
-replace the song or finish quitting until the retained cleanup succeeds; a
-late startup failure cannot be reported as an earlier clean Close.
+replace or remove the song or finish quitting until the retained cleanup
+succeeds; a late startup failure cannot be reported as an earlier clean Close.
 
 This is **Jamulus-routed**, not latency eliminated. It gets Jamulus's usual
 buffering, jitter handling, and network delay. A server recording captures it
-as a separate participant stem. WebJam shows only the source filename; the
+as a separate participant stem; Studio classifies that stem as **Shared
+Track**, not as another musician. WebJam shows only the source filename; the
 folder path is never saved to settings or written to logs.
 
 Machine-derived route eligibility is not a claim that anyone can hear clean
@@ -272,13 +280,28 @@ teardown, and a long rehearsal remain **NOT RUN** until recorded against an
 exact controlled source build using the
 [physical pilot](docs/plans/webjam-reference-track-macos-pilot.md).
 
-## Recording
+## Record Session
 
-The host controls the shared multitrack take. At the first Record click, choose
-either **Record Shared Jam Only** or **Also Keep This Mac’s Inputs**. The first
-choice begins the shared take. The second opens Recording Setup so the musician
+The host controls the shared multitrack take. At the first **Record Session**
+click, choose either **Record Shared Jam Only** or **Also Keep This Mac’s
+Inputs**. The first choice begins the shared take. The second opens Recording Setup so the musician
 can explicitly choose an eligible two-channel local-capture device. A guest is
 never blocked from joining because Local Originals are not configured.
+
+WebJam shows the take's actual progression: **Idle**, **Preparing**,
+**Count-in**, **Recording**, **Stopping**, **Finalizing**, **Ready**, **Needs
+attention**, or cleanup pending. If a Shared Track is ready, confirmed recorder
+start begins its count-in/play path. Press **Stop Recording** once; WebJam asks
+both owners to stop, but does not call the take complete until recorder
+validation and Shared Track cleanup are each settled. A second Record request
+cannot collide with a take that is still stopping or finalizing.
+
+Guests see bounded recording state but cannot control the host recorder. Each
+authoritatively correlated Jamulus musician appears once, the Shared Track has
+its own stable source identity, and only explicitly enabled Local Originals
+are added. Missing media, gaps, ambiguous identity, unverified timing, transfer
+work, or publication failure remains visible rather than becoming a duplicate
+or invented track.
 
 ## Studio and Track Export
 
@@ -311,7 +334,7 @@ and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
 manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
-v0.22.5 source tree.
+v0.23.0 source tree.
 
 Edited Studio packages require the secure descriptor-relative export available
 on macOS/Linux. On Windows, Studio instead labels the action **Export Aligned

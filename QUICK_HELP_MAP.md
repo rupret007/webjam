@@ -1,7 +1,7 @@
-# WebJam quick help — v0.22.5
+# WebJam quick help — v0.23.0 source candidate
 
-> **Pre-publication candidate help:** these labels target v0.22.5. GitHub Latest
-> remains immutable v0.22.4 until promotion.
+> GitHub **Latest** remains immutable v0.22.5. These Shared Track and Record
+> Session labels target unpublished v0.23.0 source.
 
 | Need | Use |
 | --- | --- |
@@ -15,9 +15,11 @@
 | Open the saved meeting | Conversation → **Join / Open Meeting** |
 | Change the Webex meeting link | Conversation → **Change Link** |
 | Update Jamulus | **More → Jamulus Updates…** |
-| Load a host Reference Track source | Direct **Reference Track** action; loading validates and decodes a first bounded block but does not start or unlock playback |
-| Record the band | Host → **Record** |
-| Keep local interface stems | First host Record → **Also Keep This Mac’s Inputs** |
+| Add a host Shared Track | Live session → **Add Shared Track** or drop one supported local file; loading validates and decodes a first bounded block but does not start or unlock playback |
+| Replace or remove a Shared Track | Stop playback first → **Shared Track** → **Replace…** or **Remove** |
+| Record the band | Host → **Record Session** |
+| Keep local interface stems | First host **Record Session** → **Also Keep This Mac’s Inputs** |
+| Finish a take | **Stop Recording** once → wait through **Finalizing** → require **Ready** |
 | Review a take | Direct **Studio** action |
 | Select a review speaker/output | Open a take in Studio |
 | Arrange a take | Studio → drag/trim a region; use Undo/Redo if needed |

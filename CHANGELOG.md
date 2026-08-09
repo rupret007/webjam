@@ -6,13 +6,118 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ## [Unreleased]
 
-> Future work after the v0.22.5 private test candidate belongs here. The
-> published v0.22.4 release remains immutable historical evidence.
+> Development for the v0.23.0 private test candidate belongs here until an
+> exact tag, package inventory, checksums, component catalog, and protected
+> promotion exist. The published v0.22.5 release and every earlier release
+> remain immutable historical evidence.
 
-## [0.22.5] — UNRELEASED reference-demo reliability candidate (2026-08-05)
+## [0.23.0] — UNRELEASED Shared Track and native multitrack candidate (2026-08-09)
 
-> Not published. GitHub Latest remains immutable v0.22.4 until this candidate
-> passes tag CI, draft verification, and protected promotion.
+> Source candidate only. No v0.23.0 tag, release asset, checksum manifest, or
+> physical-musician result exists yet. GitHub **Latest** remains immutable
+> v0.22.5.
+
+### One native Shared Track experience
+
+- Reworked the musician-facing live-session feature from **Reference Track**
+  into one canonical **Shared Track** surface while retaining the established
+  internal route and storage vocabulary where compatibility requires it. The
+  host can add a supported local file with **Add Track…** or drag and drop,
+  inspect its path-free name, duration, progressive waveform, transport, loop,
+  count-in, route, cleanup, and dropout state, and safely **Replace…** or
+  **Remove** it only while stopped.
+- Added a compact Shared Track deck to the live session instead of making the
+  normal rehearsal screen a second DAW. The deck exposes one clear source and
+  readiness state, a progressive waveform/playhead, and direct access to the
+  complete transport. Guests receive an authenticated, generation-bounded,
+  path-free Shared Track projection through the existing peer session but
+  never receive transport authority or a false claim of audibility,
+  synchronization, isolation, or health. Legacy peer state remains compatible
+  and can fall back to dedicated-channel presence only.
+- Preserved the separately owned `WebJam Track` Jamulus participant, exact
+  source validation and MP3 structural cross-checks, isolated-route proof,
+  fixed realtime rings, stale-generation rejection, fail-closed silence, and
+  retryable owned-process cleanup. Replacing or removing a source during an
+  active route is refused instead of implicitly racing teardown.
+- Added a bounded waveform summary to the in-memory UI snapshot. The
+  privacy-safe support projection retains only allowlisted state/counters such
+  as count-in, route, dropout, and cleanup. Source paths, names, waveform data,
+  device identifiers, credentials, invitations, and raw backend errors remain
+  excluded from logs and Support Bundles.
+
+### Record Session and take finalization
+
+- Promoted the existing recording pipeline to the primary live action
+  **Record Session** with explicit **Preparing**, **Count-in**, **Recording**,
+  **Stopping**, **Finalizing**, **Ready**, **Needs attention**, and cleanup
+  presentation. Duplicate starts are refused while the current generation is
+  preparing, recording, stopping, or finalizing.
+- When a loaded Shared Track is ready, confirmed recording start now owns the
+  transition into its count-in/playback path. **Stop Recording** requests one
+  coordinated stop while preserving the recorder and Shared Track as separate
+  owners whose cleanup must each be proven. A playback or teardown failure
+  cannot be represented as a successfully finalized take.
+- Kept host authority for the shared recorder while showing guests bounded
+  recording state, including Finalizing before the host publishes the terminal
+  Ready/attention result. Optional Local Originals remain explicit opt-in and
+  require valid input setup; they never alter Jamulus's interface, buffer,
+  channels, or live mix.
+- Retained exact recorder/roster correlation, timing evidence, immutable source
+  WAVs, private staging, atomic manifests, checksums, recovery journals, and
+  fail-closed ambiguous matching. Shared Track stems now retain a stable
+  source identity across takes and are presented distinctly from musician and
+  local-original tracks in Studio.
+
+### Studio continuity and DAW-quality presentation
+
+- Made take finalization and Studio read as one workflow: the live surface
+  reports finalization before the take becomes ready, and Studio opens the
+  immutable take with named participant, **Shared Track**, and explicitly
+  enabled Local Original sources rather than generic duplicate labels.
+- Polished live and Studio recording controls around one primary action per
+  state, consistent Record/Stop wording, visible count-in/finalization, and
+  stronger accessible names while preserving WebJam's black, neutral-gray,
+  white, and burnt-orange identity.
+- Reused the existing non-destructive Studio implementation: aligned waveform
+  review, region selection/editing, fades and crossfades, loop/cycle, markers
+  and sections, take lanes and comping, mixer controls, bounded undo/redo,
+  autosave/conflict recovery, and evidence-rich export remain one canonical
+  arrangement system. No Apple assets, artwork, exact layout, or trade dress
+  are copied, and no Logic integration is claimed.
+
+### Evidence boundary and known limits
+
+- Advanced both package SBOM identities and the three platform package read-me
+  sources to the unpublished v0.23.0 boundary. The baked Jamulus compatibility
+  matrix authorizes the already audited 3.12.2/3.12.3 identities through exact
+  v0.23.0 only and remains fail-closed for v0.23.1; a new signed component
+  channel, package checksums, and promotion evidence are still required.
+- Automated checks exercise state, identity, source validation, route failure,
+  recording coordination, Studio mapping, privacy, and UI behavior. They do
+  not prove that a musician heard audio through a physical interface.
+- Guest Shared Track state comes from the authenticated versioned peer
+  projection, never roster inference. It reports host transport facts for UI
+  continuity, not sample-clock synchronization or audibility. A legacy peer
+  may expose only dedicated-channel presence, and that fallback remains
+  explicitly weaker evidence.
+- Guest Local Originals remain preserved before alignment. If the matching
+  server reference, transfer completion, or timing evidence is missing or
+  ambiguous, Studio shows waiting/unverified media and export fails closed
+  instead of guessing.
+- Two-machine Jamulus audibility, Shared Track isolation and independent mix,
+  server-stem alignment, physical hardware recovery, long-session recording,
+  Studio output, external-editor import, accessibility on packaged builds,
+  SmartScreen, Gatekeeper, signing, and notarization are all **NOT RUN** for
+  v0.23.0. Use the
+  [v0.23 physical test checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
+  and record results only against an exact package name, build ID, SHA-256,
+  environment, and evidence location.
+
+## [0.22.5] — 2026-08-07 reference-demo reliability private test candidate
+
+> Published as the immutable GitHub **Latest** unsigned/ad-hoc private test
+> candidate after tag CI, exact draft verification, checksums, and protected
+> promotion passed.
 
 ### Demo safety and presentation
 
@@ -62,9 +167,10 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 - The Studio return button is labelled "Back to Live" instead of "Live".
 - The three platform package read-me sources identify exact v0.22.5
-  pre-publication packages and require the future
-  `WebJam-v0.22.5-SHA256SUMS.txt` plus verified promotion before use.
-  Published v0.22.4 package bytes remain immutable and unchanged.
+  pre-publication packages. Their stated condition was satisfied by the
+  `WebJam-v0.22.5-SHA256SUMS.txt` manifest and verified promotion; those
+  immutable package bytes retain their original warning. Published v0.22.4
+  package bytes remain immutable and unchanged.
 
 ## [0.22.4] — 2026-08-04 DAW and reliability private test candidate
 

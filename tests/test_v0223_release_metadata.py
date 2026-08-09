@@ -1,4 +1,4 @@
-"""v0.22.5 candidate identity and immutable release-history contracts."""
+"""v0.23.0 source identity and immutable v0.22.5 release contracts."""
 
 from __future__ import annotations
 
@@ -38,15 +38,15 @@ COMPONENT_UPDATE_SOURCE = (
 ).read_text(encoding="utf-8")
 
 
-def test_v0225_is_the_single_packaged_candidate_identity() -> None:
+def test_v0230_is_the_unpublished_source_candidate_identity() -> None:
     match = re.search(
         r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$',
         VERSION_SOURCE,
         re.MULTILINE,
     )
     assert match is not None
-    assert match.group(1) == "0.22.5"
-    assert application_version() == "0.22.5"
+    assert match.group(1) == "0.23.0"
+    assert application_version() == "0.23.0"
     assert README.startswith("# WebJam\n\n## Unified creative collaboration for live music")
     assert "## [0.22.3]" in CHANGELOG
     assert "## [0.22.2]" in CHANGELOG
@@ -58,43 +58,51 @@ def test_v0225_is_the_single_packaged_candidate_identity() -> None:
     assert "v0.22.0 annotated tag and tagged bytes remain immutable" in normalized
     assert "published v0.22.1 tag, assets, and checksums likewise" in normalized
     assert "v0.22.4 is likewise a new source and package identity" in normalized
-    assert "v0.22.5 is a new candidate source and package identity" in normalized
-    assert "master is the v0.22.5 release-candidate line" in normalized
-    assert "Reference Track and first-demo reliability closeout" in normalized
+    assert "v0.22.5 is a new source and package identity" in normalized
+    assert "exact v0.22.5 tag, checksums, and protected promotion" in normalized
+    assert "unpublished v0.23.0 source candidate" in normalized
+    assert (
+        "real-world MP3, Reference Track, and first-demo reliability closeout"
+        in normalized
+    )
 
 
 def test_runtime_sbom_names_the_exact_desktop_version() -> None:
     component = SBOM["metadata"]["component"]
     assert component == {
-        "bom-ref": "pkg:generic/webjam@0.22.5",
+        "bom-ref": "pkg:generic/webjam@0.23.0",
         "name": "WebJam",
-        "purl": "pkg:generic/webjam@0.22.5",
+        "purl": "pkg:generic/webjam@0.23.0",
         "type": "application",
-        "version": "0.22.5",
+        "version": "0.23.0",
     }
 
 
 def test_component_sbom_names_the_exact_desktop_version() -> None:
     component = COMPONENT_SBOM["metadata"]["component"]
     assert component == {
-        "bom-ref": "pkg:github/rupret007/webjam@0.22.5",
+        "bom-ref": "pkg:github/rupret007/webjam@0.23.0",
         "group": "rupret007",
         "name": "WebJam",
-        "purl": "pkg:github/rupret007/webjam@0.22.5",
+        "purl": "pkg:github/rupret007/webjam@0.23.0",
         "type": "application",
-        "version": "0.22.5",
+        "version": "0.23.0",
     }
 
 
-def test_signed_catalog_has_every_v0225_client_server_target_once() -> None:
+def test_candidate_catalog_payload_tracks_v0230_without_rewriting_v0225() -> None:
+    # Exercise deterministic source metadata with an unpublished, synthetic
+    # next sequence. Sequence 6 remains the sealed v0.22.5 public catalog and
+    # is never reused for this in-memory payload.
+    synthetic_sequence = 7
     payload = build_payload(
-        sequence=6,
+        sequence=synthetic_sequence,
         issued_at=datetime(2026, 7, 28, tzinfo=timezone.utc),
         validity_days=30,
     )
     components = payload["components"]
-    assert payload["webjam_version"] == "0.22.5"
-    assert payload["sequence"] == 6
+    assert payload["webjam_version"] == "0.23.0"
+    assert payload["sequence"] == synthetic_sequence
     assert isinstance(components, list)
     expected = {
         (role.value, target.value)
@@ -108,25 +116,33 @@ def test_signed_catalog_has_every_v0225_client_server_target_once() -> None:
     assert all(component["component_id"] == "jamulus" for component in components)
     assert all(component["version"] == "3.12.3" for component in components)
     assert all(component["variant"] == "official" for component in components)
+    assert all(
+        component["webjam_range"]["maximum"] == "0.23.0"
+        for component in components
+    )
 
 
-def test_current_release_guides_report_v0225_consistently() -> None:
+def test_current_guides_separate_v0230_source_from_v0225_history() -> None:
     expected = {
-        "ARCHITECTURE.md": "# WebJam architecture — v0.22.5",
+        "ARCHITECTURE.md": "# WebJam architecture — v0.23.0 source candidate",
         "CLOSED_PILOT_PLAYBOOK.md": "v0.22.5 private test candidate",
-        "DEVELOPMENT.md": "# Developing WebJam v0.22.5",
-        "FIRST_JAM.md": "# First Jam — WebJam v0.22.5",
-        "README_SIMPLE.md": "master` is the v0.22.5 candidate line",
-        "TEST_PROCEDURE.md": "# WebJam v0.22.5 source and physical test procedure",
-        "USER_GUIDE.md": "# WebJam musician guide — v0.22.5",
-        "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.22.5 UX acceptance checklist",
-        "WEBEX_AUDIO_MODES.md": "# Webex companion guidance — v0.22.5",
-        "ios/README.md": "matching v0.22.5 Mac candidate",
-        "requirements-lock/README.md": "The v0.22.5 candidate locks",
-        "WEBJAM_V0225_DEMO_READINESS.md": "# WebJam v0.22.5 two-musician demo readiness",
-        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": (
-            "this document targets the v0.22.5"
+        "DEVELOPMENT.md": "# Developing WebJam v0.23.0",
+        "FIRST_JAM.md": "# First Jam — WebJam v0.23.0 source candidate",
+        "README_SIMPLE.md": "exact v0.22.5 tag and checksum-verified release assets",
+        "TEST_PROCEDURE.md": "# WebJam v0.23.0 source and physical test procedure",
+        "USER_GUIDE.md": "# WebJam musician guide — v0.23.0 source candidate",
+        "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.23.0 UX acceptance checklist",
+        "RECORDING_AND_STUDIO.md": (
+            "# Recording and Studio — v0.23.0 source candidate"
         ),
+        "WEBEX_AUDIO_MODES.md": "# Webex companion guidance — v0.22.5",
+        "ios/README.md": "matching immutable v0.22.5",
+        "requirements-lock/README.md": (
+            "The v0.23.0 source candidate currently inherits the exact "
+            "dependency locks"
+        ),
+        "WEBJAM_V0225_DEMO_READINESS.md": "# WebJam v0.22.5 two-musician demo readiness",
+        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": "immutable v0.22.5",
     }
     for relative_path, marker in expected.items():
         assert marker in (ROOT / relative_path).read_text(encoding="utf-8")
@@ -157,10 +173,26 @@ def test_reference_track_play_story_is_route_gated_not_locked() -> None:
         assert "playback remains locked" not in normalized, relative_path
 
 
-def test_changelog_marks_the_candidate_unreleased() -> None:
+def test_changelog_marks_v0225_published_and_keeps_future_work_unreleased() -> None:
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "## [0.22.5] — UNRELEASED" in changelog
+    assert "## [Unreleased]" in changelog
+    assert "## [0.23.0] — UNRELEASED Shared Track" in changelog
+    assert "## [0.22.5] — 2026-08-07" in changelog
+    assert "Published as the immutable GitHub **Latest**" in changelog
     assert "## [0.22.4] — 2026-08-04" in changelog
+
+
+def test_v0230_physical_checklist_is_linked_and_every_result_is_not_run() -> None:
+    checklist_name = "V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md"
+    checklist = (ROOT / checklist_name).read_text(encoding="utf-8")
+    assert checklist_name in README
+    assert "v0.23.0" in checklist
+    result_rows = [
+        line for line in checklist.splitlines()
+        if re.match(r"^\| [A-Z][0-9]{2} \|", line)
+    ]
+    assert len(result_rows) >= 10
+    assert all(line.endswith("| **NOT RUN** |") for line in result_rows)
 
 
 def test_candidate_package_copy_is_explicit_about_platform_trust() -> None:
@@ -175,10 +207,10 @@ def test_candidate_package_copy_is_explicit_about_platform_trust() -> None:
     )
     assert "unsigned private test candidate" in windows_readme
     assert "ad-hoc signed and is NOT notarized" in macos_readme
-    assert "PRE-PUBLICATION TEST CANDIDATE" in windows_readme
-    assert "WebJam-v0.22.5-SHA256SUMS.txt" in windows_readme
-    assert "PRE-PUBLICATION TEST CANDIDATE" in macos_readme
-    assert "WebJam-v0.22.5-SHA256SUMS.txt" in macos_readme
+    for package_copy in (windows_readme, macos_readme):
+        assert "UNPUBLISHED TEST CANDIDATE" in package_copy
+        assert "no v0.23.0 release asset or promoted checksum exists" in package_copy
+        assert "published v0.22.5 package or checksum manifest" in package_copy
     inventory = runbook.split(
         "The exact v0.22.4 published inventory is:\n", 1
     )[1].split("\nThe separate `jamulus-components-v2`", 1)[0]
@@ -198,12 +230,11 @@ def test_candidate_package_copy_is_explicit_about_platform_trust() -> None:
 def test_component_catalog_current_public_state_is_sealed() -> None:
     normalized = " ".join(COMPONENT_RUNBOOK.split())
     assert (
-        "current public v2 channel is immutable sequence 5 for exact WebJam "
-        "0.22.4"
+        "public v3 channel is immutable sequence 6 for exact WebJam 0.22.5"
     ) in normalized
-    assert "2026-09-03T12:00:00Z" in COMPONENT_RUNBOOK
+    assert "2026-09-05T14:13:12Z" in COMPONENT_RUNBOOK
     assert (
-        "c5b034dad933a7ffea670cccecaf308947f5ab93f7fedeb0cde0ce8f9e34e83f"
+        "57eed122607c0859e82c4b7121cd5e4aaba397f4722b18c36189f1660225eb68"
         in COMPONENT_RUNBOOK
     )
     assert "one immutable asset" in normalized
@@ -212,13 +243,42 @@ def test_component_catalog_current_public_state_is_sealed() -> None:
     assert "Never move or replace that tag" in normalized
 
 
+def test_v0225_publication_evidence_is_exact() -> None:
+    runbook = (ROOT / "docs" / "DESKTOP_RELEASE_RUNBOOK.md").read_text(
+        encoding="utf-8"
+    )
+    inventory = runbook.split(
+        "The exact published release inventory is:\n", 1
+    )[1].split("\nThe original promotion contract", 1)[0]
+    assert re.findall(r"(?m)^- `([^`]+)`$", inventory) == [
+        "WebJam-v0.22.5-windows-x64-UNSIGNED-TEST-ONLY-setup.exe",
+        "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip",
+        "WebJam-v0.22.5-macos-arm64-ADHOC-TEST-ONLY.dmg",
+        "WebJam-macos-arm64-ADHOC-TEST-ONLY.zip",
+        "WebJam-v0.22.5-macos-x64-ADHOC-TEST-ONLY.dmg",
+        "WebJam-macos-x64-ADHOC-TEST-ONLY.zip",
+        "WebJam-linux-x64.zip",
+        "WebJam-v0.22.5-SHA256SUMS.txt",
+    ]
+    for marker in (
+        "d7d0039759e8334407fe2e6ed9e42edf0d7ef639",
+        "31206070715",
+        "31208008965",
+        "31208271585",
+        "31210531934",
+        "366957478",
+        "366930115",
+    ):
+        assert marker in runbook
+
+
 def test_v0225_uses_a_new_component_channel_boundary() -> None:
     normalized = " ".join(COMPONENT_RUNBOOK.split())
     assert "jamulus-components-v3" in COMPONENT_UPDATE_SOURCE
     assert "jamulus-components-v2" not in COMPONENT_UPDATE_SOURCE
     assert "v0.22.5 versioned-channel transition" in COMPONENT_RUNBOOK
     assert "new fixed catalog URL" in normalized
-    assert "exact sequence 6" in normalized
+    assert "signed sequence 6 for exact WebJam 0.22.5" in normalized
     assert "must never move or replace v1/v2" in normalized
 
 
@@ -230,7 +290,7 @@ def test_component_catalog_historical_promotion_record_is_preserved() -> None:
     assert "exact verified v0.22.2 Mac draft package" in normalized
     assert "only after steps 1–6 pass" in normalized
     assert "jamulus-components-v2" in COMPONENT_RUNBOOK
-    assert "remains a public non-Latest prerelease" in normalized
+    assert "sealed v0.22.4 non-Latest prerelease" in normalized
     assert "sequence 3" in normalized
     assert "Never move or replace that tag" in normalized
 

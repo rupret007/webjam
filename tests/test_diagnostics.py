@@ -218,6 +218,44 @@ class TestDiagnosticsExporter(unittest.TestCase):
             all(item["released"] for item in report["cleanup"]["ports"])
         )
 
+    def test_recording_support_snapshot_is_bounded_and_uses_opaque_take_id(self):
+        exporter = _make_exporter()
+        take_id = "0c7fb6b2-89be-447f-8180-b923618c0b20"
+        exporter.recording = SimpleNamespace(
+            phase=SimpleNamespace(value="validating"),
+            snapshot=SimpleNamespace(armed=False, recording=False),
+            last_validation=None,
+            public_diagnostics=lambda: {
+                "generation": 8,
+                "current_take_id": take_id,
+                "last_take_id": "",
+                "dropout_gap_count": 3,
+                "cleanup_pending": True,
+                "failure_reason_code": "peer_inventory",
+                "failure_category": "peer_transfer",
+                "source_path": "/Users/alice/Music/Private Song.wav",
+            },
+        )
+
+        report = exporter.artifact().structured_report["recorder"]
+
+        self.assertEqual(
+            report,
+            {
+                "armed": False,
+                "cleanup_pending": True,
+                "failure_category": "peer_transfer",
+                "gap_count": 3,
+                "generation": 8,
+                "reason_code": "peer_inventory",
+                "recording": False,
+                "state": "validating",
+                "take_id": take_id,
+            },
+        )
+        self.assertNotIn("source_path", json.dumps(report))
+        self.assertNotIn("Private Song", json.dumps(report))
+
     def test_structured_report_includes_only_allowlisted_lifecycle_timeline(self):
         lifecycle = SessionLifecycle(role="host")
         lifecycle.transition(

@@ -90,7 +90,7 @@ def test_styled_reference_track_controls_remain_reachable_at_compact_size() -> N
         dialog.setStyleSheet(load_stylesheet())
         locked = _snapshot(_State.UNAVAILABLE, available=False)
         locked.capability.detail = (
-            "Reference Track is locked until BlackHole 16ch is installed and "
+            "Shared Track is locked until BlackHole 16ch is installed and "
             "its isolated send-only route is verified. Playback remains "
             "disabled to prevent feedback or direct-monitor doubling."
         )
@@ -180,7 +180,7 @@ def test_loaded_mp3_is_distinguished_from_physical_route_blocker() -> None:
     snapshot.source_format = "MP3"
     snapshot.capability.reason_code = "physical_certification_required"
     snapshot.capability.detail = (
-        "Reference Track needs the official BlackHole 16ch or 64ch device at "
+        "Shared Track needs the official BlackHole 16ch or 64ch device at "
         "48 kHz."
     )
     try:
@@ -214,7 +214,7 @@ def test_loaded_mp3_is_distinguished_from_physical_route_blocker() -> None:
             assert "cannot unlock" not in surface
             assert "will not enable Play" not in surface
         assert dialog._blackhole_setup.isHidden() is False
-        assert dialog._blackhole_setup.text() == "Set Up Reference Track…"
+        assert dialog._blackhole_setup.text() == "Set Up Shared Track…"
         assert "never downloads or installs" in dialog._blackhole_setup.toolTip()
         with patch(
             "webjam_qt.windows.reference_track.QDesktopServices.openUrl",
@@ -227,7 +227,7 @@ def test_loaded_mp3_is_distinguished_from_physical_route_blocker() -> None:
         assert opened.path() == "/blackhole/"
         assert dialog._load.isEnabled() is True
         assert dialog._play.isEnabled() is False
-        assert "Set Up Reference Track" in dialog._play.toolTip()
+        assert "Set Up Shared Track" in dialog._play.toolTip()
         dialog._play.click()
         assert plays == []
     finally:
@@ -862,6 +862,45 @@ def test_load_picker_accepts_only_supported_audio_and_emits_path() -> None:
         dialog.close()
 
 
+def test_loaded_track_has_waveform_remove_and_stopped_only_source_changes() -> None:
+    dialog = ReferenceTrackDialog()
+    removals: list[bool] = []
+    dialog.remove_requested.connect(lambda: removals.append(True))
+    ready = _snapshot(_State.READY)
+    ready.waveform_peaks = (0.0, 0.25, 1.0, 0.5)
+    ready.waveform_progress = 0.75
+    try:
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.READY)
+        dialog.set_snapshot(ready)
+
+        assert dialog._load.text() == "Replace…"
+        assert dialog._load.isEnabled() is True
+        assert dialog._remove.isHidden() is False
+        assert dialog._remove.isEnabled() is True
+        assert dialog._waveform._peaks == ready.waveform_peaks
+        assert dialog._waveform._progress == pytest.approx(0.75)
+        assert "Rehearsal Reference.flac" in (
+            dialog._waveform.accessibleDescription()
+        )
+
+        playing = _snapshot(_State.PLAYING)
+        playing.count_in_active = True
+        playing.waveform_peaks = ready.waveform_peaks
+        playing.waveform_progress = 1.0
+        dialog.set_snapshot(playing)
+        assert dialog._load.isEnabled() is False
+        assert dialog._remove.isEnabled() is False
+        assert "Count-in" in dialog._status.text()
+        dialog._remove.click()
+        assert removals == []
+
+        dialog.set_snapshot(ready)
+        dialog._remove.click()
+        assert removals == [True]
+    finally:
+        dialog.close()
+
+
 def test_loaded_source_remains_editable_when_route_is_unavailable() -> None:
     dialog = ReferenceTrackDialog()
     rechecks: list[bool] = []
@@ -930,7 +969,7 @@ def test_unchanged_snapshot_does_not_repeat_accessibility_announcement() -> None
 def test_dialog_opens_clear_of_the_stage_then_respects_the_host() -> None:
     """A parented dialog centres itself, landing on top of the musicians.
 
-    The Reference Track controls opened directly over the participant grid.
+    The Shared Track controls opened directly over the participant grid.
     They now anchor to the session window's leading edge on first open, and
     stay wherever the host drags them afterwards.
     """
@@ -1013,6 +1052,32 @@ def test_dropped_single_supported_audio_file_requests_load(tmp_path) -> None:
         )
         dialog.dropEvent(event)
         assert received == [str(song)]
+    finally:
+        dialog.deleteLater()
+
+
+def test_drop_is_rejected_while_shared_track_is_active(tmp_path) -> None:
+    dialog = ReferenceTrackDialog()
+    received: list[str] = []
+    dialog.load_requested.connect(received.append)
+    song = tmp_path / "replacement.wav"
+    song.write_bytes(b"")
+    try:
+        dialog.set_snapshot(_snapshot(_State.PLAYING))
+        from PySide6.QtCore import QPointF
+        from PySide6.QtGui import QDropEvent
+
+        mime = _drop_mime([str(song)])
+        event = QDropEvent(
+            QPointF(10, 10),
+            Qt.DropAction.CopyAction,
+            mime,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        dialog.dropEvent(event)
+        assert received == []
+        assert event.isAccepted() is False
     finally:
         dialog.deleteLater()
 

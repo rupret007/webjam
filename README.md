@@ -12,15 +12,18 @@ the systems that should remain independent.
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/rupret007/webjam?label=Latest%20test%20candidate)](https://github.com/rupret007/webjam/releases/latest)
 
-> **Published download:** [v0.22.4](https://github.com/rupret007/webjam/releases/tag/v0.22.4)
+> **Published download:** [v0.22.5](https://github.com/rupret007/webjam/releases/tag/v0.22.5)
 > is GitHub **Latest** and immutable. It is an unsigned private test candidate:
 > Windows is unsigned; macOS is ad-hoc signed and unnotarized. Physical and
 > credentialed gates remain **NOT RUN** unless exact asset evidence says otherwise.
 
-> **Development boundary:** master is the v0.22.5 release-candidate line. It is
-> not a downloadable release until exact tag CI, draft verification, checksums,
-> and protected promotion pass. Do not substitute an untagged checkout for the
-> published v0.22.4 package.
+> **Source boundary:** the exact v0.22.5 tag, checksums, and protected promotion
+> are the downloadable-release evidence. Do not substitute an untagged checkout
+> or a later documentation commit for the immutable published package.
+
+> **Current source candidate:** v0.23.0 develops the native **Shared Track**,
+> **Record Session**, and multitrack Studio workflow. It is not a published
+> download, and every physical v0.23.0 gate remains **NOT RUN**.
 
 New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 [First Jam](FIRST_JAM.md); this README is the complete technical story.
@@ -30,8 +33,8 @@ New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 | Area | Current state |
 | --- | --- |
 | Product | Musician-facing desktop conductor around Jamulus, Webex, Studio, and Pocket Stage |
-| Published line | v0.22.4 private test candidate, four-platform immutable release |
-| Active candidate | v0.22.5 Reference Track and first-demo reliability closeout |
+| Published line | v0.22.5 private test candidate, four-platform immutable release |
+| Current development | v0.23.0 Shared Track, Record Session, and multitrack Studio source candidate |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -54,7 +57,12 @@ WebJam is a conductor, not a replacement for the tools musicians already trust.
    Sound** if needed.
 4. Open **Webex Controls** only when conversation or video is wanted; use
    **Join / Open Meeting** for an explicit meeting-link handoff.
-5. Open **Reference Studio** for local songwriting and arrangement. It
+5. As host, choose **Add Shared Track** or drop a supported song on the live
+   surface; loading does not start playback, and Play remains fail-closed until
+   the isolated Jamulus route is proven.
+6. Choose **Record Session** to capture the rehearsal, then wait through
+   **Finalizing** before opening the ready take in **Studio**.
+7. Open **Reference Studio** for separate local songwriting and arrangement. It
    includes DAW-style multi-region editing and loop Overdub (since v0.22.4);
    read the release notes before the first take.
 
@@ -83,6 +91,12 @@ WebJam is a conductor, not a replacement for the tools musicians already trust.
 7. Choose the direct **Webex Controls** action if your band wants conversation
    or video. It shows WebJam's Conversation controls without opening a meeting;
    music remains in Jamulus.
+8. The host can add a **Shared Track** from the live surface. Its proven route
+   enters Jamulus through the separately owned `WebJam Track` participant;
+   every musician still verifies the result by listening.
+9. Choose **Record Session** when the band is ready. One Stop action moves the
+   take through **Stopping** and **Finalizing**; only **Ready** is a completed
+   take that can open in Studio.
 
 There is no WebJam input/output picker, server field, port field, or Band
 Check gate in Host/Join.
@@ -106,9 +120,9 @@ process ID/liveness, finite RPC freshness category, and finite RPC age. It
 never includes the Jamulus profile path, RPC secret, invitation, meeting link,
 or raw exception.
 
-This recovery work ships in the immutable v0.22.4 private test candidate,
-which is GitHub **Latest**. Publication does not convert any physical gate to
-PASS.
+This recovery work first shipped in the immutable v0.22.4 private test
+candidate and remains in v0.22.5 GitHub **Latest**. Publication does not
+convert any physical gate to PASS.
 
 ## Jamulus updates without rebuilding WebJam
 
@@ -288,13 +302,17 @@ API and Jamulus audio path are unchanged. See the
 [Pocket Stage developer-preview plan](docs/plans/webjam-pocket-stage-v1.md)
 and [threat model](docs/security/pocket-stage-mobile-threat-model.md).
 
-## Host-controlled Reference Track pilot
+## Host-controlled Shared Track
 
-The source tree contains a macOS-first Reference Track engine. During a hosted
-session the direct **Reference Track** action opens it; **More → Reference Track…** routes
-to the same panel. Loading is deliberately separate from routing: a host can
-load and inspect WAV/WAVE, AIFF, or FLAC even while playback is locked, via
-the file picker or by dropping one local audio file on the panel.
+v0.23.0 presents the existing macOS-first route engine as one canonical
+**Shared Track** experience. During a hosted session the compact live deck,
+its **Shared Track** action, and **More → Shared Track…** all lead to the same
+transport. The older `ReferenceTrack` implementation and evidence vocabulary
+remain internal compatibility names, not a competing musician workflow.
+
+Loading is deliberately separate from routing: a host can load and inspect
+WAV/WAVE, AIFF, or FLAC even while playback is locked, using **Add Track…** or
+by dropping one local audio file on the live surface or complete transport.
 MP3 appears in the picker only when the packaged decoder proves support.
 Loading decodes the first bounded audio block; MP3 sources also receive a
 bounded structural frame and duration check that accepts real-world encoder
@@ -302,17 +320,20 @@ gapless headers (LAME and ffmpeg's Lavc/Lavf) and one trailing APE tag.
 Malformed, truncated, metadata-conflicting, or unusable input fails before
 playback is considered, and the rejection names its bounded structural
 reason without the file path.
-**Recheck Route** refreshes route evidence without starting playback.
+The source name, duration, progressive waveform, position, loop, count-in,
+route, cleanup, and dropout status remain visible. **Replace…** and **Remove**
+are available only while stopped. **Recheck Route** refreshes route evidence
+without starting playback.
 
 Its intended route sends the decoded source through a separately owned
 `WebJam Track` Jamulus client, so the song becomes one participant with an
 independent level and recording stem.
 
-Playback is **fail-closed behind machine-derived route proof** in the current
-v0.22.5 source, exactly as in published v0.22.4: Play stays refused until the
-Mac proves the required isolated route, and any missing, changed, or ambiguous
-evidence returns it to silence. Earlier candidates through v0.22.2 instead
-shipped with playback locked outright — Apple's CoreAudio process-device
+Playback is **fail-closed behind machine-derived route proof** in published
+v0.22.5, continuing the boundary first shipped in v0.22.4: Play stays refused
+until the Mac proves the required isolated route, and any missing, changed, or
+ambiguous evidence returns it to silence. Earlier candidates through v0.22.2
+instead shipped with playback locked outright — Apple's CoreAudio process-device
 property has a reported case where its input result becomes the process's
 output device after an input switch, Jamulus 3.12.2 has no independent
 live-device RPC, and its saved profile is not sufficient proof — so in a
@@ -332,9 +353,13 @@ The explicit constructor boolean remains a test-only seam; no setting,
 environment variable, command-line switch, or UI action can bypass the
 machine-derived checks. One global WebJam lifecycle claim is inherited by the
 backing child so another WebJam process cannot start a competing Track while
-an orphan survives. Failed cleanup stays visible and retryable rather than
-allowing source replacement or shutdown. Lost or stale route proof emits
-silence and retires the backing client without ending the primary connection.
+an orphan survives. Active playback refuses replacement or removal. Failed
+cleanup stays visible and retryable rather than allowing source replacement or
+shutdown. Lost or stale route proof emits silence and retires the backing
+client without ending the primary connection. Guests receive bounded,
+path-free host state through the authenticated peer session, but only the host
+controls transport. A legacy guest may see dedicated-channel presence only;
+neither projection is presented as sample synchronization or audibility proof.
 This is implementation and isolation evidence, not proof of physical
 audibility, independent mixes, or freedom from direct monitoring.
 
@@ -349,13 +374,28 @@ and [physical pilot runbook](docs/plans/webjam-reference-track-macos-pilot.md).
 
 ## Recording and Studio
 
-Recording is optional and starts only when the host presses **Record**. On a
-host's first recording, WebJam asks whether to record the shared Jamulus take
-only or also retain this Mac's first two interface inputs as Local Originals.
-The latter choice opens the clearly labeled Recording Setup panel; it never
-changes Jamulus music settings.
+Recording is optional and starts only when the host presses **Record Session**.
+On a host's first recording, WebJam asks whether to record the shared Jamulus
+take only or also retain this Mac's first two interface inputs as Local
+Originals. The latter choice opens the clearly labeled Recording Setup panel;
+it never changes Jamulus music settings.
 
-Studio is a Logic-like multitrack review workspace, not a Logic integration.
+The live action names the real lifecycle: **Preparing**, **Count-in**,
+**Recording**, **Stopping**, **Finalizing**, **Ready**, **Needs attention**, or
+cleanup pending. If a Shared Track is loaded and ready, confirmed recorder
+start owns its count-in/play transition. **Stop Recording** requests the
+recorder and Shared Track stops together, but each owner must still prove its
+own cleanup before the take can be called Ready. Guests can see bounded
+recording state; only the host controls the shared recording.
+
+The completed take keeps every authoritative Jamulus musician stem distinct,
+presents the Shared Track as its own stable source, and includes only Local
+Originals that were explicitly enabled. Ambiguous identities, missing media,
+unverified guest alignment, gaps, or incomplete publication stay visible and
+fail closed instead of becoming a false multitrack success.
+
+Studio is a professional DAW-style multitrack review workspace, not a Logic
+integration and not a copy of Apple artwork or trade dress.
 It opens recorded takes, lets the musician choose a playback output only while
 reviewing, and provides a frame-accurate Arrange timeline. Regions can be moved,
 trimmed, split, duplicated, faded, disabled, or removed; markers, sections,
@@ -423,21 +463,30 @@ the musician's native profile, and it never reads or overwrites the regular
 profile identity and phase hashes—never invitation URLs, Webex URLs,
 credentials, device identifiers, raw paths, or notes.
 
-## Published source and candidate state
+## Published release and source state
 
-The published release and the development checkout are intentionally different
-identities. `master` is the v0.22.5 release-candidate line; it is not part of
-the downloadable release until the exact tag, draft, checksums, component
-catalog, and promotion all pass. Do not use an untagged source checkout as
-evidence for the immutable download.
+The published release and a development checkout are intentionally different
+identities. The exact v0.22.5 tag, release assets, checksum manifest, component
+catalog, and successful protected promotion are the downloadable evidence. Do
+not use an untagged source checkout as evidence for the immutable download.
 
-The source tree reports **v0.22.5**. The
-[published release](https://github.com/rupret007/webjam/releases/tag/v0.22.4)
-remains **v0.22.4**, an immutable non-prerelease explicitly titled as an
+The current source tree reports **v0.23.0** and is an unpublished candidate.
+It does not reuse the v0.22.5 package or component-catalog identity. The
+[published release](https://github.com/rupret007/webjam/releases/tag/v0.22.5)
+is **v0.22.5**, an immutable non-prerelease explicitly titled as an
 unsigned private test candidate and marked GitHub **Latest**. It retains direct
 Live access to Webex, host-only Reference Track, standalone Reference Studio,
 session Studio, Pocket Stage, the Trinity three-loop identity, and the reviewed
 unsigned/ad-hoc candidate packaging described above.
+
+v0.23.0 is the separate Shared Track, Record Session, and multitrack Studio
+source identity. No v0.23.0 tag, release asset, checksum manifest, protected
+promotion, or physical musician result exists yet. A future candidate must use
+its own exact desktop assets and Jamulus component authorization; the sealed
+v3 catalog authorizes only exact WebJam 0.22.5. The baked compatibility policy
+does permit the already audited Jamulus 3.12.2/3.12.3 identities for exact
+v0.23.0 (and no later patch), so an exact candidate package can retain its
+known fallback while a new signed managed-update channel is still required.
 
 Published tags and assets remain immutable historical evidence. In particular,
 v0.20.0 history must not be moved. The v0.21.0 history must not be moved or
@@ -456,12 +505,13 @@ exception with static OpenSSL 3.5.7 LTS; CI verifies its official inputs,
 architecture, linkage, installed runtime, license evidence, and package
 inventory. No other target is permitted to use that exception.
 
-v0.22.5 is a new candidate source and package identity for the real-world MP3,
-Reference Track, and first-demo reliability closeout. It does not move or
-replace v0.22.4 and is not public until its separate release gates pass.
+v0.22.5 is a new source and package identity for the real-world MP3, Reference
+Track, and first-demo reliability closeout. It did not move or replace v0.22.4;
+its separate tag CI, eight-asset inventory, checksum, v3 catalog, and protected
+promotion gates passed before publication on 2026-08-07.
 
-The published v0.22.4 tag, title, warning text, assets, and checksums are now
-immutable and must never be rebuilt or replaced.
+The published v0.22.4 and v0.22.5 tags, titles, warning text, assets, and
+checksums are immutable and must never be rebuilt or replaced.
 
 The v0.22.4 workflow built four targets from one source identity: Windows x64,
 Ubuntu 22.04 x64, Intel Mac, and Apple-silicon Mac. The published release
@@ -471,23 +521,24 @@ from a verified draft by the separate publisher and explicitly marked GitHub
 **Latest**. For future candidates, a successful Actions build or draft release
 alone is still not a published Latest release.
 
-The Jamulus catalog is intentionally **not** one of those desktop assets. It is
+The Jamulus catalog is intentionally **not** one of the desktop assets. It is
 published under a separate non-Latest component release, signed by an offline
 release key, expires within 31 days, and carries a monotonically increasing
-sequence. Its immutable sequence 5 authorizes exact WebJam 0.22.4 through
-2026-09-03. The desktop updater embeds only the matching public key and rejects
+sequence. Immutable v3 sequence 6 authorizes exact WebJam 0.22.5 through
+2026-09-05; v2 sequence 5 remains historical evidence for v0.22.4. The desktop
+updater embeds only the matching public key and rejects
 expired, replayed, downgraded, equivocated, wrong-target, wrong-architecture,
 wrong-size, wrong-hash, wrong-publisher, or unexpected-inventory content.
 Support Bundles record only the finite catalog connection category and packaged
 TLS trust state, which helps distinguish ordinary offline access from a broken
 package without copying URLs, paths, credentials, or raw exceptions.
 
-The v0.22.5 candidate uses a new fixed `jamulus-components-v3` boundary. It
-cannot be promoted until a public, independently redownloaded, signature-valid
-sequence-6 catalog authorizes exact WebJam 0.22.5. The v1 and v2 component tags,
-assets, and signed bytes remain immutable; they are never moved or replaced to
-make the new candidate work. Missing, invalid, expired, or wrong-target v3
-metadata leaves WebJam on its reviewed embedded 3.12.2 fallback.
+The v0.22.5 release uses the fixed `jamulus-components-v3` boundary. Its public,
+independently redownloaded, signature-valid sequence-6 catalog was verified
+before desktop promotion. The v1 and v2 component tags, assets, and signed
+bytes remain immutable; they were never moved or replaced. Missing, invalid,
+expired, or wrong-target v3 metadata leaves WebJam on its reviewed embedded
+3.12.2 fallback.
 
 Successful branch and pull-request workflows also retain the unsigned Windows
 x64 candidate on GitHub for 90 days as `webjam-windows-x64`. It contains
@@ -540,8 +591,9 @@ Windows PC may still require IT approval even after valid publisher signing;
 candidate packages must never be described as production-trusted installers.
 
 Automated source and package checks are evidence for code and archive
-integrity—not a substitute for musicians hearing one another. For published
-v0.22.4 and the v0.22.5 source line alike,
+integrity—not a substitute for musicians hearing one another. For the
+unpublished v0.23.0 source candidate, published v0.22.5, and immutable earlier
+lines,
 real two-Mac audio, physical interface disconnect/reconnect, sleep/wake,
 interruption and recording recovery, long-session operation, external-editor
 import of the evidence-rich session export, physical Reference Studio
@@ -554,7 +606,8 @@ promote a package or claim audibility.
 
 - [Documentation index](docs/README.md)
 - [Project brief for technical stakeholders](docs/PROJECT_BRIEF.md)
-- [v0.22.5 candidate notes and release history](CHANGELOG.md)
+- [v0.23.0 candidate notes and release history](CHANGELOG.md)
+- [v0.23.0 Shared Track and recording physical checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.18 unified-guidance pilot checklist](V018_UNIFIED_GUIDANCE_PILOT.md)
 - [First jam](FIRST_JAM.md)
 - [Musician guide](USER_GUIDE.md)

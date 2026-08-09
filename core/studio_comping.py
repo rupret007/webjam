@@ -72,6 +72,34 @@ def _usable_track(track: ProjectTrack) -> bool:
     )
 
 
+def _same_live_reference_source(
+    destination_track: ProjectTrack,
+    candidate: ProjectTrack,
+) -> bool:
+    """Require exact uploaded-source identity for Shared Track comp lanes.
+
+    A Shared Track participant UUID is stable for the session, so it proves
+    route ownership but not that two takes used the same uploaded song. New
+    manifests persist the path-free source digest in the existing alignment
+    fingerprint field. Legacy/partial manifests remain readable but cannot
+    authorize a cross-take LIVE_REFERENCE match without that evidence.
+    """
+
+    if destination_track.source_type is not SourceType.LIVE_REFERENCE:
+        return True
+    destination_fingerprint = str(
+        destination_track.alignment.reference_fingerprint_sha256 or ""
+    ).lower()
+    candidate_fingerprint = str(
+        candidate.alignment.reference_fingerprint_sha256 or ""
+    ).lower()
+    return bool(
+        destination_fingerprint
+        and candidate_fingerprint
+        and destination_fingerprint == candidate_fingerprint
+    )
+
+
 def _matching_source_tracks(
     destination_track: ProjectTrack,
     source_project: TakeProject,
@@ -85,6 +113,7 @@ def _matching_source_tracks(
             for item in usable
             if item.participant_id == destination_track.participant_id
             and item.source_type is destination_track.source_type
+            and _same_live_reference_source(destination_track, item)
         )
         if participant_matches:
             return tuple(
@@ -99,6 +128,7 @@ def _matching_source_tracks(
         item
         for item in usable
         if item.source_type is destination_track.source_type
+        and _same_live_reference_source(destination_track, item)
         and _normalized_label(item.name) == _normalized_label(destination_track.name)
         and (
             not destination_track.instrument
@@ -116,6 +146,7 @@ def _matching_source_tracks(
         item
         for item in usable
         if item.source_type is destination_track.source_type
+        and _same_live_reference_source(destination_track, item)
         and item.order == destination_track.order
     )
     return order_matches if len(order_matches) == 1 else ()
@@ -217,7 +248,9 @@ def compatible_source_tracks(
 ) -> tuple[ProjectTrack, ...]:
     """Return timing-ready repeated-take counterparts in preference order.
 
-    Durable participant identity wins.  Older projects without participant
+    Durable participant identity wins. LIVE_REFERENCE lanes additionally
+    require the exact uploaded-source fingerprint because their participant
+    identity is stable across source replacement. Older projects without participant
     identity fall back to the same source type plus normalized name/instrument;
     an order-only fallback is accepted only when it identifies one usable
     source.  Local originals must also carry the timing evidence required by

@@ -284,8 +284,8 @@ class RecordingSetupDialog(QDialog):
             self._settings.audio_input_device_index = int(input_index)
         try:
             save_settings(self._settings)
-        except Exception as exc:  # noqa: BLE001
-            LOGGER.error("Could not save recording setup: %s", exc)
+        except Exception:  # noqa: BLE001 - settings errors can carry local paths
+            LOGGER.error("Could not save recording setup")
             self._show_error(
                 "WebJam couldn't save recording setup. Check folder access and "
                 "try again."

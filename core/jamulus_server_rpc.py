@@ -49,11 +49,11 @@ def read_secret_file(path: str | Path) -> str:
     user-actionable message on failure."""
     try:
         secret = Path(path).expanduser().read_text(encoding="utf-8").strip()
-    except OSError as exc:
+    except OSError:
         raise ServerRpcError(
-            f"Couldn't read the server RPC secret file ({exc}). Copy "
+            "Couldn't read the server RPC secret file. Copy "
             "jsonrpc.secret from your band server and point Settings at it."
-        ) from exc
+        ) from None
     if not secret:
         raise ServerRpcError("The server RPC secret file is empty.")
     return secret
@@ -89,14 +89,14 @@ class JamulusServerRpc:
             self._sock = socket.create_connection(
                 (self._host, self._port), timeout=self.CONNECT_TIMEOUT_S
             )
-        except OSError as exc:
+        except OSError:
             raise ServerRpcError(
                 f"Can't reach the band server's RPC at {self._host}:{self._port} "
-                f"({exc}). For a same-Mac server, start JamulusServer.app and "
+                "For a same-Mac server, start JamulusServer.app and "
                 f"verify loopback TCP {self._port}. For a remote Linux server, "
                 f"verify the SSH tunnel (ssh -N -L "
                 f"{self._port}:127.0.0.1:22222 you@your-server)."
-            ) from exc
+            ) from None
         result = self._call_raw("jamulus/apiAuth", {"secret": self._secret})
         if result != "ok":
             self.close()
@@ -173,12 +173,15 @@ class JamulusServerRpc:
                 if obj.get("id") != req_id:
                     continue  # notification or unrelated response
                 if "error" in obj:
-                    err = obj["error"]
-                    msg = err.get("message", err) if isinstance(err, dict) else err
-                    raise ServerRpcError(f"{method} failed: {msg}")
+                    # A server-supplied error may contain endpoints, paths, or
+                    # other uncontrolled text. Keep the operation identifier,
+                    # which is a fixed WebJam literal, and discard the payload.
+                    raise ServerRpcError(f"{method} was rejected by the band server.")
                 return obj.get("result")
-        except OSError as exc:
-            raise ServerRpcError(f"RPC transport error during {method}: {exc}") from exc
+        except OSError:
+            raise ServerRpcError(
+                f"RPC transport failed during {method}."
+            ) from None
 
     # -- recorder control (the Record button) ------------------------------
     def start_recording(self) -> bool:

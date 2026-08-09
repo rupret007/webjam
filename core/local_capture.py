@@ -4,19 +4,19 @@ Jamulus remains the live-audio authority.  This service records the selected
 Core Audio device's first two inputs as local mono stems so a host can retain
 separate instrument and vocal tracks without changing the network path.
 
-Real-time layout: the sounddevice callback only copies each block into a
-bounded queue; a dedicated writer thread does every disk write, so the audio
-thread never touches libsndfile, the logger, or a lock shared with
-finalization.  This is a separate PortAudio capture path.  WebJam records the
-selected device metadata, but cannot prove that Jamulus is using the same
-physical input or that both applications share an identical route.
+Real-time layout: the sounddevice callback copies each block into a fixed,
+preallocated SPSC ring; a dedicated writer thread does every disk write,
+status aggregation, and gap materialization. The callback never allocates a
+block, logs, waits, performs I/O, or acquires a lock. This is a separate
+PortAudio capture path. WebJam records the selected device metadata, but
+cannot prove that Jamulus is using the same physical input or that both
+applications share an identical route.
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
-import queue
 import shutil
 import stat
 import threading
@@ -27,11 +27,19 @@ from pathlib import Path
 
 import numpy as np
 
+from core.project_audio import CaptureBlockRing
+
 LOGGER = logging.getLogger("webjam.local_capture")
 
-# ~4-11 s of audio at typical Core Audio block sizes; overflow drops blocks
-# and is reported once with a count instead of stalling the callback.
-_QUEUE_MAX_BLOCKS = 512
+# The default ring accepts callback blocks through 8,192 frames without asking
+# PortAudio to use a fixed block size. At two float32 channels, 512 slots stay
+# within a 32 MiB preallocated budget. Explicit larger block sizes reduce the
+# slot count to preserve the same hard memory bound.
+_CAPTURE_RING_MAX_BLOCKS = 512
+_CAPTURE_RING_DEFAULT_BLOCK_FRAMES = 8_192
+_CAPTURE_RING_MAX_BYTES = 32 * 1024 * 1024
+_CAPTURE_RING_GAP_CAPACITY = 1_024
+_WRITER_POLL_S = 0.002
 # Manifests embed capture errors verbatim; keep the list bounded.
 _ERROR_CAP = 20
 # Finalization must never take ownership of libsndfile handles away from a
@@ -43,7 +51,7 @@ _DEFERRED_RECOVERY_GRACE_S = 0.25
 _RECOVERY_METADATA = "webjam-local-capture.json"
 _RECOVERY_REPORT = "RECOVERY.json"
 _RECOVERY_SCHEMA = 1
-# A real local take must survive more than an in-memory writer queue.  One
+# A real local take must survive more than an in-memory capture ring. One
 # second at the fixed capture rate is frequent enough to make a sudden process
 # exit recoverable without putting any I/O on PortAudio's callback thread.
 _DURABLE_CHECKPOINT_FRAMES = 48_000
@@ -110,16 +118,6 @@ class RecoveredLocalCapture:
     capture_device: object | None = None
 
 
-@dataclass(frozen=True)
-class _QueuedBlock:
-    start_frame: int
-    samples: np.ndarray
-
-    @property
-    def frame_count(self) -> int:
-        return len(self.samples)
-
-
 class LocalInputCapture:
     """Record two device channels to atomic mono WAV files."""
 
@@ -146,11 +144,20 @@ class LocalInputCapture:
         self._writers: list[object] = []
         self._temp_dir: Path | None = None
         self._parts: list[Path] = []
-        self._queue: queue.Queue = queue.Queue(maxsize=_QUEUE_MAX_BLOCKS)
+        self._ring_capacity = _CAPTURE_RING_MAX_BLOCKS
+        self._ring_block_frames = (
+            self.blocksize or _CAPTURE_RING_DEFAULT_BLOCK_FRAMES
+        )
+        self._capture_ring: CaptureBlockRing | None = None
+        self._writer_scratch: np.ndarray | None = None
+        self._generation = 0
+        self._active_generation = 0
         self._writer_thread: threading.Thread | None = None
         self._stop_requested = False
         self._dropped_blocks = 0
-        self._status_counts: dict[str, int] = {}
+        self._callback_status_events = 0
+        self._callback_overflow_events = 0
+        self._callback_format_events = 0
         self._error_counts: dict[str, int] = {}
         self._gaps: list[LocalCaptureGap] = []
         self._diagnostics_lock = threading.Lock()
@@ -188,29 +195,77 @@ class LocalInputCapture:
                 for path in self._parts
             ]
 
-            def callback(indata, _frames, _time_info, status) -> None:
-                # Audio thread: bounded dict/int bookkeeping and one block
-                # copy only — no disk, no logging, no finalization lock.
-                if status:
-                    key = str(status)
-                    self._status_counts[key] = self._status_counts.get(key, 0) + 1
-                frame_count = len(indata)
-                start_frame = self._next_input_frame
-                # Advance the source timeline even when the queue is full.
-                # The writer can then replace the exact missing interval with
-                # silence instead of pulling all later audio earlier in time.
-                self._next_input_frame += frame_count
-                try:
-                    self._queue.put_nowait(
-                        _QueuedBlock(start_frame, indata.copy())
-                    )
-                except queue.Full:
-                    self._dropped_blocks += 1
-
             sd.check_input_settings(
                 device=self.device, channels=2, samplerate=self.samplerate,
                 dtype="float32",
             )
+            ring_block_frames = int(self._ring_block_frames)
+            bytes_per_slot = ring_block_frames * 2 * np.dtype(np.float32).itemsize
+            memory_bounded_capacity = max(
+                1,
+                _CAPTURE_RING_MAX_BYTES // max(1, bytes_per_slot),
+            )
+            ring_capacity = min(
+                max(1, int(self._ring_capacity)),
+                memory_bounded_capacity,
+            )
+            ring = CaptureBlockRing(
+                ring_capacity,
+                ring_block_frames,
+                input_channels=2,
+                channel_map=(0, 1),
+                gap_capacity=_CAPTURE_RING_GAP_CAPACITY,
+            )
+            self._capture_ring = ring
+            self._writer_scratch = np.empty(
+                (ring.block_frames, ring.channels),
+                dtype=np.float32,
+            )
+            self._generation += 1
+            generation = self._generation
+            self._active_generation = generation
+
+            def callback(indata, frames, _time_info, status) -> None:
+                # Audio thread: scalar counters and one bounded copy into the
+                # preallocated SPSC ring. It performs no block-sized allocation,
+                # wait, lock, logging, or filesystem operation; the writer owns
+                # all durable I/O and diagnostic formatting.
+                if self._active_generation != generation:
+                    return
+                if status:
+                    self._callback_status_events += 1
+                    if getattr(status, "input_overflow", False):
+                        self._callback_overflow_events += 1
+                if (
+                    isinstance(frames, bool)
+                    or not isinstance(frames, int)
+                    or frames <= 0
+                ):
+                    self._callback_format_events += 1
+                    return
+                frame_count = frames
+                start_frame = self._next_input_frame
+                # Advance the source timeline even when storage is full or a
+                # malformed block is rejected. The writer then emits exact
+                # silence rather than pulling later audio earlier in time.
+                self._next_input_frame = start_frame + frame_count
+                if (
+                    not isinstance(indata, np.ndarray)
+                    or indata.dtype != np.float32
+                    or indata.ndim != 2
+                    or indata.shape[0] != frame_count
+                    or indata.shape[1] < 2
+                    or frame_count > ring.block_frames
+                ):
+                    self._callback_format_events += 1
+                    return
+                if not ring.push_from(
+                    indata,
+                    start_frame=start_frame,
+                    generation=generation,
+                ):
+                    self._dropped_blocks += 1
+
             self._capture_device = self._describe_capture_device(sd)
             self._started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             self._write_recovery_checkpoint()
@@ -224,11 +279,12 @@ class LocalInputCapture:
             self._writer_thread.start()
             self._started_monotonic = time.monotonic()
             self._stream.start()
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - native errors may contain device paths
             self.abort()
             raise LocalCaptureError(
-                f"Could not open two isolated host inputs at 48 kHz: {exc}"
-            ) from exc
+                "Could not open two isolated host inputs at 48 kHz. Check the "
+                "selected input and folder access, then try again."
+            ) from None
 
     def _write_recovery_checkpoint(self) -> None:
         """Atomically record what media is safe to recover after interruption.
@@ -326,19 +382,29 @@ class LocalInputCapture:
         )
 
     def _writer_loop(self) -> None:
+        ring = self._capture_ring
+        scratch = self._writer_scratch
+        # The writer drains the generation it was prepared for even after the
+        # control plane sets ``_active_generation`` to zero to fence callbacks.
+        generation = self._generation
+        if ring is None or scratch is None or generation <= 0:
+            self._writer_incomplete = True
+            self._record_error("Local capture buffer was not prepared.")
+            return
         timeline_frame = 0
         while True:
-            try:
-                queued = self._queue.get(timeout=0.25)
-            except queue.Empty:
+            frame_count = ring.pop_into(
+                scratch,
+                generation=generation,
+            )
+            if frame_count <= 0:
                 if self._stop_requested:
                     break
+                time.sleep(_WRITER_POLL_S)
                 continue
-            if queued is None:
-                break
 
-            start_frame = queued.start_frame
-            end_frame = start_frame + queued.frame_count
+            start_frame = ring.last_popped_start_frame
+            end_frame = start_frame + frame_count
             if start_frame > timeline_frame:
                 self._record_gap(
                     timeline_frame,
@@ -355,7 +421,9 @@ class LocalInputCapture:
 
             for channel in range(len(self._writers)):
                 self._write_channel_block(
-                    channel, start_frame, queued.samples[:, channel]
+                    channel,
+                    start_frame,
+                    scratch[:frame_count, channel],
                 )
             timeline_frame = max(timeline_frame, end_frame)
             self._checkpoint_audio_durability()
@@ -406,10 +474,10 @@ class LocalInputCapture:
             expected = self._writer_frames[channel] + frame_count
             try:
                 writer.write(np.zeros(frame_count, dtype="float32"))
-            except Exception as exc:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 - writer details may contain paths
                 self._record_error(
                     f"Local capture silence write failed on channel "
-                    f"{channel + 1}: {exc}"
+                    f"{channel + 1}."
                 )
                 self._writer_position(channel)
                 return False
@@ -434,9 +502,9 @@ class LocalInputCapture:
         expected = end_frame
         try:
             self._writers[channel].write(samples[offset:])
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - writer details may contain paths
             self._record_error(
-                f"Local capture write failed on channel {channel + 1}: {exc}"
+                f"Local capture write failed on channel {channel + 1}."
             )
             position = self._writer_position(channel)
             gap_start = min(end_frame, max(start_frame, position))
@@ -489,20 +557,20 @@ class LocalInputCapture:
 
     def _drain_writer(self) -> bool:
         """Stop the stream and return whether the writer released ownership."""
+        # Invalidate the callback generation before asking PortAudio to stop.
+        # A delayed callback from this stream can no longer append to the ring
+        # or advance the source timeline while finalization drains it.
+        self._active_generation = 0
         try:
             if self._stream is not None:
                 self._stream.stop()
                 self._stream.close()
-        except Exception as exc:  # noqa: BLE001
-            self._record_error(f"Local capture did not close cleanly: {exc}")
+        except Exception:  # noqa: BLE001 - native errors may contain device paths
+            self._record_error("Local capture did not close cleanly.")
         finally:
             self._stream = None
         self._final_input_frame = self._next_input_frame
         self._stop_requested = True
-        try:
-            self._queue.put_nowait(None)
-        except queue.Full:
-            pass  # the timeout-get in the writer loop still sees the flag
         if self._writer_thread is not None:
             self._writer_thread.join(timeout=_WRITER_JOIN_TIMEOUT_S)
             if self._writer_thread.is_alive():
@@ -517,9 +585,28 @@ class LocalInputCapture:
 
     def _collect_errors(self) -> list[str]:
         errors: list[str] = []
-        for message, count in self._status_counts.items():
+        if self._callback_overflow_events:
+            count = self._callback_overflow_events
             suffix = f" (×{count})" if count > 1 else ""
-            errors.append(f"Audio device reported: {message}{suffix}")
+            errors.append(f"Audio device reported: input overflow{suffix}")
+        other_status_events = max(
+            0,
+            self._callback_status_events - self._callback_overflow_events,
+        )
+        if other_status_events:
+            suffix = (
+                f" (×{other_status_events})"
+                if other_status_events > 1
+                else ""
+            )
+            errors.append(f"Audio device reported an input status{suffix}")
+        if self._callback_format_events:
+            count = self._callback_format_events
+            suffix = f" (×{count})" if count > 1 else ""
+            errors.append(
+                "Audio input delivered a block outside the fixed capture "
+                f"buffer{suffix}."
+            )
         with self._diagnostics_lock:
             error_counts = tuple(self._error_counts.items())
         for message, count in error_counts:
@@ -556,9 +643,9 @@ class LocalInputCapture:
                     try:
                         writer.flush()
                         writer.close()
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception:  # noqa: BLE001 - never persist raw paths
                         self._record_error(
-                            f"Local recovery WAV could not be finalized: {exc}"
+                            "A local recovery WAV could not be finalized."
                         )
                 self._writers.clear()
                 self._writer_thread = None
@@ -588,15 +675,16 @@ class LocalInputCapture:
         source_dir = self._temp_dir
         try:
             source_dir.replace(recovered)
-        except OSError as exc:
+        except OSError:
             errors.append(
-                f"Recoverable recording files remain in {source_dir}: {exc}"
+                "Recoverable recording files remain in the private working "
+                "folder because recovery publication failed."
             )
             return source_dir
         try:
             os.chmod(recovered, 0o700)
-        except OSError as exc:
-            errors.append(f"Could not protect the recovery folder: {exc}")
+        except OSError:
+            errors.append("Could not protect the private recovery folder.")
 
         promoted: list[Path] = []
         retained: list[Path] = []
@@ -626,9 +714,9 @@ class LocalInputCapture:
             if target.is_file() and not target.is_symlink():
                 try:
                     os.chmod(target, 0o600)
-                except OSError as exc:
+                except OSError:
                     errors.append(
-                        f"Could not protect recovered audio {target.name}: {exc}"
+                        "Could not protect one recovered local-audio file."
                     )
         self._temp_dir = recovered
         self._parts = [*promoted, *retained]
@@ -658,10 +746,10 @@ class LocalInputCapture:
                 json.dumps(recovery_payload, indent=2, sort_keys=True) + "\n",
                 mode=0o600,
             )
-        except OSError as exc:
-            errors.append(f"Could not write the recovery report: {exc}")
+        except OSError:
+            errors.append("Could not write the private recovery report.")
         errors.append(
-            f"Incomplete local audio was preserved visibly in {recovered}."
+            "Incomplete local audio was preserved in the visible recovery area."
         )
         return recovered
 
@@ -679,7 +767,7 @@ class LocalInputCapture:
                 recovery_dir = self._temp_dir
                 if recovery_dir is not None:
                     errors.append(
-                        f"Recoverable capture parts remain in {recovery_dir}; "
+                        "Recoverable capture parts remain in private staging; "
                         "finalization may be retried after the writer stops."
                     )
                 return LocalCaptureResult(
@@ -694,8 +782,8 @@ class LocalInputCapture:
                 try:
                     writer.flush()
                     writer.close()
-                except Exception as exc:  # noqa: BLE001
-                    self._record_error(f"Local WAV could not be finalized: {exc}")
+                except Exception:  # noqa: BLE001 - never persist raw paths
+                    self._record_error("A local WAV could not be finalized.")
             self._writers.clear()
             errors = self._collect_errors()
 
@@ -733,17 +821,17 @@ class LocalInputCapture:
                     )
                 try:
                     part.replace(final)
-                except OSError as exc:
+                except OSError:
                     attach_failed = True
                     errors.append(
-                        f"Could not attach {final.name} to the take: {exc}"
+                        "Could not attach one isolated local stem to the take."
                     )
                     continue
                 try:
                     os.chmod(final, 0o600)
-                except OSError as exc:
+                except OSError:
                     errors.append(
-                        f"Could not protect isolated stem {final.name}: {exc}"
+                        "Could not protect isolated stem."
                     )
                 final_files.append(final)
             self._cleanup_temp_dir(preserve=attach_failed, errors=errors)
@@ -1075,9 +1163,9 @@ def recover_stale_local_captures(
             if output.is_file() and not output.is_symlink():
                 try:
                     os.chmod(output, 0o600)
-                except OSError as exc:
+                except OSError:
                     errors.append(
-                        f"Could not protect recovered audio {output.name}: {exc}"
+                        "Could not protect one recovered local-audio file."
                     )
         payload = {
             "schema": _RECOVERY_SCHEMA,
@@ -1105,8 +1193,8 @@ def recover_stale_local_captures(
                 json.dumps(payload, indent=2, sort_keys=True) + "\n",
                 mode=0o600,
             )
-        except OSError as exc:
-            errors.append(f"Could not write the recovery report: {exc}")
+        except OSError:
+            errors.append("Could not write the private recovery report.")
         recovered_items.append(
             RecoveredLocalCapture(
                 source_dir=source,

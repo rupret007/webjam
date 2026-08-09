@@ -603,6 +603,60 @@ def test_comp_lane_rejects_unverified_local_but_allows_server_timeline(
     assert len(with_server_lane.take_lanes) == 1
 
 
+def test_live_reference_comp_requires_the_same_uploaded_source_fingerprint(
+    tmp_path: Path,
+) -> None:
+    shared_source = "ab" * 32
+
+    def reference_take(
+        folder: str,
+        take_number: int,
+        value: float,
+        fingerprint: str,
+    ) -> TakeProject:
+        return _project(
+            tmp_path / folder,
+            take_id=_id(take_number),
+            value=value,
+            source_type=SourceType.LIVE_REFERENCE,
+            quality=SourceQuality.REFERENCE,
+            alignment=AlignmentState(
+                confidence=1.0,
+                method="jamulus-lof-v1",
+                reference_fingerprint_sha256=fingerprint,
+            ),
+        )
+
+    primary = reference_take("reference-1", 202, 0.2, shared_source)
+    same_source = reference_take("reference-2", 203, 0.5, shared_source)
+    replacement = reference_take("reference-3", 204, 0.8, "cd" * 32)
+    legacy_unknown = reference_take("reference-4", 205, 0.6, "")
+
+    assert compatible_source_tracks(primary.tracks[0], same_source) == (
+        same_source.tracks[0],
+    )
+    document = add_take_lane(
+        default_studio_document(primary),
+        primary,
+        same_source,
+        destination_track_id=primary.tracks[0].track_id,
+    )
+    assert len(document.take_lanes) == 1
+
+    assert compatible_source_tracks(primary.tracks[0], replacement) == ()
+    with pytest.raises(StudioCompingError, match="unambiguous matching track"):
+        add_take_lane(
+            default_studio_document(primary),
+            primary,
+            replacement,
+            destination_track_id=primary.tracks[0].track_id,
+        )
+
+    # Legacy manifests stay readable, but an absent source fingerprint cannot
+    # prove that two stable Shared Track participant IDs represent one song.
+    assert compatible_source_tracks(primary.tracks[0], legacy_unknown) == ()
+
+
 def test_peer_original_requires_verified_provenance_and_current_reference(
     tmp_path: Path,
 ) -> None:

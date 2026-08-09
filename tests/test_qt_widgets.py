@@ -265,10 +265,154 @@ class TestSessionStrip(unittest.TestCase):
         self.assertEqual(tools, ["reference_track"])
         self.assertEqual(
             s._reference_track_button.accessibleName(),
-            "Open Reference Track",
+            "Open Shared Track",
         )
         s.set_reference_track_available(False)
         self.assertTrue(s._reference_track_button.isHidden())
+
+    def test_shared_track_live_deck_renders_transport_truth_and_host_drop(self):
+        from types import SimpleNamespace
+        from PySide6.QtCore import QMimeData, QUrl
+
+        class Event:
+            def __init__(self, mime):
+                self._mime = mime
+                self.accepted = False
+
+            def mimeData(self):
+                return self._mime
+
+            def acceptProposedAction(self):
+                self.accepted = True
+
+            def ignore(self):
+                self.accepted = False
+
+        s = self._strip()
+        dropped = []
+        transport = []
+        s.shared_track_dropped.connect(dropped.append)
+        s.shared_track_play_requested.connect(lambda: transport.append("play"))
+        s.shared_track_pause_requested.connect(lambda: transport.append("pause"))
+        s.shared_track_stop_requested.connect(lambda: transport.append("stop"))
+        s.set_reference_track_available(True)
+        playing = SimpleNamespace(
+            state="playing",
+            source_name="Band Song.wav",
+            duration_s=90.0,
+            position_s=12.0,
+            loop_start_s=4.0,
+            loop_end_s=24.0,
+            count_in_active=True,
+            cleanup_pending=False,
+            waveform_peaks=(0.2, 0.8, 0.4),
+            waveform_progress=1.0,
+        )
+        s.set_shared_track_snapshot(playing)
+
+        self.assertFalse(s._shared_track_surface.isHidden())
+        self.assertEqual(s._shared_track_state.text(), "Count-in")
+        self.assertEqual(s._shared_track_waveform._position, 12.0)
+        self.assertFalse(s._shared_track_source_change_allowed)
+        self.assertFalse(s._shared_track_transport.isHidden())
+        self.assertEqual(s._shared_track_transport.accessibleName(), "Pause Shared Track")
+        self.assertTrue(s._shared_track_stop.isEnabled())
+        s._shared_track_transport.click()
+        s._shared_track_stop.click()
+        self.assertEqual(transport, ["pause", "stop"])
+
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile("/tmp/replacement.wav")])
+        active_drop = Event(mime)
+        s.dropEvent(active_drop)
+        self.assertFalse(active_drop.accepted)
+        self.assertEqual(dropped, [])
+
+        playing.state = "ready"
+        playing.count_in_active = False
+        s.set_shared_track_snapshot(playing)
+        s._shared_track_transport.click()
+        ready_drop = Event(mime)
+        s.dropEvent(ready_drop)
+        self.assertTrue(ready_drop.accepted)
+        self.assertEqual(dropped, ["/tmp/replacement.wav"])
+        self.assertEqual(transport, ["pause", "stop", "play"])
+
+    def test_guest_shared_track_presence_is_visible_but_never_claims_audibility(self):
+        s = self._strip()
+        s.set_reference_track_available(False)
+        s.set_shared_track_channel_present(True)
+
+        self.assertTrue(s._reference_track_button.isHidden())
+        self.assertFalse(s._shared_track_surface.isHidden())
+        self.assertEqual(s._shared_track_state.text(), "Channel visible")
+        self.assertIn(
+            "does not claim that it is audible",
+            s._shared_track_surface.toolTip(),
+        )
+
+        s.set_shared_track_channel_present(False)
+        self.assertTrue(s._shared_track_surface.isHidden())
+
+    def test_authoritative_guest_projection_wins_over_roster_presence_hint(self):
+        from types import SimpleNamespace
+
+        s = self._strip()
+        s.set_reference_track_available(False)
+        s.set_shared_track_snapshot(
+            SimpleNamespace(
+                state="playing",
+                source_name="Band Song.wav",
+                duration_s=90.0,
+                position_s=12.0,
+                loop_start_s=0.0,
+                loop_end_s=None,
+                count_in_active=False,
+                cleanup_pending=False,
+                waveform_peaks=(),
+                waveform_progress=0.0,
+            )
+        )
+        s.set_shared_track_channel_present(True)
+
+        self.assertEqual(s._shared_track_state.text(), "Playing")
+        self.assertIn("Band Song.wav", s._shared_track_surface.toolTip())
+        self.assertTrue(s._reference_track_button.isHidden())
+
+    def test_guest_projection_survives_hud_refresh_and_clears_at_session_end(self):
+        from types import SimpleNamespace
+
+        s = self._strip()
+        s.set_reference_track_available(False)
+        s.set_shared_track_snapshot(
+            SimpleNamespace(
+                state="playing",
+                source_name="Prior Host Song.wav",
+                duration_s=90.0,
+                position_s=12.0,
+                loop_start_s=0.0,
+                loop_end_s=None,
+                count_in_active=False,
+                cleanup_pending=False,
+                waveform_peaks=(0.2, 0.8),
+                waveform_progress=1.0,
+            )
+        )
+
+        # The Session HUD reapplies role authority on every refresh. That must
+        # not hide a still-current host projection from a guest.
+        s.set_reference_track_available(False)
+        self.assertFalse(s._shared_track_surface.isHidden())
+        self.assertIn("Prior Host Song.wav", s._shared_track_surface.toolTip())
+
+        s.clear_shared_track_projection()
+
+        self.assertTrue(s._shared_track_surface.isHidden())
+        self.assertFalse(s._shared_track_snapshot_seen)
+        self.assertFalse(s._shared_track_projection_visible)
+        self.assertEqual(s._shared_track_state.text(), "Not loaded")
+        self.assertNotIn("Prior Host Song.wav", s._shared_track_surface.toolTip())
+        self.assertEqual(s._shared_track_waveform._position, 0.0)
 
     def test_webex_menu_label_recovers_after_link_is_configured(self):
         s = self._strip()
@@ -304,7 +448,7 @@ class TestSessionStrip(unittest.TestCase):
             "Check for Updates…": "jamulus_updates",
             "Webex Controls": "conversation",
             "Recording Setup…": "recording_setup",
-            "Reference Track…": "reference_track",
+            "Shared Track…": "reference_track",
             "Notes": "canvas",
             "Use iPhone as Pocket Stage…": "pocket_stage",
             "Band Check / Verify Sound\tF2": "diagnostics",
@@ -413,13 +557,25 @@ class TestSessionStrip(unittest.TestCase):
     def test_recording_validation_and_attention_states_are_explicit(self):
         s = self._strip()
         s.set_recording_phase("validating")
-        self.assertEqual(s._record_button.text(), "Validating…")
+        self.assertEqual(s._record_button.text(), "Finalizing…")
         self.assertFalse(s._record_button.isEnabled())
-        self.assertEqual(s._record_elapsed.text(), "CHECKING TRACKS…")
+        self.assertEqual(s._record_elapsed.text(), "FINALIZING…")
         s.set_recording_phase("needs_attention")
-        self.assertEqual(s._record_button.text(), "● Record Again")
+        self.assertEqual(s._record_button.text(), "● Record Session")
         self.assertTrue(s._record_button.isEnabled())
         self.assertEqual(s._record_elapsed.text(), "NEEDS ATTENTION")
+
+    def test_guest_sees_ready_then_session_idle_clears_terminal_chip(self):
+        s = self._strip()
+        s.set_recording_available(False)
+        s.set_recording_phase("recording")
+        s.set_recording_phase("complete")
+
+        self.assertFalse(s._record_elapsed.isHidden())
+        self.assertEqual(s._record_elapsed.text(), "READY · TAKE SAVED")
+
+        s.set_recording_phase("idle")
+        self.assertTrue(s._record_elapsed.isHidden())
 
     def test_validating_detail_overrides_chip_and_default_survives(self):
         s = self._strip()
@@ -430,7 +586,19 @@ class TestSessionStrip(unittest.TestCase):
             s._record_button.accessibleDescription(),
         )
         s.set_recording_phase("validating")
-        self.assertEqual(s._record_elapsed.text(), "CHECKING TRACKS…")
+        self.assertEqual(s._record_elapsed.text(), "FINALIZING…")
+
+    def test_count_in_and_cleanup_pending_labels_survive_timer_ticks(self):
+        s = self._strip()
+        s.set_recording_phase("recording")
+        s.set_recording_phase("count_in")
+        s._tick_recording()
+        self.assertEqual(s._record_elapsed.text(), "COUNT-IN")
+
+        s.set_recording_phase("stop_failed")
+        s._tick_recording()
+        self.assertEqual(s._record_elapsed.text(), "CLEANUP PENDING")
+        self.assertEqual(s._record_button.text(), "■ Finish Stop")
 
 
 # ---------------------------------------------------------------------------
@@ -1014,8 +1182,24 @@ class TestConductorWindow(unittest.TestCase):
                         control.geometry().right(),
                         w.session_controls.width(),
                     )
+                    self.assertGreaterEqual(
+                        control.width(),
+                        control.minimumSizeHint().width(),
+                    )
             for first, second in zip(visible, visible[1:]):
                 self.assertLess(first.geometry().right(), second.geometry().left())
+            self.assertEqual(strip._invite_button.text(), "Invite")
+            self.assertEqual(strip._record_button.text(), "■ Finish")
+            self.assertEqual(strip._video_button.text(), "Webex")
+            self.assertEqual(strip._audio_button.text(), "Try End")
+            self.assertEqual(
+                strip._record_button.accessibleName(),
+                "■ Finish Stop",
+            )
+            self.assertEqual(
+                strip._audio_button.accessibleName(),
+                "Try End Session",
+            )
         finally:
             w.close()
 
@@ -1068,7 +1252,7 @@ class TestConductorWindow(unittest.TestCase):
         )
         self.assertIn("Webex chooses which of its windows is shown", body)
         self.assertIn("Only <b>Join / Open Meeting</b> opens", body)
-        self.assertIn("<b>Reference Track</b> to load", body)
+        self.assertIn("<b>Shared Track</b> to load", body)
         self.assertIn("Play stays locked until", body)
         self.assertNotIn("Multitrack Studio", body)
 
@@ -1117,7 +1301,7 @@ class TestConductorWindow(unittest.TestCase):
             w.show_about()
 
         body = set_text.call_args.args[0]
-        self.assertIn("WebJam v0.22.5", body)
+        self.assertIn("WebJam v0.23.0", body)
         self.assertIn("aaaaaaaaaaaa", body)
         self.assertIn("macos-arm64", body)
         self.assertIn("Private test candidate", body)

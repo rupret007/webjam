@@ -18,6 +18,7 @@ from pathlib import Path
 import re
 import tempfile
 from typing import Any
+import uuid
 import zipfile
 
 from core.musician_guidance import GuidanceEvidence, GuidanceRecovery, GuidanceState
@@ -284,6 +285,8 @@ _CHANNEL_FIELDS = frozenset({"input", "output", "recorded", "meter_input"})
 _RECORDER_FIELDS = frozenset(
     {
         "state",
+        "generation",
+        "take_id",
         "armed",
         "recording",
         "writable",
@@ -297,9 +300,41 @@ _RECORDER_FIELDS = frozenset(
         "disk_free_bytes",
         "recovered_files",
         "dropped_blocks",
+        "dropout_count",
+        "gap_count",
+        "cleanup_pending",
+        "reason_code",
+        "failure_category",
         "last_error",
     }
 )
+_RECORDER_STATES = frozenset(
+    {
+        "idle",
+        "preflight",
+        "starting",
+        "count_in",
+        "recording",
+        "stopping",
+        "validating",
+        "complete",
+        "needs_attention",
+        "stop_failed",
+        "error",
+    }
+)
+_RECORDER_REASON_CODE_RE = re.compile(r"[a-z][a-z0-9_]{0,63}")
+_RECORDER_FAILURE_CATEGORIES = frozenset(
+    {
+        "none",
+        "local_capture",
+        "take_validation",
+        "peer_transfer",
+        "shared_track",
+        "recorder",
+    }
+)
+_RECORDER_MAX_COUNTER = 2**63 - 1
 _TRANSITION_FIELDS = frozenset(
     {"at", "component", "event", "from_state", "to_state", "status", "reason"}
 )
@@ -468,6 +503,14 @@ _REFERENCE_TRACK_ROUTE_REASONS = frozenset(
         "unsupported_platform",
     }
 )
+_REFERENCE_TRACK_COUNTER_FIELDS = (
+    "audio_callback_calls",
+    "audio_requested_frames",
+    "audio_delivered_frames",
+    "audio_underrun_frames",
+    "audio_callback_faults",
+)
+_REFERENCE_TRACK_MAX_DIAGNOSTIC_COUNTER = 2**63 - 1
 
 _LOG_ARCHIVE_NAMES = {
     "webjam": "logs/webjam.log",
@@ -724,7 +767,57 @@ def build_support_bundle(
 
 
 def _recorder_report(facts: SupportFacts) -> dict[str, Any]:
-    report = _sanitize_mapping(facts.recorder_health, _RECORDER_FIELDS)
+    raw = facts.recorder_health
+    report = _sanitize_mapping(raw, _RECORDER_FIELDS)
+    if not isinstance(raw, Mapping):
+        raw = {}
+
+    state = raw.get("state")
+    if not isinstance(state, str) or state not in _RECORDER_STATES:
+        report.pop("state", None)
+
+    generation = raw.get("generation")
+    if (
+        not isinstance(generation, int)
+        or isinstance(generation, bool)
+        or not 0 <= generation <= _RECORDER_MAX_COUNTER
+    ):
+        report.pop("generation", None)
+
+    take_id = raw.get("take_id")
+    try:
+        canonical_take_id = str(uuid.UUID(take_id)) if isinstance(take_id, str) else ""
+    except (ValueError, AttributeError):
+        canonical_take_id = ""
+    if canonical_take_id and canonical_take_id == take_id.lower():
+        report["take_id"] = canonical_take_id
+    else:
+        report.pop("take_id", None)
+
+    for key in ("dropped_blocks", "dropout_count", "gap_count"):
+        value = raw.get(key)
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or not 0 <= value <= _RECORDER_MAX_COUNTER
+        ):
+            report.pop(key, None)
+
+    cleanup_pending = raw.get("cleanup_pending")
+    if not isinstance(cleanup_pending, bool):
+        report.pop("cleanup_pending", None)
+
+    reason_code = raw.get("reason_code")
+    if not (
+        isinstance(reason_code, str)
+        and _RECORDER_REASON_CODE_RE.fullmatch(reason_code)
+    ):
+        report.pop("reason_code", None)
+
+    failure_category = raw.get("failure_category")
+    if failure_category not in _RECORDER_FAILURE_CATEGORIES:
+        report.pop("failure_category", None)
+
     if facts.dropped_blocks is not None:
         report["dropped_blocks"] = _safe_nonnegative_int(facts.dropped_blocks)
     return report
@@ -933,7 +1026,7 @@ def _sanitize_webex_app(value: Mapping[str, Any] | Any) -> dict[str, Any]:
 
 
 def _sanitize_reference_track(value: Mapping[str, Any] | Any) -> dict[str, Any]:
-    """Accept only bounded route and source-shape facts, never source identity."""
+    """Accept bounded playback/route/source facts, never source identity."""
 
     if not isinstance(value, Mapping):
         return {}
@@ -961,7 +1054,21 @@ def _sanitize_reference_track(value: Mapping[str, Any] | Any) -> dict[str, Any]:
         if item is not None and minimum <= item <= maximum:
             result[key] = item
 
-    for key in ("route_available", "route_active", "cleanup_pending"):
+    for key in _REFERENCE_TRACK_COUNTER_FIELDS:
+        item = value.get(key)
+        if (
+            isinstance(item, int)
+            and not isinstance(item, bool)
+            and 0 <= item <= _REFERENCE_TRACK_MAX_DIAGNOSTIC_COUNTER
+        ):
+            result[key] = item
+
+    for key in (
+        "route_available",
+        "route_active",
+        "cleanup_pending",
+        "count_in_active",
+    ):
         item = value.get(key)
         if isinstance(item, bool):
             result[key] = item

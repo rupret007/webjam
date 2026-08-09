@@ -1,9 +1,9 @@
-# Recording and Studio — v0.22.5
+# Recording and Studio — v0.23.0 source candidate
 
-> **Pre-publication candidate guide:** this document targets v0.22.5. GitHub
-> Latest remains immutable v0.22.4 until promotion. Physical
-> recording, playback, recovery, long-session, and external-editor gates remain
-> **NOT RUN** until exact package evidence is recorded.
+> v0.23.0 is unpublished source. GitHub **Latest** remains immutable v0.22.5.
+> Physical recording, Shared Track audibility/isolation, playback, recovery,
+> long-session, and external-editor gates remain **NOT RUN** until exact
+> v0.23.0 package evidence is recorded.
 
 ## Recording is separate from live music
 
@@ -11,7 +11,7 @@ Jamulus owns the live interface and mix. WebJam’s optional Local Originals are
 a separate capture path for this Mac’s first two interface inputs. They are not
 a prerequisite for a jam and they do not change Jamulus settings.
 
-When the host presses **Record** for the first time, WebJam asks:
+When the host presses **Record Session** for the first time, WebJam asks:
 
 - **Record Shared Jam Only** — start the synchronized host take now.
 - **Also Keep This Mac’s Inputs** — open Recording Setup and explicitly choose
@@ -24,9 +24,44 @@ while joining music.
 ## Recording readiness
 
 WebJam checks takes storage, recorder control, the known roster, and any
-explicit local-capture setting when Record is requested. It does not perform
-those checks during Host or Join. A failed record preflight preserves the live
-jam and explains the next safe action.
+explicit local-capture setting when Record Session is requested. It does not
+perform those checks during Host or Join. A failed record preflight preserves
+the live jam and explains the next safe action.
+
+The live surface presents one authoritative progression:
+
+| State | Musician meaning |
+| --- | --- |
+| Idle | No recording generation owns the session |
+| Preparing | Storage, recorder, roster, and optional local input are being checked |
+| Count-in | The confirmed generation is counting the band in before captured performance |
+| Recording | The shared take is actively being captured |
+| Stopping | New capture is blocked while active owners stop |
+| Finalizing | Stems, timing, manifests, checksums, and publication are being verified |
+| Ready | The immutable take is available to Studio |
+| Needs attention | Media was preserved, but the shown recovery must complete before success |
+| Cleanup pending | An owned process or route could not yet be proved retired; retry Stop |
+
+A duplicate Record request cannot replace a generation that is preparing,
+recording, stopping, or finalizing. **Stop Recording** is one musician action,
+but recorder and Shared Track teardown remain independently proved owners; a
+clean result for one does not manufacture success for the other.
+
+## Shared Track in a recorded take
+
+When a Shared Track is loaded and route-ready, confirmed recorder start owns
+its count-in/play transition. The route still enters Jamulus through the
+separately owned `WebJam Track` participant; WebJam does not mix a direct local
+copy into each musician's output. The server recorder's authoritative track is
+classified as **Shared Track** in Studio and keeps a stable source identity
+across takes. It is not labeled as a musician or Local Original.
+
+The imported song remains immutable. Reconstructing the Studio source from it
+is allowed only through the recorded timing contract; if the authoritative
+stem, generation, boundaries, or alignment evidence are missing or ambiguous,
+WebJam preserves what it has and reports the problem instead of creating a
+plausible-looking duplicate. A roster row or waveform is never audibility
+proof.
 
 ## Guest Local Originals
 
@@ -45,16 +80,24 @@ until it is verified or deliberately deselected rather than guessing where it
 belongs. A manual nudge alone cannot turn an uncertain guest original into an
 export-ready one.
 
+After capture stops, authenticated guest state moves to **Finalizing** rather
+than treating recorder stop as publication. Only the later host **Ready** state
+establishes a completed take, and Ready does not turn an outstanding guest
+transfer into aligned media. Studio and export continue to show that original
+as waiting or unverified until its own receipt and timing contract pass.
+
 This is software evidence, not a claim that two physical systems were sample
 synchronized or that an external editor has been tested.
 
 ## Studio
 
 Studio opens from the direct **Studio** action or Cmd/Ctrl+3; it is intentionally
-absent from More so there is one obvious route rather than a duplicate entry. It
-is a Logic-like review workspace, not a Logic integration. Open a completed or
-explicitly recovered schema-v2 take to use its multitrack review and Arrange
-workspace.
+absent from More so there is one obvious route rather than a duplicate entry.
+It uses familiar professional DAW interactions without copying Apple artwork,
+icons, exact layouts, or trade dress, and it is not a Logic integration. Open a
+completed or explicitly recovered schema-v2 take to use its multitrack review
+and Arrange workspace. The track list distinguishes musician, Shared Track,
+and Local Original sources before mixing or editing begins.
 
 ### Arrange and mix
 
@@ -63,8 +106,9 @@ It does not store source file paths in the arrangement. The timeline supports:
 
 - moving and edge-trimming regions by drag;
 - split, duplicate, disable/enable, and delete actions for a selected region;
-- multi-region selection with Shift-click or Ctrl/Cmd-click, **Select All**,
-  and one-step Cut/Copy/Paste that keeps a copied phrase's shape and offsets;
+- visible multi-region selection with Shift-click or Ctrl/Cmd-click; completed-
+  take Studio keeps edit actions single-region, while Reference Studio song
+  projects add **Select All** and one-step Cut/Copy/Paste;
 - per-region fades, validated same-track crossfades, markers/sections,
   cycle/loop playback ranges, and time/marker snapping;
 - track trim, fader, pan, mute, solo, and export-inclusion choices;
@@ -79,14 +123,15 @@ arrangement choices with the block, reloads playback, and refuses the move
 atomically when an interval cannot cross a seam safely. Source recordings and
 existing tombstones remain unchanged.
 
-Shift-click or Ctrl/Cmd-click regions to build a selection, or press
-**Select All** (⌘/Ctrl+A) to select every active region. Cut, Copy, Paste, and
-Delete then act on the whole selection as one undoable edit: Paste lands the
-earliest copied region at the playhead and preserves every other copy's exact
-relative offset, so a multi-track phrase pastes as one phrase. A copied region
-whose destination track no longer exists fails the paste closed rather than
-inventing a track. Copies are new durable IDs; the source recordings and any
-tombstones are never rewritten.
+In a **Reference Studio song project**, Shift-click or Ctrl/Cmd-click regions to
+build a selection, or press **Select All** (⌘/Ctrl+A) to select every active
+region. Cut, Copy, Paste, and Delete then act on the whole selection as one
+undoable edit: Paste lands the earliest copied region at the playhead and
+preserves every other copy's exact relative offset, so a multi-track phrase
+pastes as one phrase. A copied region whose destination track no longer exists
+fails the paste closed rather than inventing a track. Copies are new durable
+IDs; source recordings and tombstones are never rewritten. Completed-take
+Studio does not expose these batch clipboard commands.
 
 The familiar Undo/Redo shortcuts restore exact immutable snapshots, including
 durable IDs. Adjacent continuous-control changes are coalesced into a useful
@@ -123,10 +168,12 @@ select a comp range. A newer range cleanly splits prior overlapping selections
 and uses short equal-power boundaries. Removing a lane removes only its Studio
 inventory and comp choices; the repeated take remains unchanged in Takes.
 
-### Overdub loop recording
+### Reference Studio song-project overdub loop recording
 
-Turn on **Overdub** in the Transport menu (shortcut **O**) or the transport bar
-to loop-record over a chosen range. First set a loop: select a region and use
+This flow is available only in a Reference Studio song project; completed-take
+Studio remains a review, arrangement, mix, and export surface. Turn on
+**Overdub** in the Transport menu (shortcut **O**) or the transport bar to
+loop-record over a chosen range. First set a loop: select a region and use
 **Region ▸ Loop Selected Region**, or drag a cycle range. With Overdub on,
 **Record** then loops that range and lands each complete pass in its own new
 take lane, with no pass-count dialog — press **Stop** when you have enough. Comp
@@ -226,7 +273,23 @@ requested operation.
 
 Export never rewrites the original take.
 
-## v0.22.4 evidence boundary
+## v0.23.0 evidence boundary
+
+Automated source tests can establish state-machine, identity, source
+validation, timing-model, persistence/recovery, rendering, waveform, export,
+privacy, and headless UI behavior. They cannot establish acoustic audibility,
+latency, direct-monitor isolation, interface recovery, or how a packaged build
+feels to musicians.
+
+For v0.23.0, two-machine music, Shared Track audibility and independent mix,
+count-in/record alignment, authoritative server stems, Local Original transfer,
+hardware interruption, long recording, Studio playback, external-editor
+import, packaged accessibility, SmartScreen, Gatekeeper, signing, and
+notarization remain **NOT RUN**. Record them with the
+[v0.23 physical checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
+against an exact asset, build ID, SHA-256, environment, and evidence location.
+
+## Historical v0.22.4 evidence boundary
 
 Automated source tests cover the arrangement model, persistence/recovery,
 history/controller behavior, renderer, comping, source catalog, waveform

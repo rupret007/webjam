@@ -1,4 +1,4 @@
-"""macOS Reference Track route and second-client ownership tests."""
+"""macOS Shared Track route and second-client ownership tests."""
 
 from __future__ import annotations
 
@@ -761,7 +761,7 @@ def test_capability_is_macos_only_conflict_aware_and_requires_split_channels() -
         sounddevice_module=sd,
         process_route_probe=_LiveRouteProbe(
             capability_error=(
-                "Reference Track requires macOS 14.2 or later because macOS 13 "
+                "Shared Track requires macOS 14.2 or later because macOS 13 "
                 "cannot prove the primary Jamulus route."
             )
         ),
@@ -1487,7 +1487,7 @@ def test_private_popen_os_error_cannot_leak_runtime_path_in_traceback(
         physical_route_certified=True,
     )
 
-    with pytest.raises(Exception, match="prepare a safe Reference Track") as failure:
+    with pytest.raises(Exception, match="prepare a safe Shared Track") as failure:
         backend.prepare(_context(binary))
     formatted = "".join(
         traceback.format_exception(
@@ -1533,7 +1533,7 @@ def test_ownership_generation_failure_before_spawn_cleans_private_runtime(
         physical_route_certified=True,
     )
 
-    with pytest.raises(Exception, match="prepare a safe Reference Track") as failure:
+    with pytest.raises(Exception, match="prepare a safe Shared Track") as failure:
         backend.prepare(_context(binary))
 
     runtime = reference_track_runtime_directory(tmp_path)
@@ -2209,8 +2209,8 @@ def test_stream_stop_failure_is_recovered_only_by_proven_close(
 @pytest.mark.parametrize(
     "monitor_failure",
     (
-        "Reference Track stopped because its BlackHole route changed.",
-        "Reference Track stopped because zero return faders could no longer be proved.",
+        "Shared Track stopped because its BlackHole route changed.",
+        "Shared Track stopped because zero return faders could no longer be proved.",
     ),
     ids=("route-failure", "fader-failure"),
 )

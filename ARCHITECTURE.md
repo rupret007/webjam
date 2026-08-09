@@ -1,9 +1,8 @@
-# WebJam architecture — v0.22.5
+# WebJam architecture — v0.23.0 source candidate
 
-> **Pre-publication candidate source:** this document describes v0.22.5.
-> GitHub Latest remains immutable v0.22.4 until the new tag, package, checksum,
-> component-catalog, and promotion gates pass. Remaining physical gates stay
-> **NOT RUN**.
+> This document describes unpublished v0.23.0 source. GitHub **Latest** remains
+> immutable v0.22.5. All v0.23.0 physical, credentialed, signing, and platform
+> trust gates stay **NOT RUN**.
 
 ## Product boundary
 
@@ -12,7 +11,7 @@ The boundary is deliberate:
 
 | Layer | Responsibility |
 | --- | --- |
-| `webjam_qt` | Host/Join launch, Session HUD, invitations, recording/session-Studio UI, standalone Reference Studio, recovery messages |
+| `webjam_qt` | Host/Join launch, Session HUD, live Shared Track deck/transport, Record Session and session-Studio UI, standalone Reference Studio, recovery messages |
 | `core/song_*`, `core/project_*`, schema-3 Studio | Portable Reference Studio project/media ownership, local playback/recording, non-destructive arrangement/mix, and bounce |
 | `services/bridge_service.py` | Direct owned-process launch/stop, hosted-server supervision, authenticated Jamulus RPC, and verified managed/embedded/explicit/system component resolution |
 | `core/jamulus_profile.py` | Dedicated Jamulus profile launch contract and private, allowlisted restart records |
@@ -125,28 +124,44 @@ handoff. The Support Bundle sanitizer revalidates those finite values and
 optional reason codes; no URL, meeting ID, account, participant, app path,
 credential, or raw exception crosses the boundary.
 
-Reference Track also separates source and route authority. A host can load,
-decode the first bounded block, and inspect a source while route capability is
-unavailable. The immutable v0.22.2 production backend refused route capability
+The v0.23.0 UI presents one canonical **Shared Track** workflow; existing
+`ReferenceTrack*` types, paths, tests, and the ADR remain compatibility names
+for the established route engine, not a second live feature. Shared Track
+separates source and route authority. A host can load, decode the first bounded
+block, and inspect a source while route capability is unavailable. The
+immutable v0.22.2 production backend refused route capability
 before device scanning, so BlackHole setup and **Recheck Route** cannot unlock
 that downloaded package. The published v0.22.4 production factory instead
 derives prerequisite authority from an official, unambiguous 48-kHz BlackHole
 16ch/64ch route on the Mac. That machine check may make Play available; it does
 not start playback or bypass the exact live-process proofs at startup.
-The support projection exports allowlisted source format/rate/channel/duration
-and finite route state, never a source name or path.
+The source snapshot exposes only bounded transport facts plus a fixed-size
+waveform summary prepared away from the realtime callback. The callback uses
+preallocated buffers/rings and scalar generation counters; it performs no
+filesystem I/O, UI work, network call, logging, or blocking wait. The support
+projection exports allowlisted source format/rate/channel/duration,
+count-in/cleanup/dropout counters, and finite route state, never a source name
+or path.
 
 The retained controlled macOS pilot uses a separately owned Jamulus process,
 session-unique descriptor-pinned profile and RPC-secret files, and one global
 WebJam lifecycle claim shared across eligible BlackHole devices. A kernel
 socket inherited by the child preserves that claim if the parent exits.
 Playback authority requires fresh PID-bound CoreAudio proof for both primary
-and backing clients. Cleanup retains every owner and reports a retryable
-`cleanup_pending` state until the process, RPC, private files, and route lease
-are all proved retired. The production path remains fail-closed on absent,
-changed, or ambiguous evidence. Machine-derived route authority is not
-physical audibility, direct-monitor, independent-mix, or rehearsal proof;
-those acceptance gates remain **NOT RUN**.
+and backing clients. Source replacement/removal requires the route to be
+stopped; an active owner is never implicitly torn down by a load command.
+Cleanup retains every owner and reports a retryable `cleanup_pending` state
+until the process, RPC, private files, and route lease are all proved retired.
+The production path remains fail-closed on absent, changed, or ambiguous
+evidence. The host publishes a strict, generation-monotonic, path-free
+`SharedTrackSessionSnapshot` through the authenticated peer state; guest
+renderers observe it without transport authority. Playback position is
+memory-only rather than repeatedly persisted. Legacy peers may fall back to
+bounded dedicated-channel presence, but roster presence alone is never
+promoted to transport, synchronization, isolation, or audibility truth.
+Machine-derived route authority is not physical audibility, direct-monitor,
+independent-mix, or rehearsal proof; those acceptance gates remain **NOT
+RUN**.
 
 A future Webex Embedded App is described in
 [ADR 0007](docs/adr/0007-future-webex-embedded-app-companion.md). It is a
@@ -167,7 +182,7 @@ by every renderer.
 | --- | --- | --- |
 | `SessionConductor` | canonical role, phase, one action, evidence limit, attempt generation/revision | operational backbone and stale-observation rejection |
 | `SessionLifecycle` | bounded accepted transition history and cleanup/recovery phase | reason-free recent events only |
-| `RecordingCoordinator` | requested/starting/recording/stopping state, take availability, validation result | recording and take output status |
+| `RecordingCoordinator` | idle/preparing/count-in/recording/stopping/finalizing/ready/attention state, take availability, validation result | Record Session and take output status |
 | `GuestPeerSession` / transfer store | active local capture, durable queue, verified receipt, missing/recovered media | bounded guest-media and preservation status |
 | `RecordingStudio` / `StudioProjectController` | selected-take revision, validation, dirty/save state, export eligibility | review, non-destructive edit, and export readiness facts |
 | Studio export worker | exporting/completed/needs-attention result | export output status; completion is cleared by a new take or edit |
@@ -201,7 +216,7 @@ participants into session-local slots. Neither surface receives notes, titles,
 musician names, channel IDs, invitations, addresses, device names, paths,
 tokens, credentials, or raw exceptions.
 
-No model SDK or cloud assistant is part of v0.22.5. A future model-assisted
+No model SDK or cloud assistant is part of v0.23.0. A future model-assisted
 creative feature may be considered only as explicit opt-in, off the real-time
 path, read-only, privacy-gated, unable to issue session commands or create
 operational facts, and visibly labeled as a suggestion. The deterministic
@@ -304,8 +319,8 @@ does not call that proof audibility; musicians play a note and verify each
 other, with Band Check available if help is needed. The direct **Webex
 Controls** action and its **More → Webex Controls** alias reveal the same optional
 Conversation panel without opening a meeting, and Webex never delays the
-session or invite. Direct **Reference Track** and **Studio** actions likewise
-reuse their existing More-menu destinations.
+session or invite. Direct **Shared Track** and **Studio** actions likewise
+reuse their existing live-session destinations.
 
 The persisted attempt record holds only a digest ID, generation, role, safe
 server/client phases, profile fingerprint, connection state, compatibility
@@ -317,7 +332,19 @@ exact profile match and new live proof.
 
 `RecordingCoordinator` owns host recorder state, storage readiness, take
 validation, recovery journals, and Local Originals handoff. Its work begins at
-Record time, not at music startup.
+**Record Session** time, not at music startup. The musician-facing projection
+separates Preparing, Count-in, Recording, Stopping, Finalizing, Ready, Needs
+attention, and cleanup pending. One accepted generation owns the request;
+duplicate Record/Stop commands and late callbacks cannot authorize a new or
+older generation.
+
+When a loaded Shared Track is route-ready, confirmed recorder start triggers
+its count-in/play transition. One Stop Recording request asks both the recorder
+and Shared Track owners to retire, but completion remains conjunctive: a clean
+recorder cannot hide pending route cleanup, and clean route teardown cannot
+hide missing or unverified recording media. Shared Track playback remains on
+the separate `WebJam Track` participant and never enters the musician output
+through an unproved direct-monitor path.
 
 Jamulus client channel IDs are local mixer coordinates: every client may see
 itself as channel zero, so those IDs never identify server recorder stems.
@@ -331,6 +358,16 @@ presence can preserve UI and Local Original delivery but is recorder-ineligible.
 Lease rollover, reconnect segments, capture obligations, privacy boundaries,
 and the trusted-invite residual risk are specified in
 [ADR 0009](docs/adr/0009-presence-v2-recorder-correlation.md).
+
+The authoritative recorder source for `WebJam Track` is classified as
+`LIVE_REFERENCE` internally and presented as **Shared Track** in Studio. Its
+stable source identity derives from the session/source contract rather than a
+take-local filename, so repeated takes do not masquerade as different
+musicians. Local Originals retain their explicit source class and are never
+used as substitutes for missing server stems. Ambiguous filenames, roster
+collisions, missing timing references, transfer gaps, and incomplete
+publication remain typed failure/waiting states; the recorder does not copy a
+stereo mix into several tracks and call it multitrack.
 
 The Studio boundary is layered:
 
@@ -368,6 +405,22 @@ The extracted arrangement-workflow mixin coordinates those services without
 owning widget construction; the shell remains responsible for live capture,
 take switching, worker lifetime, and the responsive library/editor/inspector
 composition.
+
+The live Recording Studio shell and offline arrangement controller are views
+of the same immutable take/project boundary. A finalized take is eligible for
+Studio only after its required manifest/media checks settle. Studio track
+headers distinguish musician, Shared Track, and Local Original sources while
+retaining the existing arrangement, comping, mixer, autosave, recovery, and
+export systems; v0.23.0 does not introduce another editor or duplicate audio
+engine.
+
+The guest projection is host-state continuity, not distributed local playback,
+sample-clock synchronization, or audibility proof. Strict validation rejects
+invalid names/timing/loop ranges and stale generations; it contains no control
+or audibility field. Before host validation begins, the peer state moves to
+Finalizing; only the later terminal result can report Ready or attention. A
+host take becoming Ready still does not fabricate completion/alignment for an
+outstanding guest Local Original transfer.
 
 ## Truth and failure behavior
 

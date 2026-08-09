@@ -1748,7 +1748,7 @@ def _detail_for_reason(reason_code: str) -> str:
             "End the hosted session, then return here to install."
         ),
         ComponentBusyReason.REFERENCE_TRACK_ACTIVE.value: (
-            "Stop Reference Track, then return here to install."
+            "Stop Shared Track, then return here to install."
         ),
         ComponentBusyReason.RECORDING_ACTIVE.value: (
             "Finish the recording, then return here to install."

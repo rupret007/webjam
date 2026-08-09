@@ -267,6 +267,57 @@ QPushButton#QuietButton:focus {
     font-weight: ${FONT_WEIGHT_BOLD};
 }
 
+#SharedTrackLiveDeck {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+}
+
+#SharedTrackLiveDeck QPushButton#GhostButton {
+    min-height: 30px;
+    padding: 0 ${SPACE_SM}px;
+    border-color: transparent;
+    background-color: transparent;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#SharedTrackLiveDeck QPushButton#GhostButton:hover,
+#SharedTrackLiveDeck QPushButton#GhostButton:focus {
+    border-color: ${COLOR_BORDER_FOCUS};
+    background-color: ${COLOR_BG_CARD_HOVER};
+}
+
+QPushButton#SharedTrackTransportButton {
+    min-width: 32px;
+    max-width: 32px;
+    min-height: 32px;
+    max-height: 32px;
+    padding: 0;
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_SM}px;
+    background-color: ${COLOR_BG_INPUT};
+    color: ${COLOR_TEXT_PRIMARY};
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+QPushButton#SharedTrackTransportButton:hover,
+QPushButton#SharedTrackTransportButton:focus {
+    border-color: ${COLOR_BORDER_FOCUS};
+    background-color: ${COLOR_BG_CARD_HOVER};
+}
+
+QPushButton#SharedTrackTransportButton:disabled {
+    border-color: ${COLOR_BORDER_SUBTLE};
+    color: ${COLOR_TEXT_MUTED};
+    background-color: ${COLOR_BG_PANEL};
+}
+
+#SharedTrackLiveState {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_XS}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
 #SessionControlBar {
     background-color: ${COLOR_BG_PANEL};
     border-top: 1px solid ${COLOR_BORDER_SUBTLE};

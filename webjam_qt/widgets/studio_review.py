@@ -125,13 +125,44 @@ def _timeline_tick_positions(duration: float, width: int) -> tuple[float, ...]:
     return tuple(span * index / 8.0 for index in range(9))
 
 
-def _safe_source_label(source: str) -> str:
+def _source_key(source: object) -> str:
+    """Normalize persisted source values and their enum equivalents."""
+
+    return str(getattr(source, "value", source) or "").strip().casefold()
+
+
+def _is_shared_track_source(source: object) -> bool:
+    """Return whether a recorded lane is the canonical live Shared Track."""
+
+    return _source_key(source) == "live_reference"
+
+
+def _is_synchronized_source(source: object) -> bool:
+    """Return whether recorder evidence places the source on the server timeline."""
+
+    return _source_key(source) in {"jamulus_server", "live_reference"}
+
+
+def _safe_source_label(source: object) -> str:
     """Return stable musician-facing source labels without exposing file paths."""
+
     return {
         "jamulus_server": "BAND",
+        "live_reference": "SHARED TRACK",
         "local_ssl": "LOCAL",
         "local_isolated": "LOCAL",
-    }.get(str(source or ""), "TRACK")
+    }.get(_source_key(source), "TRACK")
+
+
+def _safe_source_description(source: object) -> str:
+    """Describe a source truthfully without treating unknown media as local."""
+
+    return {
+        "jamulus_server": "Band server track",
+        "live_reference": "Shared Track",
+        "local_ssl": "Local original",
+        "local_isolated": "Local original",
+    }.get(_source_key(source), "Recorded track")
 
 
 class StudioTimelineRuler(QWidget):
@@ -774,10 +805,11 @@ class WaveformCanvas(QWidget):
         clip = rect.adjusted(0, 7, 0, -7)
         clip.setLeft(int(clip_x))
         clip.setWidth(int(clip_width))
+        synchronized_source = _is_synchronized_source(self._source)
         fill = QColor(
-            Color.BG_CARD_HOVER if self._source == "jamulus_server" else Color.BG_PANEL
+            Color.BG_CARD_HOVER if synchronized_source else Color.BG_PANEL
         )
-        fill.setAlpha(215 if self._source == "jamulus_server" else 235)
+        fill.setAlpha(215 if synchronized_source else 235)
         painter.fillRect(clip, fill)
         # Redraw the shared seconds grid above the clip fill.  The same grid
         # underneath is useful for live lanes, but would otherwise disappear
@@ -799,7 +831,7 @@ class WaveformCanvas(QWidget):
                     if self._selected
                     else (
                         Color.TEXT_SECONDARY
-                        if self._source == "jamulus_server"
+                        if synchronized_source
                         else Color.TEXT_MUTED
                     )
                 ),

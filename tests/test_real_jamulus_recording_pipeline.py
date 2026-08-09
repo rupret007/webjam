@@ -501,8 +501,8 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
         assert {track.name for track in take.tracks} == {
             harness.CLIENT_A_NAME,
             harness.CLIENT_B_NAME,
-            "Host Guitar",
-            "Host Vocal",
+            "Host Boundary Fixture Input 1",
+            "Host Boundary Fixture Input 2",
         }
 
         sink = _PullSink()

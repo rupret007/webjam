@@ -4,6 +4,8 @@ import math
 import os
 import threading
 import time
+from types import SimpleNamespace
+import uuid
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -20,6 +22,12 @@ from core.reference_track import (  # noqa: E402
     ReferenceTrackSnapshot,
     ReferenceTrackState,
 )
+from core.session_transfer import (  # noqa: E402
+    RecordingSignal,
+    SessionStateSnapshot,
+    SharedTrackPlaybackState,
+    SharedTrackSessionSnapshot,
+)
 from core.settings import AppSettings  # noqa: E402
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
@@ -32,7 +40,7 @@ def _controller(*, host: bool) -> ApplicationController:
     window = ConductorWindow(
         mode_entries=ApplicationController.mode_entries(),
         initial_mode_key="music_jam",
-        initial_title="Reference Track Test",
+        initial_title="Shared Track Test",
     )
     return ApplicationController(
         window,
@@ -449,7 +457,7 @@ def test_song_selected_during_route_probe_loads_once_after_probe() -> None:
         assert _wait_until(
             lambda: not controller._reference_track_operation_inflight
         )
-        assert dialog._load.text() == "Load Song…"
+        assert dialog._load.text() == "Replace…"
     finally:
         fake.release_refresh.set()
         controller.shutdown()
@@ -466,6 +474,115 @@ def test_companion_diagnostics_include_only_public_reference_track_facts() -> No
         assert "path" not in diagnostics
     finally:
         controller.shutdown()
+
+
+def test_host_projects_bounded_shared_track_truth_to_private_peers() -> None:
+    controller = ApplicationController.__new__(ApplicationController)
+    publish = MagicMock()
+    controller.host_peer = SimpleNamespace(
+        active=True,
+        publish_shared_track_state=publish,
+    )
+    controller._shared_track_peer_publish_failed = False
+    base = _snapshot(ReferenceTrackState.PLAYING)
+    snapshot = ReferenceTrackSnapshot(
+        state=ReferenceTrackState.PLAYING,
+        capability=base.capability,
+        source_name=base.source_name,
+        duration_s=base.duration_s,
+        position_s=base.position_s,
+        loop_start_s=2.0,
+        loop_end_s=20.0,
+        count_in_active=True,
+    )
+
+    controller._publish_shared_track_peer_state(snapshot)
+
+    publish.assert_called_once_with(
+        state="playing",
+        loaded=True,
+        source_display_name="Reference.wav",
+        position_s=5.0,
+        duration_s=60.0,
+        loop_start_s=2.0,
+        loop_end_s=20.0,
+        count_in_active=True,
+        cleanup_pending=False,
+        needs_attention=False,
+    )
+
+
+def test_guest_renders_authoritative_shared_track_and_recording_count_in() -> None:
+    controller = ApplicationController.__new__(ApplicationController)
+    strip = SimpleNamespace(
+        set_recording_phase=MagicMock(),
+        set_shared_track_snapshot=MagicMock(),
+    )
+    studio = SimpleNamespace(set_recording_phase=MagicMock())
+    controller.window = SimpleNamespace(
+        session_strip=strip,
+        recording_studio=studio,
+    )
+    peer_state = SessionStateSnapshot(
+        session_id=str(uuid.uuid4()),
+        generation=4,
+        signal=RecordingSignal.RECORDING,
+        take_id=str(uuid.uuid4()),
+        shared_track=SharedTrackSessionSnapshot(
+            generation=7,
+            playback_generation=2,
+            state=SharedTrackPlaybackState.PLAYING,
+            loaded=True,
+            source_display_name="Band Song.wav",
+            position_s=3.5,
+            duration_s=90.0,
+            loop_start_s=2.0,
+            loop_end_s=30.0,
+            count_in_active=True,
+        ),
+    )
+    controller.guest_peer = SimpleNamespace(last_state=peer_state)
+
+    controller._render_guest_peer_state()
+
+    strip.set_recording_phase.assert_called_once_with("count_in")
+    studio.set_recording_phase.assert_called_once_with("count_in")
+    projection = strip.set_shared_track_snapshot.call_args.args[0]
+    assert projection.source_name == "Band Song.wav"
+    assert projection.state is SharedTrackPlaybackState.PLAYING
+    assert projection.position_s == pytest.approx(3.5)
+    assert projection.count_in_active is True
+    assert not hasattr(projection, "can_control")
+
+
+def test_successful_peer_teardown_clears_guest_projection_only_after_proof() -> None:
+    controller = ApplicationController.__new__(ApplicationController)
+    clear_projection = MagicMock()
+    controller.window = SimpleNamespace(
+        session_strip=SimpleNamespace(
+            clear_shared_track_projection=clear_projection,
+        )
+    )
+    controller._ui_invoker = SimpleNamespace(
+        invoke=lambda callback: callback(),
+    )
+    controller.host_peer = None
+    controller._guest_invite = object()
+    controller._guest_peer_configuration_failed = False
+    controller._host_peer_warning = ""
+    guest = MagicMock()
+    guest.stop.return_value = False
+    controller.guest_peer = guest
+
+    assert controller._stop_session_peer(clear_invite=True) is False
+    clear_projection.assert_not_called()
+    assert controller.guest_peer is guest
+
+    guest.stop.return_value = True
+    assert controller._stop_session_peer(clear_invite=True) is True
+    clear_projection.assert_called_once_with()
+    assert controller.guest_peer is None
+    assert controller._guest_invite is None
 
 
 def test_play_builds_ephemeral_separate_client_context_off_ui_thread() -> None:
@@ -946,7 +1063,7 @@ def test_audio_stop_does_not_hide_unproved_reference_teardown() -> None:
 
         controller.bridge.stop_jamulus.assert_not_called()
         message = controller.window.flash_message.call_args.args[0]
-        assert "Reference Track client did not stop cleanly" in message
+        assert "Shared Track client did not stop cleanly" in message
     finally:
         controller._stop_reference_track_for_session_end = MagicMock(return_value=True)
         controller.shutdown()
@@ -1008,7 +1125,7 @@ def test_shutdown_stays_open_when_reference_process_death_is_unproved() -> None:
             capability=fake.snapshot.capability,
             source_name="Reference.wav",
             error=(
-                "Reference Track couldn't confirm that its owned Jamulus "
+                "Shared Track couldn't confirm that its owned Jamulus "
                 "client stopped."
             ),
         )

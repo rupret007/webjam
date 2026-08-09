@@ -102,7 +102,7 @@ class CoreAudioProcessRouteProbe:
             return "Live CoreAudio process routing is only available on macOS."
         if self._version < _MINIMUM_MACOS_VERSION:
             return (
-                "Reference Track requires macOS 14.2 or later because macOS 13 "
+                "Shared Track requires macOS 14.2 or later because macOS 13 "
                 "cannot prove the primary Jamulus client's live input and output "
                 "devices."
             )
@@ -114,7 +114,7 @@ class CoreAudioProcessRouteProbe:
         if not supported:
             return (
                 "This Mac cannot provide live primary Jamulus route evidence. "
-                "Reference Track stays unavailable to prevent an audio loop."
+                "Shared Track stays unavailable to prevent an audio loop."
             )
         return ""
 
@@ -135,12 +135,12 @@ class CoreAudioProcessRouteProbe:
             raise CoreAudioProcessRouteError(capability_error)
         if isinstance(pid, bool) or int(pid) <= 0:
             raise CoreAudioProcessRouteError(
-                "Reference Track couldn't identify the active primary "
+                "Shared Track couldn't identify the active primary "
                 "Jamulus process."
             )
         if not isinstance(scan, CoreAudioScan) or scan.error or not scan.devices:
             raise CoreAudioProcessRouteError(
-                "Reference Track couldn't read a fresh CoreAudio device snapshot."
+                "Shared Track couldn't read a fresh CoreAudio device snapshot."
             )
 
         safe_pid = int(pid)
@@ -205,7 +205,7 @@ class CoreAudioProcessRouteProbe:
             raise
         except Exception as exc:  # noqa: BLE001 - native read boundary
             raise CoreAudioProcessRouteError(
-                "Reference Track couldn't inspect the primary Jamulus live "
+                "Shared Track couldn't inspect the primary Jamulus live "
                 "audio route."
             ) from exc
 
@@ -217,11 +217,11 @@ class CoreAudioProcessRouteProbe:
         ):
             raise CoreAudioProcessRouteError(
                 "The primary Jamulus audio route changed while WebJam was "
-                "checking it. Try Reference Track again after the route settles."
+                "checking it. Try Shared Track again after the route settles."
             )
         if first_running != (True, True):
             raise CoreAudioProcessRouteError(
-                "Reference Track needs the primary Jamulus input and output to "
+                "Shared Track needs the primary Jamulus input and output to "
                 "be actively running."
             )
         if len(first_input) != 1 or len(first_output) != 1:

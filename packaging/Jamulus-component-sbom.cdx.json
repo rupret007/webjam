@@ -4,12 +4,12 @@
   "version": 1,
   "metadata": {
     "component": {
-      "bom-ref": "pkg:github/rupret007/webjam@0.22.5",
+      "bom-ref": "pkg:github/rupret007/webjam@0.23.0",
       "group": "rupret007",
       "name": "WebJam",
-      "purl": "pkg:github/rupret007/webjam@0.22.5",
+      "purl": "pkg:github/rupret007/webjam@0.23.0",
       "type": "application",
-      "version": "0.22.5"
+      "version": "0.23.0"
     },
     "properties": [
       {

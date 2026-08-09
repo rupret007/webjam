@@ -76,6 +76,7 @@ class StudioEditingToolbar(QWidget):
         self._context_provider = context_provider
         self._apply_edit = apply_edit
         self._name_prompt = name_prompt or self.prompt_name
+        self._compact = False
         self.setObjectName("StudioArrangeToolbar")
         self.setAccessibleName("Studio arrangement controls")
 
@@ -136,6 +137,30 @@ class StudioEditingToolbar(QWidget):
         actions.addWidget(self.crossfade_button)
         actions.addStretch(1)
         self.setVisible(False)
+
+    def _label(self, full_text: str) -> str:
+        if not self._compact:
+            return full_text
+        return {
+            "＋ Marker": "＋ Mark",
+            "Cycle Region": "Cycle",
+            "Clear Cycle": "Clear",
+            "5 ms Fades": "Fades",
+            "Remove Fades": "No Fades",
+            "Crossfade": "Xfade",
+            "Remove Crossfade": "No Xfade",
+        }.get(full_text, full_text)
+
+    def set_compact(self, compact: bool) -> None:
+        """Use bounded visual copy while preserving complete accessible names."""
+
+        compact = bool(compact)
+        if compact == self._compact:
+            return
+        self._compact = compact
+        self.add_marker_button.setText(self._label("＋ Marker"))
+        self.add_section_button.setText(self._label("＋ Section"))
+        self.refresh()
 
     def _context(self) -> StudioEditingContext:
         return self._context_provider()
@@ -405,28 +430,34 @@ class StudioEditingToolbar(QWidget):
         ):
             control.setEnabled(region is not None)
         if region is None or context.document is None:
-            self.cycle_region_button.setText("Cycle Region")
-            self.region_fades_button.setText("5 ms Fades")
+            self.cycle_region_button.setText(self._label("Cycle Region"))
+            self.region_fades_button.setText(self._label("5 ms Fades"))
         else:
             cycle = context.document.cycle_range
             self.cycle_region_button.setText(
-                "Clear Cycle"
-                if cycle is not None
-                and cycle.start_frame == region.timeline_start_frame
-                and cycle.end_frame == region.timeline_end_frame
-                else "Cycle Region"
+                self._label(
+                    "Clear Cycle"
+                    if cycle is not None
+                    and cycle.start_frame == region.timeline_start_frame
+                    and cycle.end_frame == region.timeline_end_frame
+                    else "Cycle Region"
+                )
             )
             self.region_fades_button.setText(
-                "Remove Fades"
-                if region.fade_in_frames or region.fade_out_frames
-                else "5 ms Fades"
+                self._label(
+                    "Remove Fades"
+                    if region.fade_in_frames or region.fade_out_frames
+                    else "5 ms Fades"
+                )
             )
         crossfade = self.selected_crossfade_target() if visible else None
         self.crossfade_button.setEnabled(crossfade is not None)
         self.crossfade_button.setText(
-            "Remove Crossfade"
-            if crossfade is not None and crossfade[2] is not None
-            else "Crossfade"
+            self._label(
+                "Remove Crossfade"
+                if crossfade is not None and crossfade[2] is not None
+                else "Crossfade"
+            )
         )
 
 

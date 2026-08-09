@@ -1,13 +1,25 @@
 # Jamulus component catalog release runbook
 
-> **v0.22.4 published state:** the public component release is sealed and immutable with signed sequence 5 for exact WebJam 0.22.4. The desktop release is also immutable and GitHub Latest. The component release remains a public non-Latest prerelease and its stable channel tag was not moved.
+> **v0.22.5 published state:** the public v3 component release is sealed and
+> immutable with signed sequence 6 for exact WebJam 0.22.5. The desktop release
+> is the immutable GitHub **Latest**; the component release remains a public
+> non-Latest prerelease and its channel tag was not moved.
 
-> **v0.22.5 component state:** the fixed `jamulus-components-v3` URL now points
-> to a public, immutable, non-Latest prerelease carrying signed exact sequence 6 for
-> exact WebJam 0.22.5. The desktop candidate remains pre-publication until the
-> post-evidence CI, frozen-package proof, draft, and protected promotion pass.
+> **Historical state:** v1 sequence 4 for v0.22.3 and v2 sequence 5 for v0.22.4
+> remain immutable. Neither historical tag, release, nor signed asset moved for
+> the v0.22.5 transition.
 
-This runbook records the sealed v1 history and current v2 catalog channel. The
+> **v0.23.0 source candidate:** the sealed v3 sequence-6 catalog authorizes
+> exact WebJam 0.22.5 and cannot authorize 0.23.0. A v0.23.0 release requires a
+> new fixed versioned channel, the next monotonic sequence, future expiry, exact
+> target/architecture/capability inventory, offline signature, independent
+> public redownload, and frozen-package verification. Every such step is
+> **NOT RUN**; do not move or replace v1, v2, or v3.
+> Current source narrowly authorizes the unchanged audited Jamulus 3.12.2 and
+> 3.12.3 identities through exact WebJam 0.23.0 only, allowing a known fallback;
+> that baked compatibility is not a signed v0.23 managed-update catalog.
+
+This runbook records the sealed v1/v2 history and current v3 catalog channel. The
 catalog tells WebJam which exact
 Jamulus client/server packages are approved. It does not publish WebJam,
 redistribute Jamulus packages, approve HEADLESS, or make a desktop release
@@ -23,15 +35,15 @@ independently reverified on 2026-07-29, authorized exact WebJam 0.22.2 through
 `2026-08-28T15:03:21Z`.
 
 The sealed v1 channel remains immutable sequence 4 for exact WebJam 0.22.3.
-The current public v2 channel is immutable sequence 5 for exact WebJam 0.22.4,
+The sealed public v2 channel is immutable sequence 5 for exact WebJam 0.22.4,
 with eight Jamulus 3.12.3 client/server entries and expiry
 `2026-09-03T12:00:00Z`. Its sole asset is
 `WebJam-Jamulus-components-v1.json`, with envelope SHA-256
 `670746cd925fadc62a57e7dfd24a7d67c50a412ab82bf25d1e0295be567294e3` and
 signed payload SHA-256
 `c5b034dad933a7ffea670cccecaf308947f5ab93f7fedeb0cde0ce8f9e34e83f`.
-Both component releases are non-Latest prereleases, and GitHub's
-immutable-release policy prevents replacing either asset in place.
+All three component releases are non-Latest prereleases, and GitHub's
+immutable-release policy prevents replacing any asset in place.
 The v2 tag is anchored at commit
 `fd1d8cbd80e76cdfb257f26894de452f191e15fa`; release ID `365297898` was
 published on 2026-08-05 UTC and is immutable.
@@ -61,12 +73,13 @@ signed payload SHA-256
 - Every catalog targets one exact WebJam version, expires within 31 days, and
   uses a sequence exactly one greater than the current public catalog.
 - `jamulus-components-v1` remains the sealed v0.22.3 channel.
-- `jamulus-components-v2` is the current public non-Latest prerelease with
+- `jamulus-components-v2` is the sealed v0.22.4 non-Latest prerelease with
   exactly one immutable asset: `WebJam-Jamulus-components-v1.json`.
 - `jamulus-components-v3` is the public versioned boundary for exact WebJam
   0.22.5; it must never move or replace v1/v2 and must remain non-Latest.
-- The v0.22.5 desktop draft remains unpublished if catalog generation, public
-  redownload, frozen-runtime verification, or UI verification fails.
+- The v0.22.5 desktop draft was required to remain unpublished if catalog
+  generation, public redownload, frozen-runtime verification, or UI
+  verification failed.
 
 ## v0.22.5 versioned-channel transition after the sequence-5 seal
 
@@ -78,7 +91,7 @@ expiry, downgrade, privacy, and four-platform frozen-package proof. The new
 channel must remain non-Latest and must not alter historical sequence-4 or
 sequence-5 bytes or either desktop release.
 
-### Published v3 catalog — desktop remains pre-publication
+### Published v3 catalog and desktop release
 
 The reviewed v3 preparation object was
 `b1de2d826afe01d6696677b14c2dd5efafa87b5b`. It reports WebJam 0.22.5, selects
@@ -90,8 +103,8 @@ attempt to move the tag stops the transition.
 
 The tag, signed sequence-6 bytes, one-asset v3 prerelease, and public
 redownload were completed on 2026-08-07. The v3 release is a machine-consumed
-catalog channel, not an application download. The desktop release remains
-unpublished until the remaining gates below pass.
+catalog channel, not an application download. The remaining desktop gates
+below subsequently passed on the same immutable source identity.
 
 1. **PASS — source and CI boundary.** The reviewed release-prep history is on
    `master` at `35426b1f14bc9c09c5207d5d7a5dd5cb79351f0c`; green CI run
@@ -179,9 +192,9 @@ unpublished until the remaining gates below pass.
    WebJam 0.22.5, exact eight-entry inventory, and future expiry. The release
    and asset IDs, digests, catalog hashes, signer fingerprint, and expiry are
    recorded above and in this follow-up commit.
-7. Wait for WebJam CI to succeed on that exact post-evidence `origin/master`
-   commit, including all four desktop builds. After separate explicit approval
-   for this read-only verification dispatch, run from exact `master`:
+7. **PASS — post-evidence source CI.** WebJam CI run `31206070715` succeeded
+   on exact commit `d7d0039759e8334407fe2e6ed9e42edf0d7ef639`, including all
+   four desktop builds. The approved read-only verification dispatch used:
 
    ```bash
    gh workflow run verify-component-candidate.yml \
@@ -200,17 +213,19 @@ unpublished until the remaining gates below pass.
    Windows Setup containers are inventory- and hash-bound but are not launched
    by this gate; only the four portable ZIP packages are live-launched on their
    native Ubuntu, Windows, Apple-silicon Mac, and Intel Mac runners.
-8. Require all four native jobs and the final read-only identity-revalidation
-   job to pass. If any source commit follows the evidence commit, discard this
-   proof, obtain a new green CI run, and dispatch it again. The proof must run
-   again on the post-evidence final master CI SHA without another source commit
-   between that proof and desktop tagging.
+8. **PASS — fixed-v3 package verification.** Run `31208008965` passed all four
+   native jobs and the final read-only identity-revalidation job on the exact
+   post-evidence source identity, freezing `master` without another source commit
+   before the annotated desktop tag. If any source commit had followed the
+   evidence commit before tagging, this proof would have been discarded and
+   rerun.
    A CI run created before `verify-component-candidate.yml` landed cannot pass
    the exact-current-master policy and is not eligible release evidence.
-9. Only after that public evidence and read-only fixed-v3 package proof pass may
-   the annotated desktop tag and verified Latest promotion proceed. Preserve
-   the successful run ID and all four bounded package summaries as evidence
-   before the annotated desktop tag.
+9. **PASS — desktop tag and protected promotion.** Tag CI run `31208271585`
+   and protected promotion run `31210531934` passed for the same commit.
+   Immutable desktop release ID `366957478` was published on 2026-08-07 UTC as
+   GitHub **Latest** at tag `v0.22.5`. The v3 catalog remains a separate
+   non-Latest prerelease.
 
 ## Historical mutable-channel renewal procedure: sequence N to N+1
 

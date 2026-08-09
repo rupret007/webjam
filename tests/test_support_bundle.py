@@ -980,6 +980,12 @@ class TestSupportArtifact(unittest.TestCase):
                     "route_reason": "cleanup_pending",
                     "route_active": False,
                     "cleanup_pending": True,
+                    "count_in_active": False,
+                    "audio_callback_calls": 17,
+                    "audio_requested_frames": 17_408,
+                    "audio_delivered_frames": 16_384,
+                    "audio_underrun_frames": 1_024,
+                    "audio_callback_faults": 1,
                     "source_name": "Private Demo Song.flac",
                     "source_path": "/Users/alice/private/Private Demo Song.flac",
                     "detail": "token=secret",
@@ -1051,8 +1057,14 @@ class TestSupportArtifact(unittest.TestCase):
         self.assertEqual(
             report["reference_track"],
             {
+                "audio_callback_calls": 17,
+                "audio_callback_faults": 1,
+                "audio_delivered_frames": 16_384,
+                "audio_requested_frames": 17_408,
+                "audio_underrun_frames": 1_024,
                 "playback_state": "ready",
                 "cleanup_pending": True,
+                "count_in_active": False,
                 "route_active": False,
                 "route_available": False,
                 "route_backend": "blackhole",
@@ -1082,6 +1094,125 @@ class TestSupportArtifact(unittest.TestCase):
             "Private Demo Song",
         ):
             self.assertNotIn(forbidden, encoded)
+
+    def test_reference_track_counters_are_bounded_and_private_fields_are_dropped(
+        self,
+    ):
+        maximum = 2**63 - 1
+        artifact = build_support_bundle(
+            SupportFacts(
+                reference_track={
+                    "audio_callback_calls": maximum,
+                    "audio_requested_frames": -1,
+                    "audio_delivered_frames": 12.5,
+                    "audio_underrun_frames": True,
+                    "audio_callback_faults": 2**63,
+                    "cleanup_pending": False,
+                    "count_in_active": True,
+                    "source_name": "Private Count-In Demo.wav",
+                    "source_path": "/Users/alice/Music/Private Count-In Demo.wav",
+                    "audio_callback_detail": (
+                        "decoder failed at /Users/alice/Music/Private Count-In Demo.wav"
+                    ),
+                }
+            ),
+            created_at=CREATED_AT,
+        )
+
+        self.assertEqual(
+            artifact.structured_report["reference_track"],
+            {
+                "audio_callback_calls": maximum,
+                "cleanup_pending": False,
+                "count_in_active": True,
+            },
+        )
+        encoded = json.dumps(artifact.structured_report)
+        for forbidden in (
+            "audio_requested_frames",
+            "audio_delivered_frames",
+            "audio_underrun_frames",
+            "audio_callback_faults",
+            "source_name",
+            "source_path",
+            "audio_callback_detail",
+            "/Users/alice",
+            "Private Count-In Demo",
+        ):
+            self.assertNotIn(forbidden, encoded)
+
+        injected = build_support_bundle(
+            SupportFacts(
+                reference_track={
+                    "audio_requested_frames": (
+                        "/Users/alice/Music/Injected Counter.wav"
+                    ),
+                    "count_in_active": "/Users/alice/Music/Injected State.wav",
+                }
+            ),
+            created_at=CREATED_AT,
+        ).structured_report
+        self.assertNotIn("reference_track", injected)
+        self.assertNotIn("/Users/alice", json.dumps(injected))
+        self.assertNotIn("Injected Counter", json.dumps(injected))
+        self.assertNotIn("Injected State", json.dumps(injected))
+
+    def test_recorder_identity_generation_and_failure_facts_are_bounded(self):
+        take_id = "5c394840-f544-4c11-a63f-20b76d8a7be8"
+        report = build_support_bundle(
+            SupportFacts(
+                recorder_health={
+                    "state": "validating",
+                    "generation": 23,
+                    "take_id": take_id,
+                    "dropout_count": 4,
+                    "gap_count": 2,
+                    "cleanup_pending": True,
+                    "reason_code": "local_original_inventory_pending",
+                    "failure_category": "peer_transfer",
+                    "recording_path": "/Users/alice/Music/Private Take.wav",
+                    "participant_name": "Alice",
+                }
+            ),
+            created_at=CREATED_AT,
+        ).structured_report
+
+        self.assertEqual(
+            report["recorder"],
+            {
+                "cleanup_pending": True,
+                "dropout_count": 4,
+                "failure_category": "peer_transfer",
+                "gap_count": 2,
+                "generation": 23,
+                "reason_code": "local_original_inventory_pending",
+                "state": "validating",
+                "take_id": take_id,
+            },
+        )
+        encoded = json.dumps(report)
+        self.assertNotIn("/Users/alice", encoded)
+        self.assertNotIn("Private Take", encoded)
+        self.assertNotIn("participant_name", encoded)
+        self.assertNotIn("Alice", encoded)
+
+        rejected = build_support_bundle(
+            SupportFacts(
+                recorder_health={
+                    "state": "recording /Users/alice/private.wav",
+                    "generation": True,
+                    "take_id": "/Users/alice/private.wav",
+                    "dropout_count": -1,
+                    "gap_count": 2**63,
+                    "cleanup_pending": "/Users/alice/private.wav",
+                    "reason_code": "../../private.wav",
+                    "failure_category": "/Users/alice/private.wav",
+                }
+            ),
+            created_at=CREATED_AT,
+        ).structured_report
+        self.assertNotIn("recorder", rejected)
+        self.assertNotIn("/Users/alice", json.dumps(rejected))
 
     def test_catalog_fetch_diagnostics_use_exact_finite_allowlists(self):
         accepted = build_support_bundle(

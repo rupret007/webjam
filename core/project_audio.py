@@ -19,6 +19,7 @@ must stop the audio stream before resetting or replacing a ring.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import math
 import os
 import operator
@@ -496,6 +497,68 @@ class ProjectAudioDecoder:
     def closed(self) -> bool:
         with self._lock:
             return self._closed
+
+    def source_sha256(self) -> str:
+        """Hash the exact descriptor-bound source without trusting its path.
+
+        This worker-thread operation deliberately reopens the pathname only
+        after comparing it with the decoder's immutable descriptor identity,
+        then checks the independent hashing descriptor and pathname again
+        after EOF. A replacement or in-place mutation therefore fails closed
+        instead of producing an identity for bytes the decoder did not bind.
+        """
+
+        with self._lock:
+            if self._closed:
+                raise ProjectAudioError(
+                    "The imported audio changed or became unavailable. Relink it "
+                    "before continuing."
+                )
+            self._require_current()
+            descriptor = -1
+            try:
+                flags = (
+                    os.O_RDONLY
+                    | getattr(os, "O_BINARY", 0)
+                    | getattr(os, "O_CLOEXEC", 0)
+                    | getattr(os, "O_NOFOLLOW", 0)
+                )
+                descriptor = os.open(self._path, flags)
+                opened = os.fstat(descriptor)
+                if (
+                    not stat.S_ISREG(opened.st_mode)
+                    or _identity(opened) != self._bound_identity
+                ):
+                    raise OSError("source changed before hashing")
+                digest = hashlib.sha256()
+                while True:
+                    chunk = os.read(descriptor, 1024 * 1024)
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+                current_path = self._path.lstat()
+                current_descriptor = os.fstat(descriptor)
+                if (
+                    stat.S_ISLNK(current_path.st_mode)
+                    or not stat.S_ISREG(current_path.st_mode)
+                    or _identity(current_path) != self._bound_identity
+                    or _identity(current_descriptor) != self._bound_identity
+                ):
+                    raise OSError("source changed during hashing")
+            except ProjectAudioError:
+                raise
+            except Exception:
+                raise ProjectAudioError(
+                    "The imported audio changed or became unavailable. Relink it "
+                    "before continuing."
+                ) from None
+            finally:
+                if descriptor >= 0:
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        pass
+            return digest.hexdigest()
 
     def _require_current(self) -> None:
         try:

@@ -1,8 +1,9 @@
-"""Core Reference Track state, decoding, and bounded-stream contracts."""
+"""Core Shared Track state, decoding, and bounded-stream contracts."""
 
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+import hashlib
 from pathlib import Path
 import threading
 import time
@@ -15,6 +16,7 @@ from core.project_audio import ProjectAudioError, ProjectAudioProbe
 from core.reference_track import (
     REFERENCE_MAX_DIAGNOSTIC_COUNTER,
     REFERENCE_SAMPLE_RATE,
+    REFERENCE_WAVEFORM_BINS,
     ReferenceTrackCapability,
     ReferenceTrackController,
     ReferenceTrackDecoder,
@@ -93,7 +95,7 @@ class _Backend:
             (
                 "safe route"
                 if available
-                else "Reference Track route is unavailable."
+                else "Shared Track route is unavailable."
             ),
             "Test BlackHole" if available else "",
         )
@@ -136,7 +138,7 @@ class _StartupCleanupBackend(_Backend):
             return ReferenceTrackCapability(
                 False,
                 "macos",
-                "Private Reference Track cleanup is still pending.",
+                "Private Shared Track cleanup is still pending.",
                 backend="blackhole",
                 reason_code="cleanup_pending",
             )
@@ -148,7 +150,7 @@ class _StartupCleanupBackend(_Backend):
             self.fail_prepare_once = False
             self.pending = True
             raise ReferenceTrackError(
-                "Reference Track startup cleanup could not be confirmed."
+                "Shared Track startup cleanup could not be confirmed."
             )
         session = _Session()
         self.sessions.append(session)
@@ -159,7 +161,7 @@ class _StartupCleanupBackend(_Backend):
         if self.retry_failures:
             self.retry_failures -= 1
             raise ReferenceTrackError(
-                "Private Reference Track cleanup is still pending."
+                "Private Shared Track cleanup is still pending."
             )
         self.pending = False
 
@@ -177,7 +179,7 @@ class _BlockingStartupCleanupBackend(_StartupCleanupBackend):
         self.fail_prepare_once = False
         self.pending = True
         raise ReferenceTrackError(
-            "Reference Track startup cleanup could not be confirmed."
+            "Shared Track startup cleanup could not be confirmed."
         )
 
 
@@ -247,6 +249,38 @@ def test_snapshot_and_context_are_immutable_and_validate_ports() -> None:
         duration_s=2.0,
     )
     assert sanitized_source.source_name == "Selected song"
+
+    waveform = ReferenceTrackSnapshot(
+        state=ReferenceTrackState.PLAYING,
+        capability=capability,
+        source_name="song.wav",
+        duration_s=2.0,
+        count_in_active=True,
+        waveform_peaks=(0.0, 0.5, 1.0),
+        waveform_progress=0.75,
+    )
+    assert waveform.count_in_active is True
+    assert waveform.waveform_peaks == (0.0, 0.5, 1.0)
+    assert waveform.waveform_progress == pytest.approx(0.75)
+
+    with pytest.raises(ValueError, match="waveform_peaks"):
+        ReferenceTrackSnapshot(
+            state=ReferenceTrackState.READY,
+            capability=capability,
+            waveform_peaks=(0.0,) * (REFERENCE_WAVEFORM_BINS + 1),
+        )
+    with pytest.raises(ValueError, match="waveform_peaks"):
+        ReferenceTrackSnapshot(
+            state=ReferenceTrackState.READY,
+            capability=capability,
+            waveform_peaks=(1.01,),
+        )
+    with pytest.raises(ValueError, match="waveform_progress"):
+        ReferenceTrackSnapshot(
+            state=ReferenceTrackState.READY,
+            capability=capability,
+            waveform_progress=float("nan"),
+        )
 
 
 def test_decoder_streams_mono_as_stereo_and_resamples_to_48k(
@@ -614,7 +648,10 @@ def test_stream_never_commits_a_short_decode_block(tmp_path: Path) -> None:
         deadline = time.monotonic() + 1.0
         while time.monotonic() < deadline and not stream.error:
             time.sleep(0.01)
-        assert "complete song block" in stream.error
+        # The bounded waveform preview and playback producer share the same
+        # non-realtime decoder boundary.  Whichever sees the malformed short
+        # read first must latch a path-free failure and never publish it.
+        assert "complete song" in stream.error
         assert stream._ring._write_sequence == 0  # type: ignore[attr-defined]
         output = stream.pull(256)
         assert np.count_nonzero(output) == 0
@@ -902,6 +939,16 @@ def test_controller_full_lifecycle_is_host_only_ephemeral_and_clean(
     assert loaded.state is ReferenceTrackState.READY
     assert loaded.source_name == "song.wav"
     assert str(source.parent) not in repr(loaded)
+    deadline = time.monotonic() + 2.0
+    while (
+        controller.snapshot.waveform_progress < 1.0
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.01)
+    waveform = controller.snapshot
+    assert len(waveform.waveform_peaks) == REFERENCE_WAVEFORM_BINS
+    assert waveform.waveform_progress == pytest.approx(1.0)
+    assert max(waveform.waveform_peaks) > 0.0
     controller.set_count_in(4, 100.0)
     controller.set_trim_db(-3.0)
     controller.set_loop(0.02, 0.15)
@@ -909,17 +956,30 @@ def test_controller_full_lifecycle_is_host_only_ephemeral_and_clean(
     playing = controller.play(_context())
     session = backend.sessions[-1]
     assert playing.state is ReferenceTrackState.PLAYING
+    assert playing.count_in_active is True
     assert session.started == 1
     assert session.pull is not None
     assert backend.prepared == [_context()]
     assert "Jamulus-routed" in playing.warning
     assert "separate stem" in playing.warning
     session.claim = ReferenceTrackOwnershipClaim(51000, 4321, "a" * 32)
-    assert controller.recording_ownership_claim() == session.claim
-    rendered_claim = repr(session.claim)
+    recording_claim = controller.recording_ownership_claim()
+    assert recording_claim is not None
+    assert recording_claim.udp_port == session.claim.udp_port
+    assert recording_claim.process_id == session.claim.process_id
+    assert recording_claim.generation == session.claim.generation
+    assert recording_claim.source_fingerprint_sha256 == hashlib.sha256(
+        source.read_bytes()
+    ).hexdigest()
+    assert recording_claim.source_fingerprint_sha256 not in repr(controller.snapshot)
+    assert recording_claim.source_fingerprint_sha256 not in repr(
+        controller.public_diagnostics()
+    )
+    rendered_claim = repr(recording_claim)
     assert "51000" not in rendered_claim
     assert "4321" not in rendered_claim
     assert "a" * 32 not in rendered_claim
+    assert recording_claim.source_fingerprint_sha256 not in rendered_claim
 
     paused = controller.pause()
     assert paused.state is ReferenceTrackState.PAUSED
@@ -938,6 +998,57 @@ def test_controller_full_lifecycle_is_host_only_ephemeral_and_clean(
     closed = controller.close()
     assert closed.state is ReferenceTrackState.CLOSED
     assert not closed.loaded
+
+
+def test_decoder_rejects_source_changed_while_fingerprinting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import core.project_audio as project_audio
+
+    source = _audio_file(tmp_path / "changing.wav")
+    original_read = project_audio.os.read
+    changed = False
+
+    def change_during_hash(descriptor: int, count: int) -> bytes:
+        nonlocal changed
+        chunk = original_read(descriptor, count)
+        if not changed:
+            changed = True
+            with source.open("ab") as stream:
+                stream.write(b"changed")
+        return chunk
+
+    monkeypatch.setattr(project_audio.os, "read", change_during_hash)
+
+    with pytest.raises(ReferenceTrackError, match="changed while WebJam was loading"):
+        ReferenceTrackDecoder(source)
+
+    assert changed is True
+
+
+def test_controller_unload_is_non_destructive_and_rejects_active_playback(
+    tmp_path: Path,
+) -> None:
+    backend = _Backend()
+    controller = ReferenceTrackController(backend, is_host=lambda: True)
+    source = _audio_file(tmp_path / "keep-me.wav")
+    controller.load(source)
+    controller.play(_context())
+
+    with pytest.raises(ReferenceTrackError, match="Stop the Shared Track"):
+        controller.unload()
+    assert controller.snapshot.source_name == source.name
+    assert source.is_file()
+
+    controller.stop()
+    unloaded = controller.unload()
+    assert unloaded.state is ReferenceTrackState.IDLE
+    assert unloaded.loaded is False
+    assert unloaded.source_name == ""
+    assert unloaded.waveform_peaks == ()
+    assert source.is_file()
+    controller.close()
 
 
 def test_controller_restart_reuses_session_and_resets_live_position(
@@ -983,7 +1094,7 @@ def test_controller_route_failure_stops_only_owned_reference_session(
     controller.load(_audio_file(tmp_path / "song.wav"))
     controller.play(_context())
     session = backend.sessions[-1]
-    session.error = "Reference Track route changed."
+    session.error = "Shared Track route changed."
 
     failed = controller.refresh_health()
 
@@ -1006,7 +1117,7 @@ def test_controller_refuses_resume_or_restart_after_live_route_failure(
     session = backend.sessions[-1]
     if operation == "resume":
         controller.pause()
-    session.error = "Reference Track live primary route proof became stale."
+    session.error = "Shared Track live primary route proof became stale."
 
     result = (
         controller.play(_context())
@@ -1029,7 +1140,7 @@ def test_controller_teardown_failure_never_reports_ready(
     controller.play(_context())
     session = backend.sessions[-1]
     session.stop_error = (
-        "Reference Track couldn't confirm that its owned Jamulus client stopped."
+        "Shared Track couldn't confirm that its owned Jamulus client stopped."
     )
 
     failed = controller.stop()
@@ -1128,15 +1239,19 @@ def test_failed_owned_teardown_blocks_source_replacement_until_retry(
     controller.play(_context())
     session = backend.sessions[-1]
     session.stop_error = (
-        "Reference Track couldn't confirm that its owned Jamulus client stopped."
+        "Shared Track couldn't confirm that its owned Jamulus client stopped."
     )
 
-    blocked = controller.load(second)
+    with pytest.raises(ReferenceTrackError, match="Stop the Shared Track"):
+        controller.load(second)
 
+    assert controller.snapshot.source_name == first.name
+    blocked = controller.stop()
     assert blocked.state is ReferenceTrackState.FAILED
     assert blocked.source_name == first.name
-    assert controller.snapshot.source_name == first.name
     session.stop_error = ""
+    stopped = controller.stop()
+    assert stopped.state is ReferenceTrackState.READY
     replaced = controller.load(second)
     assert replaced.state is ReferenceTrackState.READY
     assert replaced.source_name == second.name
@@ -1151,9 +1266,9 @@ def test_start_failure_retains_session_when_cleanup_cannot_be_confirmed(
         def prepare(self, context):
             self.prepared.append(context)
             session = _Session()
-            session.start_error = "Reference Track control did not become ready."
+            session.start_error = "Shared Track control did not become ready."
             session.stop_error = (
-                "Reference Track couldn't confirm that its owned Jamulus "
+                "Shared Track couldn't confirm that its owned Jamulus "
                 "client stopped."
             )
             self.sessions.append(session)
@@ -1169,8 +1284,9 @@ def test_start_failure_retains_session_when_cleanup_cannot_be_confirmed(
     assert failed.state is ReferenceTrackState.FAILED
     assert failed.error == session.stop_error
     assert failed.route_detail == session.route_name
-    blocked = controller.load(_audio_file(tmp_path / "new.wav"))
-    assert blocked.source_name == "song.wav"
+    with pytest.raises(ReferenceTrackError, match="Stop the Shared Track"):
+        controller.load(_audio_file(tmp_path / "new.wav"))
+    assert controller.snapshot.source_name == "song.wav"
     session.stop_error = ""
     assert controller.close().state is ReferenceTrackState.CLOSED
 
@@ -1498,6 +1614,7 @@ def test_public_diagnostics_are_path_and_filename_free(
         "route_reason": "unavailable",
         "route_active": False,
         "cleanup_pending": False,
+        "count_in_active": False,
         "audio_callback_calls": 0,
         "audio_requested_frames": 0,
         "audio_delivered_frames": 0,

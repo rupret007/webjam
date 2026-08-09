@@ -1,4 +1,4 @@
-"""Platform audio bridge for a Jamulus-routed Reference Track.
+"""Platform audio bridge for a Jamulus-routed Shared Track.
 
 The shipping implementation is deliberately macOS-only and fail-closed.  The
 pilot implementation accepts only the official BlackHole 16ch or 64ch device
@@ -104,7 +104,7 @@ _MAX_OWNED_SECRET_BYTES = 512
 _PRIVATE_FILE_TOKEN_BYTES = 16
 _REFERENCE_LIFECYCLE_PORT = 47_623
 _UNCERTIFIED_ROUTE_DETAIL = (
-    "The Reference Track engine is included, but playback is locked in this "
+    "The Shared Track engine is included, but playback is locked in this "
     "private test candidate until the physical macOS pilot proves route, "
     "direct-monitor isolation, and device-switch behavior. Pilot setup "
     "requires official BlackHole 16ch or 64ch at 48 kHz; BlackHole 2ch and "
@@ -119,7 +119,7 @@ _OFFICIAL_BLACKHOLE_ROUTES: dict[str, tuple[str, int]] = {
 }
 _REFERENCE_LIFECYCLE_LOCK_NAME = ".reference-track-v1.lifecycle.lock"
 _PRIVATE_LAUNCH_CHANGED = (
-    "Reference Track's private launch profile changed during startup."
+    "Shared Track's private launch profile changed during startup."
 )
 
 
@@ -169,7 +169,7 @@ def _open_webjam_runtime_directory(
         )
     except SecureRuntimeError:
         raise ReferenceTrackError(
-            "WebJam couldn't establish its private Reference Track directory."
+            "WebJam couldn't establish its private Shared Track directory."
         ) from None
 
 
@@ -190,13 +190,13 @@ class _ReferenceLifecycleLock:
 
     def __enter__(self) -> "_ReferenceLifecycleLock":
         if self._descriptor is not None:
-            raise ComponentLockError("Reference Track lock is not re-entrant")
+            raise ComponentLockError("Shared Track lock is not re-entrant")
         if not self._directory.path_matches():
-            raise ComponentLockError("Reference Track runtime directory changed")
+            raise ComponentLockError("Shared Track runtime directory changed")
         flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
         nofollow = getattr(os, "O_NOFOLLOW", 0)
         if not nofollow:
-            raise ComponentLockError("Reference Track lock cannot reject links")
+            raise ComponentLockError("Shared Track lock cannot reject links")
         flags |= nofollow
         try:
             descriptor = os.open(
@@ -207,7 +207,7 @@ class _ReferenceLifecycleLock:
             )
         except (NotImplementedError, OSError) as exc:
             raise ComponentLockError(
-                "could not open the Reference Track lifecycle lock"
+                "could not open the Shared Track lifecycle lock"
             ) from exc
         try:
             details = os.fstat(descriptor)
@@ -217,7 +217,7 @@ class _ReferenceLifecycleLock:
                 or not _directory_owned_by_current_user(details)
             ):
                 raise ComponentLockError(
-                    "Reference Track lifecycle lock is unsafe"
+                    "Shared Track lifecycle lock is unsafe"
                 )
             entry = os.stat(
                 _REFERENCE_LIFECYCLE_LOCK_NAME,
@@ -230,7 +230,7 @@ class _ReferenceLifecycleLock:
                 or int(entry.st_ino) != int(details.st_ino)
             ):
                 raise ComponentLockError(
-                    "Reference Track lifecycle lock changed"
+                    "Shared Track lifecycle lock changed"
                 )
             os.fchmod(descriptor, 0o600)
             details = os.fstat(descriptor)
@@ -241,7 +241,7 @@ class _ReferenceLifecycleLock:
                 or not _directory_owned_by_current_user(details)
             ):
                 raise ComponentLockError(
-                    "Reference Track lifecycle lock is unsafe"
+                    "Shared Track lifecycle lock is unsafe"
                 )
             deadline = time.monotonic() + self._timeout
             while True:
@@ -253,11 +253,11 @@ class _ReferenceLifecycleLock:
                 except OSError as exc:
                     if exc.errno not in {errno.EACCES, errno.EAGAIN}:
                         raise ComponentLockError(
-                            "could not acquire the Reference Track lifecycle lock"
+                            "could not acquire the Shared Track lifecycle lock"
                         ) from exc
                     if time.monotonic() >= deadline:
                         raise ComponentLockTimeout(
-                            "timed out waiting for the Reference Track lifecycle lock"
+                            "timed out waiting for the Shared Track lifecycle lock"
                         ) from exc
                     time.sleep(
                         min(
@@ -267,7 +267,7 @@ class _ReferenceLifecycleLock:
                     )
             if not self._directory.path_matches():
                 raise ComponentLockError(
-                    "Reference Track runtime directory changed"
+                    "Shared Track runtime directory changed"
                 )
             current = os.stat(
                 _REFERENCE_LIFECYCLE_LOCK_NAME,
@@ -283,7 +283,7 @@ class _ReferenceLifecycleLock:
                 or not _directory_owned_by_current_user(current)
             ):
                 raise ComponentLockError(
-                    "Reference Track lifecycle lock changed"
+                    "Shared Track lifecycle lock changed"
                 )
             self._descriptor = descriptor
             return self
@@ -321,7 +321,7 @@ class _UnavailableReferenceBackend:
         del audience_bridge_active
         if self._platform.startswith("win"):
             detail = (
-                "Reference Track is not available on Windows yet. Its "
+                "Shared Track is not available on Windows yet. Its "
                 "VB-CABLE/JACK isolation backend still needs physical proof."
             )
             platform = "windows"
@@ -329,14 +329,14 @@ class _UnavailableReferenceBackend:
             reason_code = "windows_backend_unavailable"
         elif self._platform.startswith("linux"):
             detail = (
-                "Reference Track is not available on Linux yet. Its JACK "
+                "Shared Track is not available on Linux yet. Its JACK "
                 "isolation backend still needs physical proof."
             )
             platform = "linux"
             backend = "jack"
             reason_code = "linux_backend_unavailable"
         else:
-            detail = "Reference Track routing is not available on this platform."
+            detail = "Shared Track routing is not available on this platform."
             platform = self._platform or "unknown"
             backend = "unavailable"
             reason_code = "unsupported_platform"
@@ -369,7 +369,7 @@ class _BlackHoleRoute:
 
 
 class _BlackHoleRouteLease:
-    """One local and cross-process claim on the Reference Track lifecycle."""
+    """One local and cross-process claim on the Shared Track lifecycle."""
 
     def __init__(
         self,
@@ -418,7 +418,7 @@ class _BlackHoleRouteLease:
 
 
 def _reference_track_lock_path(home: Path) -> Path:
-    # All eligible BlackHole routes share one Reference Track lifecycle. Keep
+    # All eligible BlackHole routes share one Shared Track lifecycle. Keep
     # this lock global rather than UID-specific, and never unlink it while a
     # descriptor may still carry ownership.
     return reference_track_runtime_directory(home).parent / (
@@ -432,7 +432,7 @@ def _claim_blackhole_route(uid: str, *, home: Path) -> _BlackHoleRouteLease:
     with _ROUTE_OWNERS_LOCK:
         if _ROUTE_OWNER_KEY in _ROUTE_OWNERS:
             raise ReferenceTrackError(
-                "Another WebJam Reference Track already owns this BlackHole route."
+                "Another WebJam Shared Track already owns this BlackHole route."
             )
         _ROUTE_OWNERS[_ROUTE_OWNER_KEY] = token
     runtime_directory: SecureRuntimeDirectory | None = None
@@ -460,7 +460,7 @@ def _claim_blackhole_route(uid: str, *, home: Path) -> _BlackHoleRouteLease:
         if runtime_directory is not None:
             runtime_directory.close()
         raise ReferenceTrackError(
-            "Another WebJam window is already using Reference Track."
+            "Another WebJam window is already using Shared Track."
         ) from None
     except OSError as exc:
         if lifecycle_socket is not None:
@@ -472,10 +472,10 @@ def _claim_blackhole_route(uid: str, *, home: Path) -> _BlackHoleRouteLease:
             runtime_directory.close()
         if exc.errno == errno.EADDRINUSE:
             raise ReferenceTrackError(
-                "Another WebJam window is already using Reference Track."
+                "Another WebJam window is already using Shared Track."
             ) from None
         raise ReferenceTrackError(
-            "WebJam couldn't reserve the private Reference Track lifecycle."
+            "WebJam couldn't reserve the private Shared Track lifecycle."
         ) from None
     except ComponentLockError:
         if lifecycle_socket is not None:
@@ -486,7 +486,7 @@ def _claim_blackhole_route(uid: str, *, home: Path) -> _BlackHoleRouteLease:
         if runtime_directory is not None:
             runtime_directory.close()
         raise ReferenceTrackError(
-            "WebJam couldn't reserve the private Reference Track lifecycle."
+            "WebJam couldn't reserve the private Shared Track lifecycle."
         ) from None
     except Exception:
         if lifecycle_socket is not None:
@@ -497,7 +497,7 @@ def _claim_blackhole_route(uid: str, *, home: Path) -> _BlackHoleRouteLease:
         if runtime_directory is not None:
             runtime_directory.close()
         raise ReferenceTrackError(
-            "WebJam couldn't reserve the private Reference Track lifecycle."
+            "WebJam couldn't reserve the private Shared Track lifecycle."
         ) from None
     assert lifecycle_socket is not None
     assert interprocess is not None
@@ -553,7 +553,7 @@ class _ReferencePrivateFiles:
         expected = reference_track_runtime_directory(home)
         if directory != expected:
             raise ReferenceTrackError(
-                "WebJam refused an unexpected Reference Track profile directory."
+                "WebJam refused an unexpected Shared Track profile directory."
             )
         runtime_directory: SecureRuntimeDirectory | None = None
         try:
@@ -567,7 +567,7 @@ class _ReferencePrivateFiles:
             ):
                 runtime_directory.close()
                 raise ReferenceTrackError(
-                    "WebJam refused a changed Reference Track profile directory."
+                    "WebJam refused a changed Shared Track profile directory."
                 )
             directory_fd = runtime_directory.descriptor
             opened = os.fstat(directory_fd)
@@ -577,7 +577,7 @@ class _ReferencePrivateFiles:
                 or not _directory_owned_by_current_user(opened)
             ):
                 raise ReferenceTrackError(
-                    "WebJam refused a changed Reference Track profile directory."
+                    "WebJam refused a changed Shared Track profile directory."
                 )
             for _attempt in range(8):
                 token = secrets.token_hex(_PRIVATE_FILE_TOKEN_BYTES)
@@ -598,7 +598,7 @@ class _ReferencePrivateFiles:
                         secret_name=secret_name,
                     )
             raise ReferenceTrackError(
-                "WebJam couldn't reserve unique private Reference Track files."
+                "WebJam couldn't reserve unique private Shared Track files."
             )
         except ReferenceTrackError:
             if runtime_directory is not None:
@@ -614,7 +614,7 @@ class _ReferencePrivateFiles:
                 except SecureRuntimeError:
                     pass
             raise ReferenceTrackError(
-                "WebJam couldn't establish its private Reference Track files."
+                "WebJam couldn't establish its private Shared Track files."
             ) from None
 
     @property
@@ -634,7 +634,7 @@ class _ReferencePrivateFiles:
     ) -> None:
         if self._closed:
             raise ReferenceTrackError(
-                "Reference Track private-file ownership was already closed."
+                "Shared Track private-file ownership was already closed."
             )
         payload = adapter.render_inifile(
             profile,
@@ -643,7 +643,7 @@ class _ReferencePrivateFiles:
         secret_payload = (str(secret) + "\n").encode("utf-8")
         if not 1 <= len(secret_payload) <= _MAX_OWNED_SECRET_BYTES:
             raise ReferenceTrackError(
-                "WebJam refused an invalid Reference Track control secret."
+                "WebJam refused an invalid Shared Track control secret."
             )
         self._expected_selector = str(
             adapter.jamulus_device_selector(profile) or ""
@@ -1096,7 +1096,7 @@ class _ReferencePrivateFiles:
             or (os.altsep and os.altsep in name)
         ):
             raise ReferenceTrackError(
-                "WebJam refused an invalid private Reference Track filename."
+                "WebJam refused an invalid private Shared Track filename."
             )
 
 
@@ -1217,7 +1217,7 @@ def _default_port_allocator(kind: str, excluded: set[int]) -> int:
         ):
             return port
     raise ReferenceTrackError(
-        "WebJam couldn't reserve a separate local port for Reference Track."
+        "WebJam couldn't reserve a separate local port for Shared Track."
     )
 
 
@@ -1250,7 +1250,7 @@ class _ReferenceRpcControl:
 
     def connect(self) -> None:
         if self._closed:
-            raise ReferenceTrackError("Reference Track control was already closed.")
+            raise ReferenceTrackError("Shared Track control was already closed.")
         self._disconnect_socket()
         try:
             sock = self._socket_factory(
@@ -1261,13 +1261,13 @@ class _ReferenceRpcControl:
             result = self.call("jamulus/apiAuth", {"secret": self._secret})
             if result != "ok":
                 raise ReferenceTrackError(
-                    "Reference Track couldn't authenticate its private "
+                    "Shared Track couldn't authenticate its private "
                     "Jamulus control."
                 )
             mode = self.call("jamulus/getMode", {})
             if not isinstance(mode, Mapping) or mode.get("mode") != "client":
                 raise ReferenceTrackError(
-                    "Reference Track control did not reach its owned "
+                    "Shared Track control did not reach its owned "
                     "Jamulus client."
                 )
         except ReferenceTrackError:
@@ -1276,17 +1276,17 @@ class _ReferenceRpcControl:
         except Exception:  # noqa: BLE001 - socket factory boundary
             self._disconnect_socket()
             raise ReferenceTrackError(
-                "Reference Track's private Jamulus control is not ready."
+                "Shared Track's private Jamulus control is not ready."
             ) from None
 
     def call(self, method: str, params: Mapping[str, object]) -> object:
         if method not in self._ALLOWED:
             raise ReferenceTrackError(
-                "Reference Track refused an unsupported Jamulus command."
+                "Shared Track refused an unsupported Jamulus command."
             )
         sock = self._socket
         if sock is None or self._closed:
-            raise ReferenceTrackError("Reference Track control is unavailable.")
+            raise ReferenceTrackError("Shared Track control is unavailable.")
         self._request_id += 1
         request_id = self._request_id
         payload = (
@@ -1309,18 +1309,18 @@ class _ReferenceRpcControl:
                     continue
                 if "error" in response:
                     raise ReferenceTrackError(
-                        "Reference Track's Jamulus client refused a safety command."
+                        "Shared Track's Jamulus client refused a safety command."
                     )
                 if "result" not in response:
                     raise ReferenceTrackError(
-                        "Reference Track received an invalid Jamulus response."
+                        "Shared Track received an invalid Jamulus response."
                     )
                 return response["result"]
         except ReferenceTrackError:
             raise
         except (OSError, ValueError, TypeError) as exc:
             raise ReferenceTrackError(
-                "Reference Track lost its private Jamulus control connection."
+                "Shared Track lost its private Jamulus control connection."
             ) from exc
 
     def client_rows(self) -> tuple[int, ...]:
@@ -1337,29 +1337,29 @@ class _ReferenceRpcControl:
             result.get("clients"), list
         ):
             raise ReferenceTrackError(
-                "Reference Track couldn't verify the Jamulus return mix."
+                "Shared Track couldn't verify the Jamulus return mix."
             )
         raw_clients = result["clients"]
         if not 1 <= len(raw_clients) <= _MAX_CLIENT_ROWS:
             raise ReferenceTrackError(
-                "Reference Track is waiting for its Jamulus participant to connect."
+                "Shared Track is waiting for its Jamulus participant to connect."
             )
         rows: list[int] = []
         seen_ids: set[int] = set()
         for raw in raw_clients:
             if not isinstance(raw, Mapping):
                 raise ReferenceTrackError(
-                    "Reference Track couldn't verify the Jamulus return mix."
+                    "Shared Track couldn't verify the Jamulus return mix."
                 )
             value = raw.get("id")
             if not isinstance(value, int) or isinstance(value, bool):
                 raise ReferenceTrackError(
-                    "Reference Track couldn't verify the Jamulus return mix."
+                    "Shared Track couldn't verify the Jamulus return mix."
                 )
             client_local_id = value
             if client_local_id < 0 or client_local_id in seen_ids:
                 raise ReferenceTrackError(
-                    "Reference Track couldn't verify the Jamulus return mix."
+                    "Shared Track couldn't verify the Jamulus return mix."
                 )
             seen_ids.add(client_local_id)
             rows.append(client_local_id)
@@ -1377,20 +1377,20 @@ class _ReferenceRpcControl:
             # not evidence that the client accepted the command.
             if result != "ok":
                 raise ReferenceTrackError(
-                    "Reference Track couldn't prove that every return fader is zero."
+                    "Shared Track couldn't prove that every return fader is zero."
                 )
         # Refuse a successful-looking proof if the roster changed while its
         # position-based commands were being applied.
         if self.client_rows() != rows:
             raise ReferenceTrackError(
-                "Reference Track's Jamulus roster changed during route proof."
+                "Shared Track's Jamulus roster changed during route proof."
             )
         return len(rows)
 
     def _read_object(self) -> dict:
         sock = self._socket
         if sock is None:
-            raise ReferenceTrackError("Reference Track control is unavailable.")
+            raise ReferenceTrackError("Shared Track control is unavailable.")
         while True:
             newline = self._buffer.find(b"\n")
             if newline >= 0:
@@ -1400,22 +1400,22 @@ class _ReferenceRpcControl:
                     value = json.loads(raw.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                     raise ReferenceTrackError(
-                        "Reference Track received an invalid Jamulus response."
+                        "Shared Track received an invalid Jamulus response."
                     ) from exc
                 if not isinstance(value, dict):
                     raise ReferenceTrackError(
-                        "Reference Track received an invalid Jamulus response."
+                        "Shared Track received an invalid Jamulus response."
                     )
                 return value
             chunk = sock.recv(16_384)
             if not chunk:
                 raise ReferenceTrackError(
-                    "Reference Track's Jamulus control connection closed."
+                    "Shared Track's Jamulus control connection closed."
                 )
             self._buffer.extend(chunk)
             if len(self._buffer) > _RPC_MAX_LINE_BYTES:
                 raise ReferenceTrackError(
-                    "Reference Track refused an oversized Jamulus response."
+                    "Shared Track refused an oversized Jamulus response."
                 )
 
     def close(self) -> None:
@@ -1508,7 +1508,7 @@ class MacOSBlackHoleReferenceBackend:
                 return ReferenceTrackCapability(
                     False,
                     "macos",
-                    "A previous Reference Track startup stopped, but private "
+                    "A previous Shared Track startup stopped, but private "
                     "cleanup is still pending. Choose Play again to retry cleanup.",
                     backend="blackhole",
                     reason_code="cleanup_pending",
@@ -1517,7 +1517,7 @@ class MacOSBlackHoleReferenceBackend:
             return ReferenceTrackCapability(
                 False,
                 "macos",
-                "Reference Track can't share BlackHole with the Webex audience "
+                "Shared Track can't share BlackHole with the Webex audience "
                 "bridge. Switch Webex to talkback or video-only first.",
                 backend="blackhole",
                 reason_code="audience_bridge_conflict",
@@ -1569,7 +1569,7 @@ class MacOSBlackHoleReferenceBackend:
             if self._active is not None:
                 if not self._active.health_error():
                     raise ReferenceTrackError(
-                        "A Reference Track route is already active."
+                        "A Shared Track route is already active."
                     )
                 self._active.stop()
                 self._active = None
@@ -1583,11 +1583,11 @@ class MacOSBlackHoleReferenceBackend:
                 or self._version_probe(str(binary)) != _PINNED_JAMULUS_VERSION
             ):
                 raise ReferenceTrackError(
-                    "Reference Track needs the included Jamulus 3.12.2 component."
+                    "Shared Track needs the included Jamulus 3.12.2 component."
                 )
             if not self._headless_client_probe(str(binary)):
                 raise ReferenceTrackError(
-                    "Reference Track needs a packaged headless Jamulus client. "
+                    "Shared Track needs a packaged headless Jamulus client. "
                     "This build's interactive Jamulus client cannot prove zero "
                     "return faders while hidden."
                 )
@@ -1602,7 +1602,7 @@ class MacOSBlackHoleReferenceBackend:
                 or not 1 <= int(udp_port) <= JAMULUS_CLIENT_MAX_BASE_PORT
             ):
                 raise ReferenceTrackError(
-                    "Reference Track couldn't reserve a safe Jamulus audio port."
+                    "Shared Track couldn't reserve a safe Jamulus audio port."
                 )
             udp_port = int(udp_port)
             excluded.add(udp_port)
@@ -1612,13 +1612,13 @@ class MacOSBlackHoleReferenceBackend:
                 or not 1 <= int(rpc_port) <= 65_535
             ):
                 raise ReferenceTrackError(
-                    "Reference Track couldn't reserve a separate control port."
+                    "Shared Track couldn't reserve a separate control port."
                 )
             rpc_port = int(rpc_port)
             excluded.add(rpc_port)
             if len({udp_port, rpc_port, *excluded}) < 4:
                 raise ReferenceTrackError(
-                    "Reference Track couldn't reserve separate local ports."
+                    "Shared Track couldn't reserve separate local ports."
                 )
 
             session = self._prepare_session(
@@ -1639,7 +1639,7 @@ class MacOSBlackHoleReferenceBackend:
             return
         if not pending.retry():
             raise ReferenceTrackError(
-                "A previous Reference Track startup stopped, but its private "
+                "A previous Shared Track startup stopped, but its private "
                 "cleanup is still pending. Resolve the reported file or process "
                 "issue, then choose Play again."
             )
@@ -1703,13 +1703,13 @@ class MacOSBlackHoleReferenceBackend:
             scan = self._scanner()
         except Exception as exc:  # noqa: BLE001 - native hot-plug boundary
             raise ReferenceTrackError(
-                "Reference Track couldn't read a fresh CoreAudio device snapshot."
+                "Shared Track couldn't read a fresh CoreAudio device snapshot."
             ) from exc
         try:
             current_route = self._resolve_route_from_scan(scan)
         except ReferenceTrackError:
             raise ReferenceTrackError(
-                "Reference Track stopped because its BlackHole route changed."
+                "Shared Track stopped because its BlackHole route changed."
             ) from None
         try:
             proof = self._process_route_probe.snapshot(
@@ -1719,7 +1719,7 @@ class MacOSBlackHoleReferenceBackend:
             raise ReferenceTrackError(str(exc)) from None
         if current_route != route:
             raise ReferenceTrackError(
-                "Reference Track stopped because its BlackHole route changed."
+                "Shared Track stopped because its BlackHole route changed."
             )
 
         live_devices = (proof.input_device, proof.output_device)
@@ -1730,7 +1730,7 @@ class MacOSBlackHoleReferenceBackend:
             for device in live_devices
         ):
             raise ReferenceTrackError(
-                "Reference Track can't start while the primary Jamulus client "
+                "Shared Track can't start while the primary Jamulus client "
                 "is using BlackHole."
             )
         expected_names = (
@@ -1757,25 +1757,25 @@ class MacOSBlackHoleReferenceBackend:
             pid = int(process.pid)
         except (AttributeError, TypeError, ValueError):
             raise ReferenceTrackError(
-                "Reference Track couldn't identify its owned Jamulus client."
+                "Shared Track couldn't identify its owned Jamulus client."
             ) from None
         try:
             scan = self._scanner()
         except Exception as exc:  # noqa: BLE001 - native hot-plug boundary
             raise ReferenceTrackError(
-                "Reference Track couldn't read a fresh CoreAudio device snapshot."
+                "Shared Track couldn't read a fresh CoreAudio device snapshot."
             ) from exc
         try:
             current_route = self._resolve_route_from_scan(scan)
             proof = self._process_route_probe.snapshot(pid, scan)
         except (ReferenceTrackError, CoreAudioProcessRouteError) as exc:
             raise ReferenceTrackError(
-                "Reference Track couldn't prove its owned Jamulus client's "
+                "Shared Track couldn't prove its owned Jamulus client's "
                 "live BlackHole route."
             ) from exc
         if current_route != route:
             raise ReferenceTrackError(
-                "Reference Track stopped because its BlackHole route changed."
+                "Shared Track stopped because its BlackHole route changed."
             )
         for device in (proof.input_device, proof.output_device):
             if (
@@ -1784,7 +1784,7 @@ class MacOSBlackHoleReferenceBackend:
                 or device.name != route.name
             ):
                 raise ReferenceTrackError(
-                    "Reference Track stopped because its owned Jamulus client "
+                    "Shared Track stopped because its owned Jamulus client "
                     "did not use the exact isolated BlackHole route."
                 )
         return proof
@@ -1897,12 +1897,12 @@ class MacOSBlackHoleReferenceBackend:
             secret_value = ""
             if not terminated:
                 raise ReferenceTrackError(
-                    "Reference Track couldn't confirm that its owned Jamulus "
+                    "Shared Track couldn't confirm that its owned Jamulus "
                     "client stopped after startup failed."
                 ) from None
             if not cleaned:
                 raise ReferenceTrackError(
-                    "Reference Track stopped after startup failed, but its "
+                    "Shared Track stopped after startup failed, but its "
                     "private cleanup could not be confirmed."
                 ) from None
             if (
@@ -1911,7 +1911,7 @@ class MacOSBlackHoleReferenceBackend:
             ):
                 raise ReferenceTrackError(_PRIVATE_LAUNCH_CHANGED) from None
             raise ReferenceTrackError(
-                "WebJam couldn't prepare a safe Reference Track route."
+                "WebJam couldn't prepare a safe Shared Track route."
             ) from None
         secret_value = ""
         assert owned_files is not None
@@ -1968,7 +1968,7 @@ class MacOSBlackHoleReferenceBackend:
                 candidates.append(device)
         if not candidates:
             raise ReferenceTrackError(
-                "Reference Track needs the official BlackHole 16ch or 64ch "
+                "Shared Track needs the official BlackHole 16ch or 64ch "
                 "device with its exact UID, name, channel count, and 48 kHz "
                 "rate. BlackHole 2ch cannot isolate the return; renamed/custom "
                 "devices and aggregates such as WebJam Bridge are not accepted "
@@ -1982,14 +1982,14 @@ class MacOSBlackHoleReferenceBackend:
         if len(duplicate_names) != 1:
             raise ReferenceTrackError(
                 "More than one CoreAudio device has the selected BlackHole name. "
-                "Rename or remove the duplicate before using Reference Track."
+                "Rename or remove the duplicate before using Shared Track."
             )
         sd = self._load_sounddevice()
         try:
             devices = tuple(sd.query_devices())
         except Exception as exc:
             raise ReferenceTrackError(
-                "WebJam couldn't open BlackHole for Reference Track."
+                "WebJam couldn't open BlackHole for Shared Track."
             ) from exc
         matches = [
             (index, raw)
@@ -2028,7 +2028,7 @@ class MacOSBlackHoleReferenceBackend:
             import sounddevice as sd  # type: ignore
         except Exception as exc:  # noqa: BLE001
             raise ReferenceTrackError(
-                "Reference Track audio support is unavailable in this build."
+                "Shared Track audio support is unavailable in this build."
             ) from exc
         self._sounddevice = sd
         return sd
@@ -2039,7 +2039,7 @@ class MacOSBlackHoleReferenceBackend:
             endpoint = parse_jamulus_endpoint(value)
         except (TypeError, ValueError) as exc:
             raise ReferenceTrackError(
-                "Reference Track needs the current Jamulus server address."
+                "Shared Track needs the current Jamulus server address."
             ) from exc
         host = f"[{endpoint.host}]" if ":" in endpoint.host else endpoint.host
         return f"{host}:{endpoint.port}"
@@ -2053,7 +2053,7 @@ class MacOSBlackHoleReferenceBackend:
         while time.monotonic() < deadline:
             if process.poll() is not None:
                 raise ReferenceTrackError(
-                    "The Reference Track Jamulus client exited during startup."
+                    "The Shared Track Jamulus client exited during startup."
                 )
             try:
                 rpc.connect()
@@ -2062,7 +2062,7 @@ class MacOSBlackHoleReferenceBackend:
                 last_error = exc
                 time.sleep(0.15)
         raise ReferenceTrackError(
-            "Reference Track's private Jamulus control did not become ready."
+            "Shared Track's private Jamulus control did not become ready."
         ) from last_error
 
     @staticmethod
@@ -2222,7 +2222,7 @@ class _MacReferenceSession:
             raise TypeError("pull_into must be callable")
         with self._lock:
             if self._teardown_started:
-                raise ReferenceTrackError("Reference Track route was already stopped.")
+                raise ReferenceTrackError("Shared Track route was already stopped.")
             if self._stream is not None:
                 return
             self._pull_into = pull_into
@@ -2290,7 +2290,7 @@ class _MacReferenceSession:
             actual_dtype = np.dtype(getattr(stream, "dtype"))
         except (AttributeError, TypeError, ValueError):
             raise ReferenceTrackError(
-                "Reference Track couldn't prove the opened BlackHole stream."
+                "Shared Track couldn't prove the opened BlackHole stream."
             ) from None
         if (
             actual_device != self._route.sounddevice_index
@@ -2300,7 +2300,7 @@ class _MacReferenceSession:
             or actual_dtype != np.dtype(np.float32)
         ):
             raise ReferenceTrackError(
-                "Reference Track stopped because PortAudio opened a different "
+                "Shared Track stopped because PortAudio opened a different "
                 "device or stream format."
             )
 
@@ -2312,7 +2312,7 @@ class _MacReferenceSession:
         while True:
             if self._process.poll() is not None:
                 raise ReferenceTrackError(
-                    "The Reference Track Jamulus client exited during startup."
+                    "The Shared Track Jamulus client exited during startup."
                 )
             try:
                 self._rpc.prove_all_faders_zero()
@@ -2321,7 +2321,7 @@ class _MacReferenceSession:
             except ReferenceTrackError:
                 if time.monotonic() >= deadline:
                     raise ReferenceTrackError(
-                        "Reference Track couldn't prove a connected, zero-return "
+                        "Shared Track couldn't prove a connected, zero-return "
                         "Jamulus mix."
                     )
                 time.sleep(0.15)
@@ -2365,14 +2365,14 @@ class _MacReferenceSession:
             self._rpc.close()
             if not MacOSBlackHoleReferenceBackend._terminate_process(self._process):
                 message = (
-                    "Reference Track couldn't confirm that its owned Jamulus "
+                    "Shared Track couldn't confirm that its owned Jamulus "
                     "client stopped."
                 )
                 self._set_health_error(message)
                 raise ReferenceTrackError(message)
             if not self._owned_files.cleanup():
                 message = (
-                    "Reference Track stopped, but its private profile and control "
+                    "Shared Track stopped, but its private profile and control "
                     "cleanup could not be confirmed."
                 )
                 self._set_health_error(message)
@@ -2394,7 +2394,7 @@ class _MacReferenceSession:
             stream.close()
         except Exception:  # noqa: BLE001 - retain owner for a later retry
             return (
-                "Reference Track couldn't close its BlackHole audio stream. "
+                "Shared Track couldn't close its BlackHole audio stream. "
                 "Choose Stop again; its route remains reserved."
             )
         try:
@@ -2403,7 +2403,7 @@ class _MacReferenceSession:
             closed = False
         if closed is not True:
             return (
-                "Reference Track couldn't prove that its BlackHole audio stream "
+                "Shared Track couldn't prove that its BlackHole audio stream "
                 "closed. Choose Stop again; its route remains reserved."
             )
         return ""
@@ -2412,7 +2412,7 @@ class _MacReferenceSession:
         outdata.fill(0.0)
         if status:
             self._latch_realtime_fault(
-                "Reference Track's BlackHole stream reported an audio fault."
+                "Shared Track's BlackHole stream reported an audio fault."
             )
             return
         # The callback reads single-object latches only. It never acquires the
@@ -2440,7 +2440,7 @@ class _MacReferenceSession:
         )
         if proof_stale:
             self._latch_realtime_fault(
-                "Reference Track stopped because its live primary Jamulus "
+                "Shared Track stopped because its live primary Jamulus "
                 "route proof became stale."
             )
             return
@@ -2476,7 +2476,7 @@ class _MacReferenceSession:
         except Exception:  # noqa: BLE001 - real-time boundary
             outdata.fill(0.0)
             self._latch_realtime_fault(
-                "Reference Track stopped because its bounded audio stream failed."
+                "Shared Track stopped because its bounded audio stream failed."
             )
 
     def _monitor_safety(self) -> None:
@@ -2486,14 +2486,14 @@ class _MacReferenceSession:
                 return
             if self._process.poll() is not None:
                 self._set_health_error(
-                    "Reference Track's owned Jamulus client stopped."
+                    "Shared Track's owned Jamulus client stopped."
                 )
                 return
             try:
                 self._rpc.prove_all_faders_zero()
             except ReferenceTrackError:
                 self._set_health_error(
-                    "Reference Track stopped because zero return faders could "
+                    "Shared Track stopped because zero return faders could "
                     "no longer be proved."
                 )
                 return
@@ -2506,7 +2506,7 @@ class _MacReferenceSession:
                     self._set_health_error(
                         str(exc)
                         or (
-                            "Reference Track stopped because its live audio "
+                            "Shared Track stopped because its live audio "
                             "route could no longer be proved."
                         )
                     )
@@ -2523,7 +2523,7 @@ class _MacReferenceSession:
             raise
         except Exception as exc:  # noqa: BLE001 - native proof boundary
             raise ReferenceTrackError(
-                "Reference Track stopped because its owned Jamulus live route "
+                "Shared Track stopped because its owned Jamulus live route "
                 "could no longer be proved."
             ) from exc
         with self._lock:
@@ -2531,12 +2531,12 @@ class _MacReferenceSession:
                 self._owned_route_proof = owned
             elif owned != self._owned_route_proof:
                 raise ReferenceTrackError(
-                    "Reference Track stopped because its owned Jamulus live "
+                    "Shared Track stopped because its owned Jamulus live "
                     "audio route changed."
                 )
             if self._teardown_started:
                 raise ReferenceTrackError(
-                    "Reference Track route was already stopped."
+                    "Shared Track route was already stopped."
                 )
             self._route_proof_monotonic = time.monotonic()
             self._route_proof_wall = time.time()
@@ -2549,18 +2549,18 @@ class _MacReferenceSession:
             raise
         except Exception as exc:  # noqa: BLE001 - native proof boundary
             raise ReferenceTrackError(
-                "Reference Track stopped because its live audio route could "
+                "Shared Track stopped because its live audio route could "
                 "no longer be proved."
             ) from exc
         if current != self._route_proof:
             raise ReferenceTrackError(
-                "Reference Track stopped because the primary Jamulus live "
+                "Shared Track stopped because the primary Jamulus live "
                 "audio route changed."
             )
         with self._lock:
             if self._teardown_started:
                 raise ReferenceTrackError(
-                    "Reference Track route was already stopped."
+                    "Shared Track route was already stopped."
                 )
 
     def _set_health_error(self, message: str) -> None:

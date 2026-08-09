@@ -57,12 +57,55 @@ from core.jamulus_roster_identity import (
     server_common_profile,
 )
 from core.jamulus_rpc_client import JamulusOrderedRosterProof
+from core.session_transfer_runtime import PEER_TRANSFER_ERROR_PREFIX
 
 if TYPE_CHECKING:
     from webjam_qt.controllers.application_controller import ApplicationController
 
 LOGGER = logging.getLogger("webjam.qt.recording")
 _FINAL_RECEIPT_DRAIN_TIMEOUT_S = 5.0
+_SHARED_TRACK_FINALIZE_TIMEOUT_S = 5.0
+_PEER_INVENTORY_FINALIZE_TIMEOUT_S = 30.0
+_SHARED_TRACK_PARTICIPANT_LABEL = "participant:shared-track"
+_RECORDING_DIAGNOSTIC_MAX_COUNT = 1_000_000
+_RECORDING_FAILURE_PRIORITIES = {
+    "none": 0,
+    "capture_gap": 10,
+    "take_needs_attention": 20,
+    "peer_inventory": 30,
+    "shared_track_playback_unproven": 40,
+    "shared_track_cleanup_unconfirmed": 50,
+    "shared_track_dropout": 60,
+    "recorder_control_failure": 70,
+    "unexpected_stop": 80,
+    "take_publication": 90,
+}
+_RECORDING_FAILURE_CATEGORIES = {
+    "none": "none",
+    "capture_gap": "local_capture",
+    "take_needs_attention": "take_validation",
+    "peer_inventory": "peer_transfer",
+    "shared_track_playback_unproven": "shared_track",
+    "shared_track_cleanup_unconfirmed": "shared_track",
+    "shared_track_dropout": "shared_track",
+    "recorder_control_failure": "recorder",
+    "unexpected_stop": "recorder",
+    "take_publication": "take_validation",
+}
+
+
+def _shared_track_participant_id(session_id: str) -> str:
+    """Return the canonical Shared Track identity for one WebJam session.
+
+    Recorder receipts need a durable participant identity that survives take
+    boundaries, while still remaining scoped to the current private session.
+    Deriving it from the session UUID gives every take the same opaque identity
+    without weakening the separate process/socket/generation proof that binds a
+    native recorder row to the owned Shared Track client.
+    """
+
+    session_namespace = uuid.UUID(str(session_id))
+    return str(uuid.uuid5(session_namespace, _SHARED_TRACK_PARTICIPANT_LABEL))
 
 
 class RecorderPhase(str, Enum):
@@ -353,7 +396,9 @@ class RecordingCoordinator:
         self._recording_identity_errors: list[str] = []
         self._recording_identity_invalid = False
         self._recording_presence_retry_pending = False
-        self._reference_participant_id = new_project_id()
+        self._reference_participant_id = _shared_track_participant_id(
+            self._session_id
+        )
         # The recorder endpoint and secret-file identity are captured once per
         # take. Workers use this immutable binding instead of mutable Settings.
         self._recording_rpc_take_id = ""
@@ -371,6 +416,303 @@ class RecordingCoordinator:
         self._shutdown_stop_lock = threading.Lock()
         self._shutdown_validation_pending_take_id = ""
         self._shutdown_validation_dispatch_take_id = ""
+        # A Record Session may include one host-owned Shared Track.  The
+        # pending choice is frozen only when a take ID is allocated; playback
+        # and route teardown then become conjunctive take truth rather than
+        # unrelated UI operations that can finish after a false success.
+        self._shared_track_condition = threading.Condition(threading.RLock())
+        self._pending_shared_track_required = False
+        self._shared_track_take_id = ""
+        self._shared_track_required = False
+        self._shared_track_playback_proven = False
+        self._shared_track_recorder_active = False
+        self._shared_track_underrun_baseline = 0
+        self._shared_track_underrun_peak = 0
+        self._shared_track_cleanup_requested = False
+        self._shared_track_cleanup_confirmed = False
+        self._initial_peer_inventory_take_id = ""
+        # Peer manifest callbacks are normally marshalled onto Qt's UI thread,
+        # but the lock also preserves this seam for direct tests/alternate
+        # invokers. A callback racing terminal validation is latched, never
+        # discarded, and reloaded immediately before terminal publication.
+        self._peer_reconcile_lock = threading.Lock()
+        self._pending_peer_reconciliations: dict[str, Path] = {}
+        # This deliberately contains only bounded counters, fixed categories,
+        # and opaque UUIDs. It is safe for diagnostics/support-bundle callers;
+        # source names, paths, device names, and raw validation text stay out.
+        self._recording_diagnostics_lock = threading.Lock()
+        self._recording_generation = 0
+        self._diagnostic_current_take_id = ""
+        self._diagnostic_last_take_id = ""
+        self._recording_dropout_gap_count = 0
+        self._recording_failure_reason_code = "none"
+
+    def _begin_recording_diagnostics(self, take_id: str) -> None:
+        try:
+            canonical_take = str(uuid.UUID(str(take_id)))
+        except (AttributeError, TypeError, ValueError):
+            canonical_take = ""
+        with self._recording_diagnostics_lock:
+            self._recording_generation = min(
+                (1 << 63) - 1,
+                self._recording_generation + 1,
+            )
+            self._diagnostic_current_take_id = canonical_take
+            self._recording_dropout_gap_count = 0
+            self._recording_failure_reason_code = "none"
+
+    def _record_diagnostic_failure(self, reason_code: str) -> None:
+        code = str(reason_code or "").strip().lower()
+        if code not in _RECORDING_FAILURE_PRIORITIES:
+            code = "take_needs_attention"
+        with self._recording_diagnostics_lock:
+            current = self._recording_failure_reason_code
+            if _RECORDING_FAILURE_PRIORITIES[code] >= _RECORDING_FAILURE_PRIORITIES[
+                current
+            ]:
+                self._recording_failure_reason_code = code
+
+    def _record_dropout_gaps(self, count: int) -> None:
+        try:
+            bounded = max(0, min(_RECORDING_DIAGNOSTIC_MAX_COUNT, int(count)))
+        except (TypeError, ValueError):
+            bounded = 0
+        if not bounded:
+            return
+        with self._recording_diagnostics_lock:
+            self._recording_dropout_gap_count = min(
+                _RECORDING_DIAGNOSTIC_MAX_COUNT,
+                self._recording_dropout_gap_count + bounded,
+            )
+        self._record_diagnostic_failure("capture_gap")
+
+    def public_diagnostics(self) -> dict[str, object]:
+        """Return path-free, bounded Record Session lifecycle diagnostics."""
+
+        with self._recording_diagnostics_lock:
+            generation = self._recording_generation
+            current_take_id = self._diagnostic_current_take_id
+            last_take_id = self._diagnostic_last_take_id
+            dropout_gap_count = self._recording_dropout_gap_count
+            failure_reason_code = self._recording_failure_reason_code
+        with self._shared_track_condition:
+            cleanup_pending = bool(
+                self._shared_track_required
+                and not self._shared_track_cleanup_confirmed
+                and (
+                    self._shared_track_cleanup_requested
+                    or self.phase
+                    in {
+                        RecorderPhase.STOPPING,
+                        RecorderPhase.STOP_FAILED,
+                        RecorderPhase.VALIDATING,
+                    }
+                )
+            )
+        return {
+            "generation": generation,
+            "current_take_id": current_take_id,
+            "last_take_id": last_take_id,
+            "dropout_gap_count": dropout_gap_count,
+            "cleanup_pending": cleanup_pending,
+            "failure_reason_code": failure_reason_code,
+            "failure_category": _RECORDING_FAILURE_CATEGORIES[failure_reason_code],
+        }
+
+    def plan_shared_track_for_next_take(self, *, required: bool) -> None:
+        """Freeze the host's path-free Shared Track intent at take allocation."""
+
+        with self._shared_track_condition:
+            self._pending_shared_track_required = bool(required)
+
+    def _begin_shared_track_transaction(self, take_id: str) -> None:
+        with self._shared_track_condition:
+            self._shared_track_take_id = str(take_id or "")
+            self._shared_track_required = bool(
+                self._pending_shared_track_required and take_id
+            )
+            self._pending_shared_track_required = False
+            self._shared_track_playback_proven = False
+            self._shared_track_recorder_active = False
+            self._shared_track_underrun_baseline = 0
+            self._shared_track_underrun_peak = 0
+            self._shared_track_cleanup_requested = False
+            self._shared_track_cleanup_confirmed = False
+            self._shared_track_condition.notify_all()
+
+    @staticmethod
+    def _shared_track_underrun_frames(snapshot: object) -> int:
+        try:
+            return max(
+                0,
+                min((1 << 63) - 1, int(getattr(snapshot, "underrun_frames", 0))),
+            )
+        except (AttributeError, TypeError, ValueError):
+            return 0
+
+    def _begin_shared_track_recording_window(self, take_id: str) -> None:
+        """Open underrun/playback evidence only after recorder confirmation."""
+
+        controller = getattr(self._c, "_reference_track", None)
+        snapshot = getattr(controller, "snapshot", None)
+        baseline = self._shared_track_underrun_frames(snapshot)
+        with self._shared_track_condition:
+            if not (
+                take_id
+                and self._shared_track_required
+                and self._shared_track_take_id == take_id
+                and self._take_id == take_id
+            ):
+                return
+            self._shared_track_recorder_active = True
+            self._shared_track_underrun_baseline = baseline
+            self._shared_track_underrun_peak = baseline
+            self._shared_track_condition.notify_all()
+
+    def _finish_shared_track_recording_window(self, take_id: str) -> int:
+        """Close recorder overlap and return only this take's underrun delta."""
+
+        controller = getattr(self._c, "_reference_track", None)
+        snapshot = getattr(controller, "snapshot", None)
+        if snapshot is not None:
+            # Capture the final recorder-overlap sample while the window is
+            # still active. Playback after this point belongs to route cleanup,
+            # not to the recorded take.
+            self.observe_shared_track_snapshot(snapshot)
+        with self._shared_track_condition:
+            if not (
+                take_id
+                and self._shared_track_required
+                and self._shared_track_take_id == take_id
+            ):
+                return 0
+            self._shared_track_recorder_active = False
+            delta = max(
+                0,
+                self._shared_track_underrun_peak
+                - self._shared_track_underrun_baseline,
+            )
+            self._shared_track_condition.notify_all()
+        if delta:
+            self._record_dropout_gaps(1)
+            self._record_diagnostic_failure("shared_track_dropout")
+        return delta
+
+    @property
+    def shared_track_required_for_active_take(self) -> bool:
+        with self._shared_track_condition:
+            return bool(
+                self._shared_track_required
+                and self._shared_track_take_id
+                and self._shared_track_take_id == self._take_id
+            )
+
+    def observe_shared_track_snapshot(self, snapshot: object) -> None:
+        """Reduce a local Shared Track snapshot to take-scoped lifecycle truth."""
+
+        with self._shared_track_condition:
+            if not (
+                self._shared_track_required
+                and self._shared_track_take_id
+                and self._shared_track_take_id == self._take_id
+            ):
+                return
+            state = str(
+                getattr(getattr(snapshot, "state", None), "value", "") or ""
+            ).lower()
+            if self._shared_track_recorder_active and state == "playing":
+                self._shared_track_playback_proven = True
+            if self._shared_track_recorder_active:
+                self._shared_track_underrun_peak = max(
+                    self._shared_track_underrun_peak,
+                    self._shared_track_underrun_frames(snapshot),
+                )
+            if self._shared_track_cleanup_requested:
+                active = bool(getattr(snapshot, "active", False))
+                cleanup_pending = bool(
+                    getattr(snapshot, "cleanup_pending", False)
+                )
+                if (
+                    not active
+                    and not cleanup_pending
+                    and state in {"ready", "unavailable", "idle", "closed"}
+                ):
+                    self._shared_track_cleanup_confirmed = True
+            self._shared_track_condition.notify_all()
+
+    def note_shared_track_cleanup_requested(self) -> None:
+        """Join the host route's Stop acknowledgement to the active take."""
+
+        with self._shared_track_condition:
+            if not (
+                self._shared_track_required
+                and self._shared_track_take_id
+                and self._shared_track_take_id == self._take_id
+            ):
+                return
+            self._shared_track_cleanup_requested = True
+            self._shared_track_condition.notify_all()
+        controller = getattr(self._c, "_reference_track", None)
+        snapshot = getattr(controller, "snapshot", None)
+        if snapshot is not None:
+            self.observe_shared_track_snapshot(snapshot)
+
+    def _await_shared_track_transaction_errors(
+        self,
+        take_id: str,
+    ) -> tuple[str, ...]:
+        """Wait off the UI thread for required playback and route retirement."""
+
+        with self._shared_track_condition:
+            required = bool(
+                take_id
+                and self._shared_track_required
+                and self._shared_track_take_id == take_id
+            )
+        if not required:
+            return ()
+
+        deadline = time.monotonic() + _SHARED_TRACK_FINALIZE_TIMEOUT_S
+        while True:
+            controller = getattr(self._c, "_reference_track", None)
+            snapshot = getattr(controller, "snapshot", None)
+            if snapshot is not None:
+                self.observe_shared_track_snapshot(snapshot)
+            with self._shared_track_condition:
+                if self._shared_track_take_id != take_id:
+                    return (
+                        "Shared Track recording evidence changed before the take "
+                        "was finalized. The take was preserved for review.",
+                    )
+                settled = bool(
+                    self._shared_track_playback_proven
+                    and self._shared_track_cleanup_requested
+                    and self._shared_track_cleanup_confirmed
+                )
+                if settled or time.monotonic() >= deadline:
+                    playback_proven = self._shared_track_playback_proven
+                    cleanup_requested = self._shared_track_cleanup_requested
+                    cleanup_confirmed = self._shared_track_cleanup_confirmed
+                    break
+                self._shared_track_condition.wait(
+                    timeout=min(0.1, max(0.0, deadline - time.monotonic()))
+                )
+
+        errors: list[str] = []
+        if not playback_proven:
+            self._record_diagnostic_failure("shared_track_playback_unproven")
+            errors.append(
+                "Shared Track playback was required for this Record Session, "
+                "but its owned route never reached confirmed playback. The take "
+                "was preserved for review."
+            )
+        if not cleanup_requested or not cleanup_confirmed:
+            self._record_diagnostic_failure("shared_track_cleanup_unconfirmed")
+            errors.append(
+                "Shared Track cleanup was not confirmed before take publication. "
+                "The take was preserved for review."
+            )
+        return tuple(errors)
 
     def _take_local_capture(self):
         """Atomically claim the active capture (or None)."""
@@ -398,6 +740,13 @@ class RecordingCoordinator:
     def _retire_active_take(self, take_id: str) -> None:
         """Forget active ownership after a terminal validation/recovery path."""
 
+        with self._recording_diagnostics_lock:
+            if take_id and self._diagnostic_current_take_id == take_id:
+                self._diagnostic_last_take_id = take_id
+                self._diagnostic_current_take_id = ""
+        with self._peer_reconcile_lock:
+            if take_id:
+                self._pending_peer_reconciliations.pop(take_id, None)
         if take_id and self._shutdown_validation_pending_take_id == take_id:
             self._shutdown_validation_pending_take_id = ""
         if take_id and self._shutdown_validation_dispatch_take_id == take_id:
@@ -412,6 +761,17 @@ class RecordingCoordinator:
                 self._recording_rpc_port = 0
                 self._recording_rpc_secret_file = ""
                 self._recording_rpc_secret_identity = None
+        with self._shared_track_condition:
+            if take_id and self._shared_track_take_id == take_id:
+                self._shared_track_take_id = ""
+                self._shared_track_required = False
+                self._shared_track_playback_proven = False
+                self._shared_track_recorder_active = False
+                self._shared_track_underrun_baseline = 0
+                self._shared_track_underrun_peak = 0
+                self._shared_track_cleanup_requested = False
+                self._shared_track_cleanup_confirmed = False
+                self._shared_track_condition.notify_all()
 
     def _recording_rpc_binding_for_take(
         self,
@@ -580,7 +940,12 @@ class RecordingCoordinator:
             self._recording_identity_errors = []
             self._recording_identity_invalid = False
             self._recording_presence_retry_pending = False
-            self._reference_participant_id = new_project_id()
+            # The Shared Track is one durable session participant, not a new
+            # musician on every take. Exact recorder authorization still comes
+            # from the current owned process/socket/generation evidence below.
+            self._reference_participant_id = _shared_track_participant_id(
+                self._session_id
+            )
             self._recording_rpc_take_id = ""
             self._recording_rpc_port = 0
             self._recording_rpc_secret_file = ""
@@ -1402,10 +1767,12 @@ class RecordingCoordinator:
         receipt_lifecycle_by_digest: dict[str, tuple[object, ...]] = {}
         unproven_keys: set[str] = set()
         for ordinal, observation in enumerate(observations):
+            source_fingerprint = ""
             if observation.matches_owned_reference and stable_reference is not None:
                 participant_id = self._reference_participant_id
                 display_name = REFERENCE_PARTICIPANT_NAME
                 source_kind = "reference_track"
+                source_fingerprint = stable_reference.source_fingerprint_sha256
                 receipt_lifecycle_by_digest[
                     observation.recorder_key_sha256
                 ] = (
@@ -1413,6 +1780,7 @@ class RecordingCoordinator:
                     stable_reference.process_id,
                     stable_reference.generation,
                     stable_reference.udp_port,
+                    source_fingerprint,
                 )
             elif context.require_presence_v2:
                 presence = (
@@ -1476,6 +1844,7 @@ class RecordingCoordinator:
                 recorder_key_sha256=observation.recorder_key_sha256,
                 channels=observation.channels,
                 source_kind=source_kind,
+                source_fingerprint_sha256=source_fingerprint,
             ))
 
         with self._receipt_lock:
@@ -1586,6 +1955,8 @@ class RecordingCoordinator:
                 if any(
                     existing.participant_id != receipt.participant_id
                     or existing.source_kind != receipt.source_kind
+                    or existing.source_fingerprint_sha256
+                    != receipt.source_fingerprint_sha256
                     for existing in same_digest
                 ):
                     self._recording_conflicted_keys.add(digest)
@@ -2451,6 +2822,7 @@ class RecordingCoordinator:
                 detail="WebJam observed the band server confirm recording.",
                 occurred_utc=started_utc,
             )
+        self._begin_shared_track_recording_window(self._take_id)
         self._checkpoint_evidence_journal()
         return started_utc, True
 
@@ -2464,6 +2836,7 @@ class RecordingCoordinator:
         """
         if not self._take_id:
             return "", False
+        active_take_id = self._take_id
         with self._evidence_lock:
             if self._recording_ended_utc:
                 return self._recording_ended_utc, False
@@ -2496,8 +2869,66 @@ class RecordingCoordinator:
                 ),
                 occurred_utc=stopped_utc,
             )
+        underrun_delta = self._finish_shared_track_recording_window(active_take_id)
+        if underrun_delta:
+            with self._evidence_lock:
+                self._set_recovery_locked(
+                    RecoveryStatus.NEEDS_ATTENTION,
+                    "Shared Track playback had an underrun during the confirmed "
+                    "recording window.",
+                )
+                self._append_evidence_event_locked(
+                    "shared_track_dropout",
+                    detail=(
+                        "Shared Track playback reported "
+                        f"{underrun_delta} take-local underrun frame(s)."
+                    ),
+                    occurred_utc=stopped_utc,
+                )
+        if unexpected:
+            self._record_diagnostic_failure("unexpected_stop")
         self._checkpoint_evidence_journal()
         return stopped_utc, True
+
+    def _signal_peer_recording_finalizing(
+        self,
+        take_id: str,
+        *,
+        stopped_utc: str,
+        message: str = "",
+    ) -> None:
+        """Publish recorder stop without claiming that the take is ready yet."""
+
+        if not take_id or not self._c.host_peer.active:
+            return
+        try:
+            self._c.host_peer.begin_take_finalization(
+                take_id,
+                stopped_utc=stopped_utc,
+                message=" ".join(str(message).split())[:240],
+            )
+        except Exception:  # noqa: BLE001 - peer failures may contain private detail
+            LOGGER.error("Could not publish recording finalization state")
+
+    def _signal_peer_validation_outcome(
+        self,
+        take_id: str,
+        *,
+        needs_attention: bool,
+        message: str,
+    ) -> None:
+        """Publish one terminal guest state only after host finalization truth."""
+
+        if not take_id:
+            return
+        with self._evidence_lock:
+            stopped_utc = self._recording_ended_utc
+        self._c.signal_peer_recording_stopped(
+            take_id,
+            stopped_utc=stopped_utc,
+            needs_attention=bool(needs_attention),
+            message=" ".join(str(message).split())[:240],
+        )
 
     def _mark_recording_recovery(
         self, status: RecoveryStatus, note: str, *, event: str = "recovery"
@@ -2752,9 +3183,10 @@ class RecordingCoordinator:
                                 )
                             )
                             if newly_confirmed:
-                                self._c.signal_peer_recording_stopped(
+                                self._signal_peer_recording_finalizing(
                                     active_take_id,
                                     stopped_utc=stopped_utc,
+                                    message="The host is finalizing the recorded take.",
                                 )
                             self._shutdown_validation_pending_take_id = (
                                 active_take_id
@@ -2826,6 +3258,7 @@ class RecordingCoordinator:
         if self.phase is RecorderPhase.VALIDATING:
             # The validation worker owns the capture and will finish the take.
             return
+        prior_phase = self.phase
         active_take_id = self._take_id
         recovered, errors = self._salvage_capture()
         self._mark_recording_recovery(
@@ -2837,6 +3270,16 @@ class RecordingCoordinator:
         self._c._server_recording = False
         self._c.window.set_status_recording(False)
         self._set_phase(RecorderPhase.IDLE)
+        if prior_phase in {
+            RecorderPhase.IDLE,
+            RecorderPhase.COMPLETE,
+            RecorderPhase.NEEDS_ATTENTION,
+            RecorderPhase.ERROR,
+        }:
+            # No in-flight capture was interrupted. Retire any old Ready or
+            # attention chip instead of letting class-reused/queued UI state
+            # present it as belonging to the next jam.
+            self._c.window.session_strip.clear_recording_session_status()
         if recovered is not None:
             self._notify_recovered(recovered, errors)
         self._retire_active_take(active_take_id)
@@ -3002,6 +3445,22 @@ class RecordingCoordinator:
     ) -> None:
         """Allocate take resources only after hosted readiness is complete."""
 
+        with self._shared_track_condition:
+            pending_shared_track = bool(self._pending_shared_track_required)
+        reference_controller = getattr(self._c, "_reference_track", None)
+        reference_snapshot = getattr(reference_controller, "snapshot", None)
+        reference_state = str(
+            getattr(getattr(reference_snapshot, "state", None), "value", "")
+            or ""
+        ).lower()
+        planned_shared_track = bool(
+            pending_shared_track
+            and getattr(reference_snapshot, "loaded", False)
+            and reference_state in {"ready", "paused", "routing", "playing"}
+        )
+        if pending_shared_track and not planned_shared_track:
+            with self._shared_track_condition:
+                self._pending_shared_track_required = False
         recording_rpc_port = 0
         recording_rpc_secret_file = ""
         recording_rpc_secret_identity: tuple[int, int, int, int] | None = None
@@ -3058,7 +3517,13 @@ class RecordingCoordinator:
                 return
         storage = check_recording_storage(
             self._c.settings.takes_directory,
-            expected_server_tracks=len(real_participants),
+            # A ready Shared Track joins only after the server recorder starts,
+            # so reserve its server stem even when it is not in preflight's
+            # current roster yet. A paused/active route may be counted twice
+            # here; conservative storage estimation is intentional.
+            expected_server_tracks=(
+                len(real_participants) + int(planned_shared_track)
+            ),
             local_originals_enabled=bool(self._c.settings.local_capture_enabled),
         )
         if not storage.can_start:
@@ -3111,7 +3576,9 @@ class RecordingCoordinator:
         self._before_takes = snapshot_take_directories(
             self._c.settings.takes_directory
         )
-        self._expected_tracks = len(real_participants)
+        self._expected_tracks = len(real_participants) + int(
+            planned_shared_track and not hosted_references
+        )
         if self._c.host_peer.active:
             self._session_id = self._c.host_peer.session_id
             if self._c.host_peer.host_enrollment is not None:
@@ -3119,8 +3586,10 @@ class RecordingCoordinator:
                     self._c.host_peer.host_enrollment.participant_id
                 )
         self._take_id = new_project_id()
+        self._begin_recording_diagnostics(self._take_id)
         self._session_title = self._c.window.session_strip.current_title()
         self._reset_session_evidence()
+        self._begin_shared_track_transaction(self._take_id)
         if recording_rpc_secret_identity is None:
             raise RuntimeError("recording RPC identity is unavailable")
         self._bind_recording_rpc_configuration(
@@ -3776,8 +4245,10 @@ class RecordingCoordinator:
             if self._take_id:
                 stopped_utc, newly_confirmed = self._confirmed_recording_stopped()
                 if newly_confirmed:
-                    self._c.signal_peer_recording_stopped(
-                        self._take_id, stopped_utc=stopped_utc
+                    self._signal_peer_recording_finalizing(
+                        self._take_id,
+                        stopped_utc=stopped_utc,
+                        message="The host is finalizing the recorded take.",
                     )
                 self._start_take_validation_once()
             else:
@@ -3804,6 +4275,7 @@ class RecordingCoordinator:
                 "WebJam could not confirm whether recording started.",
                 event="recording_start_unconfirmed",
             )
+        self._record_diagnostic_failure("recorder_control_failure")
         still_armed = bool(self._c._recorder_armed or self._c._server_recording)
         self._c.session_health.mark_rpc_result("recorder", False, message)
         self._set_phase(
@@ -3865,14 +4337,14 @@ class RecordingCoordinator:
                     ),
                 )
                 if newly_confirmed:
-                    self._c.signal_peer_recording_stopped(
+                    self._signal_peer_recording_finalizing(
                         self._take_id,
                         stopped_utc=stopped_utc,
-                        needs_attention=prior_phase is not RecorderPhase.STOPPING,
                         message=(
-                            "The band server stopped recording unexpectedly."
+                            "The band server stopped unexpectedly; the host is "
+                            "finalizing the take."
                             if prior_phase is not RecorderPhase.STOPPING
-                            else ""
+                            else "The host is finalizing the recorded take."
                         ),
                     )
             # The state notification is authoritative even if the stop RPC
@@ -3972,6 +4444,7 @@ class RecordingCoordinator:
         active_take_id = self._take_id if take_id is None else take_id
         root = self._c.settings.takes_directory
         if not root:
+            self._record_diagnostic_failure("take_publication")
             self._mark_recording_recovery(
                 RecoveryStatus.NEEDS_ATTENTION,
                 "No local Takes folder was configured when recording stopped.",
@@ -3984,6 +4457,11 @@ class RecordingCoordinator:
             self._set_phase(RecorderPhase.NEEDS_ATTENTION)
             if recovered is not None:
                 self._notify_recovered(recovered, errors)
+            self._signal_peer_validation_outcome(
+                active_take_id,
+                needs_attention=True,
+                message="The take could not be finalized and needs host review.",
+            )
             if (
                 active_take_id
                 and active_take_id == self._shutdown_validation_pending_take_id
@@ -4023,6 +4501,7 @@ class RecordingCoordinator:
             result = self._build_take_validation(take_id=take_id)
         except Exception:  # noqa: BLE001 - validation errors can contain private paths
             LOGGER.error("Take validation failed unexpectedly")
+            self._record_diagnostic_failure("take_publication")
             candidate = find_changed_take(
                 self._c.settings.takes_directory, self._before_takes
             )
@@ -4038,6 +4517,10 @@ class RecordingCoordinator:
                     *capture_errors,
                 ),
             )
+        result = self._reconcile_initial_peer_inventory(
+            result,
+            take_id=take_id,
+        )
         publication_status: _PublishedTakeStatus | None = None
         if (
             take_id
@@ -4056,6 +4539,113 @@ class RecordingCoordinator:
                 take_id=take_id,
                 publication_status=publication_status,
             )
+        )
+
+    @staticmethod
+    def _publish_take_attention(take_dir: Path, message: str) -> bool:
+        """CAS one fixed attention reason into a schema-v2 take manifest."""
+
+        from core.take_project import (
+            ProjectStatus,
+            load_take_project,
+            replace_take_project_manifest_if_unchanged,
+        )
+
+        manifest = Path(take_dir) / "webjam-take.json"
+        for _attempt in range(3):
+            try:
+                prior = manifest.read_bytes()
+                payload = json.loads(prior)
+                project = load_take_project(take_dir)
+            except Exception:  # noqa: BLE001 - fixed path-free failure boundary
+                return False
+            if not isinstance(payload, dict) or project.take_id != payload.get(
+                "take_id"
+            ):
+                return False
+            errors = tuple(dict.fromkeys((*project.errors, str(message))))
+            payload["status"] = ProjectStatus.NEEDS_ATTENTION.value
+            payload["errors"] = list(errors)
+            payload["revision"] = max(
+                int(payload.get("revision", 0) or 0) + 1,
+                project.revision + 1,
+            )
+            if replace_take_project_manifest_if_unchanged(
+                take_dir,
+                expected_bytes=prior,
+                payload=payload,
+            ):
+                return True
+        return False
+
+    def _reconcile_initial_peer_inventory(
+        self,
+        result: TakeValidationResult,
+        *,
+        take_id: str | None,
+    ) -> TakeValidationResult:
+        """Keep Finalizing until the first expected Local Original inventory."""
+
+        if result.take is None or not take_id:
+            return result
+        host_peer = getattr(self._c, "host_peer", None)
+        if not bool(getattr(host_peer, "active", False)):
+            return result
+        take_path = result.take.path
+        inventory_error = (
+            f"{PEER_TRANSFER_ERROR_PREFIX}Guest Local Original inventory could "
+            "not be finalized before take publication. The take was preserved "
+            "for review."
+        )
+        marker_valid = False
+        try:
+            self._post_validation_stage("WAITING FOR LOCAL ORIGINALS…")
+            waiter = getattr(host_peer, "wait_for_initial_take_inventory", None)
+            if callable(waiter):
+                waiter(
+                    take_id,
+                    timeout_s=_PEER_INVENTORY_FINALIZE_TIMEOUT_S,
+                )
+            host_peer.register_take(take_id, take_path)
+            host_peer.reconcile_take(take_id, take_path)
+            payload = json.loads(
+                (Path(take_path) / "webjam-take.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            peer_transfers = (
+                payload.get("peer_transfers")
+                if isinstance(payload, dict)
+                else None
+            )
+            marker_valid = bool(
+                isinstance(peer_transfers, dict)
+                and peer_transfers.get("status")
+                in {"complete", "needs_attention"}
+            )
+        except Exception:  # noqa: BLE001 - private transfer facts stay hidden
+            LOGGER.error("Initial peer recording inventory could not be finalized")
+        if not marker_valid:
+            self._record_diagnostic_failure("peer_inventory")
+            self._publish_take_attention(take_path, inventory_error)
+        else:
+            self._initial_peer_inventory_take_id = take_id
+        loaded = load_take(take_path)
+        if loaded is None:
+            return TakeValidationResult(
+                None,
+                tuple(dict.fromkeys((*result.errors, inventory_error))),
+                result.warnings,
+                result.manifest_path,
+            )
+        errors = tuple(loaded.manifest_errors)
+        if not marker_valid and inventory_error not in errors:
+            errors = tuple(dict.fromkeys((*errors, inventory_error)))
+        return TakeValidationResult(
+            loaded,
+            errors,
+            tuple(loaded.manifest_warnings),
+            loaded.manifest_path,
         )
 
     def _build_take_validation(
@@ -4077,7 +4667,20 @@ class RecordingCoordinator:
         recording_receipts, recording_identity_errors = (
             self._final_recording_receipt_snapshot()
         )
+        terminal_errors = list(
+            self._await_shared_track_transaction_errors(active_take_id)
+        )
+        if (
+            self._current_session_evidence().recovery_status
+            is RecoveryStatus.NEEDS_ATTENTION
+        ):
+            terminal_errors.append(
+                "Recording recovery or an unexpected server stop needs host "
+                "review before this take can be treated as complete."
+            )
+        terminal_errors = list(dict.fromkeys(terminal_errors))
         if take_dir is None:
+            self._record_diagnostic_failure("take_publication")
             self._mark_recording_recovery(
                 RecoveryStatus.NEEDS_ATTENTION,
                 "No new Jamulus take folder appeared after recording stopped.",
@@ -4086,7 +4689,7 @@ class RecordingCoordinator:
             recovered: Path | None = (
                 Path(root).expanduser() / f"Recovered-{time.strftime('%Y%m%d-%H%M%S')}"
             )
-            capture_errors: tuple[str, ...] = ()
+            capture_errors: tuple[str, ...] = tuple(terminal_errors)
             started_utc = ""
             duration_s = 0.0
             capture_gaps: tuple[object, ...] = ()
@@ -4096,10 +4699,13 @@ class RecordingCoordinator:
             capture = self._take_local_capture()
             if capture is not None:
                 local_result = capture.stop_into(recovered)
-                capture_errors = local_result.errors
+                capture_errors = tuple(
+                    dict.fromkeys((*capture_errors, *local_result.errors))
+                )
                 started_utc = local_result.started_utc
                 duration_s = local_result.duration_s
                 capture_gaps = tuple(getattr(local_result, "gaps", ()) or ())
+                self._record_dropout_gaps(len(capture_gaps))
                 local_total_frames = int(getattr(local_result, "total_frames", 0) or 0)
                 local_durable_frames = getattr(local_result, "durable_frames", None)
                 capture_device = getattr(local_result, "capture_device", None)
@@ -4144,6 +4750,7 @@ class RecordingCoordinator:
                     session_evidence=self._current_session_evidence(),
                     recording_receipts=recording_receipts,
                     recording_identity_errors=recording_identity_errors,
+                    required_reference_track=self.shared_track_required_for_active_take,
                 )
                 if result.take is not None:
                     self._retire_journal_for_exact_publication(active_take_id)
@@ -4153,7 +4760,7 @@ class RecordingCoordinator:
                     ("No new Jamulus take folder appeared after recording stopped.",),
                 )
         else:
-            capture_errors: tuple[str, ...] = ()
+            capture_errors: tuple[str, ...] = tuple(terminal_errors)
             started_utc = ""
             duration_s = 0.0
             capture_gaps: tuple[object, ...] = ()
@@ -4163,10 +4770,13 @@ class RecordingCoordinator:
             capture = self._take_local_capture()
             if capture is not None:
                 local_result = capture.stop_into(take_dir)
-                capture_errors = local_result.errors
+                capture_errors = tuple(
+                    dict.fromkeys((*capture_errors, *local_result.errors))
+                )
                 started_utc = local_result.started_utc
                 duration_s = local_result.duration_s
                 capture_gaps = tuple(getattr(local_result, "gaps", ()) or ())
+                self._record_dropout_gaps(len(capture_gaps))
                 local_total_frames = int(getattr(local_result, "total_frames", 0) or 0)
                 local_durable_frames = getattr(local_result, "durable_frames", None)
                 capture_device = getattr(local_result, "capture_device", None)
@@ -4208,6 +4818,7 @@ class RecordingCoordinator:
                 session_evidence=self._current_session_evidence(),
                 recording_receipts=recording_receipts,
                 recording_identity_errors=recording_identity_errors,
+                required_reference_track=self.shared_track_required_for_active_take,
             )
             if result.take is not None:
                 self._retire_journal_for_exact_publication(active_take_id)
@@ -4224,6 +4835,34 @@ class RecordingCoordinator:
             LOGGER.debug("Ignoring validation result for a retired recording take")
             return
         completed_take_id = self._take_id if take_id is None else take_id
+        with self._peer_reconcile_lock:
+            pending_peer_path = self._pending_peer_reconciliations.pop(
+                str(completed_take_id or ""),
+                None,
+            )
+        if pending_peer_path is not None:
+            refreshed = load_take(pending_peer_path)
+            if (
+                refreshed is not None
+                and refreshed.take_id == completed_take_id
+            ):
+                result = TakeValidationResult(
+                    refreshed,
+                    tuple(refreshed.manifest_errors),
+                    tuple(refreshed.manifest_warnings),
+                    refreshed.manifest_path,
+                )
+            else:
+                reload_error = (
+                    f"{PEER_TRANSFER_ERROR_PREFIX}A committed Local Original "
+                    "update could not be reloaded before take publication."
+                )
+                result = TakeValidationResult(
+                    result.take,
+                    tuple(dict.fromkeys((*result.errors, reload_error))),
+                    result.warnings,
+                    result.manifest_path,
+                )
         shutdown_pending = bool(
             completed_take_id
             and completed_take_id == self._shutdown_validation_pending_take_id
@@ -4239,6 +4878,41 @@ class RecordingCoordinator:
             not shutdown_pending
             or publication_status is _PublishedTakeStatus.MATCH
         )
+        take_status = str(
+            getattr(result.take, "validation_status", "complete")
+            if result.take is not None
+            else ""
+        )
+        take_manifest_errors = tuple(
+            getattr(result.take, "manifest_errors", ()) or ()
+            if result.take is not None
+            else ()
+        )
+        effective_needs_attention = bool(
+            not result.ok
+            or result.take is None
+            or take_status != "complete"
+            or bool(take_manifest_errors)
+            or self._current_session_evidence().recovery_status
+            is RecoveryStatus.NEEDS_ATTENTION
+        )
+        host_peer = getattr(self._c, "host_peer", None)
+        if (
+            result.take is not None
+            and completed_take_id
+            and durable_shutdown_publication
+            and bool(getattr(host_peer, "active", False))
+            and self._initial_peer_inventory_take_id != completed_take_id
+        ):
+            try:
+                host_peer.register_take(completed_take_id, result.take.path)
+            except Exception:  # noqa: BLE001 - private transfer facts stay hidden
+                LOGGER.error("Could not queue peer transfer inventory for take")
+            # Real TakeInfo objects carry their durable take ID. Production
+            # may never publish Complete without the worker's initial
+            # reconciliation marker. Simple test doubles keep the older seam.
+            if bool(getattr(result.take, "take_id", "")):
+                effective_needs_attention = True
         self.last_validation = result
         self.last_completed_take = (
             result.take.path
@@ -4251,7 +4925,8 @@ class RecordingCoordinator:
                 len(result.warnings),
                 "" if len(result.warnings) == 1 else "s",
             )
-        if not result.ok:
+        if effective_needs_attention:
+            self._record_diagnostic_failure("take_needs_attention")
             if result.errors:
                 LOGGER.warning(
                     "Take validation needs attention after %d issue%s.",
@@ -4280,16 +4955,22 @@ class RecordingCoordinator:
             result.take.path if result.take else None,
             result,
         )
-        if (
-            result.take is not None
-            and completed_take_id
-            and durable_shutdown_publication
-            and self._c.host_peer.active
-        ):
-            try:
-                self._c.host_peer.register_take(completed_take_id, result.take.path)
-            except Exception:  # noqa: BLE001 - transfer errors can contain private paths
-                LOGGER.error("Could not attach peer transfer inventory to take")
+        if result.take is not None and durable_shutdown_publication:
+            open_studio = getattr(self._c, "_on_rail_view_changed", None)
+            if callable(open_studio):
+                open_studio("takes")
+        peer_needs_attention = bool(
+            effective_needs_attention or not durable_shutdown_publication
+        )
+        self._signal_peer_validation_outcome(
+            completed_take_id,
+            needs_attention=peer_needs_attention,
+            message=(
+                "The take needs host review before it is ready."
+                if peer_needs_attention
+                else "The take is finalized and ready."
+            ),
+        )
         if shutdown_pending and not durable_shutdown_publication:
             # Raw media may be loadable even though no exact schema-v2
             # publication exists. Keep the take/journal/server ownership and
@@ -4309,6 +4990,66 @@ class RecordingCoordinator:
         if shutdown_pending:
             self._remove_evidence_journal_after_manifest()
         self._retire_active_take(completed_take_id)
+
+    def on_peer_take_reconciled(self, take_id: str, take_dir: Path) -> None:
+        """Republish terminal truth when a late Local Original changes a take."""
+
+        if self.phase is RecorderPhase.VALIDATING:
+            if self._take_id and self._take_id != take_id:
+                return
+            with self._peer_reconcile_lock:
+                self._pending_peer_reconciliations[str(take_id)] = Path(take_dir)
+            return
+        if self._take_id and self._take_id != take_id:
+            return
+        previous = self.last_validation
+        previous_take = previous.take if previous is not None else None
+        if previous_take is None or previous_take.take_id != take_id:
+            return
+        refreshed = load_take(Path(take_dir))
+        if refreshed is None or refreshed.take_id != take_id:
+            return
+        result = TakeValidationResult(
+            refreshed,
+            tuple(refreshed.manifest_errors),
+            tuple(refreshed.manifest_warnings),
+            refreshed.manifest_path,
+        )
+        previous_attention = bool(
+            not previous.ok
+            or previous_take.validation_status != "complete"
+            or previous_take.manifest_errors
+        )
+        needs_attention = bool(
+            not result.ok
+            or refreshed.validation_status != "complete"
+            or refreshed.manifest_errors
+        )
+        self.last_validation = result
+        self.last_completed_take = refreshed.path
+        if needs_attention != previous_attention:
+            self._set_phase(
+                RecorderPhase.NEEDS_ATTENTION
+                if needs_attention
+                else RecorderPhase.COMPLETE
+            )
+            self._c.window.flash_message(
+                (
+                    "A late Local Original changed this take. Review it in Studio."
+                    if needs_attention
+                    else "All expected Local Originals arrived. The take is ready."
+                ),
+                ms=7000,
+            )
+        self._signal_peer_validation_outcome(
+            take_id,
+            needs_attention=needs_attention,
+            message=(
+                "The take needs host review before it is ready."
+                if needs_attention
+                else "The take is finalized and ready."
+            ),
+        )
 
     @staticmethod
     def _completion_text(result: TakeValidationResult) -> tuple[str, str]:

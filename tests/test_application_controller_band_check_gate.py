@@ -638,6 +638,83 @@ def test_saved_local_original_preference_never_interrupts_later_host_take(
     controller.recording.on_record_requested.assert_called_once_with()
 
 
+def test_record_session_starts_ready_shared_track_after_recorder_confirmation(
+    tmp_path,
+) -> None:
+    controller = _bare_controller()
+    controller.settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        local_capture_choice_made=True,
+    )
+    controller.window = SimpleNamespace(
+        recording_studio=SimpleNamespace(export_in_progress=False),
+        flash_message=mock.Mock(),
+    )
+    controller.recording = SimpleNamespace(
+        phase=SimpleNamespace(value="idle"),
+        on_record_requested=mock.Mock(),
+    )
+    controller._recorder_armed = False
+    controller._server_recording = False
+    controller._shared_track_play_after_recording = ""
+    controller._reference_track = SimpleNamespace(
+        snapshot=SimpleNamespace(
+            state=SimpleNamespace(value="ready"),
+            can_play=True,
+            active=False,
+        )
+    )
+    controller._play_reference_track = mock.Mock()
+    controller._request_reference_track_teardown = mock.Mock()
+    controller._update_session_hud = mock.Mock()
+    controller._shutdown_cleanup_blocks_action = mock.Mock(return_value=False)
+
+    controller._on_record_requested()
+
+    assert controller._shared_track_play_after_recording == "play"
+    controller.recording.on_record_requested.assert_called_once_with()
+    controller._play_reference_track.assert_not_called()
+
+    controller.recording.phase.value = "recording"
+    controller._on_recorder_phase_changed("recording")
+    controller._play_reference_track.assert_called_once_with()
+    assert controller._shared_track_play_after_recording == ""
+
+
+def test_stop_recording_also_requests_independent_shared_track_teardown(
+    tmp_path,
+) -> None:
+    controller = _bare_controller()
+    controller.settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        local_capture_choice_made=True,
+    )
+    controller.window = SimpleNamespace(
+        recording_studio=SimpleNamespace(export_in_progress=False),
+        flash_message=mock.Mock(),
+    )
+    controller.recording = SimpleNamespace(
+        phase=SimpleNamespace(value="recording"),
+        on_record_requested=mock.Mock(),
+    )
+    controller._recorder_armed = True
+    controller._server_recording = True
+    controller._shared_track_play_after_recording = "play"
+    controller._reference_track = SimpleNamespace(
+        snapshot=SimpleNamespace(active=True)
+    )
+    controller._request_reference_track_teardown = mock.Mock()
+    controller._shutdown_cleanup_blocks_action = mock.Mock(return_value=False)
+
+    controller._on_record_requested()
+
+    controller._request_reference_track_teardown.assert_called_once_with()
+    controller.recording.on_record_requested.assert_called_once_with()
+    assert controller._shared_track_play_after_recording == ""
+
+
 def test_record_request_is_blocked_while_studio_export_is_running(tmp_path) -> None:
     controller = _bare_controller()
     controller.settings = AppSettings(

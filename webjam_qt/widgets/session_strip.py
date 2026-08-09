@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PySide6.QtCore import QTime, QTimer, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 
 from webjam_qt.theme.brand import BrandMark
 from webjam_qt.theme.tokens import Space
+from webjam_qt.widgets.shared_track_waveform import SharedTrackWaveform
 
 
 class SessionStrip(QFrame):
@@ -48,6 +49,10 @@ class SessionStrip(QFrame):
     reset_invite_requested = Signal()   # revoke and replace a remote invite
     test_night_requested = Signal()     # open the operator-only pilot surface
     tool_requested = Signal(str)        # progressive-disclosure destination
+    shared_track_dropped = Signal(str)  # one supported host-local audio file
+    shared_track_play_requested = Signal()
+    shared_track_pause_requested = Signal()
+    shared_track_stop_requested = Signal()
 
     STRIP_HEIGHT = 60
 
@@ -69,6 +74,21 @@ class SessionStrip(QFrame):
         self.operator_mode = bool(operator_mode)
         self._elapsed_seconds = 0
         self._tools_enabled = True
+        self._shared_track_host = False
+        self._shared_track_channel_present = False
+        self._shared_track_source_change_allowed = False
+        self._shared_track_snapshot_seen = False
+        self._shared_track_projection_visible = False
+        self._shared_track_transport_action = "play"
+        self._shared_track_transport_enabled = False
+        self._shared_track_stop_enabled = False
+        self._recording_control_available = False
+        self._recording_seen_active = False
+        self._recording_phase = "idle"
+        self._compact_control_labels = False
+        self._record_button_full_text = "● Record Session"
+        self._audio_button_full_text = "Start Session"
+        self.setAcceptDrops(True)
         # --- Widgets
         self._logo = BrandMark(28)
         self._logo.setObjectName("SessionStripLogo")
@@ -127,7 +147,7 @@ class SessionStrip(QFrame):
         self._audio_button.clicked.connect(self.launch_audio_requested.emit)
         self._audio_button.setVisible(False)
 
-        self._record_button = QPushButton("● Record")
+        self._record_button = QPushButton("● Record Session")
         self._record_button.setObjectName("GhostButton")
         self._record_button.setAccessibleName(
             "Start or stop band-server multitrack recording"
@@ -185,21 +205,69 @@ class SessionStrip(QFrame):
             lambda: self.tool_requested.emit("takes")
         )
 
-        self._reference_track_button = QPushButton("Reference Track")
+        self._shared_track_surface = QFrame()
+        self._shared_track_surface.setObjectName("SharedTrackLiveDeck")
+        self._shared_track_surface.setAccessibleName("Shared Track live controls")
+        self._shared_track_surface.setAccessibleDescription(
+            "No Shared Track loaded"
+        )
+        self._shared_track_surface.setMaximumWidth(390)
+        self._shared_track_surface.setSizePolicy(
+            QSizePolicy.Policy.Maximum,
+            QSizePolicy.Policy.Fixed,
+        )
+        shared_layout = QHBoxLayout(self._shared_track_surface)
+        shared_layout.setContentsMargins(Space.XS, 0, Space.XS, 0)
+        shared_layout.setSpacing(Space.XS)
+
+        self._reference_track_button = QPushButton("＋ Shared Track")
         self._reference_track_button.setObjectName("GhostButton")
-        self._reference_track_button.setAccessibleName("Open Reference Track")
+        self._reference_track_button.setAccessibleName("Open Shared Track")
         self._reference_track_button.setAccessibleDescription(
-            "Open the host-controlled song player. Loading and inspecting a "
-            "song does not start playback."
+            "Open the host-controlled Shared Track player. Adding and inspecting "
+            "a song does not start playback."
         )
         self._reference_track_button.setToolTip(
-            "Open Reference Track to load and inspect a song.\n"
+            "Open Shared Track to load and inspect a song.\n"
             "Playback remains locked until its isolated Jamulus route is proven."
         )
         self._reference_track_button.clicked.connect(
             lambda: self.tool_requested.emit("reference_track")
         )
+        self._reference_track_button.setMaximumWidth(128)
         self._reference_track_button.setVisible(False)
+        shared_layout.addWidget(self._reference_track_button)
+        self._shared_track_waveform = SharedTrackWaveform(
+            self._shared_track_surface,
+            compact=True,
+        )
+        shared_layout.addWidget(self._shared_track_waveform)
+        self._shared_track_transport = QPushButton("▶")
+        self._shared_track_transport.setObjectName("SharedTrackTransportButton")
+        self._shared_track_transport.setFixedSize(32, 32)
+        self._shared_track_transport.setAccessibleName("Play Shared Track")
+        self._shared_track_transport.setToolTip("Play Shared Track")
+        self._shared_track_transport.clicked.connect(
+            self._emit_shared_track_transport
+        )
+        self._shared_track_transport.setVisible(False)
+        shared_layout.addWidget(self._shared_track_transport)
+        self._shared_track_stop = QPushButton("■")
+        self._shared_track_stop.setObjectName("SharedTrackTransportButton")
+        self._shared_track_stop.setFixedSize(32, 32)
+        self._shared_track_stop.setAccessibleName("Stop Shared Track")
+        self._shared_track_stop.setToolTip("Stop Shared Track")
+        self._shared_track_stop.clicked.connect(
+            self.shared_track_stop_requested.emit
+        )
+        self._shared_track_stop.setVisible(False)
+        shared_layout.addWidget(self._shared_track_stop)
+        self._shared_track_state = QLabel("Not loaded")
+        self._shared_track_state.setObjectName("SharedTrackLiveState")
+        self._shared_track_state.setAccessibleName("Shared Track status")
+        self._shared_track_state.setMaximumWidth(82)
+        shared_layout.addWidget(self._shared_track_state)
+        self._shared_track_surface.setVisible(False)
 
         self._invite_button = QPushButton("Copy Invite")
         self._invite_button.setObjectName("GhostButton")
@@ -244,7 +312,7 @@ class SessionStrip(QFrame):
         recording_action.triggered.connect(
             lambda: self.tool_requested.emit("recording_setup")
         )
-        self._reference_track_action = QAction("Reference Track…", tools_menu)
+        self._reference_track_action = QAction("Shared Track…", tools_menu)
         self._reference_track_action.setToolTip(
             "Route a host-controlled song into the jam as its own Jamulus participant."
         )
@@ -342,7 +410,7 @@ class SessionStrip(QFrame):
         layout.addWidget(self._audio_button)
         layout.addWidget(self._invite_button)
         layout.addWidget(self._video_button)
-        layout.addWidget(self._reference_track_button)
+        layout.addWidget(self._shared_track_surface)
         layout.addWidget(self._studio_button)
         layout.addWidget(self._tools_button)
 
@@ -368,7 +436,8 @@ class SessionStrip(QFrame):
         self._update_timer_label()
 
     def set_audio_state(self, label: str, *, enabled: bool = True) -> None:
-        self._audio_button.setText(label)
+        self._audio_button_full_text = str(label)
+        self._audio_button.setText(self._compact_control_label(label))
         self._audio_button.setEnabled(enabled)
         # Start/retry lives in the focused stage card. The header owns only
         # the in-session End action, avoiding duplicate primary buttons.
@@ -387,6 +456,54 @@ class SessionStrip(QFrame):
         self._audio_button.setAccessibleName(label)
         self._audio_button.setAccessibleDescription(
             f"Band session action. Current action: {label}."
+        )
+
+    @staticmethod
+    def _compact_control_text(label: str) -> str:
+        """Keep safety actions legible at the supported 720 px window floor."""
+
+        return {
+            "Copy Invite": "Invite",
+            "Webex Controls": "Webex",
+            "● Record Session": "● Record",
+            "■ Stop Recording": "■ Stop",
+            "■ Finish Stop": "■ Finish",
+            "Retry Record": "Retry",
+            "End Session": "End",
+            "Leave Jam": "Leave",
+            "Try End Session": "Try End",
+            "Try Leave Jam": "Try Leave",
+        }.get(str(label), str(label))
+
+    def _compact_control_label(self, label: str) -> str:
+        return (
+            self._compact_control_text(label)
+            if self._compact_control_labels
+            else str(label)
+        )
+
+    def _set_record_button_label(self, label: str) -> None:
+        self._record_button_full_text = str(label)
+        self._record_button.setText(self._compact_control_label(label))
+        # The shortened compact label is visual density only; assistive
+        # technology always receives the complete semantic action.
+        self._record_button.setAccessibleName(str(label))
+
+    def set_compact_control_labels(self, compact: bool) -> None:
+        """Adapt bottom-bar copy without hiding any live-session action."""
+
+        self._compact_control_labels = bool(compact)
+        self._invite_button.setText(
+            self._compact_control_label("Copy Invite")
+        )
+        self._video_button.setText(
+            self._compact_control_label("Webex Controls")
+        )
+        self._record_button.setText(
+            self._compact_control_label(self._record_button_full_text)
+        )
+        self._audio_button.setText(
+            self._compact_control_label(self._audio_button_full_text)
         )
 
     def set_video_state(self, label: str, *, enabled: bool = True) -> None:
@@ -428,7 +545,15 @@ class SessionStrip(QFrame):
         self._tools_enabled = bool(enabled)
         self._tools_button.setEnabled(self._tools_enabled)
         self._video_button.setEnabled(self._tools_enabled)
-        self._reference_track_button.setEnabled(self._tools_enabled)
+        self._reference_track_button.setEnabled(
+            self._tools_enabled and self._shared_track_host
+        )
+        self._shared_track_transport.setEnabled(
+            self._tools_enabled and self._shared_track_transport_enabled
+        )
+        self._shared_track_stop.setEnabled(
+            self._tools_enabled and self._shared_track_stop_enabled
+        )
         self._studio_button.setEnabled(self._tools_enabled)
         self._video_action.setEnabled(self._tools_enabled)
 
@@ -437,21 +562,33 @@ class SessionStrip(QFrame):
 
         ``detail`` refines the chip text during validation (staged progress).
         """
+        previous_phase = self._recording_phase
         phase = str(phase or "idle").lower()
+        self._recording_phase = phase
         if phase == "preflight":
-            self._record_button.setText("Checking…")
+            self._set_record_button_label("Preparing…")
             self._record_button.setEnabled(False)
-            self._record_elapsed.setText("PREFLIGHT")
+            self._record_elapsed.setText("PREPARING")
             self._record_elapsed.setVisible(True)
             description = "Checking server and isolated host recording inputs."
         elif phase == "starting":
-            self._record_button.setText("Starting…")
+            self._set_record_button_label("Preparing…")
             self._record_button.setEnabled(False)
-            self._record_elapsed.setText("ARMING")
+            self._record_elapsed.setText("PREPARING")
             self._record_elapsed.setVisible(True)
             description = "Recording is being armed on the band server."
+        elif phase == "count_in":
+            self._recording_seen_active = True
+            self._set_record_button_label("■ Stop Recording")
+            self._record_button.setEnabled(True)
+            self._record_elapsed.setText("COUNT-IN")
+            self._record_elapsed.setVisible(True)
+            description = (
+                "Recording is active while the Shared Track count-in plays."
+            )
         elif phase == "recording":
-            self._record_button.setText("■ Stop Rec")
+            self._recording_seen_active = True
+            self._set_record_button_label("■ Stop Recording")
             self._record_button.setEnabled(True)
             if not self._record_clock.isActive():
                 self._record_elapsed_seconds = 0
@@ -460,74 +597,315 @@ class SessionStrip(QFrame):
             self._record_elapsed.setVisible(True)
             description = "Recording is active. Activate to stop and verify the take."
         elif phase == "stop_failed":
-            self._record_button.setText("■ Try Stop Again")
+            self._set_record_button_label("■ Finish Stop")
             self._record_button.setEnabled(True)
             if not self._record_clock.isActive():
                 self._record_clock.start()
+            self._record_elapsed.setText("CLEANUP PENDING")
             self._record_elapsed.setVisible(True)
             description = (
                 "The server may still be recording. Activate to try stopping again."
             )
         elif phase == "stopping":
-            self._record_button.setText("Stopping…")
+            self._set_record_button_label("Stopping…")
             self._record_button.setEnabled(False)
             self._record_clock.stop()
-            self._record_elapsed.setText("SAVING…")
+            self._record_elapsed.setText("STOPPING")
             self._record_elapsed.setVisible(True)
             description = "Recording stopped; WebJam is saving and checking the tracks."
         elif phase == "validating":
-            self._record_button.setText("Validating…")
+            self._set_record_button_label("Finalizing…")
             self._record_button.setEnabled(False)
             self._record_clock.stop()
-            self._record_elapsed.setText(detail or "CHECKING TRACKS…")
+            self._record_elapsed.setText(detail or "FINALIZING…")
             self._record_elapsed.setVisible(True)
             description = "WebJam is waiting for stable files and validating every track."
             if detail:
                 description = f"WebJam is validating the take. {detail.capitalize()}"
         elif phase == "needs_attention":
             self._record_clock.stop()
-            self._record_button.setText("● Record Again")
+            self._set_record_button_label("● Record Session")
             self._record_button.setEnabled(True)
             self._record_elapsed.setText("NEEDS ATTENTION")
             self._record_elapsed.setVisible(True)
             description = "The take was preserved but did not pass recording validation."
         elif phase == "complete":
             self._record_clock.stop()
-            self._record_button.setText("● Record")
+            self._set_record_button_label("● Record Session")
             self._record_button.setEnabled(True)
-            self._record_elapsed.setText("TAKE VERIFIED")
+            self._record_elapsed.setText("READY · TAKE SAVED")
             self._record_elapsed.setVisible(True)
             description = "The previous take passed validation. Activate to record another."
         elif phase == "error":
             self._record_clock.stop()
-            self._record_button.setText("Retry Record")
+            self._set_record_button_label("Retry Record")
             self._record_button.setEnabled(True)
             self._record_elapsed.setText("RECORD ERROR")
             self._record_elapsed.setVisible(True)
             description = "The recording request failed. Activate to try again."
         else:
             self._record_clock.stop()
-            self._record_button.setText("● Record")
+            self._set_record_button_label("● Record Session")
             self._record_button.setEnabled(True)
-            self._record_elapsed.setVisible(False)
+            if (
+                not self._recording_control_available
+                and self._recording_seen_active
+                and previous_phase not in {"complete", "needs_attention"}
+            ):
+                self._record_elapsed.setText("RECORDING STOPPED")
+                self._record_elapsed.setVisible(True)
+            else:
+                self._record_elapsed.setVisible(False)
             description = "Start band-server multitrack recording."
-        self._record_button.setAccessibleName(self._record_button.text())
+        self._record_button.setAccessibleName(self._record_button_full_text)
         self._record_button.setAccessibleDescription(description)
+        self._record_button.setVisible(self._recording_control_available)
+        if not self._recording_control_available:
+            # Guests still need the host's explicit terminal Ready/attention
+            # truth.  Only an ensuing idle transition decides whether a
+            # stopped chip should remain (salvaged active capture) or clear
+            # (a completed/attention take whose session has now ended).
+            if phase != "idle":
+                self._record_elapsed.setVisible(True)
 
     def set_recording_available(self, available: bool) -> None:
         """Only the host owns the synchronized take; joiners are recorded there."""
-        self._record_button.setVisible(bool(available))
-        self._record_elapsed.setVisible(
-            bool(available) and self._record_elapsed.isVisible()
-        )
+        self._recording_control_available = bool(available)
+        self._record_button.setVisible(self._recording_control_available)
+        if not self._recording_control_available and not self._recording_seen_active:
+            self._record_elapsed.setVisible(False)
+
+    def clear_recording_session_status(self) -> None:
+        """Retire terminal take copy after its owning audio session ends."""
+
+        self._record_clock.stop()
+        self._recording_phase = "idle"
+        self._recording_seen_active = False
+        self._record_elapsed.setVisible(False)
 
     def set_reference_track_available(self, host: bool) -> None:
-        """Keep the backing-track surface host-only without hiding its state."""
+        """Grant host controls while retaining bounded guest-visible state."""
 
-        self._reference_track_action.setVisible(bool(host))
-        self._reference_track_action.setEnabled(bool(host))
-        self._reference_track_button.setVisible(bool(host))
-        self._reference_track_button.setEnabled(bool(host) and self._tools_enabled)
+        self._shared_track_host = bool(host)
+        if self._shared_track_host and not self._shared_track_snapshot_seen:
+            self._shared_track_source_change_allowed = True
+        self._reference_track_action.setVisible(self._shared_track_host)
+        self._reference_track_action.setEnabled(self._shared_track_host)
+        self._reference_track_button.setVisible(self._shared_track_host)
+        self._reference_track_button.setEnabled(
+            self._shared_track_host and self._tools_enabled
+        )
+        self._shared_track_transport.setVisible(False)
+        self._shared_track_stop.setVisible(False)
+        self._shared_track_surface.setVisible(
+            self._shared_track_host
+            or self._shared_track_channel_present
+            or self._shared_track_projection_visible
+        )
+
+    def set_shared_track_snapshot(self, snapshot: object) -> None:
+        """Render the host-owned source/transport truth in the live mini deck."""
+
+        self._shared_track_snapshot_seen = True
+        state_value = getattr(getattr(snapshot, "state", None), "value", "")
+        state = str(state_value or getattr(snapshot, "state", "idle")).lower()
+        loaded = bool(str(getattr(snapshot, "source_name", "") or ""))
+        cleanup_pending = bool(getattr(snapshot, "cleanup_pending", False))
+        count_in_active = bool(getattr(snapshot, "count_in_active", False))
+        labels = {
+            "unavailable": "Route locked",
+            "idle": "Not loaded",
+            "loading": "Loading…",
+            "ready": "Ready",
+            "routing": "Starting…",
+            "playing": "Count-in" if count_in_active else "Playing",
+            "paused": "Paused",
+            "stopping": "Stopping…",
+            "failed": "Needs attention",
+            "closed": "Closed",
+        }
+        label = "Cleanup pending" if cleanup_pending else labels.get(state, "Checking…")
+        self._shared_track_state.setText(label)
+        self._shared_track_state.setAccessibleDescription(label)
+        self._shared_track_waveform.set_snapshot(snapshot)
+        self._shared_track_source_change_allowed = state in {
+            "idle",
+            "ready",
+            "failed",
+            "unavailable",
+        } and not cleanup_pending
+        self._reference_track_button.setText(
+            "Shared Track" if loaded else "＋ Shared Track"
+        )
+        self._shared_track_transport_action = (
+            "pause" if state == "playing" else "play"
+        )
+        self._shared_track_transport.setText(
+            "Ⅱ" if self._shared_track_transport_action == "pause" else "▶"
+        )
+        transport_name = (
+            "Pause Shared Track"
+            if self._shared_track_transport_action == "pause"
+            else "Resume Shared Track"
+            if state == "paused"
+            else "Play Shared Track"
+        )
+        self._shared_track_transport.setAccessibleName(transport_name)
+        self._shared_track_transport.setToolTip(transport_name)
+        can_play = bool(getattr(snapshot, "can_play", state == "ready"))
+        self._shared_track_transport_enabled = bool(
+            self._shared_track_host
+            and loaded
+            and not cleanup_pending
+            and (
+                state in {"playing", "paused"}
+                or (state == "ready" and can_play)
+            )
+        )
+        self._shared_track_stop_enabled = bool(
+            self._shared_track_host
+            and (
+                state in {"routing", "playing", "paused", "stopping"}
+                or cleanup_pending
+            )
+        )
+        self._shared_track_transport.setVisible(
+            self._shared_track_host and loaded
+        )
+        self._shared_track_transport.setEnabled(
+            self._tools_enabled and self._shared_track_transport_enabled
+        )
+        self._shared_track_stop.setVisible(
+            self._shared_track_host
+            and (loaded or self._shared_track_stop_enabled)
+        )
+        self._shared_track_stop.setEnabled(
+            self._tools_enabled and self._shared_track_stop_enabled
+        )
+        source_name = str(getattr(snapshot, "source_name", "") or "")
+        description = f"Shared Track: {label}."
+        if source_name:
+            description = f"Shared Track {source_name}: {label}."
+        self._shared_track_surface.setAccessibleDescription(description)
+        self._shared_track_surface.setToolTip(description)
+        self._shared_track_projection_visible = bool(
+            loaded or state not in {"idle", "unavailable", "closed"}
+        )
+        self._shared_track_surface.setVisible(
+            self._shared_track_host
+            or self._shared_track_channel_present
+            or self._shared_track_projection_visible
+        )
+
+    def clear_shared_track_projection(self) -> None:
+        """Retire host-published guest truth at the session ownership boundary."""
+
+        self._shared_track_snapshot_seen = False
+        self._shared_track_projection_visible = False
+        self._shared_track_source_change_allowed = self._shared_track_host
+        self._shared_track_transport_action = "play"
+        self._shared_track_transport_enabled = False
+        self._shared_track_stop_enabled = False
+        self._reference_track_button.setText("＋ Shared Track")
+        self._shared_track_transport.setText("▶")
+        self._shared_track_transport.setAccessibleName("Play Shared Track")
+        self._shared_track_transport.setToolTip("Play Shared Track")
+        self._shared_track_transport.setVisible(False)
+        self._shared_track_transport.setEnabled(False)
+        self._shared_track_stop.setVisible(False)
+        self._shared_track_stop.setEnabled(False)
+        self._shared_track_state.setText("Not loaded")
+        self._shared_track_state.setAccessibleDescription("Not loaded")
+        description = "No Shared Track is published for this session."
+        self._shared_track_surface.setAccessibleDescription(description)
+        self._shared_track_surface.setToolTip(description)
+        self._shared_track_waveform.clear(description)
+        self._shared_track_surface.setVisible(
+            self._shared_track_host or self._shared_track_channel_present
+        )
+        if self._shared_track_channel_present and not self._shared_track_host:
+            # Preserve only the weak authenticated-roster observation. The old
+            # host filename, transport, timing, and waveform are already gone.
+            self.set_shared_track_channel_present(True)
+
+    def set_shared_track_channel_present(self, present: bool) -> None:
+        """Show a bounded guest observation without claiming host transport truth."""
+
+        self._shared_track_channel_present = bool(present)
+        if not self._shared_track_host:
+            self._reference_track_button.setVisible(False)
+            self._shared_track_transport.setVisible(False)
+            self._shared_track_stop.setVisible(False)
+            self._shared_track_surface.setVisible(
+                self._shared_track_channel_present
+                or self._shared_track_projection_visible
+            )
+            if self._shared_track_channel_present and not self._shared_track_snapshot_seen:
+                detail = "Channel visible"
+                self._shared_track_state.setText(detail)
+                self._shared_track_state.setAccessibleDescription(detail)
+                description = (
+                    "A Shared Track channel is visible in Jamulus. This client "
+                    "does not claim that it is audible or currently playing."
+                )
+                self._shared_track_surface.setAccessibleDescription(description)
+                self._shared_track_surface.setToolTip(description)
+                self._shared_track_waveform.clear(description)
+
+    def _emit_shared_track_transport(self) -> None:
+        if not self._shared_track_host or not self._shared_track_transport_enabled:
+            return
+        if self._shared_track_transport_action == "pause":
+            self.shared_track_pause_requested.emit()
+        else:
+            self.shared_track_play_requested.emit()
+
+    @staticmethod
+    def _dropped_shared_track_path(mime_data) -> str:
+        if mime_data is None or not mime_data.hasUrls():
+            return ""
+        urls = list(mime_data.urls())
+        if len(urls) != 1 or not urls[0].isLocalFile():
+            return ""
+        path = urls[0].toLocalFile()
+        if not path:
+            return ""
+        from core.reference_track import reference_track_supported_extensions
+
+        lowered = path.casefold()
+        return (
+            path
+            if any(
+                lowered.endswith(extension)
+                for extension in reference_track_supported_extensions()
+            )
+            else ""
+        )
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
+        if (
+            self._shared_track_host
+            and self._shared_track_source_change_allowed
+            and self._dropped_shared_track_path(event.mimeData())
+        ):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # noqa: N802
+        self.dragEnterEvent(event)
+
+    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
+        path = self._dropped_shared_track_path(event.mimeData())
+        if (
+            not self._shared_track_host
+            or not self._shared_track_source_change_allowed
+            or not path
+        ):
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        self.shared_track_dropped.emit(path)
 
     def set_invite_available(self, available: bool) -> None:
         self._invite_button.setVisible(bool(available))
@@ -591,6 +969,12 @@ class SessionStrip(QFrame):
         self._update_record_elapsed()
 
     def _update_record_elapsed(self) -> None:
+        if self._recording_phase == "count_in":
+            self._record_elapsed.setText("COUNT-IN")
+            return
+        if self._recording_phase == "stop_failed":
+            self._record_elapsed.setText("CLEANUP PENDING")
+            return
         seconds = self._record_elapsed_seconds
         self._record_elapsed.setText(f"REC {seconds // 60:02d}:{seconds % 60:02d}")
 

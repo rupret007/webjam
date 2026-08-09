@@ -1,11 +1,10 @@
-# WebJam v0.22.5 source and physical test procedure
+# WebJam v0.23.0 source and physical test procedure
 
-> The source tree reports v0.22.5 as a pre-publication unsigned private test
-> candidate. GitHub **Latest** remains immutable v0.22.4 until the exact
-> eight-asset release and signed sequence-6 component catalog pass every
-> publication gate. Physical Pocket Stage installation/pairing, standalone
-> Reference Studio audio, external Webex behavior, and Reference Track routing
-> remain **NOT RUN**.
+> v0.23.0 is an unpublished Shared Track, Record Session, and Studio source
+> candidate. No v0.23.0 package, checksum manifest, component catalog, or
+> physical result exists. GitHub **Latest** remains immutable v0.22.5. Every
+> v0.23.0 physical, credentialed, signing, and platform-trust gate is
+> **NOT RUN**.
 
 ## Scope
 
@@ -13,7 +12,7 @@ This procedure distinguishes automated source/package evidence from physical
 musician evidence. A passing source suite does not certify two-Mac audibility,
 hardware changes, sleep/wake, interruption recovery, or external-editor import.
 
-The v0.22.5 dependency gate pins `cryptography` 50.0.0 for
+The dependency boundary inherited from v0.22.5 pins `cryptography` 50.0.0 for
 CVE-2026-69247, CVE-2026-69248, and CVE-2026-69249. Windows, Linux, and
 Apple-silicon macOS use exact upstream wheels. Intel macOS uses only the
 documented, hash-locked native x86_64 source-build exception with static
@@ -140,18 +139,23 @@ Review at minimum:
   fallback, Webex-app, and Reference Track source/route facts without paths,
   source names, URLs, meeting links, musician names, tokens, credentials, or
   raw exceptions.
-- First Record offers shared-only versus Local Originals.
+- First **Record Session** offers shared-only versus Local Originals.
+- Record Session exposes Idle, Preparing, Count-in, Recording, Stopping,
+  Finalizing, Ready, Needs attention, and cleanup pending without allowing a
+  second generation to collide with stopping/finalization.
 - Studio output appears only in Studio review.
 - Direct **Studio** and Cmd/Ctrl+3 reuse the existing live-take/offline-project
-  route; Studio is intentionally absent from More. Direct **Reference Track**
-  is host-only and routes to the same panel as More → Reference Track.
-- Reference Track source validation accepts real WAV/WAVE, AIFF, and FLAC;
+  route; Studio is intentionally absent from More. Direct **Shared Track** is
+  host-only and routes to the same transport as More → Shared Track.
+- Shared Track source validation accepts real WAV/WAVE, AIFF, and FLAC;
   advertises MP3 only when the packaged decoder proves support; and safely
   rejects renamed/malformed files, symlinks, unsupported channels, oversized
   input, a source that cannot decode its first bounded audio block, and stale
   async completion without exposing paths.
 - A host may load and inspect a valid source while route certification is
-  unavailable. Source/route status stays independent, Recheck Route starts no
+  unavailable. Picker and live-surface drop use the same validation. The
+  progressive waveform stays bounded and path-free; Replace/Remove are refused
+  until safely stopped. Source/route status stays independent, Recheck Route starts no
   playback, and BlackHole setup or **Recheck Route** cannot unlock downloaded
   v0.22.2. In current source, production Play becomes eligible only when an
   official 48-kHz BlackHole 16ch/64ch route passes machine-derived
@@ -163,6 +167,18 @@ Review at minimum:
   child, exact live primary/backing CoreAudio routes, retryable startup
   cleanup, and Close serialization. No machine test is recorded as physical
   audibility, independent-mix, direct-monitor, or stem evidence.
+- Authenticated guest peer state validates bounded path-free source/transport
+  facts, loop/timing ranges, and monotonic generations while exposing no
+  Shared Track transport authority or audibility field. Legacy channel-presence
+  fallback is never translated into playing, synchronized, isolated, healthy,
+  or audible claims.
+- When a Shared Track is ready, confirmed recording start triggers its
+  count-in/play path. One Stop Recording request coordinates both owners while
+  requiring independent recorder validation and route-cleanup truth.
+- Authoritative recorder mapping includes every eligible musician exactly once
+  and presents `LIVE_REFERENCE` as **Shared Track** with a stable source
+  identity across takes. Ambiguous roster/filename evidence, missing media,
+  explicit gaps, and unverified timing fail closed.
 - Studio Arrange edits, take-lane comps, undo/redo, save/reopen, and autosave
   failure/retry never change the take manifest or source WAV bytes.
 - Standalone Reference Studio create/import/save/reopen/Save As, local
@@ -212,8 +228,8 @@ Review at minimum:
    absence of `NSAppDataUsageDescription` from every Mac bundle, signatures,
    fresh extraction, and archive SHA-256.
 5. Launch the fresh app and inspect Host, Join, Jamulus Updates, direct
-   Webex/Track/Studio actions, Webex installed/missing/focus/open behavior,
-   Recording Setup, Reference Track load/route separation, Studio
+   Webex/Shared Track/Studio actions, Webex installed/missing/focus/open behavior,
+   Recording Setup, Shared Track load/route separation, Record Session states, Studio
    Arrange/comp/undo/autosave/export, standalone Reference Studio
    project/import/playback/mix/bounce, Support diagnostics, End/Leave, and
    invalid/recovery states at 720×560, 760×600, 1024×768, and 1440×900. On
@@ -221,6 +237,15 @@ Review at minimum:
    separately labelled aligned-originals/reference-mix boundary above.
 6. Preserve the current rollback package before installing any freshly verified
    candidate app.
+
+## v0.23.0 physical musician gate
+
+Do not reuse a v0.22.5 observation or a source-test result. Run the dedicated
+[v0.23.0 Shared Track and recording physical checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
+against exact candidate assets on at least two physical machines with named
+interfaces and headphones. Its multi-machine, macOS/BlackHole, Linux/JACK,
+recording, recovery, Studio, export, accessibility, and package-trust rows are
+all **NOT RUN** until the checklist records otherwise.
 
 ## v0.22.5 permissionless macOS Jamulus profile gate
 

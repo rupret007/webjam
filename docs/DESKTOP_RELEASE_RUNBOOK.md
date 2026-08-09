@@ -1,14 +1,18 @@
 # Desktop release runbook
 
-> **v0.22.4 published candidate:** the exact eight-asset release is immutable,
-> non-prerelease, and GitHub Latest. Windows remains unsigned; macOS remains
-> ad-hoc signed and unnotarized. The historical records below remain unchanged
-> release evidence.
+> **v0.22.5 published candidate:** the exact eight-asset release is immutable,
+> non-prerelease, and GitHub **Latest**. Windows remains unsigned; macOS remains
+> ad-hoc signed and unnotarized. Physical and credentialed gates remain
+> **NOT RUN** unless separately recorded against exact asset checksums.
 
-> **v0.22.5 pre-publication candidate:** source/package identity is being
-> prepared separately. It is not a release until the new v3 component catalog,
-> exact four-platform tag build, draft inventory, checksums, and protected
-> promotion all pass. Do not describe it as Latest before that event.
+> **Historical boundary:** v0.22.5 and every earlier tag, asset, checksum, and
+> release record remain immutable and must never be replaced by the current
+> source line.
+
+> **v0.23.0 pre-publication boundary:** current source is a new Shared Track,
+> Record Session, and Studio candidate. No v0.23.0 tag, draft, asset, checksum,
+> component authorization, or promotion exists. GitHub **Latest** remains
+> v0.22.5, and every v0.23.0 physical/credentialed gate is **NOT RUN**.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version
@@ -18,6 +22,14 @@ candidate. The environment-bound `windows-release-trust` and
 signed platform release, once their GitHub Environments have real protection
 rules and credentials. Do not reuse a package from a different source commit or
 replace assets on a published tag.
+
+For v0.23.0, do not reuse the v0.22.5 v3 catalog: it authorizes exact WebJam
+0.22.5 only. Prepare a new immutable versioned component channel and monotonic
+signed catalog under the separate component runbook, then require post-evidence
+source CI, four-platform frozen-package verification, exact tag CI, draft
+inventory, checksums, and protected promotion on one source identity. Run the
+[v0.23 physical checklist](../V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
+against exact assets; automation cannot convert its **NOT RUN** rows to PASS.
 
 ## Supported targets
 
@@ -653,7 +665,7 @@ notarization, and managed-device policy remain **NOT RUN** until dated evidence
 names an exact v0.22.3 asset, build ID, SHA-256, environment, and evidence
 location.
 
-### v0.22.4 DAW and reliability candidate — current published record
+### v0.22.4 DAW and reliability candidate — historical published record
 
 v0.22.4 is a new immutable patch identity after v0.22.3. Never move, replace,
 rebuild, delete, or retag either release. It carries the Reference Studio
@@ -681,18 +693,19 @@ Pocket Stage, Gatekeeper, SmartScreen, signing, and notarization gates remain
 Publication completed on 2026-08-05 UTC. Tag CI run `30979207513`, source
 master CI run `30978055097`, and protected promotion run `30980588968` passed
 for commit `9baed5329984ee48591f75a86cb42cebc1e3a62f`. Release ID `365318104`
-is immutable and GitHub **Latest** at
+was GitHub **Latest** when published and remains immutable at
 https://github.com/rupret007/webjam/releases/tag/v0.22.4. Its checksum
 manifest is `WebJam-v0.22.4-SHA256SUMS.txt`; the separate component release is
 ID `365297898` at the immutable `jamulus-components-v2` tag.
 
-### v0.22.5 reference-demo reliability candidate — pre-publication contract
+### v0.22.5 reference-demo reliability candidate — published record
 
-v0.22.5 is a new patch identity. It carries the real-world MP3 and Reference
-Track acceptance work plus bounded first-demo safety/presentation fixes. It
-must not move or replace v0.22.4 or either sealed component channel.
+v0.22.5 is an immutable published patch identity. It carries the real-world
+MP3 and Reference Track acceptance work plus bounded first-demo
+safety/presentation fixes. It did not move or replace v0.22.4 or either sealed
+component channel.
 
-The draft and final release inventory must be exactly:
+The exact published release inventory is:
 
 - `WebJam-v0.22.5-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`
 - `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip`
@@ -703,11 +716,12 @@ The draft and final release inventory must be exactly:
 - `WebJam-linux-x64.zip`
 - `WebJam-v0.22.5-SHA256SUMS.txt`
 
-Before the desktop tag is approved, complete the new fixed
+The original promotion contract required completing the new fixed
 `jamulus-components-v3` boundary in
 [`JAMULUS_COMPONENT_RELEASE_RUNBOOK.md`](JAMULUS_COMPONENT_RELEASE_RUNBOOK.md).
 Require signed sequence 6 for exact WebJam 0.22.5, its independently verified
-one-asset non-Latest prerelease, and the final pinned channel anchor. Then:
+one-asset non-Latest prerelease, and the final pinned channel anchor. The
+completed gated sequence is retained below as historical evidence:
 
 1. Record the independently verified v3 release IDs, catalog hashes, signer,
    expiry, and asset evidence in the required follow-up commit. After separate
@@ -750,3 +764,13 @@ Windows remains unsigned. macOS remains ad-hoc signed and unnotarized. Physical
 two-musician audio, real Reference Track audibility/isolation, Webex behavior,
 Pocket Stage, Gatekeeper, SmartScreen, signing, and notarization remain
 **NOT RUN** until dated evidence names an exact v0.22.5 asset and SHA-256.
+
+Publication completed on 2026-08-07 UTC for commit
+`d7d0039759e8334407fe2e6ed9e42edf0d7ef639`. Source CI run `31206070715`,
+component-package verification run `31208008965`, tag CI run `31208271585`,
+and protected promotion run `31210531934` all passed. Immutable release ID
+`366957478` is GitHub **Latest** at
+https://github.com/rupret007/webjam/releases/tag/v0.22.5. Its exact eight assets
+include checksum manifest `WebJam-v0.22.5-SHA256SUMS.txt`; the separate
+immutable v3 component release is ID `366930115` at tag
+`jamulus-components-v3`.

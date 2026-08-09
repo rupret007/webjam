@@ -60,6 +60,7 @@ def _receipt(
     participant_id: str | None = None,
     source_kind: str = "musician",
     channels: int = 1,
+    source_fingerprint_sha256: str = "",
 ) -> RecorderClientReceipt:
     observation = recorder_client_observations({
         "connections": 1,
@@ -77,6 +78,7 @@ def _receipt(
         recorder_key_sha256=observation.recorder_key_sha256,
         channels=channels,
         source_kind=source_kind,
+        source_fingerprint_sha256=source_fingerprint_sha256,
     )
 
 
@@ -1277,6 +1279,7 @@ class TestTakeValidation(unittest.TestCase):
         Studio comps and mixes it like one.
         """
 
+        source_fingerprint = "ab" * 32
         with tempfile.TemporaryDirectory() as d:
             take = Path(d) / "take"
             take.mkdir()
@@ -1293,6 +1296,7 @@ class TestTakeValidation(unittest.TestCase):
                 take,
                 expected_tracks=2,
                 required_local_stems=0,
+                required_reference_track=True,
                 session_title="Sunday Rehearsal",
                 recording_receipts=(
                     _receipt("Jeff", 50000),
@@ -1301,6 +1305,7 @@ class TestTakeValidation(unittest.TestCase):
                         50001,
                         channel_id=1,
                         source_kind="reference_track",
+                        source_fingerprint_sha256=source_fingerprint,
                     ),
                 ),
             )
@@ -1310,8 +1315,70 @@ class TestTakeValidation(unittest.TestCase):
 
         self.assertEqual(by_name["Jeff"]["source"], "jamulus_server")
         self.assertEqual(by_name["WebJam Track"]["source"], "live_reference")
+        self.assertEqual(by_name["WebJam Track"]["quality"], "reference")
+        self.assertEqual(
+            by_name["WebJam Track"]["alignment"][
+                "reference_fingerprint_sha256"
+            ],
+            source_fingerprint,
+        )
         self.assertIsNotNone(result.take)
         self.assertTrue(result.ok, result.errors)
+
+    def test_required_shared_track_stem_fails_closed_without_owned_receipt(self):
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            filename = "Jeff-127_0_0_1_50000-0-1.wav"
+            _write_wav(take / filename, seconds=0.1)
+            _write_lof(take / "take.lof", (filename, 0.0))
+
+            result = write_take_manifest(
+                take,
+                expected_tracks=1,
+                required_local_stems=0,
+                required_reference_track=True,
+                recording_receipts=(_receipt("Jeff", 50000),),
+            )
+            payload = json.loads((take / "webjam-take.json").read_text())
+
+        self.assertFalse(result.ok)
+        self.assertEqual(payload["status"], "needs_attention")
+        self.assertTrue(
+            any("exact band-server stem" in error for error in payload["errors"])
+        )
+        self.assertEqual(payload["tracks"][0]["source"], "jamulus_server")
+
+    def test_required_shared_track_is_enforced_on_immutable_complete_manifest(self):
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            filename = "Jeff-127_0_0_1_50000-0-1.wav"
+            _write_wav(take / filename, seconds=0.1)
+            _write_lof(take / "take.lof", (filename, 0.0))
+            first = write_take_manifest(
+                take,
+                expected_tracks=1,
+                required_local_stems=0,
+                recording_receipts=(_receipt("Jeff", 50000),),
+            )
+            manifest_path = take / "webjam-take.json"
+            published = manifest_path.read_bytes()
+
+            revalidated = write_take_manifest(
+                take,
+                expected_tracks=1,
+                required_local_stems=0,
+                required_reference_track=True,
+                recording_receipts=(_receipt("Jeff", 50000),),
+            )
+
+            self.assertTrue(first.ok, first.errors)
+            self.assertFalse(revalidated.ok)
+            self.assertTrue(
+                any("exact band-server stem" in error for error in revalidated.errors)
+            )
+            self.assertEqual(manifest_path.read_bytes(), published)
 
     def test_a_musician_named_like_the_reference_is_still_a_musician(self):
         """Display text alone never grants Reference Track ownership."""
@@ -1858,6 +1925,16 @@ class TestTakeValidation(unittest.TestCase):
             new.mkdir()
             _write_wav(new / "track.wav", seconds=0.1)
             self.assertEqual(find_changed_take(root, before), new)
+
+    def test_snapshot_rejects_multiple_changed_take_directories(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            before = snapshot_take_directories(root)
+            for name in ("recorder-take", "unrelated-take"):
+                candidate = root / name
+                candidate.mkdir()
+                _write_wav(candidate / "track.wav", seconds=0.1)
+            self.assertIsNone(find_changed_take(root, before))
 
     def test_snapshot_ignores_private_work_directories(self):
         with tempfile.TemporaryDirectory() as d:

@@ -1,8 +1,8 @@
 # WebJam project brief
 
-**Review date:** 2026-08-05
-**Status:** v0.22.5 is the pre-publication candidate on `master`; v0.22.4
-remains the immutable GitHub Latest private test candidate until promotion.
+**Review date:** 2026-08-09
+**Status:** v0.23.0 is an unpublished Shared Track and native multitrack source
+candidate; v0.22.5 remains the immutable GitHub Latest private test candidate.
 
 ## Executive summary
 
@@ -31,9 +31,9 @@ and truthful failure states.
 | --- | --- | --- |
 | Host / Join | Start or enter a private rehearsal | WebJam session conductor + Jamulus |
 | Conversation | Optional meeting handoff and native Webex focus guidance | Webex |
-| Recording | Capture and finalize a session with durable identity | WebJam recorder + Jamulus evidence |
+| Record Session | Capture and finalize a session with durable identity | WebJam recorder + Jamulus evidence |
 | Reference Studio | Local writing, arrangement, take lanes, overdub, and bounce | WebJam Studio backend |
-| Reference Track | Host-controlled backing audio routed as a separate Jamulus participant | WebJam lifecycle + Jamulus |
+| Shared Track | Host-controlled backing audio routed as a separate Jamulus participant | WebJam lifecycle + Jamulus |
 | Pocket Stage | Owner's iPhone as a focused second screen and remote | Desktop remains authoritative |
 
 ## Architecture in one view
@@ -42,13 +42,13 @@ and truthful failure states.
 Musician
    │
    ▼
-WebJam desktop conductor ── session / recording / Studio / privacy-safe guidance
+WebJam desktop conductor ── session / Shared Track / recording / Studio / guidance
    │                 │
    │                 ├── Jamulus client/server ── live music, devices, mix, jitter
    │                 ├── Webex app/browser ───── conversation and video
    │                 └── Pocket Stage iPhone ─── owner-device control preview
    │
-   └── Reference Studio / Reference Track remain separate, bounded workflows
+   └── Reference Studio stays separate from live Shared Track audio ownership
 ```
 
 The architecture is intentionally process- and evidence-oriented: external
@@ -58,7 +58,7 @@ the full contract.
 
 ## Verified status
 
-- The published v0.22.4 release contains Windows x64, Ubuntu 22.04 x64, Intel
+- The published v0.22.5 release contains Windows x64, Ubuntu 22.04 x64, Intel
   Mac, and Apple-silicon Mac packages plus an exact checksum manifest.
 - `cryptography` 50.0.0 remediates the three audited runtime CVEs; the Intel
   Mac source-build exception is explicit, hash-locked, and separately verified.
@@ -68,19 +68,25 @@ the full contract.
 - Physical two-Mac audibility, hardware recovery, Webex joining, Pocket Stage
   owner-device pairing, signing/notarization, and long-session evidence remain
   **NOT RUN**. Automated green does not mean those gates passed.
+- v0.23.0 has no tag, package inventory, checksum manifest, component catalog,
+  promotion, or physical result. The sealed v0.22.5 release is not evidence for
+  the changed source candidate.
 
-## Current development line
+## Current product line
 
-The current `master` line is the unreleased v0.22.5 candidate focused on
-first-demo reliability: real-world MP3 acceptance with exact, path-free
-rejection reasons, drag-and-drop Reference Track loading, audible-dropout
-surfacing, a 3.0 s route-proof freshness budget, a default-safe built-in
-mic/speaker warning before audio starts, and the Studio return button
-labelled "Back to Live". DAW-style multi-region editing and loop Overdub
-shipped in the immutable v0.22.4 test download and are unchanged here.
-Future changes are candidates for a new versioned release after product
-review and physical validation, not silent patches to the published
-artifact.
+v0.23.0 turns the established Reference Track route engine into one canonical
+musician-facing **Shared Track** experience on the live surface: add/drop,
+path-free identity, progressive waveform, count-in, transport, loop, route and
+dropout truth, stopped-only replacement/removal, and bounded guest observation
+without guest authority. It promotes **Record Session** through explicit
+preparing/count-in/recording/stopping/finalizing/ready states, retains exact
+musician correlation and optional Local Originals, and carries the distinct
+Shared Track source into the existing non-destructive Studio.
+
+This is a new versioned source identity, not a patch to v0.22.5. Familiar DAW
+interactions are used for clarity and musical flow without copying Apple
+artwork, exact layouts, assets, or trade dress. Physical audibility, isolation,
+alignment, recovery, output, and packaged UX remain **NOT RUN**.
 
 ## Why this may matter to Cisco
 
@@ -95,23 +101,26 @@ claimed as implemented in this repository.
 ## Five-minute evaluation
 
 1. Read the [root README](../README.md) and [musician guide](../USER_GUIDE.md).
-2. Download the exact [v0.22.4 Latest release](https://github.com/rupret007/webjam/releases/tag/v0.22.4)
-   and verify its checksum manifest.
-3. Run one Host/Join rehearsal with wired headphones and Jamulus.
-4. Open Webex Controls without joining, then test the explicit Join/Open action
+2. Use the exact [v0.22.5 Latest release](https://github.com/rupret007/webjam/releases/tag/v0.22.5)
+   only to evaluate the published baseline; verify its checksum manifest.
+3. Build v0.23.0 from one recorded source commit for candidate evaluation. Do
+   not represent that build as a published release.
+4. Run one Host/Join rehearsal with wired headphones and Jamulus, then exercise
+   Shared Track, Record Session, finalization, and Studio.
+5. Open Webex Controls without joining, then test the explicit Join/Open action
    only with an approved sandbox account.
-5. Open Reference Studio and inspect the non-destructive arrangement workflow.
-6. Record every physical result against the exact artifact name, build ID, and
+6. Open Reference Studio and inspect the separate non-destructive project workflow.
+7. Record every physical result against the exact artifact name, build ID, and
    SHA-256; leave anything not physically observed as **NOT RUN**.
 
 ## Constraints and next decisions
 
 - No Apple Developer account is currently available, so macOS remains ad-hoc
   signed and unnotarized.
-- The v2 Jamulus component catalog is sealed for v0.22.4. The v0.22.5
-  candidate introduces a separate v3 boundary and cannot promote until its
-  exact sequence-6 catalog is published and independently verified. The
-  v1/v0.22.3 and v2/v0.22.4 channels remain historical.
-- A v0.23 release cut should first decide the DAW feature scope, complete the
-  physical Studio/Reference Track gates, choose the Webex integration boundary,
-  and establish protected-branch and release-environment ownership.
+- The v3 Jamulus component catalog is sealed at exact sequence 6 for v0.22.5.
+  The v1/v0.22.3 and v2/v0.22.4 channels remain immutable historical evidence.
+- A v0.23.0 release cut requires a new exact-target component authorization,
+  complete desktop asset/checksum evidence, the
+  [v0.23 physical checklist](../V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md),
+  and protected-branch/release-environment ownership. Nothing may move or
+  replace the sealed v0.22.5 catalog, tag, or assets.

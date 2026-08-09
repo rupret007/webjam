@@ -5,9 +5,9 @@ a backing track. It can open without a WebJam session, Webex, or Jamulus. Its
 local playback and recording choices do not change the device, buffer, mix, or
 connection owned by Jamulus.
 
-> **Pre-publication candidate guide:** this document targets the v0.22.5
-> source line. GitHub Latest remains the published, immutable v0.22.4 private
-> test candidate — those packages are what a musician can download today.
+> **Published candidate guide:** this document targets the immutable v0.22.5
+> GitHub **Latest** private test candidate. Verify the downloaded checksum
+> before use.
 
 Windows packages are unsigned. Mac packages are ad-hoc signed and unnotarized.
 Automated checks do not prove that a particular interface, driver, speaker, or
@@ -152,7 +152,7 @@ clipped-sample count, and deterministic RMS dBFS. RMS is not an integrated-LUFS
 mastering measurement. Treat clipping as a reason to lower track, effect, send,
 or master gain and bounce again.
 
-MP3 bounce is intentionally absent from the v0.22.4 candidate. It appears only
+MP3 bounce is intentionally absent from the v0.22.5 candidate. It appears only
 if a separate encoder adapter has passed the product's identity,
 output-decoding,
 and license-policy self-tests. Use WAV or FLAC for a lossless handoff.
@@ -170,7 +170,20 @@ Do not route Reference Studio into Jamulus by assumption. A future explicit
 feature would need to prove ownership, feedback isolation, return-fader state,
 and teardown. The standalone workflow makes no such claim.
 
-## v0.22.4 published candidate record
+## v0.22.5 published candidate record
+
+The immutable v0.22.5 GitHub **Latest** release adds first-demo reliability to
+the v0.22.4 Studio foundation, including real-world MP3 acceptance, exact
+path-free load errors, drag-and-drop Reference Track loading, and audible
+dropout surfacing. Verify the exact downloaded asset against
+`WebJam-v0.22.5-SHA256SUMS.txt`; the complete eight-asset inventory and
+publication evidence are in the [desktop release runbook](DESKTOP_RELEASE_RUNBOOK.md).
+Windows remains unsigned, both Mac architectures remain ad-hoc signed and
+unnotarized, and physical Reference Studio input/output, latency, recovery,
+external-editor, hardware, SmartScreen, Gatekeeper, signing, and notarization
+gates remain **NOT RUN**.
+
+## Historical v0.22.4 published candidate record
 
 The v0.22.4 source, checksums, signed sequence-5 Jamulus catalog, four-platform
 frozen-package gates, and verified promotion passed before publication. Its
@@ -195,7 +208,7 @@ SmartScreen, Gatekeeper, signing, and notarization gates remain **NOT RUN**.
 The
 [v0.22.2 GitHub release](https://github.com/rupret007/webjam/releases/tag/v0.22.2)
 was published as a non-prerelease marked **Latest** at that time and is now
-superseded by immutable v0.22.4. Its verified inventory is exactly these seven
+superseded by immutable v0.22.5. Its verified inventory is exactly these seven
 packages plus the checksum manifest:
 
 - `WebJam-v0.22.2-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`

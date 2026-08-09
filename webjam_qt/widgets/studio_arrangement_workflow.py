@@ -38,7 +38,12 @@ from core.studio_source_catalog import (
 )
 from core.take_library import TakeInfo
 from core.take_player import PlaybackError
-from core.take_project import TakeProject, TakeProjectError, load_take_project
+from core.take_project import (
+    PROJECT_SCHEMA_VERSION,
+    TakeProject,
+    TakeProjectError,
+    load_take_project,
+)
 from webjam_qt.widgets.studio_arrange import _format_frame_time
 from webjam_qt.widgets.studio_editing import (
     StudioCrossfadeTarget,
@@ -48,10 +53,20 @@ from webjam_qt.widgets.studio_messages import arrange_edit_failure_message
 from webjam_qt.widgets.studio_review import (
     _fmt_db,
     _fmt_time,
+    _is_shared_track_source,
+    _is_synchronized_source,
+    _safe_source_description,
     _timeline_gaps_for_track,
 )
 
 LOGGER = logging.getLogger("webjam.qt.recording_studio")
+
+_STUDIO_CHOICES_SAVE_ERROR = (
+    "Studio couldn't save those review choices. The recorded take is safe."
+)
+_STUDIO_CHOICES_SAVED = (
+    "Studio choices saved. The recorded take remains unchanged."
+)
 
 
 def _selectable_track_export_track_ids(take: TakeInfo) -> tuple[str, ...]:
@@ -69,6 +84,14 @@ def _selectable_track_export_track_ids(take: TakeInfo) -> tuple[str, ...]:
     if len(set(identifiers)) != len(identifiers):
         return ()
     return identifiers
+
+
+def _take_requires_studio_document(take: TakeInfo) -> bool:
+    """Return whether this take is an authoritative schema-v2 project."""
+
+    return (
+        getattr(take, "manifest_schema_version", 0) == PROJECT_SCHEMA_VERSION
+    )
 
 
 class StudioArrangementWorkflowMixin:
@@ -863,7 +886,9 @@ class StudioArrangementWorkflowMixin:
         method = str(
             getattr(source_info, "alignment_method", "unverified") or "unverified"
         )
-        if source == "jamulus_server":
+        if _is_shared_track_source(source):
+            alignment = "Shared Track · band server timeline reference"
+        elif _is_synchronized_source(source):
             alignment = "Band server timeline reference"
         elif confidence > 0.0 and method != "unverified":
             alignment = f"Evidence {confidence:.2f} · {method}"
@@ -879,9 +904,7 @@ class StudioArrangementWorkflowMixin:
         )
         self._set_inspector_values(
             status=status,
-            source=(
-                "Band server track" if source == "jamulus_server" else "Local original"
-            ),
+            source=_safe_source_description(source),
             timeline=timeline,
             alignment=alignment,
             gaps=(
@@ -907,6 +930,8 @@ class StudioArrangementWorkflowMixin:
         self._studio_audition_lane_id = None
         if hasattr(self, "_studio_arrange"):
             self._studio_arrange.set_document(None)
+        if not _take_requires_studio_document(take):
+            return
         if not _selectable_track_export_track_ids(take):
             return
         controller_loaded = False
@@ -1066,9 +1091,7 @@ class StudioArrangementWorkflowMixin:
                 "Could not save Studio state: %s",
                 self._studio_controller.last_error,
             )
-            self._studio_state_error = (
-                "Studio couldn't save those review choices. The recorded take is safe."
-            )
+            self._studio_state_error = _STUDIO_CHOICES_SAVE_ERROR
             self._studio_persistence_failed = True
             self._hint.setText(self._studio_state_error)
             notify = getattr(self, "_emit_guidance_changed", None)
@@ -1077,6 +1100,14 @@ class StudioArrangementWorkflowMixin:
             # Keep the edit dirty. A later edit, hide, export, or shutdown
             # retries instead of silently forgetting a low-disk/fsync failure.
             return False
+        persistence_error_was_visible = (
+            self._studio_persistence_failed
+            and self._studio_state_error == _STUDIO_CHOICES_SAVE_ERROR
+        )
         self._studio_persistence_failed = False
+        if persistence_error_was_visible:
+            self._studio_state_error = ""
         self._sync_studio_controller_snapshot()
+        if persistence_error_was_visible and not self._studio_state_error:
+            self._hint.setText(_STUDIO_CHOICES_SAVED)
         return True

@@ -1,4 +1,4 @@
-"""Host-facing controls for the Jamulus-routed Reference Track."""
+"""Host-facing controls for the Jamulus-routed Shared Track."""
 
 from __future__ import annotations
 
@@ -38,6 +38,7 @@ from core.reference_track import (
     reference_track_supported_extensions,
 )
 from webjam_qt.theme.tokens import Space
+from webjam_qt.widgets.shared_track_waveform import SharedTrackWaveform
 
 _BLACKHOLE_SETUP_URL = "https://existential.audio/blackhole/"
 
@@ -48,7 +49,7 @@ _UNDERRUN_ALERT_FRAMES = 4_800
 
 
 class ReferenceTrackPrimaryGate(StrEnum):
-    """Finite application-owned readiness truth for Reference Track playback."""
+    """Finite application-owned readiness truth for Shared Track playback."""
 
     READY = "ready"
     NOT_CONNECTED = "not_connected"
@@ -68,9 +69,10 @@ def _clock_text(seconds: float) -> str:
 
 
 class ReferenceTrackDialog(QDialog):
-    """Render immutable Reference Track state and emit semantic user intent."""
+    """Render immutable Shared Track state and emit semantic user intent."""
 
     load_requested = Signal(str)
+    remove_requested = Signal()
     play_requested = Signal()
     pause_requested = Signal()
     restart_requested = Signal()
@@ -95,7 +97,7 @@ class ReferenceTrackDialog(QDialog):
         self._rendered_state = "unavailable"
         self._route_checking = False
         self._source_load_queued = False
-        # The core Reference Track snapshot deliberately does not own the
+        # The core Shared Track snapshot deliberately does not own the
         # primary Jamulus/session lifecycle. Fail closed until the application
         # controller proves one of the finite gate states below.
         self._primary_gate = ReferenceTrackPrimaryGate.NOT_CONNECTED
@@ -111,7 +113,7 @@ class ReferenceTrackDialog(QDialog):
         self._pending_trim_deadline = 0.0
         self._pending_count_in_deadline = 0.0
         self.setObjectName("ReferenceTrackDialog")
-        self.setWindowTitle("Reference Track")
+        self.setWindowTitle("Shared Track")
         self.setModal(False)
         # Accept one dragged local audio file as an alternative to the file
         # picker. The dropped path goes through the same load_requested path,
@@ -137,9 +139,9 @@ class ReferenceTrackDialog(QDialog):
         self._scroll_area.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
-        self._scroll_area.setAccessibleName("Reference Track controls")
+        self._scroll_area.setAccessibleName("Shared Track controls")
         self._scroll_area.setAccessibleDescription(
-            "Scroll vertically to reach every Reference Track control and its "
+            "Scroll vertically to reach every Shared Track control and its "
             "routing safety guidance."
         )
         outer.addWidget(self._scroll_area)
@@ -152,14 +154,14 @@ class ReferenceTrackDialog(QDialog):
         root.setContentsMargins(Space.XL, Space.XL, Space.XL, Space.LG)
         root.setSpacing(Space.MD)
 
-        title = QLabel("Reference Track")
+        title = QLabel("Shared Track")
         title.setObjectName("SimpleSettingsTitle")
         root.addWidget(title)
 
         intro = QLabel(
-            "Play a song into the jam. Everyone hears it and sets its level "
-            "in their own mix. Load a song below, or drop an audio file "
-            "anywhere on this window."
+            "Play a song through the jam as its own band channel. Each "
+            "musician can set its level in their own mix. Load a song below, "
+            "or drop an audio file anywhere on this window."
         )
         intro.setObjectName("SimpleSettingsSubtitle")
         intro.setWordWrap(True)
@@ -175,7 +177,7 @@ class ReferenceTrackDialog(QDialog):
             QSizePolicy.Policy.Preferred,
         )
         self._status.setTextFormat(Qt.TextFormat.PlainText)
-        self._status.setAccessibleName("Reference Track status")
+        self._status.setAccessibleName("Shared Track status")
         self._status.setAccessibleDescription(self._status.text())
         root.addWidget(self._status)
 
@@ -188,7 +190,7 @@ class ReferenceTrackDialog(QDialog):
             QSizePolicy.Policy.Preferred,
         )
         self._route.setTextFormat(Qt.TextFormat.PlainText)
-        self._route.setAccessibleName("Reference Track routing status")
+        self._route.setAccessibleName("Shared Track routing status")
         self._route.setAccessibleDescription("")
         root.addWidget(self._route)
 
@@ -204,22 +206,22 @@ class ReferenceTrackDialog(QDialog):
             QSizePolicy.Policy.Preferred,
         )
         self._route_guidance.setTextFormat(Qt.TextFormat.PlainText)
-        self._route_guidance.setAccessibleName("Reference Track route guidance")
+        self._route_guidance.setAccessibleName("Shared Track route guidance")
         route_actions.addWidget(self._route_guidance, 1)
         self._recheck_route = QPushButton("Recheck Route")
         self._recheck_route.setObjectName("GhostButton")
         self._recheck_route.setAccessibleName(
-            "Recheck the Reference Track playback route"
+            "Recheck the Shared Track playback route"
         )
         self._recheck_route.setToolTip(
             "Inspect the isolated audio route again. This never starts playback."
         )
         self._recheck_route.clicked.connect(self.recheck_route_requested.emit)
         route_actions.addWidget(self._recheck_route)
-        self._blackhole_setup = QPushButton("Set Up Reference Track…")
+        self._blackhole_setup = QPushButton("Set Up Shared Track…")
         self._blackhole_setup.setObjectName("GhostButton")
         self._blackhole_setup.setAccessibleName(
-            "Open the official setup page for Reference Track audio routing"
+            "Open the official setup page for Shared Track audio routing"
         )
         self._blackhole_setup.setToolTip(
             "Open the official setup page. WebJam never downloads or installs "
@@ -235,7 +237,7 @@ class ReferenceTrackDialog(QDialog):
         self._source = QLabel("No song loaded")
         self._source.setObjectName("SimpleSettingsFieldLabel")
         self._source.setTextFormat(Qt.TextFormat.PlainText)
-        self._source.setAccessibleName("Loaded Reference Track")
+        self._source.setAccessibleName("Loaded Shared Track")
         self._source.setWordWrap(True)
         self._source.setMinimumWidth(0)
         self._source.setMaximumHeight(48)
@@ -244,11 +246,20 @@ class ReferenceTrackDialog(QDialog):
             QSizePolicy.Policy.Preferred,
         )
         source_row.addWidget(self._source, 1)
-        self._load = QPushButton("Load Song…")
+        self._load = QPushButton("Add Track…")
         self._load.setObjectName("GhostButton")
-        self._load.setAccessibleName("Load a Reference Track audio file")
+        self._load.setAccessibleName("Add a Shared Track audio file")
         self._load.clicked.connect(self._choose_source)
         source_row.addWidget(self._load)
+        self._remove = QPushButton("Remove")
+        self._remove.setObjectName("GhostButton")
+        self._remove.setAccessibleName("Remove the loaded Shared Track")
+        self._remove.setToolTip(
+            "Remove this track from WebJam without changing the source file."
+        )
+        self._remove.clicked.connect(self.remove_requested.emit)
+        self._remove.setVisible(False)
+        source_row.addWidget(self._remove)
         root.addLayout(source_row)
 
         self._source_details = QLabel("No source details")
@@ -260,16 +271,19 @@ class ReferenceTrackDialog(QDialog):
             QSizePolicy.Policy.Ignored,
             QSizePolicy.Policy.Preferred,
         )
-        self._source_details.setAccessibleName("Reference Track source details")
+        self._source_details.setAccessibleName("Shared Track source details")
         root.addWidget(self._source_details)
+
+        self._waveform = SharedTrackWaveform(self)
+        root.addWidget(self._waveform)
 
         time_row = QHBoxLayout()
         self._time = QLabel("0:00 / 0:00")
-        self._time.setAccessibleName("Reference Track playback position")
+        self._time.setAccessibleName("Shared Track playback position")
         time_row.addWidget(self._time)
         self._seek = QSlider(Qt.Orientation.Horizontal)
         self._seek.setRange(0, self._SEEK_STEPS)
-        self._seek.setAccessibleName("Paused Reference Track position")
+        self._seek.setAccessibleName("Paused Shared Track position")
         self._seek.setToolTip("Seeking is available only while paused.")
         self._seek.sliderReleased.connect(self._emit_seek)
         self._seek.valueChanged.connect(self._emit_keyboard_seek)
@@ -279,16 +293,19 @@ class ReferenceTrackDialog(QDialog):
         transport = QHBoxLayout()
         self._play = QPushButton("Play")
         self._play.setObjectName("PrimaryButton")
-        self._play.setAccessibleName("Play the reference track to the band")
+        self._play.setAccessibleName("Play the Shared Track to the band")
         self._play.clicked.connect(self._emit_play)
         self._pause = QPushButton("Pause")
         self._pause.setObjectName("GhostButton")
+        self._pause.setAccessibleName("Pause Shared Track playback")
         self._pause.clicked.connect(self._emit_pause)
         self._restart = QPushButton("Restart")
         self._restart.setObjectName("GhostButton")
+        self._restart.setAccessibleName("Restart Shared Track playback")
         self._restart.clicked.connect(self._emit_restart)
         self._stop = QPushButton("Stop")
         self._stop.setProperty("destructive", "true")
+        self._stop.setAccessibleName("Stop Shared Track playback")
         self._stop.clicked.connect(self._emit_stop)
         transport.addWidget(self._play)
         transport.addWidget(self._pause)
@@ -303,19 +320,19 @@ class ReferenceTrackDialog(QDialog):
 
         loop_row = QHBoxLayout()
         self._loop = QCheckBox("Loop")
-        self._loop.setAccessibleName("Loop a Reference Track range")
+        self._loop.setAccessibleName("Loop a Shared Track range")
         self._loop.toggled.connect(self._emit_loop)
         self._loop_start = QDoubleSpinBox()
         self._loop_start.setRange(0.0, 0.0)
         self._loop_start.setDecimals(2)
         self._loop_start.setSuffix(" s")
-        self._loop_start.setAccessibleName("Reference Track loop start")
+        self._loop_start.setAccessibleName("Shared Track loop start")
         self._loop_start.editingFinished.connect(self._emit_loop)
         self._loop_end = QDoubleSpinBox()
         self._loop_end.setRange(0.0, 0.0)
         self._loop_end.setDecimals(2)
         self._loop_end.setSuffix(" s")
-        self._loop_end.setAccessibleName("Reference Track loop end")
+        self._loop_end.setAccessibleName("Shared Track loop end")
         self._loop_end.editingFinished.connect(self._emit_loop)
         loop_row.addWidget(self._loop)
         loop_row.addWidget(QLabel("In"))
@@ -329,7 +346,7 @@ class ReferenceTrackDialog(QDialog):
         self._trim.setDecimals(1)
         self._trim.setSingleStep(0.5)
         self._trim.setSuffix(" dB")
-        self._trim.setAccessibleName("Reference Track source trim")
+        self._trim.setAccessibleName("Shared Track source trim")
         self._trim.editingFinished.connect(self._emit_trim)
         controls.addRow("Source trim", self._trim)
 
@@ -337,12 +354,12 @@ class ReferenceTrackDialog(QDialog):
         self._count_in = QSpinBox()
         self._count_in.setRange(0, 8)
         self._count_in.setSuffix(" beats")
-        self._count_in.setAccessibleName("Reference Track audible count-in beats")
+        self._count_in.setAccessibleName("Shared Track audible count-in beats")
         self._count_bpm = QDoubleSpinBox()
         self._count_bpm.setRange(40.0, 240.0)
         self._count_bpm.setDecimals(1)
         self._count_bpm.setSuffix(" BPM")
-        self._count_bpm.setAccessibleName("Reference Track count-in tempo")
+        self._count_bpm.setAccessibleName("Shared Track count-in tempo")
         self._count_in.editingFinished.connect(self._emit_count_in)
         self._count_bpm.editingFinished.connect(self._emit_count_in)
         count_row.addWidget(self._count_in)
@@ -365,6 +382,7 @@ class ReferenceTrackDialog(QDialog):
         footer.addStretch(1)
         self._done = QPushButton("Done")
         self._done.setObjectName("GhostButton")
+        self._done.setAccessibleName("Close Shared Track controls")
         self._done.clicked.connect(self.close)
         footer.addWidget(self._done)
         root.addLayout(footer)
@@ -398,20 +416,31 @@ class ReferenceTrackDialog(QDialog):
         return path
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
-        if self._dropped_audio_path(event.mimeData()):
+        if (
+            self._rendered_state in {"idle", "ready", "failed", "unavailable"}
+            and self._dropped_audio_path(event.mimeData())
+        ):
             event.acceptProposedAction()
             return
         event.ignore()
 
     def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # noqa: N802
-        if self._dropped_audio_path(event.mimeData()):
+        if (
+            self._rendered_state in {"idle", "ready", "failed", "unavailable"}
+            and self._dropped_audio_path(event.mimeData())
+        ):
             event.acceptProposedAction()
             return
         event.ignore()
 
     def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
         path = self._dropped_audio_path(event.mimeData())
-        if not path:
+        if not path or self._rendered_state not in {
+            "idle",
+            "ready",
+            "failed",
+            "unavailable",
+        }:
             event.ignore()
             return
         event.acceptProposedAction()
@@ -420,7 +449,7 @@ class ReferenceTrackDialog(QDialog):
     def _choose_source(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Load Reference Track",
+            "Add Shared Track",
             "",
             reference_track_file_filter(),
         )
@@ -696,6 +725,7 @@ class ReferenceTrackDialog(QDialog):
         source_channels = max(
             0, int(getattr(snapshot, "source_channels", 0) or 0)
         )
+        count_in_active = bool(getattr(snapshot, "count_in_active", False))
         try:
             underrun_frames = max(0, int(getattr(snapshot, "underrun_frames", 0)))
         except (TypeError, ValueError):
@@ -714,10 +744,12 @@ class ReferenceTrackDialog(QDialog):
             "playing": "Playing to the band",
             "paused": "Paused",
             "stopping": "Stopping the song…",
-            "failed": "Reference Track needs attention",
-            "closed": "Reference Track is closed",
+            "failed": "Shared Track needs attention",
+            "closed": "Shared Track is closed",
         }
-        status = state_labels.get(state, "Checking Reference Track state…")
+        status = state_labels.get(state, "Checking Shared Track state…")
+        if count_in_active and state == "playing":
+            status = "Count-in playing to the band"
         if loaded and state == "ready" and not capability_available:
             status = (
                 "Song loaded and ready to inspect; initial audio decoded; "
@@ -735,8 +767,12 @@ class ReferenceTrackDialog(QDialog):
         ):
             ready_prefix = {
                 "ready": "Song loaded and ready to inspect",
-                "playing": "Reference Track reports playback active",
-                "paused": "Reference Track paused",
+                "playing": (
+                    "Shared Track count-in is playing"
+                    if count_in_active
+                    else "Shared Track reports playback active"
+                ),
+                "paused": "Shared Track paused",
             }[state]
             if self._primary_gate is ReferenceTrackPrimaryGate.SESSION_CHANGING:
                 status = (
@@ -765,7 +801,7 @@ class ReferenceTrackDialog(QDialog):
                 )
         if cleanup_pending:
             status = (
-                "Private Reference Track cleanup is still pending"
+                "Private Shared Track cleanup is still pending"
             )
         if error:
             status = f"{status}. {error}"
@@ -812,7 +848,7 @@ class ReferenceTrackDialog(QDialog):
         ):
             guidance = (
                 "Finish the current End, Leave, or session-switch cleanup from "
-                "WebJam's main session control. Reference Track's Stop stays "
+                "WebJam's main session control. Shared Track's Stop stays "
                 "locked while that single cleanup owner is active."
             )
         elif cleanup_pending:
@@ -836,7 +872,7 @@ class ReferenceTrackDialog(QDialog):
             and self._primary_gate is ReferenceTrackPrimaryGate.HOST_REQUIRED
         ):
             guidance = (
-                "Only the host can send a Reference Track to the band. This "
+                "Only the host can send a Shared Track to the band. This "
                 "song stays loaded for inspection, but connecting as a guest "
                 "will not unlock Play; start a hosted jam to use it."
             )
@@ -882,7 +918,7 @@ class ReferenceTrackDialog(QDialog):
                 else "You can still load and inspect a song. "
             )
             setup = (
-                "Reference Track needs an official BlackHole 16ch or 64ch "
+                "Shared Track needs an official BlackHole 16ch or 64ch "
                 "device at 48 kHz. Install it, then choose Recheck Route. "
                 "BlackHole 2ch and WebJam Bridge cannot safely isolate the "
                 "return mix."
@@ -919,6 +955,15 @@ class ReferenceTrackDialog(QDialog):
             " · ".join(source_facts) if source_facts else "No source details"
         )
         self._time.setText(f"{_clock_text(position)} / {_clock_text(duration)}")
+        self._waveform.set_snapshot(snapshot)
+        self._remove.setVisible(loaded)
+        if not self._source_load_queued:
+            self._load.setText("Replace…" if loaded else "Add Track…")
+            self._load.setAccessibleName(
+                "Replace the loaded Shared Track audio file"
+                if loaded
+                else "Add a Shared Track audio file"
+            )
 
         snapshot_seek_value = (
             0
@@ -1071,9 +1116,9 @@ class ReferenceTrackDialog(QDialog):
         )
         self._recheck_route.setAccessibleName(
             (
-                "Checking the Reference Track playback route"
+                "Checking the Shared Track playback route"
                 if self._route_checking
-                else "Recheck the Reference Track playback route"
+                else "Recheck the Shared Track playback route"
             )
         )
         if self._snapshot is not None:
@@ -1083,16 +1128,23 @@ class ReferenceTrackDialog(QDialog):
         """Show that one selected source will load after current safe work."""
 
         self._source_load_queued = bool(queued)
+        loaded = bool(
+            str(getattr(self._snapshot, "source_name", "") or "")
+        )
         self._load.setText(
             "Waiting to Load…"
             if self._source_load_queued
-            else "Load Song…"
+            else "Replace…"
+            if loaded
+            else "Add Track…"
         )
         self._load.setAccessibleName(
             (
-                "Selected Reference Track is waiting to load"
+                "Selected Shared Track is waiting to load"
                 if self._source_load_queued
-                else "Load a Reference Track audio file"
+                else "Replace the loaded Shared Track audio file"
+                if loaded
+                else "Add a Shared Track audio file"
             )
         )
         if self._snapshot is not None:
@@ -1102,7 +1154,7 @@ class ReferenceTrackDialog(QDialog):
         """Open clear of the stage the first time, then respect the host.
 
         A dialog parented to the session window opens centred on it, which
-        put the Reference Track controls directly over the musicians. Anchor
+        put the Shared Track controls directly over the musicians. Anchor
         it to the window's leading edge on first open so the stage stays
         readable, and never move it again -- once the host drags it
         somewhere, that is where they want it.
@@ -1193,11 +1245,40 @@ class ReferenceTrackDialog(QDialog):
         busy = state in {"loading", "routing", "stopping", "closed"}
         primary_ready = self._primary_gate is ReferenceTrackPrimaryGate.READY
         editable = loaded and primary_ready and state in {"ready", "paused"}
+        source_change_allowed = state in {
+            "idle",
+            "ready",
+            "failed",
+            "unavailable",
+        }
         self._load.setEnabled(
             not busy
             and not cleanup_pending
             and not self._source_load_queued
+            and source_change_allowed
         )
+        self._remove.setEnabled(
+            loaded
+            and not busy
+            and not cleanup_pending
+            and source_change_allowed
+        )
+        source_change_tooltip = (
+            "Choose another local audio file. The current source file is unchanged."
+            if loaded and source_change_allowed
+            else "Choose a local audio file to share with the band."
+            if source_change_allowed
+            else "Stop the Shared Track before replacing or removing it."
+        )
+        self._load.setToolTip(source_change_tooltip)
+        self._set_dynamic_description(self._load, source_change_tooltip)
+        remove_tooltip = (
+            "Remove this track from WebJam without changing the source file."
+            if self._remove.isEnabled()
+            else "Stop the Shared Track before removing it."
+        )
+        self._remove.setToolTip(remove_tooltip)
+        self._set_dynamic_description(self._remove, remove_tooltip)
         self._recheck_route.setEnabled(
             not busy
             and not self._route_checking
@@ -1231,7 +1312,7 @@ class ReferenceTrackDialog(QDialog):
             and capability_available
             and self._primary_gate is ReferenceTrackPrimaryGate.HOST_REQUIRED
         ):
-            play_tooltip = "Only the host can play a Reference Track for the band."
+            play_tooltip = "Only the host can play a Shared Track for the band."
         elif (
             loaded
             and capability_available
@@ -1263,7 +1344,7 @@ class ReferenceTrackDialog(QDialog):
         elif reason == "physical_certification_required":
             play_tooltip = (
                 "Play needs an isolated audio route on this Mac. Choose Set Up "
-                "Reference Track, then Recheck Route."
+                "Shared Track, then Recheck Route."
             )
         elif loaded and not capability_available:
             play_tooltip = (
@@ -1276,10 +1357,10 @@ class ReferenceTrackDialog(QDialog):
         self._pause.setEnabled(primary_ready and state == "playing")
         if state != "playing":
             pause_tooltip = (
-                "Pause becomes available while the Reference Track is playing."
+                "Pause becomes available while the Shared Track is playing."
             )
         elif primary_ready:
-            pause_tooltip = "Pause the Reference Track through Jamulus."
+            pause_tooltip = "Pause the Shared Track through Jamulus."
         else:
             pause_tooltip = (
                 "Pause is locked until the primary Jamulus session is ready."
@@ -1293,7 +1374,7 @@ class ReferenceTrackDialog(QDialog):
         )
         if state not in {"playing", "paused"}:
             restart_tooltip = (
-                "Restart becomes available while the Reference Track is playing "
+                "Restart becomes available while the Shared Track is playing "
                 "or paused."
             )
         elif self._primary_gate is ReferenceTrackPrimaryGate.SESSION_CHANGING:
@@ -1302,7 +1383,7 @@ class ReferenceTrackDialog(QDialog):
             )
         elif self._primary_gate is ReferenceTrackPrimaryGate.HOST_REQUIRED:
             restart_tooltip = (
-                "Only the host can restart a Reference Track for the band."
+                "Only the host can restart a Shared Track for the band."
             )
         elif self._primary_gate is ReferenceTrackPrimaryGate.NOT_CONNECTED:
             restart_tooltip = (
@@ -1320,7 +1401,7 @@ class ReferenceTrackDialog(QDialog):
                 "before restarting."
             )
         elif self._restart.isEnabled():
-            restart_tooltip = "Restart the Reference Track from the beginning."
+            restart_tooltip = "Restart the Shared Track from the beginning."
         else:
             restart_tooltip = "Restart is unavailable until the route is proven."
         self._restart.setToolTip(restart_tooltip)
@@ -1335,11 +1416,11 @@ class ReferenceTrackDialog(QDialog):
         if self._primary_gate is ReferenceTrackPrimaryGate.SESSION_CHANGING:
             stop_tooltip = (
                 "Wait for the current session change to finish; its single "
-                "cleanup owner is already stopping Reference Track safely."
+                "cleanup owner is already stopping Shared Track safely."
             )
         elif self._primary_gate is ReferenceTrackPrimaryGate.RECOVERING:
             stop_tooltip = (
-                "Band audio recovery already owns Reference Track cleanup. "
+                "Band audio recovery already owns Shared Track cleanup. "
                 "Wait for recovery to finish."
             )
         elif not primary_ready:
@@ -1350,13 +1431,13 @@ class ReferenceTrackDialog(QDialog):
             )
         else:
             stop_tooltip = (
-                "Stop the Reference Track and its isolated Jamulus participant."
+                "Stop the Shared Track and its isolated Jamulus participant."
             )
         self._stop.setToolTip(stop_tooltip)
         self._set_dynamic_description(self._stop, stop_tooltip)
         self._seek.setEnabled(primary_ready and state == "paused")
         seek_tooltip = (
-            "Seek within the paused Reference Track."
+            "Seek within the paused Shared Track."
             if self._seek.isEnabled()
             else "Seeking is locked until the track is paused and primary "
             "Jamulus is ready."
@@ -1373,10 +1454,10 @@ class ReferenceTrackDialog(QDialog):
         ):
             control.setEnabled(editable)
             edit_tooltip = (
-                "Edit this setting while the loaded Reference Track is ready "
+                "Edit this setting while the loaded Shared Track is ready "
                 "or paused."
                 if editable
-                else "This setting is locked until the loaded Reference Track "
+                else "This setting is locked until the loaded Shared Track "
                 "is ready or paused and primary Jamulus is ready."
             )
             control.setToolTip(edit_tooltip)

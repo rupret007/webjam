@@ -10,7 +10,7 @@ keeps the product story and five-minute demo intentionally short.
 | --- | --- | --- |
 | Evaluator or stakeholder | [Project brief](PROJECT_BRIEF.md) | Understand the product thesis, architecture, evidence, and roadmap |
 | New musician | [Simple-language guide](../README_SIMPLE.md) | Understand WebJam in plain words before anything technical |
-| Musician | [Musician guide](../USER_GUIDE.md) | Host, join, use Webex, record, and recover a session |
+| Musician | [Musician guide](../USER_GUIDE.md) | Host, join, add a Shared Track, record, and recover a session |
 | First-time demo | [First Jam](../FIRST_JAM.md) | Follow the shortest live-rehearsal path |
 | Reference Studio user | [Reference Studio musician guide](REFERENCE_STUDIO_MUSICIAN_GUIDE.md) | Write, arrange, record, and bounce a local project |
 | Developer | [Development guide](../DEVELOPMENT.md) | Set up the repository, preserve ownership boundaries, and run checks |
@@ -19,8 +19,9 @@ keeps the product story and five-minute demo intentionally short.
 
 - [Architecture](../ARCHITECTURE.md) — system boundaries and ownership between
   WebJam, Jamulus, Webex, Reference Studio, and Pocket Stage.
-- [Recording and Studio](../RECORDING_AND_STUDIO.md) — local capture, editing,
-  export, recovery, and evidence boundaries.
+- [Recording and Studio](../RECORDING_AND_STUDIO.md) — Record Session, Shared
+  Track source identity, Local Originals, editing, export, recovery, and
+  evidence boundaries.
 - [Reference Studio decision record](adr/0006-standalone-reference-studio-projects.md)
   — project and migration invariants.
 - [Reference Track decision record](adr/0005-reference-track-jamulus-participant.md)
@@ -43,6 +44,10 @@ keeps the product story and five-minute demo intentionally short.
 - [Test procedure](../TEST_PROCEDURE.md) — automated evidence and the physical /
   credentialed ledger. **NOT RUN** is not a claim of failure; it means evidence
   has not yet been collected against an exact package.
+- [v0.23 Shared Track and recording physical checklist](../V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
+  — exact multi-machine, macOS/BlackHole, Linux/JACK, hardware, recording,
+  Studio, accessibility, and recovery observations. Every row begins
+  **NOT RUN**.
 - [v0.22.5 demo readiness](../WEBJAM_V0225_DEMO_READINESS.md) — the exact
   two-musician Reference Track/Webex scorecard in musician order.
 - [Desktop release runbook](DESKTOP_RELEASE_RUNBOOK.md) — draft-first,

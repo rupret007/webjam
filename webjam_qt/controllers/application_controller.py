@@ -20,6 +20,7 @@ import re
 import sys
 import threading
 import time
+from types import SimpleNamespace
 import unicodedata
 import uuid
 from pathlib import Path
@@ -309,6 +310,7 @@ class ApplicationController(QObject):
         self._guest_invite = None
         self._guest_peer_configuration_failed = False
         self.guest_peer: GuestPeerSession | None = None
+        self._shared_track_peer_publish_failed = False
         if session_invite is not None and bool(
             getattr(session_invite, "peer_enabled", False)
         ):
@@ -442,11 +444,11 @@ class ApplicationController(QObject):
         # cleanup remains single-flight and no serialized link is retained.
         self._pending_invitation: BandInvite | RemoteInvitation | None = None
         # A busy BandInvite switch may be replaced by a v3 RemoteInvitation.
-        # The switch worker has already retired Reference Track in that case;
+        # The switch worker has already retired Shared Track in that case;
         # carry that one-shot fact until the authenticated remote route is
         # installed so settings reconfiguration cannot stop it twice.
         self._reference_track_remote_route_pre_retired = False
-        # Reference Track is created lazily when a host opens its panel. The
+        # Shared Track is created lazily when a host opens its panel. The
         # operation lock serializes decoder/process work without ever blocking
         # the Qt event thread; shutdown takes the same lock before releasing
         # the primary Jamulus client.
@@ -461,6 +463,8 @@ class ApplicationController(QObject):
         self._reference_track_load_pending: str | None = None
         self._reference_track_teardown_pending = False
         self._reference_track_session_generation = 0
+        self._shared_track_play_after_recording = ""
+        self._shared_track_count_in_visible = False
         # Desktop integration checks begin only after the main window is
         # visible (see start_desktop_integrations). Keeping both services lazy
         # avoids network/subprocess work in constructor-only tests and lets the
@@ -816,12 +820,12 @@ class ApplicationController(QObject):
                     getattr(getattr(snapshot, "state", None), "value", "") == "closed"
                 )
             except Exception:  # noqa: BLE001
-                LOGGER.error("Reference Track shutdown could not be confirmed")
+                LOGGER.error("Shared Track shutdown could not be confirmed")
             if not reference_closed:
                 return self._show_shutdown_cleanup_retry(
-                    "Reference Track is still stopping",
+                    "Shared Track is still stopping",
                     "WebJam silenced the song but could not yet confirm all "
-                    "private Reference Track process, profile, control, and "
+                    "private Shared Track process, profile, control, and "
                     "audio-route cleanup. Wait a moment, then quit again. Your "
                     "primary jam is still running.",
                 )
@@ -1204,6 +1208,18 @@ class ApplicationController(QObject):
                 self._guest_invite = None
                 self._guest_peer_configuration_failed = False
             self._host_peer_warning = ""
+            clear_projection = getattr(
+                getattr(getattr(self, "window", None), "session_strip", None),
+                "clear_shared_track_projection",
+                None,
+            )
+            if callable(clear_projection):
+                invoker = getattr(self, "_ui_invoker", None)
+                invoke = getattr(invoker, "invoke", None)
+                if callable(invoke):
+                    invoke(clear_projection)
+                else:
+                    clear_projection()
         return cleanup_ok
 
     def _on_peer_take_updated(
@@ -1218,6 +1234,13 @@ class ApplicationController(QObject):
             if self._shutdown:
                 return
             self.window.recording_studio.refresh_take(take_dir)
+            reconciled = getattr(
+                getattr(self, "recording", None),
+                "on_peer_take_reconciled",
+                None,
+            )
+            if callable(reconciled):
+                reconciled(_take_id, take_dir)
             if attached_new_media:
                 self.window.flash_message(
                     "A bandmate's Local Original arrived and is now visible in Studio.",
@@ -1242,9 +1265,58 @@ class ApplicationController(QObject):
 
         def refresh() -> None:
             if not self._shutdown:
+                self._render_guest_peer_state()
                 self._update_session_hud()
 
         self._ui_invoker.invoke(refresh)
+
+    def _render_guest_peer_state(self) -> None:
+        """Render host-published peer truth without granting guest authority."""
+
+        guest = getattr(self, "guest_peer", None)
+        state = getattr(guest, "last_state", None)
+        if state is None:
+            return
+        signal = str(getattr(getattr(state, "signal", None), "value", "idle"))
+        phase = {
+            "recording": "recording",
+            "finalizing": "validating",
+            "complete": "complete",
+            "needs_attention": "needs_attention",
+        }.get(signal, "idle")
+        shared = getattr(state, "shared_track", None)
+        if (
+            phase == "recording"
+            and bool(getattr(shared, "count_in_active", False))
+        ):
+            phase = "count_in"
+        self.window.session_strip.set_recording_phase(phase)
+        self.window.recording_studio.set_recording_phase(phase)
+
+        if shared is None or int(getattr(shared, "generation", 0) or 0) <= 0:
+            return
+        projection = SimpleNamespace(
+            state=getattr(shared, "state", "idle"),
+            source_name=str(getattr(shared, "source_display_name", "") or ""),
+            duration_s=float(getattr(shared, "duration_s", 0.0) or 0.0),
+            position_s=float(getattr(shared, "position_s", 0.0) or 0.0),
+            loop_start_s=float(getattr(shared, "loop_start_s", 0.0) or 0.0),
+            loop_end_s=getattr(shared, "loop_end_s", None),
+            count_in_active=bool(
+                getattr(shared, "count_in_active", False)
+            ),
+            cleanup_pending=bool(
+                getattr(shared, "cleanup_pending", False)
+            ),
+            error=(
+                "Shared Track needs host attention."
+                if bool(getattr(shared, "needs_attention", False))
+                else ""
+            ),
+            waveform_peaks=(),
+            waveform_progress=0.0,
+        )
+        self.window.session_strip.set_shared_track_snapshot(projection)
 
     def _guest_media_state(self) -> tuple[GuestMediaState, EvidenceState]:
         """Map the guest transfer owner's finite facts without exposing errors."""
@@ -3063,6 +3135,16 @@ class ApplicationController(QObject):
         strip.join_video_requested.connect(self._on_join_video)
         strip.practice_requested.connect(self._on_practice_requested)
         strip.record_requested.connect(self._on_record_requested)
+        strip.shared_track_dropped.connect(self._load_reference_track)
+        strip.shared_track_play_requested.connect(self._play_reference_track)
+        strip.shared_track_pause_requested.connect(
+            lambda: self._run_reference_track_fast(
+                self._reference_track_controller().pause
+            )
+        )
+        strip.shared_track_stop_requested.connect(
+            self._request_reference_track_teardown
+        )
         strip.ready_check_requested.connect(self._on_ready_check)
         strip.invite_requested.connect(self._copy_band_invite)
         strip.reset_invite_requested.connect(self._confirm_reset_remote_invite)
@@ -5373,13 +5455,26 @@ class ApplicationController(QObject):
                 durable = self.peer_participant_id_for_channel(channel_id)
                 presentation.participant_id = durable
         # A process-authenticated primary roster change is the signal that a
-        # musician or the separately owned Reference Track may have joined.
+        # musician or the separately owned Shared Track may have joined.
         # While a take is active, reduce the server's independently
         # authenticated getClients row to an address-free recorder receipt.
         if local_session_proven:
             self.recording.request_authenticated_roster_observation(
                 exact_process_update=ordered_topology_changed
             )
+        from core.reference_track import REFERENCE_PARTICIPANT_NAME
+
+        shared_track_channel_present = bool(
+            local_session_proven
+            and any(
+                str(getattr(person, "name", "") or "").strip()
+                == REFERENCE_PARTICIPANT_NAME
+                for person in jamulus_participants
+            )
+        )
+        self.window.session_strip.set_shared_track_channel_present(
+            shared_track_channel_present
+        )
         self._update_pocket_roster_binding_epoch()
         self.window.recording_studio.set_live_participants(self.participants.values())
         self._update_session_hud()
@@ -5859,6 +5954,59 @@ class ApplicationController(QObject):
             if choice == "local":
                 self._open_recording_setup()
                 return
+        recorder_phase = str(
+            getattr(getattr(self.recording, "phase", None), "value", "idle")
+            or "idle"
+        )
+        starting = bool(
+            not bool(getattr(self, "_recorder_armed", False))
+            and not bool(getattr(self, "_server_recording", False))
+            and recorder_phase
+            not in {"preflight", "starting", "recording", "stopping", "validating"}
+        )
+        shared_track = getattr(self, "_reference_track", None)
+        shared_snapshot = getattr(shared_track, "snapshot", None)
+        if starting:
+            shared_state = str(
+                getattr(getattr(shared_snapshot, "state", None), "value", "")
+                or ""
+            )
+            planner = getattr(
+                self.recording,
+                "plan_shared_track_for_next_take",
+                None,
+            )
+            if callable(planner):
+                planner(
+                    required=bool(
+                        getattr(shared_snapshot, "loaded", False)
+                        and shared_state
+                        in {"ready", "paused", "routing", "playing"}
+                    )
+                )
+            self._shared_track_play_after_recording = (
+                "play"
+                if shared_state == "ready"
+                and bool(getattr(shared_snapshot, "can_play", False))
+                else "restart"
+                if shared_state == "paused"
+                else ""
+            )
+        else:
+            self._shared_track_play_after_recording = ""
+            if bool(getattr(shared_snapshot, "active", False)):
+                # One Stop Recording action retires the separately owned song
+                # route too. Recorder and route cleanup retain independent
+                # evidence and retry paths; neither is falsely inferred from
+                # the other's acknowledgement.
+                note_cleanup = getattr(
+                    self.recording,
+                    "note_shared_track_cleanup_requested",
+                    None,
+                )
+                if callable(note_cleanup):
+                    note_cleanup()
+                self._request_reference_track_teardown()
         self.recording.on_record_requested()
 
     def _copy_band_invite(self) -> None:
@@ -7971,6 +8119,48 @@ class ApplicationController(QObject):
     def _on_recorder_phase_changed(self, _phase=None) -> None:
         """Refresh the conductor after recorder-owned state changes."""
 
+        phase = str(getattr(_phase, "value", _phase) or "idle").lower()
+        pending_shared_track = str(
+            getattr(self, "_shared_track_play_after_recording", "") or ""
+        )
+        if phase == "recording" and pending_shared_track:
+            self._shared_track_play_after_recording = ""
+            controller = getattr(self, "_reference_track", None)
+            snapshot = getattr(controller, "snapshot", None)
+            state = str(
+                getattr(getattr(snapshot, "state", None), "value", "") or ""
+            )
+            if pending_shared_track == "restart" and state == "paused":
+                self._run_reference_track_fast(controller.restart)
+            elif pending_shared_track == "play" and state == "ready":
+                self._play_reference_track()
+        elif phase in {
+            "idle",
+            "needs_attention",
+            "stop_failed",
+            "error",
+            "complete",
+        }:
+            self._shared_track_play_after_recording = ""
+        if phase == "validating" and bool(
+            getattr(
+                self.recording,
+                "shared_track_required_for_active_take",
+                False,
+            )
+        ):
+            # An unexpected recorder stop never passes through the Record
+            # button's ordinary Stop path. Join and retire the owned Shared
+            # Track here before the validation worker can publish a terminal
+            # take result.
+            note_cleanup = getattr(
+                self.recording,
+                "note_shared_track_cleanup_requested",
+                None,
+            )
+            if callable(note_cleanup):
+                note_cleanup()
+            self._queue_reference_track_teardown()
         self._update_session_hud()
 
     def _resume_session_conductor_after_authoritative_reconnect(self) -> None:
@@ -9591,7 +9781,7 @@ class ApplicationController(QObject):
 
         # Publish the state transition in this same supervision tick.  In
         # particular, a newly detected RPC hang must move every open
-        # Reference Track surface from "not connected" to the more truthful
+        # Shared Track surface from "not connected" to the more truthful
         # recovery gate without waiting for another timer callback.
         self._sync_reference_track_primary_gate()
         self.bridge.attempt_auto_reconnects()
@@ -10335,7 +10525,7 @@ class ApplicationController(QObject):
             return
         if not self._reference_track_is_host():
             self.window.flash_message(
-                "Only the host can send a Reference Track into the jam.",
+                "Only the host can send a Shared Track into the jam.",
                 ms=6000,
             )
             return
@@ -10346,6 +10536,7 @@ class ApplicationController(QObject):
 
             dialog = ReferenceTrackDialog(parent=self.window)
             dialog.load_requested.connect(self._load_reference_track)
+            dialog.remove_requested.connect(self._remove_reference_track)
             dialog.recheck_route_requested.connect(
                 self._request_reference_track_route_check
             )
@@ -10396,6 +10587,15 @@ class ApplicationController(QObject):
     def _render_reference_track_snapshot(self, snapshot) -> None:
         if self._shutdown:
             return
+        observer = getattr(
+            getattr(self, "recording", None),
+            "observe_shared_track_snapshot",
+            None,
+        )
+        if callable(observer):
+            observer(snapshot)
+        self.window.session_strip.set_shared_track_snapshot(snapshot)
+        self._publish_shared_track_peer_state(snapshot)
         dialog = getattr(self, "_reference_track_dialog", None)
         if dialog is not None:
             self._sync_reference_track_primary_gate(dialog)
@@ -10406,6 +10606,97 @@ class ApplicationController(QObject):
             self._reference_track_timer.start()
         else:
             self._reference_track_timer.stop()
+        recorder = getattr(self, "recording", None)
+        recorder_phase = str(
+            getattr(getattr(recorder, "phase", None), "value", "idle") or "idle"
+        )
+        count_in_visible = bool(
+            recorder_phase == "recording"
+            and getattr(snapshot, "count_in_active", False)
+        )
+        if count_in_visible != self._shared_track_count_in_visible:
+            self._shared_track_count_in_visible = count_in_visible
+            visible_phase = "count_in" if count_in_visible else recorder_phase
+            self.window.session_strip.set_recording_phase(visible_phase)
+            self.window.recording_studio.set_recording_phase(visible_phase)
+
+    def _publish_shared_track_peer_state(self, snapshot) -> None:
+        """Project bounded host transport truth onto the private peer plane."""
+
+        host_peer = getattr(self, "host_peer", None)
+        publish = getattr(host_peer, "publish_shared_track_state", None)
+        if not bool(getattr(host_peer, "active", False)) or not callable(publish):
+            return
+        raw_state = str(
+            getattr(getattr(snapshot, "state", None), "value", "idle") or "idle"
+        ).lower()
+        loaded = bool(getattr(snapshot, "loaded", False))
+        if raw_state == "loading":
+            peer_state = "ready" if loaded else "idle"
+        elif raw_state == "unavailable":
+            peer_state = "failed"
+        elif raw_state == "closed":
+            peer_state = "idle"
+            loaded = False
+        elif raw_state in {
+            "idle",
+            "ready",
+            "routing",
+            "playing",
+            "paused",
+            "stopping",
+            "failed",
+        }:
+            peer_state = raw_state
+        else:
+            peer_state = "failed"
+
+        try:
+            publish(
+                state=peer_state,
+                loaded=loaded,
+                source_display_name=(
+                    str(getattr(snapshot, "source_name", "") or "")
+                    if loaded
+                    else ""
+                ),
+                position_s=(
+                    float(getattr(snapshot, "position_s", 0.0) or 0.0)
+                    if loaded
+                    else 0.0
+                ),
+                duration_s=(
+                    float(getattr(snapshot, "duration_s", 0.0) or 0.0)
+                    if loaded
+                    else 0.0
+                ),
+                loop_start_s=(
+                    float(getattr(snapshot, "loop_start_s", 0.0) or 0.0)
+                    if loaded
+                    else 0.0
+                ),
+                loop_end_s=(
+                    getattr(snapshot, "loop_end_s", None) if loaded else None
+                ),
+                count_in_active=bool(
+                    loaded
+                    and peer_state in {"routing", "playing"}
+                    and getattr(snapshot, "count_in_active", False)
+                ),
+                cleanup_pending=bool(
+                    getattr(snapshot, "cleanup_pending", False)
+                ),
+                needs_attention=bool(
+                    peer_state == "failed"
+                    or getattr(snapshot, "error", "")
+                ),
+            )
+        except Exception:  # noqa: BLE001 - peer boundary remains UI-optional
+            if not getattr(self, "_shared_track_peer_publish_failed", False):
+                LOGGER.warning("Shared Track peer state could not be published")
+            self._shared_track_peer_publish_failed = True
+        else:
+            self._shared_track_peer_publish_failed = False
 
     def _refresh_reference_track_ui(self) -> None:
         controller = getattr(self, "_reference_track", None)
@@ -10415,9 +10706,9 @@ class ApplicationController(QObject):
         self._render_reference_track_snapshot(controller.snapshot)
 
     def _show_reference_track_error(self, message: str) -> None:
-        safe = str(message or "Reference Track couldn't continue.").strip()
+        safe = str(message or "Shared Track couldn't continue.").strip()
         if len(safe) > 1_024:
-            safe = "Reference Track couldn't continue safely."
+            safe = "Shared Track couldn't continue safely."
         self.window.flash_message(safe, ms=8000)
 
     def _run_reference_track_operation(
@@ -10433,7 +10724,7 @@ class ApplicationController(QObject):
         with self._reference_track_worker_state_lock:
             if self._reference_track_operation_inflight:
                 self.window.flash_message(
-                    "Reference Track is finishing another operation…",
+                    "Shared Track is finishing another operation…",
                     ms=2500,
                 )
                 return False
@@ -10460,9 +10751,9 @@ class ApplicationController(QObject):
                 message = (
                     str(exc)
                     if isinstance(exc, ReferenceTrackError)
-                    else "Reference Track couldn't continue safely."
+                    else "Shared Track couldn't continue safely."
                 )
-                LOGGER.error("A Reference Track operation failed safely")
+                LOGGER.error("A Shared Track operation failed safely")
                 self._ui_invoker.invoke(
                     lambda safe=message: self._show_reference_track_error(safe)
                 )
@@ -10522,7 +10813,7 @@ class ApplicationController(QObject):
         ):
             self._sync_reference_track_primary_gate()
             self.window.flash_message(
-                "Reference Track needs the band audio running first.",
+                "Shared Track needs the band audio running first.",
                 ms=4000,
             )
             return
@@ -10621,7 +10912,7 @@ class ApplicationController(QObject):
             return
         if not self._reference_track_operation_lock.acquire(blocking=False):
             self.window.flash_message(
-                "Reference Track is still preparing its route…",
+                "Shared Track is still preparing its route…",
                 ms=2500,
             )
             return
@@ -10633,7 +10924,7 @@ class ApplicationController(QObject):
             message = (
                 str(exc)
                 if isinstance(exc, ReferenceTrackError)
-                else "Reference Track couldn't apply that control safely."
+                else "Shared Track couldn't apply that control safely."
             )
             self._show_reference_track_error(message)
         finally:
@@ -10653,10 +10944,19 @@ class ApplicationController(QObject):
         if was_busy:
             self.window.flash_message(
                 "Song selected. WebJam will load it as soon as the current "
-                "Reference Track check finishes.",
+                "Shared Track check finishes.",
                 ms=5000,
             )
         self._drain_reference_track_pending()
+
+    def _remove_reference_track(self) -> None:
+        controller = getattr(self, "_reference_track", None)
+        if controller is None or self._shutdown_cleanup_blocks_action():
+            return
+        self._run_reference_track_operation(
+            controller.unload,
+            thread_name="webjam-shared-track-remove",
+        )
 
     def _reference_track_primary_device_names(self) -> tuple[str, str]:
         """Read profile names only as a secondary live-proof consistency check."""
@@ -10669,7 +10969,7 @@ class ApplicationController(QObject):
 
             return read_native_audio_device_names(plan)
         except Exception:  # noqa: BLE001 - native profile is an external boundary
-            LOGGER.warning("Reference Track could not verify the primary Jamulus route")
+            LOGGER.warning("Shared Track could not verify the primary Jamulus route")
             return "", ""
 
     def _reference_track_primary_process_id(self) -> int:
@@ -10983,13 +11283,13 @@ class ApplicationController(QObject):
         if primary_gate is ReferenceTrackPrimaryGate.SESSION_CHANGING:
             self.window.flash_message(
                 "Wait for the current session change to finish before "
-                "starting Reference Track.",
+                "starting Shared Track.",
                 ms=6000,
             )
             return
         if primary_gate is ReferenceTrackPrimaryGate.HOST_REQUIRED:
             self.window.flash_message(
-                "Reference Track playback is host-only. Start a hosted jam "
+                "Shared Track playback is host-only. Start a hosted jam "
                 "before sending a song to the band.",
                 ms=7000,
             )
@@ -11007,24 +11307,24 @@ class ApplicationController(QObject):
             elif primary_gate is ReferenceTrackPrimaryGate.RECOVERING:
                 message = (
                     "WebJam is still recovering band audio. Wait for that "
-                    "recovery to finish before playing a Reference Track."
+                    "recovery to finish before playing a Shared Track."
                 )
             elif self._reference_track_primary_process_id() <= 0:
                 message = (
                     "WebJam couldn't identify the active primary Jamulus "
-                    "process. Reconnect band audio, then try Reference Track "
+                    "process. Reconnect band audio, then try Shared Track "
                     "again."
                 )
             elif self._reference_track_is_host() and self._jamulus_connected:
                 message = (
                     "WebJam has not verified a fresh primary Jamulus control "
-                    "connection. Reconnect band audio, then try Reference Track "
+                    "connection. Reconnect band audio, then try Shared Track "
                     "again."
                 )
             else:
                 message = (
                     "Start the hosted jam and wait for your Jamulus connection "
-                    "before playing a Reference Track."
+                    "before playing a Shared Track."
                 )
             self.window.flash_message(message, ms=8000)
             return
@@ -11032,8 +11332,8 @@ class ApplicationController(QObject):
         jamulus_binary = self.bridge.find_reference_track_jamulus()
         if not jamulus_binary:
             self.window.flash_message(
-                "WebJam couldn't verify its separate Reference Track audio "
-                "component. Reinstall this build before using Reference Track.",
+                "WebJam couldn't verify its separate Shared Track audio "
+                "component. Reinstall this build before using Shared Track.",
                 ms=8000,
             )
             return
@@ -11044,7 +11344,7 @@ class ApplicationController(QObject):
             self._sync_reference_track_primary_gate()
             self.window.flash_message(
                 "WebJam couldn't verify the active primary Jamulus session. "
-                "Reconnect band audio, then try Reference Track again.",
+                "Reconnect band audio, then try Shared Track again.",
                 ms=8000,
             )
             return
@@ -11057,7 +11357,7 @@ class ApplicationController(QObject):
         ):
             self._sync_reference_track_primary_gate()
             self.window.flash_message(
-                "The primary Jamulus session changed before Reference Track "
+                "The primary Jamulus session changed before Shared Track "
                 "could start. Wait for band audio to reconnect, then try again.",
                 ms=8000,
             )
@@ -11144,7 +11444,7 @@ class ApplicationController(QObject):
                 if not already_retired:
                     snapshot = controller.handle_session_end()
         except Exception:  # noqa: BLE001
-            LOGGER.error("Reference Track session cleanup could not be confirmed")
+            LOGGER.error("Shared Track session cleanup could not be confirmed")
             return False
         state = getattr(getattr(snapshot, "state", None), "value", "")
         return (
@@ -11171,7 +11471,7 @@ class ApplicationController(QObject):
             try:
                 operation()
             except Exception:  # noqa: BLE001
-                LOGGER.error("Reference Track health check failed safely")
+                LOGGER.error("Shared Track health check failed safely")
             finally:
                 self._reference_track_operation_lock.release()
 

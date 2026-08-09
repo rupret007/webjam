@@ -371,6 +371,80 @@ def test_transfer_descriptor_round_trips_precise_gaps_and_keeps_legacy_totals_un
         TransferDescriptor.from_mapping({**asdict(precise), "gaps": "invalid"})
 
 
+def test_transfer_descriptor_inventory_is_bounded_and_legacy_wire_is_readable(
+    tmp_path: Path,
+) -> None:
+    credentials = SessionCredentials.create()
+    source = tmp_path / "local.wav"
+    _wav(source)
+    declared = replace(
+        _descriptor(source, credentials, _id()),
+        source_channel=1,
+        inventory_input_count=2,
+        inventory_segment_count=3,
+    )
+    assert TransferDescriptor.from_mapping(asdict(declared)) == declared
+
+    legacy_payload = asdict(declared)
+    legacy_payload.pop("inventory_input_count")
+    legacy_payload.pop("inventory_segment_count")
+    legacy_payload["source_channel"] = 0
+    legacy = TransferDescriptor.from_mapping(legacy_payload)
+    assert legacy.inventory_input_count == 0
+    assert legacy.inventory_segment_count == 0
+
+    with pytest.raises(ValueError, match="both be declared"):
+        replace(declared, inventory_segment_count=0)
+    with pytest.raises(ValueError, match="smaller than the input"):
+        replace(
+            declared,
+            inventory_input_count=3,
+            inventory_segment_count=2,
+        )
+    with pytest.raises(ValueError, match="declared input inventory"):
+        replace(declared, source_channel=2, inventory_input_count=2)
+    with pytest.raises(ValueError, match="non-negative integer"):
+        TransferDescriptor.from_mapping(
+            {**asdict(declared), "inventory_input_count": True}
+        )
+
+
+def test_transfer_descriptor_inventory_fields_preserve_legacy_positional_order(
+    tmp_path: Path,
+) -> None:
+    credentials = SessionCredentials.create()
+    source = tmp_path / "local.wav"
+    _wav(source)
+    base = _descriptor(source, credentials, _id())
+    gap = TransferGap(120, 48, (0,), "legacy queue overrun")
+
+    positional = TransferDescriptor(
+        base.session_id,
+        base.take_id,
+        base.participant_id,
+        base.segment_id,
+        base.sha256,
+        base.size_bytes,
+        base.sample_rate,
+        base.channels,
+        base.frame_count,
+        base.subtype,
+        base.started_utc,
+        "legacy-device",
+        0,
+        48,
+        ("legacy capture warning",),
+        (gap,),
+    )
+
+    assert positional.device_id == "legacy-device"
+    assert positional.gap_frames == 48
+    assert positional.capture_errors == ("legacy capture warning",)
+    assert positional.gaps == (gap,)
+    assert positional.inventory_input_count == 0
+    assert positional.inventory_segment_count == 0
+
+
 @pytest.fixture
 def peer(tmp_path: Path):
     credentials = SessionCredentials.create()

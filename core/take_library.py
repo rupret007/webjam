@@ -50,6 +50,10 @@ _INTERRUPTED_PUBLICATION_ERROR = (
     "Recording publication was interrupted. Source audio was preserved for "
     "review."
 )
+_REQUIRED_REFERENCE_TRACK_ERROR = (
+    "The Shared Track was part of this Record Session, but its exact "
+    "band-server stem could not be verified. The take was preserved for review."
+)
 
 EVIDENCE_ONLY_EXPORT_BLOCK_REASON = (
     "No audio media was preserved. This recovery project is review-only and "
@@ -173,6 +177,10 @@ class TakeInfo:
     session_id: str = ""
     take_id: str = ""
     project_samplerate: int = 0
+    # Preserve the parsed manifest generation so UI boundaries can distinguish
+    # a genuine schema-v2 project from a legacy/synthetic take that happens to
+    # carry stable-looking track IDs.
+    manifest_schema_version: int = 0
     # A recovery journal can prove that a recording was interrupted even when
     # no source media survived. Keep that truth visible without inventing a
     # placeholder WAV or offering audio actions that cannot be truthful.
@@ -236,6 +244,27 @@ class TakeValidationResult:
             f"{self.take.track_count} track{'s' if self.take.track_count != 1 else ''}"
             f" · {duration // 60}:{duration % 60:02d} · {rate}"
         )
+
+
+def _enforce_required_reference_track(
+    result: TakeValidationResult,
+    *,
+    required: bool,
+) -> TakeValidationResult:
+    """Fail this validation without rewriting immutable published evidence."""
+
+    if (
+        not required
+        or result.take is None
+        or any(track.source == "live_reference" for track in result.take.tracks)
+    ):
+        return result
+    return TakeValidationResult(
+        result.take,
+        tuple(dict.fromkeys((*result.errors, _REQUIRED_REFERENCE_TRACK_ERROR))),
+        result.warnings,
+        result.manifest_path,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -332,6 +361,7 @@ class RecorderClientReceipt:
     recorder_key_sha256: str
     channels: int
     source_kind: str = "musician"
+    source_fingerprint_sha256: str = ""
 
     def __post_init__(self) -> None:
         observation = RecorderClientObservation(
@@ -347,6 +377,17 @@ class RecorderClientReceipt:
         source_kind = str(self.source_kind or "").strip()
         if source_kind not in {"musician", "reference_track"}:
             raise ValueError("source_kind is unsupported")
+        source_fingerprint = str(
+            self.source_fingerprint_sha256 or ""
+        ).strip().lower()
+        if source_fingerprint and _RECORDER_KEY_RE.fullmatch(
+            source_fingerprint
+        ) is None:
+            raise ValueError("source_fingerprint_sha256 must be a SHA-256 digest")
+        if source_fingerprint and source_kind != "reference_track":
+            raise ValueError(
+                "source_fingerprint_sha256 is only valid for a reference track"
+            )
         object.__setattr__(self, "server_channel_id", observation.server_channel_id)
         object.__setattr__(self, "display_name", observation.display_name)
         object.__setattr__(self, "channels", observation.channels)
@@ -355,6 +396,11 @@ class RecorderClientReceipt:
         )
         object.__setattr__(self, "participant_id", participant_id)
         object.__setattr__(self, "source_kind", source_kind)
+        object.__setattr__(
+            self,
+            "source_fingerprint_sha256",
+            source_fingerprint,
+        )
 
 
 class RecorderRosterError(ValueError):
@@ -1015,7 +1061,7 @@ def snapshot_take_directories(root: str | Path) -> dict[Path, int]:
 
 
 def find_changed_take(root: str | Path, before: dict[Path, int]) -> Optional[Path]:
-    """Find the newest new/modified take directory since ``before``."""
+    """Return the sole changed take directory, or fail closed on ambiguity."""
     path = Path(root).expanduser()
     candidates: list[tuple[int, Path]] = []
     try:
@@ -1029,7 +1075,9 @@ def find_changed_take(root: str | Path, before: dict[Path, int]) -> Optional[Pat
         return None
     if not candidates:
         return None
-    return max(candidates, key=lambda item: item[0])[1]
+    if len(candidates) != 1:
+        return None
+    return candidates[0][1]
 
 
 def wait_for_take_files_stable(
@@ -1216,19 +1264,35 @@ def _refine_lag(server_sig, local_sig, coarse_lag: int, anchor: int) -> tuple[in
     return best_lag, best_val
 
 
-def estimate_local_alignment(take_dir: str | Path) -> tuple[float, float]:
-    """Estimate local-stem offset against the closest Jamulus server track.
+def estimate_local_alignment(
+    take_dir: str | Path,
+    *,
+    server_candidates: tuple[Path, ...] | None = None,
+) -> tuple[float, float]:
+    """Estimate local-stem offset against bounded Jamulus server media.
 
     Returns ``(offset_seconds, confidence)``.  The offset is signed: it is
     negative when the local stems start before the server take, which is the
     normal case because supplemental capture arms before the server recorder
     acknowledges the RPC start.  Correlation is bounded to keep post-record
-    validation responsive and never runs on the audio thread.
+    validation responsive and never runs on the audio thread. Callers with
+    authenticated identity evidence pass an exact same-participant candidate;
+    the legacy all-server scan remains only for schema-v1 compatibility.
     """
     path = Path(take_dir)
     wavs = sorted(p for p in path.glob("*.wav") if p.is_file())
     local = [p for p in wavs if is_local_stem_name(p.name)]
-    server = [p for p in wavs if not is_local_stem_name(p.name)]
+    if server_candidates is None:
+        server = [p for p in wavs if not is_local_stem_name(p.name)]
+    else:
+        server = [
+            Path(candidate)
+            for candidate in server_candidates
+            if Path(candidate).parent == path
+            and Path(candidate).is_file()
+            and not Path(candidate).is_symlink()
+            and not is_local_stem_name(Path(candidate).name)
+        ]
     if len(local) < 2 or not server:
         return (0.0, 0.0)
     try:
@@ -1292,6 +1356,7 @@ def write_take_manifest(
     session_evidence: "SessionEvidence | None" = None,
     recording_receipts: tuple[RecorderClientReceipt, ...] | None = None,
     recording_identity_errors: tuple[str, ...] = (),
+    required_reference_track: bool = False,
 ) -> TakeValidationResult:
     """Validate a take and atomically publish schema-v2 project truth.
 
@@ -1353,13 +1418,20 @@ def write_take_manifest(
                     "A stale recording staging receipt could not be retired."
                 )
             else:
-                return validate_take(
-                    path,
-                    expected_tracks=expected_tracks + required_local_stems,
-                    required_local_stems=required_local_stems,
+                return _enforce_required_reference_track(
+                    validate_take(
+                        path,
+                        expected_tracks=expected_tracks + required_local_stems,
+                        required_local_stems=required_local_stems,
+                    ),
+                    required=required_reference_track,
                 )
-        return existing_result
-    offset_s, confidence = estimate_local_alignment(path)
+        return _enforce_required_reference_track(
+            existing_result,
+            required=required_reference_track,
+        )
+    offset_s = 0.0
+    confidence = 0.0
     # The old channel-keyed maps remain accepted for source compatibility but
     # can never identify recorder media: Jamulus writes startFrame in the
     # numeric filename position those maps previously consumed.
@@ -1391,6 +1463,8 @@ def write_take_manifest(
         if any(
             existing.participant_id != receipt.participant_id
             or existing.source_kind != receipt.source_kind
+            or existing.source_fingerprint_sha256
+            != receipt.source_fingerprint_sha256
             for existing in same_digest
         ):
             conflicted_keys.add(digest)
@@ -1733,6 +1807,29 @@ def write_take_manifest(
         if parsed is None or parsed.recorder_key_sha256 in conflicted_keys:
             return None
         return receipts_by_key.get((parsed.recorder_key_sha256, parsed.channels))
+
+    if required_local_stems:
+        alignment_candidates: tuple[Path, ...] | None = None
+        if strict_recording_identity:
+            proven_host_media = tuple(
+                path / filename
+                for filename in recording_filename_facts
+                if (
+                    (receipt := _receipt_for_filename(filename)) is not None
+                    and receipt.source_kind == "musician"
+                    and receipt.participant_id == stable_local_participant_id
+                )
+            )
+            # Never choose the most-correlated participant. Exactly one proven
+            # same-host server stem is required for automatic Local Original
+            # alignment; reconnect ambiguity remains review-only.
+            alignment_candidates = (
+                proven_host_media if len(proven_host_media) == 1 else ()
+            )
+        offset_s, confidence = estimate_local_alignment(
+            path,
+            server_candidates=alignment_candidates,
+        )
     # A trusted journal can outlive every media writer. Publish its recovery
     # truth directly as schema v2 instead of fabricating a zero-frame WAV just
     # to pass the legacy discovery path. This branch is intentionally narrow:
@@ -1886,6 +1983,7 @@ def write_take_manifest(
     grouped_tracks: dict[str, dict[str, object]] = {}
     for order, track in enumerate(take.tracks):
         local = track.source in {"local_ssl", "local_isolated"}
+        source_fingerprint = ""
         if local:
             participant_id: str | None = stable_local_participant_id
             participant_name = (
@@ -1918,13 +2016,24 @@ def write_take_manifest(
             else:
                 participant_id = receipt.participant_id
                 participant_name = receipt.display_name
+                source_fingerprint = (
+                    receipt.source_fingerprint_sha256
+                    if receipt.source_kind == "reference_track"
+                    else ""
+                )
                 source_type = (
                     SourceType.LIVE_REFERENCE
                     if receipt.source_kind == "reference_track"
                     else SourceType.JAMULUS_SERVER
                 )
                 group_key = f"proved:{receipt.source_kind}:{receipt.participant_id}"
-            quality = SourceQuality.NETWORK_TRACK
+                if source_fingerprint:
+                    group_key = f"{group_key}:{source_fingerprint}"
+            quality = (
+                SourceQuality.REFERENCE
+                if source_type is SourceType.LIVE_REFERENCE
+                else SourceQuality.NETWORK_TRACK
+            )
             local_channel = -1
             lof_offset = recording_offsets.get(track.path.name)
             if (
@@ -2039,7 +2148,11 @@ def write_take_manifest(
             grouped_tracks[group_key] = {
                 "first_order": order,
                 "participant_id": participant_id,
-                "name": track.name if local else participant_name,
+                "name": (
+                    f"{participant_name} Input {local_channel + 1}"
+                    if local
+                    else participant_name
+                ),
                 "source_type": source_type,
                 "quality": quality,
                 "media_status": segment_status,
@@ -2048,6 +2161,7 @@ def write_take_manifest(
                     automatic_offset_s=track.offset_s if local else 0.0,
                     confidence=confidence if local else 1.0,
                     method=ALIGNMENT_METHOD if local else "jamulus-lof-v1",
+                    reference_fingerprint_sha256=source_fingerprint,
                 ),
             }
         else:
@@ -2131,6 +2245,12 @@ def write_take_manifest(
         final_session_evidence,
         timeline=tuple(timeline),
     )
+
+    if required_reference_track and not any(
+        track.source_type is SourceType.LIVE_REFERENCE
+        for track in project_tracks
+    ):
+        errors.append(_REQUIRED_REFERENCE_TRACK_ERROR)
 
     project = TakeProject(
         session_id=stable_session_id,
@@ -2829,6 +2949,12 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
         session_id=str(manifest.get("session_id") or ""),
         take_id=str(manifest.get("take_id") or ""),
         project_samplerate=project_rate,
+        manifest_schema_version=(
+            int(manifest.get("schema_version"))
+            if isinstance(manifest.get("schema_version"), int)
+            and not isinstance(manifest.get("schema_version"), bool)
+            else 0
+        ),
         review_only=evidence_only,
         export_block_reason=(
             EVIDENCE_ONLY_EXPORT_BLOCK_REASON if evidence_only else ""

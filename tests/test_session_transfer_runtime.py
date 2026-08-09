@@ -39,6 +39,7 @@ from core.session_transfer import (
 from core.session_transfer_runtime import (
     GuestPeerSession,
     HostPeerSession,
+    PEER_TRANSFER_ERROR_PREFIX,
     is_private_lan_host,
 )
 from core.take_project import (
@@ -197,6 +198,8 @@ def _descriptor(
         frame_count=info.frames,
         subtype=info.subtype,
         started_utc="2026-07-13T12:00:00Z",
+        inventory_input_count=1,
+        inventory_segment_count=1,
     )
 
 
@@ -517,13 +520,165 @@ def test_guest_capture_starts_only_after_confirmed_state_survives_peer_outage_an
     assert guest.active_take_id == ""
     assert len(guest.pending_segments) == 2
     assert all(item.status == "verified" for item in guest.pending_segments)
+    assert {
+        (
+            item.descriptor.inventory_input_count,
+            item.descriptor.inventory_segment_count,
+        )
+        for item in guest.pending_segments
+    } == {(2, 2)}
     assert all(item.source.is_file() for item in guest.pending_segments)
     assert all(
         transfers.status(item.descriptor).complete for item in guest.pending_segments
     )
     assert originals_updates == [guest.originals_root]
-    assert guidance_updates == ["changed", "changed"]
+    # Stop truth is published before the synchronous upload, then transfer
+    # guidance refreshes once more when both Local Originals are verified.
+    assert guidance_updates == ["changed", "changed", "changed"]
     guest.stop()
+
+
+def test_guest_finalizing_state_notifies_after_capture_clears_active_take(
+    tmp_path: Path,
+    peer,
+    monkeypatch,
+) -> None:
+    credentials, _registry, control, _transfers, server = peer
+    _FakeCapture.instances.clear()
+    invite = BandInvite(
+        "127.0.0.1",
+        22124,
+        "Test",
+        credentials.session_id,
+        server.address[1],
+        credentials.invite_token,
+    )
+    guidance_updates: list[RecordingSignal] = []
+    guest = GuestPeerSession(
+        invite,
+        display_name="Alex",
+        takes_root=tmp_path / "guest",
+        installation_path=tmp_path / "installation.json",
+        capture_enabled=lambda: True,
+        capture_config=lambda: (7, 48_000, 128),
+        capture_factory=_FakeCapture,
+        on_guidance_changed=lambda: guidance_updates.append(
+            guest.last_state.signal
+        ),
+    )
+    guest.poll_once()
+    take_id = _id()
+    control.begin(take_id, started_utc="2026-08-09T12:00:00Z")
+    guest.poll_once()
+    assert guest.active_take_id == take_id
+    assert guidance_updates == [RecordingSignal.RECORDING]
+
+    # Isolate host-state guidance from upload-status guidance. The old active-
+    # take equality guard dropped FINALIZING after capture retirement here.
+    monkeypatch.setattr(guest, "_upload_pending", lambda: None)
+    control.begin_finalizing(
+        take_id,
+        stopped_utc="2026-08-09T12:01:00Z",
+        message="The host is finalizing the take.",
+    )
+    finalizing = guest.poll_once()
+
+    assert finalizing.signal is RecordingSignal.FINALIZING
+    assert guest.active_take_id == ""
+    assert _FakeCapture.instances[0].stop_calls == 1
+    assert guidance_updates == [
+        RecordingSignal.RECORDING,
+        RecordingSignal.FINALIZING,
+    ]
+
+
+def test_host_publishes_finalizing_before_fallible_inventory_refresh(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    control = SessionControlState(tmp_path, _id())
+    take_id = _id()
+    control.begin(take_id, started_utc="2026-08-09T12:00:00Z")
+    host = HostPeerSession()
+    host.control = control
+    refresh = MagicMock(side_effect=RuntimeError("registry unavailable"))
+    monkeypatch.setattr(host, "_update_expected_capture_participants", refresh)
+
+    with pytest.raises(RuntimeError, match="registry unavailable"):
+        host.begin_take_finalization(
+            take_id,
+            stopped_utc="2026-08-09T12:01:00Z",
+            message="The host is finalizing the take.",
+        )
+
+    refresh.assert_called_once_with(take_id)
+    assert control.snapshot().signal is RecordingSignal.FINALIZING
+    assert control.snapshot().take_id == take_id
+
+
+def test_host_wait_requires_every_authoritatively_declared_segment(
+    tmp_path: Path,
+) -> None:
+    credentials = SessionCredentials.create()
+    participant_id = _id()
+    take_id = _id()
+    source = tmp_path / "original.wav"
+    _wav(source)
+    first_descriptor = replace(
+        _descriptor(source, credentials, participant_id, take_id),
+        inventory_input_count=2,
+        inventory_segment_count=2,
+    )
+    second_descriptor = replace(
+        first_descriptor,
+        segment_id=_id(),
+        source_channel=1,
+    )
+    inventory = [
+        SimpleNamespace(
+            descriptor=first_descriptor,
+            received_bytes=first_descriptor.size_bytes,
+            complete=True,
+            error="",
+            path=source,
+        )
+    ]
+    host = HostPeerSession()
+    host.server = object()
+    host.credentials = credentials
+    host.transfers = SimpleNamespace(inventory=lambda _take_id: tuple(inventory))
+    host._expected_by_take[take_id] = (participant_id,)
+
+    # A quiet first upload is not proof that input 2 does not exist.
+    assert not host.wait_for_initial_take_inventory(take_id, timeout_s=0.35)
+    inventory.append(
+        SimpleNamespace(
+            descriptor=second_descriptor,
+            received_bytes=second_descriptor.size_bytes,
+            complete=True,
+            error="",
+            path=source,
+        )
+    )
+    assert host.wait_for_initial_take_inventory(take_id, timeout_s=0.1)
+
+    legacy = replace(
+        first_descriptor,
+        inventory_input_count=0,
+        inventory_segment_count=0,
+    )
+    inventory[:] = [
+        SimpleNamespace(
+            descriptor=legacy,
+            received_bytes=legacy.size_bytes,
+            complete=True,
+            error="",
+            path=source,
+        )
+    ]
+    began = time.monotonic()
+    assert not host.wait_for_initial_take_inventory(take_id, timeout_s=1.0)
+    assert time.monotonic() - began < 0.25
 
 
 def test_guest_capture_gaps_survive_queue_transfer_and_host_attachment(
@@ -860,6 +1015,7 @@ def test_host_inventory_discloses_missing_then_attaches_only_verified_media(
             host.host_enrollment.participant_id,
         )
         host.finish_take(take_id, stopped_utc="2026-07-13T12:01:00Z")
+        assert not host.wait_for_initial_take_inventory(take_id, timeout_s=0.01)
         host.register_take(take_id, take_dir)
         _wait_until(lambda: bool(updates), "initial missing peer inventory")
         missing = load_take_project(take_dir)
@@ -880,6 +1036,7 @@ def test_host_inventory_discloses_missing_then_attaches_only_verified_media(
         )
         receipt = client.upload_file(guest, descriptor, local_original, chunk_bytes=257)
         assert receipt.complete
+        assert host.wait_for_initial_take_inventory(take_id, timeout_s=1.0)
         assert host.reconcile_take(take_id, take_dir) is True
         complete = load_take_project(take_dir)
         assert not complete.errors
@@ -907,16 +1064,91 @@ def test_host_inventory_discloses_missing_then_attaches_only_verified_media(
             "peer-local-original-awaiting-reference/"
         )
         payload = json.loads((take_dir / "webjam-take.json").read_text())
-        assert payload["peer_transfers"]["participants"][0]["status"] == "verified"
-        alignment = payload["peer_transfers"]["participants"][0]["segments"][0][
-            "alignment"
-        ]
+        participant_summary = payload["peer_transfers"]["participants"][0]
+        assert participant_summary["status"] == "verified"
+        assert participant_summary["inventory"] == {
+            "status": "complete",
+            "input_count": 1,
+            "segment_count": 1,
+            "received_segments": 1,
+        }
+        alignment = participant_summary["segments"][0]["alignment"]
         assert alignment["status"] == "waiting_for_reference"
         assert alignment["timing_ready"] is False
         assert "same-participant" in alignment["reason"]
         assert updates == [(take_id, take_dir.resolve(), True)]
         assert host.reconcile_take(take_id, take_dir) is False
         assert updates == [(take_id, take_dir.resolve(), True)]
+    finally:
+        host.stop()
+
+
+def test_host_preserves_legacy_descriptor_media_but_fails_inventory_closed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "core.session_transfer_runtime.is_private_lan_host", lambda _host: True
+    )
+    monkeypatch.setattr("core.session_transfer_runtime._POLL_SECONDS", 3600.0)
+    host = HostPeerSession()
+    host.start(
+        "127.0.0.1",
+        takes_root=tmp_path / "host-takes",
+        installation_path=tmp_path / "host-installation.json",
+        display_name="Host",
+    )
+    try:
+        credentials = host.credentials
+        assert credentials is not None
+        assert host.host_enrollment is not None
+        client = SessionPeerClient("127.0.0.1", host.peer_port, credentials=credentials)
+        guest = client.enroll(_id(), "Legacy Alex")
+        client.bind_presence(
+            guest,
+            channel_id=7,
+            display_name="Legacy Alex",
+            generation=1,
+            capture_enabled=True,
+        )
+        take_id = _id()
+        host.begin_take(take_id, started_utc="2026-08-09T12:00:00Z")
+        host.finish_take(take_id, stopped_utc="2026-08-09T12:01:00Z")
+        take_dir = tmp_path / "legacy-take"
+        take_dir.mkdir()
+        _base_project(
+            take_dir,
+            take_id,
+            credentials.session_id,
+            host.host_enrollment.participant_id,
+        )
+        source = tmp_path / "legacy-original.wav"
+        _wav(source)
+        legacy = replace(
+            _descriptor(source, credentials, guest.participant_id, take_id),
+            inventory_input_count=0,
+            inventory_segment_count=0,
+        )
+        assert client.upload_file(guest, legacy, source).complete
+
+        assert not host.wait_for_initial_take_inventory(take_id, timeout_s=1.0)
+        assert host.reconcile_take(take_id, take_dir)
+        project = load_take_project(take_dir)
+        assert project.status is ProjectStatus.NEEDS_ATTENTION
+        assert any(
+            error.startswith(PEER_TRANSFER_ERROR_PREFIX)
+            and "did not declare" in error
+            for error in project.errors
+        )
+        assert any(
+            track.participant_id == guest.participant_id
+            and track.source_type is SourceType.LOCAL_ISOLATED
+            for track in project.tracks
+        )
+        payload = json.loads((take_dir / "webjam-take.json").read_text())
+        summary = payload["peer_transfers"]["participants"][0]
+        assert summary["status"] == "needs_attention"
+        assert summary["inventory"]["status"] == "needs_attention"
     finally:
         host.stop()
 

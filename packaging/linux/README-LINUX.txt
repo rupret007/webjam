@@ -1,9 +1,10 @@
-WEBJAM v0.22.5 FOR LINUX x64
-=============================
+WEBJAM v0.23.0 SOURCE CANDIDATE FOR LINUX x64
+==============================================
 
-PRE-PUBLICATION TEST CANDIDATE: use this v0.22.5 package only after its draft,
-checksum, and verified GitHub promotion gates pass. Install only the exact
-asset listed in WebJam-v0.22.5-SHA256SUMS.txt whose SHA-256 matches your download.
+UNPUBLISHED TEST CANDIDATE: no v0.23.0 release asset or promoted checksum exists.
+Use only an exact locally produced artifact whose filename and SHA-256 are
+recorded in the v0.23 physical-test evidence. Do not treat the immutable
+published v0.22.5 package or checksum manifest as evidence for this build.
 Physical audio, hardware, signed-install, and distribution-policy gates
 remain NOT RUN unless the release evidence names this exact file and SHA-256.
 
@@ -33,7 +34,7 @@ WebJam automatically checks a signed, version-specific component catalog; it
 never follows an upstream "latest" download. An approved Jamulus update is
 downloaded and verified in the background, but installing a system package
 always requires your explicit approval. WebJam never invokes hidden sudo and
-never installs while a jam, recording, Reference Track, reconnect, or Jamulus
+never installs while a jam, recording, Shared Track, reconnect, or Jamulus
 launch is active.
 
 1. When offline or when no approved update is ready, install the included,

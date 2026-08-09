@@ -5,9 +5,11 @@ matching its native package. These locks preserve the Python dependency graph
 that is reviewed and tested before signing; `requirements.txt` remains the
 human-maintained application dependency declaration.
 
-The v0.22.5 candidate locks target CPython 3.11.9 on Windows and both macOS
-targets, CPython 3.11.15 on Linux, pip 26.1.2, setuptools 81.0.0 on macOS, and
-setuptools 83.0.0 elsewhere. PyInstaller 6.21's macOS `pkg_resources`
+The v0.23.0 source candidate currently inherits the exact dependency locks
+reviewed for immutable v0.22.5; that does not make them v0.23.0 release
+evidence. They target CPython 3.11.9 on Windows and both macOS targets, CPython
+3.11.15 on Linux, pip 26.1.2, setuptools 81.0.0 on macOS, and setuptools 83.0.0
+elsewhere. PyInstaller 6.21's macOS `pkg_resources`
 runtime hook requires `NullProvider`, which setuptools 82+ no longer ships.
 Regenerate all locks with uv 0.11.29 after a deliberate dependency change,
 then rerun the entire native matrix before creating a release tag:

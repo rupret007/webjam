@@ -879,7 +879,7 @@ class TestRailViewChanges(_ControllerTestBase):
         routes = (
             ("Sound Settings…", "_bring_jamulus_forward"),
             ("Recording Setup…", "_open_recording_setup"),
-            ("Reference Track…", "_open_reference_track"),
+            ("Shared Track…", "_open_reference_track"),
             ("Use iPhone as Pocket Stage…", "_open_pocket_stage"),
             ("Band Check / Verify Sound\tF2", "_on_ready_check"),
             ("Support", "_on_save_support_bundle"),
@@ -891,7 +891,7 @@ class TestRailViewChanges(_ControllerTestBase):
                 handler_name,
             ) as handler:
                 action = self._more_action(label)
-                host_only = label == "Reference Track…"
+                host_only = label == "Shared Track…"
                 if host_only:
                     self.assertFalse(action.isVisible())
                     action.setVisible(True)

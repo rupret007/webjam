@@ -272,9 +272,9 @@ def _exercise_packaged_reference_track_mp3(root: Path) -> None:
 
     if "MP3" not in sf.available_formats() or not sf.check_format("MP3"):
         raise RuntimeError(
-            "Packaged Reference Track MP3 decoding is unavailable."
+            "Packaged Shared Track MP3 decoding is unavailable."
         )
-    source = root / "Reference Track MP3 With Spaces.mp3"
+    source = root / "Shared Track MP3 With Spaces.mp3"
     sample_rate = 44_100
     frames = np.arange(sample_rate * 2, dtype=np.float32)
     left = np.sin(frames * np.float32(2.0 * np.pi * 220.0 / sample_rate))
@@ -303,7 +303,7 @@ def _exercise_packaged_reference_track_mp3(root: Path) -> None:
             or source_frames != 2 * sample_rate
         ):
             raise RuntimeError(
-                "Packaged Reference Track MP3 validation is invalid."
+                "Packaged Shared Track MP3 validation is invalid."
             )
         stream.play()
         warmup_deadline = time.monotonic() + 2.0
@@ -316,13 +316,13 @@ def _exercise_packaged_reference_track_mp3(root: Path) -> None:
                 time.sleep(0.001)
         if warmup_frames < 4_096 or stream.position_s <= 0.0:
             raise RuntimeError(
-                "Packaged Reference Track MP3 did not begin playback."
+                "Packaged Shared Track MP3 did not begin playback."
             )
 
         stream.restart(count_in=False)
         if stream.position_s != 0.0 or stream.finished:
             raise RuntimeError(
-                "Packaged Reference Track MP3 did not restart from the beginning."
+                "Packaged Shared Track MP3 did not restart from the beginning."
             )
 
         deadline = time.monotonic() + 5.0
@@ -337,7 +337,7 @@ def _exercise_packaged_reference_track_mp3(root: Path) -> None:
                 peak = max(peak, float(np.max(np.abs(output[:delivered]))))
                 if np.count_nonzero(output[delivered:]):
                     raise RuntimeError(
-                        "Packaged Reference Track MP3 final block was not zeroed."
+                        "Packaged Shared Track MP3 final block was not zeroed."
                     )
             else:
                 time.sleep(0.001)
@@ -351,7 +351,7 @@ def _exercise_packaged_reference_track_mp3(root: Path) -> None:
             or peak <= 0.001
         ):
             raise RuntimeError(
-                "Packaged Reference Track MP3 did not reach exact normal EOF."
+                "Packaged Shared Track MP3 did not reach exact normal EOF."
             )
     finally:
         stream.close()

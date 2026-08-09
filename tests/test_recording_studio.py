@@ -74,6 +74,11 @@ from webjam_qt.widgets.studio_messages import (
     arrange_edit_failure_message,
     safe_detail,
 )
+from webjam_qt.widgets.studio_review import (
+    _is_synchronized_source,
+    _safe_source_description,
+    _safe_source_label,
+)
 from webjam_qt.widgets.studio_waveforms import StudioWaveformCoordinatorError
 from webjam_qt.windows.recording_setup import (
     LocalOriginalsChoiceDialog,
@@ -208,7 +213,12 @@ def _mark_verified(take: Path, *filenames: str) -> None:
     )
 
 
-def _schema2_studio_take(tmp_path: Path) -> tuple[Path, tuple[str, str]]:
+def _schema2_studio_take(
+    tmp_path: Path,
+    *,
+    server_source_type: SourceType = SourceType.JAMULUS_SERVER,
+    server_name: str = "Band Drums",
+) -> tuple[Path, tuple[str, str]]:
     """Create a small genuine v2 take so Studio exercises its sidecar boundary."""
     take_dir = tmp_path / "Studio Project Take"
     media = take_dir / "media"
@@ -247,10 +257,18 @@ def _schema2_studio_take(tmp_path: Path) -> tuple[Path, tuple[str, str]]:
                 track_id=server_id,
                 source_id=new_project_id(),
                 participant_id=None,
-                name="Band Drums",
-                instrument="Drums",
-                source_type=SourceType.JAMULUS_SERVER,
-                quality=SourceQuality.NETWORK_TRACK,
+                name=server_name,
+                instrument=(
+                    "Reference"
+                    if server_source_type is SourceType.LIVE_REFERENCE
+                    else "Drums"
+                ),
+                source_type=server_source_type,
+                quality=(
+                    SourceQuality.REFERENCE
+                    if server_source_type is SourceType.LIVE_REFERENCE
+                    else SourceQuality.NETWORK_TRACK
+                ),
                 media_status=MediaStatus.AVAILABLE,
                 order=0,
                 segments=(segment(server),),
@@ -367,9 +385,78 @@ def test_live_session_arms_one_lane_per_musician():
         )
         studio.set_recording_phase("recording")
         assert set(studio._lanes) == {0, 3}
-        assert studio._record_btn.text() == "■ Stop"
+        assert studio._record_btn.text() == "■ Stop Recording"
         assert "one track per musician" in studio._phase.text()
-        assert "ARMED · you" in studio._lanes[0]._detail.text()
+        assert "RECORDING · you" in studio._lanes[0]._detail.text()
+    finally:
+        studio.shutdown()
+
+
+def test_live_roster_never_claims_tracks_before_recorder_proof():
+    studio = RecordingStudio(player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
+    try:
+        studio.set_can_record(True)
+        studio.set_live_participants(
+            [SimpleNamespace(channel_id=2, name="Sam", is_local=False)]
+        )
+
+        assert "awaiting recorder proof" in studio._lanes[2]._detail.text()
+        assert "mapped automatically after recorder proof" in studio._subtitle.text()
+        assert "armed" not in studio._hint.text().casefold()
+    finally:
+        studio.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("source", "badge", "description", "synchronized"),
+    (
+        (SourceType.JAMULUS_SERVER, "BAND", "Band server track", True),
+        ("live_reference", "SHARED TRACK", "Shared Track", True),
+        (SourceType.LOCAL_ISOLATED, "LOCAL", "Local original", False),
+        ("unknown", "TRACK", "Recorded track", False),
+    ),
+)
+def test_recorded_source_presentation_has_one_truthful_classification(
+    source,
+    badge,
+    description,
+    synchronized,
+):
+    assert _safe_source_label(source) == badge
+    assert _safe_source_description(source) == description
+    assert _is_synchronized_source(source) is synchronized
+
+
+def test_shared_track_take_is_distinct_and_synchronized_in_studio(tmp_path):
+    _schema2_studio_take(
+        tmp_path,
+        server_source_type=SourceType.LIVE_REFERENCE,
+        server_name="Shared Track",
+    )
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio.resize(1440, 900)
+        studio.show()
+        studio._take_list.setCurrentRow(0)
+        APP.processEvents()
+
+        lane = studio._lanes[0]
+        assert lane._source_badge.text() == "SHARED TRACK"
+        assert lane._source_badge.accessibleName() == "SHARED TRACK source"
+        assert lane._detail.text() == "SYNCHRONIZED"
+        assert lane.waveform._source == "live_reference"
+        assert _is_synchronized_source(lane.waveform._source)
+
+        studio._select_track(0)
+        assert studio._inspector_values["source"].text() == "Shared Track"
+        assert (
+            studio._inspector_values["alignment"].text()
+            == "Shared Track · band server timeline reference"
+        )
+        assert "Local original" not in studio._inspector_values["source"].text()
     finally:
         studio.shutdown()
 
@@ -743,7 +830,7 @@ def test_arrange_toolbar_edits_reload_cycle_and_preserve_source_truth(tmp_path):
         assert crossfades[0].start_frame == RATE // 2
         assert crossfades[0].frame_count == RATE // 2
         assert crossfades[0].curve.value == "equal_power"
-        assert studio._crossfade_btn.text() == "Remove Crossfade"
+        assert studio._crossfade_btn.text() == "No Xfade"
 
         studio.resize(760, 600)
         studio.show()
@@ -759,6 +846,14 @@ def test_arrange_toolbar_edits_reload_cycle_and_preserve_source_truth(tmp_path):
         ):
             assert bounds.contains(button.mapTo(studio, button.rect().topLeft()))
             assert bounds.contains(button.mapTo(studio, button.rect().bottomRight()))
+            assert button.width() >= button.minimumSizeHint().width()
+        assert studio._add_marker_btn.text() == "＋ Mark"
+        assert studio._cycle_region_btn.text() == "Clear"
+        assert studio._region_fades_btn.text() == "No Fades"
+        assert studio._crossfade_btn.text() == "No Xfade"
+        assert studio._crossfade_btn.accessibleName() == (
+            "Crossfade selected overlapping regions"
+        )
 
         studio._toggle_selected_crossfade()
         assert all(item.deleted for item in studio._studio_state.crossfades)
@@ -1081,6 +1176,87 @@ def test_studio_export_failure_never_silently_falls_back(tmp_path):
             studio.shutdown()
 
 
+def test_schema2_activation_failure_locks_export_without_legacy_fallback(tmp_path):
+    _take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        with patch.object(
+            studio,
+            "_source_catalog_for_document",
+            side_effect=StudioSourceCatalogError("intentional inventory failure"),
+        ):
+            studio._take_list.setCurrentRow(0)
+
+        assert studio._current is not None
+        assert studio._current.manifest_schema_version == 2
+        assert studio._studio_state is None
+        assert studio._studio_project is None
+        assert studio._studio_source_catalog is None
+        assert not studio._export_btn.isEnabled()
+
+        with (
+            patch(
+                "webjam_qt.widgets.recording_studio.export_studio_arrangement"
+            ) as studio_export,
+            patch(
+                "webjam_qt.widgets.recording_studio.export_track_package"
+            ) as legacy_export,
+        ):
+            studio._export_tracks()
+
+        studio_export.assert_not_called()
+        legacy_export.assert_not_called()
+        assert studio.export_in_progress is False
+        assert "export stays locked" in studio._hint.text().lower()
+        assert "every recording is unchanged" in studio._hint.text().lower()
+    finally:
+        studio.shutdown()
+
+
+def test_schema2_export_rechecks_source_inventory_at_enable_and_click(tmp_path):
+    _take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        catalog = studio._studio_source_catalog
+        assert catalog is not None
+        assert studio._export_btn.isEnabled()
+
+        studio._studio_source_catalog = None
+        studio._refresh_export_button()
+        assert not studio._export_btn.isEnabled()
+
+        studio._studio_source_catalog = catalog
+        studio._refresh_export_button()
+        assert studio._export_btn.isEnabled()
+
+        # Model a source-inventory invalidation after the last button refresh.
+        # The click boundary must still refuse both worker paths.
+        studio._studio_source_catalog = None
+        with (
+            patch(
+                "webjam_qt.widgets.recording_studio.export_studio_arrangement"
+            ) as studio_export,
+            patch(
+                "webjam_qt.widgets.recording_studio.export_track_package"
+            ) as legacy_export,
+        ):
+            studio._export_tracks()
+
+        studio_export.assert_not_called()
+        legacy_export.assert_not_called()
+        assert studio.export_in_progress is False
+        assert "export stays locked" in studio._hint.text().lower()
+    finally:
+        studio.shutdown()
+
+
 def test_schema2_export_shutdown_cancels_and_discards_worker_callback(tmp_path):
     _take_dir, _track_ids = _schema2_studio_take(tmp_path)
     started = threading.Event()
@@ -1261,7 +1437,7 @@ def test_recording_confirmation_cancels_raced_export_and_returns_live(tmp_path):
             assert studio.export_in_progress is False
             assert studio._viewing_live is True
             assert studio._current is None
-            assert studio._record_btn.text() == "■ Stop"
+            assert studio._record_btn.text() == "■ Stop Recording"
             assert studio._record_btn.isEnabled()
             assert finished == [False]
 
@@ -1912,6 +2088,10 @@ def test_studio_autosave_failure_stays_dirty_and_retries_without_losing_edit(
         assert "recorded take is safe" in studio._hint.text().lower()
         assert studio.prepare_close() is True
         assert studio._studio_state_dirty is False
+        assert studio._studio_persistence_failed is False
+        assert studio._studio_state_error == ""
+        assert "studio choices saved" in studio._hint.text().lower()
+        assert "couldn't save" not in studio._hint.text().lower()
         assert studio.shutdown() is True
         assert studio.shutdown() is True
     finally:

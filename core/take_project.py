@@ -367,9 +367,12 @@ class AlignmentState:
     residual_ms: float = 0.0
     anchors: tuple[AlignmentAnchor, ...] = ()
     # A peer original may rely on a different musician's immutable server
-    # capture only when this identifies the exact same-participant reference
-    # track and its declared segment fingerprint. Empty values retain legacy
-    # alignment compatibility; peer export uses them as a required gate.
+    # capture only when these fields identify the exact same-participant
+    # reference track and its declared segment fingerprint. A LIVE_REFERENCE
+    # track uses the fingerprint alone for the exact uploaded source bytes so
+    # Studio never treats a replacement song as another take lane. Empty
+    # values retain manifest readability; provenance-sensitive operations use
+    # them as a fail-closed gate.
     reference_track_id: str = ""
     reference_fingerprint_sha256: str = ""
 

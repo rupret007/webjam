@@ -1,10 +1,12 @@
-# Developing WebJam v0.22.5
+# Developing WebJam v0.23.0
 
-> **Pre-publication candidate source:** this guide describes v0.22.5. The
-> immutable v0.22.4 release remains GitHub Latest until promotion succeeds.
+> **Current candidate source:** this guide describes unpublished v0.23.0
+> Shared Track, Record Session, and Studio development. GitHub **Latest**
+> remains immutable v0.22.5.
 
-> **Current source boundary:** `master` is the v0.22.5 release-candidate line
-> and is not itself a published download.
+> **Release boundary:** the exact v0.22.5 tag and checksum-verified assets remain
+> authoritative for the published download. No v0.23.0 tag, package, checksum,
+> component authorization, or physical result exists yet.
 
 ## Local setup
 
@@ -21,7 +23,7 @@ Use the repository virtual environment:
 For Studio arrangement changes, run the focused model, persistence, history,
 controller, renderer, comping, waveform, export, and Qt integration modules in
 addition to the full suite. The physical-output and external-editor gates in
-`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.22.5.
+`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.23.0.
 
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
@@ -118,6 +120,14 @@ Linux/JACK real-Jamulus companion and its evidence boundary are documented in
 - Keep Webex external and truthful: opening a URL is not a joined/muted claim.
 - Keep Local Originals behind explicit Recording Setup and Studio output in
   Studio.
+- Keep Shared Track on the existing separately owned `WebJam Track` Jamulus
+  participant. Do not add distributed local playback or a second transport.
+- Treat **Record Session** as one musician action but keep recorder, Shared
+  Track route, Local Original, transfer, validation, and publication ownership
+  independently proved.
+- Never derive guest transport or audibility from a roster row. A bounded
+  channel-presence observation is not playing, synchronized, isolated, or
+  healthy evidence.
 
 ## Guidance ownership rules
 
@@ -158,13 +168,15 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree's package identity is `0.22.5`. It remains pre-publication until
-its exact tag, eight-asset draft, checksums, v3 component catalog, and verified
-promotion pass. v0.22.4 is the immutable GitHub **Latest** release, clearly
-labeled as an unsigned/unnotarized private test candidate.
-Published v0.20.0, v0.21.0,
-v0.22.0, v0.22.1, v0.22.2, v0.22.3, and v0.22.4 tags and assets remain immutable
-historical evidence and must never be overwritten or served under a moved tag.
+The source tree's package identity is `0.23.0`, an unpublished candidate. It
+must receive its own exact tag, asset inventory, checksums, exact-target
+component catalog, tag CI, and verified promotion before it can become a
+download. The v0.22.5 tag, eight-asset inventory, checksums, v3 component
+catalog, tag CI, and verified promotion remain the immutable GitHub **Latest**
+release evidence and must not be reused.
+Published v0.20.0, v0.21.0, v0.22.0, v0.22.1, v0.22.2, v0.22.3, v0.22.4,
+and v0.22.5 tags and assets remain immutable historical evidence and must never
+be overwritten or served under a moved tag.
 
 The v0.22.5 locks select `cryptography` 50.0.0 for the three audited CVE
 remediations. Windows, Linux, and Apple-silicon macOS install exact upstream

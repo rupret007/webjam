@@ -1,9 +1,11 @@
 """Supplemental host capture is atomic and failure-safe."""
 from __future__ import annotations
 
+import builtins
+from contextlib import ExitStack
 import json
+import logging
 import os
-import queue
 import sys
 import tempfile
 import threading
@@ -17,6 +19,7 @@ from unittest.mock import patch
 import numpy as np
 import soundfile as sf
 
+import core.local_capture as local_capture
 from core.local_capture import (
     LocalCaptureError,
     LocalInputCapture,
@@ -101,10 +104,11 @@ class TestLocalInputCapture(TestCase):
         class _OneSecondStream(_FakeStream):
             def start(self):
                 block = np.column_stack((
-                    np.full(48_000, 0.25, dtype="float32"),
-                    np.full(48_000, -0.125, dtype="float32"),
+                    np.full(4_800, 0.25, dtype="float32"),
+                    np.full(4_800, -0.125, dtype="float32"),
                 ))
-                self.callback(block, len(block), None, "")
+                for _ in range(10):
+                    self.callback(block, len(block), None, "")
 
         take_id = str(uuid.uuid4())
         session_id = str(uuid.uuid4())
@@ -137,9 +141,10 @@ class TestLocalInputCapture(TestCase):
         self.assertEqual(payload["writer_frames"], [48_000, 48_000])
 
     def test_device_open_failure_cleans_partial_files(self):
+        private_detail = "/Users/private-musician/Secret Interface"
         fake_sd = SimpleNamespace(
             check_input_settings=lambda **_kwargs: (_ for _ in ()).throw(
-                ValueError("device busy")
+                ValueError(f"device busy at {private_detail}")
             ),
             InputStream=lambda **kwargs: _FakeStream(**kwargs),
         )
@@ -148,14 +153,17 @@ class TestLocalInputCapture(TestCase):
         ):
             root = Path(d)
             capture = LocalInputCapture(root)
-            with self.assertRaisesRegex(LocalCaptureError, "device busy"):
+            with self.assertRaises(LocalCaptureError) as raised:
                 capture.start()
             leftovers = list(root.glob(".webjam-capture-*"))
+        message = str(raised.exception)
         self.assertFalse(leftovers)
+        self.assertIn("Check the selected input", message)
+        self.assertNotIn("device busy", message)
+        self.assertNotIn(private_detail, message)
 
     def test_disk_writes_happen_on_writer_thread_not_audio_callback(self):
-        """The audio callback must only enqueue; every disk write belongs to
-        the dedicated writer thread."""
+        """The callback only hands off; every disk write belongs to the writer."""
         write_threads: list[str] = []
 
         class _RecordingWriter:
@@ -188,6 +196,144 @@ class TestLocalInputCapture(TestCase):
             write_threads,
         )
 
+    def test_callback_hot_path_uses_only_the_preallocated_ring(self):
+        """Callback ingress must not allocate a block, lock, wait, log, or do I/O."""
+
+        class _ManualStream(_FakeStream):
+            def start(self):
+                return None
+
+        class _PositionWriter:
+            def __init__(self, path, **_kwargs):
+                self._path = Path(str(path))
+                self._path.touch()
+                self._position = 0
+
+            def write(self, data):
+                self._position += len(data)
+
+            def tell(self):
+                return self._position
+
+            def flush(self):
+                return None
+
+            def close(self):
+                return None
+
+        class _NoCopyArray(np.ndarray):
+            def copy(self, *_args, **_kwargs):
+                raise AssertionError("callback attempted to allocate a block copy")
+
+        class _Status:
+            input_overflow = True
+
+            def __bool__(self):
+                return True
+
+            def __str__(self):
+                raise AssertionError("callback attempted to format device status")
+
+        class _ForbiddenLock:
+            def __enter__(self):
+                raise AssertionError("callback attempted to acquire a lock")
+
+            def __exit__(self, *_args):
+                return None
+
+        def forbidden(*_args, **_kwargs):
+            raise AssertionError("forbidden operation reached the audio callback")
+
+        fake_sd = _fake_sd(lambda **kwargs: _ManualStream(**kwargs))
+        fake_sf = SimpleNamespace(
+            SoundFile=lambda path, **kwargs: _PositionWriter(path, **kwargs)
+        )
+        with tempfile.TemporaryDirectory() as d, patch.dict(
+            sys.modules,
+            {"sounddevice": fake_sd, "soundfile": fake_sf},
+        ):
+            root = Path(d)
+            capture = LocalInputCapture(root, samplerate=48_000, blocksize=8)
+            capture.start()
+            callback = capture._stream.callback
+            source = np.ones((8, 2), dtype=np.float32).view(_NoCopyArray)
+            prior_diagnostics_lock = capture._diagnostics_lock
+            prior_finalize_lock = capture._finalize_lock
+            capture._diagnostics_lock = _ForbiddenLock()
+            capture._finalize_lock = _ForbiddenLock()
+            try:
+                import queue as queue_module
+
+                with ExitStack() as hot:
+                    for name in (
+                        "array",
+                        "asarray",
+                        "concatenate",
+                        "empty",
+                        "ones",
+                        "stack",
+                        "zeros",
+                    ):
+                        hot.enter_context(
+                            patch.object(local_capture.np, name, forbidden)
+                        )
+                    for name in ("open", "read", "write"):
+                        hot.enter_context(
+                            patch.object(local_capture.os, name, forbidden)
+                        )
+                    for name in ("lstat", "open"):
+                        hot.enter_context(patch.object(Path, name, forbidden))
+                    hot.enter_context(patch.object(builtins, "open", forbidden))
+                    hot.enter_context(patch.object(logging.Logger, "_log", forbidden))
+                    hot.enter_context(
+                        patch.object(threading.Event, "wait", forbidden)
+                    )
+                    hot.enter_context(
+                        patch.object(threading.Event, "set", forbidden)
+                    )
+                    hot.enter_context(
+                        patch.object(queue_module.Queue, "put_nowait", forbidden)
+                    )
+                    callback(source, 8, None, _Status())
+            finally:
+                capture._diagnostics_lock = prior_diagnostics_lock
+                capture._finalize_lock = prior_finalize_lock
+            result = capture.stop_into(root / "take")
+
+        self.assertEqual(result.total_frames, 8)
+        self.assertEqual(len(result.files), 2)
+        self.assertTrue(
+            any("input overflow" in error for error in result.errors),
+            result.errors,
+        )
+
+    def test_stale_callback_generation_cannot_append_after_stop(self):
+        class _ManualStream(_FakeStream):
+            def start(self):
+                return None
+
+        fake_sd = _fake_sd(lambda **kwargs: _ManualStream(**kwargs))
+        with tempfile.TemporaryDirectory() as d, patch.dict(
+            sys.modules,
+            {"sounddevice": fake_sd},
+        ):
+            root = Path(d)
+            capture = LocalInputCapture(root, samplerate=48_000, blocksize=8)
+            capture.start()
+            callback = capture._stream.callback
+            source = np.ones((8, 2), dtype=np.float32)
+            callback(source, 8, None, "")
+            result = capture.stop_into(root / "take")
+            completed_frames = capture._next_input_frame
+
+            callback(source, 8, None, "")
+
+            attached_frames = tuple(sf.info(path).frames for path in result.files)
+
+        self.assertEqual(completed_frames, 8)
+        self.assertEqual(capture._next_input_frame, 8)
+        self.assertEqual(attached_frames, (8, 8))
+
     def test_repeated_device_status_flags_stay_bounded(self):
         """A sustained overflow condition must not grow the error list one
         entry per audio block — the manifest embeds these strings."""
@@ -195,8 +341,9 @@ class TestLocalInputCapture(TestCase):
         class _SpammyStream(_FakeStream):
             def start(self):
                 block = np.zeros((480, 2), dtype="float32")
+                status = SimpleNamespace(input_overflow=True)
                 for _ in range(1000):
-                    self.callback(block, len(block), None, "input overflow")
+                    self.callback(block, len(block), None, status)
 
         fake_sd = _fake_sd(lambda **kwargs: _SpammyStream(**kwargs))
         with tempfile.TemporaryDirectory() as d, patch.dict(
@@ -210,7 +357,7 @@ class TestLocalInputCapture(TestCase):
             "input overflow" in e and "×1000" in e for e in result.errors
         ), result.errors)
 
-    def test_queue_overflow_drops_blocks_with_counted_error(self):
+    def test_capture_ring_overflow_drops_blocks_with_counted_error(self):
         release = threading.Event()
         write_started = threading.Event()
 
@@ -327,7 +474,7 @@ class TestLocalInputCapture(TestCase):
         ):
             root = Path(d)
             capture = LocalInputCapture(root, samplerate=48000)
-            capture._queue = queue.Queue(maxsize=1)
+            capture._ring_capacity = 1
             capture.start()
             result = capture.stop_into(root / "take")
             guitar, guitar_rate = sf.read(str(result.files[0]), dtype="float32")
@@ -435,7 +582,8 @@ class TestLocalInputCapture(TestCase):
             )),
             atol=2e-6,
         )
-        self.assertTrue(any(
+        self.assertIn("Local capture write failed on channel 1.", result.errors)
+        self.assertFalse(any(
             "transient test write failure" in error for error in result.errors
         ), result.errors)
 

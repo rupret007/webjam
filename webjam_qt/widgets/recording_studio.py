@@ -67,6 +67,7 @@ from core.studio_source_catalog import StudioSourceCatalog
 from webjam_qt.widgets.studio_arrangement_workflow import (
     StudioArrangementWorkflowMixin,
     _selectable_track_export_track_ids,
+    _take_requires_studio_document,
 )
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.accessible import set_labeled_action
@@ -87,6 +88,7 @@ from webjam_qt.widgets.studio_review import (
     _composite_waveform_peaks,
     _fmt_db,
     _fmt_time,
+    _is_synchronized_source,
     _timeline_gaps_for_track,
     _waveform_peaks,
     _waveform_source_key,
@@ -400,9 +402,9 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._setup_btn.setAccessibleName("Open recording setup")
         self._setup_btn.clicked.connect(self.recording_setup_requested.emit)
         top.addWidget(self._setup_btn)
-        self._record_btn = QPushButton("● Record")
+        self._record_btn = QPushButton("● Record Session")
         self._record_btn.setObjectName("StudioRecordButton")
-        self._record_btn.setAccessibleName("Record take")
+        self._record_btn.setAccessibleName("Record Session")
         self._record_btn.clicked.connect(self.record_requested.emit)
         top.addWidget(self._record_btn)
         root.addLayout(top)
@@ -859,6 +861,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
     def _set_compact_chrome(self, compact: bool) -> None:
         """Keep Arrange and its one-lane mixer usable at the 760 px floor."""
 
+        self._arrange_toolbar.set_compact(compact)
         button_height = 44
         controls = (
             self._live_btn,
@@ -1136,42 +1139,50 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
 
     def set_recording_phase(self, phase: str, detail: str = "") -> None:
         phase = str(phase or "idle")
+        previous_phase = self._phase_name
         self._phase_name = phase
         if self._exporting and phase in {
             "preflight",
             "starting",
+            "count_in",
             "recording",
             "stop_failed",
         }:
             self._cancel_export_for_recording()
         labels = {
-            "idle": "READY · start audio, then record a take",
-            "preflight": "CHECKING THE BAND…",
-            "starting": "ARMING TRACKS…",
+            "idle": "READY · start audio, then Record Session",
+            "preflight": "PREPARING THE SESSION…",
+            "starting": "PREPARING TRACKS…",
+            "count_in": "COUNT-IN · recording is already active",
             "recording": "● RECORDING · one track per musician",
-            "stopping": "SAVING TRACKS…",
-            "validating": detail or "VERIFYING THE TAKE…",
-            "complete": "TAKE SAVED · ready to play",
+            "stopping": "STOPPING RECORDING…",
+            "validating": detail or "FINALIZING THE TAKE…",
+            "complete": "READY · TAKE SAVED",
             "needs_attention": "TAKE SAVED · review recommended",
-            "stop_failed": "● STILL RECORDING · stop was not confirmed",
+            "stop_failed": "CLEANUP PENDING · recording stop not confirmed",
             "error": "RECORDING NEEDS ATTENTION",
         }
         self._phase_label = labels.get(phase, phase.upper())
         self._render_studio_phase()
-        self._recording = phase in {"recording", "stop_failed"}
+        self._recording = phase in {"count_in", "recording", "stop_failed"}
         if self._recording:
-            if phase == "recording":
+            if phase == "recording" and previous_phase not in {
+                "count_in",
+                "recording",
+            }:
                 self._recording_elapsed = 0.0
             self._show_live_session()
             self._record_btn.setText(
-                "■ Try Stop" if phase == "stop_failed" else "■ Stop"
+                "■ Finish Stop"
+                if phase == "stop_failed"
+                else "■ Stop Recording"
             )
             self._refresh_record_button_enabled()
         elif phase in {"preflight", "starting", "stopping", "validating"}:
             self._record_btn.setText("Working…")
             self._record_btn.setEnabled(False)
         else:
-            self._record_btn.setText("● Record")
+            self._record_btn.setText("● Record Session")
             self._refresh_record_button_enabled()
         for lane in self._lanes.values():
             lane.waveform.set_recording(self._recording)
@@ -1180,7 +1191,12 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
     def _refresh_record_button_enabled(self) -> None:
         """Keep record/stop availability consistent with export and recorder state."""
 
-        busy = self._phase_name in {"preflight", "starting", "stopping", "validating"}
+        busy = self._phase_name in {
+            "preflight",
+            "starting",
+            "stopping",
+            "validating",
+        }
         self._record_btn.setEnabled(
             self._recording
             or (
@@ -1659,7 +1675,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._new_take_btn.setVisible(False)
         self._title.setText("Live multitrack session")
         self._subtitle.setText(
-            "Each connected musician is armed automatically—no track setup required."
+            "Connected musicians are mapped automatically after recorder proof."
         )
         self._play_btn.setEnabled(False)
         self._stop_btn.setEnabled(False)
@@ -1676,9 +1692,22 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             channel_id = int(getattr(participant, "channel_id", -1))
             if channel_id < 0:
                 continue
-            detail = "ARMED · live musician"
+            recording_proven = self._phase_name in {
+                "count_in",
+                "recording",
+                "stop_failed",
+            }
+            detail = (
+                "RECORDING · live musician"
+                if recording_proven
+                else "CONNECTED · awaiting recorder proof"
+            )
             if getattr(participant, "is_local", False):
-                detail = "ARMED · you"
+                detail = (
+                    "RECORDING · you"
+                    if recording_proven
+                    else "YOU · awaiting recorder proof"
+                )
             lane = TrackLane(
                 channel_id,
                 getattr(participant, "name", "Musician"),
@@ -1689,11 +1718,17 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             lane.waveform.set_live(self._recording)
             self._add_lane(lane, live=True)
         if self._live_participants:
-            self._hint.setText(
-                f"{len(self._live_participants)} track"
-                f"{'s' if len(self._live_participants) != 1 else ''} armed. "
-                "Press Record when the band is ready."
-            )
+            if self._phase_name in {"count_in", "recording", "stop_failed"}:
+                self._hint.setText(
+                    f"Recording {len(self._live_participants)} proven musician "
+                    f"source{'s' if len(self._live_participants) != 1 else ''}."
+                )
+            else:
+                self._hint.setText(
+                    f"{len(self._live_participants)} connected musician"
+                    f"{'s' if len(self._live_participants) != 1 else ''}. "
+                    "Press Record Session to verify and map recorder tracks."
+                )
         else:
             self._hint.setText(
                 "Start Session to add musicians, then press Record for synchronized tracks."
@@ -1768,6 +1803,46 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         excluded.intersection_update(available)
         return available - excluded
 
+    def _studio_export_context_ready(self, take: TakeInfo) -> bool:
+        """Require one fully activated source inventory for schema-v2 export."""
+
+        if not _take_requires_studio_document(take):
+            return True
+        take_path = self._track_export_selection_key(take)
+        document = self._studio_state
+        project = self._studio_project
+        catalog = self._studio_source_catalog
+        if (
+            document is None
+            or project is None
+            or catalog is None
+            or self._studio_state_take_path != take_path
+            or self._studio_controller.take_path != take_path
+            or document.take_id != project.take_id
+            or document.take_id != take.take_id
+        ):
+            return False
+        expected_take_ids = (
+            project.take_id,
+            *sorted(
+                {
+                    region.source_take_id
+                    for region in document.regions
+                    if not region.deleted
+                    and region.source_take_id != project.take_id
+                }
+            ),
+        )
+        return catalog.take_ids == expected_take_ids
+
+    def _show_studio_export_context_error(self) -> None:
+        self._hint.setText(
+            "Studio export stays locked because its arrangement sources could "
+            "not be verified. Reopen the take and try again. Every recording "
+            "is unchanged."
+        )
+        self._emit_guidance_changed()
+
     def _can_export_current_take(self) -> bool:
         take = self._current
         if (
@@ -1778,6 +1853,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             or take.validation_status != "complete"
             or bool(take.manifest_errors)
             or not self._player.tracks
+            or not self._studio_export_context_ready(take)
         ):
             return False
         selected = self._selected_track_export_track_ids(take)
@@ -1975,7 +2051,9 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 detail = "RECOVERED TRACK · listen and review before export"
             else:
                 detail = (
-                    "SYNCHRONIZED" if track.source == "jamulus_server" else "ORIGINAL"
+                    "SYNCHRONIZED"
+                    if _is_synchronized_source(track.source)
+                    else "ORIGINAL"
                 )
             export_track_id = str(getattr(source_info, "track_id", "") or "").strip()
             lane = TrackLane(
@@ -2096,9 +2174,20 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
     def _export_tracks(self) -> None:
         """Publish a portable track package without creating an editor project."""
         take = self._current
-        if take is None or not self._can_export_current_take():
+        if take is None:
+            return
+        if not self._can_export_current_take():
+            if not self._studio_export_context_ready(take):
+                self._show_studio_export_context_error()
             return
         if not self._flush_studio_state():
+            return
+        # Saving can refresh the controller snapshot and its cross-take source
+        # inventory. Recheck the exact schema-v2 activation before choosing the
+        # Studio or legacy worker so a failed refresh cannot become a fallback.
+        if not self._studio_export_context_ready(take):
+            self._show_studio_export_context_error()
+            self._refresh_export_button()
             return
         self._stop_playback()
         take_path = take.path.expanduser().resolve()

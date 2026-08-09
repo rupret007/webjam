@@ -35,6 +35,8 @@ from core.session_transfer import (
     SessionPeerServer,
     SessionStateSnapshot,
     SessionTransferError,
+    SharedTrackPlaybackState,
+    SharedTrackSessionSnapshot,
     TransferConflictError,
     TransferDescriptor,
     TransferGap,
@@ -53,7 +55,7 @@ from core.session_transfer import (
 
 LOGGER = logging.getLogger("webjam.session_transfer")
 _POLL_SECONDS = 0.75
-_TRANSFER_ERROR_PREFIX = "Peer isolated recording: "
+PEER_TRANSFER_ERROR_PREFIX = "Peer isolated recording: "
 
 # A generic transient match is useful evidence, but a remotely delivered local
 # original must clear a higher bar before Studio may treat it as a timing-ready
@@ -69,6 +71,85 @@ _PEER_ALIGNMENT_MAX_RESIDUAL_MS = 2.0
 _PEER_ALIGNMENT_MIN_ANCHORS = 3
 _MANIFEST_RECONCILE_MAX_ATTEMPTS = 3
 _RECONCILE_RETRY = object()
+
+
+@dataclass(frozen=True, slots=True)
+class _ParticipantInventoryDisposition:
+    """Bounded truth about one guest's declared take inventory."""
+
+    status: str
+    input_count: int = 0
+    segment_count: int = 0
+    issue: str = ""
+
+    @property
+    def settled(self) -> bool:
+        return self.status in {"complete", "needs_attention"}
+
+
+def _participant_inventory_disposition(
+    items: Iterable[object],
+) -> _ParticipantInventoryDisposition:
+    """Validate one participant's immutable input/segment declaration.
+
+    A descriptor from an older peer has zero counts. It remains wire-readable
+    and its verified media can still be preserved, but it cannot prove that no
+    additional local input is still waiting to be declared.
+    """
+
+    records = tuple(items)
+    if not records:
+        return _ParticipantInventoryDisposition("missing")
+    declarations = {
+        (
+            int(getattr(item.descriptor, "inventory_input_count", 0) or 0),
+            int(getattr(item.descriptor, "inventory_segment_count", 0) or 0),
+        )
+        for item in records
+    }
+    if declarations == {(0, 0)}:
+        return _ParticipantInventoryDisposition(
+            "needs_attention",
+            issue=(
+                "local original did not declare its complete input and segment "
+                "inventory."
+            ),
+        )
+    if (0, 0) in declarations or len(declarations) != 1:
+        return _ParticipantInventoryDisposition(
+            "needs_attention",
+            issue="local original declared contradictory take inventories.",
+        )
+    input_count, segment_count = next(iter(declarations))
+    if len(records) < segment_count:
+        return _ParticipantInventoryDisposition(
+            "receiving",
+            input_count=input_count,
+            segment_count=segment_count,
+            issue="declared local-original inventory has not fully arrived.",
+        )
+    if len(records) > segment_count:
+        return _ParticipantInventoryDisposition(
+            "needs_attention",
+            input_count=input_count,
+            segment_count=segment_count,
+            issue="local original exceeded its declared segment inventory.",
+        )
+    source_channels = {
+        int(getattr(item.descriptor, "source_channel", -1)) for item in records
+    }
+    if source_channels != set(range(input_count)):
+        return _ParticipantInventoryDisposition(
+            "needs_attention",
+            input_count=input_count,
+            segment_count=segment_count,
+            issue="local original did not represent every declared input.",
+        )
+    return _ParticipantInventoryDisposition(
+        "complete",
+        input_count=input_count,
+        segment_count=segment_count,
+    )
 
 
 def is_private_lan_host(value: str) -> bool:
@@ -1007,6 +1088,66 @@ class HostPeerSession:
         self._update_expected_capture_participants(take_id)
         return snapshot
 
+    def begin_take_finalization(
+        self,
+        take_id: str,
+        *,
+        stopped_utc: str,
+        message: str = "",
+    ) -> SessionStateSnapshot | None:
+        """Tell enrolled peers to finalize originals before host validation."""
+
+        if self.control is None:
+            return None
+        snapshot = self.control.begin_finalizing(
+            take_id,
+            stopped_utc=stopped_utc,
+            message=message,
+        )
+        # Stop truth must reach guests before registry reads that exist only to
+        # classify the later Local Original inventory. If this refresh fails,
+        # the caller sees the failure and final reconciliation remains
+        # fail-closed, but guests no longer remain falsely Recording.
+        self._update_expected_capture_participants(take_id)
+        return snapshot
+
+    def publish_shared_track_state(
+        self,
+        *,
+        state: SharedTrackPlaybackState | str,
+        loaded: bool,
+        source_display_name: str = "",
+        position_s: float = 0.0,
+        duration_s: float = 0.0,
+        loop_start_s: float = 0.0,
+        loop_end_s: float | None = None,
+        count_in_active: bool = False,
+        cleanup_pending: bool = False,
+        needs_attention: bool = False,
+        playback_generation: int | None = None,
+    ) -> SharedTrackSessionSnapshot | None:
+        """Publish bounded Shared Track truth for authenticated guests.
+
+        The returned projection grants neither transport control nor evidence
+        of remote audibility. It is safe for a guest to render as host state.
+        """
+
+        if self.control is None:
+            return None
+        return self.control.publish_shared_track(
+            state=state,
+            loaded=loaded,
+            source_display_name=source_display_name,
+            position_s=position_s,
+            duration_s=duration_s,
+            loop_start_s=loop_start_s,
+            loop_end_s=loop_end_s,
+            count_in_active=count_in_active,
+            cleanup_pending=cleanup_pending,
+            needs_attention=needs_attention,
+            playback_generation=playback_generation,
+        )
+
     def finish_take(
         self,
         take_id: str,
@@ -1042,6 +1183,78 @@ class HostPeerSession:
             self._registered_takes[canonical_take] = Path(take_dir).resolve()
             wake_event = self._maintenance_wake
         wake_event.set()
+
+    def wait_for_initial_take_inventory(
+        self,
+        take_id: str,
+        *,
+        timeout_s: float = 5.0,
+    ) -> bool:
+        """Wait off the UI thread for expected guest upload dispositions.
+
+        A current peer declares both its total input count and segment count on
+        every immutable descriptor. A participant is successful only after the
+        complete declared set exists and every segment is checksum-complete or
+        has a terminal transfer error. Legacy or contradictory declarations are
+        wire-readable but immediately fail closed. Timeout is classification,
+        never evidence that an incomplete inventory succeeded.
+        """
+
+        try:
+            canonical_take = str(uuid.UUID(str(take_id)))
+            timeout = float(timeout_s)
+        except (TypeError, ValueError, AttributeError):
+            return False
+        if isinstance(timeout_s, bool) or not 0.0 <= timeout <= 60.0:
+            return False
+        self._update_expected_capture_participants(canonical_take)
+        deadline = time.monotonic() + timeout
+        while True:
+            with self._lock:
+                if not self.active or self.transfers is None:
+                    return False
+                transfers = self.transfers
+                expected = set(self._expected_by_take.get(canonical_take, ()))
+            if not expected:
+                return True
+            try:
+                inventory = transfers.inventory(canonical_take)
+            except Exception:  # noqa: BLE001 - inventory truth fails absent
+                inventory = ()
+            by_participant: dict[str, list[object]] = {}
+            for item in inventory:
+                participant_id = str(
+                    getattr(getattr(item, "descriptor", None), "participant_id", "")
+                    or ""
+                )
+                if participant_id in expected:
+                    by_participant.setdefault(participant_id, []).append(item)
+            dispositions = {
+                participant_id: _participant_inventory_disposition(
+                    by_participant.get(participant_id, ())
+                )
+                for participant_id in expected
+            }
+            if any(
+                disposition.status == "needs_attention"
+                for disposition in dispositions.values()
+            ):
+                return False
+            settled = all(
+                disposition.status == "complete"
+                and all(
+                    bool(getattr(item, "complete", False))
+                    or bool(getattr(item, "error", ""))
+                    for item in by_participant.get(participant_id, ())
+                )
+                for participant_id, disposition in dispositions.items()
+            )
+            now = time.monotonic()
+            if settled:
+                return True
+            if now >= deadline:
+                return False
+            time.sleep(min(0.05, max(0.0, deadline - now)))
 
     def _lifecycle_is_current_locked(
         self,
@@ -1260,7 +1473,7 @@ class HostPeerSession:
         attached_dir.mkdir(exist_ok=True)
         transfer_errors: list[str] = []
         if readiness_issue:
-            transfer_errors.append(f"{_TRANSFER_ERROR_PREFIX}{readiness_issue}")
+            transfer_errors.append(f"{PEER_TRANSFER_ERROR_PREFIX}{readiness_issue}")
         transfer_summary: list[dict] = []
         next_order = max((item.order for item in project.tracks), default=-1) + 1
         attached_new_media = False
@@ -1270,13 +1483,21 @@ class HostPeerSession:
                 return False
             name = display_by_id.get(participant_id, "Musician")
             participant_items = received_by_participant.get(participant_id, [])
+            inventory_disposition = _participant_inventory_disposition(
+                participant_items
+            )
             participant_status = "missing"
             segment_summaries: list[dict] = []
             if participant_id not in participants:
                 participants[participant_id] = Participant(participant_id, name)
             if not participant_items:
                 transfer_errors.append(
-                    f"{_TRANSFER_ERROR_PREFIX}{name}'s local original has not arrived."
+                    f"{PEER_TRANSFER_ERROR_PREFIX}{name}'s local original has not arrived."
+                )
+            elif inventory_disposition.issue:
+                transfer_errors.append(
+                    f"{PEER_TRANSFER_ERROR_PREFIX}{name}'s "
+                    f"{inventory_disposition.issue}"
                 )
             for item in participant_items:
                 if not self._lifecycle_is_current(generation, stop_event):
@@ -1307,7 +1528,7 @@ class HostPeerSession:
                 )
                 if not item.complete or item.path is None:
                     transfer_errors.append(
-                        f"{_TRANSFER_ERROR_PREFIX}{name}'s local original is incomplete."
+                        f"{PEER_TRANSFER_ERROR_PREFIX}{name}'s local original is incomplete."
                     )
                     continue
                 destination = attached_dir / (
@@ -1653,10 +1874,16 @@ class HostPeerSession:
                         )
                 if descriptor.capture_errors or descriptor.gap_frames:
                     transfer_errors.append(
-                        f"{_TRANSFER_ERROR_PREFIX}{name}'s local original needs attention."
+                        f"{PEER_TRANSFER_ERROR_PREFIX}{name}'s local original needs attention."
                     )
             if participant_items:
-                if all(item.complete for item in participant_items):
+                if inventory_disposition.status == "needs_attention":
+                    participant_status = "needs_attention"
+                elif inventory_disposition.status != "complete":
+                    participant_status = "receiving"
+                elif any(item.error for item in participant_items):
+                    participant_status = "needs_attention"
+                elif all(item.complete for item in participant_items):
                     participant_status = (
                         "needs_attention"
                         if any(
@@ -1672,6 +1899,12 @@ class HostPeerSession:
                     "participant_id": participant_id,
                     "display_name": name,
                     "status": participant_status,
+                    "inventory": {
+                        "status": inventory_disposition.status,
+                        "input_count": inventory_disposition.input_count,
+                        "segment_count": inventory_disposition.segment_count,
+                        "received_segments": len(participant_items),
+                    },
                     "segments": segment_summaries,
                 }
             )
@@ -1679,10 +1912,10 @@ class HostPeerSession:
         base_errors = tuple(
             item
             for item in project.errors
-            if not item.startswith(_TRANSFER_ERROR_PREFIX)
+            if not item.startswith(PEER_TRANSFER_ERROR_PREFIX)
         )
         had_transfer_attention = any(
-            item.startswith(_TRANSFER_ERROR_PREFIX) for item in project.errors
+            item.startswith(PEER_TRANSFER_ERROR_PREFIX) for item in project.errors
         )
         errors = tuple(dict.fromkeys((*base_errors, *transfer_errors)))
         status = project.status
@@ -1831,6 +2064,7 @@ class GuestPeerSession:
         self._capture = None
         self._active_take_id = ""
         self._capture_started_config: tuple[int, int, int] | None = None
+        self._guidance_notification_generation = 0
         self._pending: list[PendingLocalSegment] = []
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -2011,8 +2245,34 @@ class GuestPeerSession:
                 self.installation_id, self.display_name
             )
         self._publish_presence_if_needed()
+        previous_state = self.last_state
         state = self.client.state(self.enrollment)
         self.last_state = state
+        state_changed = bool(
+            (
+                previous_state is None
+                and (
+                    state.signal is not RecordingSignal.IDLE
+                    or state.shared_track.generation > 0
+                )
+            )
+            or (previous_state is not None and state != previous_state)
+        )
+        published_terminal_early = bool(
+            state_changed
+            and state.signal
+            in {
+            RecordingSignal.FINALIZING,
+            RecordingSignal.COMPLETE,
+            RecordingSignal.NEEDS_ATTENTION,
+            }
+        )
+        if published_terminal_early:
+            # Publish host stop truth before local WAV finalization or a long
+            # synchronous upload. The UI must not remain visibly Recording
+            # while those independent guest-owned operations finish.
+            self._notify_guidance_changed()
+        guidance_before_work = self._guidance_notification_generation
         if state.signal is RecordingSignal.RECORDING and state.take_id:
             if bool(self.capture_enabled()):
                 self._start_capture(state.take_id)
@@ -2028,6 +2288,16 @@ class GuestPeerSession:
                     else ""
                 )
         self._upload_pending()
+        if (
+            state_changed
+            and not published_terminal_early
+            and self._guidance_notification_generation
+            == guidance_before_work
+        ):
+            # Recording and Shared Track presentation share this bounded poll.
+            # Capture/upload transitions can issue the same semantic
+            # notification first; the generation check avoids duplicates.
+            self._notify_guidance_changed()
         return state
 
     def _publish_presence_if_needed(self) -> None:
@@ -2210,8 +2480,11 @@ class GuestPeerSession:
         final_dir = self.queue_path.parent / take_id
         try:
             result = capture.stop_into(final_dir)
-        except Exception as exc:  # noqa: BLE001
-            self.last_error = f"The local original could not be finalized: {exc}"
+        except Exception:  # noqa: BLE001 - capture errors may contain local paths
+            self.last_error = (
+                "The local original could not be finalized and needs local "
+                "recovery review."
+            )
             return
         errors = list(getattr(result, "errors", ()) or ())
         if needs_attention:
@@ -2228,14 +2501,17 @@ class GuestPeerSession:
         capture_device = getattr(result, "capture_device", None)
         device_id = str(getattr(capture_device, "device_id", "") or "")
         gaps = tuple(getattr(result, "gaps", ()) or ())
-        for channel, source in enumerate(tuple(getattr(result, "files", ()) or ())):
+        source_files = tuple(getattr(result, "files", ()) or ())
+        inventory_input_count = len(source_files)
+        inventory_segment_count = len(source_files)
+        for channel, source in enumerate(source_files):
             source_path = Path(source).resolve()
             try:
                 import soundfile as sf  # type: ignore
 
                 info = sf.info(str(source_path))
-            except (OSError, RuntimeError) as exc:
-                errors.append(f"The preserved local WAV is unreadable: {exc}")
+            except (OSError, RuntimeError):
+                errors.append("The preserved local WAV is unreadable.")
                 continue
             channel_gaps: list[TransferGap] = []
             for gap in gaps:
@@ -2285,6 +2561,8 @@ class GuestPeerSession:
                 started_utc=str(getattr(result, "started_utc", "") or ""),
                 device_id=device_id,
                 source_channel=channel,
+                inventory_input_count=inventory_input_count,
+                inventory_segment_count=inventory_segment_count,
                 capture_errors=tuple(dict.fromkeys(errors)),
                 gaps=tuple(channel_gaps),
             )
@@ -2306,6 +2584,7 @@ class GuestPeerSession:
             LOGGER.exception("Could not publish Local Originals update")
 
     def _notify_guidance_changed(self) -> None:
+        self._guidance_notification_generation += 1
         callback = self._on_guidance_changed
         if callback is None:
             return

@@ -47,6 +47,7 @@ REFERENCE_MAX_TRIM_DB = 12.0
 REFERENCE_MAX_COUNT_IN_BEATS = 16
 REFERENCE_MIN_BPM = 20.0
 REFERENCE_MAX_BPM = 400.0
+REFERENCE_WAVEFORM_BINS = 128
 REFERENCE_MAX_DIAGNOSTIC_COUNTER = (1 << 63) - 1
 _BASE_SUPPORTED_EXTENSIONS = (
     ".wav",
@@ -56,8 +57,8 @@ _BASE_SUPPORTED_EXTENSIONS = (
     ".flac",
 )
 _ROUTE_WARNING = (
-    "Jamulus-routed: everyone hears this like another musician, with the "
-    "session's normal buffering, jitter handling, and network latency. "
+    "Jamulus-routed: this travels like another musician, with the session's "
+    "normal buffering, jitter handling, and network latency. "
     "A server recording captures it as a separate stem."
 )
 
@@ -217,12 +218,15 @@ class ReferenceTrackOwnershipClaim:
     ``udp_port`` is the exact live socket proved to belong to ``process_id``;
     it is not the Jamulus ``--port`` allocation base.  The private port and
     process identity deliberately never appear in a public snapshot,
-    diagnostic, take manifest, or support bundle.
+    diagnostic, take manifest, or support bundle. The optional source digest
+    is path-free content identity that the controller adds only after hashing
+    the exact validated local source off the real-time path.
     """
 
     udp_port: int
     process_id: int
     generation: str
+    source_fingerprint_sha256: str = ""
 
     def __post_init__(self) -> None:
         if isinstance(self.udp_port, bool) or not 1 <= int(self.udp_port) <= 65_535:
@@ -232,9 +236,21 @@ class ReferenceTrackOwnershipClaim:
         generation = str(self.generation or "").strip().lower()
         if re.fullmatch(r"[0-9a-f]{32}", generation) is None:
             raise ValueError("generation must be a private 128-bit token")
+        source_fingerprint = str(
+            self.source_fingerprint_sha256 or ""
+        ).strip().lower()
+        if source_fingerprint and re.fullmatch(
+            r"[0-9a-f]{64}", source_fingerprint
+        ) is None:
+            raise ValueError("source_fingerprint_sha256 must be a SHA-256 digest")
         object.__setattr__(self, "udp_port", int(self.udp_port))
         object.__setattr__(self, "process_id", int(self.process_id))
         object.__setattr__(self, "generation", generation)
+        object.__setattr__(
+            self,
+            "source_fingerprint_sha256",
+            source_fingerprint,
+        )
 
     def __repr__(self) -> str:
         return "ReferenceTrackOwnershipClaim(<redacted>)"
@@ -260,6 +276,9 @@ class ReferenceTrackSnapshot:
     warning: str = _ROUTE_WARNING
     cleanup_pending: bool = False
     underrun_frames: int = 0
+    count_in_active: bool = False
+    waveform_peaks: tuple[float, ...] = ()
+    waveform_progress: float = 0.0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "state", ReferenceTrackState(self.state))
@@ -324,6 +343,18 @@ class ReferenceTrackSnapshot:
             "underrun_frames",
             _bounded_diagnostic_counter(self.underrun_frames),
         )
+        object.__setattr__(self, "count_in_active", bool(self.count_in_active))
+        peaks = tuple(float(value) for value in self.waveform_peaks)
+        if len(peaks) > REFERENCE_WAVEFORM_BINS or any(
+            not math.isfinite(value) or not 0.0 <= value <= 1.0
+            for value in peaks
+        ):
+            raise ValueError("waveform_peaks must be bounded normalized values")
+        object.__setattr__(self, "waveform_peaks", peaks)
+        progress = float(self.waveform_progress)
+        if not math.isfinite(progress) or not 0.0 <= progress <= 1.0:
+            raise ValueError("waveform_progress must be between zero and one")
+        object.__setattr__(self, "waveform_progress", progress)
 
     @property
     def loaded(self) -> bool:
@@ -355,7 +386,7 @@ class ReferenceTrackSnapshot:
         )
 
     def public_diagnostics(self) -> dict[str, object]:
-        """Return strict path- and filename-free Reference Track facts."""
+        """Return strict path- and filename-free Shared Track facts."""
 
         raw_platform = self.capability.platform.casefold()
         platform = (
@@ -399,6 +430,7 @@ class ReferenceTrackSnapshot:
             "route_reason": self.capability.reason_code,
             "route_active": self.active,
             "cleanup_pending": self.cleanup_pending,
+            "count_in_active": self.count_in_active,
         }
 
 
@@ -436,10 +468,11 @@ class ReferenceTrackSourceInfo:
     output_frames: int
     container: str
     initial_decode_frames: int
+    source_fingerprint_sha256: str
 
 
 class ReferenceTrackDecoder:
-    """Reference Track adapter over the hardened project-audio decoder."""
+    """Shared Track adapter over the hardened project-audio decoder."""
 
     def __init__(self, path: str | Path) -> None:
         candidate = Path(path).expanduser()
@@ -503,6 +536,14 @@ class ReferenceTrackDecoder:
                 "Check that the local audio file is complete and try again."
             )
         initial_audio.fill(0.0)
+        try:
+            source_fingerprint = decoder.source_sha256()
+        except ProjectAudioError:
+            decoder.close()
+            raise ReferenceTrackError(
+                "That song changed while WebJam was loading it. Choose the "
+                "local audio file again."
+            ) from None
 
         safe_name = candidate.name.strip()
         if (
@@ -524,6 +565,7 @@ class ReferenceTrackDecoder:
             output_frames=output_frames,
             container=str(probe.container or "").upper(),
             initial_decode_frames=initial_decode_frames,
+            source_fingerprint_sha256=source_fingerprint,
         )
 
     def __repr__(self) -> str:
@@ -614,6 +656,11 @@ class _ReferencePlaybackRing:
         self.requested_frames = 0
         self.delivered_frames = 0
         self.underrun_frames = 0
+        # Callback-owned count-in progress. These scalar writes remain inside
+        # the lock-free consumer path; UI/control readers only observe a
+        # bounded snapshot and never coordinate the callback with a lock.
+        self.count_in_delivered_generation = -1
+        self.count_in_delivered_frames = 0
 
     @property
     def has_write_capacity(self) -> bool:
@@ -657,7 +704,7 @@ class _ReferencePlaybackRing:
             or output.shape[1] != 2
             or output.shape[0] > REFERENCE_MAX_DECODE_FRAMES
         ):
-            raise ValueError("output does not fit the Reference Track ring")
+            raise ValueError("output does not fit the Shared Track ring")
         output.fill(0.0)
         requested = int(output.shape[0])
         self._pending_generation = generation
@@ -698,6 +745,11 @@ class _ReferencePlaybackRing:
                 output[written : written + amount],
                 source[begin : begin + amount],
             )
+            if bool(self._count_in[slot]):
+                if self.count_in_delivered_generation != generation:
+                    self.count_in_delivered_generation = generation
+                    self.count_in_delivered_frames = 0
+                self.count_in_delivered_frames += amount
             self._front_offset += amount
             written += amount
             if not bool(self._count_in[slot]):
@@ -785,6 +837,16 @@ class ReferenceTrackStream:
         self._count_in_bpm = 120.0
         self._count_in_total = 0
         self._count_in_cursor = 0
+        # Waveform analysis is owned by the existing decoder producer thread,
+        # never the real-time callback. It scans in bounded blocks while idle
+        # and yields immediately to playback work.
+        self._waveform_peaks = np.zeros(
+            REFERENCE_WAVEFORM_BINS, dtype=np.float32
+        )
+        self._waveform_scan_frame = 0
+        self._waveform_buffer = np.empty(
+            (REFERENCE_MAX_DECODE_FRAMES, 2), dtype=np.float32
+        )
         self._thread = threading.Thread(
             target=self._run,
             name="WebJam reference-track decoder",
@@ -835,6 +897,30 @@ class ReferenceTrackStream:
                 self._ring.underrun_frames
             ),
         }
+
+    @property
+    def count_in_active(self) -> bool:
+        """Return bounded consumer truth for the audible pre-roll."""
+
+        with self._condition:
+            if not self._playing or self._count_in_total <= 0:
+                return False
+            delivered = (
+                self._ring.count_in_delivered_frames
+                if self._ring.count_in_delivered_generation == self._generation
+                else 0
+            )
+            return delivered < self._count_in_total
+
+    @property
+    def waveform_summary(self) -> tuple[tuple[float, ...], float]:
+        """Return a path-free, normalized progressive waveform snapshot."""
+
+        with self._condition:
+            peaks = tuple(float(value) for value in self._waveform_peaks)
+            total = max(1, self._decoder.output_frames)
+            progress = min(1.0, self._waveform_scan_frame / total)
+        return peaks, progress
 
     def configure_loop(self, start_s: float, end_s: float | None) -> None:
         start = self._seconds_to_frame(start_s)
@@ -1031,6 +1117,14 @@ class ReferenceTrackStream:
                         and self._ring.has_write_capacity
                         and not at_end
                     ):
+                        work_kind = "playback"
+                        break
+                    if (
+                        not self._playing
+                        and self._waveform_scan_frame
+                        < self._decoder.output_frames
+                    ):
+                        work_kind = "waveform"
                         break
                     # The callback never enters this condition merely to wake
                     # the producer. Poll a full ring well inside one 1024-frame
@@ -1046,11 +1140,57 @@ class ReferenceTrackStream:
                     self._condition.wait(timeout=timeout)
                 if self._closed:
                     return
-                generation = self._generation
-                target = self._ring.acquire_write_buffer()
-                if target is None:
-                    self._condition.wait(timeout=0.005)
+                if work_kind == "waveform":
+                    scan_start = self._waveform_scan_frame
+                    scan_amount = min(
+                        REFERENCE_MAX_DECODE_FRAMES,
+                        self._decoder.output_frames - scan_start,
+                    )
+                    target = self._waveform_buffer[:scan_amount]
+                    generation = self._generation
+                else:
+                    scan_start = 0
+                    scan_amount = 0
+                    target = self._ring.acquire_write_buffer()
+                    generation = self._generation
+                    if target is None:
+                        self._condition.wait(timeout=0.005)
+                        continue
+            if work_kind == "waveform":
+                try:
+                    decoded_frames = self._decoder.read_48k_into(
+                        scan_start,
+                        target,
+                    )
+                    if decoded_frames != scan_amount:
+                        raise ReferenceTrackError(
+                            "WebJam couldn't decode the complete song preview. "
+                            "Load the song again."
+                        )
+                    self._merge_waveform_block(
+                        scan_start,
+                        target[:scan_amount],
+                    )
+                except ReferenceTrackError as exc:
+                    with self._condition:
+                        if generation == self._generation:
+                            self._error = str(exc)
+                            self._waveform_scan_frame = self._decoder.output_frames
                     continue
+                with self._condition:
+                    if generation == self._generation:
+                        self._waveform_scan_frame = max(
+                            self._waveform_scan_frame,
+                            scan_start + scan_amount,
+                        )
+                continue
+
+            with self._condition:
+                # Playback may have been paused while the worker crossed the
+                # bounded decoder boundary above. Re-check before publishing.
+                if self._closed:
+                    return
+                generation = self._generation
                 count_remaining = self._count_in_total - self._count_in_cursor
                 if count_remaining > 0:
                     amount = min(self._block_frames, count_remaining)
@@ -1125,6 +1265,7 @@ class ReferenceTrackStream:
                 np.clip(target[:amount], -1.0, 1.0, out=target[:amount])
                 song_end = song_start + amount
                 count_in = False
+                self._merge_waveform_block(song_start, target[:amount])
             with self._condition:
                 if (
                     not self._closed
@@ -1139,6 +1280,33 @@ class ReferenceTrackStream:
                         count_in=count_in,
                         finish_after=finish_after,
                     )
+
+    def _merge_waveform_block(
+        self,
+        start_frame: int,
+        audio: np.ndarray,
+    ) -> None:
+        """Merge one producer-thread block into fixed normalized peak bins."""
+
+        frames = int(audio.shape[0])
+        if frames <= 0:
+            return
+        total = max(1, self._decoder.output_frames)
+        first = min(
+            REFERENCE_WAVEFORM_BINS - 1,
+            int(start_frame) * REFERENCE_WAVEFORM_BINS // total,
+        )
+        last = min(
+            REFERENCE_WAVEFORM_BINS - 1,
+            max(first, (int(start_frame) + frames - 1) * REFERENCE_WAVEFORM_BINS // total),
+        )
+        peak = min(1.0, float(np.max(np.abs(audio))))
+        with self._condition:
+            np.maximum(
+                self._waveform_peaks[first : last + 1],
+                np.float32(peak),
+                out=self._waveform_peaks[first : last + 1],
+            )
 
     @staticmethod
     def _render_count_in_into(
@@ -1214,6 +1382,7 @@ class ReferenceTrackController:
         self._source_format = ""
         self._source_samplerate = 0
         self._source_channels = 0
+        self._source_fingerprint_sha256 = ""
         self._route_detail = ""
         self._error = ""
         # True only when FAILED means a pre-playback route/capability start
@@ -1287,12 +1456,22 @@ class ReferenceTrackController:
             claim = reader()
         except Exception:  # noqa: BLE001 - private backend evidence boundary
             return None
-        if claim is not None and not isinstance(claim, ReferenceTrackOwnershipClaim):
+        if not isinstance(claim, ReferenceTrackOwnershipClaim):
             return None
         with self._lock:
-            if self._session is not session:
+            if (
+                self._session is not session
+                or self._stream is None
+                or not self._source_fingerprint_sha256
+            ):
                 return None
-        return claim
+            source_fingerprint = self._source_fingerprint_sha256
+        return ReferenceTrackOwnershipClaim(
+            udp_port=claim.udp_port,
+            process_id=claim.process_id,
+            generation=claim.generation,
+            source_fingerprint_sha256=source_fingerprint,
+        )
 
     def refresh_capability(
         self, audience_bridge_active: bool = False
@@ -1376,6 +1555,17 @@ class ReferenceTrackController:
         return snapshot
 
     def load(self, path: str | Path) -> ReferenceTrackSnapshot:
+        with self._lock:
+            self._require_open_locked()
+            if self._session is not None or self._state in {
+                ReferenceTrackState.ROUTING,
+                ReferenceTrackState.PLAYING,
+                ReferenceTrackState.PAUSED,
+                ReferenceTrackState.STOPPING,
+            }:
+                raise ReferenceTrackError(
+                    "Stop the Shared Track before replacing it."
+                )
         stopped = self.stop()
         with self._lock:
             self._require_open_locked()
@@ -1436,6 +1626,9 @@ class ReferenceTrackController:
                 self._source_format = decoder.info.container
                 self._source_samplerate = decoder.info.source_samplerate
                 self._source_channels = decoder.info.channels
+                self._source_fingerprint_sha256 = (
+                    decoder.info.source_fingerprint_sha256
+                )
                 self._error = ""
                 self._recoverable_route_failure = False
                 self._state = ReferenceTrackState.READY
@@ -1445,6 +1638,57 @@ class ReferenceTrackController:
             return stale
         if old_stream is not None:
             old_stream.close()
+        self._notify(snapshot)
+        return snapshot
+
+    def unload(self) -> ReferenceTrackSnapshot:
+        """Remove the selected source after proving owned playback stopped.
+
+        The imported file is never modified. If private route cleanup cannot
+        be confirmed, retain the old source and owner so Stop can be retried
+        without presenting a false empty state.
+        """
+
+        with self._lock:
+            self._require_open_locked()
+            if self._session is not None or self._state in {
+                ReferenceTrackState.ROUTING,
+                ReferenceTrackState.PLAYING,
+                ReferenceTrackState.PAUSED,
+                ReferenceTrackState.STOPPING,
+            }:
+                raise ReferenceTrackError(
+                    "Stop the Shared Track before removing it."
+                )
+        stopped = self.stop()
+        with self._lock:
+            self._require_open_locked()
+            if stopped.cleanup_pending or (
+                stopped.state is ReferenceTrackState.FAILED
+                and self._session is not None
+            ):
+                return stopped
+            stream = self._stream
+            self._source_generation += 1
+            self._stream = None
+            self._source_name = ""
+            self._duration_s = 0.0
+            self._loop_start_s = 0.0
+            self._loop_end_s = None
+            self._trim_db = 0.0
+            self._count_in_beats = 0
+            self._count_in_bpm = 120.0
+            self._source_format = ""
+            self._source_samplerate = 0
+            self._source_channels = 0
+            self._source_fingerprint_sha256 = ""
+            self._route_detail = ""
+            self._error = ""
+            self._recoverable_route_failure = False
+            self._state = ReferenceTrackState.IDLE
+            snapshot = self._snapshot_locked()
+        if stream is not None:
+            stream.close()
         self._notify(snapshot)
         return snapshot
 
@@ -1461,16 +1705,16 @@ class ReferenceTrackController:
             self._require_open_locked()
             if not self._is_host():
                 return self._fail_locked(
-                    "Only the session host can control the Reference Track."
+                    "Only the session host can control the Shared Track."
                 )
             if context.audience_bridge_active:
                 return self._fail_locked(
-                    "Reference Track can't share BlackHole with the Webex audience "
+                    "Shared Track can't share BlackHole with the Webex audience "
                     "bridge. Switch Webex to talkback or video-only first.",
                     recoverable_route=True,
                 )
             if self._stream is None:
-                return self._fail_locked("Load a song before starting Reference Track.")
+                return self._fail_locked("Load a song before starting Shared Track.")
             if self._state is ReferenceTrackState.PLAYING:
                 return self._snapshot_locked()
             if self._state is ReferenceTrackState.ROUTING:
@@ -1582,7 +1826,7 @@ class ReferenceTrackController:
                     teardown_error = str(stop_exc)
                 except Exception:  # noqa: BLE001
                     teardown_error = (
-                        "Reference Track couldn't confirm that its owned "
+                        "Shared Track couldn't confirm that its owned "
                         "Jamulus client stopped."
                     )
                 if teardown_error:
@@ -1600,7 +1844,7 @@ class ReferenceTrackController:
                     if backend_cleanup_pending
                     else str(exc)
                     if isinstance(exc, ReferenceTrackError)
-                    else "WebJam couldn't prove a safe Reference Track route."
+                    else "WebJam couldn't prove a safe Shared Track route."
                 )
             )
             with self._lock:
@@ -1620,7 +1864,7 @@ class ReferenceTrackController:
         with self._lock:
             self._require_open_locked()
             if self._state is not ReferenceTrackState.PLAYING or self._stream is None:
-                raise ReferenceTrackError("Reference Track is not playing.")
+                raise ReferenceTrackError("Shared Track is not playing.")
             self._stream.pause()
             self._state = ReferenceTrackState.PAUSED
             snapshot = self._snapshot_locked()
@@ -1634,7 +1878,7 @@ class ReferenceTrackController:
         with self._lock:
             self._require_open_locked()
             if self._stream is None or self._session is None:
-                raise ReferenceTrackError("Start Reference Track before restarting it.")
+                raise ReferenceTrackError("Start Shared Track before restarting it.")
             self._stream.restart(count_in=True)
             self._state = ReferenceTrackState.PLAYING
             self._error = ""
@@ -1651,7 +1895,7 @@ class ReferenceTrackController:
                 ReferenceTrackState.PAUSED,
                 ReferenceTrackState.READY,
             }:
-                raise ReferenceTrackError("Pause Reference Track before seeking.")
+                raise ReferenceTrackError("Pause Shared Track before seeking.")
             self._stream.seek(seconds)
             snapshot = self._snapshot_locked()
         self._notify(snapshot)
@@ -1705,7 +1949,7 @@ class ReferenceTrackController:
             try:
                 error = session.health_error().strip()
             except Exception:  # noqa: BLE001
-                error = "Reference Track couldn't verify its owned route."
+                error = "Shared Track couldn't verify its owned route."
             if error:
                 teardown_error = self._stop_session()
                 with self._lock:
@@ -1819,6 +2063,7 @@ class ReferenceTrackController:
                 self._source_format = ""
                 self._source_samplerate = 0
                 self._source_channels = 0
+                self._source_fingerprint_sha256 = ""
                 self._recoverable_route_failure = False
                 snapshot = self._snapshot_locked()
             if stream is not None:
@@ -1837,7 +2082,7 @@ class ReferenceTrackController:
             return str(exc)
         except Exception:  # noqa: BLE001
             return (
-                "Reference Track couldn't confirm that its owned Jamulus "
+                "Shared Track couldn't confirm that its owned Jamulus "
                 "client stopped."
             )
         with self._lock:
@@ -1857,7 +2102,7 @@ class ReferenceTrackController:
             teardown_error = str(exc)
         except Exception:  # noqa: BLE001
             teardown_error = (
-                "Reference Track couldn't confirm that its owned Jamulus "
+                "Shared Track couldn't confirm that its owned Jamulus "
                 "client stopped."
             )
         else:
@@ -1883,13 +2128,13 @@ class ReferenceTrackController:
             capability = ReferenceTrackCapability(
                 False,
                 "unknown",
-                "Reference Track routing could not be inspected safely.",
+                "Shared Track routing could not be inspected safely.",
             )
         if not isinstance(capability, ReferenceTrackCapability):
             return ReferenceTrackCapability(
                 False,
                 "unknown",
-                "Reference Track routing returned invalid capability evidence.",
+                "Shared Track routing returned invalid capability evidence.",
             )
         return capability
 
@@ -1897,7 +2142,7 @@ class ReferenceTrackController:
         retry = getattr(self._backend, "retry_cleanup", None)
         if not callable(retry):
             return (
-                "Reference Track private cleanup is still pending. Restart "
+                "Shared Track private cleanup is still pending. Restart "
                 "WebJam before trying the route again."
             )
         try:
@@ -1906,7 +2151,7 @@ class ReferenceTrackController:
             message = str(exc).strip()
         except Exception:  # noqa: BLE001 - backend recovery boundary
             message = (
-                "Reference Track private cleanup could not be confirmed. "
+                "Shared Track private cleanup could not be confirmed. "
                 "Choose Stop again."
             )
         else:
@@ -1921,8 +2166,13 @@ class ReferenceTrackController:
     def _snapshot_locked(self) -> ReferenceTrackSnapshot:
         position = self._stream.position_s if self._stream is not None else 0.0
         underruns = 0
+        count_in_active = False
+        waveform_peaks: tuple[float, ...] = ()
+        waveform_progress = 0.0
         if self._stream is not None:
             underruns = self._stream.realtime_stats().get("underrun_frames", 0)
+            count_in_active = self._stream.count_in_active
+            waveform_peaks, waveform_progress = self._stream.waveform_summary
         return ReferenceTrackSnapshot(
             state=self._state,
             capability=self._capability,
@@ -1947,6 +2197,9 @@ class ReferenceTrackController:
                 or self._capability.reason_code == "cleanup_pending"
             ),
             underrun_frames=underruns,
+            count_in_active=count_in_active,
+            waveform_peaks=waveform_peaks,
+            waveform_progress=waveform_progress,
         )
 
     def _fail_locked(
@@ -1956,7 +2209,7 @@ class ReferenceTrackController:
         recoverable_route: bool = False,
     ) -> ReferenceTrackSnapshot:
         self._state = ReferenceTrackState.FAILED
-        self._error = str(message or "Reference Track couldn't continue.").strip()
+        self._error = str(message or "Shared Track couldn't continue.").strip()
         self._recoverable_route_failure = bool(recoverable_route)
         snapshot = self._snapshot_locked()
         self._notify(snapshot)
@@ -1964,7 +2217,7 @@ class ReferenceTrackController:
 
     def _require_open_locked(self) -> None:
         if self._state is ReferenceTrackState.CLOSED:
-            raise ReferenceTrackError("Reference Track was already closed.")
+            raise ReferenceTrackError("Shared Track was already closed.")
 
     def _notify(self, snapshot: ReferenceTrackSnapshot) -> None:
         callback = self._on_snapshot
@@ -1982,6 +2235,7 @@ __all__ = [
     "REFERENCE_MAX_DECODE_FRAMES",
     "REFERENCE_QUEUE_BLOCKS",
     "REFERENCE_SAMPLE_RATE",
+    "REFERENCE_WAVEFORM_BINS",
     "ReferenceAudioBridgeBackend",
     "ReferenceAudioBridgeSession",
     "ReferenceTrackCapability",

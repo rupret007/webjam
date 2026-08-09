@@ -205,7 +205,12 @@ class TestJamulusServerRpc(unittest.TestCase):
         with self._rpc() as rpc:
             with self.assertRaises(ServerRpcError) as ctx:
                 rpc.start_recording()
-        self.assertIn("nope", str(ctx.exception))
+        message = str(ctx.exception)
+        self.assertEqual(
+            message,
+            "jamulusserver/startRecording was rejected by the band server.",
+        )
+        self.assertNotIn("nope", message)
 
     def test_call_timeout_raises(self):
         self.fake.mute_method = "jamulusserver/getRecorderStatus"
@@ -290,6 +295,287 @@ class TestRecordButtonWiring(unittest.TestCase):
         self.window.session_strip._record_button.click()
         self.assertEqual(received, [True])
 
+    def test_shared_track_participant_identity_is_stable_within_the_session(self):
+        import uuid
+
+        from core.take_project import new_project_id
+
+        c = self.controller
+        original_session_id = c.recording._session_id
+        try:
+            session_id = new_project_id()
+            c.recording._session_id = session_id
+            c.recording._take_id = new_project_id()
+            c.recording._reset_session_evidence()
+            first_take_identity = c.recording._reference_participant_id
+
+            self.assertEqual(
+                first_take_identity,
+                str(
+                    uuid.uuid5(
+                        uuid.UUID(session_id),
+                        "participant:shared-track",
+                    )
+                ),
+            )
+
+            c.recording._take_id = new_project_id()
+            c.recording._reset_session_evidence()
+            self.assertEqual(
+                c.recording._reference_participant_id,
+                first_take_identity,
+            )
+
+            next_session_id = new_project_id()
+            c.recording._session_id = next_session_id
+            c.recording._take_id = new_project_id()
+            c.recording._reset_session_evidence()
+            self.assertNotEqual(
+                c.recording._reference_participant_id,
+                first_take_identity,
+            )
+            self.assertEqual(
+                c.recording._reference_participant_id,
+                str(
+                    uuid.uuid5(
+                        uuid.UUID(next_session_id),
+                        "participant:shared-track",
+                    )
+                ),
+            )
+        finally:
+            c.recording._session_id = original_session_id
+            c.recording._take_id = ""
+            c.recording._reset_session_evidence()
+
+    def test_planned_shared_track_transaction_waits_for_playback_and_cleanup(self):
+        from core.take_project import new_project_id
+
+        c = self.controller
+        take_id = new_project_id()
+        prior_reference_track = c._reference_track
+        try:
+            c.recording._take_id = take_id
+            c.recording.plan_shared_track_for_next_take(required=True)
+            c.recording._begin_shared_track_transaction(take_id)
+
+            # Planning the following take must not rewrite this take's frozen
+            # requirement.
+            c.recording.plan_shared_track_for_next_take(required=False)
+            self.assertTrue(c.recording.shared_track_required_for_active_take)
+
+            playing = SimpleNamespace(
+                state=SimpleNamespace(value="playing"),
+                active=True,
+                cleanup_pending=False,
+            )
+            ready = SimpleNamespace(
+                state=SimpleNamespace(value="ready"),
+                active=False,
+                cleanup_pending=False,
+                underrun_frames=0,
+            )
+            c._reference_track = SimpleNamespace(snapshot=ready)
+            c.recording._confirmed_recording_started()
+            c.recording.observe_shared_track_snapshot(playing)
+            c.recording._confirmed_recording_stopped()
+            c.recording.note_shared_track_cleanup_requested()
+
+            self.assertEqual(
+                c.recording._await_shared_track_transaction_errors(take_id),
+                (),
+            )
+        finally:
+            c._reference_track = prior_reference_track
+            c.recording._retire_active_take(take_id)
+            c.recording.plan_shared_track_for_next_take(required=False)
+
+    def test_shared_track_playing_before_recorder_confirmation_is_not_proof(self):
+        from core.take_project import new_project_id
+
+        c = self.controller
+        take_id = new_project_id()
+        prior_reference_track = c._reference_track
+        try:
+            c.recording._take_id = take_id
+            c.recording._reset_session_evidence()
+            c.recording.plan_shared_track_for_next_take(required=True)
+            c.recording._begin_shared_track_transaction(take_id)
+            playing = SimpleNamespace(
+                state=SimpleNamespace(value="playing"),
+                active=True,
+                cleanup_pending=False,
+                underrun_frames=7,
+            )
+            ready = SimpleNamespace(
+                state=SimpleNamespace(value="ready"),
+                active=False,
+                cleanup_pending=False,
+                underrun_frames=7,
+            )
+            c._reference_track = SimpleNamespace(snapshot=playing)
+
+            c.recording.observe_shared_track_snapshot(playing)
+            c.recording._confirmed_recording_started()
+            c._reference_track.snapshot = ready
+            c.recording._confirmed_recording_stopped()
+            c.recording.note_shared_track_cleanup_requested()
+            with patch(
+                "webjam_qt.controllers.recording_coordinator."
+                "_SHARED_TRACK_FINALIZE_TIMEOUT_S",
+                0.0,
+            ):
+                errors = c.recording._await_shared_track_transaction_errors(take_id)
+
+            self.assertEqual(len(errors), 1)
+            self.assertIn("never reached confirmed playback", errors[0])
+        finally:
+            c._reference_track = prior_reference_track
+            c.recording._retire_active_take(take_id)
+            c.recording.plan_shared_track_for_next_take(required=False)
+
+    def test_shared_track_underruns_are_scoped_to_each_recording_window(self):
+        from core.take_project import RecoveryStatus, new_project_id
+
+        c = self.controller
+        prior_reference_track = c._reference_track
+        first_take = new_project_id()
+        second_take = new_project_id()
+        starting_generation = c.recording.public_diagnostics()["generation"]
+        try:
+            baseline = SimpleNamespace(
+                state=SimpleNamespace(value="ready"),
+                active=False,
+                cleanup_pending=False,
+                underrun_frames=10,
+            )
+            dropped = SimpleNamespace(
+                state=SimpleNamespace(value="playing"),
+                active=True,
+                cleanup_pending=False,
+                underrun_frames=14,
+            )
+            stopped = SimpleNamespace(
+                state=SimpleNamespace(value="ready"),
+                active=False,
+                cleanup_pending=False,
+                underrun_frames=14,
+            )
+            c._reference_track = SimpleNamespace(snapshot=baseline)
+            c.recording._take_id = first_take
+            c.recording._begin_recording_diagnostics(first_take)
+            c.recording._reset_session_evidence()
+            c.recording.plan_shared_track_for_next_take(required=True)
+            c.recording._begin_shared_track_transaction(first_take)
+            c.recording._confirmed_recording_started()
+            c._reference_track.snapshot = dropped
+            c.recording.observe_shared_track_snapshot(dropped)
+            c._reference_track.snapshot = stopped
+            c.recording._confirmed_recording_stopped()
+
+            self.assertEqual(
+                c.recording._current_session_evidence().recovery_status,
+                RecoveryStatus.NEEDS_ATTENTION,
+            )
+            first_diagnostics = c.recording.public_diagnostics()
+            self.assertEqual(first_diagnostics["dropout_gap_count"], 1)
+            self.assertEqual(
+                first_diagnostics["failure_reason_code"],
+                "shared_track_dropout",
+            )
+            c.recording._retire_active_take(first_take)
+
+            # The stream's lifetime counter remains at 14. With no take-local
+            # delta, the next Record Session must remain clean.
+            c.recording._take_id = second_take
+            c.recording._begin_recording_diagnostics(second_take)
+            c.recording._reset_session_evidence()
+            c.recording.plan_shared_track_for_next_take(required=True)
+            c.recording._begin_shared_track_transaction(second_take)
+            c.recording._confirmed_recording_started()
+            c._reference_track.snapshot = SimpleNamespace(
+                state=SimpleNamespace(value="playing"),
+                active=True,
+                cleanup_pending=False,
+                underrun_frames=14,
+            )
+            c.recording.observe_shared_track_snapshot(c._reference_track.snapshot)
+            c._reference_track.snapshot = stopped
+            c.recording._confirmed_recording_stopped()
+
+            self.assertEqual(
+                c.recording._current_session_evidence().recovery_status,
+                RecoveryStatus.NOT_NEEDED,
+            )
+            second_diagnostics = c.recording.public_diagnostics()
+            self.assertEqual(
+                second_diagnostics["generation"],
+                starting_generation + 2,
+            )
+            self.assertEqual(second_diagnostics["current_take_id"], second_take)
+            self.assertEqual(second_diagnostics["last_take_id"], first_take)
+            self.assertEqual(second_diagnostics["dropout_gap_count"], 0)
+            self.assertEqual(second_diagnostics["failure_reason_code"], "none")
+            self.assertEqual(second_diagnostics["failure_category"], "none")
+        finally:
+            c._reference_track = prior_reference_track
+            c.recording._retire_active_take(first_take)
+            c.recording._retire_active_take(second_take)
+            c.recording.plan_shared_track_for_next_take(required=False)
+
+    def test_planned_shared_track_transaction_fails_closed_without_evidence(self):
+        from core.take_project import new_project_id
+
+        c = self.controller
+        take_id = new_project_id()
+        prior_reference_track = c._reference_track
+        try:
+            c.recording._take_id = take_id
+            c.recording.plan_shared_track_for_next_take(required=True)
+            c.recording._begin_shared_track_transaction(take_id)
+            c._reference_track = SimpleNamespace(snapshot=None)
+
+            with patch(
+                "webjam_qt.controllers.recording_coordinator."
+                "_SHARED_TRACK_FINALIZE_TIMEOUT_S",
+                0.0,
+            ):
+                errors = c.recording._await_shared_track_transaction_errors(take_id)
+
+            self.assertEqual(len(errors), 2)
+            self.assertIn("never reached confirmed playback", errors[0])
+            self.assertIn("cleanup was not confirmed", errors[1])
+        finally:
+            c._reference_track = prior_reference_track
+            c.recording._retire_active_take(take_id)
+            c.recording.plan_shared_track_for_next_take(required=False)
+
+    def test_peer_finalizing_signal_uses_the_public_host_peer_api(self):
+        from core.take_project import new_project_id
+
+        c = self.controller
+        take_id = new_project_id()
+        begin_finalization = MagicMock()
+        prior_host_peer = c.host_peer
+        c.host_peer = SimpleNamespace(
+            active=True,
+            begin_take_finalization=begin_finalization,
+        )
+        try:
+            c.recording._signal_peer_recording_finalizing(
+                take_id,
+                stopped_utc="2026-08-03T12:00:00Z",
+                message="  The host is finalizing the take.  ",
+            )
+        finally:
+            c.host_peer = prior_host_peer
+
+        begin_finalization.assert_called_once_with(
+            take_id,
+            stopped_utc="2026-08-03T12:00:00Z",
+            message="The host is finalizing the take.",
+        )
+
     def test_unconfigured_shows_setup_instructions(self):
         c = self.controller
         c._on_record_requested()
@@ -322,10 +608,12 @@ class TestRecordButtonWiring(unittest.TestCase):
                 participant_id=musician_id,
             )
         }
+        source_fingerprint = "ab" * 32
         first_claim = ReferenceTrackOwnershipClaim(
             udp_port=51042,
             process_id=1234,
             generation="1" * 32,
+            source_fingerprint_sha256=source_fingerprint,
         )
         claim_holder = [first_claim]
         old_reference = getattr(c, "_reference_track", None)
@@ -373,6 +661,10 @@ class TestRecordButtonWiring(unittest.TestCase):
             by_kind = {item.source_kind: item for item in receipts}
             self.assertEqual(by_kind["musician"].participant_id, musician_id)
             self.assertEqual(by_kind["reference_track"].display_name, "WebJam Track")
+            self.assertEqual(
+                by_kind["reference_track"].source_fingerprint_sha256,
+                source_fingerprint,
+            )
             self.assertNotIn("51042", repr(receipts))
 
             # Replacing the exact process/generation between context and
@@ -390,6 +682,7 @@ class TestRecordButtonWiring(unittest.TestCase):
                     udp_port=51042,
                     process_id=5678,
                     generation="2" * 32,
+                    source_fingerprint_sha256=source_fingerprint,
                 )
                 c.recording._consume_authenticated_roster(payload, stale_context)
             receipts, errors = c.recording._recording_receipt_snapshot()
@@ -3213,9 +3506,9 @@ class TestRecordButtonWiring(unittest.TestCase):
             "_confirmed_recording_stopped",
             return_value=("2026-08-03T12:00:00Z", True),
         ), patch.object(
-            c,
-            "signal_peer_recording_stopped",
-        ) as signal_stopped, patch.object(
+            c.recording,
+            "_signal_peer_recording_finalizing",
+        ) as signal_finalizing, patch.object(
             c._ui_invoker,
             "invoke",
             side_effect=callbacks.append,
@@ -3239,8 +3532,10 @@ class TestRecordButtonWiring(unittest.TestCase):
             self.assertEqual(len(callbacks), 1)
             set_status.assert_not_called()
             begin_validation.assert_not_called()
-            signal_stopped.assert_called_once_with(
-                take_id, stopped_utc="2026-08-03T12:00:00Z"
+            signal_finalizing.assert_called_once_with(
+                take_id,
+                stopped_utc="2026-08-03T12:00:00Z",
+                message="The host is finalizing the recorded take.",
             )
             self.assertFalse(c.recording.stop_server_recording_for_shutdown())
 
@@ -3424,6 +3719,7 @@ class TestRecordButtonWiring(unittest.TestCase):
         c.settings.takes_directory = ""
         c.recording._take_id = take_id
         c.recording._reset_session_evidence()
+        c.recording._recording_ended_utc = "2026-08-03T12:03:00Z"
         c.recording._shutdown_validation_pending_take_id = take_id
         c.recording._validation_take_id = take_id
         c._server_recording = False
@@ -3434,12 +3730,18 @@ class TestRecordButtonWiring(unittest.TestCase):
             c.recording,
             "_salvage_capture",
             return_value=(None, ()),
-        ):
+        ), patch.object(c, "signal_peer_recording_stopped") as peer_finished:
             c.recording._begin_take_validation(take_id)
 
         self.assertEqual(c.recording._take_id, take_id)
         self.assertEqual(c.recording._shutdown_validation_pending_take_id, take_id)
         self.assertEqual(c.recording._validation_take_id, "")
+        peer_finished.assert_called_once_with(
+            take_id,
+            stopped_utc="2026-08-03T12:03:00Z",
+            needs_attention=True,
+            message="The take could not be finalized and needs host review.",
+        )
         with patch.object(c._ui_invoker, "invoke", side_effect=callbacks.append):
             self.assertFalse(c.recording.stop_server_recording_for_shutdown())
         self.assertEqual(len(callbacks), 1)
@@ -3484,7 +3786,7 @@ class TestRecordButtonWiring(unittest.TestCase):
         fake_rpc.start_recording.assert_called_once()
         self.assertTrue(c._recorder_armed)
         self.assertEqual(
-            self.window.session_strip._record_button.text(), "■ Stop Rec"
+            self.window.session_strip._record_button.text(), "■ Stop Recording"
         )
         self.assertIs(
             self.window.workspace_stack.currentWidget(),
@@ -3566,6 +3868,9 @@ class TestRecordButtonWiring(unittest.TestCase):
         c.settings.musician_name = "Test Host"
         c.recording._reset_session_evidence()
         with patch.object(c, "signal_peer_recording_started") as peer_started, \
+             patch.object(
+                 c.recording, "_signal_peer_recording_finalizing"
+             ) as peer_finalizing, \
              patch.object(c, "signal_peer_recording_stopped") as peer_stopped, \
              patch.object(c.recording, "_begin_take_validation"):
             c.recording.apply_toggle_result(True)
@@ -3581,8 +3886,9 @@ class TestRecordButtonWiring(unittest.TestCase):
             peer_started.call_args.kwargs["started_utc"], evidence.started_utc
         )
         self.assertEqual(
-            peer_stopped.call_args.kwargs["stopped_utc"], evidence.ended_utc
+            peer_finalizing.call_args.kwargs["stopped_utc"], evidence.ended_utc
         )
+        peer_stopped.assert_not_called()
         self.assertEqual(
             [item.event for item in evidence.timeline],
             ["recording_requested", "recording_started", "recording_stopped"],
@@ -3674,10 +3980,10 @@ class TestRecordButtonWiring(unittest.TestCase):
 
         self.assertEqual(c.recording.phase, RecorderPhase.STOP_FAILED)
         self.assertEqual(
-            self.window.session_strip._record_button.text(), "■ Try Stop Again"
+            self.window.session_strip._record_button.text(), "■ Finish Stop"
         )
         self.assertTrue(self.window.session_strip._record_clock.isActive())
-        self.assertIn("STILL RECORDING", self.window.recording_studio._phase.text())
+        self.assertIn("CLEANUP PENDING", self.window.recording_studio._phase.text())
         _args, kwargs = c._show_actionable_error.call_args
         self.assertEqual(kwargs["retry_callback"], c.recording.on_record_requested)
 
@@ -3723,12 +4029,61 @@ class TestRecordButtonWiring(unittest.TestCase):
         c._recorder_armed = True
         c._server_recording = True
         c.recording.phase = RecorderPhase.STOP_FAILED
-        with patch.object(c.recording, "_begin_take_validation") as begin:
+        with patch.object(
+            c.recording, "_signal_peer_recording_finalizing"
+        ) as peer_finalizing, patch.object(
+            c, "signal_peer_recording_stopped"
+        ) as peer_finished, patch.object(
+            c.recording, "_begin_take_validation"
+        ) as begin:
             c.recording.on_server_state(False)
             c.recording.apply_toggle_result(False, take_id=take_id)
 
         begin.assert_called_once_with(take_id)
+        peer_finalizing.assert_called_once()
+        self.assertEqual(peer_finalizing.call_args.args, (take_id,))
+        self.assertIn(
+            "stopped unexpectedly",
+            peer_finalizing.call_args.kwargs["message"],
+        )
+        peer_finished.assert_not_called()
         self.assertEqual(c.recording.phase, RecorderPhase.VALIDATING)
+
+    def test_unexpected_stop_cannot_publish_a_complete_take(self):
+        from core.take_library import TakeInfo, TakeValidationResult
+        from core.take_project import RecoveryStatus, new_project_id
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        take_id = new_project_id()
+        c.recording._take_id = take_id
+        c.recording._validation_take_id = take_id
+        c.recording._reset_session_evidence()
+        c.recording._confirmed_recording_started()
+        c.recording._confirmed_recording_stopped(
+            unexpected=True,
+            detail="The band server stopped before WebJam requested it.",
+        )
+        result = TakeValidationResult(
+            TakeInfo(
+                path=Path("/tmp/webjam-unexpected-stop"),
+                name="Unexpected stop",
+                validation_status="complete",
+                take_id=take_id,
+            )
+        )
+
+        with patch.object(
+            c.window.recording_studio, "on_take_completed"
+        ), patch.object(c, "signal_peer_recording_stopped") as peer_finished:
+            c.recording._show_validation_result(result, take_id=take_id)
+
+        self.assertEqual(
+            c.recording._current_session_evidence().recovery_status,
+            RecoveryStatus.NEEDS_ATTENTION,
+        )
+        self.assertEqual(c.recording.phase, RecorderPhase.NEEDS_ATTENTION)
+        self.assertTrue(peer_finished.call_args.kwargs["needs_attention"])
 
     def test_late_worker_callback_stays_bound_to_its_originating_take(self):
         """A retired worker must not fall back to mutating the next take."""
@@ -3772,6 +4127,7 @@ class TestRecordButtonWiring(unittest.TestCase):
         take_id = new_project_id()
         c.recording._take_id = take_id
         c.recording._validation_take_id = take_id
+        c.recording._recording_ended_utc = "2026-08-03T12:01:00Z"
         result = SimpleNamespace(
             ok=True,
             take=SimpleNamespace(path=Path("/tmp/webjam-completed-take")),
@@ -3780,10 +4136,17 @@ class TestRecordButtonWiring(unittest.TestCase):
             summary="1 track · 0:01 · 48 kHz",
         )
         with patch.object(c.window.recording_studio, "on_take_completed"), \
+             patch.object(c, "signal_peer_recording_stopped") as peer_finished, \
              patch.object(c.recording, "_begin_take_validation") as begin:
             c.recording._show_validation_result(result, take_id=take_id)
             self.assertEqual(c.recording._take_id, "")
             self.assertEqual(c.recording._validation_take_id, "")
+            peer_finished.assert_called_once_with(
+                take_id,
+                stopped_utc="2026-08-03T12:01:00Z",
+                needs_attention=False,
+                message="The take is finalized and ready.",
+            )
             c.recording.on_server_state(True)
             c.recording.on_server_state(False)
             c.recording.apply_toggle_result(True, take_id=take_id)
@@ -3791,6 +4154,391 @@ class TestRecordButtonWiring(unittest.TestCase):
         begin.assert_not_called()
         self.assertEqual(c.recording.phase.value, "idle")
         self.assertFalse(c._recorder_armed)
+
+    def test_validation_failure_publishes_peer_needs_attention_before_retire(self):
+        from core.take_project import new_project_id
+
+        c = self.controller
+        take_id = new_project_id()
+        c.recording._take_id = take_id
+        c.recording._validation_take_id = take_id
+        c.recording._recording_ended_utc = "2026-08-03T12:02:00Z"
+        result = SimpleNamespace(
+            ok=False,
+            take=None,
+            errors=("A required recorder track was missing.",),
+            warnings=(),
+            summary="",
+        )
+
+        with patch.object(
+            c.window.recording_studio, "on_take_completed"
+        ), patch.object(c, "signal_peer_recording_stopped") as peer_finished:
+            c.recording._show_validation_result(result, take_id=take_id)
+
+        peer_finished.assert_called_once_with(
+            take_id,
+            stopped_utc="2026-08-03T12:02:00Z",
+            needs_attention=True,
+            message="The take needs host review before it is ready.",
+        )
+        self.assertEqual(c.recording.phase.value, "needs_attention")
+        self.assertEqual(c.recording._take_id, "")
+        self.assertEqual(c.recording._validation_take_id, "")
+
+    def test_durable_take_is_registered_before_peer_ready_is_published(self):
+        from core.take_project import new_project_id
+
+        c = self.controller
+        take_id = new_project_id()
+        c.recording._take_id = take_id
+        c.recording._validation_take_id = take_id
+        c.recording._recording_ended_utc = "2026-08-03T12:04:00Z"
+        take_path = Path("/tmp/webjam-durable-take")
+        result = SimpleNamespace(
+            ok=True,
+            take=SimpleNamespace(path=take_path),
+            errors=(),
+            warnings=(),
+            summary="1 track · 0:01 · 48 kHz",
+        )
+        events: list[str] = []
+        prior_host_peer = c.host_peer
+        c.host_peer = SimpleNamespace(
+            active=True,
+            register_take=lambda registered_id, registered_path: events.append(
+                f"register:{registered_id}:{registered_path.name}"
+            ),
+        )
+        try:
+            with patch.object(
+                c.window.recording_studio, "on_take_completed"
+            ), patch.object(
+                c,
+                "signal_peer_recording_stopped",
+                side_effect=lambda *_args, **_kwargs: events.append("ready"),
+            ):
+                c.recording._show_validation_result(result, take_id=take_id)
+        finally:
+            c.host_peer = prior_host_peer
+
+        self.assertEqual(
+            events,
+            [f"register:{take_id}:webjam-durable-take", "ready"],
+        )
+
+    def test_validation_waits_and_reconciles_initial_peer_inventory_before_complete(self):
+        from core.take_library import TakeInfo, TakeValidationResult
+        from core.take_project import new_project_id
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        take_id = new_project_id()
+        events: list[str] = []
+        with TemporaryDirectory() as directory:
+            take_path = Path(directory)
+            manifest_path = take_path / "webjam-take.json"
+            manifest_path.write_text(
+                json.dumps({"schema_version": 2, "take_id": take_id}),
+                encoding="utf-8",
+            )
+            initial = TakeInfo(
+                path=take_path,
+                name="Initial peer inventory",
+                validation_status="complete",
+                manifest_path=manifest_path,
+                take_id=take_id,
+            )
+            refreshed = TakeInfo(
+                path=take_path,
+                name="Initial peer inventory",
+                validation_status="complete",
+                manifest_path=manifest_path,
+                take_id=take_id,
+            )
+
+            class _Peer:
+                active = True
+
+                @staticmethod
+                def wait_for_initial_take_inventory(
+                    waited_take_id: str, *, timeout_s: float
+                ) -> bool:
+                    self.assertEqual(waited_take_id, take_id)
+                    self.assertGreater(timeout_s, 0.0)
+                    events.append("wait")
+                    return True
+
+                @staticmethod
+                def register_take(registered_take_id: str, path: Path) -> None:
+                    self.assertEqual((registered_take_id, path), (take_id, take_path))
+                    events.append("register")
+
+                @staticmethod
+                def reconcile_take(reconciled_take_id: str, path: Path) -> bool:
+                    self.assertEqual((reconciled_take_id, path), (take_id, take_path))
+                    events.append("reconcile")
+                    manifest_path.write_text(
+                        json.dumps(
+                            {
+                                "schema_version": 2,
+                                "take_id": take_id,
+                                "peer_transfers": {"status": "complete"},
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+                    return True
+
+            prior_host_peer = c.host_peer
+            c.host_peer = _Peer()
+            c.recording._take_id = take_id
+            c.recording._validation_take_id = take_id
+            c.recording._recording_ended_utc = "2026-08-03T12:06:00Z"
+            c.recording.phase = RecorderPhase.VALIDATING
+            try:
+                with patch.object(
+                    c.recording,
+                    "_build_take_validation",
+                    return_value=TakeValidationResult(initial),
+                ), patch(
+                    "webjam_qt.controllers.recording_coordinator.load_take",
+                    return_value=refreshed,
+                ), patch.object(
+                    c._ui_invoker,
+                    "invoke",
+                    side_effect=lambda callback: callback(),
+                ), patch.object(
+                    c.window.recording_studio,
+                    "on_take_completed",
+                ), patch.object(
+                    c,
+                    "signal_peer_recording_stopped",
+                    side_effect=lambda *_args, **_kwargs: events.append("complete"),
+                ):
+                    c.recording._validate_take_worker(take_id)
+            finally:
+                c.host_peer = prior_host_peer
+                c.recording._take_id = ""
+                c.recording._validation_take_id = ""
+
+        self.assertEqual(events, ["wait", "register", "reconcile", "complete"])
+        self.assertEqual(c.recording._initial_peer_inventory_take_id, take_id)
+
+    def test_late_peer_reconciliation_republishes_terminal_truth(self):
+        from core.take_library import TakeInfo, TakeValidationResult
+        from core.take_project import new_project_id
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        take_id = new_project_id()
+        take_path = Path("/tmp/webjam-late-peer-reconciliation")
+        transfer_error = "Peer transfer: Alex's local original has not arrived."
+        prior = TakeInfo(
+            path=take_path,
+            name="Late peer reconciliation",
+            validation_status="needs_attention",
+            manifest_errors=(transfer_error,),
+            take_id=take_id,
+        )
+        refreshed = TakeInfo(
+            path=take_path,
+            name="Late peer reconciliation",
+            validation_status="complete",
+            take_id=take_id,
+        )
+        previous_validation = c.recording.last_validation
+        c.recording.last_validation = TakeValidationResult(
+            prior,
+            (transfer_error,),
+        )
+        c.recording.phase = RecorderPhase.NEEDS_ATTENTION
+        try:
+            with patch(
+                "webjam_qt.controllers.recording_coordinator.load_take",
+                return_value=refreshed,
+            ), patch.object(
+                c,
+                "signal_peer_recording_stopped",
+            ) as peer_finished:
+                c.recording.on_peer_take_reconciled(take_id, take_path)
+                # A later semantic manifest update with the same terminal state
+                # is still republished; guests must not depend on a phase edge.
+                c.recording.on_peer_take_reconciled(take_id, take_path)
+
+            self.assertEqual(c.recording.phase, RecorderPhase.COMPLETE)
+            self.assertEqual(peer_finished.call_count, 2)
+            self.assertTrue(
+                all(
+                    call.kwargs["needs_attention"] is False
+                    for call in peer_finished.call_args_list
+                )
+            )
+        finally:
+            c.recording.last_validation = previous_validation
+            c.recording.phase = RecorderPhase.IDLE
+
+    def test_peer_reconciliation_racing_validation_is_reloaded_before_complete(self):
+        from core.take_library import TakeInfo, TakeValidationResult
+        from core.take_project import new_project_id
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        take_id = new_project_id()
+        take_path = Path("/tmp/webjam-validation-race")
+        transfer_error = "Peer isolated recording: Local Original is still arriving."
+        stale = TakeInfo(
+            path=take_path,
+            name="Stale validation",
+            validation_status="needs_attention",
+            manifest_errors=(transfer_error,),
+            take_id=take_id,
+        )
+        refreshed = TakeInfo(
+            path=take_path,
+            name="Refreshed validation",
+            validation_status="complete",
+            take_id=take_id,
+        )
+        previous_validation = c.recording.last_validation
+        c.recording._take_id = take_id
+        c.recording._validation_take_id = take_id
+        c.recording._recording_ended_utc = "2026-08-09T12:01:00Z"
+        c.recording._initial_peer_inventory_take_id = take_id
+        c.recording.phase = RecorderPhase.VALIDATING
+        try:
+            with patch(
+                "webjam_qt.controllers.recording_coordinator.load_take",
+                return_value=refreshed,
+            ) as reload_take, patch.object(
+                c.window.recording_studio,
+                "on_take_completed",
+            ) as studio_complete, patch.object(
+                c,
+                "signal_peer_recording_stopped",
+            ) as peer_finished:
+                # The manifest commit callback reaches the UI before the queued
+                # worker result. It must be latched, not discarded.
+                c.recording.on_peer_take_reconciled(take_id, take_path)
+                reload_take.assert_not_called()
+                c.recording._show_validation_result(
+                    TakeValidationResult(stale, (transfer_error,)),
+                    take_id=take_id,
+                )
+
+            reload_take.assert_called_once_with(take_path)
+            self.assertIs(c.recording.last_validation.take, refreshed)
+            self.assertEqual(c.recording.phase, RecorderPhase.COMPLETE)
+            self.assertFalse(peer_finished.call_args.kwargs["needs_attention"])
+            self.assertIs(studio_complete.call_args.args[1].take, refreshed)
+        finally:
+            c.recording.last_validation = previous_validation
+            c.recording._retire_active_take(take_id)
+            c.recording.phase = RecorderPhase.IDLE
+
+    def test_initial_peer_inventory_failure_uses_recoverable_error_class(self):
+        from core.session_transfer_runtime import PEER_TRANSFER_ERROR_PREFIX
+        from core.take_library import TakeInfo, TakeValidationResult
+        from core.take_project import new_project_id
+
+        c = self.controller
+        take_id = new_project_id()
+        c.recording._begin_recording_diagnostics(take_id)
+        with TemporaryDirectory() as directory:
+            take_path = Path(directory)
+            (take_path / "webjam-take.json").write_text(
+                json.dumps({"schema_version": 2, "take_id": take_id}),
+                encoding="utf-8",
+            )
+            loaded = TakeInfo(
+                path=take_path,
+                name="Peer inventory failure",
+                validation_status="needs_attention",
+                take_id=take_id,
+            )
+            peer = SimpleNamespace(
+                active=True,
+                wait_for_initial_take_inventory=MagicMock(return_value=False),
+                register_take=MagicMock(),
+                reconcile_take=MagicMock(return_value=False),
+            )
+            prior_host_peer = c.host_peer
+            c.host_peer = peer
+            try:
+                with patch.object(
+                    c.recording,
+                    "_publish_take_attention",
+                    return_value=True,
+                ) as publish_attention, patch(
+                    "webjam_qt.controllers.recording_coordinator.load_take",
+                    return_value=loaded,
+                ):
+                    result = c.recording._reconcile_initial_peer_inventory(
+                        TakeValidationResult(loaded),
+                        take_id=take_id,
+                    )
+            finally:
+                c.host_peer = prior_host_peer
+
+        attention_message = publish_attention.call_args.args[1]
+        self.assertTrue(attention_message.startswith(PEER_TRANSFER_ERROR_PREFIX))
+        self.assertIn(attention_message, result.errors)
+        self.assertEqual(
+            c.recording.public_diagnostics()["failure_reason_code"],
+            "peer_inventory",
+        )
+        c.recording._retire_active_take(take_id)
+
+    def test_guest_state_stays_finalizing_until_validation_is_ready(self):
+        from core.session_transfer import RecordingSignal, SessionControlState
+        from core.take_project import new_project_id
+
+        c = self.controller
+        take_id = new_project_id()
+        with TemporaryDirectory() as directory:
+            control = SessionControlState(directory, new_project_id())
+            control.begin(take_id, started_utc="2026-08-03T12:00:00Z")
+            prior_host_peer = c.host_peer
+            c.host_peer = SimpleNamespace(
+                active=True,
+                begin_take_finalization=control.begin_finalizing,
+                finish_take=control.finish,
+                register_take=MagicMock(),
+            )
+            c.recording._take_id = take_id
+            c.recording._validation_take_id = take_id
+            c.recording._recording_ended_utc = "2026-08-03T12:05:00Z"
+            result = SimpleNamespace(
+                ok=True,
+                take=SimpleNamespace(path=Path(directory)),
+                errors=(),
+                warnings=(),
+                summary="1 track · 0:01 · 48 kHz",
+            )
+            try:
+                c.recording._signal_peer_recording_finalizing(
+                    take_id,
+                    stopped_utc="2026-08-03T12:05:00Z",
+                    message="The host is finalizing the recorded take.",
+                )
+                self.assertEqual(
+                    control.snapshot().signal,
+                    RecordingSignal.FINALIZING,
+                )
+
+                with patch.object(
+                    c.window.recording_studio, "on_take_completed"
+                ):
+                    c.recording._show_validation_result(result, take_id=take_id)
+
+                self.assertEqual(
+                    control.snapshot().signal,
+                    RecordingSignal.COMPLETE,
+                )
+            finally:
+                c.host_peer = prior_host_peer
+                c.recording._take_id = ""
+                c.recording._validation_take_id = ""
 
     def test_ambiguous_start_failure_preserves_capture_and_retries_stop(self):
         """A lost start reply must not delete audio or send another start."""
@@ -3808,7 +4556,7 @@ class TestRecordButtonWiring(unittest.TestCase):
         capture.stop_into.assert_not_called()
         self.assertEqual(c.recording.phase, RecorderPhase.STOP_FAILED)
         self.assertEqual(
-            self.window.session_strip._record_button.text(), "■ Try Stop Again"
+            self.window.session_strip._record_button.text(), "■ Finish Stop"
         )
         _args, kwargs = c._show_actionable_error.call_args
         self.assertIn("may still be recording", kwargs["next_action"])
@@ -3910,6 +4658,7 @@ class TestRecordButtonWiring(unittest.TestCase):
             fake_capture.stop_into.return_value = SimpleNamespace(errors=())
             c.recording._local_capture = fake_capture
             c.recording.phase = RecorderPhase.RECORDING
+            self.window.session_strip.set_recording_phase("recording")
             c._recorder_armed = True
             c._server_recording = True
             c.bridge.stop_jamulus = MagicMock()
@@ -3931,8 +4680,9 @@ class TestRecordButtonWiring(unittest.TestCase):
             self.assertFalse(c._recorder_armed)
             self.assertFalse(c._server_recording)
             strip = self.window.session_strip
-            self.assertTrue(strip._record_elapsed.isHidden())
-            self.assertEqual(strip._record_button.text(), "● Record")
+            self.assertFalse(strip._record_elapsed.isHidden())
+            self.assertEqual(strip._record_elapsed.text(), "RECORDING STOPPED")
+            self.assertEqual(strip._record_button.text(), "● Record Session")
             msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
             self.assertTrue(any("tracks were saved" in m for m in msgs), msgs)
 
@@ -3963,7 +4713,7 @@ class TestRecordButtonWiring(unittest.TestCase):
         c.recording.phase = RecorderPhase.COMPLETE
         self.window.session_strip.set_recording_phase("complete")
         self.assertEqual(
-            self.window.session_strip._record_elapsed.text(), "TAKE VERIFIED"
+            self.window.session_strip._record_elapsed.text(), "READY · TAKE SAVED"
         )
         c.bridge.stop_jamulus = MagicMock()
         with patch(

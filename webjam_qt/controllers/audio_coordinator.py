@@ -468,12 +468,12 @@ class AudioCoordinator:
     def _stop_session_services(self, hosting: bool) -> None:
         """Stop in data-safe order without freezing the Qt event loop."""
         failures: list[str] = []
-        # The Reference Track owns a second Jamulus client. Retire it before
+        # The Shared Track owns a second Jamulus client. Retire it before
         # recorder finalization and before the primary musician client/server;
         # an uncertain backing route must never outlive the jam it was feeding.
         if not self._c._stop_reference_track_for_session_end(background=False):
             failures.append(
-                "The separate Reference Track client did not stop cleanly."
+                "The separate Shared Track client did not stop cleanly."
             )
             error = " ".join(failures)
             self._c._ui_invoker.invoke(

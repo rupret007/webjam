@@ -23,7 +23,15 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 from PySide6.QtCore import QTimer, Qt, Signal
-from PySide6.QtGui import QCloseEvent, QGuiApplication, QKeySequence, QShortcut
+from PySide6.QtGui import (
+    QCloseEvent,
+    QDragEnterEvent,
+    QDragMoveEvent,
+    QDropEvent,
+    QGuiApplication,
+    QKeySequence,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -76,6 +84,7 @@ class ConductorWindow(QMainWindow):
         from webjam_qt import __version__
 
         self.setWindowTitle(f"WebJam — Band Session (v{__version__})")
+        self.setAcceptDrops(True)
         self.resize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
         # Reserve 40 px around the client area for native title-bar/frame
         # chrome so the complete meeting surface fits a physical 760×600
@@ -374,6 +383,8 @@ class ConductorWindow(QMainWindow):
         order = [
             strip._title_input,
             strip._reference_track_button,
+            strip._shared_track_transport,
+            strip._shared_track_stop,
             self.session_hud._input,
             self.session_hud._secondary_action,
             self.session_hud._action,
@@ -468,7 +479,7 @@ class ConductorWindow(QMainWindow):
                 "<b>1.</b> Choose <b>Host a Jam</b> or <b>Join a Jam</b>.<br>"
                 "<b>2.</b> The host presses <b>Copy Invite</b> and sends the link.<br>"
                 "<b>3.</b> Play. Each musician tile shows real connection and level truth.<br>"
-                "<b>4.</b> The host presses <b>Record</b> for synchronized tracks.<br>"
+                "<b>4.</b> The host presses <b>Record Session</b> for synchronized tracks.<br>"
                 "<b>5.</b> Choose <b>Studio</b> to build a song project or "
                 "review completed session takes.<br>"
                 "<b>6.</b> Choose <b>Webex Controls</b> to show Conversation. "
@@ -476,7 +487,7 @@ class ConductorWindow(QMainWindow):
                 "without reopening a meeting link; Webex chooses which of its "
                 "windows is shown. Only "
                 "<b>Join / Open Meeting</b> opens the saved meeting link.<br>"
-                "<b>7.</b> The host can choose <b>Reference Track</b> to load "
+                "<b>7.</b> The host can choose <b>Shared Track</b> to load "
                 "and inspect a song; Play stays locked until its isolated "
                 "Jamulus route is proven.<br>"
                 "<b>8.</b> Press <b>End Session</b> when the jam is over.<br><br>"
@@ -682,9 +693,27 @@ class ConductorWindow(QMainWindow):
             if not self._status_recording.isVisible():
                 self._status_bar.setVisible(False)
 
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        """Keep every bottom-bar action readable on compact live windows."""
+
+        super().resizeEvent(event)
+        if hasattr(self, "session_strip"):
+            self.session_strip.set_compact_control_labels(self.width() < 900)
+
     # ------------------------------------------------------------------
     # Qt overrides
     # ------------------------------------------------------------------
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
+        """Let a host drop one Shared Track anywhere on the live window."""
+
+        self.session_strip.dragEnterEvent(event)
+
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # noqa: N802
+        self.session_strip.dragMoveEvent(event)
+
+    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
+        self.session_strip.dropEvent(event)
+
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         if self.confirm_close is not None and not self.confirm_close():
             event.ignore()

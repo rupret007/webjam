@@ -279,6 +279,28 @@ class DiagnosticsExporter:
         if recorder is None:
             return {}
         result: dict[str, Any] = {}
+        public_snapshot = getattr(recorder, "public_diagnostics", None)
+        if callable(public_snapshot):
+            try:
+                public = public_snapshot()
+            except Exception:  # noqa: BLE001 - support evidence remains optional
+                public = {}
+            if isinstance(public, Mapping):
+                for source, target in (
+                    ("generation", "generation"),
+                    ("dropout_gap_count", "gap_count"),
+                    ("cleanup_pending", "cleanup_pending"),
+                    ("failure_reason_code", "reason_code"),
+                    ("failure_category", "failure_category"),
+                ):
+                    if source in public:
+                        result[target] = _plain_value(public[source])
+                current_take = _plain_value(public.get("current_take_id"))
+                last_take = _plain_value(public.get("last_take_id"))
+                if isinstance(current_take, str) and current_take:
+                    result["take_id"] = current_take
+                elif isinstance(last_take, str) and last_take:
+                    result["take_id"] = last_take
         phase = getattr(recorder, "phase", None)
         phase_value = _plain_value(getattr(phase, "value", phase))
         if isinstance(phase_value, str):
