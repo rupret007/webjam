@@ -88,8 +88,10 @@ class _DeterministicHardwareInputStream:
 
     def start(self) -> None:
         fixture_a = make_fixture(SPEC_A, duration_s=6.0)
-        fixture_b = make_fixture(SPEC_B, duration_s=6.0)
-        inputs = np.column_stack((fixture_a, fixture_b))
+        # Model two physical inputs owned by the same authenticated musician.
+        # The server-side SPEC_B source belongs to the other Jamulus client and
+        # must never be selected merely because it correlates with an input.
+        inputs = np.column_stack((fixture_a, fixture_a * 0.75))
         for start in range(0, len(inputs), 4096):
             block = inputs[start : start + 4096]
             self.callback(block, len(block), None, "")
@@ -378,13 +380,13 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
             ),
             "host-vocal.wav": analyze_recorded_stem(
                 local_by_name["host-vocal.wav"],
-                expected=SPEC_B,
-                forbidden_frequency_hz=SPEC_A.frequency_hz,
+                expected=SPEC_A,
+                forbidden_frequency_hz=SPEC_B.frequency_hz,
             ),
         }
         for filename, expected in (
             ("host-guitar.wav", SPEC_A),
-            ("host-vocal.wav", SPEC_B),
+            ("host-vocal.wav", SPEC_A),
         ):
             assert_recorded_stem_metrics(
                 local_metrics[filename],
@@ -420,7 +422,8 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
             capture_errors=local_result.errors,
             session_title="Real Jamulus Boundary Certification",
             app_version="integration",
-            local_participant_name="Host Boundary Fixture",
+            local_participant_id=participant_ids[harness.CLIENT_A_NAME],
+            local_participant_name=harness.CLIENT_A_NAME,
             capture_device=local_result.capture_device,
             capture_gaps=local_result.gaps,
             local_total_frames=local_result.total_frames,
@@ -441,7 +444,6 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
         } == {
             harness.CLIENT_A_NAME,
             harness.CLIENT_B_NAME,
-            "Host Boundary Fixture",
         }
         server_tracks = tuple(
             track
@@ -501,8 +503,8 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
         assert {track.name for track in take.tracks} == {
             harness.CLIENT_A_NAME,
             harness.CLIENT_B_NAME,
-            "Host Boundary Fixture Input 1",
-            "Host Boundary Fixture Input 2",
+            f"{harness.CLIENT_A_NAME} Input 1",
+            f"{harness.CLIENT_A_NAME} Input 2",
         }
 
         sink = _PullSink()
@@ -550,7 +552,6 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
         assert {track["musician"] for track in handoff["tracks"]} == {
             harness.CLIENT_A_NAME,
             harness.CLIENT_B_NAME,
-            "Host Boundary Fixture",
         }
         recording_report = export.recording_report.read_text(encoding="utf-8")
         assert "jamulus_server; network_track" in recording_report
@@ -575,7 +576,7 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
             else:
                 expected = {
                     "host-guitar.wav": SPEC_A,
-                    "host-vocal.wav": SPEC_B,
+                    "host-vocal.wav": SPEC_A,
                 }[source_path]
                 expected_source_hash = local_source_hashes[source_path]
             assert evidence["segments"][0]["declared_sha256"] == expected_source_hash
