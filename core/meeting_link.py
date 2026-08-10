@@ -51,6 +51,73 @@ def _service_for_host(host: str) -> str | None:
     return None
 
 
+# Native desktop-app identity facts per service, for the future
+# service-neutral detection/bring-forward phase.  These are identity FACTS,
+# not behavior: WebJam still detects, verifies, and activates only Webex
+# today.  ``macos_team_id`` is the Developer ID subject.OU used to build a
+# codesign requirement exactly like services/webex_app.py builds Cisco's;
+# ``None`` with ``apple_system=True`` means the app is Apple-signed system
+# software (anchored to Apple proper, no team OU).  ``windows_publisher_cn``
+# is the Authenticode certificate common name for a future Windows publisher
+# check, and ``linux`` records honest desktop availability ("native",
+# "browser", or "unavailable").  Team IDs and publisher names are pinned from
+# public MDM/PPPC documentation and MUST be re-verified against a real
+# installed app (``codesign -d -r -`` on macOS, the signature panel on
+# Windows) before any native detection ships — record that as a physical
+# gate, per project discipline.
+MEETING_APP_IDENTITIES: dict[str, dict[str, object]] = {
+    "webex": {
+        "macos_bundle_ids": ("Cisco-Systems.Spark",),
+        "macos_team_id": "DE8Y96K9QP",
+        "apple_system": False,
+        "browser_only": False,
+        "windows_publisher_cn": "Cisco Systems, Inc.",
+        "linux": "native",
+    },
+    "zoom": {
+        "macos_bundle_ids": ("us.zoom.xos",),
+        "macos_team_id": "BJ4HAAB9B3",
+        "apple_system": False,
+        "browser_only": False,
+        "windows_publisher_cn": "Zoom Video Communications, Inc.",
+        "linux": "native",
+    },
+    "teams": {
+        # New Teams first; classic Teams retained for detection fallback.
+        "macos_bundle_ids": ("com.microsoft.teams2", "com.microsoft.teams"),
+        "macos_team_id": "UBF8T346G9",
+        "apple_system": False,
+        "browser_only": False,
+        "windows_publisher_cn": "Microsoft Corporation",
+        "linux": "browser",
+    },
+    "google_meet": {
+        # Google Meet ships no desktop app; the browser is the app.
+        "macos_bundle_ids": (),
+        "macos_team_id": None,
+        "apple_system": False,
+        "browser_only": True,
+        "windows_publisher_cn": None,
+        "linux": "browser",
+    },
+    "facetime": {
+        "macos_bundle_ids": ("com.apple.FaceTime",),
+        "macos_team_id": None,
+        "apple_system": True,
+        "browser_only": False,
+        "windows_publisher_cn": None,
+        "linux": "unavailable",
+    },
+}
+
+
+def meeting_app_identity(service: str | None) -> dict[str, object] | None:
+    """Return the immutable identity facts for a service, if known."""
+
+    identity = MEETING_APP_IDENTITIES.get(service or "")
+    return dict(identity) if identity is not None else None
+
+
 def is_supported_meeting_host(host: str) -> bool:
     """Return whether a bare hostname belongs to a supported service."""
 

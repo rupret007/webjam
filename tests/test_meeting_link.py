@@ -141,3 +141,54 @@ def test_meeting_links_redact_to_origin_only_in_logs_and_mappings():
     # The historical webex_url settings field may hold any supported link.
     mapping = redact_mapping({"webex_url": "https://zoom.us/j/123?pwd=s"})
     assert mapping["webex_url"] == "https://zoom.us/[redacted]"
+
+
+def test_app_identity_registry_matches_the_live_webex_contract():
+    from core.meeting_link import MEETING_APP_IDENTITIES, meeting_app_identity
+    from services.webex_app import WEBEX_MAC_BUNDLE_ID, WEBEX_MAC_TEAM_ID
+
+    # Every link-policy service has an identity entry and vice versa.
+    assert set(MEETING_APP_IDENTITIES) == {
+        "webex",
+        "zoom",
+        "teams",
+        "google_meet",
+        "facetime",
+    }
+    # The registry must never drift from the one identity WebJam actually
+    # verifies today.
+    webex = meeting_app_identity("webex")
+    assert webex is not None
+    assert webex["macos_bundle_ids"] == (WEBEX_MAC_BUNDLE_ID,)
+    assert webex["macos_team_id"] == WEBEX_MAC_TEAM_ID
+
+    zoom = meeting_app_identity("zoom")
+    assert zoom["macos_bundle_ids"] == ("us.zoom.xos",)
+    assert zoom["macos_team_id"] == "BJ4HAAB9B3"
+    teams = meeting_app_identity("teams")
+    assert teams["macos_bundle_ids"][0] == "com.microsoft.teams2"
+    assert teams["macos_team_id"] == "UBF8T346G9"
+    # Google Meet is honestly browser-only; FaceTime is Apple system software.
+    assert meeting_app_identity("google_meet")["browser_only"] is True
+    assert meeting_app_identity("google_meet")["macos_bundle_ids"] == ()
+    facetime = meeting_app_identity("facetime")
+    assert facetime["apple_system"] is True
+    assert facetime["macos_team_id"] is None
+    # Multi-platform facts: Authenticode publisher names where a Windows
+    # app exists, and honest Linux availability everywhere.
+    assert zoom["windows_publisher_cn"] == "Zoom Video Communications, Inc."
+    assert teams["windows_publisher_cn"] == "Microsoft Corporation"
+    assert webex["windows_publisher_cn"] == "Cisco Systems, Inc."
+    assert facetime["windows_publisher_cn"] is None
+    assert {i["linux"] for i in MEETING_APP_IDENTITIES.values()} <= {
+        "native",
+        "browser",
+        "unavailable",
+    }
+    assert meeting_app_identity("facetime")["linux"] == "unavailable"
+    assert meeting_app_identity("teams")["linux"] == "browser"
+    # Unknown services return None, and callers get copies, not the registry.
+    assert meeting_app_identity("skype") is None
+    copy = meeting_app_identity("zoom")
+    copy["macos_team_id"] = "tampered"
+    assert meeting_app_identity("zoom")["macos_team_id"] == "BJ4HAAB9B3"
