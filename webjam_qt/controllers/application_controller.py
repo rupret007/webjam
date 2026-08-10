@@ -4324,14 +4324,21 @@ class ApplicationController(QObject):
         if attempt is None:
             return
         from core.settings import save_settings
-        from core.webex_url import normalize_webex_url, webex_url_error
+        from core.meeting_link import (
+            SUPPORTED_MEETING_SERVICES_TEXT,
+            meeting_link_error,
+            normalize_meeting_url,
+        )
 
         raw = self.window.session_hud.input_text()
-        value = normalize_webex_url(raw)
+        value = normalize_meeting_url(raw)
         error = (
-            webex_url_error(value)
+            meeting_link_error(value)
             if value
-            else "Paste a valid Webex link, or choose Not now."
+            else (
+                "Paste a valid meeting link "
+                f"({SUPPORTED_MEETING_SERVICES_TEXT}), or choose Not now."
+            )
         )
         if error:
             attempt["input_error"] = error
@@ -9008,7 +9015,12 @@ class ApplicationController(QObject):
 
     def _on_join_video(self) -> None:
         """Open the configured meeting externally without claiming join state."""
-        from core.webex_url import normalize_webex_url, webex_url_error
+        from core.meeting_link import (
+            SUPPORTED_MEETING_SERVICES_TEXT,
+            meeting_handoff_platform_error,
+            meeting_link_error,
+            normalize_meeting_url,
+        )
 
         if self._shutdown_cleanup_blocks_action():
             return
@@ -9018,32 +9030,33 @@ class ApplicationController(QObject):
         if self.bridge.webex_state == "Opening…":
             self._record_webex_event("meeting-handoff", "busy")
             self.window.flash_message(
-                "Webex is already opening. Finish joining there.",
+                "The meeting app is already opening. Finish joining there.",
                 ms=5000,
             )
             return
-        url = normalize_webex_url(self.settings.webex_url)
+        url = normalize_meeting_url(self.settings.webex_url)
         if not url:
             self._record_webex_event("meeting-handoff", "missing-link")
             self._show_actionable_error(
-                "No Webex Link",
-                what_failed=("No Webex Meeting or Personal Room link is configured."),
+                "No Meeting Link",
+                what_failed="No meeting link is configured.",
                 likely_cause="A link hasn't been entered yet.",
                 next_action=(
-                    "Go to Settings and enter your Meeting or Personal Room link."
+                    "Go to Settings and enter your meeting link "
+                    f"({SUPPORTED_MEETING_SERVICES_TEXT})."
                 ),
             )
             return
-        error = webex_url_error(url)
+        error = meeting_link_error(url) or meeting_handoff_platform_error(url)
         if error:
             self._record_webex_event("meeting-handoff", "invalid-link")
             self._show_actionable_error(
-                "Invalid Webex URL",
+                "Invalid Meeting Link",
                 what_failed="WebJam will not open this meeting link.",
                 likely_cause=error,
                 next_action=(
-                    "Open Settings and paste the HTTPS webex.com Meeting or "
-                    "Personal Room link."
+                    "Open Settings and paste an HTTPS meeting link "
+                    f"({SUPPORTED_MEETING_SERVICES_TEXT})."
                 ),
             )
             return

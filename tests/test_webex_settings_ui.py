@@ -34,7 +34,7 @@ def test_settings_names_meeting_or_personal_room_and_derives_site(tmp_path):
     )
 
     labels = " ".join(label.text() for label in dialog.findChildren(QLabel))
-    assert "Meeting or Personal Room link" in labels
+    assert "Meeting link (Webex, Zoom, Teams, Meet, or FaceTime)" in labels
     assert dialog._video_site.text() == "Webex site: team.webex.com"
     assert "private-room" not in dialog._video_site.text()
     assert "private" not in dialog._video_site.text()

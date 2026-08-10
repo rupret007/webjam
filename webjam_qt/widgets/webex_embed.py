@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.webex_url import is_allowed_webex_url
+from core.meeting_link import is_allowed_meeting_link
 from webjam_qt.theme.tokens import Space
 
 LOGGER = logging.getLogger("webjam.qt.webex_embed")
@@ -137,7 +137,8 @@ class WebexEmbed(QFrame):
         self._change_link_btn.setObjectName("GhostButton")
         self._change_link_btn.setAccessibleName("Add Webex meeting link")
         self._change_link_btn.setAccessibleDescription(
-            "Open WebJam Settings to add a Webex Meeting or Personal Room link."
+            "Open WebJam Settings to add a meeting link (Webex, Zoom, "
+            "Microsoft Teams, Google Meet, or FaceTime)."
         )
         self._change_link_btn.setToolTip(
             "Open Settings to add or change the Webex meeting link."
@@ -381,9 +382,10 @@ class WebexEmbed(QFrame):
         self._change_link_btn.setAccessibleDescription(
             "Open WebJam Settings to "
             + (
-                "change the saved Webex Meeting or Personal Room link."
+                "change the saved meeting link."
                 if self._meeting_configured
-                else "add a Webex Meeting or Personal Room link."
+                else "add a meeting link (Webex, Zoom, Microsoft Teams, "
+                "Google Meet, or FaceTime)."
             )
         )
         self._sync_meeting_action()
@@ -440,7 +442,7 @@ class WebexEmbed(QFrame):
     def load_meeting(self, meeting_url: str, **_unused: object) -> bool:
         """Compatibility guard: embedded meetings are no longer supported."""
 
-        if not is_allowed_webex_url(meeting_url):
+        if not is_allowed_meeting_link(meeting_url):
             LOGGER.warning("Webex launch card refused an untrusted meeting URL")
         else:
             LOGGER.warning(

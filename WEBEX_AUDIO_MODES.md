@@ -6,6 +6,15 @@
 
 Webex is optional for talking or video. Jamulus carries the music.
 
+The saved conversation link is no longer Webex-only: one hardened HTTPS
+policy also accepts Zoom, Microsoft Teams, Google Meet, and FaceTime meeting
+links. **Join / Open Meeting** hands whichever accepted link is saved to the
+operating system exactly once, and WebJam still never claims join, mute, or
+meeting state on any service. FaceTime links open only on a Mac and the app
+says so instead of failing silently. Native app detection, bring-forward,
+and publisher verification remain Webex-specific; other services open
+through the default browser or their own installed app's link handler.
+
 Use the direct **Webex Controls** action or **More → Webex Controls** only if
 the band wants it. Both reveal the Conversation panel without opening or
 rejoining a meeting. In **Settings → Conversation**, each musician can enter
