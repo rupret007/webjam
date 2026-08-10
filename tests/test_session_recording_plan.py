@@ -39,6 +39,7 @@ def _plan(**overrides) -> SessionRecordingPlan:
         shared_track=SharedTrackBinding(
             source_fingerprint_sha256=_fingerprint(), playback_generation=3
         ),
+        shared_track_planned=True,
         input_maps=(
             InputMapBinding(track_name="Guitar DI", channel_count=1),
             InputMapBinding(
@@ -167,3 +168,16 @@ def test_plan_fingerprint_is_stable_and_binds_every_fact():
     fingerprints = {plan.plan_fingerprint() for plan in changed}
     assert baseline not in fingerprints
     assert len(fingerprints) == len(changed)
+
+
+def test_shared_track_binding_requires_the_planned_flag():
+    with pytest.raises(ValueError, match="shared_track_planned"):
+        _plan(shared_track_planned=False)
+    with pytest.raises(ValueError):
+        _plan(shared_track_planned="yes")
+    planned_only = _plan(shared_track=None, shared_track_planned=True)
+    assert planned_only.to_public_dict()["shared_track_planned"] is True
+    assert planned_only.to_public_dict()["shared_track_bound"] is False
+    # The planned flag is part of the binding digest.
+    unplanned = _plan(shared_track=None, shared_track_planned=False)
+    assert planned_only.plan_fingerprint() != unplanned.plan_fingerprint()

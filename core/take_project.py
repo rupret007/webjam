@@ -940,6 +940,10 @@ class SessionEvidence:
     recovery_status: RecoveryStatus = RecoveryStatus.NOT_NEEDED
     recovery_notes: tuple[str, ...] = ()
     timeline: tuple[SessionTimelineEvent, ...] = ()
+    # The SessionRecordingPlan digest bound at record start; empty when no
+    # plan was constructed (older takes, or a binding failure that is
+    # reported separately). Additive and optional for backward compat.
+    recording_plan_fingerprint: str = ""
 
     def __post_init__(self) -> None:
         protocol_version = _safe_session_text(self.protocol_version, 80)
@@ -1012,6 +1016,10 @@ class SessionEvidence:
             payload["recovery_notes"] = list(self.recovery_notes)
         if self.timeline:
             payload["timeline"] = [item.to_dict() for item in self.timeline]
+        if self.recording_plan_fingerprint:
+            payload["recording_plan_fingerprint"] = (
+                self.recording_plan_fingerprint
+            )
         return payload
 
     @classmethod
@@ -1036,6 +1044,9 @@ class SessionEvidence:
             recovery_status=value.get("recovery_status", RecoveryStatus.NOT_NEEDED.value),
             recovery_notes=_string_tuple(value.get("recovery_notes")),
             timeline=timeline,
+            recording_plan_fingerprint=str(
+                value.get("recording_plan_fingerprint", "") or ""
+            ),
         )
 
 

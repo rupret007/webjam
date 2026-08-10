@@ -430,6 +430,7 @@ def _validate_session_shape(value: Any) -> None:
         "recovery_status",
         "recovery_notes",
         "timeline",
+        "recording_plan_fingerprint",
     }
     _require_known_keys(value, allowed)
     recovery_status = value.get("recovery_status")
@@ -437,7 +438,12 @@ def _validate_session_shape(value: Any) -> None:
         status.value for status in RecoveryStatus
     }:
         raise ValueError("Journal recovery state is missing.")
-    for key in ("protocol_version", "started_utc", "ended_utc"):
+    for key in (
+        "protocol_version",
+        "started_utc",
+        "ended_utc",
+        "recording_plan_fingerprint",
+    ):
         if key in value and not isinstance(value[key], str):
             raise ValueError("Journal text field is invalid.")
     host = value.get("host")

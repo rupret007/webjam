@@ -116,6 +116,7 @@ class SessionRecordingPlan:
     expected_source_count: int
     created_at_utc: str
     shared_track: SharedTrackBinding | None = None
+    shared_track_planned: bool = False
     input_maps: tuple[InputMapBinding, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
@@ -189,10 +190,15 @@ class SessionRecordingPlan:
         created = _clean_identity(self.created_at_utc, "created_at_utc")
         object.__setattr__(self, "created_at_utc", created)
 
-        if self.shared_track is not None and not isinstance(
-            self.shared_track, SharedTrackBinding
-        ):
-            raise ValueError("shared_track must be a SharedTrackBinding.")
+        if type(self.shared_track_planned) is not bool:
+            raise ValueError("shared_track_planned must be a boolean.")
+        if self.shared_track is not None:
+            if not isinstance(self.shared_track, SharedTrackBinding):
+                raise ValueError("shared_track must be a SharedTrackBinding.")
+            if not self.shared_track_planned:
+                raise ValueError(
+                    "a bound shared_track requires shared_track_planned."
+                )
 
         input_maps = tuple(self.input_maps)
         if len(input_maps) > _MAX_INPUT_TRACKS:
@@ -223,6 +229,7 @@ class SessionRecordingPlan:
             "storage_status": self.storage.status.value,
             "storage_required_bytes": self.storage.required_bytes,
             "expected_source_count": self.expected_source_count,
+            "shared_track_planned": self.shared_track_planned,
             "shared_track_bound": self.shared_track is not None,
             "input_map_count": len(self.input_maps),
             "created_at_utc": self.created_at_utc,
@@ -246,6 +253,7 @@ class SessionRecordingPlan:
             "pre_roll_frames": self.pre_roll_frames,
             "storage_required_bytes": self.storage.required_bytes,
             "expected_source_count": self.expected_source_count,
+            "shared_track_planned": self.shared_track_planned,
             "shared_track": (
                 None
                 if self.shared_track is None

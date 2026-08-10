@@ -22,8 +22,17 @@ All notable improvements and features for the WebJam music collaboration platfor
   path-free counts only, and `plan_fingerprint()` yields a stable digest
   the finalization gate and take manifest can bind so a result produced
   under different facts can never masquerade as this plan's outcome.
-  Wiring into the recording coordinator and the Finalizing gate is the
-  next step in `docs/plans/v0240-recording-first.md`.
+- Wired the plan into Record Session: `_begin_recording_start` binds one
+  best-effort plan per take (deduplicated durable roster, storage verdict,
+  Shared Track planned flag, expected source count) at the exact seam
+  where every fact is final and nothing irreversible has happened, stores
+  it take-scoped alongside the existing immutable RPC binding, and
+  records `plan_fingerprint()` in the evidence journal and take manifest
+  through a new optional `SessionEvidence.recording_plan_fingerprint`
+  field (additive: legacy journals and manifests load unchanged). Binding
+  is recorded, not yet enforced - fingerprint verification at the Ready
+  gate lands next - and a binding failure logs and never blocks a take
+  that would succeed today.
 
 ### Conversation — multi-service meeting links
 

@@ -48,9 +48,11 @@ from core.take_project import (
     new_project_id,
 )
 from core.recording_readiness import (
+    RecordingStorageCheck,
     RecordingStorageStatus,
     check_recording_storage,
 )
+from core.session_recording_plan import SessionRecordingPlan
 from core.jamulus_roster_identity import (
     JamulusRosterIdentityError,
     ordered_common_roster_digest,
@@ -403,6 +405,12 @@ class RecordingCoordinator:
         # take. Workers use this immutable binding instead of mutable Settings.
         self._recording_rpc_take_id = ""
         self._recording_rpc_port = 0
+        # One immutable SessionRecordingPlan bound per take at record start;
+        # best-effort in this step (recorded, not yet enforced) and cleared
+        # with the take. Guarded by the evidence lock with its fingerprint.
+        self._recording_plan: SessionRecordingPlan | None = None
+        self._recording_plan_take_id = ""
+        self._recording_plan_fingerprint = ""
         self._recording_rpc_secret_file = ""
         self._recording_rpc_secret_identity: tuple[int, int, int, int] | None = None
         self._roster_poll_inflight = False
@@ -761,6 +769,10 @@ class RecordingCoordinator:
                 self._recording_rpc_port = 0
                 self._recording_rpc_secret_file = ""
                 self._recording_rpc_secret_identity = None
+        with self._evidence_lock:
+            if take_id and self._recording_plan_take_id == take_id:
+                self._recording_plan = None
+                self._recording_plan_take_id = ""
         with self._shared_track_condition:
             if take_id and self._shared_track_take_id == take_id:
                 self._shared_track_take_id = ""
@@ -923,6 +935,9 @@ class RecordingCoordinator:
             self._evidence_journal = None
             self._evidence_journal_take_id = ""
             self._evidence_journal_failed = False
+            self._recording_plan = None
+            self._recording_plan_take_id = ""
+            self._recording_plan_fingerprint = ""
             self._append_evidence_event_locked(
                 "recording_requested",
                 detail="Waiting for the band server to confirm recording.",
@@ -2128,6 +2143,7 @@ class RecordingCoordinator:
                 recovery_status=self._recording_recovery_status,
                 recovery_notes=tuple(self._recording_recovery_notes),
                 timeline=tuple(self._recording_events),
+                recording_plan_fingerprint=self._recording_plan_fingerprint,
             )
 
     def _create_evidence_journal(self) -> bool:
@@ -3436,6 +3452,83 @@ class RecordingCoordinator:
             hosted_readiness=readiness,
         )
 
+    def _bind_session_recording_plan(
+        self,
+        storage: object,
+        *,
+        planned_shared_track: bool,
+    ) -> None:
+        """Best-effort: bind one immutable plan for the starting take.
+
+        This step records the plan and its fingerprint in the evidence
+        journal and take manifest; it deliberately never blocks a start
+        that would succeed today. Enforcement (fingerprint verification at
+        the Ready gate) lands separately once construction coverage is
+        proven across the recording suites.
+        """
+
+        try:
+            roster: list[tuple[str, str]] = []
+            seen: set[str] = set()
+            for channel_id in sorted(self._participant_ids):
+                durable = str(self._participant_ids.get(channel_id, "") or "")
+                if not durable or durable in seen:
+                    continue
+                seen.add(durable)
+                name = str(
+                    self._track_names.get(channel_id, "") or "Musician"
+                )
+                roster.append((durable, name))
+            if isinstance(storage, RecordingStorageCheck):
+                bound_storage = storage
+            else:
+                # Some callers/tests provide a duck-typed check; coerce the
+                # facts without weakening the action-needed rule.
+                status = str(getattr(storage, "status", "") or "")
+                bound_storage = RecordingStorageCheck(
+                    status=(
+                        RecordingStorageStatus.WARNING
+                        if status == RecordingStorageStatus.WARNING.value
+                        else RecordingStorageStatus.READY
+                    ),
+                    detail=str(getattr(storage, "detail", "") or "coerced"),
+                    free_bytes=None,
+                    required_bytes=max(
+                        0, int(getattr(storage, "required_bytes", 0) or 0)
+                    ),
+                )
+            plan = SessionRecordingPlan(
+                session_id=str(self._session_id or "") or "unbound-session",
+                take_id=self._take_id,
+                plan_generation=max(1, int(self._hosted_preflight_generation) + 1),
+                roster=tuple(roster),
+                expected_server_stems=(),
+                count_in_frames=0,
+                pre_roll_frames=0,
+                storage=bound_storage,
+                expected_source_count=max(1, int(self._expected_tracks)),
+                created_at_utc=(
+                    datetime.now(timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                ),
+                shared_track=None,
+                shared_track_planned=bool(planned_shared_track),
+            )
+        except Exception:  # noqa: BLE001 - plan binding must never block a take
+            LOGGER.warning(
+                "Session recording plan could not be bound for this take."
+            )
+            with self._evidence_lock:
+                self._recording_plan = None
+                self._recording_plan_take_id = ""
+                self._recording_plan_fingerprint = ""
+            return
+        with self._evidence_lock:
+            self._recording_plan = plan
+            self._recording_plan_take_id = self._take_id
+            self._recording_plan_fingerprint = plan.plan_fingerprint()
+
     def _begin_recording_start(
         self,
         real_participants: list[object],
@@ -3623,6 +3716,9 @@ class RecordingCoordinator:
             # durable identity; its complete channel set was checked above.
             self._participant_id_by_channel[channel_id] = durable
             self._participant_ids[channel_id] = durable
+        self._bind_session_recording_plan(
+            storage, planned_shared_track=planned_shared_track
+        )
         self.request_authenticated_roster_observation()
         if not self._start_local_capture():
             return

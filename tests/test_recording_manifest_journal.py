@@ -187,3 +187,29 @@ def test_list_pending_reports_untrusted_entries_without_returning_untrusted_name
     )
     assert scan.untrusted_entries == (JournalDirectoryIssue("journal_untrusted_name"),)
     assert journal.pending_take_ids() == (trusted_take_id,)
+
+
+def test_recording_plan_fingerprint_round_trips_and_legacy_journals_load(tmp_path):
+    from core.recording_manifest_journal import RecordingManifestJournal
+    from core.take_project import RecoveryStatus, SessionEvidence
+
+    import uuid
+
+    journal = RecordingManifestJournal(tmp_path)
+    fingerprint = "ab" * 32
+    plan_take = str(uuid.uuid4())
+    legacy_take = str(uuid.uuid4())
+    with_plan = SessionEvidence(recording_plan_fingerprint=fingerprint)
+    journal.create(plan_take, with_plan)
+    loaded = journal.load(plan_take)
+    assert loaded.evidence is not None
+    assert loaded.evidence.recording_plan_fingerprint == fingerprint
+    assert loaded.evidence.recovery_status is RecoveryStatus.NOT_NEEDED
+
+    # A legacy journal (no plan field) still loads with an empty binding.
+    legacy = SessionEvidence()
+    assert "recording_plan_fingerprint" not in legacy.to_dict()
+    journal.create(legacy_take, legacy)
+    loaded_legacy = journal.load(legacy_take)
+    assert loaded_legacy.evidence is not None
+    assert loaded_legacy.evidence.recording_plan_fingerprint == ""
