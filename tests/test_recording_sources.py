@@ -123,3 +123,27 @@ def test_duplicate_and_empty_roster_ids_collapse():
     rows = _project(roster=(("p-1", "A"), ("p-1", "B"), ("", "C")))
     assert len(rows) == 1
     assert rows[0].display_name == "A"
+
+
+def test_guest_side_structural_guard_idle_phase_yields_no_claims():
+    """Guests never render per-musician badges.
+
+    Guest controllers receive recording phase as widget-level pushes only;
+    their own RecordingCoordinator stays idle, so the projection must
+    return nothing even when stale receipts or roster entries exist. This
+    is the structural guarantee that guest cards cannot claim per-musician
+    recording proof the guest does not hold.
+    """
+
+    for stale_phase in ("idle", "", "error"):
+        assert (
+            project_recording_sources(
+                phase=stale_phase,
+                roster=ROSTER,
+                receipts=(_receipt(),),
+                conflicted_keys=("d1",),
+                receipts_frozen=False,
+                shared_track_planned=True,
+            )
+            == ()
+        )

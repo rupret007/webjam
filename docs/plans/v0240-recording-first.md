@@ -125,6 +125,19 @@ generation, and privacy change WebJam currently refuses. Guards: the
 1100px no-overlap strip test, the once-only set_recording_phase guest
 assertion (use a separate setter), and the fingerprint-absence tests.
 
+## Step 3 completion record (2026-08-10)
+
+Host side: per-source projection + coordinator accessor + card badges,
+all landed with geometry and truth guards. Guest side is complete by
+deliberate refusal: guest cards render no per-musician badges, because a
+guest holds no per-musician recording proof — the authenticated
+session-wide signal in the strip is the guest truth. Structurally
+guaranteed (guest coordinators never enter active phases, so the
+projection is empty) and locked by regression. Any future guest badge
+requires per-participant wire attribution: a schema, generation, and
+privacy change to SessionStateSnapshot that must be its own reviewed
+step.
+
 ## Sequencing (each step lands with focused regression tests)
 
 1. SessionRecordingPlan consolidation + Finalizing-gate condition tests.

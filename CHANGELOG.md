@@ -87,6 +87,15 @@ All notable improvements and features for the WebJam music collaboration platfor
   grid refreshes on every recorder phase change and participant push;
   the refresh is presentation-only and can never break recorder state.
 
+### Record Session — guest cards claim nothing they cannot prove (step 3 complete)
+
+- Completed the recording workspace step: guest participant cards render
+  no per-musician recording badges, because a guest holds no
+  per-musician proof - the authenticated session-wide signal remains the
+  guest truth. The guarantee is structural (guest coordinators never
+  enter active recording phases, so the per-source projection is empty
+  even against stale receipts) and locked by regression.
+
 ### Conversation — multi-service meeting links
 
 - The saved conversation link now accepts Webex, Zoom, Microsoft Teams,
