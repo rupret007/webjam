@@ -9,6 +9,22 @@ All notable improvements and features for the WebJam music collaboration platfor
 > Development after the exact v0.23.0 private test candidate belongs here.
 > Every published tag and asset remains immutable historical evidence.
 
+### Record Session — one authoritative recording plan (step 1)
+
+- Added `core/session_recording_plan.py`: one immutable
+  `SessionRecordingPlan` per take, binding session/take identity, plan
+  generation, the proven roster, expected server stems, Shared Track
+  fingerprint and playback generation, configurable input maps (up to 32
+  mono/stereo tracks with Local Original opt-in), count-in/pre-roll, the
+  storage readiness verdict, expected source inventory, and creation
+  time. Construction fails closed on any invalid fact — including
+  action-needed storage — the repr is redacted, the public projection is
+  path-free counts only, and `plan_fingerprint()` yields a stable digest
+  the finalization gate and take manifest can bind so a result produced
+  under different facts can never masquerade as this plan's outcome.
+  Wiring into the recording coordinator and the Finalizing gate is the
+  next step in `docs/plans/v0240-recording-first.md`.
+
 ### Conversation — multi-service meeting links
 
 - The saved conversation link now accepts Webex, Zoom, Microsoft Teams,
