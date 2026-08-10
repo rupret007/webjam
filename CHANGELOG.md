@@ -13,9 +13,10 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 > The exact publication state is authoritative at the
 > [v0.23.0 release page](https://github.com/rupret007/webjam/releases/tag/v0.23.0).
-> Publication requires the annotated tag, four-platform tag CI, exact draft
-> inventory, checksums, fallback proof, and protected promotion. It does not
-> convert any physical-musician **NOT RUN** result to PASS.
+> Published immutable as GitHub **Latest** on 2026-08-10 from tag commit
+> `416186a3ea9cddc1ff01a2b0d61f5e1d5dfc70c8`, tag CI run `31368570400`,
+> release `367773776`, and protected promotion run `31371289158`. Publication
+> does not convert any physical-musician **NOT RUN** result to PASS.
 
 ### One native Shared Track experience
 

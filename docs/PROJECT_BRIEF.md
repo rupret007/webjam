@@ -1,9 +1,9 @@
 # WebJam project brief
 
 **Review date:** 2026-08-10
-**Status:** v0.23.0 is the Shared Track and native multitrack private test
-candidate. GitHub Releases is authoritative for its exact publication state;
-v0.22.5 remains immutable historical evidence.
+**Status:** v0.23.0 is the immutable GitHub Latest Shared Track and native
+multitrack private test candidate; its physical-musician gates remain **NOT
+RUN**. v0.22.5 remains immutable historical evidence.
 
 ## Executive summary
 

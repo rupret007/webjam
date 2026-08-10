@@ -13,20 +13,18 @@ the systems that should remain independent.
 [![Latest release](https://img.shields.io/github/v/release/rupret007/webjam?label=Latest%20test%20candidate)](https://github.com/rupret007/webjam/releases/latest)
 
 > **Testing download:** GitHub [**Latest**](https://github.com/rupret007/webjam/releases/latest)
-> is the only current downloadable-test pointer. v0.22.5 remains immutable;
-> v0.23.0 may replace the Latest pointer only after its exact annotated tag,
-> four-platform CI, draft inventory, checksums, fallback proof, and protected
-> promotion all pass. Windows is unsigned; macOS is ad-hoc signed and
-> unnotarized.
+> is **v0.23.0**, the current unsigned private test candidate. Its exact
+> annotated tag, four-platform CI, eight-asset inventory, checksums, fallback
+> proof, and protected promotion passed. Windows is unsigned; macOS is ad-hoc
+> signed and unnotarized. v0.22.5 remains immutable historical evidence.
 
-> **Source boundary:** the exact v0.22.5 tag, checksums, and protected promotion
+> **Source boundary:** the exact v0.23.0 tag, checksums, and protected promotion
 > are the downloadable-release evidence. Do not substitute an untagged checkout
 > or a later documentation commit for the immutable published package.
 
-> **Current source candidate:** v0.23.0 develops the native **Shared Track**,
-> **Record Session**, and multitrack Studio workflow. Its exact publication
-> state is shown on GitHub; every physical v0.23.0 gate remains **NOT RUN**
-> even if the unsigned/ad-hoc private test candidate is published.
+> **Current release candidate:** v0.23.0 contains the native **Shared Track**,
+> **Record Session**, and multitrack Studio workflow. Every physical v0.23.0
+> gate remains **NOT RUN** until musicians test these exact packages.
 
 New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 [First Jam](FIRST_JAM.md); this README is the complete technical story.
@@ -36,8 +34,8 @@ New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 | Area | Current state |
 | --- | --- |
 | Product | Musician-facing desktop conductor around Jamulus, Webex, Studio, and Pocket Stage |
-| Published line | GitHub Latest private test candidate; verify its exact tag and checksum manifest |
-| Current development | v0.23.0 Shared Track, Record Session, and multitrack Studio source candidate |
+| Published line | v0.23.0 GitHub Latest private test candidate; verify its checksum manifest |
+| Current development | Changes after the immutable v0.23.0 tag belong under Changelog Unreleased |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -474,11 +472,12 @@ successful protected promotion behind GitHub
 [Latest](https://github.com/rupret007/webjam/releases/latest) are downloadable
 evidence. Do not use an untagged checkout or ordinary branch build as a release.
 
-The current source tree reports **v0.23.0**. Its publication state must be read
-from GitHub rather than inferred from this moving branch. The immutable
+The current source tree reports **v0.23.0**. The exact
+[v0.23.0 release](https://github.com/rupret007/webjam/releases/tag/v0.23.0)
+is GitHub Latest and immutable; its tag CI and protected promotion are the
+package evidence. The immutable
 [v0.22.5 release](https://github.com/rupret007/webjam/releases/tag/v0.22.5)
-retains its original assets and evidence regardless of which newer candidate
-GitHub marks Latest.
+retains its original assets and evidence as a historical candidate.
 
 v0.23.0 is the separate Shared Track, Record Session, and multitrack Studio
 identity. Its private testing-release lane does not reuse or weaken the sealed

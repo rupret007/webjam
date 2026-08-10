@@ -7,10 +7,11 @@
 > release record remain immutable and must never be replaced by the current
 > source line.
 
-> **v0.23.0 testing boundary:** this is a new Shared Track, Record Session, and
-> Studio candidate. Its exact public state is authoritative on GitHub. Even
-> after protected publication, every v0.23.0 physical/credentialed gate remains
-> **NOT RUN** until separately observed against exact checksums.
+> **v0.23.0 published testing boundary:** the Shared Track, Record Session, and
+> Studio candidate is immutable GitHub Latest. Tag CI `31368570400` produced its
+> exact eight assets; protected promotion `31371289158` verified and published
+> release `367773776`. Every physical/credentialed gate remains **NOT RUN**
+> until separately observed against exact checksums.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version
