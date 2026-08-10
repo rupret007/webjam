@@ -101,6 +101,45 @@ class InputMapBinding:
         return "InputMapBinding(private=[redacted])"
 
 
+def configured_input_map_bindings(
+    settings: object,
+) -> tuple[InputMapBinding, ...]:
+    """Parse the musician's configured input maps from settings.
+
+    Returns only strictly valid bindings (the settings loader already
+    fail-safes malformed lists to empty). NOTE: until the capture layer is
+    generalized, an enabled local capture records the fixed two host stems
+    regardless of this configuration; the SessionRecordingPlan therefore
+    binds capture truth, not this wish-list. This helper feeds the editor
+    UI and becomes authoritative only when capture consumes it.
+    """
+
+    raw = getattr(settings, "input_maps", None)
+    if not isinstance(raw, list):
+        return ()
+    bindings: list[InputMapBinding] = []
+    try:
+        for entry in raw[:_MAX_INPUT_TRACKS]:
+            if not isinstance(entry, dict):
+                return ()
+            bindings.append(
+                InputMapBinding(
+                    track_name=entry.get("name", ""),
+                    channel_count=entry.get("channels", 0),
+                    enabled=bool(entry.get("enabled", True)),
+                    local_original_enabled=bool(
+                        entry.get("local_original_enabled", False)
+                    ),
+                )
+            )
+    except ValueError:
+        return ()
+    names = [binding.track_name for binding in bindings]
+    if len(set(names)) != len(names):
+        return ()
+    return tuple(bindings)
+
+
 @dataclass(frozen=True, repr=False)
 class SessionRecordingPlan:
     """The single authoritative binding for one Record Session take."""

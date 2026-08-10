@@ -27,6 +27,51 @@ def _as_bool(value: object) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+_MAX_INPUT_MAPS = 32
+
+
+def _coerce_input_maps(value: object) -> list:
+    """Return a strictly validated input-map list, or [] on any problem.
+
+    Fail-safe, not fail-open: one malformed entry rejects the whole list so
+    a half-valid configuration can never silently record fewer tracks than
+    the musician believes are armed.
+    """
+
+    if not isinstance(value, list) or len(value) > _MAX_INPUT_MAPS:
+        return []
+    cleaned: list = []
+    seen_names: set = set()
+    for entry in value:
+        if not isinstance(entry, dict):
+            return []
+        name = entry.get("name")
+        channels = entry.get("channels")
+        if not isinstance(name, str) or not name.strip() or len(name) > 128:
+            return []
+        if any(ord(char) < 0x20 or ord(char) == 0x7F for char in name):
+            return []
+        if isinstance(channels, bool) or channels not in (1, 2):
+            return []
+        enabled = entry.get("enabled", True)
+        local_original = entry.get("local_original_enabled", False)
+        if not isinstance(enabled, bool) or not isinstance(local_original, bool):
+            return []
+        stripped = name.strip()
+        if stripped in seen_names:
+            return []
+        seen_names.add(stripped)
+        cleaned.append(
+            {
+                "name": stripped,
+                "channels": channels,
+                "enabled": enabled,
+                "local_original_enabled": local_original,
+            }
+        )
+    return cleaned
+
+
 def _coerce_settings_data(data: dict) -> None:
     """Coerce config values to expected types; fall back to defaults on invalid data."""
     defaults = asdict(AppSettings())
@@ -63,6 +108,9 @@ def _coerce_settings_data(data: dict) -> None:
         else:
             candidates = []
         data["jamulus_candidates"] = candidates if candidates else defaults["jamulus_candidates"]
+    # Structured input maps: strict per-entry validation; fail-safe to [].
+    if "input_maps" in data:
+        data["input_maps"] = _coerce_input_maps(data["input_maps"])
     # String fields: ensure str
     for key in ("jamulus_server", "webex_url", "config_file", "mix_file",
                 "server_rpc_secret_file", "takes_directory",
@@ -112,6 +160,15 @@ class AppSettings:
     # Webex carries speech only by default; Jamulus remains the music path.
     webex_audio_mode: str = "talkback"
     # Supplemental isolated input capture is independent of the Webex role.
+    # Configurable local input maps for Record Session. Each entry is a
+    # mapping {"name": str, "channels": 1|2, "enabled": bool,
+    # "local_original_enabled": bool}. Strictly coerced on load: any
+    # malformed entry clears the whole list, which falls back to the
+    # compatibility rule (local_capture_enabled + empty maps means today's
+    # two fixed host stems). The capture layer still records the fixed
+    # two-stem map until it is generalized; this field feeds the editor
+    # and the SessionRecordingPlan truth first.
+    input_maps: list = field(default_factory=list)
     local_capture_enabled: bool = False
     # The first host Record click asks whether this Mac should retain isolated
     # interface inputs.  This records only that the musician made a choice;

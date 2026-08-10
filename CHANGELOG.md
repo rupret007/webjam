@@ -34,6 +34,20 @@ All notable improvements and features for the WebJam music collaboration platfor
   gate lands next - and a binding failure logs and never blocks a take
   that would succeed today.
 
+### Record Session — configurable input-map settings (step 2, part 1)
+
+- Added the `input_maps` settings field: up to 32 named mono/stereo local
+  input tracks with enable and Local Original opt-in, strictly coerced on
+  load (one malformed entry rejects the whole list, so a half-valid
+  configuration can never silently record fewer tracks than the musician
+  believes are armed) and fail-safe to the compatibility rule that an
+  enabled local capture with no configured maps means today's fixed two
+  host stems. `configured_input_map_bindings()` parses the field into
+  validated plan bindings for the coming editor UI. The capture layer
+  still records the fixed two-stem map until it is generalized, so the
+  SessionRecordingPlan continues to bind capture truth, not
+  configuration intent - the plan doc records that boundary explicitly.
+
 ### Conversation — multi-service meeting links
 
 - The saved conversation link now accepts Webex, Zoom, Microsoft Teams,
