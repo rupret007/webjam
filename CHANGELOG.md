@@ -18,6 +18,23 @@ All notable improvements and features for the WebJam music collaboration platfor
 > release `367773776`, and protected promotion run `31371289158`. Publication
 > does not convert any physical-musician **NOT RUN** result to PASS.
 
+### Conversation — multi-service meeting links
+
+- The saved conversation link now accepts Webex, Zoom, Microsoft Teams,
+  Google Meet, and FaceTime meeting links through one hardened HTTPS-only
+  policy (no userinfo, custom ports, percent-encoded hosts, or lookalike
+  domains). **Join / Open Meeting** hands any accepted link to the
+  operating system exactly once; WebJam still never claims join, mute, or
+  meeting state on any service. FaceTime links open only on a Mac, and the
+  handoff error says so honestly on other platforms.
+- Settings, setup wizard, and first-run link fields name the detected
+  service (for example "Zoom site: us02web.zoom.us"), and every supported
+  service's link is redacted to its origin in logs, mappings, and support
+  bundles exactly like Webex links.
+- Native app detection, bring-forward, and publisher verification remain
+  Webex-only in this phase; other services open through the default
+  browser or their own installed app's link handler.
+
 ### One native Shared Track experience
 
 - Reworked the musician-facing live-session feature from **Reference Track**

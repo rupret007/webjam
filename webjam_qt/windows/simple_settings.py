@@ -30,10 +30,12 @@ from PySide6.QtWidgets import (
 
 from core.jamulus_name import JamulusNameError, validate_jamulus_name
 from core.settings import AppSettings, save_settings
-from core.webex_url import (
-    normalize_webex_url,
-    webex_site_hostname,
-    webex_url_error,
+from core.meeting_link import (
+    identify_meeting_service,
+    meeting_link_error,
+    meeting_link_hostname,
+    meeting_service_label,
+    normalize_meeting_url,
 )
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
@@ -160,7 +162,7 @@ class SimpleSettingsDialog(QDialog):
         )
         video_note.setObjectName("SimpleSettingsHint")
         video_note.setWordWrap(True)
-        video_label = self._field_label("Meeting or Personal Room link")
+        video_label = self._field_label("Meeting link (Webex, Zoom, Teams, Meet, or FaceTime)")
         self._video = QLineEdit(settings.webex_url)
         self._video.setPlaceholderText(
             "https://your-site.webex.com/meet/your-room"
@@ -281,16 +283,19 @@ class SimpleSettingsDialog(QDialog):
         self._webex_status.clear()
         self._webex_status.setAccessibleDescription("")
         self._webex_status.setVisible(False)
-        hostname = webex_site_hostname(text)
-        self._video_site.setText(f"Webex site: {hostname}" if hostname else "")
+        hostname = meeting_link_hostname(text)
+        service = meeting_service_label(identify_meeting_service(text))
+        self._video_site.setText(
+            f"{service} site: {hostname}" if hostname else ""
+        )
         self._video_site.setVisible(bool(hostname))
         self._open_webex.setEnabled(bool(str(text or "").strip()))
 
     def _open_webex_test(self) -> None:
         """Validate and externally open the draft link without saving it."""
 
-        url = normalize_webex_url(self._video.text())
-        error = webex_url_error(url)
+        url = normalize_meeting_url(self._video.text())
+        error = meeting_link_error(url)
         if error:
             self._webex_status.setText(f"Check this link before opening: {error}.")
             self._webex_status.setVisible(True)
@@ -359,9 +364,9 @@ class SimpleSettingsDialog(QDialog):
         except JamulusNameError as exc:
             self._show_error(str(exc), focus=self._name)
             return False
-        video = normalize_webex_url(self._video.text())
+        video = normalize_meeting_url(self._video.text())
         if video:
-            error = webex_url_error(video)
+            error = meeting_link_error(video)
             if error:
                 self._show_error(error, focus=self._video)
                 return False

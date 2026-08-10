@@ -13,10 +13,10 @@ from enum import Enum
 
 from core.logging_config import configure_logging
 from core.settings import load_settings
-from core.webex_url import (
-    is_allowed_webex_url,
-    normalize_webex_url,
-    webex_site_hostname,
+from core.meeting_link import (
+    is_allowed_meeting_link,
+    meeting_link_hostname,
+    normalize_meeting_url,
 )
 
 
@@ -31,7 +31,7 @@ class WebexLaunchState(str, Enum):
 
 def _meeting_hostname(url: str) -> str:
     """Return a safe logging label without meeting path/query/fragment."""
-    return webex_site_hostname(url) or "unknown"
+    return meeting_link_hostname(url) or "unknown"
 
 
 class WebexController:
@@ -70,9 +70,9 @@ class WebexController:
         requested_url = str(meeting_url or "")
         hostname = _meeting_hostname(requested_url)
         try:
-            launch_url = normalize_webex_url(requested_url)
-            if not is_allowed_webex_url(launch_url):
-                raise RuntimeError("invalid or untrusted Webex meeting URL")
+            launch_url = normalize_meeting_url(requested_url)
+            if not is_allowed_meeting_link(launch_url):
+                raise RuntimeError("invalid or untrusted meeting URL")
             if not webbrowser.open(launch_url):
                 raise RuntimeError("browser refused meeting URL")
         except Exception as exc:  # noqa: BLE001

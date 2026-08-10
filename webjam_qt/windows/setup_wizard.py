@@ -47,10 +47,12 @@ from core.jamulus_name import (
     validate_jamulus_name,
 )
 from core.settings import AppSettings, load_settings
-from core.webex_url import (
-    normalize_webex_url,
-    webex_site_hostname,
-    webex_url_error,
+from core.meeting_link import (
+    identify_meeting_service,
+    meeting_link_error,
+    meeting_link_hostname,
+    meeting_service_label,
+    normalize_meeting_url,
 )
 from webjam_qt.theme.tokens import Color, Font, Space
 from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
@@ -597,8 +599,11 @@ class _WebexPage(QWizardPage):
     def _validate_url_live(self, text: str) -> None:
         """Show a typing-time hint about obvious URL-input mistakes."""
         stripped = text.strip()
-        hostname = webex_site_hostname(stripped)
-        self._site.setText(f"Webex site: {hostname}" if hostname else "")
+        hostname = meeting_link_hostname(stripped)
+        service = meeting_service_label(identify_meeting_service(stripped))
+        self._site.setText(
+            f"{service} site: {hostname}" if hostname else ""
+        )
         self._site.setVisible(bool(hostname))
         if not stripped:
             self._url_hint.setVisible(False)
@@ -608,7 +613,7 @@ class _WebexPage(QWizardPage):
             self._url_hint.setVisible(True)
             return
         if "://" in stripped:
-            error = webex_url_error(stripped)
+            error = meeting_link_error(stripped)
             if error:
                 self._url_hint.setText(error)
                 self._url_hint.setVisible(True)
@@ -624,10 +629,10 @@ class _WebexPage(QWizardPage):
         self._url_hint.setVisible(False)
 
     def validatePage(self) -> bool:
-        url = normalize_webex_url(self._url.text())
+        url = normalize_meeting_url(self._url.text())
         if url != self._url.text().strip():
             self._url.setText(url)
-        error = webex_url_error(url)
+        error = meeting_link_error(url)
         if error:
             self._url_hint.setText(error)
             self._url_hint.setVisible(True)
@@ -638,7 +643,7 @@ class _WebexPage(QWizardPage):
 
     @property
     def webex_url(self) -> str:
-        return normalize_webex_url(self._url.text())
+        return normalize_meeting_url(self._url.text())
 
 # ---------------------------------------------------------------------------
 # Page 3 — Optional local recording

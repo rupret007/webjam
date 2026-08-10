@@ -41,10 +41,12 @@ from core.settings import (
     hosted_server_recordings_dir,
     hosted_server_secret_path,
 )
-from core.webex_url import (
-    normalize_webex_url,
-    webex_site_hostname,
-    webex_url_error,
+from core.meeting_link import (
+    identify_meeting_service,
+    meeting_link_error,
+    meeting_link_hostname,
+    meeting_service_label,
+    normalize_meeting_url,
 )
 from webjam_qt.theme import Space
 from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
@@ -413,8 +415,11 @@ class FirstRunSetupDialog(QDialog):
     def _on_webex_text_changed(self, text: str) -> None:
         self._webex_error.clear()
         self._webex_error.setVisible(False)
-        hostname = webex_site_hostname(text)
-        self._webex_site.setText(f"Webex site: {hostname}" if hostname else "")
+        hostname = meeting_link_hostname(text)
+        service = meeting_service_label(identify_meeting_service(text))
+        self._webex_site.setText(
+            f"{service} site: {hostname}" if hostname else ""
+        )
         self._webex_site.setVisible(bool(hostname))
         self._refresh_navigation()
 
@@ -493,8 +498,8 @@ class FirstRunSetupDialog(QDialog):
         return True
 
     def _webex_page_valid(self, *, show_error: bool = False) -> bool:
-        url = normalize_webex_url(self._webex_url.text())
-        error = webex_url_error(url) if url else None
+        url = normalize_meeting_url(self._webex_url.text())
+        error = meeting_link_error(url) if url else None
         if show_error and error:
             self._webex_error.setText(error)
             self._webex_error.setVisible(True)
@@ -557,7 +562,7 @@ class FirstRunSetupDialog(QDialog):
             musician_name=validate_jamulus_name(self._name.text()).value,
             jamulus_host=host,
             jamulus_port=port,
-            webex_url=normalize_webex_url(self._webex_url.text()),
+            webex_url=normalize_meeting_url(self._webex_url.text()),
             local_capture_enabled=False,
             audio_input_device_index=-1,
         )
