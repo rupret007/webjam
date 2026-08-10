@@ -1,0 +1,143 @@
+from core.meeting_link import (
+    SUPPORTED_MEETING_SERVICES_TEXT,
+    identify_meeting_service,
+    is_allowed_meeting_link,
+    meeting_handoff_platform_error,
+    meeting_link_error,
+    meeting_link_hostname,
+    meeting_service_label,
+)
+
+
+def test_all_supported_services_validate_and_identify():
+    cases = {
+        "https://myband.webex.com/meet/practice": ("webex", "myband.webex.com"),
+        "https://webex.com/meet/practice": ("webex", "webex.com"),
+        "https://us02web.zoom.us/j/1234567890?pwd=abc": (
+            "zoom",
+            "us02web.zoom.us",
+        ),
+        "https://zoom.us/j/1234567890": ("zoom", "zoom.us"),
+        "https://teams.microsoft.com/l/meetup-join/19%3ameeting": (
+            "teams",
+            "teams.microsoft.com",
+        ),
+        "https://teams.live.com/meet/9351234567890": (
+            "teams",
+            "teams.live.com",
+        ),
+        "https://meet.google.com/abc-defg-hij": (
+            "google_meet",
+            "meet.google.com",
+        ),
+        "https://facetime.apple.com/join#v=1&p=abc": (
+            "facetime",
+            "facetime.apple.com",
+        ),
+        # Bare domains gain https:// exactly like the Webex-only policy.
+        "myband.webex.com/meet/practice": ("webex", "myband.webex.com"),
+    }
+    for url, (service, hostname) in cases.items():
+        assert meeting_link_error(url) is None, url
+        assert is_allowed_meeting_link(url), url
+        assert identify_meeting_service(url) == service, url
+        assert meeting_link_hostname(url) == hostname, url
+
+
+def test_lookalike_and_hostile_links_are_rejected():
+    rejected = (
+        "https://zoom.us.evil.example/j/123",
+        "https://meet.google.com.evil.example/abc",
+        "https://teams.microsoft.com.evil.example/l/x",
+        "https://facetime.apple.com.evil.example/join",
+        "https://notzoom.us/j/123",
+        "https://gmeet.google.com/abc",
+        "https://example.com/meet/band",
+        "http://zoom.us/j/123",
+        "https://user:pass@zoom.us/j/123",
+        "https://zoom.us:8443/j/123",
+        "https://%7aoom.us/j/123",
+        "https://localhost/meet",
+        "https://zoom..us/j/123",
+        "https://zoom.us/j/1 23",
+        "https://meet.google.com/abc\n-defg",
+        "",
+        "not-a-link",
+    )
+    for url in rejected:
+        assert meeting_link_error(url), url
+        assert not is_allowed_meeting_link(url), url
+        assert identify_meeting_service(url) is None, url
+        assert meeting_link_hostname(url) == "", url
+
+
+def test_unknown_host_error_names_every_supported_service():
+    error = meeting_link_error("https://example.com/meet/band")
+    assert error is not None
+    assert SUPPORTED_MEETING_SERVICES_TEXT in error
+    for name in ("Webex", "Zoom", "Microsoft Teams", "Google Meet", "FaceTime"):
+        assert name in SUPPORTED_MEETING_SERVICES_TEXT, name
+
+
+def test_service_labels_are_human_readable():
+    assert meeting_service_label("webex") == "Webex"
+    assert meeting_service_label("zoom") == "Zoom"
+    assert meeting_service_label("teams") == "Microsoft Teams"
+    assert meeting_service_label("google_meet") == "Google Meet"
+    assert meeting_service_label("facetime") == "FaceTime"
+    assert meeting_service_label(None) == "meeting service"
+    assert meeting_service_label("unknown") == "meeting service"
+
+
+def test_facetime_handoff_is_macos_only_and_the_error_is_honest():
+    facetime = "https://facetime.apple.com/join#v=1&p=abc"
+    assert meeting_handoff_platform_error(facetime, platform="darwin") is None
+    for platform in ("win32", "linux"):
+        error = meeting_handoff_platform_error(facetime, platform=platform)
+        assert error is not None and "Mac" in error
+    # Non-FaceTime services carry no platform restriction anywhere.
+    for url in (
+        "https://myband.webex.com/meet/practice",
+        "https://zoom.us/j/123",
+        "https://teams.microsoft.com/l/meetup-join/19",
+        "https://meet.google.com/abc-defg-hij",
+    ):
+        for platform in ("darwin", "win32", "linux"):
+            assert (
+                meeting_handoff_platform_error(url, platform=platform) is None
+            ), (url, platform)
+    # An invalid link is a validation problem, not a platform problem.
+    assert (
+        meeting_handoff_platform_error("https://example.com/x", platform="win32")
+        is None
+    )
+
+
+def test_meeting_links_redact_to_origin_only_in_logs_and_mappings():
+    from core.redaction import redact_mapping, redact_meeting_url, redact_text
+
+    reductions = {
+        "https://us02web.zoom.us/j/123?pwd=secret": "https://us02web.zoom.us/[redacted]",
+        "https://teams.microsoft.com/l/meetup-join/19%3aroom": (
+            "https://teams.microsoft.com/[redacted]"
+        ),
+        "https://teams.live.com/meet/935123": "https://teams.live.com/[redacted]",
+        "https://meet.google.com/abc-defg-hij": "https://meet.google.com/[redacted]",
+        "https://facetime.apple.com/join#v=1&p=priv": (
+            "https://facetime.apple.com/[redacted]"
+        ),
+    }
+    for url, origin_only in reductions.items():
+        assert redact_meeting_url(url) == origin_only, url
+        redacted_line = redact_text(f"opening {url} now")
+        assert origin_only in redacted_line, url
+        for private in ("pwd=secret", "abc-defg-hij", "meetup-join", "p=priv"):
+            assert private not in redacted_line
+
+    # Lookalike hosts never earn a trusted origin.
+    assert redact_meeting_url("https://zoom.us.evil.example/j/1") == "[redacted]"
+    hostile = redact_text("see https://zoom.us.evil.example/j/1?pwd=x now")
+    assert "https://zoom.us/" not in hostile.replace("zoom.us.evil", "")
+    # The historical webex_url settings field may hold any supported link.
+    mapping = redact_mapping({"webex_url": "https://zoom.us/j/123?pwd=s"})
+    assert mapping["webex_url"] == "https://zoom.us/[redacted]"

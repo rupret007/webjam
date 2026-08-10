@@ -9,6 +9,23 @@ All notable improvements and features for the WebJam music collaboration platfor
 > Future work after the v0.22.5 private test candidate belongs here. The
 > published v0.22.4 release remains immutable historical evidence.
 
+### Conversation — multi-service meeting links
+
+- The saved conversation link now accepts Webex, Zoom, Microsoft Teams,
+  Google Meet, and FaceTime meeting links through one hardened HTTPS-only
+  policy (no userinfo, custom ports, percent-encoded hosts, or lookalike
+  domains). **Join / Open Meeting** hands any accepted link to the
+  operating system exactly once; WebJam still never claims join, mute, or
+  meeting state on any service. FaceTime links open only on a Mac, and the
+  handoff error says so honestly on other platforms.
+- Settings, setup wizard, and first-run link fields name the detected
+  service (for example "Zoom site: us02web.zoom.us"), and every supported
+  service's link is redacted to its origin in logs, mappings, and support
+  bundles exactly like Webex links.
+- Native app detection, bring-forward, and publisher verification remain
+  Webex-only in this phase; other services open through the default
+  browser or their own installed app's link handler.
+
 ## [0.22.5] — UNRELEASED reference-demo reliability candidate (2026-08-05)
 
 > Not published. GitHub Latest remains immutable v0.22.4 until this candidate

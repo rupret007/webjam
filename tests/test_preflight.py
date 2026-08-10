@@ -344,7 +344,7 @@ class TestReadyCheck(unittest.TestCase):
         item = next(i for i in rep.items if i.name == "Webex companion")
         self.assertFalse(item.ok)
         self.assertFalse(item.required)
-        self.assertIn("webex.com", item.detail)
+        self.assertIn("Webex, Zoom, Microsoft Teams", item.detail)
 
     def test_webex_success_exposes_hostname_but_not_private_destination(self):
         private_path = "private-room"

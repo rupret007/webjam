@@ -127,7 +127,7 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         c._on_join_video()
         c.window.webex_embed.setVisible.assert_called_once_with(True)
         c._show_actionable_error.assert_called_once()
-        self.assertEqual(c._show_actionable_error.call_args.args[0], "No Webex Link")
+        self.assertEqual(c._show_actionable_error.call_args.args[0], "No Meeting Link")
         c.bridge.launch_webex = MagicMock()
         c.bridge.launch_webex.assert_not_called()
 
@@ -182,7 +182,7 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         c._show_actionable_error.assert_called_once()
         self.assertEqual(
             c._show_actionable_error.call_args.args[0],
-            "Invalid Webex URL",
+            "Invalid Meeting Link",
         )
         self.assertEqual(
             c._webex_events[-1],
@@ -201,7 +201,7 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         c._show_actionable_error.assert_called_once()
         self.assertEqual(
             c._show_actionable_error.call_args.args[0],
-            "Invalid Webex URL",
+            "Invalid Meeting Link",
         )
         c.bridge.launch_webex = MagicMock()
         c.bridge.launch_webex.assert_not_called()
