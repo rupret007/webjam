@@ -52,6 +52,10 @@ class ParticipantPresentation:
     # metadata only; recording authority additionally requires the exact
     # digest/generations and the host's fresh presence challenge.
     roster_ordinal: int | None = None
+    # Per-take recording truth from core.recording_sources (state values
+    # such as "waiting"/"recording"/"conflicted"); empty when no take is
+    # active. Presentation-only: it never carries digests or fingerprints.
+    recording_state: str = ""
 
 
 class ParticipantCard(QFrame):
@@ -98,6 +102,11 @@ class ParticipantCard(QFrame):
         self._role_label = QLabel(presentation.role or self._default_role_label())
         self._role_label.setObjectName("ParticipantRole")
         self._role_label.setAccessibleName("Participant role")
+        self._recording_label = QLabel()
+        self._recording_label.setObjectName("ParticipantRecordingState")
+        self._recording_label.setAccessibleName("Recording status")
+        self._recording_label.setTextFormat(Qt.TextFormat.PlainText)
+        self._recording_label.setVisible(False)
         self._role_label.setTextFormat(Qt.TextFormat.PlainText)
         self._fader_value = QLabel(self._format_fader(presentation.fader_level))
         self._fader_value.setObjectName("FaderValue")
@@ -144,6 +153,7 @@ class ParticipantCard(QFrame):
         self._apply_solo_state(presentation.solo)
 
         self._compose_layout()
+        self._apply_recording_state(presentation.recording_state)
         self._apply_connection_state()
         self._apply_local_state(presentation.is_local)
         self._update_accessibility()
@@ -169,6 +179,7 @@ class ParticipantCard(QFrame):
         self._solo_button.blockSignals(False)
         self._apply_solo_state(presentation.solo)
         self._level_meter.set_level(presentation.audio_level)
+        self._apply_recording_state(presentation.recording_state)
         self._apply_connection_state()
         self._apply_local_state(presentation.is_local)
         self._sync_mute_label()
@@ -177,6 +188,23 @@ class ParticipantCard(QFrame):
         self._fader.setAccessibleName(f"Volume fader for {presentation.name} (decibels)")
         self._sync_mute_label()
         self._solo_button.setAccessibleName(f"Solo {presentation.name}")
+
+    _RECORDING_STATE_TEXT = {
+        "armed": "Armed",
+        "waiting": "Waiting…",
+        "recording": "● REC",
+        "conflicted": "Needs attention",
+        "missing": "Missing",
+        "finalized": "Saved",
+    }
+
+    def _apply_recording_state(self, state: str) -> None:
+        text = self._RECORDING_STATE_TEXT.get(str(state or "").lower(), "")
+        self._recording_label.setText(text)
+        self._recording_label.setVisible(bool(text))
+        if self.property("recordingState") != (state or ""):
+            self.setProperty("recordingState", state or "")
+            self._repolish(self)
 
     def set_audio_level(self, level: float) -> None:
         """Push instantaneous meter level without rebuilding the whole card."""
@@ -232,7 +260,12 @@ class ParticipantCard(QFrame):
         identity_col = QVBoxLayout()
         identity_col.setSpacing(2)
         identity_col.addWidget(self._name_label)
-        identity_col.addWidget(self._role_label)
+        role_row = QHBoxLayout()
+        role_row.setSpacing(Space.SM)
+        role_row.addWidget(self._role_label)
+        role_row.addWidget(self._recording_label)
+        role_row.addStretch(1)
+        identity_col.addLayout(role_row)
         identity_row.addLayout(identity_col, stretch=1)
         identity_row.addWidget(self._fader_value)
         body_layout.addLayout(identity_row)
@@ -327,8 +360,14 @@ class ParticipantCard(QFrame):
         solo = ", soloed" if self._presentation.solo else ""
         role = self._presentation.role or self._default_role_label()
         self.setAccessibleName(self._presentation.name)
+        recording_text = self._RECORDING_STATE_TEXT.get(
+            str(self._presentation.recording_state or "").lower(), ""
+        )
+        recording = (
+            f" Recording: {recording_text}." if recording_text else ""
+        )
         self.setAccessibleDescription(
-            f"{role}. {status}. {mix}{solo}."
+            f"{role}. {status}. {mix}{solo}.{recording}"
         )
 
     def _refresh_speaking_state(self, level: float) -> None:

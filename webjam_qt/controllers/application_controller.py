@@ -3289,9 +3289,25 @@ class ApplicationController(QObject):
         self._update_session_hud()
 
     def _push_participants_to_grid(self) -> None:
+        self._apply_recording_states_to_participants()
         self.window.participant_grid.set_participants(self.participants.values())
         self._sync_self_mute_button()
         self._refresh_session_pulse()
+
+    def _apply_recording_states_to_participants(self) -> None:
+        """Stamp per-take recording truth onto the card presentations."""
+
+        states: dict[str, str] = {}
+        try:
+            for row in self.recording.recording_source_presentations():
+                if row.kind == "musician" and row.participant_id:
+                    states[row.participant_id] = row.state.value
+        except Exception:  # noqa: BLE001 - presentation must never break the grid
+            states = {}
+        for presentation in self.participants.values():
+            presentation.recording_state = states.get(
+                getattr(presentation, "participant_id", "") or "", ""
+            )
 
     def _sync_self_mute_button(self) -> None:
         """Compatibility hook that can only clear unsupported transmit state."""
@@ -8126,6 +8142,12 @@ class ApplicationController(QObject):
     def _on_recorder_phase_changed(self, _phase=None) -> None:
         """Refresh the conductor after recorder-owned state changes."""
 
+        try:
+            # Presentation-only refresh; recorder state changes must never
+            # fail because a test double or partial window cannot render.
+            self._push_participants_to_grid()
+        except Exception:  # noqa: BLE001 - grid refresh is best-effort here
+            pass
         phase = str(getattr(_phase, "value", _phase) or "idle").lower()
         pending_shared_track = str(
             getattr(self, "_shared_track_play_after_recording", "") or ""

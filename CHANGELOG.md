@@ -77,6 +77,16 @@ All notable improvements and features for the WebJam music collaboration platfor
   safely. Rendering on participant cards and the guest-side derivation
   follow, with their exact seams and guard tests recorded in the plan.
 
+### Record Session — per-musician state on the live cards (step 3, part 2)
+
+- Participant cards now show each musician's per-take recording truth as
+  a compact text badge on the role line - Armed, Waiting…, ● REC, Needs
+  attention, Missing, Saved - fed from the conservative projection, with
+  the state also announced in the card's accessible description (never
+  color-only) and rendered strictly inside the pinned card geometry. The
+  grid refreshes on every recorder phase change and participant push;
+  the refresh is presentation-only and can never break recorder state.
+
 ### Conversation — multi-service meeting links
 
 - The saved conversation link now accepts Webex, Zoom, Microsoft Teams,
