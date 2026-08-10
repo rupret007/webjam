@@ -81,6 +81,31 @@ def redact_webex_url(value: str) -> str:
     return origin
 
 
+def redact_meeting_url(value: str) -> str:
+    """Keep only a supported meeting-service origin; rooms are sensitive.
+
+    Extends the Webex-only rule to every service the meeting-link policy
+    accepts (Zoom, Microsoft Teams, Google Meet, FaceTime).  Anything else
+    fails closed to the plain redaction marker.
+    """
+
+    from core.meeting_link import is_supported_meeting_host
+
+    raw = str(value or "")
+    try:
+        parsed = urlsplit(raw)
+        host = (parsed.hostname or "").lower().rstrip(".")
+    except ValueError:
+        return REDACTED
+    if parsed.scheme.lower() != "https" or not is_supported_meeting_host(host):
+        return REDACTED
+    # Never reuse ``netloc``: it can contain userinfo and a port.
+    origin = f"https://{host}"
+    if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        return f"{origin}/{REDACTED}"
+    return origin
+
+
 def should_redact_name(name: str) -> bool:
     lname = re.sub(r"[^a-z0-9]+", "_", str(name or "").lower()).strip("_")
     return (
@@ -103,7 +128,9 @@ def redact_mapping(data: Mapping[str, Any]) -> dict[str, Any]:
         field = str(raw_field)
         lname = field.lower()
         if lname == "webex_url" and value:
-            redacted[field] = redact_webex_url(str(value))
+            # The historical settings field can now hold any supported
+            # meeting service's link; keep only its validated origin.
+            redacted[field] = redact_meeting_url(str(value))
             continue
         has_value = not (
             value is None or value is False or (isinstance(value, str) and not value)
@@ -189,6 +216,15 @@ _WEBEX_URL_RE = re.compile(
     r"(?i)https?://[^\s/'\"<>)]*webex\.com(?::\d+)?(?:[/?#][^\s'\"<>)]*)?"
 )
 _WEBJAM_URL_RE = re.compile(r"(?i)\bwebjam:(?://)?[^\s'\"<>)]*")
+# Non-Webex supported meeting hosts.  The lookahead pins the host boundary so
+# a lookalike such as zoom.us.evil.example never yields a trusted origin.
+_MEETING_URL_RE = re.compile(
+    r"(?i)https?://[^\s/'\"<>)]*"
+    r"(?:zoom\.us|teams\.microsoft\.com|teams\.live\.com|"
+    r"meet\.google\.com|facetime\.apple\.com)"
+    r"(?=[/:?#\s'\"<>)]|$)"
+    r"(?::\d+)?(?:[/?#][^\s'\"<>)]*)?"
+)
 _URL_USERINFO_RE = re.compile(
     r"(?i)\b(https?://)[^/@\s]+:[^/@\s]+@"
 )
@@ -277,6 +313,9 @@ def redact_text(text: str) -> str:
     out = _AUTH_SCHEME_RE.sub(lambda match: f"{match.group(1)} {REDACTED}", out)
     out = _QUERY_RE.sub(r"\1" + REDACTED, out)
     out = _WEBEX_URL_RE.sub(lambda match: redact_webex_url(match.group(0)), out)
+    out = _MEETING_URL_RE.sub(
+        lambda match: redact_meeting_url(match.group(0)), out
+    )
     out = _WEBJAM_URL_RE.sub("webjam://" + REDACTED, out)
     out = _URL_USERINFO_RE.sub(r"\1" + REDACTED + "@", out)
     out = _EMAIL_RE.sub("[redacted-email]", out)

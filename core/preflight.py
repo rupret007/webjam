@@ -382,16 +382,16 @@ def _check_recorder(settings) -> CheckItem:
 
 
 def _check_webex(settings) -> CheckItem:
-    from core.webex_url import webex_site_hostname, webex_url_error
+    from core.meeting_link import meeting_link_error, meeting_link_hostname
 
     url = str(getattr(settings, "webex_url", "") or "")
     if not url.strip():
         return CheckItem(
             "Webex companion", True, "not configured — optional", required=False
         )
-    error = webex_url_error(url)
+    error = meeting_link_error(url)
     if error is None:
-        hostname = webex_site_hostname(url)
+        hostname = meeting_link_hostname(url)
         return CheckItem(
             "Webex companion",
             True,
