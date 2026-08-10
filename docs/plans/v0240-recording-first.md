@@ -79,6 +79,26 @@ app-identity registry (carried onto this line under Unreleased).
   external-listening-only version was judged not worth the surface.
   Uploaded local files remain the only Shared Track path.
 
+## Step 2 audit findings (2026-08-10)
+
+The project engine is already the 1-32 track engine (one wide input
+stream, one ring+writer per armed track, per-track names driving
+filenames); only Reference Studio uses it. The live path's
+`LocalInputCapture` is hard-wired to exactly two mono stems
+(host-guitar/host-vocal, device channels 0/1, 48 kHz). The plan now
+states that fixed map truthfully. Remaining step 2 order: (1)
+`AppSettings.input_maps` structured field with strict coercion and the
+compat rule that `local_capture_enabled` + empty maps equals today's two
+fixed tracks; (2) derive `required_local_stems` and the storage budget
+from the map instead of the hardcoded 2; (3) generalize
+`LocalInputCapture` to a track list while KEEPING its single stream,
+checkpoint journal, and recovery path (do not switch the live path to
+the project engine — that loses crash recovery); (4) the editor UI,
+reusing Reference Studio's mapping pattern keyed on stable device_key,
+never a PortAudio index. Known risks: ring-memory budget and per-stem
+fsync cadence at high track counts, storage preflight under-reserve, and
+device-index churn across reboots.
+
 ## Sequencing (each step lands with focused regression tests)
 
 1. SessionRecordingPlan consolidation + Finalizing-gate condition tests.

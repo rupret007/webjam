@@ -52,7 +52,10 @@ from core.recording_readiness import (
     RecordingStorageStatus,
     check_recording_storage,
 )
-from core.session_recording_plan import SessionRecordingPlan
+from core.session_recording_plan import (
+    InputMapBinding,
+    SessionRecordingPlan,
+)
 from core.jamulus_roster_identity import (
     JamulusRosterIdentityError,
     ordered_common_roster_digest,
@@ -3497,6 +3500,23 @@ class RecordingCoordinator:
                         0, int(getattr(storage, "required_bytes", 0) or 0)
                     ),
                 )
+            # Today's local capture is a fixed two-mono-stem map recorded to
+            # host-guitar/host-vocal when enabled; the plan states exactly
+            # that until the configurable input-map editor replaces it.
+            input_maps: tuple[InputMapBinding, ...] = ()
+            if bool(self._c.settings.local_capture_enabled):
+                input_maps = (
+                    InputMapBinding(
+                        track_name="host-guitar",
+                        channel_count=1,
+                        local_original_enabled=True,
+                    ),
+                    InputMapBinding(
+                        track_name="host-vocal",
+                        channel_count=1,
+                        local_original_enabled=True,
+                    ),
+                )
             plan = SessionRecordingPlan(
                 session_id=str(self._session_id or "") or "unbound-session",
                 take_id=self._take_id,
@@ -3514,6 +3534,7 @@ class RecordingCoordinator:
                 ),
                 shared_track=None,
                 shared_track_planned=bool(planned_shared_track),
+                input_maps=input_maps,
             )
         except Exception:  # noqa: BLE001 - plan binding must never block a take
             LOGGER.warning(
