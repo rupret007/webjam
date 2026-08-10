@@ -24,6 +24,7 @@ env:
   PINNED_TAG_COMMIT: 416186a3ea9cddc1ff01a2b0d61f5e1d5dfc70c8
   PINNED_RELEASE_ID: 367773776
   PINNED_INVENTORY_SHA256: 307401a794e04235cce19a4c46b79cb786968e46850e9a7951f5a02ad98192b7
+  PINNED_BODY_SHA256: 4b00258e72fab5754ddd425a9ca1be378b9cd6bbe95fcb1bb68586dfbaee0768
   V0225_TAG_OBJECT: 88d48b518c582fdc219efa8d62bf996b625372df
   V0225_TAG_COMMIT: d7d0039759e8334407fe2e6ed9e42edf0d7ef639
   SEALED_COMPONENT_TAG: jamulus-components-v3
@@ -274,7 +275,8 @@ jobs:
                   or $matches[0].prerelease != false
                   or $matches[0].name != $expected_name
                   or ($matches[0].body | contains("unsigned private test candidate") | not)
-                  or ($matches[0].body | contains("keeps the reviewed embedded Jamulus 3.12.2 fallback") | not)
+                  or ($matches[0].body | contains("keeps the reviewed embedded Jamulus 3.12.2") | not)
+                  or ($matches[0].body | contains("fallback.") | not)
                   or ([ $matches[0].assets[].name ] | sort) != $expected_assets
                   or ([ $matches[0].assets[].id ] | unique | length) != 8
                   or any(
@@ -290,6 +292,9 @@ jobs:
                 end
             ' "$RUNNER_TEMP/release-pages.json" \
             > "$RUNNER_TEMP/draft.json"
+          body_sha256="$(jq -j '.body' "$RUNNER_TEMP/draft.json" \
+            | sha256sum | awk '{print $1}')"
+          [[ "$body_sha256" == "$PINNED_BODY_SHA256" ]]
           inventory_sha256="$(jq -c \
             '[.assets[] | {id,name,size,digest}] | sort_by(.name)' \
             "$RUNNER_TEMP/draft.json" | sha256sum | awk '{print $1}')"
@@ -327,6 +332,9 @@ jobs:
             -F prerelease=false \
             -f make_latest=true \
             > "$RUNNER_TEMP/published.json"
+          body_sha256="$(jq -j '.body' "$RUNNER_TEMP/published.json" \
+            | sha256sum | awk '{print $1}')"
+          [[ "$body_sha256" == "$PINNED_BODY_SHA256" ]]
           jq -e \
             --arg tag "$EXPECTED_TAG" \
             --argjson release_id "$PINNED_RELEASE_ID" \
@@ -352,6 +360,9 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "repos/$GITHUB_REPOSITORY/releases/latest" \
             > "$RUNNER_TEMP/latest.json"
+          body_sha256="$(jq -j '.body' "$RUNNER_TEMP/latest.json" \
+            | sha256sum | awk '{print $1}')"
+          [[ "$body_sha256" == "$PINNED_BODY_SHA256" ]]
           jq -e \
             --arg tag "$EXPECTED_TAG" \
             --argjson release_id "$PINNED_RELEASE_ID" \

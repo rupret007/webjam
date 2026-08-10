@@ -76,6 +76,11 @@ def test_protected_lane_binds_draft_and_all_exact_assets() -> None:
         "307401a794e04235cce19a4c46b79cb786968e46850e9a7951f5a02ad98192b7"
         in HEADER
     )
+    assert (
+        "PINNED_BODY_SHA256: "
+        "4b00258e72fab5754ddd425a9ca1be378b9cd6bbe95fcb1bb68586dfbaee0768"
+        in HEADER
+    )
     for asset in (
         "WebJam-linux-x64.zip",
         "WebJam-macos-arm64-ADHOC-TEST-ONLY.zip",
@@ -88,6 +93,7 @@ def test_protected_lane_binds_draft_and_all_exact_assets() -> None:
     assert '(.digest | test("^sha256:[0-9a-f]{64}$") | not)' in PUBLISH
     assert "sha256sum --check --strict" in PUBLISH
     assert "PINNED_INVENTORY_SHA256" in PUBLISH
+    assert PUBLISH.count("PINNED_BODY_SHA256") == 3
 
 
 def test_only_protected_publish_job_can_write_and_make_latest() -> None:
