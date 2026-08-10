@@ -9,15 +9,6 @@ All notable improvements and features for the WebJam music collaboration platfor
 > Development after the exact v0.23.0 private test candidate belongs here.
 > Every published tag and asset remains immutable historical evidence.
 
-## [0.23.0] — Shared Track and native multitrack private test candidate (2026-08-10)
-
-> The exact publication state is authoritative at the
-> [v0.23.0 release page](https://github.com/rupret007/webjam/releases/tag/v0.23.0).
-> Published immutable as GitHub **Latest** on 2026-08-10 from tag commit
-> `416186a3ea9cddc1ff01a2b0d61f5e1d5dfc70c8`, tag CI run `31368570400`,
-> release `367773776`, and protected promotion run `31371289158`. Publication
-> does not convert any physical-musician **NOT RUN** result to PASS.
-
 ### Conversation — multi-service meeting links
 
 - The saved conversation link now accepts Webex, Zoom, Microsoft Teams,
@@ -131,6 +122,15 @@ All notable improvements and features for the WebJam music collaboration platfor
   [v0.23 physical test checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
   and record results only against an exact package name, build ID, SHA-256,
   environment, and evidence location.
+
+## [0.23.0] — Shared Track and native multitrack private test candidate (2026-08-10)
+
+> The exact publication state is authoritative at the
+> [v0.23.0 release page](https://github.com/rupret007/webjam/releases/tag/v0.23.0).
+> Published immutable as GitHub **Latest** on 2026-08-10 from tag commit
+> `416186a3ea9cddc1ff01a2b0d61f5e1d5dfc70c8`, tag CI run `31368570400`,
+> release `367773776`, and protected promotion run `31371289158`. Publication
+> does not convert any physical-musician **NOT RUN** result to PASS.
 
 ## [0.22.5] — 2026-08-07 reference-demo reliability private test candidate
 
