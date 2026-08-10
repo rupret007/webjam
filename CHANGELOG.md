@@ -61,6 +61,22 @@ All notable improvements and features for the WebJam music collaboration platfor
   that default - switching it to the configured input maps follows once
   Local Original classification and storage budgets derive from the map.
 
+### Record Session — per-source recording truth projection (step 3, part 1)
+
+- Added `core/recording_sources.py`: one pure, conservative projection
+  from the take's existing evidence (roster, recorder receipts, conflict
+  keys, receipt freeze) to one bounded state row per source - armed,
+  waiting, recording, conflicted, missing, finalized - for the coming
+  live recording workspace. Receipts are treated as identity evidence,
+  not liveness: an unproven musician WAITS during recording and can go
+  MISSING only after the receipt set freezes; only an explicit conflict
+  renders CONFLICTED; the UI-only count-in phase is an active phase; and
+  no fingerprint, digest, or path ever leaves the projection. The
+  coordinator exposes it via `recording_source_presentations()`,
+  snapshotting under the receipt lock so the UI thread can call it
+  safely. Rendering on participant cards and the guest-side derivation
+  follow, with their exact seams and guard tests recorded in the plan.
+
 ### Conversation — multi-service meeting links
 
 - The saved conversation link now accepts Webex, Zoom, Microsoft Teams,

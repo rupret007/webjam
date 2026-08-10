@@ -52,6 +52,10 @@ from core.recording_readiness import (
     RecordingStorageStatus,
     check_recording_storage,
 )
+from core.recording_sources import (
+    RecordingSourcePresentation,
+    project_recording_sources,
+)
 from core.session_recording_plan import (
     InputMapBinding,
     SessionRecordingPlan,
@@ -2044,6 +2048,43 @@ class RecordingCoordinator:
                     "Source audio was preserved for review."
                 )
             return receipts, tuple(errors)
+
+    def recording_source_presentations(
+        self,
+    ) -> tuple[RecordingSourcePresentation, ...]:
+        """One bounded per-source truth row per musician for the workspace.
+
+        Snapshots every input under the receipt lock and projects through
+        the pure, conservative rules in core.recording_sources; safe to
+        call from the UI thread.
+        """
+
+        with self._receipt_lock:
+            receipts = (
+                ()
+                if self._recording_identity_invalid
+                else tuple(self._recording_receipts.values())
+            )
+            conflicted = tuple(self._recording_conflicted_keys)
+            frozen = bool(
+                self._take_id
+                and self._recording_receipts_frozen_take_id == self._take_id
+            )
+            roster = tuple(
+                (self._participant_ids.get(channel_id, ""),
+                 self._track_names.get(channel_id, ""))
+                for channel_id in sorted(self._participant_ids)
+            )
+        with self._shared_track_condition:
+            shared_track_planned = bool(self._shared_track_required)
+        return project_recording_sources(
+            phase=getattr(self.phase, "value", str(self.phase or "")),
+            roster=roster,
+            receipts=receipts,
+            conflicted_keys=conflicted,
+            receipts_frozen=frozen,
+            shared_track_planned=shared_track_planned,
+        )
 
     def _final_recording_receipt_snapshot(
         self,

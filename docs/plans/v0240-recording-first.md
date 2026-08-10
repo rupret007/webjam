@@ -99,6 +99,32 @@ never a PortAudio index. Known risks: ring-memory budget and per-stem
 fsync cadence at high track counts, storage preflight under-reserve, and
 device-index churn across reboots.
 
+## Step 3 audit findings (2026-08-10)
+
+The live surface today shows one session-wide phase string, an elapsed
+clock, Shared Track truth, and a REC chip; participant cards carry zero
+recording awareness, and guests receive one authenticated monotonic
+RecordingSignal plus Shared Track state. The per-source truth projection
+now exists (`core/recording_sources.py` + the coordinator's
+`recording_source_presentations()` accessor, snapshotting under the
+receipt lock) with the conservative rules: receipts are identity
+evidence, not liveness — unproven participants WAIT during recording and
+go MISSING only after the take's receipt set freezes; only explicit
+conflict keys render CONFLICTED; the UI-synthesized `count_in` phase is
+handled explicitly; no fingerprints, digests, channels ids, or paths
+leave the projection. Remaining step 3 in order: (1) render the
+projection as one bounded status line per ParticipantCard via a
+defaulted `recording_state` field on ParticipantPresentation and one
+accessibility clause — strictly inside the pinned 260×228 card envelope
+and the exact-geometry grid tests; (2) refresh cards from the
+coordinator on phase changes and roster observations through the UI
+invoker; (3) guest-side derivation from the existing session-wide signal
+only (self from local capture truth, others host-attributed) — no
+per-participant fields in SessionStateSnapshot, which would be a schema,
+generation, and privacy change WebJam currently refuses. Guards: the
+1100px no-overlap strip test, the once-only set_recording_phase guest
+assertion (use a separate setter), and the fingerprint-absence tests.
+
 ## Sequencing (each step lands with focused regression tests)
 
 1. SessionRecordingPlan consolidation + Finalizing-gate condition tests.
