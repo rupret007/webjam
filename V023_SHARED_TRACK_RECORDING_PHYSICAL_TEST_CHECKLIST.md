@@ -1,9 +1,9 @@
 # WebJam v0.23.0 Shared Track and recording physical test checklist
 
-> **Current status:** every row in this document is **NOT RUN**. v0.23.0 is an
-> unpublished source candidate. No package, checksum manifest, component
-> catalog, signing result, or physical-musician observation exists yet. GitHub
-> **Latest** remains the immutable v0.22.5 private test candidate.
+> **Current status:** every physical row in this document is **NOT RUN**.
+> Publishing an unsigned/ad-hoc v0.23.0 private test candidate does not change
+> that status. Record the exact tag, CI run, package names, checksums, and test
+> environment below before changing any physical result.
 
 Use this ledger for physical multi-machine, Jamulus, BlackHole, JACK, hardware,
 recording, and Studio validation. Automated tests are prerequisite evidence,

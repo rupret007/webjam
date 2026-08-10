@@ -66,16 +66,16 @@ def _workflow_step(name: str) -> str:
     return WORKFLOW[start : end if end >= 0 else len(WORKFLOW)]
 
 
-def test_current_candidate_identity_cannot_be_confused_with_latest_old_release() -> None:
+def test_current_candidate_identity_cannot_be_confused_with_old_release() -> None:
     match = re.search(r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$', VERSION_SOURCE, re.M)
     assert match is not None
     version = match.group(1)
     assert version == "0.23.0"
-    assert version != "0.22.5"  # Immutable GitHub Latest release.
+    assert version != "0.22.5"  # Immutable historical release.
     assert PROJECT_README.startswith("# WebJam\n\n## Unified creative collaboration for live music")
     assert f"## [{version}]" in CHANGELOG
     assert "v0.20.0 history must not be moved" in PROJECT_README
-    assert "standalone Reference Studio" in PROJECT_README
+    assert "**Reference Studio** is a standalone" in PROJECT_README
     assert re.search(r"Pocket Stage iPhone\s+Setup", PROJECT_README)
 
 

@@ -1,18 +1,16 @@
 # Desktop release runbook
 
-> **v0.22.5 published candidate:** the exact eight-asset release is immutable,
-> non-prerelease, and GitHub **Latest**. Windows remains unsigned; macOS remains
-> ad-hoc signed and unnotarized. Physical and credentialed gates remain
-> **NOT RUN** unless separately recorded against exact asset checksums.
+> **v0.22.5 historical candidate:** the exact eight-asset release is immutable.
+> It is never moved or replaced when a later candidate becomes GitHub Latest.
 
 > **Historical boundary:** v0.22.5 and every earlier tag, asset, checksum, and
 > release record remain immutable and must never be replaced by the current
 > source line.
 
-> **v0.23.0 pre-publication boundary:** current source is a new Shared Track,
-> Record Session, and Studio candidate. No v0.23.0 tag, draft, asset, checksum,
-> component authorization, or promotion exists. GitHub **Latest** remains
-> v0.22.5, and every v0.23.0 physical/credentialed gate is **NOT RUN**.
+> **v0.23.0 testing boundary:** this is a new Shared Track, Record Session, and
+> Studio candidate. Its exact public state is authoritative on GitHub. Even
+> after protected publication, every v0.23.0 physical/credentialed gate remains
+> **NOT RUN** until separately observed against exact checksums.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version
@@ -23,11 +21,14 @@ signed platform release, once their GitHub Environments have real protection
 rules and credentials. Do not reuse a package from a different source commit or
 replace assets on a published tag.
 
-For v0.23.0, do not reuse the v0.22.5 v3 catalog: it authorizes exact WebJam
-0.22.5 only. Prepare a new immutable versioned component channel and monotonic
-signed catalog under the separate component runbook, then require post-evidence
-source CI, four-platform frozen-package verification, exact tag CI, draft
-inventory, checksums, and protected promotion on one source identity. Run the
+For v0.23.0, never reuse the v0.22.5 v3 catalog: it authorizes exact WebJam
+0.22.5 only. The exact `publish-v023-testing-release.yml` lane must first prove
+that v3 verifies for v0.22.5 and is rejected for v0.23.0, then bind one
+successful tag CI run, exact draft inventory, all asset digests, the checksum
+manifest, and the protected `release-latest` environment before publication.
+That private test candidate uses embedded Jamulus 3.12.2 only when no compatible
+managed catalog exists. A new immutable signed channel remains mandatory before
+managed 3.12.3 downloads can be advertised. Run the
 [v0.23 physical checklist](../V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
 against exact assets; automation cannot convert its **NOT RUN** rows to PASS.
 

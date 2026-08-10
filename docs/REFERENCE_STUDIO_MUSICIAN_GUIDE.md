@@ -172,7 +172,7 @@ and teardown. The standalone workflow makes no such claim.
 
 ## v0.22.5 published candidate record
 
-The immutable v0.22.5 GitHub **Latest** release adds first-demo reliability to
+The immutable historical v0.22.5 release adds first-demo reliability to
 the v0.22.4 Studio foundation, including real-world MP3 acceptance, exact
 path-free load errors, drag-and-drop Reference Track loading, and audible
 dropout surfacing. Verify the exact downloaded asset against

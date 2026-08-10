@@ -1,20 +1,20 @@
 # Jamulus component catalog release runbook
 
 > **v0.22.5 published state:** the public v3 component release is sealed and
-> immutable with signed sequence 6 for exact WebJam 0.22.5. The desktop release
-> is the immutable GitHub **Latest**; the component release remains a public
-> non-Latest prerelease and its channel tag was not moved.
+> immutable with signed sequence 6 for exact WebJam 0.22.5. Its component
+> release remains a public non-Latest prerelease and its channel tag never moves.
 
 > **Historical state:** v1 sequence 4 for v0.22.3 and v2 sequence 5 for v0.22.4
 > remain immutable. Neither historical tag, release, nor signed asset moved for
 > the v0.22.5 transition.
 
-> **v0.23.0 source candidate:** the sealed v3 sequence-6 catalog authorizes
-> exact WebJam 0.22.5 and cannot authorize 0.23.0. A v0.23.0 release requires a
-> new fixed versioned channel, the next monotonic sequence, future expiry, exact
-> target/architecture/capability inventory, offline signature, independent
-> public redownload, and frozen-package verification. Every such step is
-> **NOT RUN**; do not move or replace v1, v2, or v3.
+> **v0.23.0 private testing candidate:** sealed v3 authorizes exact WebJam
+> 0.22.5 and cannot authorize 0.23.0. The v0.23 testing-release workflow proves
+> that rejection and publishes only a fallback-capable desktop candidate; it
+> does not publish, move, or replace a component channel. A managed v0.23 update
+> still requires a new fixed versioned channel, the next monotonic sequence,
+> future expiry, exact inventory, offline signature, independent redownload,
+> and frozen-package verification. Every such component step is **NOT RUN**.
 > Current source narrowly authorizes the unchanged audited Jamulus 3.12.2 and
 > 3.12.3 identities through exact WebJam 0.23.0 only, allowing a known fallback;
 > that baked compatibility is not a signed v0.23 managed-update catalog.

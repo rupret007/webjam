@@ -1,10 +1,9 @@
-WebJam v0.23.0 source candidate for Windows x64
-================================================
+WebJam v0.23.0 private test candidate for Windows x64
+======================================================
 
-UNPUBLISHED TEST CANDIDATE: no v0.23.0 release asset or promoted checksum exists.
-Use only an exact locally produced artifact whose filename and SHA-256 are
-recorded in the v0.23 physical-test evidence. Do not treat the immutable
-published v0.22.5 package or checksum manifest as evidence for this build.
+PRIVATE TEST CANDIDATE: use this package only when its exact filename appears
+in the v0.23.0 GitHub release and its SHA-256 matches that release's manifest.
+Do not use the immutable v0.22.5 checksum manifest for this build.
 Physical audio, hardware, SmartScreen, publisher-signing, and managed-device
 gates remain NOT RUN unless the release evidence names this exact file and
 SHA-256.
@@ -36,6 +35,10 @@ and verify it in the background, but Windows installation still requires your
 explicit approval and may display UAC or SmartScreen. WebJam verifies the
 installed version after setup. It never hides elevation or installs while a
 jam, recording, Shared Track, reconnect, or Jamulus launch is active.
+
+The sealed v0.22.5 catalog does not authorize v0.23.0 and is rejected. Until a
+new signed v0.23 catalog exists, this candidate uses the embedded Jamulus
+3.12.2 fallback rather than offering a managed 3.12.3 download.
 
 If an update is unavailable or you are offline, WebJam offers the exact
 bundled Jamulus 3.12.2 fallback installer from the Host/Join screen. Jamulus is

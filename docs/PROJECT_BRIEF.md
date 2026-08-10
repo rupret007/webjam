@@ -1,8 +1,9 @@
 # WebJam project brief
 
-**Review date:** 2026-08-09
-**Status:** v0.23.0 is an unpublished Shared Track and native multitrack source
-candidate; v0.22.5 remains the immutable GitHub Latest private test candidate.
+**Review date:** 2026-08-10
+**Status:** v0.23.0 is the Shared Track and native multitrack private test
+candidate. GitHub Releases is authoritative for its exact publication state;
+v0.22.5 remains immutable historical evidence.
 
 ## Executive summary
 
@@ -68,9 +69,9 @@ the full contract.
 - Physical two-Mac audibility, hardware recovery, Webex joining, Pocket Stage
   owner-device pairing, signing/notarization, and long-session evidence remain
   **NOT RUN**. Automated green does not mean those gates passed.
-- v0.23.0 has no tag, package inventory, checksum manifest, component catalog,
-  promotion, or physical result. The sealed v0.22.5 release is not evidence for
-  the changed source candidate.
+- v0.23.0 publication requires its exact tag, package inventory, checksum
+  manifest, fallback proof, and protected promotion. The sealed v0.22.5 catalog
+  is explicitly rejected for v0.23.0 and is not evidence for the changed line.
 
 ## Current product line
 
@@ -101,10 +102,12 @@ claimed as implemented in this repository.
 ## Five-minute evaluation
 
 1. Read the [root README](../README.md) and [musician guide](../USER_GUIDE.md).
-2. Use the exact [v0.22.5 Latest release](https://github.com/rupret007/webjam/releases/tag/v0.22.5)
-   only to evaluate the published baseline; verify its checksum manifest.
-3. Build v0.23.0 from one recorded source commit for candidate evaluation. Do
-   not represent that build as a published release.
+2. Use [GitHub Latest](https://github.com/rupret007/webjam/releases/latest) for
+   the current downloadable candidate and verify its checksum manifest. Use
+   immutable [v0.22.5](https://github.com/rupret007/webjam/releases/tag/v0.22.5)
+   only when evaluating that historical baseline.
+3. If no v0.23.0 release exists yet, build it from one recorded source commit
+   for evaluation without representing that branch build as published.
 4. Run one Host/Join rehearsal with wired headphones and Jamulus, then exercise
    Shared Track, Record Session, finalization, and Studio.
 5. Open Webex Controls without joining, then test the explicit Join/Open action
@@ -119,8 +122,9 @@ claimed as implemented in this repository.
   signed and unnotarized.
 - The v3 Jamulus component catalog is sealed at exact sequence 6 for v0.22.5.
   The v1/v0.22.3 and v2/v0.22.4 channels remain immutable historical evidence.
-- A v0.23.0 release cut requires a new exact-target component authorization,
-  complete desktop asset/checksum evidence, the
-  [v0.23 physical checklist](../V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md),
-  and protected-branch/release-environment ownership. Nothing may move or
-  replace the sealed v0.22.5 catalog, tag, or assets.
+- A fallback-only v0.23.0 private testing release requires complete desktop
+  asset/checksum evidence and protected release-environment ownership. A new
+  exact-target component authorization remains mandatory before managed 3.12.3
+  download can be enabled. Nothing may move or replace the sealed v0.22.5
+  catalog, tag, or assets; physical results stay in the
+  [v0.23 checklist](../V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md).

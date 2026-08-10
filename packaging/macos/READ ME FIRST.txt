@@ -1,9 +1,8 @@
-WEBJAM v0.23.0 UNPUBLISHED SOURCE CANDIDATE — PLEASE READ
+WEBJAM v0.23.0 PRIVATE TEST CANDIDATE — PLEASE READ
 
-UNPUBLISHED TEST CANDIDATE: no v0.23.0 release asset or promoted checksum exists.
-Use only an exact locally produced artifact whose filename and SHA-256 are
-recorded in the v0.23 physical-test evidence. Do not treat the immutable
-published v0.22.5 package or checksum manifest as evidence for this build.
+PRIVATE TEST CANDIDATE: use this package only when its exact filename appears
+in the v0.23.0 GitHub release and its SHA-256 matches that release's manifest.
+Do not use the immutable v0.22.5 checksum manifest for this build.
 Physical audio, hardware, Gatekeeper, signing, and notarization gates remain
 NOT RUN unless the release evidence names this exact file and SHA-256.
 
@@ -58,6 +57,10 @@ WebJam keeps its launch workspace, loopback control credentials, and private
 Shared Track profile/control files under your own
 ~/Library/Application Support/WebJam folder. Host, Join, and Shared Track
 must not ask WebJam for permission to access data from other apps.
+
+The sealed v0.22.5 Jamulus catalog does not authorize v0.23.0 and is rejected.
+Until a new signed v0.23 catalog exists, this candidate uses the embedded
+Jamulus 3.12.2 fallback rather than offering a managed 3.12.3 download.
 
 macOS may separately ask for microphone access when you use an audio input.
 That expected audio permission is not an Other Application Data prompt. If

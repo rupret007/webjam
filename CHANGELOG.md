@@ -6,16 +6,16 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ## [Unreleased]
 
-> Development for the v0.23.0 private test candidate belongs here until an
-> exact tag, package inventory, checksums, component catalog, and protected
-> promotion exist. The published v0.22.5 release and every earlier release
-> remain immutable historical evidence.
+> Development after the exact v0.23.0 private test candidate belongs here.
+> Every published tag and asset remains immutable historical evidence.
 
-## [0.23.0] — UNRELEASED Shared Track and native multitrack candidate (2026-08-09)
+## [0.23.0] — Shared Track and native multitrack private test candidate (2026-08-10)
 
-> Source candidate only. No v0.23.0 tag, release asset, checksum manifest, or
-> physical-musician result exists yet. GitHub **Latest** remains immutable
-> v0.22.5.
+> The exact publication state is authoritative at the
+> [v0.23.0 release page](https://github.com/rupret007/webjam/releases/tag/v0.23.0).
+> Publication requires the annotated tag, four-platform tag CI, exact draft
+> inventory, checksums, fallback proof, and protected promotion. It does not
+> convert any physical-musician **NOT RUN** result to PASS.
 
 ### One native Shared Track experience
 
@@ -88,10 +88,11 @@ All notable improvements and features for the WebJam music collaboration platfor
 ### Evidence boundary and known limits
 
 - Advanced both package SBOM identities and the three platform package read-me
-  sources to the unpublished v0.23.0 boundary. The baked Jamulus compatibility
+  sources to the v0.23.0 boundary. The baked Jamulus compatibility
   matrix authorizes the already audited 3.12.2/3.12.3 identities through exact
-  v0.23.0 only and remains fail-closed for v0.23.1; a new signed component
-  channel, package checksums, and promotion evidence are still required.
+  v0.23.0 only and remains fail-closed for v0.23.1. The private testing-release
+  lane proves the sealed v0.22.5 catalog is rejected and keeps embedded 3.12.2;
+  a new signed component channel is still required for managed 3.12.3 download.
 - Automated checks exercise state, identity, source validation, route failure,
   recording coordination, Studio mapping, privacy, and UI behavior. They do
   not prove that a musician heard audio through a physical interface.

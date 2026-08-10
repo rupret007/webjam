@@ -12,18 +12,21 @@ the systems that should remain independent.
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/rupret007/webjam?label=Latest%20test%20candidate)](https://github.com/rupret007/webjam/releases/latest)
 
-> **Published download:** [v0.22.5](https://github.com/rupret007/webjam/releases/tag/v0.22.5)
-> is GitHub **Latest** and immutable. It is an unsigned private test candidate:
-> Windows is unsigned; macOS is ad-hoc signed and unnotarized. Physical and
-> credentialed gates remain **NOT RUN** unless exact asset evidence says otherwise.
+> **Testing download:** GitHub [**Latest**](https://github.com/rupret007/webjam/releases/latest)
+> is the only current downloadable-test pointer. v0.22.5 remains immutable;
+> v0.23.0 may replace the Latest pointer only after its exact annotated tag,
+> four-platform CI, draft inventory, checksums, fallback proof, and protected
+> promotion all pass. Windows is unsigned; macOS is ad-hoc signed and
+> unnotarized.
 
 > **Source boundary:** the exact v0.22.5 tag, checksums, and protected promotion
 > are the downloadable-release evidence. Do not substitute an untagged checkout
 > or a later documentation commit for the immutable published package.
 
 > **Current source candidate:** v0.23.0 develops the native **Shared Track**,
-> **Record Session**, and multitrack Studio workflow. It is not a published
-> download, and every physical v0.23.0 gate remains **NOT RUN**.
+> **Record Session**, and multitrack Studio workflow. Its exact publication
+> state is shown on GitHub; every physical v0.23.0 gate remains **NOT RUN**
+> even if the unsigned/ad-hoc private test candidate is published.
 
 New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 [First Jam](FIRST_JAM.md); this README is the complete technical story.
@@ -33,7 +36,7 @@ New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 | Area | Current state |
 | --- | --- |
 | Product | Musician-facing desktop conductor around Jamulus, Webex, Studio, and Pocket Stage |
-| Published line | v0.22.5 private test candidate, four-platform immutable release |
+| Published line | GitHub Latest private test candidate; verify its exact tag and checksum manifest |
 | Current development | v0.23.0 Shared Track, Record Session, and multitrack Studio source candidate |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
@@ -120,9 +123,9 @@ process ID/liveness, finite RPC freshness category, and finite RPC age. It
 never includes the Jamulus profile path, RPC secret, invitation, meeting link,
 or raw exception.
 
-This recovery work first shipped in the immutable v0.22.4 private test
-candidate and remains in v0.22.5 GitHub **Latest**. Publication does not
-convert any physical gate to PASS.
+This recovery work first shipped in immutable v0.22.4, remains in historical
+v0.22.5, and carries into later candidates. Publication does not convert any
+physical gate to PASS.
 
 ## Jamulus updates without rebuilding WebJam
 
@@ -466,27 +469,25 @@ credentials, device identifiers, raw paths, or notes.
 ## Published release and source state
 
 The published release and a development checkout are intentionally different
-identities. The exact v0.22.5 tag, release assets, checksum manifest, component
-catalog, and successful protected promotion are the downloadable evidence. Do
-not use an untagged source checkout as evidence for the immutable download.
+identities. Only the exact tag, release assets, checksum manifest, and
+successful protected promotion behind GitHub
+[Latest](https://github.com/rupret007/webjam/releases/latest) are downloadable
+evidence. Do not use an untagged checkout or ordinary branch build as a release.
 
-The current source tree reports **v0.23.0** and is an unpublished candidate.
-It does not reuse the v0.22.5 package or component-catalog identity. The
-[published release](https://github.com/rupret007/webjam/releases/tag/v0.22.5)
-is **v0.22.5**, an immutable non-prerelease explicitly titled as an
-unsigned private test candidate and marked GitHub **Latest**. It retains direct
-Live access to Webex, host-only Reference Track, standalone Reference Studio,
-session Studio, Pocket Stage, the Trinity three-loop identity, and the reviewed
-unsigned/ad-hoc candidate packaging described above.
+The current source tree reports **v0.23.0**. Its publication state must be read
+from GitHub rather than inferred from this moving branch. The immutable
+[v0.22.5 release](https://github.com/rupret007/webjam/releases/tag/v0.22.5)
+retains its original assets and evidence regardless of which newer candidate
+GitHub marks Latest.
 
 v0.23.0 is the separate Shared Track, Record Session, and multitrack Studio
-source identity. No v0.23.0 tag, release asset, checksum manifest, protected
-promotion, or physical musician result exists yet. A future candidate must use
-its own exact desktop assets and Jamulus component authorization; the sealed
-v3 catalog authorizes only exact WebJam 0.22.5. The baked compatibility policy
-does permit the already audited Jamulus 3.12.2/3.12.3 identities for exact
-v0.23.0 (and no later patch), so an exact candidate package can retain its
-known fallback while a new signed managed-update channel is still required.
+identity. Its private testing-release lane does not reuse or weaken the sealed
+v3 catalog, which authorizes only exact WebJam 0.22.5. Instead, promotion proves
+that v3 is rejected for v0.23.0 and publishes the exact frozen packages with
+the reviewed embedded Jamulus 3.12.2 fallback. The baked compatibility policy
+also recognizes the audited 3.12.3 identity through exact v0.23.0, but managed
+3.12.3 download remains unavailable until a new signed version-specific channel
+exists. Physical musician results remain **NOT RUN** until separately recorded.
 
 Published tags and assets remain immutable historical evidence. In particular,
 v0.20.0 history must not be moved. The v0.21.0 history must not be moved or
@@ -591,9 +592,8 @@ Windows PC may still require IT approval even after valid publisher signing;
 candidate packages must never be described as production-trusted installers.
 
 Automated source and package checks are evidence for code and archive
-integrity—not a substitute for musicians hearing one another. For the
-unpublished v0.23.0 source candidate, published v0.22.5, and immutable earlier
-lines,
+integrity—not a substitute for musicians hearing one another. For v0.23.0,
+historical v0.22.5, and immutable earlier lines,
 real two-Mac audio, physical interface disconnect/reconnect, sleep/wake,
 interruption and recording recovery, long-session operation, external-editor
 import of the evidence-rich session export, physical Reference Studio

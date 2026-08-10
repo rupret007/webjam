@@ -3369,10 +3369,11 @@ jobs:
             advanced helper that removes quarantine from the installed WebJam app only.
             They also include a self-contained **Pocket Stage iPhone Setup** Xcode project;
             an Apple ID with a free Personal Team is sufficient for owner-device testing.
-            Jamulus 3.12.3 updates are authorized by a separate signed, expiring component
-            catalog. The embedded Jamulus 3.12.2 remains the offline fallback; platform
-            approval is explicit, and updates never interrupt an active Jamulus lifecycle.
-            Verify the attached SHA-256 manifest before installing.
+            Jamulus managed updates require a separate signed, expiring component catalog
+            that exactly authorizes this WebJam version. If no compatible catalog exists,
+            WebJam rejects the catalog and keeps the reviewed embedded Jamulus 3.12.2
+            fallback. Platform approval is explicit, and updates never interrupt an active
+            Jamulus lifecycle. Verify the attached SHA-256 manifest before installing.
           fail_on_unmatched_files: true
           files: |
             release-assets/WebJam-linux-x64.zip

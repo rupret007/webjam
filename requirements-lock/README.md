@@ -5,9 +5,9 @@ matching its native package. These locks preserve the Python dependency graph
 that is reviewed and tested before signing; `requirements.txt` remains the
 human-maintained application dependency declaration.
 
-The v0.23.0 source candidate currently inherits the exact dependency locks
-reviewed for immutable v0.22.5; that does not make them v0.23.0 release
-evidence. They target CPython 3.11.9 on Windows and both macOS targets, CPython
+The v0.23.0 candidate inherits the exact dependency locks reviewed for
+immutable v0.22.5; the locks become v0.23.0 release evidence only when bound to
+its exact tag CI artifacts and checksum manifest. They target CPython 3.11.9 on Windows and both macOS targets, CPython
 3.11.15 on Linux, pip 26.1.2, setuptools 81.0.0 on macOS, and setuptools 83.0.0
 elsewhere. PyInstaller 6.21's macOS `pkg_resources`
 runtime hook requires `NullProvider`, which setuptools 82+ no longer ships.

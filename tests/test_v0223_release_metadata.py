@@ -59,8 +59,9 @@ def test_v0230_is_the_unpublished_source_candidate_identity() -> None:
     assert "published v0.22.1 tag, assets, and checksums likewise" in normalized
     assert "v0.22.4 is likewise a new source and package identity" in normalized
     assert "v0.22.5 is a new source and package identity" in normalized
-    assert "exact v0.22.5 tag, checksums, and protected promotion" in normalized
-    assert "unpublished v0.23.0 source candidate" in normalized
+    assert "Only the exact tag, release assets, checksum manifest" in normalized
+    assert "v0.23.0 is the separate Shared Track" in normalized
+    assert "publishes the exact frozen packages with the reviewed embedded" in normalized
     assert (
         "real-world MP3, Reference Track, and first-demo reliability closeout"
         in normalized
@@ -128,7 +129,7 @@ def test_current_guides_separate_v0230_source_from_v0225_history() -> None:
         "CLOSED_PILOT_PLAYBOOK.md": "v0.22.5 private test candidate",
         "DEVELOPMENT.md": "# Developing WebJam v0.23.0",
         "FIRST_JAM.md": "# First Jam — WebJam v0.23.0 source candidate",
-        "README_SIMPLE.md": "exact v0.22.5 tag and checksum-verified release assets",
+        "README_SIMPLE.md": "use the exact release tag and attached checksum manifest",
         "TEST_PROCEDURE.md": "# WebJam v0.23.0 source and physical test procedure",
         "USER_GUIDE.md": "# WebJam musician guide — v0.23.0 source candidate",
         "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.23.0 UX acceptance checklist",
@@ -138,11 +139,12 @@ def test_current_guides_separate_v0230_source_from_v0225_history() -> None:
         "WEBEX_AUDIO_MODES.md": "# Webex companion guidance — v0.22.5",
         "ios/README.md": "matching immutable v0.22.5",
         "requirements-lock/README.md": (
-            "The v0.23.0 source candidate currently inherits the exact "
-            "dependency locks"
+            "The v0.23.0 candidate inherits the exact dependency locks"
         ),
         "WEBJAM_V0225_DEMO_READINESS.md": "# WebJam v0.22.5 two-musician demo readiness",
-        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": "immutable v0.22.5",
+        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": (
+            "immutable historical v0.22.5"
+        ),
     }
     for relative_path, marker in expected.items():
         assert marker in (ROOT / relative_path).read_text(encoding="utf-8")
@@ -173,10 +175,11 @@ def test_reference_track_play_story_is_route_gated_not_locked() -> None:
         assert "playback remains locked" not in normalized, relative_path
 
 
-def test_changelog_marks_v0225_published_and_keeps_future_work_unreleased() -> None:
+def test_changelog_marks_v023_candidate_and_keeps_future_work_unreleased() -> None:
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "## [Unreleased]" in changelog
-    assert "## [0.23.0] — UNRELEASED Shared Track" in changelog
+    assert "## [0.23.0] — Shared Track and native multitrack" in changelog
+    assert "exact publication state is authoritative" in changelog
     assert "## [0.22.5] — 2026-08-07" in changelog
     assert "Published as the immutable GitHub **Latest**" in changelog
     assert "## [0.22.4] — 2026-08-04" in changelog
@@ -208,9 +211,12 @@ def test_candidate_package_copy_is_explicit_about_platform_trust() -> None:
     assert "unsigned private test candidate" in windows_readme
     assert "ad-hoc signed and is NOT notarized" in macos_readme
     for package_copy in (windows_readme, macos_readme):
-        assert "UNPUBLISHED TEST CANDIDATE" in package_copy
-        assert "no v0.23.0 release asset or promoted checksum exists" in package_copy
-        assert "published v0.22.5 package or checksum manifest" in package_copy
+        normalized = " ".join(package_copy.split())
+        assert "PRIVATE TEST CANDIDATE" in normalized
+        assert "exact filename appears" in normalized
+        assert "Do not use the immutable v0.22.5 checksum manifest" in normalized
+        assert "sealed v0.22.5" in normalized
+        assert "embedded Jamulus 3.12.2 fallback" in normalized
     inventory = runbook.split(
         "The exact v0.22.4 published inventory is:\n", 1
     )[1].split("\nThe separate `jamulus-components-v2`", 1)[0]
@@ -301,11 +307,13 @@ def test_draft_release_notes_explain_the_jamulus_update_boundary() -> None:
         "          fail_on_unmatched_files:", 1
     )[0]
     normalized = " ".join(body.lower().split())
-    assert "jamulus 3.12.3" in normalized
+    assert "managed updates require" in normalized
+    assert "exactly authorizes this webjam version" in normalized
     assert "component catalog" in normalized
     assert "separate" in normalized
     assert "jamulus 3.12.2" in normalized
     assert "fallback" in normalized
+    assert "jamulus 3.12.3 updates are authorized" not in normalized
     assert "approval" in normalized
     assert "active" in normalized
     assert "interrupt" in normalized

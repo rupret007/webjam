@@ -1,19 +1,21 @@
 # WebJam, simply
 
-> **Published candidate guide:** this guide describes the immutable v0.22.5
-> GitHub **Latest** private test candidate. Windows is unsigned; macOS is
-> ad-hoc signed and unnotarized.
+> **Private candidate guide:** use GitHub
+> [Latest](https://github.com/rupret007/webjam/releases/latest) for the current
+> checksum-verified test package. Windows is unsigned; macOS is ad-hoc signed
+> and unnotarized.
 
-> **Source note:** use the exact v0.22.5 tag and checksum-verified release assets
-> as download evidence; an untagged checkout is not a substitute. Current
-> v0.23.0 source adds Shared Track, Record Session, and Studio improvements but
-> is not a published download.
+> **Source note:** use the exact release tag and attached checksum manifest as
+> download evidence; an untagged checkout is not a substitute. v0.23.0 adds
+> Shared Track, Record Session, and Studio improvements. Its publication state
+> is authoritative on GitHub.
 
 WebJam helps a band start playing together. It keeps the session, invite, and
 recordings organized. Jamulus handles the music. Webex is optional for talking
 or video.
 
-Current published candidate: **v0.22.5 unsigned private test candidate**. Its
+Current downloadable candidate: verify the exact version shown by GitHub
+**Latest**. Its
 four-platform release covers Windows, Ubuntu 22.04, Intel Mac, and
 Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc
 signed and not notarized. The current line uses `cryptography` 50.0.0 for three
