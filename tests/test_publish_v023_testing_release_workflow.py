@@ -60,12 +60,22 @@ def test_lane_proves_old_catalog_valid_then_rejects_it_for_v023() -> None:
     assert "COMPONENT_CHANNEL_TAG: jamulus-components-v3" not in PUBLISH
 
 
-def test_lane_binds_successful_tag_ci_draft_and_all_exact_assets() -> None:
+def test_read_only_lane_binds_the_unique_successful_tag_ci() -> None:
     assert "expected one exact successful v0.23.0 tag CI run" in PROOF
     assert '.path == ".github/workflows/ci.yml"' in PROOF
     assert '.head_branch == $tag' in PROOF
     assert '.head_sha == $commit' in PROOF
     assert '.conclusion == "success"' in PROOF
+    assert "repos/$GITHUB_REPOSITORY/releases" not in PROOF
+
+
+def test_protected_lane_binds_draft_and_all_exact_assets() -> None:
+    assert "PINNED_RELEASE_ID: 367773776" in HEADER
+    assert (
+        "PINNED_INVENTORY_SHA256: "
+        "307401a794e04235cce19a4c46b79cb786968e46850e9a7951f5a02ad98192b7"
+        in HEADER
+    )
     for asset in (
         "WebJam-linux-x64.zip",
         "WebJam-macos-arm64-ADHOC-TEST-ONLY.zip",
@@ -74,10 +84,10 @@ def test_lane_binds_successful_tag_ci_draft_and_all_exact_assets() -> None:
         "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip",
         "SHA256SUMS.txt",
     ):
-        assert asset in PROOF
-    assert '(.digest | test("^sha256:[0-9a-f]{64}$"))' in PROOF
-    assert "sha256sum --check --strict" in PROOF
-    assert "inventory_sha256" in PROOF
+        assert asset in PUBLISH
+    assert '(.digest | test("^sha256:[0-9a-f]{64}$") | not)' in PUBLISH
+    assert "sha256sum --check --strict" in PUBLISH
+    assert "PINNED_INVENTORY_SHA256" in PUBLISH
 
 
 def test_only_protected_publish_job_can_write_and_make_latest() -> None:

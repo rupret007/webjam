@@ -22,6 +22,8 @@ env:
   EXPECTED_VERSION: 0.23.0
   PINNED_TAG_OBJECT: ecbdd826475e7fabfea98f2f5c6cf55b47b7019b
   PINNED_TAG_COMMIT: 416186a3ea9cddc1ff01a2b0d61f5e1d5dfc70c8
+  PINNED_RELEASE_ID: 367773776
+  PINNED_INVENTORY_SHA256: 307401a794e04235cce19a4c46b79cb786968e46850e9a7951f5a02ad98192b7
   V0225_TAG_OBJECT: 88d48b518c582fdc219efa8d62bf996b625372df
   V0225_TAG_COMMIT: d7d0039759e8334407fe2e6ed9e42edf0d7ef639
   SEALED_COMPONENT_TAG: jamulus-components-v3
@@ -37,12 +39,10 @@ jobs:
       contents: read
       actions: read
     outputs:
-      release_id: ${{ steps.candidate.outputs.release_id }}
       tag_object: ${{ steps.source.outputs.tag_object }}
       tag_commit: ${{ steps.source.outputs.tag_commit }}
       master_commit: ${{ steps.source.outputs.master_commit }}
       tag_ci_run_id: ${{ steps.candidate.outputs.tag_ci_run_id }}
-      inventory_sha256: ${{ steps.candidate.outputs.inventory_sha256 }}
     steps:
       - name: Checkout release-control source without persisted credentials
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -160,7 +160,7 @@ jobs:
               assert {"3.12.2", "3.12.3"}.issubset(versions)
           PY
 
-      - name: Bind successful tag CI and exact draft inventory
+      - name: Bind the unique successful tag CI
         id: candidate
         shell: bash
         env:
@@ -198,82 +198,7 @@ jobs:
             > "$RUNNER_TEMP/tag-ci.json"
           tag_ci_run_id="$(jq -r '.id' "$RUNNER_TEMP/tag-ci.json")"
           [[ "$tag_ci_run_id" =~ ^[1-9][0-9]*$ ]]
-          gh api \
-            --paginate \
-            --slurp \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            > "$RUNNER_TEMP/release-pages.json"
-          jq -e \
-            --arg tag "$EXPECTED_TAG" \
-            --arg expected_name \
-              "WebJam v${EXPECTED_VERSION} — unsigned private test candidate." \
-            '
-              [ .[][] | select(.tag_name == $tag) ] as $matches
-              | if ($matches | length) != 1 then
-                  error("expected one exact v0.23.0 draft")
-                elif (
-                  $matches[0].draft != true
-                  or $matches[0].prerelease != false
-                  or $matches[0].name != $expected_name
-                  or ($matches[0].body | contains("unsigned private test candidate") | not)
-                  or ($matches[0].body | contains("keeps the reviewed embedded Jamulus 3.12.2 fallback") | not)
-                  or ($matches[0].body | contains("Physical audio") | not)
-                ) then
-                  error("v0.23.0 draft state or warnings are invalid")
-                else
-                  $matches[0]
-                end
-            ' "$RUNNER_TEMP/release-pages.json" \
-            > "$RUNNER_TEMP/draft.json"
-          expected_assets="$(jq -cn --arg version "$EXPECTED_VERSION" '[
-            "WebJam-linux-x64.zip",
-            "WebJam-macos-arm64-ADHOC-TEST-ONLY.zip",
-            "WebJam-macos-x64-ADHOC-TEST-ONLY.zip",
-            ("WebJam-v" + $version + "-macos-arm64-ADHOC-TEST-ONLY.dmg"),
-            ("WebJam-v" + $version + "-macos-x64-ADHOC-TEST-ONLY.dmg"),
-            ("WebJam-v" + $version + "-windows-x64-UNSIGNED-TEST-ONLY-setup.exe"),
-            "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip",
-            ("WebJam-v" + $version + "-SHA256SUMS.txt")
-          ] | sort')"
-          jq -e \
-            --argjson expected "$expected_assets" \
-            '
-              ([.assets[].name] | sort) == $expected
-              and ([.assets[].name] | unique | length) == 8
-              and ([.assets[].id] | unique | length) == 8
-              and all(
-                .assets[];
-                .id > 0
-                and .size > 0
-                and (.digest | test("^sha256:[0-9a-f]{64}$"))
-              )
-            ' "$RUNNER_TEMP/draft.json" >/dev/null
-          mkdir "$RUNNER_TEMP/release-assets"
-          jq -r '.assets[] | [.id, .name, .digest] | @tsv' \
-            "$RUNNER_TEMP/draft.json" \
-            | while IFS=$'\t' read -r asset_id name digest; do
-                target="$RUNNER_TEMP/release-assets/$name"
-                gh api \
-                  -H "Accept: application/octet-stream" \
-                  -H "X-GitHub-Api-Version: 2022-11-28" \
-                  "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
-                  > "$target"
-                [[ -s "$target" && ! -L "$target" ]]
-                [[ "sha256:$(sha256sum -- "$target" | awk '{print $1}')" == "$digest" ]]
-              done
-          cd "$RUNNER_TEMP/release-assets"
-          checksum="WebJam-v${EXPECTED_VERSION}-SHA256SUMS.txt"
-          [[ "$(wc -l < "$checksum")" -eq 7 ]]
-          sha256sum --check --strict "$checksum"
-          inventory_sha256="$(jq -c \
-            '[.assets[] | {id,name,size,digest}] | sort_by(.name)' \
-            "$RUNNER_TEMP/draft.json" | sha256sum | awk '{print $1}')"
-          release_id="$(jq -r '.id' "$RUNNER_TEMP/draft.json")"
-          [[ "$release_id" =~ ^[1-9][0-9]*$ ]]
-          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
           echo "tag_ci_run_id=$tag_ci_run_id" >> "$GITHUB_OUTPUT"
-          echo "inventory_sha256=$inventory_sha256" >> "$GITHUB_OUTPUT"
 
   publish-latest:
     name: Publish exact v0.23.0 draft as Latest
@@ -297,11 +222,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_TAG: ${{ inputs.tag }}
-          EXPECTED_RELEASE_ID: ${{ needs['prove-candidate'].outputs.release_id }}
           EXPECTED_TAG_OBJECT: ${{ needs['prove-candidate'].outputs.tag_object }}
           EXPECTED_TAG_COMMIT: ${{ needs['prove-candidate'].outputs.tag_commit }}
           EXPECTED_MASTER_COMMIT: ${{ needs['prove-candidate'].outputs.master_commit }}
-          EXPECTED_INVENTORY_SHA256: ${{ needs['prove-candidate'].outputs.inventory_sha256 }}
         run: |
           set -euo pipefail
           [[ "$REQUESTED_TAG" == "$EXPECTED_TAG" ]]
@@ -325,9 +248,20 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             > "$RUNNER_TEMP/release-pages.json"
+          expected_assets="$(jq -cn --arg version "$EXPECTED_VERSION" '[
+            "WebJam-linux-x64.zip",
+            "WebJam-macos-arm64-ADHOC-TEST-ONLY.zip",
+            "WebJam-macos-x64-ADHOC-TEST-ONLY.zip",
+            ("WebJam-v" + $version + "-macos-arm64-ADHOC-TEST-ONLY.dmg"),
+            ("WebJam-v" + $version + "-macos-x64-ADHOC-TEST-ONLY.dmg"),
+            ("WebJam-v" + $version + "-windows-x64-UNSIGNED-TEST-ONLY-setup.exe"),
+            "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip",
+            ("WebJam-v" + $version + "-SHA256SUMS.txt")
+          ] | sort')"
           jq -e \
             --arg tag "$EXPECTED_TAG" \
-            --argjson release_id "$EXPECTED_RELEASE_ID" \
+            --argjson release_id "$PINNED_RELEASE_ID" \
+            --argjson expected_assets "$expected_assets" \
             --arg expected_name \
               "WebJam v${EXPECTED_VERSION} — unsigned private test candidate." \
             '
@@ -341,7 +275,8 @@ jobs:
                   or $matches[0].name != $expected_name
                   or ($matches[0].body | contains("unsigned private test candidate") | not)
                   or ($matches[0].body | contains("keeps the reviewed embedded Jamulus 3.12.2 fallback") | not)
-                  or ([ $matches[0].assets[].name ] | unique | length) != 8
+                  or ([ $matches[0].assets[].name ] | sort) != $expected_assets
+                  or ([ $matches[0].assets[].id ] | unique | length) != 8
                   or any(
                     $matches[0].assets[];
                     .id <= 0
@@ -358,7 +293,7 @@ jobs:
           inventory_sha256="$(jq -c \
             '[.assets[] | {id,name,size,digest}] | sort_by(.name)' \
             "$RUNNER_TEMP/draft.json" | sha256sum | awk '{print $1}')"
-          [[ "$inventory_sha256" == "$EXPECTED_INVENTORY_SHA256" ]]
+          [[ "$inventory_sha256" == "$PINNED_INVENTORY_SHA256" ]]
           mkdir "$RUNNER_TEMP/release-assets"
           jq -r '.assets[] | [.id, .name, .digest] | @tsv' \
             "$RUNNER_TEMP/draft.json" \
@@ -382,20 +317,19 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPECTED_RELEASE_ID: ${{ needs['prove-candidate'].outputs.release_id }}
         run: |
           set -euo pipefail
           gh api \
             --method PATCH \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "repos/$GITHUB_REPOSITORY/releases/$EXPECTED_RELEASE_ID" \
+            "repos/$GITHUB_REPOSITORY/releases/$PINNED_RELEASE_ID" \
             -F draft=false \
             -F prerelease=false \
             -f make_latest=true \
             > "$RUNNER_TEMP/published.json"
           jq -e \
             --arg tag "$EXPECTED_TAG" \
-            --argjson release_id "$EXPECTED_RELEASE_ID" \
+            --argjson release_id "$PINNED_RELEASE_ID" \
             --arg expected_name \
               "WebJam v${EXPECTED_VERSION} — unsigned private test candidate." \
             '
@@ -412,8 +346,6 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPECTED_RELEASE_ID: ${{ needs['prove-candidate'].outputs.release_id }}
-          EXPECTED_INVENTORY_SHA256: ${{ needs['prove-candidate'].outputs.inventory_sha256 }}
         run: |
           set -euo pipefail
           gh api \
@@ -422,7 +354,7 @@ jobs:
             > "$RUNNER_TEMP/latest.json"
           jq -e \
             --arg tag "$EXPECTED_TAG" \
-            --argjson release_id "$EXPECTED_RELEASE_ID" \
+            --argjson release_id "$PINNED_RELEASE_ID" \
             --arg expected_name \
               "WebJam v${EXPECTED_VERSION} — unsigned private test candidate." \
             '
@@ -437,7 +369,7 @@ jobs:
           inventory_sha256="$(jq -c \
             '[.assets[] | {id,name,size,digest}] | sort_by(.name)' \
             "$RUNNER_TEMP/latest.json" | sha256sum | awk '{print $1}')"
-          [[ "$inventory_sha256" == "$EXPECTED_INVENTORY_SHA256" ]]
+          [[ "$inventory_sha256" == "$PINNED_INVENTORY_SHA256" ]]
           mkdir "$RUNNER_TEMP/latest-assets"
           jq -r '.assets[] | [.id, .name, .digest] | @tsv' \
             "$RUNNER_TEMP/latest.json" \
