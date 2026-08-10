@@ -20,6 +20,10 @@ concurrency:
 env:
   EXPECTED_TAG: v0.23.0
   EXPECTED_VERSION: 0.23.0
+  PINNED_TAG_OBJECT: ecbdd826475e7fabfea98f2f5c6cf55b47b7019b
+  PINNED_TAG_COMMIT: 416186a3ea9cddc1ff01a2b0d61f5e1d5dfc70c8
+  V0225_TAG_OBJECT: 88d48b518c582fdc219efa8d62bf996b625372df
+  V0225_TAG_COMMIT: d7d0039759e8334407fe2e6ed9e42edf0d7ef639
   SEALED_COMPONENT_TAG: jamulus-components-v3
   SEALED_COMPONENT_SEQUENCE: 6
   SEALED_COMPONENT_URL: https://github.com/rupret007/webjam/releases/download/jamulus-components-v3/WebJam-Jamulus-components-v1.json
@@ -64,9 +68,19 @@ jobs:
           [[ "$(git cat-file -t "$tag_ref")" == "tag" ]]
           tag_object="$(git rev-parse "$tag_ref")"
           tag_commit="$(git rev-parse "${tag_ref}^{commit}")"
-          [[ "$tag_commit" == "$master_commit" ]]
+          [[ "$tag_object" == "$PINNED_TAG_OBJECT" ]]
+          [[ "$tag_commit" == "$PINNED_TAG_COMMIT" ]]
+          git merge-base --is-ancestor "$tag_commit" "$master_commit"
           [[ "$(git ls-remote --refs origin "refs/tags/$EXPECTED_TAG" \
             | awk 'NR == 1 {print $1}')" == "$tag_object" ]]
+          historical_ref="refs/webjam-historical-tags/v0.22.5"
+          git fetch --no-tags origin "refs/tags/v0.22.5:$historical_ref"
+          [[ "$(git cat-file -t "$historical_ref")" == "tag" ]]
+          [[ "$(git rev-parse "$historical_ref")" == "$V0225_TAG_OBJECT" ]]
+          [[ "$(git rev-parse "${historical_ref}^{commit}")" == \
+            "$V0225_TAG_COMMIT" ]]
+          [[ "$(git ls-remote --refs origin refs/tags/v0.22.5 \
+            | awk 'NR == 1 {print $1}')" == "$V0225_TAG_OBJECT" ]]
           packaged_version="$(sed -n \
             's/^__version__ = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' \
             webjam_qt/__init__.py)"
@@ -99,10 +113,17 @@ jobs:
           catalog="$RUNNER_TEMP/sealed-v3-catalog.json"
           curl -fsSL --proto '=https' --tlsv1.2 \
             -o "$catalog" "$SEALED_COMPONENT_URL"
-          python -m tools.verify_jamulus_component_catalog \
-            --webjam-version 0.22.5 \
-            --minimum-sequence "$SEALED_COMPONENT_SEQUENCE" \
-            "$catalog" > "$RUNNER_TEMP/v0225-catalog-proof.json"
+          historical_source="$RUNNER_TEMP/v0225-source"
+          mkdir "$historical_source"
+          git archive "$V0225_TAG_COMMIT" \
+            | tar -x -C "$historical_source"
+          (
+            cd "$historical_source"
+            python -m tools.verify_jamulus_component_catalog \
+              --webjam-version 0.22.5 \
+              --minimum-sequence "$SEALED_COMPONENT_SEQUENCE" \
+              "$catalog" > "$RUNNER_TEMP/v0225-catalog-proof.json"
+          )
           jq -e '
             .sequence == 6
             and .webjam_version == "0.22.5"
@@ -294,7 +315,10 @@ jobs:
           [[ "$(git rev-parse "$tag_ref")" == "$EXPECTED_TAG_OBJECT" ]]
           [[ "$(git rev-parse "${tag_ref}^{commit}")" == "$EXPECTED_TAG_COMMIT" ]]
           [[ "$(git rev-parse refs/remotes/origin/master)" == "$EXPECTED_MASTER_COMMIT" ]]
-          [[ "$EXPECTED_TAG_COMMIT" == "$EXPECTED_MASTER_COMMIT" ]]
+          [[ "$EXPECTED_TAG_OBJECT" == "$PINNED_TAG_OBJECT" ]]
+          [[ "$EXPECTED_TAG_COMMIT" == "$PINNED_TAG_COMMIT" ]]
+          git merge-base --is-ancestor \
+            "$EXPECTED_TAG_COMMIT" "$EXPECTED_MASTER_COMMIT"
           gh api \
             --paginate \
             --slurp \

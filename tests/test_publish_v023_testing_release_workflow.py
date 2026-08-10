@@ -28,11 +28,15 @@ def test_lane_is_manual_exact_version_and_serialized() -> None:
     assert '[[ "$packaged_version" == "$EXPECTED_VERSION" ]]' in PROOF
 
 
-def test_lane_requires_annotated_tag_equal_to_exact_master() -> None:
+def test_lane_pins_annotated_tag_and_requires_descendant_master() -> None:
+    assert "PINNED_TAG_OBJECT: ecbdd826475e7fabfea98f2f5c6cf55b47b7019b" in HEADER
+    assert "PINNED_TAG_COMMIT: 416186a3ea9cddc1ff01a2b0d61f5e1d5dfc70c8" in HEADER
     assert 'git cat-file -t "$tag_ref"' in PROOF
     assert 'tag_object="$(git rev-parse "$tag_ref")"' in PROOF
     assert 'tag_commit="$(git rev-parse "${tag_ref}^{commit}")"' in PROOF
-    assert '[[ "$tag_commit" == "$master_commit" ]]' in PROOF
+    assert '[[ "$tag_object" == "$PINNED_TAG_OBJECT" ]]' in PROOF
+    assert '[[ "$tag_commit" == "$PINNED_TAG_COMMIT" ]]' in PROOF
+    assert 'git merge-base --is-ancestor "$tag_commit" "$master_commit"' in PROOF
     assert "git ls-remote --refs origin" in PROOF
     assert '[[ "$(git rev-parse HEAD)" == "$master_commit" ]]' in PROOF
     assert "persist-credentials: false" in PROOF
@@ -40,9 +44,13 @@ def test_lane_requires_annotated_tag_equal_to_exact_master() -> None:
 
 
 def test_lane_proves_old_catalog_valid_then_rejects_it_for_v023() -> None:
+    assert "V0225_TAG_OBJECT: 88d48b518c582fdc219efa8d62bf996b625372df" in HEADER
+    assert "V0225_TAG_COMMIT: d7d0039759e8334407fe2e6ed9e42edf0d7ef639" in HEADER
     assert "SEALED_COMPONENT_TAG: jamulus-components-v3" in HEADER
     assert "SEALED_COMPONENT_SEQUENCE: 6" in HEADER
     assert "requirements-lock/component-catalog-verifier-linux-x64.txt" in PROOF
+    assert 'git archive "$V0225_TAG_COMMIT"' in PROOF
+    assert 'cd "$historical_source"' in PROOF
     assert "--webjam-version 0.22.5" in PROOF
     assert '--webjam-version "$EXPECTED_VERSION"' in PROOF
     assert "unexpectedly authorized v0.23.0" in PROOF
