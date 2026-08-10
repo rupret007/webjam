@@ -3765,3 +3765,49 @@ def test_invite_chooses_a_non_loopback_address():
     ):
         assert local_band_address() == "192.168.1.42"
     sock.close.assert_called_once()
+
+
+def test_reset_mix_is_one_undo_and_preserves_export_choices(tmp_path):
+    _take_dir, (track_id, _local_id) = _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        lane = studio._lanes[0]
+        lane._gain.setValue(180)
+        lane._pan.setValue(-40)
+        lane._mute.setChecked(True)
+        studio._master_gain.setValue(220)
+        lane._track_export_include.setChecked(False)
+
+        studio._on_reset_mix()
+        state = studio._studio_state.state_for(track_id)
+        assert state.fader_gain == pytest.approx(1.0)
+        assert state.pan == pytest.approx(0.0)
+        assert state.muted is False
+        assert state.solo is False
+        assert studio._studio_state.master.gain == pytest.approx(1.0)
+        # Export choices must survive a mix reset.
+        assert state.export_included is False
+        # Widgets and player follow the document.
+        assert lane._gain.value() == 100
+        assert lane._mute.isChecked() is False
+        assert studio._master_gain.value() == 100
+        assert studio._player.tracks[0].gain == pytest.approx(1.0)
+
+        # A no-op reset performs no edit (no extra undo entry).
+        before = studio._studio_controller.document
+        studio._on_reset_mix()
+        assert studio._studio_controller.document is before
+
+        # One undo restores the whole pre-reset mix.
+        studio._undo_arrange_edit()
+        restored = studio._studio_state.state_for(track_id)
+        assert restored.fader_gain == pytest.approx(1.8)
+        assert restored.pan == pytest.approx(-0.4)
+        assert restored.muted is True
+        assert studio._studio_state.master.gain == pytest.approx(2.2)
+    finally:
+        studio.shutdown()

@@ -108,6 +108,18 @@ All notable improvements and features for the WebJam music collaboration platfor
   badges with matching descriptions and inspector text, aligned with the
   live-surface projection and the plan's musician-facing language.
 
+### Studio — one-click undoable Reset Mix (step 5)
+
+- The completed-take Studio mixer gains a "Reset Mix" action beside the
+  master controls: one undoable edit returns every track's trim, volume,
+  pan, mute, and solo plus the master gain and limiter to defaults,
+  while deliberately preserving each track's export inclusion - a reset
+  must never silently re-include a track the musician excluded. The
+  action no-ops when the mix is already default, keeps widgets and the
+  player in sync, and one undo restores the entire previous mix. Export
+  invariant suites re-ran green (schema-v2 fail-closed export, shared
+  authoritative mix, durable mix ids).
+
 ### Conversation — multi-service meeting links
 
 - The saved conversation link now accepts Webex, Zoom, Microsoft Teams,

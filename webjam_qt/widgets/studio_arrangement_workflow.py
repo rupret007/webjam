@@ -165,6 +165,61 @@ class StudioArrangementWorkflowMixin:
     def _end_track_mix_gesture(self, channel_id: int, field_name: str) -> None:
         self._studio_mix_merge_keys.pop((int(channel_id), str(field_name)), None)
 
+    _MIX_DEFAULTS = {
+        "trim_gain": 1.0,
+        "fader_gain": 1.0,
+        "pan": 0.0,
+        "muted": False,
+        "solo": False,
+    }
+
+    def _on_reset_mix(self) -> None:
+        """One undoable edit returning every mix control to its default.
+
+        Export inclusion is deliberately untouched: resetting the mix must
+        never silently re-include a track the musician excluded.
+        """
+
+        document = self._studio_state
+        if document is None:
+            return
+        default_master = StudioMaster()
+        differs = (
+            document.master.gain != default_master.gain
+            or document.master.limiter_enabled
+            != default_master.limiter_enabled
+        )
+        for track in document.tracks:
+            if any(
+                getattr(track, field) != value
+                for field, value in self._MIX_DEFAULTS.items()
+            ):
+                differs = True
+                break
+        if not differs:
+            return
+
+        def _reset(current):
+            updated = current
+            for track in current.tracks:
+                updated = updated.update_track(
+                    track.track_id, **self._MIX_DEFAULTS
+                )
+            return updated.set_master(default_master)
+
+        if not self._perform_arrange_edit(
+            "Reset mix", _reset, reload_audio=False
+        ):
+            return
+        for channel_id in self._lanes:
+            self._player.set_trim_gain(channel_id, 1.0)
+            self._player.set_gain(channel_id, 1.0)
+            self._player.set_pan(channel_id, 0.0)
+            self._player.set_muted(channel_id, False)
+            self._player.set_solo(channel_id, False)
+        self._player.set_master_gain(default_master.gain)
+        self._player.set_limiter_enabled(default_master.limiter_enabled)
+
     def _on_master_limiter_changed(self, enabled: bool) -> None:
         self._player.set_limiter_enabled(enabled)
         if self._studio_state is None:

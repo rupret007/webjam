@@ -157,6 +157,26 @@ alters export eligibility of existing takes); wiring SharedTrackBinding
 into the plan at record start (fingerprint accessor exists only after
 playback starts).
 
+## Step 5 findings and completion record (2026-08-10)
+
+The completed-take Studio mixer already satisfies most of the spec:
+per-track trim/gain/pan/mute/solo, latched clip indication inside each
+meter (spoken to screen readers), source badges, master gain, master
+meter, and limiter. This step added the missing reset/default action:
+one undoable "Reset Mix" beside the master row that returns every track
+and master control to defaults while deliberately preserving export
+inclusion (a reset must never silently re-include an excluded track),
+no-ops when the mix is already default, and syncs widgets and the
+player. Export invariants re-run green: studio export (schema-v2
+fail-closed, shared authoritative mix), take export (gain/pan/mute/solo
+honored, durable mix ids), studio mixer parity, comping, and the
+Reference Studio mixer dialog. Deferred with reasons: a sticky per-take
+overload latch (the live clip bool is recomputed per block and cleared
+each tick; a latch must be epoch-cleared inside the existing level lock
+or it reintroduces a pinned race) and Reference Studio mixer meters
+(the dialog is deliberately state-free; a live level feed needs the
+take-Studio epoch pattern, not a new one).
+
 ## Sequencing (each step lands with focused regression tests)
 
 1. SessionRecordingPlan consolidation + Finalizing-gate condition tests.

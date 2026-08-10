@@ -511,11 +511,22 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._master_gain.sliderPressed.connect(self._begin_master_gain_gesture)
         self._master_gain.sliderReleased.connect(self._end_master_gain_gesture)
         self._master_limiter.toggled.connect(self._on_master_limiter_changed)
+        self._reset_mix_btn = QPushButton("Reset Mix")
+        self._reset_mix_btn.setObjectName("GhostButton")
+        self._reset_mix_btn.setAccessibleName(
+            "Reset every track and master mix control to default"
+        )
+        self._reset_mix_btn.setToolTip(
+            "Return trim, volume, pan, mute, solo, and master to defaults.\n"
+            "Export choices are kept. One undo restores the mix."
+        )
+        self._reset_mix_btn.clicked.connect(self._on_reset_mix)
         master.addWidget(self._master_label)
         master.addWidget(self._master_meter)
         master.addWidget(self._master_gain)
         master.addWidget(self._master_gain_value)
         master.addWidget(self._master_limiter)
+        master.addWidget(self._reset_mix_btn)
         master.addStretch(1)
         editor_layout.addLayout(master)
 
@@ -655,6 +666,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             self._master_gain,
             self._master_gain_value,
             self._master_limiter,
+            self._reset_mix_btn,
         )
         self._comp_controls = (
             self._comp_toolbar,
