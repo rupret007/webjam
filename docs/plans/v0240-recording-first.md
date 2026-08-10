@@ -138,6 +138,25 @@ requires per-participant wire attribution: a schema, generation, and
 privacy change to SessionStateSnapshot that must be its own reviewed
 step.
 
+## Step 4 findings and completion record (2026-08-10)
+
+The cross-take Shared Track fingerprint gate already shipped in v0.23
+(`core/studio_comping.py`): equal, nonempty digests or no match, with
+musician matching correctly participant-id-based. This step promoted the
+gate to a public reason-carrying predicate (`shared_track_sources_match`)
+and made `add_take_lane` raise those honest reasons — a swapped song now
+says so instead of "no unambiguous matching track", and legacy takes
+without source evidence say exactly what is missing. Studio vocabulary
+unified to Musician / Shared Track / Local Original across badges,
+descriptions, and inspector. Deliberately NOT done here, recorded as
+future steps with reasons: merging reconnect groups for local/unproven
+sources (group keys derive durable track_ids — changing them invalidates
+StudioDocument references and clone/reconcile lineage); tightening host
+local-original admission (today confidence > 0 alone — changing it
+alters export eligibility of existing takes); wiring SharedTrackBinding
+into the plan at record start (fingerprint accessor exists only after
+playback starts).
+
 ## Sequencing (each step lands with focused regression tests)
 
 1. SessionRecordingPlan consolidation + Finalizing-gate condition tests.

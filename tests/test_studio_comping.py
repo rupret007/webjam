@@ -644,7 +644,9 @@ def test_live_reference_comp_requires_the_same_uploaded_source_fingerprint(
     assert len(document.take_lanes) == 1
 
     assert compatible_source_tracks(primary.tracks[0], replacement) == ()
-    with pytest.raises(StudioCompingError, match="unambiguous matching track"):
+    with pytest.raises(
+        StudioCompingError, match="different Shared Track song"
+    ):
         add_take_lane(
             default_studio_document(primary),
             primary,
@@ -653,8 +655,18 @@ def test_live_reference_comp_requires_the_same_uploaded_source_fingerprint(
         )
 
     # Legacy manifests stay readable, but an absent source fingerprint cannot
-    # prove that two stable Shared Track participant IDs represent one song.
+    # prove that two stable Shared Track participant IDs represent one song;
+    # the refusal now names that missing evidence honestly.
     assert compatible_source_tracks(primary.tracks[0], legacy_unknown) == ()
+    with pytest.raises(
+        StudioCompingError, match="no Shared Track source evidence"
+    ):
+        add_take_lane(
+            default_studio_document(primary),
+            primary,
+            legacy_unknown,
+            destination_track_id=primary.tracks[0].track_id,
+        )
 
 
 def test_peer_original_requires_verified_provenance_and_current_reference(

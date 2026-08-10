@@ -410,9 +410,9 @@ def test_live_roster_never_claims_tracks_before_recorder_proof():
 @pytest.mark.parametrize(
     ("source", "badge", "description", "synchronized"),
     (
-        (SourceType.JAMULUS_SERVER, "BAND", "Band server track", True),
+        (SourceType.JAMULUS_SERVER, "MUSICIAN", "Musician (band server track)", True),
         ("live_reference", "SHARED TRACK", "Shared Track", True),
-        (SourceType.LOCAL_ISOLATED, "LOCAL", "Local original", False),
+        (SourceType.LOCAL_ISOLATED, "LOCAL ORIGINAL", "Local Original", False),
         ("unknown", "TRACK", "Recorded track", False),
     ),
 )
@@ -456,7 +456,7 @@ def test_shared_track_take_is_distinct_and_synchronized_in_studio(tmp_path):
             studio._inspector_values["alignment"].text()
             == "Shared Track · band server timeline reference"
         )
-        assert "Local original" not in studio._inspector_values["source"].text()
+        assert "Local Original" not in studio._inspector_values["source"].text()
     finally:
         studio.shutdown()
 
@@ -559,7 +559,7 @@ def test_studio_ruler_selection_gap_and_meter_share_the_recorded_timeline(tmp_pa
         studio._select_track(1)
         assert studio._lanes[1]._selected
         assert not studio._lanes[0]._selected
-        assert "Local original" in studio._inspector_values["source"].text()
+        assert "Local Original" in studio._inspector_values["source"].text()
         assert "1 recorded gap" in studio._inspector_values["gaps"].text()
         assert studio._timeline_ruler._trailing_inset >= 8
     finally:

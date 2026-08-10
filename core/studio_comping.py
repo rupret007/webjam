@@ -72,32 +72,46 @@ def _usable_track(track: ProjectTrack) -> bool:
     )
 
 
-def _same_live_reference_source(
+def shared_track_sources_match(
     destination_track: ProjectTrack,
     candidate: ProjectTrack,
-) -> bool:
-    """Require exact uploaded-source identity for Shared Track comp lanes.
+) -> tuple[bool, str]:
+    """Fingerprint-equality gate for cross-take Shared Track identity.
 
     A Shared Track participant UUID is stable for the session, so it proves
-    route ownership but not that two takes used the same uploaded song. New
-    manifests persist the path-free source digest in the existing alignment
-    fingerprint field. Legacy/partial manifests remain readable but cannot
-    authorize a cross-take LIVE_REFERENCE match without that evidence.
+    route ownership but not that two takes used the same uploaded song.
+    Identity is the path-free uploaded-source digest, never a filename:
+    both sides must carry equal, nonempty fingerprints. Legacy/partial
+    manifests remain readable but fail closed here, with an honest reason.
     """
 
     if destination_track.source_type is not SourceType.LIVE_REFERENCE:
-        return True
+        return True, ""
     destination_fingerprint = str(
         destination_track.alignment.reference_fingerprint_sha256 or ""
     ).lower()
     candidate_fingerprint = str(
         candidate.alignment.reference_fingerprint_sha256 or ""
     ).lower()
-    return bool(
-        destination_fingerprint
-        and candidate_fingerprint
-        and destination_fingerprint == candidate_fingerprint
-    )
+    if not destination_fingerprint or not candidate_fingerprint:
+        return False, (
+            "One of these takes has no Shared Track source evidence, so "
+            "WebJam cannot prove both takes played the same song."
+        )
+    if destination_fingerprint != candidate_fingerprint:
+        return False, (
+            "The repeated take played a different Shared Track song, so "
+            "its lane cannot stack with this one."
+        )
+    return True, ""
+
+
+def _same_live_reference_source(
+    destination_track: ProjectTrack,
+    candidate: ProjectTrack,
+) -> bool:
+    matched, _reason = shared_track_sources_match(destination_track, candidate)
+    return matched
 
 
 def _matching_source_tracks(
@@ -414,6 +428,15 @@ def add_take_lane(
                     "alignment. Keep its Jamulus server track, or align and verify "
                     "the local original before comping it."
                 )
+            if destination_track.source_type is SourceType.LIVE_REFERENCE:
+                for candidate in source_project.tracks:
+                    if candidate.source_type is not SourceType.LIVE_REFERENCE:
+                        continue
+                    matched_gate, reason = shared_track_sources_match(
+                        destination_track, candidate
+                    )
+                    if not matched_gate and reason:
+                        raise StudioCompingError(reason)
             raise StudioCompingError(
                 "The repeated take does not have one unambiguous matching track."
             )

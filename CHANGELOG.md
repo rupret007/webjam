@@ -96,6 +96,18 @@ All notable improvements and features for the WebJam music collaboration platfor
   enter active recording phases, so the per-source projection is empty
   even against stale receipts) and locked by regression.
 
+### Studio — honest Shared Track identity refusals and one vocabulary (step 4)
+
+- Comp lane refusals now tell the truth about Shared Track identity: a
+  repeated take that played a different uploaded song says so, and a
+  legacy take without source evidence names the missing proof - instead
+  of the generic "no unambiguous matching track". The v0.23
+  fingerprint-equality gate itself is unchanged (equal, nonempty digests
+  or no match) and is now a public reason-carrying predicate.
+- Studio speaks one vocabulary: MUSICIAN / SHARED TRACK / LOCAL ORIGINAL
+  badges with matching descriptions and inspector text, aligned with the
+  live-surface projection and the plan's musician-facing language.
+
 ### Conversation — multi-service meeting links
 
 - The saved conversation link now accepts Webex, Zoom, Microsoft Teams,

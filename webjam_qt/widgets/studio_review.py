@@ -147,10 +147,10 @@ def _safe_source_label(source: object) -> str:
     """Return stable musician-facing source labels without exposing file paths."""
 
     return {
-        "jamulus_server": "BAND",
+        "jamulus_server": "MUSICIAN",
         "live_reference": "SHARED TRACK",
-        "local_ssl": "LOCAL",
-        "local_isolated": "LOCAL",
+        "local_ssl": "LOCAL ORIGINAL",
+        "local_isolated": "LOCAL ORIGINAL",
     }.get(_source_key(source), "TRACK")
 
 
@@ -158,10 +158,10 @@ def _safe_source_description(source: object) -> str:
     """Describe a source truthfully without treating unknown media as local."""
 
     return {
-        "jamulus_server": "Band server track",
+        "jamulus_server": "Musician (band server track)",
         "live_reference": "Shared Track",
-        "local_ssl": "Local original",
-        "local_isolated": "Local original",
+        "local_ssl": "Local Original",
+        "local_isolated": "Local Original",
     }.get(_source_key(source), "Recorded track")
 
 
