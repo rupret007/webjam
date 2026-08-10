@@ -64,6 +64,21 @@ app-identity registry (carried onto this line under Unreleased).
    recording workspace as it is built; the existing suites already cover
    several geometry/accessibility contracts.
 
+## Owner directives recorded 2026-08-10
+
+- Studio/live parity: the Studio must offer the same functional depth as
+  the live jam surface (transport, Shared Track context, per-musician
+  truth), with the clarity and information density of Logic/GarageBand as
+  the quality bar — as an original WebJam design, never copied artwork,
+  layouts, or trade dress.
+- Multitrack recording enhancements remain the top implementation
+  priority (plan steps 1–4).
+- A YouTube listen-along option was evaluated and declined by the owner:
+  routing YouTube audio into the session would violate YouTube's Terms of
+  Service and the project's copyright/network boundaries, and an
+  external-listening-only version was judged not worth the surface.
+  Uploaded local files remain the only Shared Track path.
+
 ## Sequencing (each step lands with focused regression tests)
 
 1. SessionRecordingPlan consolidation + Finalizing-gate condition tests.
