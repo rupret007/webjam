@@ -939,3 +939,94 @@ class TestLocalInputCapture(TestCase):
         self.assertFalse(second.files)
         self.assertTrue(any("already finalized" in e for e in second.errors))
         self.assertTrue(guitar_kept)
+
+
+class TestConfigurableCaptureTracks(TestCase):
+    def test_mapped_tracks_publish_named_stems_from_their_own_channels(self):
+        class _FourChannelStream(_FakeStream):
+            def start(self):
+                block = np.column_stack((
+                    np.full(4800, 0.1, dtype="float32"),
+                    np.full(4800, 0.2, dtype="float32"),
+                    np.full(4800, 0.3, dtype="float32"),
+                    np.full(4800, 0.4, dtype="float32"),
+                ))
+                self.callback(block, len(block), None, "")
+
+        seen = {}
+
+        def _check(**kwargs):
+            seen.update(kwargs)
+
+        fake_sd = SimpleNamespace(
+            check_input_settings=_check,
+            InputStream=lambda **kwargs: seen.update(
+                stream_channels=kwargs.get("channels")
+            )
+            or _FourChannelStream(**kwargs),
+            query_devices=lambda device, kind: {"name": "Quad", "hostapi": 0},
+            query_hostapis=lambda _index: {"name": "Test Audio"},
+        )
+        with tempfile.TemporaryDirectory() as d, patch.dict(
+            sys.modules, {"sounddevice": fake_sd}
+        ):
+            root = Path(d)
+            capture = LocalInputCapture(
+                root,
+                samplerate=48000,
+                tracks=(("bass-di", 2), ("room-mic", 0)),
+            )
+            capture.start()
+            checkpoint = json.loads(
+                next(root.glob(".webjam-capture-*/webjam-local-capture.json"))
+                .read_text(encoding="utf-8")
+            )
+            result = capture.stop_into(root / "take")
+            audio = {
+                path.name: sf.read(str(path))[0] for path in result.files
+            }
+        self.assertEqual(seen["channels"], 3)
+        self.assertEqual(seen["stream_channels"], 3)
+        self.assertEqual(
+            sorted(audio), ["bass-di.wav", "room-mic.wav"]
+        )
+        # Each stem carries its own mapped device channel, not channel 0/1.
+        self.assertAlmostEqual(float(audio["bass-di.wav"][0]), 0.3, places=3)
+        self.assertAlmostEqual(float(audio["room-mic.wav"][0]), 0.1, places=3)
+        self.assertEqual(checkpoint["channels"], 3)
+        self.assertEqual(
+            checkpoint["tracks"],
+            [
+                {"channel": 2, "stem": "bass-di"},
+                {"channel": 0, "stem": "room-mic"},
+            ],
+        )
+        self.assertEqual(
+            result.capture_device.channel_indices, (2, 0)
+        )
+        self.assertFalse(result.errors)
+
+    def test_default_tracks_remain_the_fixed_host_pair(self):
+        capture = LocalInputCapture(Path("."), samplerate=48000)
+        self.assertEqual(
+            capture._tracks, (("host-guitar", 0), ("host-vocal", 1))
+        )
+        self.assertEqual(capture._required_input_channels, 2)
+
+    def test_invalid_track_specifications_fail_closed(self):
+        hostile = (
+            (),  # empty
+            (("ok", 0),) * 33,  # too many
+            (("../evil", 0),),  # unsafe stem
+            (("name\n", 0),),
+            (("", 0),),
+            (("dup", 0), ("dup", 1)),  # duplicate stems
+            (("a", 3), ("b", 3)),  # duplicate channels
+            (("a", -1),),
+            (("a", 64),),
+            (("a", True),),
+            (("a", "0"),),
+        )
+        for tracks in hostile:
+            with self.assertRaises(LocalCaptureError, msg=repr(tracks)):
+                LocalInputCapture(Path("."), samplerate=48000, tracks=tracks)

@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import stat
 import threading
@@ -30,6 +31,60 @@ import numpy as np
 from core.project_audio import CaptureBlockRing
 
 LOGGER = logging.getLogger("webjam.local_capture")
+
+# Parameterized capture tracks: (stem, device_channel_index). The default is
+# the historical fixed pair; stems become filenames, so they are restricted
+# to a conservative, path-safe alphabet.
+_DEFAULT_CAPTURE_TRACKS: tuple[tuple[str, int], ...] = (
+    ("host-guitar", 0),
+    ("host-vocal", 1),
+)
+_MAX_CAPTURE_TRACKS = 32
+_MAX_CAPTURE_CHANNEL = 63
+_TRACK_STEM_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _-]{0,63}$")
+
+
+def _validated_capture_tracks(
+    tracks: object,
+) -> tuple[tuple[str, int], ...]:
+    if tracks is None:
+        return _DEFAULT_CAPTURE_TRACKS
+    entries = tuple(tracks)
+    if not 1 <= len(entries) <= _MAX_CAPTURE_TRACKS:
+        raise LocalCaptureError(
+            "Local capture supports between 1 and 32 input tracks."
+        )
+    cleaned: list[tuple[str, int]] = []
+    stems: set[str] = set()
+    channels: set[int] = set()
+    for entry in entries:
+        stem, channel = entry
+        raw_stem = str(stem or "")
+        if any(ord(char) < 0x20 or ord(char) == 0x7F for char in raw_stem):
+            raise LocalCaptureError(
+                "A local capture track name is not filesystem-safe."
+            )
+        stem = raw_stem.strip()
+        if not _TRACK_STEM_RE.fullmatch(stem):
+            raise LocalCaptureError(
+                "A local capture track name is not filesystem-safe."
+            )
+        if isinstance(channel, bool) or not isinstance(channel, int):
+            raise LocalCaptureError(
+                "A local capture channel index must be an integer."
+            )
+        if not 0 <= channel <= _MAX_CAPTURE_CHANNEL:
+            raise LocalCaptureError(
+                "A local capture channel index is out of range."
+            )
+        if stem in stems or channel in channels:
+            raise LocalCaptureError(
+                "Local capture tracks must use unique names and channels."
+            )
+        stems.add(stem)
+        channels.add(channel)
+        cleaned.append((stem, channel))
+    return tuple(cleaned)
 
 # The default ring accepts callback blocks through 8,192 frames without asking
 # PortAudio to use a fixed block size. At two float32 channels, 512 slots stay
@@ -119,7 +174,13 @@ class RecoveredLocalCapture:
 
 
 class LocalInputCapture:
-    """Record two device channels to atomic mono WAV files."""
+    """Record mapped device channels to atomic mono WAV files.
+
+    Defaults to the historical fixed pair (host-guitar on channel 0,
+    host-vocal on channel 1); callers may map 1-32 uniquely named mono
+    tracks onto unique device channels instead. One input stream carries
+    every mapped channel; the writer thread owns all file publication.
+    """
 
     def __init__(
         self,
@@ -130,6 +191,7 @@ class LocalInputCapture:
         blocksize: int = 0,
         take_id: str = "",
         session_id: str = "",
+        tracks: object = None,
     ) -> None:
         self.root = Path(root).expanduser()
         self.device = None if device < 0 else device
@@ -163,7 +225,11 @@ class LocalInputCapture:
         self._diagnostics_lock = threading.Lock()
         self._next_input_frame = 0
         self._final_input_frame: int | None = None
-        self._writer_frames = [0, 0]
+        self._tracks = _validated_capture_tracks(tracks)
+        self._track_channels = tuple(channel for _stem, channel in self._tracks)
+        self._required_input_channels = max(self._track_channels) + 1
+        self._all_writer_channels = tuple(range(len(self._tracks)))
+        self._writer_frames = [0] * len(self._tracks)
         self._writer_incomplete = False
         self._finalize_lock = threading.Lock()
         self._finalized = False
@@ -186,8 +252,8 @@ class LocalInputCapture:
             self._temp_dir = self.root / f".webjam-capture-{uuid.uuid4().hex}"
             self._temp_dir.mkdir(mode=0o700)
             self._parts = [
-                self._temp_dir / "host-guitar.wav.part",
-                self._temp_dir / "host-vocal.wav.part",
+                self._temp_dir / f"{stem}.wav.part"
+                for stem, _channel in self._tracks
             ]
             self._writers = [
                 sf.SoundFile(str(path), mode="w", samplerate=self.samplerate,
@@ -196,11 +262,17 @@ class LocalInputCapture:
             ]
 
             sd.check_input_settings(
-                device=self.device, channels=2, samplerate=self.samplerate,
+                device=self.device,
+                channels=self._required_input_channels,
+                samplerate=self.samplerate,
                 dtype="float32",
             )
             ring_block_frames = int(self._ring_block_frames)
-            bytes_per_slot = ring_block_frames * 2 * np.dtype(np.float32).itemsize
+            bytes_per_slot = (
+                ring_block_frames
+                * len(self._tracks)
+                * np.dtype(np.float32).itemsize
+            )
             memory_bounded_capacity = max(
                 1,
                 _CAPTURE_RING_MAX_BYTES // max(1, bytes_per_slot),
@@ -212,8 +284,8 @@ class LocalInputCapture:
             ring = CaptureBlockRing(
                 ring_capacity,
                 ring_block_frames,
-                input_channels=2,
-                channel_map=(0, 1),
+                input_channels=self._required_input_channels,
+                channel_map=self._track_channels,
                 gap_capacity=_CAPTURE_RING_GAP_CAPACITY,
             )
             self._capture_ring = ring
@@ -254,7 +326,7 @@ class LocalInputCapture:
                     or indata.dtype != np.float32
                     or indata.ndim != 2
                     or indata.shape[0] != frame_count
-                    or indata.shape[1] < 2
+                    or indata.shape[1] < self._required_input_channels
                     or frame_count > ring.block_frames
                 ):
                     self._callback_format_events += 1
@@ -270,8 +342,12 @@ class LocalInputCapture:
             self._started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             self._write_recovery_checkpoint()
             self._stream = sd.InputStream(
-                device=self.device, channels=2, samplerate=self.samplerate,
-                blocksize=self.blocksize, dtype="float32", callback=callback,
+                device=self.device,
+                channels=self._required_input_channels,
+                samplerate=self.samplerate,
+                blocksize=self.blocksize,
+                dtype="float32",
+                callback=callback,
             )
             self._writer_thread = threading.Thread(
                 target=self._writer_loop, daemon=True, name="local-capture-writer",
@@ -282,8 +358,8 @@ class LocalInputCapture:
         except Exception:  # noqa: BLE001 - native errors may contain device paths
             self.abort()
             raise LocalCaptureError(
-                "Could not open two isolated host inputs at 48 kHz. Check the "
-                "selected input and folder access, then try again."
+                "Could not open the isolated host inputs at 48 kHz. Check "
+                "the selected input and folder access, then try again."
             ) from None
 
     def _write_recovery_checkpoint(self) -> None:
@@ -304,7 +380,11 @@ class LocalInputCapture:
             "pid": os.getpid(),
             "started_utc": self._started_utc,
             "sample_rate": self.samplerate,
-            "channels": 2,
+            "channels": self._required_input_channels,
+            "tracks": [
+                {"stem": stem, "channel": channel}
+                for stem, channel in self._tracks
+            ],
             "parts": [path.name for path in self._parts],
             "take_id": self.take_id,
             "session_id": self.session_id,
@@ -377,8 +457,10 @@ class LocalInputCapture:
             display_name=name,
             backend=backend,
             sample_rate=self.samplerate,
-            channel_indices=(0, 1),
-            channel_labels=("Input 1", "Input 2"),
+            channel_indices=self._track_channels,
+            channel_labels=tuple(
+                f"Input {channel + 1}" for channel in self._track_channels
+            ),
         )
 
     def _writer_loop(self) -> None:
@@ -409,7 +491,7 @@ class LocalInputCapture:
                 self._record_gap(
                     timeline_frame,
                     start_frame - timeline_frame,
-                    (0, 1),
+                    self._all_writer_channels,
                     "queue_overflow",
                 )
                 for channel in range(len(self._writers)):
@@ -435,7 +517,7 @@ class LocalInputCapture:
             self._record_gap(
                 timeline_frame,
                 target - timeline_frame,
-                (0, 1),
+                self._all_writer_channels,
                 "queue_overflow",
             )
         for channel in range(len(self._writers)):

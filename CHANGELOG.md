@@ -48,6 +48,19 @@ All notable improvements and features for the WebJam music collaboration platfor
   SessionRecordingPlan continues to bind capture truth, not
   configuration intent - the plan doc records that boundary explicitly.
 
+### Record Session — capture engine accepts mapped track lists (step 2, part 2)
+
+- Generalized `LocalInputCapture` from the hard-wired two-stem pair to a
+  validated list of 1-32 uniquely named mono tracks mapped onto unique
+  device channels, still through one input stream, one SPSC ring, one
+  writer thread, and the existing crash-recovery checkpoint (which now
+  also records the exact track map and true stream width). Track names
+  are restricted to a conservative filesystem-safe alphabet and hostile
+  specifications fail closed. The default remains exactly the historical
+  host-guitar/host-vocal pair, and the recording coordinator still uses
+  that default - switching it to the configured input maps follows once
+  Local Original classification and storage budgets derive from the map.
+
 ### Conversation — multi-service meeting links
 
 - The saved conversation link now accepts Webex, Zoom, Microsoft Teams,
