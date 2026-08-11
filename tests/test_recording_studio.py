@@ -3862,3 +3862,33 @@ def test_overload_latch_is_sticky_within_a_take_and_clears_on_transport(tmp_path
         assert clipped == ()
     finally:
         studio.shutdown()
+
+
+def test_completed_take_is_auto_selected_and_loaded_in_studio(tmp_path):
+    """Phase 11 guard: finalization surfaces the take, ready to review.
+
+    on_take_completed reloads the take list, selects the finished take,
+    and the selection loads it into Studio — so a musician who finishes a
+    take lands on it without hunting. (The controller separately switches
+    the live surface to the Studio view on the same completion.)
+    """
+
+    take_dir, _ids = _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        # Nothing selected until a take completes.
+        studio._take_list.setCurrentRow(-1)
+        studio.on_take_completed(
+            take_dir,
+            SimpleNamespace(errors=(), warnings=()),
+        )
+        assert studio._current is not None
+        assert str(studio._current.path) == str(take_dir)
+        selected = studio._take_list.currentItem()
+        assert selected is not None
+        assert selected.data(Qt.ItemDataRole.UserRole) == str(take_dir)
+    finally:
+        studio.shutdown()

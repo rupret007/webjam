@@ -257,6 +257,20 @@ deferred: Reference Studio mixer meters (that dialog is state-free; a
 live feed needs the take-Studio epoch pattern) and a visible per-lane
 overload badge (geometry-pinned; `overloaded_sources()` is the seam).
 
+## Phase 11 — auto-open completed take: already satisfied (2026-08-11)
+
+Verified rather than rebuilt: successful finalization already surfaces
+the finished take. on_take_completed reloads the take list and selects
+the completed path, the selection handler loads it into Studio, and the
+controller switches the live surface to the takes view (gated on
+durable_shutdown_publication, which is true for a normal completion). A
+focused guard test now pins the studio-side selection+load so the
+behavior cannot silently regress. No redundant code was added. Remaining
+larger phase-11 ambitions (a dedicated compact recording-workspace
+layout distinct from the live grid, and extracting Reference Studio
+editing-command logic to share with the take Studio) are genuine
+follow-ups, not started here.
+
 ## Sequencing (each step lands with focused regression tests)
 
 1. SessionRecordingPlan consolidation + Finalizing-gate condition tests.
