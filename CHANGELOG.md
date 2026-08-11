@@ -132,6 +132,16 @@ All notable improvements and features for the WebJam music collaboration platfor
   gains a Copy Link action that is enabled only when a validated link is
   saved and copies the normalized URL with a confirmation flash.
 
+### Verification — full-repository closing sweep (step 7)
+
+- All 249 test files pass under CI-style per-file isolation with
+  offscreen Qt; pinned ruff, diff-check, and the release-metadata and
+  workflow-limit contracts are clean. The sweep surfaced and fixed one
+  robustness gap: the participant-card badge tests now dispose widgets
+  deterministically, since interpreter-exit collection of unparented
+  QWidgets crashes Qt offscreen teardown. Physical-musician gates remain
+  NOT RUN until exact packages are tested by hand.
+
 ### Conversation — multi-service meeting links
 
 - The saved conversation link now accepts Webex, Zoom, Microsoft Teams,

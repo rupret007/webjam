@@ -1,27 +1,37 @@
 """Participant cards render per-take recording truth inside pinned geometry."""
 
-import sys
+import os
 
-import pytest
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from webjam_qt.widgets.participant_card import (
+_app = QApplication.instance() or QApplication([])
+
+from webjam_qt.widgets.participant_card import (  # noqa: E402
     ParticipantCard,
     ParticipantPresentation,
 )
 
 
+import pytest  # noqa: E402
+
+_cards: list[ParticipantCard] = []
+
+
 @pytest.fixture(autouse=True)
-def _qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv[:1])
-    yield app
+def _dispose_cards():
+    yield
+    # Destroy native widgets deterministically; interpreter-exit collection
+    # of unparented QWidgets crashes Qt offscreen teardown.
+    while _cards:
+        card = _cards.pop()
+        card.deleteLater()
+    _app.processEvents()
 
 
 def _card(state=""):
-    return ParticipantCard(
+    card = ParticipantCard(
         ParticipantPresentation(
             channel_id=1,
             name="Jeff",
@@ -29,6 +39,8 @@ def _card(state=""):
             recording_state=state,
         )
     )
+    _cards.append(card)
+    return card
 
 
 def test_states_render_text_not_color_alone_and_stay_in_envelope():

@@ -193,6 +193,24 @@ the same wire-schema review as guest badges), recent-choice memory
 (privacy review first), and the generic-HTTPS fallback decision, which
 stays fail-closed until explicitly made as a labelled policy change.
 
+## Step 7 closing verification record (2026-08-11)
+
+Full repository sweep: all 249 test files pass under CI-style per-file
+isolation, offscreen Qt, non-root. CI-pinned ruff clean on every linted
+tree including reference_service; git diff --check clean; release
+metadata and workflow-limit contracts green. One real fix emerged: the
+new participant-card test file needed deterministic widget disposal
+(interpreter-exit collection of unparented QWidgets crashes Qt offscreen
+teardown) — landed with the sweep. Physical gates remain NOT RUN, as
+always, until humans run exact packages.
+
+v0.24.0 readiness: the branch carries the plan, four completed steps
+(1, 3, 4, 5, 6), step 2's engine+schema halves, and the meeting-platform
+foundation. READY FOR HANDS-ON SOURCE TESTING of the landed behavior.
+Not yet a release candidate: step 2's classification/budget coherence
+pass, the deferred mixer latches, and the editor UI remain, each with
+seams documented above.
+
 ## Sequencing (each step lands with focused regression tests)
 
 1. SessionRecordingPlan consolidation + Finalizing-gate condition tests.
