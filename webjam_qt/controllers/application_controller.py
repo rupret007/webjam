@@ -3160,6 +3160,9 @@ class ApplicationController(QObject):
         # Conversation navigation is side-effect free. Only the explicit
         # Join/Open action hands the configured meeting link to the OS.
         self.window.webex_embed.open_meeting_requested.connect(self._on_join_video)
+        self.window.webex_embed.copy_link_requested.connect(
+            self._on_copy_meeting_link
+        )
         self.window.webex_embed.bring_forward_requested.connect(
             self._show_webex_app
         )
@@ -3264,6 +3267,15 @@ class ApplicationController(QObject):
         )
         self.window.webex_embed.set_meeting_configured(
             bool(str(self.settings.webex_url or "").strip())
+        )
+        from core.meeting_link import (
+            identify_meeting_service,
+            meeting_service_label,
+        )
+
+        service = identify_meeting_service(self.settings.webex_url)
+        self.window.webex_embed.set_service_label(
+            meeting_service_label(service) if service else "Webex"
         )
         self.window.session_strip.set_tools_enabled(True)
         self.window.webex_embed.set_audio_mode(self._webex_audio_mode())
@@ -9035,6 +9047,23 @@ class ApplicationController(QObject):
         self.window.webex_embed.focus_primary_action()
         self._record_webex_event("conversation-panel", "shown")
 
+    def _on_copy_meeting_link(self) -> None:
+        """Copy the saved, validated meeting link for sharing."""
+
+        from PySide6.QtWidgets import QApplication
+
+        from core.meeting_link import is_allowed_meeting_link, normalize_meeting_url
+
+        url = normalize_meeting_url(self.settings.webex_url)
+        if not url or not is_allowed_meeting_link(url):
+            self.window.flash_message(
+                "No valid meeting link is saved. Add one in Settings first.",
+                ms=5000,
+            )
+            return
+        QApplication.clipboard().setText(url)
+        self.window.flash_message("Meeting link copied.", ms=4000)
+
     def _on_join_video(self) -> None:
         """Open the configured meeting externally without claiming join state."""
         from core.meeting_link import (
@@ -10109,6 +10138,15 @@ class ApplicationController(QObject):
         )
         self.window.webex_embed.set_meeting_configured(
             bool(str(self.settings.webex_url or "").strip())
+        )
+        from core.meeting_link import (
+            identify_meeting_service,
+            meeting_service_label,
+        )
+
+        service = identify_meeting_service(self.settings.webex_url)
+        self.window.webex_embed.set_service_label(
+            meeting_service_label(service) if service else "Webex"
         )
         self.window.webex_embed.set_audio_mode(self._webex_audio_mode())
         self._start_routing_scan()

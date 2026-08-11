@@ -120,6 +120,18 @@ All notable improvements and features for the WebJam music collaboration platfor
   invariant suites re-ran green (schema-v2 fail-closed export, shared
   authoritative mix, durable mix ids).
 
+### Conversation — provider adapter, service-aware card, Copy Link (step 6)
+
+- One provider adapter (`MeetingProvider`) now fronts every meeting
+  service with recognition facts only: key, label, hostname, platform
+  gate, and native-detection support (true solely for Webex, the one app
+  WebJam verifies and activates). Future authenticated integrations
+  extend this boundary; nothing claims them today.
+- The conversation card names the saved link's service in its title -
+  "Zoom conversation", "Google Meet video" - falling back to Webex, and
+  gains a Copy Link action that is enabled only when a validated link is
+  saved and copies the normalized URL with a confirmation flash.
+
 ### Conversation — multi-service meeting links
 
 - The saved conversation link now accepts Webex, Zoom, Microsoft Teams,

@@ -40,6 +40,7 @@ class WebexEmbed(QFrame):
     open_meeting_requested = Signal()
     change_link_requested = Signal()
     mute_in_webex_requested = Signal()
+    copy_link_requested = Signal()
     recheck_webex_requested = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
@@ -54,6 +55,7 @@ class WebexEmbed(QFrame):
         self._native_app_available = False
         self._native_action_busy = False
         self._native_focus_restore: QPushButton | None = None
+        self._service_label = "Webex"
 
         self._title_label = QLabel("Webex conversation")
         self._title_label.setObjectName("WebexEmbedTitle")
@@ -133,6 +135,18 @@ class WebexEmbed(QFrame):
         self._fallback_btn.clicked.connect(self.open_meeting_requested.emit)
         self._fallback_btn.setEnabled(False)
 
+        self._copy_link_btn = QPushButton("Copy Link")
+        self._copy_link_btn.setObjectName("GhostButton")
+        self._copy_link_btn.setAccessibleName("Copy the saved meeting link")
+        self._copy_link_btn.setAccessibleDescription(
+            "Copy the saved meeting link to the clipboard to share it."
+        )
+        self._copy_link_btn.setToolTip(
+            "Copy the saved meeting link so you can paste it anywhere."
+        )
+        self._copy_link_btn.clicked.connect(self.copy_link_requested.emit)
+        self._copy_link_btn.setEnabled(False)
+
         self._change_link_btn = QPushButton("Add Link")
         self._change_link_btn.setObjectName("GhostButton")
         self._change_link_btn.setAccessibleName("Add Webex meeting link")
@@ -186,8 +200,9 @@ class WebexEmbed(QFrame):
         actions.addWidget(self._mute_btn, 0, 1)
         actions.addWidget(self._fallback_btn, 1, 0)
         actions.addWidget(self._change_link_btn, 1, 1)
-        actions.addWidget(self._install_btn, 2, 0)
-        actions.addWidget(self._recheck_btn, 2, 1)
+        actions.addWidget(self._copy_link_btn, 2, 0)
+        actions.addWidget(self._install_btn, 2, 1)
+        actions.addWidget(self._recheck_btn, 3, 0)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.SM)
@@ -365,10 +380,20 @@ class WebexEmbed(QFrame):
         self._restore_native_focus()
         self._announce_description_change(self._app_status_label)
 
+    def set_service_label(self, label: str) -> None:
+        """Name the saved link's meeting service on the card truthfully."""
+
+        clean = " ".join(str(label or "").split())[:32] or "Webex"
+        if clean == self._service_label:
+            return
+        self._service_label = clean
+        self._render_audio_guidance()
+
     def set_meeting_configured(self, configured: bool) -> None:
         """Render whether Join/Open has a trusted saved link to hand off."""
 
         self._meeting_configured = bool(configured)
+        self._copy_link_btn.setEnabled(self._meeting_configured)
         self._change_link_btn.setText(
             "Change Link" if self._meeting_configured else "Add Link"
         )
@@ -510,10 +535,11 @@ class WebexEmbed(QFrame):
             target.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _render_audio_guidance(self) -> None:
+        service = self._service_label
         titles = {
-            "talkback": "Webex conversation",
-            "video_only": "Webex video",
-            "audience_bridge": "Webex audience feed",
+            "talkback": f"{service} conversation",
+            "video_only": f"{service} video",
+            "audience_bridge": f"{service} audience feed",
         }
         guidance = {
             "talkback": (

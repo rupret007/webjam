@@ -192,3 +192,25 @@ def test_app_identity_registry_matches_the_live_webex_contract():
     copy = meeting_app_identity("zoom")
     copy["macos_team_id"] = "tampered"
     assert meeting_app_identity("zoom")["macos_team_id"] == "BJ4HAAB9B3"
+
+
+def test_meeting_provider_adapter_carries_recognition_facts_only():
+    from core.meeting_link import meeting_provider_for_link
+
+    zoom = meeting_provider_for_link("https://us02web.zoom.us/j/123?pwd=x")
+    assert zoom is not None
+    assert (zoom.key, zoom.label) == ("zoom", "Zoom")
+    assert zoom.link_hostname == "us02web.zoom.us"
+    assert zoom.platform_error == ""
+    assert zoom.native_detection_supported is False
+
+    webex = meeting_provider_for_link("https://band.webex.com/meet/us")
+    assert webex.native_detection_supported is True
+
+    facetime_on_windows = meeting_provider_for_link(
+        "https://facetime.apple.com/join#v=1&p=a", platform="win32"
+    )
+    assert "Mac" in facetime_on_windows.platform_error
+
+    assert meeting_provider_for_link("https://example.com/x") is None
+    assert meeting_provider_for_link("") is None

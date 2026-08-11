@@ -16,6 +16,7 @@ canonical Webex host rule.
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from core.webex_url import normalize_webex_url as normalize_meeting_url
@@ -203,6 +204,41 @@ def meeting_link_hostname(raw: str) -> str:
         ).lower().rstrip(".")
     except ValueError:
         return ""
+
+
+@dataclass(frozen=True)
+class MeetingProvider:
+    """One provider adapter for a validated meeting link.
+
+    The stable boundary future authenticated integrations extend: today it
+    carries recognition facts only. ``native_detection_supported`` is True
+    solely for Webex, the one app WebJam verifies and activates; every
+    other provider opens through the OS link handler.
+    """
+
+    key: str
+    label: str
+    link_hostname: str
+    platform_error: str
+    native_detection_supported: bool
+
+
+def meeting_provider_for_link(
+    raw: str, *, platform: str | None = None
+) -> MeetingProvider | None:
+    """Return the provider adapter for a validated link, else None."""
+
+    service = identify_meeting_service(raw)
+    if service is None:
+        return None
+    return MeetingProvider(
+        key=service,
+        label=meeting_service_label(service),
+        link_hostname=meeting_link_hostname(raw),
+        platform_error=meeting_handoff_platform_error(raw, platform=platform)
+        or "",
+        native_detection_supported=service == "webex",
+    )
 
 
 def meeting_handoff_platform_error(

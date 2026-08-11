@@ -408,3 +408,30 @@ def test_show_webex_button_announces_what_it_displays() -> None:
         assert button.accessibleName() == button.text()
     finally:
         embed.deleteLater()
+
+
+def test_card_title_follows_the_saved_links_service():
+    embed = WebexEmbed()
+    assert embed._title_label.text() == "Webex conversation"
+    embed.set_service_label("Zoom")
+    assert embed._title_label.text() == "Zoom conversation"
+    embed.set_audio_mode("video_only")
+    assert embed._title_label.text() == "Zoom video"
+    # Empty/hostile labels fall back to Webex and stay bounded.
+    embed.set_service_label("")
+    assert embed._title_label.text() == "Webex video"
+    embed.set_service_label("  Google   Meet  ")
+    assert embed._title_label.text() == "Google Meet video"
+
+
+def test_copy_link_requires_a_configured_meeting():
+    embed = WebexEmbed()
+    events = []
+    embed.copy_link_requested.connect(lambda: events.append("copy"))
+    assert not embed._copy_link_btn.isEnabled()
+    embed.set_meeting_configured(True)
+    assert embed._copy_link_btn.isEnabled()
+    embed._copy_link_btn.click()
+    assert events == ["copy"]
+    embed.set_meeting_configured(False)
+    assert not embed._copy_link_btn.isEnabled()

@@ -177,6 +177,22 @@ or it reintroduces a pinned race) and Reference Studio mixer meters
 (the dialog is deliberately state-free; a live level feed needs the
 take-Studio epoch pattern, not a new one).
 
+## Step 6 completion record (2026-08-11)
+
+The Meeting Companion adapter boundary now exists as
+`MeetingProvider` / `meeting_provider_for_link()` in core/meeting_link.py:
+recognition facts only (key, label, hostname, platform gate,
+native-detection support — true solely for Webex, the one app WebJam
+verifies). Authenticated integrations extend this object later; nothing
+claims them today. The conversation card follows the saved link's
+service in its title ("Zoom conversation"), falls back to Webex, and
+gains a Copy Link action enabled only with a validated saved link,
+copying the normalized URL with a flash confirmation. Remaining
+companion items, deliberately out: guest-visible provider surface (needs
+the same wire-schema review as guest badges), recent-choice memory
+(privacy review first), and the generic-HTTPS fallback decision, which
+stays fail-closed until explicitly made as a labelled policy change.
+
 ## Sequencing (each step lands with focused regression tests)
 
 1. SessionRecordingPlan consolidation + Finalizing-gate condition tests.
