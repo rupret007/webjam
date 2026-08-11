@@ -231,6 +231,18 @@ deferred to the editor-UI phase: explicit device-channel selection
 (sequential allocation is the documented default) and non-Local-Original
 input tracks, which are reserved and skipped.
 
+## Phase 9 — input-track editor (2026-08-11, unattended)
+
+The musician-facing front end for the phase-8 resolver:
+`webjam_qt/windows/input_map_editor.py` (self-contained, headlessly
+tested) edits `AppSettings.input_maps` as add/name/remove rows with
+mono/stereo, enable, and Local Original, validating exactly like the
+settings loader. Recording Setup opens it via "Edit Input Tracks…",
+shows a configuration summary, and persists the maps with the capture
+flag. Reserved for later: explicit device-channel selection (sequential
+allocation is the documented default) and a device picker keyed on
+stable device IDs.
+
 ## Sequencing (each step lands with focused regression tests)
 
 1. SessionRecordingPlan consolidation + Finalizing-gate condition tests.

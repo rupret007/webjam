@@ -187,6 +187,26 @@ class RecordingSetupDialog(QDialog):
         root.addWidget(self._input_label)
         root.addWidget(self._input)
 
+        # Working copy of the configured input maps; edited through the
+        # dedicated editor and persisted on Save alongside the capture flag.
+        self._input_maps = [
+            dict(entry)
+            for entry in (getattr(settings, "input_maps", None) or [])
+            if isinstance(entry, dict)
+        ]
+        self._edit_tracks_btn = QPushButton("Edit Input Tracks…")
+        self._edit_tracks_btn.setObjectName("GhostButton")
+        self._edit_tracks_btn.setAccessibleName(
+            "Edit the named local input tracks Record Session captures"
+        )
+        self._edit_tracks_btn.clicked.connect(self._edit_input_tracks)
+        self._tracks_summary = QLabel("")
+        self._tracks_summary.setObjectName("SimpleSettingsSubtitle")
+        self._tracks_summary.setWordWrap(True)
+        root.addWidget(self._edit_tracks_btn)
+        root.addWidget(self._tracks_summary)
+        self._refresh_tracks_summary()
+
         folder_row = QHBoxLayout()
         self._folder = QLabel(
             "Takes: " + (str(settings.takes_directory or "Not configured"))
@@ -241,6 +261,9 @@ class RecordingSetupDialog(QDialog):
         visible = self._capture.isEnabled() and self._capture.isChecked()
         self._input_label.setVisible(visible)
         self._input.setVisible(visible)
+        if hasattr(self, "_edit_tracks_btn"):
+            self._edit_tracks_btn.setVisible(visible)
+            self._tracks_summary.setVisible(visible)
         self._capture_help.setVisible(self._capture.isEnabled())
         self._error.clear()
         self._error.setVisible(False)
@@ -269,6 +292,26 @@ class RecordingSetupDialog(QDialog):
         self._error.clear()
         self._error.setVisible(False)
 
+    def _refresh_tracks_summary(self) -> None:
+        count = len(self._input_maps)
+        if count == 0:
+            self._tracks_summary.setText(
+                "Using the default two isolated stems (host-guitar, host-vocal)."
+            )
+        else:
+            names = ", ".join(
+                str(entry.get("name", "") or "?") for entry in self._input_maps
+            )
+            self._tracks_summary.setText(f"{count} configured: {names}")
+
+    def _edit_input_tracks(self) -> None:
+        from webjam_qt.windows.input_map_editor import InputMapEditorDialog
+
+        dialog = InputMapEditorDialog(self._input_maps, parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._input_maps = dialog.result_maps()
+            self._refresh_tracks_summary()
+
     def _save(self) -> None:
         capture = self._capture.isEnabled() and self._capture.isChecked()
         input_index = self._input.currentData()
@@ -280,6 +323,7 @@ class RecordingSetupDialog(QDialog):
         if self._local_originals_available:
             self._settings.local_capture_enabled = capture
             self._settings.local_capture_choice_made = True
+            self._settings.input_maps = [dict(e) for e in self._input_maps]
         if capture:
             self._settings.audio_input_device_index = int(input_index)
         try:

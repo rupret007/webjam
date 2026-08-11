@@ -157,6 +157,17 @@ All notable improvements and features for the WebJam music collaboration platfor
   selection and non-Local-Original input tracks stay reserved for the
   editor-UI phase.
 
+### Record Session — input-track editor (phase 9)
+
+- Recording Setup gains an "Edit Input Tracks…" editor: add, name, and
+  remove local input tracks, each mono or stereo with enable and Local
+  Original opt-in, validated through the same rules the settings loader
+  enforces (non-empty, unique, bounded, control-free names; 1-32 tracks).
+  Saved tracks drive capture through the phase-8 resolver; an empty editor
+  keeps the default two isolated stems. A summary line shows the current
+  configuration. Explicit per-track device-channel selection stays
+  reserved (tracks allocate inputs sequentially, the resolver's default).
+
 ### Conversation — multi-service meeting links
 
 - The saved conversation link now accepts Webex, Zoom, Microsoft Teams,
