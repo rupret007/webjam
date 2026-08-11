@@ -347,7 +347,18 @@ def test_matching_saved_verification_never_bypasses_v3_host_or_guest_path() -> N
 
 
 def test_v2_guest_peer_waits_for_post_gate_audio_start(tmp_path) -> None:
-    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        local_capture_enabled=True,
+        input_maps=[
+            {
+                "name": "Guest Voice",
+                "channels": 1,
+                "enabled": True,
+                "local_original_enabled": True,
+            }
+        ],
+    )
     window = ConductorWindow(
         mode_entries=ApplicationController.mode_entries(),
         initial_mode_key="music_jam",
@@ -364,13 +375,16 @@ def test_v2_guest_peer_waits_for_post_gate_audio_start(tmp_path) -> None:
     with mock.patch(
         "webjam_qt.controllers.application_controller.GuestPeerSession",
         return_value=guest,
-    ):
+    ) as guest_type:
         controller = ApplicationController(
             window,
             settings=settings,
             session_invite=invite,
         )
     try:
+        peer_kwargs = guest_type.call_args.kwargs
+        assert peer_kwargs["capture_enabled"]() is True
+        assert peer_kwargs["capture_tracks"]() == (("local-Guest Voice", 0),)
         guest.start.assert_not_called()
         controller.audio.on_launch_toggle = mock.Mock(return_value=True)
         with mock.patch.object(
@@ -785,6 +799,20 @@ def test_matching_recovery_only_restores_the_next_safe_native_prompt() -> None:
     assert attempt["fast_path"] is False
     assert attempt["webex_decision"] == "skipped"
     assert attempt["resumed"] is True
+
+
+def test_startup_conversation_guidance_is_provider_neutral() -> None:
+    prompt = ApplicationController._startup_guidance_override(
+        {"phase": "conversation", "role": "guest"}
+    )
+    link = ApplicationController._startup_guidance_override(
+        {"phase": "conversation_link", "role": "guest"}
+    )
+
+    assert prompt.action_label == "Add Conversation"
+    assert link.title == "Add Meeting Link"
+    assert link.action_label == "Save Meeting Link"
+    assert "public HTTPS meeting link from any platform" in link.message
 
 
 def test_changed_profile_fails_closed_to_native_setup_after_restart() -> None:

@@ -2,7 +2,7 @@
 
 A pure, GUI-free readiness probe so a musician learns what's missing *before*
 they try to play. Virtual-loopback audio is checked only for the advanced
-audience-bridge role; native Webex choices are explicit manual confirmations.
+audience-bridge role; conversation-app choices are explicit manual confirmations.
 The UI can render ``run_ready_check(settings)`` however it likes; this module
 never touches Qt.
 """
@@ -72,7 +72,7 @@ class ReadyCheckReport:
         if self.automated_ok and self.pending_manual_count:
             lines.append(
                 "Automated checks passed; confirm "
-                f"{self.pending_manual_count} Webex settings."
+                f"{self.pending_manual_count} conversation settings."
             )
         elif any(item.warning for item in self.items):
             lines.append(
@@ -123,8 +123,8 @@ def _check_audio_routing(settings) -> CheckItem:
     from core.audio_routing import scan_loopback_devices
     status = scan_loopback_devices()  # contracted never to raise
     if getattr(status, "ok", False):
-        return CheckItem("Webex audio bridge", True, status.device_name)
-    return CheckItem("Webex audio bridge", False, status.install_hint)
+        return CheckItem("Conversation audio bridge", True, status.device_name)
+    return CheckItem("Conversation audio bridge", False, status.install_hint)
 
 
 def _check_selected_input(settings) -> CheckItem:
@@ -263,9 +263,68 @@ def _manual_item(name: str, detail: str) -> CheckItem:
 
 
 def _webex_manual_checks(settings) -> list[CheckItem]:
-    if not str(getattr(settings, "webex_url", "") or "").strip():
+    url = str(getattr(settings, "webex_url", "") or "").strip()
+    if not url:
+        return []
+    from core.meeting_link import meeting_provider_for_link
+
+    provider = meeting_provider_for_link(url)
+    if provider is None:
         return []
     mode = str(getattr(settings, "webex_audio_mode", "talkback") or "talkback")
+    if provider.key != "webex":
+        service = (
+            provider.label
+            if provider.key != "generic"
+            else "meeting service"
+        )
+        if mode == "video_only":
+            return [
+                _manual_item(
+                    f"{service} joined without computer audio",
+                    f"Confirm {service} shows video only and cannot send or "
+                    "play meeting audio.",
+                )
+            ]
+        if mode == "audience_bridge":
+            return [
+                _manual_item(
+                    "Conversation virtual microphone",
+                    f"Select BlackHole or VB-CABLE as the microphone in {service}.",
+                ),
+                _manual_item(
+                    "Conversation physical speaker",
+                    "Select the wired audio interface, never the virtual bridge.",
+                ),
+                _manual_item(
+                    "Real microphone excluded",
+                    f"Confirm the Mac or interface microphone is not sent to {service}.",
+                ),
+                _manual_item(
+                    "Audience echo test",
+                    "Verify from a second device with headphones that the mix is "
+                    "clear and echo-free.",
+                ),
+            ]
+        return [
+            _manual_item(
+                "Conversation microphone",
+                "Select the intended dedicated speech microphone.",
+            ),
+            _manual_item(
+                "Conversation wired speaker",
+                "Select the wired audio interface used by your headphones.",
+            ),
+            _manual_item(
+                f"{service} muted for Play",
+                f"Confirm the microphone is muted in {service} before music starts.",
+            ),
+            _manual_item(
+                "Conversation safety control",
+                "Confirm you can mute the audio interface before unmuting the "
+                "meeting service. Otherwise end the WebJam session first.",
+            ),
+        ]
     if mode == "video_only":
         return [
             _manual_item(
@@ -382,23 +441,36 @@ def _check_recorder(settings) -> CheckItem:
 
 
 def _check_webex(settings) -> CheckItem:
-    from core.meeting_link import meeting_link_error, meeting_link_hostname
+    from core.meeting_link import (
+        GENERIC_MEETING_SERVICE_KEY,
+        identify_meeting_service,
+        meeting_link_error,
+        meeting_link_hostname,
+    )
 
     url = str(getattr(settings, "webex_url", "") or "")
     if not url.strip():
         return CheckItem(
-            "Webex companion", True, "not configured — optional", required=False
+            "Conversation companion",
+            True,
+            "not configured — optional",
+            required=False,
         )
     error = meeting_link_error(url)
     if error is None:
+        service = identify_meeting_service(url)
         hostname = meeting_link_hostname(url)
         return CheckItem(
-            "Webex companion",
+            "Conversation companion",
             True,
-            f"{hostname} configured — opens externally",
+            (
+                "meeting service configured — opens externally"
+                if service == GENERIC_MEETING_SERVICE_KEY
+                else f"{hostname} configured — opens externally"
+            ),
             required=False,
         )
-    return CheckItem("Webex companion", False, error, required=False)
+    return CheckItem("Conversation companion", False, error, required=False)
 
 
 def _check_hosted_server(settings) -> "CheckItem | None":

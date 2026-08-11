@@ -14,7 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel
 
 from core.settings import AppSettings
 from core.jamulus_name import JAMULUS_NAME_HELP
@@ -163,6 +163,35 @@ def test_second_step_is_compact_and_defaults_to_talkback(qapp, settings):
     )
     assert not dialog._capture.isChecked()
     assert dialog._device.isHidden()
+
+
+def test_second_step_uses_provider_neutral_meeting_copy(qapp, settings):
+    dialog = make_dialog(settings)
+    choose_host(dialog)
+    dialog._primary.click()
+
+    copy = " ".join(
+        label.text() for label in dialog._pages.currentWidget().findChildren(QLabel)
+    )
+    assert (
+        "Meeting link (any platform)"
+        in copy
+    )
+    assert dialog._webex_url.accessibleName() == (
+        "Optional meeting link for conversation or video"
+    )
+    assert dialog._webex_site.accessibleName() == "Meeting service site"
+    assert "selected meeting service handles sign-in" in copy
+    assert "TALK  ·  MEETING SERVICE" in copy
+    assert "Webex handles sign-in" not in copy
+
+    dialog._webex_url.setText("https://teams.microsoft.com/l/meetup-join/example")
+    assert dialog._webex_site.text() == (
+        "Microsoft Teams site: teams.microsoft.com"
+    )
+
+    dialog._webex_url.setText("https://meet.jit.si/WebJamBand?private=1#join")
+    assert dialog._webex_site.text() == "Meeting service site: meet.jit.si"
 
 
 def test_supplemental_capture_is_removed_from_simple_setup(qapp, settings):

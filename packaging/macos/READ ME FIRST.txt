@@ -1,14 +1,14 @@
-WEBJAM v0.23.0 PRIVATE TEST CANDIDATE — PLEASE READ
+WEBJAM v0.24.0 PRIVATE TEST CANDIDATE — PLEASE READ
 
 PRIVATE TEST CANDIDATE: use this package only when its exact filename appears
-in the v0.23.0 GitHub release and its SHA-256 matches that release's manifest.
-Do not use the immutable v0.22.5 checksum manifest for this build.
+in the v0.24.0 GitHub release and its SHA-256 matches that release's manifest.
+Do not use the immutable v0.23.0 checksum manifest for this build.
 Physical audio, hardware, Gatekeeper, signing, and notarization gates remain
 NOT RUN unless the release evidence names this exact file and SHA-256.
 
 This WebJam build is ad-hoc signed and is NOT notarized or reviewed by Apple.
 Only install it when its exact local artifact identity and checksum are part of
-the current v0.23 physical-test handoff.
+the current v0.24 physical-test handoff.
 
 This candidate upgrades cryptography to 50.0.0 for CVE-2026-69247,
 CVE-2026-69248, and CVE-2026-69249. Apple-silicon uses an exact hash-locked
@@ -58,8 +58,8 @@ Shared Track profile/control files under your own
 ~/Library/Application Support/WebJam folder. Host, Join, and Shared Track
 must not ask WebJam for permission to access data from other apps.
 
-The sealed v0.22.5 Jamulus catalog does not authorize v0.23.0 and is rejected.
-Until a new signed v0.23 catalog exists, this candidate uses the embedded
+The sealed v0.22.5 Jamulus catalog does not authorize v0.24.0 and is rejected.
+Until a new signed v0.24 catalog exists, this candidate uses the embedded
 Jamulus 3.12.2 fallback rather than offering a managed 3.12.3 download.
 
 macOS may separately ask for microphone access when you use an audio input.
@@ -68,22 +68,28 @@ macOS says WebJam wants data from other apps, do not add WebJam to Full Disk
 Access or treat the prompt as normal. Record the WebJam version and build ID,
 close the setup, and report the package as a test-candidate failure.
 
-Optional Webex conversation
+Optional conversation/video
 ---------------------------
-Webex is not bundled with WebJam. After WebJam opens, choose Webex Controls
-(described in v0.22.2 as Webex on the main session rail) or More > Webex
-Controls to show Conversation controls. This does not open or rejoin a meeting.
-For compatibility with the earlier wording, only Join / Open hands off the saved link;
-the current button is labeled Join / Open Meeting. Show Webex App dynamically
+No meeting service is bundled with WebJam. Any meeting platform can use the
+explicit Join / Open Meeting handoff when its link is public HTTPS with a DNS
+hostname and passes WebJam's safety checks. Known Webex, Zoom, Teams, Google
+Meet, and FaceTime links receive friendly labels; another accepted provider
+remains neutral and is not natively verified. WebJam never claims join or
+mute. Native verification, installation guidance, mute guidance, and
+bring-forward remain Webex-only. Webex is not bundled with WebJam. After
+WebJam opens, choose
+Conversation on the main session rail or More > Conversation to show the
+meeting controls. This does not open or rejoin a meeting. Only Join / Open
+Meeting hands off the saved link. Show Webex App dynamically
 re-verifies the exact Cisco app and any running PID. It then activates or
 launches that verified app itself with no meeting link, document argument, or
-browser; Webex chooses its own screen. Mute in Webex shows the verified app so
+browser; Webex chooses its own screen. Open Webex to Mute shows the verified app so
 you can use Webex's own Mute control; WebJam cannot verify or change external
 Webex mute.
 If the native Webex app is missing, Get Webex opens Cisco's official installer
 for this Mac after you confirm. Cisco owns that download, license, installation,
-sign-in, and its automatic updates. Jamulus remains the music path; keep Webex
-muted while playing to avoid delayed duplicate audio.
+sign-in, and its automatic updates. Jamulus remains the music path; keep the
+selected meeting service muted while playing to avoid delayed duplicate audio.
 
 iPhone Pocket Stage setup
 -------------------------

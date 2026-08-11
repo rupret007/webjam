@@ -1,8 +1,8 @@
-# First Jam — WebJam v0.23.0 source candidate
+# First Jam — WebJam v0.24.0 source candidate
 
-> v0.23.0 is not published. GitHub **Latest** remains the immutable,
-> checksum-verified v0.22.5 candidate. Use these new Shared Track and Record
-> Session steps only with an exact v0.23.0 test build, and record every physical
+> GitHub **Latest** remains the immutable, checksum-verified v0.23.0 candidate
+> until v0.24.0's protected promotion passes. Use these recording-first steps
+> only with an exact v0.24.0 test build, and record every physical
 > rehearsal gate as **NOT RUN** until it is actually observed.
 
 ## Host
@@ -17,9 +17,12 @@
 5. When **Copy Invite** appears, send the complete link to a bandmate.
 6. Play a note and make sure you can hear each other. Use **More → Band Check
    / Verify Sound** if you need help.
-7. Add Webex only if your band wants it: choose **Webex Controls** on the main
-   session rail, then use **Join / Open Meeting**. Merely showing Conversation
-   does not open or rejoin a meeting. On macOS, **Show Webex App** re-verifies
+7. Add conversation/video only if your band wants it: choose **Conversation**
+   on the main session rail, save a public HTTPS meeting link, then use **Join
+   / Open Meeting**. Known Webex, Zoom, Microsoft Teams, Google Meet, and
+   FaceTime destinations receive friendly labels; another accepted provider
+   stays neutrally labeled. Merely showing Conversation does not open or
+   rejoin a meeting. On macOS, the separate Webex-only **Show Webex App** re-verifies
    and activates the exact Cisco process when running; if stopped, it launches
    the verified app itself without a URL. Only **Join / Open Meeting** hands off
    the meeting link. Jamulus remains the music path.
@@ -46,7 +49,11 @@
 ## Important boundaries
 
 - Do not select Jamulus music devices in WebJam; Jamulus owns them.
-- Do not expect Webex to carry the music; it is optional conversation/video.
+- Do not expect a meeting service to carry the music; it is optional
+  conversation/video.
+- Any provider's link must be public HTTPS with a DNS hostname. Local/private
+  destinations, IP-literal hosts, embedded credentials, and custom ports are
+  refused.
 - **Show Webex App** activates or launches the verified app itself without a
   meeting link or browser; Webex chooses its own screen. **Open Webex to Mute** shows
   the verified app for its own Mute control; WebJam does not claim to change or
@@ -58,7 +65,7 @@
   musicians still need to listen and verify each other.
 
 Use the
-[v0.23 physical checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
+[v0.24 physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
 to capture machine, interface, route, stem, recovery, and Studio evidence.
 
 If Jamulus needs another change, choose **Bring Jamulus Forward** in the setup

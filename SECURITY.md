@@ -27,12 +27,23 @@ support bundles, or unredacted local paths.
 
 ## Scope and limitations
 
-Jamulus, Webex, Python dependencies, Qt, and operating-system trust systems
+Jamulus, meeting services, Python dependencies, Qt, and operating-system trust systems
 have their own upstream security channels. WebJam-specific orchestration,
 privacy projection, package verification, updater, transport, and lifecycle
-issues belong here. The published v0.22.5 GitHub **Latest** download and its
-immutable predecessors share this test-only trust boundary: Windows is
-unsigned and macOS is ad-hoc signed and unnotarized.
+issues belong here. The published v0.23.0 GitHub **Latest** download, the
+v0.24.0 testing candidate, and their immutable predecessors share this
+test-only trust boundary: Windows is unsigned and macOS is ad-hoc signed and
+unnotarized.
+
+The Conversation boundary accepts any meeting provider only through a
+hardened public HTTPS DNS-host link; it rejects embedded credentials, custom
+ports, local/special-use names, IP literals, percent-encoded hosts, and
+known-brand lookalikes. Acceptance authorizes only an external URL handoff,
+not provider identity or native-app verification; validation itself performs
+no DNS lookup or network fetch. Known allowlisted services
+may retain an origin-only redaction in bounded diagnostics; an unknown
+provider's URL and hostname are fully redacted. Native publisher proof,
+installation guidance, bring-forward, and mute guidance remain Webex-only.
 
 ## Disclosure
 

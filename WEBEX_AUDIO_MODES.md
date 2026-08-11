@@ -1,26 +1,33 @@
-# Webex companion guidance — v0.22.5
+# Conversation companion guidance — v0.24.0 source candidate
 
-> **Published candidate guide:** this document targets the immutable v0.22.5
-> GitHub **Latest** private test candidate. External Webex behavior remains a
-> separate physical gate.
+> GitHub **Latest** remains immutable v0.23.0 until protected v0.24 promotion.
+> Every external meeting-app behavior remains a separate physical gate.
 
-Webex is optional for talking or video. Jamulus carries the music.
+Any meeting service is optional for talking or video. Jamulus carries the
+music.
 
-The saved conversation link is no longer Webex-only: one hardened HTTPS
-policy also accepts Zoom, Microsoft Teams, Google Meet, and FaceTime meeting
-links. **Join / Open Meeting** hands whichever accepted link is saved to the
-operating system exactly once, and WebJam still never claims join, mute, or
-meeting state on any service. FaceTime links open only on a Mac and the app
-says so instead of failing silently. Native app detection, bring-forward,
-and publisher verification remain Webex-specific; other services open
-through the default browser or their own installed app's link handler.
+The saved conversation link is provider-neutral. WebJam accepts a meeting
+platform when it supplies a public HTTPS URL with a DNS hostname that passes
+the shared hardening policy: no embedded credentials, custom port,
+local/special-use name, IP literal, percent-encoded host, or known-brand lookalike.
+Known Webex, Zoom, Microsoft Teams, Google Meet, and FaceTime links receive
+friendly labels. Any other accepted provider uses neutral meeting-service
+wording; acceptance is not native provider verification. **Join / Open
+Meeting** hands whichever accepted link is saved to the operating system
+exactly once, and WebJam never claims join, mute, or meeting state on any
+service. FaceTime links open only on a Mac and the app says so instead of
+failing silently. Native app detection, Cisco installer guidance,
+bring-forward, and publisher verification remain explicitly Webex-only;
+other services open through the default browser or their installed link
+handler.
 
-Use the direct **Webex Controls** action or **More → Webex Controls** only if
-the band wants it. Both reveal the Conversation panel without opening or
-rejoining a meeting. In **Settings → Conversation**, each musician can enter
-their own **Meeting or Personal Room link**. WebJam displays the Webex site
-hostname and offers **Open in Webex** to test the draft link. It saves only the
-link and opens it externally only after an explicit user action.
+Use the direct **Conversation** action or **More → Conversation** only if the
+band wants meeting controls. Both reveal the Conversation panel
+without opening or rejoining a meeting. In **Settings → Conversation**, each
+musician can enter their own **Meeting link**. WebJam names a recognized
+service or uses neutral wording for another accepted provider, and offers
+**Open Meeting Link** to test the draft link. It saves only the link and opens
+it externally only after an explicit user action.
 
 In Conversation on macOS, **Show Webex App** re-verifies Cisco's exact bundle.
 When Webex is running, every click dynamically finds and verifies the exact
@@ -41,11 +48,11 @@ publisher identity, so **Show Webex App** and the focus-based mute guidance
 remain unavailable there. **Join / Open Meeting** remains the supported
 external handoff.
 
-Webex handles sign-in, participant identity, camera, microphone, speakers, and
-meeting controls. A WebJam musician name does not change the user's Webex
-identity. “Opened externally—finish joining in Webex” reports only a successful
-handoff to the operating system; WebJam never claims to have joined, muted, or
-verified the Webex participant list.
+The selected meeting service handles sign-in, participant identity, camera,
+microphone, speakers, and meeting controls. A WebJam musician name does not
+change the user's meeting identity. “Opened externally—finish joining in
+Zoom,” for example, reports only a successful handoff to the operating system;
+WebJam never claims to have joined, muted, or verified the participant list.
 
 WebJam detects a native Webex installation after startup. On macOS it verifies
 the Cisco bundle identifier, Developer ID Team `DE8Y96K9QP`, deep signature,
@@ -61,20 +68,23 @@ Diagnostics keep only a bounded allowlist of action and result categories such
 as Conversation shown, running-app activation requested/confirmed/refused or
 failed, and meeting handoff accepted/opened/failed. They never retain the
 meeting URL or ID, Webex account, application path, participant identity, or
-credential.
+credential. Known allowlisted services may be represented only by a redacted
+origin. For every unknown provider, the full URL and hostname are removed from
+logs, mappings, diagnostics, and Support Bundles.
 
 ## Safe rehearsal habit
 
 1. Get music working in Jamulus first.
-2. Add or open Webex only if the band uses it.
-3. Keep Webex muted while playing to avoid duplicate music and feedback.
-4. If Webex fails, keep the Jamulus rehearsal running; Webex is not a music
-   prerequisite.
+2. Add or open a meeting service only if the band uses it.
+3. Keep the meeting service muted while playing to avoid duplicate music and
+   feedback.
+4. If the meeting service fails, keep the Jamulus rehearsal running; it is not
+   a music prerequisite.
 
 Legacy audience-bridge preferences remain loadable for compatibility, but the
-musician flow does not route system audio automatically or configure Webex
-devices. WebJam Settings persists only the optional conversation link for
-Webex; live behavior and device choices stay with their native apps.
+musician flow does not route system audio automatically or configure meeting
+devices. WebJam Settings persists only the optional conversation link; live
+behavior and device choices stay with their native apps.
 
 WebJam does not bundle a Webex web widget, Chromium/WebEngine meeting runtime,
 Guest Issuer token exchange, OAuth token, username, or password. A future

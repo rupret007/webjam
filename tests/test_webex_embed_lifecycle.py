@@ -48,6 +48,7 @@ def test_leave_and_shutdown_are_safe_idempotent_no_ops():
 
 def test_external_success_copy_never_claims_join_or_connection():
     embed = WebexEmbed()
+    embed.set_service_label("Webex")
 
     embed.set_launch_status("Opened externally")
 
@@ -412,16 +413,140 @@ def test_show_webex_button_announces_what_it_displays() -> None:
 
 def test_card_title_follows_the_saved_links_service():
     embed = WebexEmbed()
-    assert embed._title_label.text() == "Webex conversation"
+    assert embed._title_label.text() == "Conversation"
     embed.set_service_label("Zoom")
     assert embed._title_label.text() == "Zoom conversation"
     embed.set_audio_mode("video_only")
     assert embed._title_label.text() == "Zoom video"
-    # Empty/hostile labels fall back to Webex and stay bounded.
+    # Empty labels restore neutral no-link copy; configured labels stay bounded.
     embed.set_service_label("")
-    assert embed._title_label.text() == "Webex video"
+    assert embed._title_label.text() == "Conversation video"
     embed.set_service_label("  Google   Meet  ")
     assert embed._title_label.text() == "Google Meet video"
+
+
+def test_unconfigured_card_uses_neutral_meeting_copy_and_accessibility():
+    embed = WebexEmbed()
+    try:
+        embed.set_meeting_configured(False)
+
+        assert embed._title_label.text() == "Conversation"
+        assert "Webex" not in embed._mode_label.text()
+        assert embed._status_label.text() == (
+            "No meeting link has been opened from WebJam yet."
+        )
+        assert embed._status_label.accessibleName() == "Meeting launch status"
+        assert embed.fallback_button().accessibleName() == (
+            "Join or open the meeting link"
+        )
+        assert embed.change_link_button().accessibleName() == (
+            "Add a meeting link from any platform"
+        )
+        assert "Webex" not in embed.change_link_button().toolTip()
+
+        embed.set_launch_status("Opened externally")
+        assert embed._status_label.text() == (
+            "Opened externally—finish joining in your meeting service."
+        )
+        assert embed.fallback_button().accessibleName() == (
+            "Open the meeting link again"
+        )
+    finally:
+        embed.deleteLater()
+
+
+def test_non_webex_card_names_provider_in_handoff_guidance_and_accessibility():
+    embed = WebexEmbed()
+    try:
+        embed.set_service_label("Zoom")
+        embed.set_meeting_configured(True)
+
+        assert embed._title_label.text() == "Zoom conversation"
+        assert "Keep Zoom muted" in embed._mode_label.text()
+        assert embed._status_label.text() == (
+            "Zoom has not been opened from WebJam yet."
+        )
+        assert embed._status_label.accessibleName() == "Zoom launch status"
+        assert embed.fallback_button().accessibleName() == (
+            "Join or open the Zoom meeting"
+        )
+        assert "in Zoom or your browser" in embed.fallback_button().toolTip()
+        assert embed.change_link_button().accessibleName() == (
+            "Change Zoom meeting link"
+        )
+        assert "saved Zoom meeting link" in (
+            embed.change_link_button().accessibleDescription()
+        )
+        assert "Zoom meeting link" in embed.change_link_button().toolTip()
+
+        embed.set_audio_mode("video_only")
+        assert "Join Zoom without computer audio" in embed._mode_label.text()
+        embed.set_audio_mode("audience_bridge")
+        assert "disconnect Zoom audio" in embed._mode_label.text()
+
+        embed.set_launch_status("Opening…")
+        assert embed._status_label.text() == "Opening Zoom externally…"
+        assert embed.fallback_button().accessibleName() == (
+            "Opening Zoom meeting"
+        )
+        assert embed.fallback_button().accessibleDescription() == (
+            "Opening Zoom externally…"
+        )
+
+        embed.set_launch_status("Opened externally")
+        assert embed._status_label.text() == (
+            "Opened externally—finish joining in Zoom."
+        )
+        assert embed.fallback_button().accessibleName() == (
+            "Open Zoom meeting again"
+        )
+        assert "Webex" not in embed._status_label.text()
+        assert "Webex" not in embed._mode_label.text()
+        assert "Webex" not in embed.change_link_button().accessibleName()
+    finally:
+        embed.deleteLater()
+
+
+def test_generic_configured_card_has_active_neutral_guidance():
+    embed = WebexEmbed()
+    try:
+        # The controller deliberately supplies no branded label for a generic
+        # provider while still marking the validated link as configured.
+        embed.set_service_label("")
+        embed.set_meeting_configured(True)
+
+        assert embed._title_label.text() == "Conversation"
+        assert embed._mode_label.text().startswith(
+            "Keep your meeting service muted while you play."
+        )
+        assert "After adding" not in embed._mode_label.text()
+        assert embed.fallback_button().isEnabled()
+        assert embed.change_link_button().text() == "Change Link"
+        assert embed._copy_link_btn.isEnabled()
+        assert embed.fallback_button().accessibleName() == (
+            "Join or open the meeting link"
+        )
+        assert "Webex" not in embed._title_label.text()
+        assert "Webex" not in embed._mode_label.text()
+    finally:
+        embed.deleteLater()
+
+
+def test_non_webex_card_keeps_native_controls_explicitly_webex_only():
+    embed = WebexEmbed()
+    try:
+        embed.set_service_label("Microsoft Teams")
+        embed.set_app_status(
+            WebexAppState.INSTALLED,
+            publisher_verified=True,
+        )
+
+        assert embed.bring_forward_button().text() == "Show Webex App"
+        assert embed.bring_forward_button().accessibleName() == "Show Webex App"
+        assert embed.mute_button().text() == "Open Webex to Mute"
+        assert "Webex" in embed._app_status_label.text()
+    finally:
+        embed.deleteLater()
 
 
 def test_copy_link_requires_a_configured_meeting():

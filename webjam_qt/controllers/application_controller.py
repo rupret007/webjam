@@ -105,6 +105,26 @@ from webjam_qt.session_state import SessionPhase, SessionUiState
 LOGGER = logging.getLogger("webjam.qt.application_controller")
 
 
+def _meeting_service_name(url: object, *, fallback: str = "") -> str:
+    """Return the supported provider label without inventing one for no link."""
+
+    from core.meeting_link import (
+        GENERIC_MEETING_SERVICE_KEY,
+        identify_meeting_service,
+        meeting_service_label,
+    )
+
+    service = identify_meeting_service(str(url or ""))
+    if service == GENERIC_MEETING_SERVICE_KEY:
+        return fallback
+    return meeting_service_label(service) if service else fallback
+
+
+def _meeting_open_action_label(url: object) -> str:
+    service = _meeting_service_name(url)
+    return f"Open {service}" if service else "Join / Open Meeting"
+
+
 class ApplicationController(QObject):
     """Glue layer between ConductorWindow and the service layer."""
 
@@ -1051,6 +1071,11 @@ class ApplicationController(QObject):
         self._guest_invite = invite
         self._guest_peer_configuration_failed = False
         try:
+            from core.session_recording_plan import resolve_capture_tracks
+
+            def guest_capture_tracks() -> tuple[tuple[str, int], ...]:
+                return resolve_capture_tracks(self.settings)
+
             self.guest_peer = GuestPeerSession(
                 invite,
                 display_name=self.settings.musician_name,
@@ -1061,12 +1086,13 @@ class ApplicationController(QObject):
                 installation_path=default_installation_identity_path(
                     self.settings.config_file
                 ),
-                capture_enabled=lambda: bool(self.settings.local_capture_enabled),
+                capture_enabled=lambda: bool(guest_capture_tracks()),
                 capture_config=lambda: (
                     int(self.settings.audio_input_device_index),
                     int(self.settings.audio_samplerate),
                     int(self.settings.audio_blocksize),
                 ),
+                capture_tracks=guest_capture_tracks,
                 on_originals_changed=self._on_guest_originals_changed,
                 on_guidance_changed=self._on_guest_media_guidance_changed,
             )
@@ -3268,14 +3294,8 @@ class ApplicationController(QObject):
         self.window.webex_embed.set_meeting_configured(
             bool(str(self.settings.webex_url or "").strip())
         )
-        from core.meeting_link import (
-            identify_meeting_service,
-            meeting_service_label,
-        )
-
-        service = identify_meeting_service(self.settings.webex_url)
         self.window.webex_embed.set_service_label(
-            meeting_service_label(service) if service else "Webex"
+            _meeting_service_name(self.settings.webex_url)
         )
         self.window.session_strip.set_tools_enabled(True)
         self.window.webex_embed.set_audio_mode(self._webex_audio_mode())
@@ -4388,9 +4408,27 @@ class ApplicationController(QObject):
             return
         if value != previous_url:
             self.bridge.invalidate_webex_launch()
+            from webex_integration import WebexLaunchState
+
+            self.webex.launch_state = WebexLaunchState.NOT_OPENED
+            self.webex.browser_opened = False
+            self.webex.last_error = ""
+            self.bridge.webex_state = WebexLaunchState.NOT_OPENED.value
         self.webex.meeting_url = value
         self.bridge.webex_controller = self.webex
+        service_name = _meeting_service_name(value)
+        self.window.webex_embed.set_service_label(service_name)
+        self.window.webex_embed.set_meeting_configured(True)
+        if value != previous_url:
+            self.window.set_status_video(WebexLaunchState.NOT_OPENED.value)
+            self.window.webex_embed.set_launch_status(
+                WebexLaunchState.NOT_OPENED.value
+            )
         self.window.session_strip.set_video_configured(True)
+        self.window.session_strip.set_video_state(
+            _meeting_open_action_label(value),
+            enabled=True,
+        )
         attempt["webex_decision"] = "open_requested"
         attempt.pop("input_error", None)
         self._show_startup_invite_ready(int(attempt["generation"]))
@@ -4729,8 +4767,9 @@ class ApplicationController(QObject):
         elif phase == "conversation":
             self.window.session_hud.set_state(
                 "Add conversation if you use it",
-                "Jamulus carries the music. Webex is optional for talking or video.",
-                action_text="Add Webex",
+                "Jamulus carries the music. A supported meeting service is "
+                "optional for talking or video.",
+                action_text="Add Conversation",
                 action_visible=True,
                 action_kind="add_webex",
                 secondary_action_text="Not Now",
@@ -4741,22 +4780,22 @@ class ApplicationController(QObject):
             error = str(attempt.get("input_error", "") or "")
             detail = (
                 error
-                or "Paste your Meeting or Personal Room link. WebJam opens it "
-                "externally only when you ask; Webex handles sign-in."
+                or "Paste a public HTTPS meeting link. WebJam opens it externally "
+                "only when you ask; the meeting service handles sign-in."
             )
             self.window.session_hud.set_state(
-                "Add Webex",
+                "Add Meeting Link",
                 detail,
-                action_text="Save Webex",
+                action_text="Save Meeting Link",
                 action_visible=True,
                 action_kind="save_webex",
                 secondary_action_text="Not Now",
                 secondary_action_visible=True,
                 secondary_action_kind="skip_webex",
                 input_visible=True,
-                input_placeholder="https://your-site.webex.com/meet/your-room",
+                input_placeholder="Paste a public https:// meeting link",
                 input_value=self.window.session_hud.input_text(),
-                input_accessible_name=("Optional Webex meeting or Personal Room link"),
+                input_accessible_name="Optional meeting link",
             )
         elif phase == "invite_ready":
             if role == "host":
@@ -4904,14 +4943,14 @@ class ApplicationController(QObject):
                 "Add conversation if you use it",
                 "Jamulus carries the music. Conversation or video is optional.",
                 SessionPrimaryAction.ADD_CONVERSATION,
-                "Add Webex",
+                "Add Conversation",
             ),
             "conversation_link": GuidanceDisplayOverride(
-                "Add Webex",
-                "Paste a valid Meeting or Personal Room link, or continue "
-                "without conversation video.",
+                "Add Meeting Link",
+                "Paste a valid public HTTPS meeting link from any platform, "
+                "or continue without conversation video.",
                 SessionPrimaryAction.SAVE_CONVERSATION,
-                "Save Webex",
+                "Save Meeting Link",
             ),
             "cancelling": GuidanceDisplayOverride(
                 "Closing this setup",
@@ -9037,7 +9076,7 @@ class ApplicationController(QObject):
         return self.bridge.jamulus_state in ("Running", "Already running")
 
     def _show_webex_conversation(self) -> None:
-        """Reveal Conversation controls without launching or rejoining Webex."""
+        """Reveal Conversation controls without opening a meeting link."""
 
         if self._shutdown_cleanup_blocks_action():
             return
@@ -9112,13 +9151,14 @@ class ApplicationController(QObject):
             )
             return
 
+        service_name = _meeting_service_name(url, fallback="meeting service")
         self.webex.meeting_url = url
         accepted = self.bridge.launch_webex(manual=True)
         if not accepted:
             self._record_webex_event("meeting-handoff", "busy")
             self.window.set_status_video(self.bridge.webex_state)
             self.window.session_strip.set_video_state(
-                "Open Webex",
+                _meeting_open_action_label(url),
                 enabled=True,
             )
             self.window.webex_embed.set_launch_status(
@@ -9131,7 +9171,7 @@ class ApplicationController(QObject):
                 else "Not opened"
             )
             self.window.flash_message(
-                "A previous Webex open request is still finishing. Wait a "
+                f"A previous {service_name} open request is still finishing. Wait a "
                 "moment, then choose Join / Open Meeting again for the new "
                 "link.",
                 ms=7000,
@@ -9145,15 +9185,18 @@ class ApplicationController(QObject):
     def _is_video_active(self) -> bool:
         """Return whether an external launch is in progress or succeeded.
 
-        This deliberately does not mean "in a meeting"; native Webex does not
-        expose that truth to this local application.
+        This deliberately does not mean "in a meeting"; the external service
+        does not expose that truth to this local application.
         """
         return self.bridge.webex_state in ("Opening…", "Opened externally")
 
     def _leave_video(self) -> None:
-        """Compatibility entry point; WebJam cannot close external Webex."""
+        """Compatibility entry point; WebJam cannot close an external meeting."""
+
+        service = _meeting_service_name(self.settings.webex_url)
+        destination = f"in {service}" if service else "in your meeting service"
         self.window.flash_message(
-            "Close or leave the meeting in Webex. WebJam does not control it.",
+            f"Close or leave the meeting {destination}. WebJam does not control it.",
             ms=5000,
         )
 
@@ -9300,7 +9343,10 @@ class ApplicationController(QObject):
         elif self.bridge.webex_state == "Opened externally":
             webex_label, enabled = "Open Again", True
         else:
-            webex_label, enabled = "Open Webex", True
+            webex_label, enabled = (
+                _meeting_open_action_label(self.settings.webex_url),
+                True,
+            )
         self.window.session_strip.set_video_state(webex_label, enabled=enabled)
         self.window.session_strip.set_video_configured(
             bool(str(self.settings.webex_url or "").strip())
@@ -10129,7 +10175,10 @@ class ApplicationController(QObject):
             self.webex.last_error = ""
             self.bridge.webex_state = WebexLaunchState.NOT_OPENED.value
             self.window.set_status_video(WebexLaunchState.NOT_OPENED.value)
-            self.window.session_strip.set_video_state("Open Webex", enabled=True)
+            self.window.session_strip.set_video_state(
+                _meeting_open_action_label(self.settings.webex_url),
+                enabled=True,
+            )
             self.window.webex_embed.set_launch_status(WebexLaunchState.NOT_OPENED.value)
         self._talk_break_intended = False
         self._self_transmit_muted = False
@@ -10139,14 +10188,8 @@ class ApplicationController(QObject):
         self.window.webex_embed.set_meeting_configured(
             bool(str(self.settings.webex_url or "").strip())
         )
-        from core.meeting_link import (
-            identify_meeting_service,
-            meeting_service_label,
-        )
-
-        service = identify_meeting_service(self.settings.webex_url)
         self.window.webex_embed.set_service_label(
-            meeting_service_label(service) if service else "Webex"
+            _meeting_service_name(self.settings.webex_url)
         )
         self.window.webex_embed.set_audio_mode(self._webex_audio_mode())
         self._start_routing_scan()
@@ -10302,14 +10345,14 @@ class ApplicationController(QObject):
             if self.settings.webex_url != old_webex_url and webex_was_active:
                 warnings.append(
                     (
-                        "Any Webex meeting already open stays open there. Open "
+                        "Any meeting already open stays open in that service. Open "
                         "Conversation, then choose Join / Open Meeting for the "
                         "new link."
                     )
                     if self.settings.webex_url
                     else (
-                        "Any Webex meeting already open stays open until you "
-                        "leave it in Webex."
+                        "Any meeting already open stays open until you leave it "
+                        "in that service."
                     )
                 )
             if (

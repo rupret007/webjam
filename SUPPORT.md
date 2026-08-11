@@ -2,7 +2,11 @@
 
 Start with the [musician guide](USER_GUIDE.md), [quick help map](QUICK_HELP_MAP.md),
 and [test procedure](TEST_PROCEDURE.md). WebJam deliberately leaves live audio
-configuration to Jamulus and meeting state to Webex.
+configuration to Jamulus and meeting state to the selected meeting service.
+Conversation can hand off any public HTTPS DNS-host meeting link that passes
+WebJam's safety checks; known services receive friendly labels and another
+accepted provider remains neutral. This does not verify that provider or the
+meeting state.
 
 ## Before opening an issue
 
@@ -17,6 +21,8 @@ Record:
 
 Never paste passwords, meeting links, invitations, tokens, private keys, raw
 support bundles, private paths, device identifiers, or unredacted logs.
+For an unknown meeting provider, WebJam removes both the full URL and hostname
+from its support projection; do not add either back to an issue manually.
 
 ## Where an issue belongs
 
@@ -24,8 +30,9 @@ support bundles, private paths, device identifiers, or unredacted logs.
   privacy, packaging, or updater: open a WebJam issue with the template.
 - Jamulus devices, buffers, channels, server connectivity, or the Jamulus
   client itself: consult [Jamulus help](https://jamulus.io/wiki/Getting-Started).
-- Webex login, meeting admission, camera, microphone, participants, mute, or
-  meeting state: consult [Webex help](https://help.webex.com/).
+- Meeting login, admission, camera, microphone, participants, mute, or state:
+  consult the selected service's support. For Webex, use
+  [Webex help](https://help.webex.com/).
 
 If a physical gate is not yet tested, report it as **NOT RUN** rather than
 assuming that a source test or moving meter proves audibility.

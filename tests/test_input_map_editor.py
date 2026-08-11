@@ -103,3 +103,60 @@ def test_row_cap_is_enforced():
     editor._add_row({"name": "overflow", "channels": 1})
     assert len(editor._rows) == 32
     assert not editor._add_btn.isEnabled()
+
+
+def test_full_input_map_scrolls_without_pushing_actions_offscreen():
+    editor = _editor([
+        {
+            "name": f"Input {index + 1}",
+            "channels": 1,
+            "enabled": True,
+            "local_original_enabled": True,
+        }
+        for index in range(32)
+    ])
+    editor.resize(760, 560)
+    editor.show()
+    _app.processEvents()
+
+    assert editor.height() <= 560
+    assert editor._rows_scroll.verticalScrollBar().maximum() > 0
+    assert editor._rows_scroll.accessibleName() == "Configured input tracks"
+
+    editor.resize(1100, 800)
+    _app.processEvents()
+    assert editor._rows_scroll.height() > 360
+
+
+def test_enabled_local_original_channel_cap_is_enforced_without_truncation():
+    editor = _editor([
+        {
+            "name": f"Stereo {index}",
+            "channels": 2,
+            "enabled": True,
+            "local_original_enabled": True,
+        }
+        for index in range(17)
+    ])
+
+    ok, error, collected = editor.collect()
+
+    assert not ok
+    assert "more than 32 input channels" in error
+    assert collected == []
+
+
+def test_opted_out_rows_are_valid_and_do_not_imply_default_capture():
+    editor = _editor([
+        {
+            "name": "Guide",
+            "channels": 2,
+            "enabled": True,
+            "local_original_enabled": False,
+        }
+    ])
+
+    ok, error, collected = editor.collect()
+
+    assert ok and error == ""
+    assert collected[0]["local_original_enabled"] is False

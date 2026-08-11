@@ -82,22 +82,30 @@ def redact_webex_url(value: str) -> str:
 
 
 def redact_meeting_url(value: str) -> str:
-    """Keep only a supported meeting-service origin; rooms are sensitive.
+    """Keep only a known provider's origin; rooms and generic hosts are private.
 
-    Extends the Webex-only rule to every service the meeting-link policy
-    accepts (Zoom, Microsoft Teams, Google Meet, FaceTime).  Anything else
-    fails closed to the plain redaction marker.
+    Known Webex, Zoom, Teams, Google Meet, and FaceTime origins are public
+    product infrastructure and remain useful diagnostics.  An accepted generic
+    link can contain a private company or community domain, so its host and
+    complete destination fail closed to the plain redaction marker.
     """
 
-    from core.meeting_link import is_supported_meeting_host
+    from core.meeting_link import (
+        GENERIC_MEETING_SERVICE_KEY,
+        identify_meeting_service,
+        meeting_link_hostname,
+    )
 
     raw = str(value or "")
+    service = identify_meeting_service(raw)
+    if service in {None, GENERIC_MEETING_SERVICE_KEY}:
+        return REDACTED
+    host = meeting_link_hostname(raw)
+    if not host:
+        return REDACTED
     try:
         parsed = urlsplit(raw)
-        host = (parsed.hostname or "").lower().rstrip(".")
     except ValueError:
-        return REDACTED
-    if parsed.scheme.lower() != "https" or not is_supported_meeting_host(host):
         return REDACTED
     # Never reuse ``netloc``: it can contain userinfo and a port.
     origin = f"https://{host}"
@@ -212,19 +220,12 @@ _QUERY_RE = re.compile(
     r"auth|authorization|code|invite|key|session|signature|sig|jwt|rpc[_-]?key)"
     r"=)[^&#\s]+"
 )
-_WEBEX_URL_RE = re.compile(
-    r"(?i)https?://[^\s/'\"<>)]*webex\.com(?::\d+)?(?:[/?#][^\s'\"<>)]*)?"
-)
 _WEBJAM_URL_RE = re.compile(r"(?i)\bwebjam:(?://)?[^\s'\"<>)]*")
-# Non-Webex supported meeting hosts.  The lookahead pins the host boundary so
-# a lookalike such as zoom.us.evil.example never yields a trusted origin.
-_MEETING_URL_RE = re.compile(
-    r"(?i)https?://[^\s/'\"<>)]*"
-    r"(?:zoom\.us|teams\.microsoft\.com|teams\.live\.com|"
-    r"meet\.google\.com|facetime\.apple\.com)"
-    r"(?=[/:?#\s'\"<>)]|$)"
-    r"(?::\d+)?(?:[/?#][^\s'\"<>)]*)?"
-)
+# Every HTTP(S) URL in diagnostics crosses the meeting-link privacy boundary.
+# The callback retains origin-only for a fully validated *known* provider and
+# fully redacts everything else.  That prevents a generic company/community
+# meeting host from leaking merely because no static regex knew its brand.
+_HTTP_URL_RE = re.compile(r"(?i)\bhttps?://[^\s'\"<>)]*")
 _URL_USERINFO_RE = re.compile(
     r"(?i)\b(https?://)[^/@\s]+:[^/@\s]+@"
 )
@@ -312,8 +313,7 @@ def redact_text(text: str) -> str:
     out = _ASSIGNMENT_RE.sub(r"\1\2" + REDACTED, out)
     out = _AUTH_SCHEME_RE.sub(lambda match: f"{match.group(1)} {REDACTED}", out)
     out = _QUERY_RE.sub(r"\1" + REDACTED, out)
-    out = _WEBEX_URL_RE.sub(lambda match: redact_webex_url(match.group(0)), out)
-    out = _MEETING_URL_RE.sub(
+    out = _HTTP_URL_RE.sub(
         lambda match: redact_meeting_url(match.group(0)), out
     )
     out = _WEBJAM_URL_RE.sub("webjam://" + REDACTED, out)

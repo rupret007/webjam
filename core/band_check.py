@@ -802,7 +802,7 @@ class BandCheckSession:
                     return item
         # Optional companions can provide useful warnings, but they must not
         # replace the one action needed to finish or start a music session.
-        # In particular, Webex is never the music path and sending its warning
+        # In particular, Conversation is never the music path and sending its warning
         # to the primary button used to strand an otherwise-ready Band Check in
         # an unrelated settings route.
         for item in self.steps:
@@ -846,7 +846,7 @@ def build_band_check_session(
     recorder = _preflight_item(report, "Host recorder")
     local_capture = _preflight_item(report, "Local stem recording")
     recording_storage = _preflight_item(report, "Recording storage")
-    webex = _preflight_item(report, "Webex companion")
+    webex = _preflight_item(report, "Conversation companion")
     is_host = bool(getattr(settings, "host_server_enabled", False))
     probed_engine_version = (
         music_engine_version(settings)
@@ -1140,12 +1140,12 @@ def build_band_check_session(
         steps.append(
             BandCheckStep(
                 BandCheckStepKey.WEBEX,
-                "Webex companion",
+                "Conversation companion",
                 BandCheckStatus.WARNING,
                 (
-                    "Optional: Webex is for video and conversation. Keep its music monitoring off while playing."
+                    "Optional: your meeting service is for video and conversation. Keep its music monitoring off while playing."
                     if bool(webex and webex.ok)
-                    else "The optional Webex link needs attention. Jamulus still carries the music."
+                    else "The optional meeting link needs attention. Jamulus still carries the music."
                 ),
                 "",
                 (getattr(webex, "detail", ""),) if webex else (),

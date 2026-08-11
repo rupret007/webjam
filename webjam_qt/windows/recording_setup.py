@@ -13,9 +13,12 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -32,7 +35,7 @@ class LocalOriginalsChoiceDialog(QDialog):
     """Ask the one first-recording question without touching live audio.
 
     The shared Jamulus take is always available on the host.  Keeping this
-    Mac's first two interface inputs is a separate, explicit recording choice
+    Mac's configured interface inputs is a separate, explicit recording choice
     and therefore belongs here—not in Host, Join, or Jamulus setup.
     """
 
@@ -55,8 +58,8 @@ class LocalOriginalsChoiceDialog(QDialog):
 
         detail = QLabel(
             "WebJam will record the shared Jamulus take either way. You can "
-            "also keep this Mac’s first two interface inputs as separate "
-            "Local Originals for Studio later. This does not change Jamulus "
+            "also keep configured inputs from this Mac as separate Local "
+            "Originals for Studio later. This does not change Jamulus "
             "audio settings."
         )
         detail.setObjectName("SimpleSettingsSubtitle")
@@ -117,12 +120,28 @@ class RecordingSetupDialog(QDialog):
         root.setContentsMargins(Space.XL, Space.XL, Space.XL, Space.LG)
         root.setSpacing(Space.MD)
 
+        scroll = QScrollArea()
+        scroll.setObjectName("RecordingSetupScrollArea")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        scroll.setAccessibleName("Recording setup options")
+        body = QWidget()
+        content = QVBoxLayout(body)
+        content.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        content.setContentsMargins(0, 0, Space.SM, 0)
+        content.setSpacing(Space.MD)
+        scroll.setWidget(body)
+        root.addWidget(scroll, 1)
+
         title = QLabel("Recording setup")
         title.setObjectName("SimpleSettingsTitle")
         subtitle = QLabel(
             (
                 "The host records the synchronized Jamulus take. Choose whether "
-                "this Mac also keeps its first two interface inputs as Local "
+                "this Mac also keeps its configured interface inputs as Local "
                 "Originals. Studio chooses its own playback output when you review a take."
             )
             if self._local_originals_available
@@ -133,19 +152,19 @@ class RecordingSetupDialog(QDialog):
         )
         subtitle.setObjectName("SimpleSettingsSubtitle")
         subtitle.setWordWrap(True)
-        root.addWidget(title)
-        root.addWidget(subtitle)
+        content.addWidget(title)
+        content.addWidget(subtitle)
 
         self._capture = QCheckBox(
-            "Keep interface inputs 1 and 2 as isolated local originals"
+            "Keep configured interface inputs as isolated Local Originals"
         )
-        self._capture.setAccessibleName("Record two isolated local input stems")
+        self._capture.setAccessibleName("Record configured isolated local inputs")
         self._capture.setChecked(
             self._local_originals_available
             and bool(settings.local_capture_enabled)
         )
         self._capture.setEnabled(self._local_originals_available)
-        root.addWidget(self._capture)
+        content.addWidget(self._capture)
 
         self._capture_unavailable = QLabel(
             "Local originals are unavailable for this session. You can "
@@ -156,36 +175,45 @@ class RecordingSetupDialog(QDialog):
         self._capture_unavailable.setVisible(
             not self._local_originals_available
         )
-        root.addWidget(self._capture_unavailable)
+        content.addWidget(self._capture_unavailable)
 
         self._capture_help = QLabel(
-            "Use this when one interface carries two distinct sources, such as "
-            "guitar on input 1 and vocal on input 2. The device must support two "
-            "input channels at 48 kHz and be shareable with Jamulus. WebJam records "
-            "only after the host confirms a take, keeps the originals on this Mac, "
-            "and transfers verified copies to the host when available."
+            "Name mono or stereo tracks with Edit Input Tracks. Enabled Local "
+            "Originals use device inputs sequentially, up to 32 channels total. "
+            "An empty track list keeps the compatible input 1–2 default. The "
+            "device must run at 48 kHz and be shareable with Jamulus. WebJam "
+            "records only after the host confirms a take."
         )
         self._capture_help.setObjectName("SimpleSettingsSubtitle")
         self._capture_help.setWordWrap(True)
-        root.addWidget(self._capture_help)
+        content.addWidget(self._capture_help)
 
-        self._input_label = QLabel("Two-channel recording input")
+        self._input_label = QLabel("Local Original recording input")
         self._input_label.setObjectName("SimpleSettingsFieldLabel")
         self._input = QComboBox()
-        self._input.setAccessibleName("Two-channel isolated recording input")
+        self._input.setAccessibleName("Local Original recording input device")
+        self._input_device_channels: dict[int, int] = {}
         for device in list_input_devices():
-            if int(device.get("channels", 0) or 0) < 2:
+            channels = int(device.get("channels", 0) or 0)
+            if channels < 1:
                 continue
             name = str(device.get("name") or "").strip()
             index = int(device.get("index", -1))
             if name and index >= 0:
-                self._input.addItem(f"{name} · {device['channels']} inputs", index)
+                self._input_device_channels[index] = channels
+                self._input.addItem(f"{name} · {channels} inputs", index)
         saved_input = int(settings.audio_input_device_index)
         input_index = self._input.findData(saved_input)
         if input_index >= 0:
             self._input.setCurrentIndex(input_index)
-        root.addWidget(self._input_label)
-        root.addWidget(self._input)
+        else:
+            for combo_index in range(self._input.count()):
+                device_index = int(self._input.itemData(combo_index))
+                if self._input_device_channels.get(device_index, 0) >= 2:
+                    self._input.setCurrentIndex(combo_index)
+                    break
+        content.addWidget(self._input_label)
+        content.addWidget(self._input)
 
         # Working copy of the configured input maps; edited through the
         # dedicated editor and persisted on Save alongside the capture flag.
@@ -203,8 +231,8 @@ class RecordingSetupDialog(QDialog):
         self._tracks_summary = QLabel("")
         self._tracks_summary.setObjectName("SimpleSettingsSubtitle")
         self._tracks_summary.setWordWrap(True)
-        root.addWidget(self._edit_tracks_btn)
-        root.addWidget(self._tracks_summary)
+        content.addWidget(self._edit_tracks_btn)
+        content.addWidget(self._tracks_summary)
         self._refresh_tracks_summary()
 
         folder_row = QHBoxLayout()
@@ -231,15 +259,15 @@ class RecordingSetupDialog(QDialog):
         show_folder.setEnabled(bool(settings.takes_directory))
         show_folder.clicked.connect(self._show_folder)
         folder_row.addWidget(show_folder)
-        root.addLayout(folder_row)
+        content.addLayout(folder_row)
 
         self._error = QLabel("")
         self._error.setObjectName("SimpleSettingsError")
         self._error.setWordWrap(True)
         self._error.setTextFormat(Qt.TextFormat.PlainText)
         self._error.setVisible(False)
-        root.addWidget(self._error)
-        root.addStretch(1)
+        content.addWidget(self._error)
+        content.addStretch(1)
 
         footer = QHBoxLayout()
         footer.addStretch(1)
@@ -299,10 +327,19 @@ class RecordingSetupDialog(QDialog):
                 "Using the default two isolated stems (host-guitar, host-vocal)."
             )
         else:
+            active_channels = sum(
+                int(entry.get("channels", 0) or 0)
+                for entry in self._input_maps
+                if bool(entry.get("enabled", True))
+                and bool(entry.get("local_original_enabled", False))
+            )
             names = ", ".join(
                 str(entry.get("name", "") or "?") for entry in self._input_maps
             )
-            self._tracks_summary.setText(f"{count} configured: {names}")
+            self._tracks_summary.setText(
+                f"{count} configured · {active_channels}/32 active input "
+                f"channels: {names}"
+            )
 
     def _edit_input_tracks(self) -> None:
         from webjam_qt.windows.input_map_editor import InputMapEditorDialog
@@ -317,7 +354,33 @@ class RecordingSetupDialog(QDialog):
         input_index = self._input.currentData()
         if capture and input_index is None:
             self._show_error(
-                "Connect a two-channel input interface, then reopen Recording Setup."
+                "Connect an input interface, then reopen Recording Setup."
+            )
+            return
+        active_channels = (
+            2
+            if not self._input_maps
+            else sum(
+                int(entry.get("channels", 0) or 0)
+                for entry in self._input_maps
+                if bool(entry.get("enabled", True))
+                and bool(entry.get("local_original_enabled", False))
+            )
+        )
+        if capture and active_channels == 0:
+            self._show_error(
+                "Turn on at least one Local Original track, or turn off local "
+                "input capture."
+            )
+            return
+        available_channels = self._input_device_channels.get(
+            int(input_index) if input_index is not None else -1,
+            0,
+        )
+        if capture and available_channels < active_channels:
+            self._show_error(
+                f"This map needs {active_channels} input channels, but the "
+                f"selected interface provides {available_channels}."
             )
             return
         if self._local_originals_available:

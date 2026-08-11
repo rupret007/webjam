@@ -215,6 +215,7 @@ class _FakeCapture:
         blocksize,
         take_id,
         session_id,
+        tracks=None,
     ) -> None:
         self.root = Path(root)
         self.device = device
@@ -222,6 +223,7 @@ class _FakeCapture:
         self.blocksize = blocksize
         self.take_id = take_id
         self.session_id = session_id
+        self.tracks = tuple(tracks) if tracks is not None else None
         self.started = False
         self.stop_calls = 0
         self.__class__.instances.append(self)
@@ -231,12 +233,16 @@ class _FakeCapture:
 
     def stop_into(self, destination: Path):
         self.stop_calls += 1
-        first = Path(destination) / "input-1.wav"
-        second = Path(destination) / "input-2.wav"
-        _wav(first)
-        _wav(second)
+        names = (
+            tuple(stem for stem, _channel in self.tracks)
+            if self.tracks is not None
+            else ("input-1", "input-2")
+        )
+        files = tuple(Path(destination) / f"{name}.wav" for name in names)
+        for output in files:
+            _wav(output)
         return SimpleNamespace(
-            files=(first, second),
+            files=files,
             started_utc="2026-07-13T12:00:00Z",
             errors=(),
             gaps=(),
@@ -536,6 +542,90 @@ def test_guest_capture_starts_only_after_confirmed_state_survives_peer_outage_an
     # guidance refreshes once more when both Local Originals are verified.
     assert guidance_updates == ["changed", "changed", "changed"]
     guest.stop()
+
+
+def test_guest_capture_uses_the_exact_configured_local_original_map(
+    tmp_path: Path,
+    peer,
+) -> None:
+    credentials, _registry, control, _transfers, server = peer
+    _FakeCapture.instances.clear()
+    invite = BandInvite(
+        "127.0.0.1",
+        22124,
+        "Test",
+        credentials.session_id,
+        server.address[1],
+        credentials.invite_token,
+    )
+    mapped_tracks = (
+        ("local-Voice", 0),
+        ("local-Guitar L", 1),
+        ("local-Guitar R", 2),
+    )
+    guest = GuestPeerSession(
+        invite,
+        display_name="Alex",
+        takes_root=tmp_path / "guest",
+        installation_path=tmp_path / "installation.json",
+        capture_enabled=lambda: True,
+        capture_config=lambda: (7, 48_000, 128),
+        capture_tracks=lambda: mapped_tracks,
+        capture_factory=_FakeCapture,
+    )
+    try:
+        guest.poll_once()
+        take_id = _id()
+        control.begin(take_id, started_utc="2026-08-11T12:00:00Z")
+        guest.poll_once()
+
+        assert len(_FakeCapture.instances) == 1
+        assert _FakeCapture.instances[0].tracks == mapped_tracks
+
+        control.finish(take_id, stopped_utc="2026-08-11T12:01:00Z")
+        guest.poll_once()
+        assert len(guest.pending_segments) == 3
+        assert {
+            item.descriptor.inventory_input_count
+            for item in guest.pending_segments
+        } == {3}
+    finally:
+        guest.stop()
+
+
+def test_guest_empty_configured_map_never_falls_back_to_two_inputs(
+    tmp_path: Path,
+    peer,
+) -> None:
+    credentials, _registry, control, _transfers, server = peer
+    _FakeCapture.instances.clear()
+    invite = BandInvite(
+        "127.0.0.1",
+        22124,
+        "Test",
+        credentials.session_id,
+        server.address[1],
+        credentials.invite_token,
+    )
+    guest = GuestPeerSession(
+        invite,
+        display_name="Alex",
+        takes_root=tmp_path / "guest",
+        installation_path=tmp_path / "installation.json",
+        capture_enabled=lambda: True,
+        capture_config=lambda: (7, 48_000, 128),
+        capture_tracks=lambda: (),
+        capture_factory=_FakeCapture,
+    )
+    try:
+        guest.poll_once()
+        control.begin(_id(), started_utc="2026-08-11T12:00:00Z")
+        guest.poll_once()
+
+        assert _FakeCapture.instances == []
+        assert guest.active_take_id == ""
+    finally:
+        guest.stop()
 
 
 def test_guest_finalizing_state_notifies_after_capture_clears_active_take(

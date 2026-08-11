@@ -1,8 +1,9 @@
-# WebJam v0.23.0 UX acceptance checklist
+# WebJam v0.24.0 UX acceptance checklist
 
-> v0.23.0 is unpublished source; immutable v0.22.5 remains GitHub **Latest**.
+> Immutable v0.23.0 remains GitHub **Latest** until v0.24.0's protected
+> promotion passes.
 > Every physical and platform-trust gate stays **NOT RUN** until recorded
-> against an exact v0.23.0 asset.
+> against an exact v0.24.0 asset.
 
 ## Unified guidance
 
@@ -57,11 +58,11 @@
 
 ## Optional features
 
-- [ ] Direct **Webex Controls** and **Studio** actions remain visible on the main
+- [ ] Direct **Conversation** and **Studio** actions remain visible on the main
       session rail; hosts also see the compact **Shared Track** deck and
       **Record Session**, with no clipping or lost Copy Invite or End/Leave
       action at the supported compact sizes.
-- [ ] Direct **Webex Controls** and **More → Webex Controls** reveal and focus
+- [ ] Direct **Conversation** and **More → Conversation** reveal and focus
       the same panel without opening a URL; repeated navigation remains
       side-effect free.
 - [ ] On macOS, **Show Webex App** re-verifies the Cisco bundle and, when
@@ -79,10 +80,16 @@
 - [ ] **Open Webex to Mute** shows the verified app for its own Mute control and
       truthfully says that WebJam neither changes nor verifies external mute or
       Jamulus.
-- [ ] Webex link is optional, external, persisted without credentials, and
-      never auto-opened.
-- [ ] UI says Jamulus carries music and reminds musicians to mute Webex while
-      playing.
+- [ ] Any public HTTPS DNS-host meeting link that passes the hardened policy
+      uses one optional, external, credential-free handoff and never auto-opens.
+      Known Webex, Zoom, Microsoft Teams, Google Meet, and FaceTime links get
+      friendly labels; other accepted providers stay neutral and receive no
+      native-verification claim.
+- [ ] Credentials, custom ports, local/special-use names, IP literals,
+      percent-encoded hosts, and known-brand lookalikes fail closed; unknown
+      provider URLs and hostnames never enter logs or Support Bundles.
+- [ ] UI says Jamulus carries music and reminds musicians to mute the selected
+      meeting service while playing.
 - [ ] Recording starts only when **Record Session** is pressed.
 - [ ] First host **Record Session** offers shared-only or Local Originals.
 - [ ] Local Originals selection is clearly separate from Jamulus setup.
@@ -112,9 +119,8 @@
       field. Legacy `WebJam Track` presence fallback is never described as
       synchronized, isolated, healthy, or audible.
 - [ ] Source and route states remain distinct. **Recheck Route** starts no
-      playback, and BlackHole setup or Recheck cannot unlock a downloaded
-      v0.22.2 package. In published v0.22.4, Play may become available only after
-      the production Mac path certifies an official 48-kHz BlackHole 16ch/64ch
+      playback. In the v0.24 package, Play may become available only after the
+      production Mac path certifies an official 48-kHz BlackHole 16ch/64ch
       route; exact live isolation is still rechecked at startup and uncertainty
       fails closed. This machine result is not physical audibility proof.
 - [ ] Reference Studio opens independently of Host/Join, retains the canonical
@@ -148,14 +154,14 @@
 - [ ] Jamulus permission or sound setup problems point the musician back to
       Jamulus instead of duplicating a WebJam device picker.
 - [ ] A missing music component, failed server, invalid invitation, or failed
-      optional Webex save states one plain next action without exposing private
+      optional meeting-link save states one plain next action without exposing private
       connection details.
 
 ## Layout, accessibility, and recovery
 
 - [ ] One dominant action is visible for each startup step.
 - [ ] Keyboard focus reaches input and action controls in order.
-- [ ] Accessible names describe the symbol, invitation field, Webex field,
+- [ ] Accessible names describe the symbol, invitation field, meeting-link field,
       and actions.
 - [ ] No clipping or horizontal scrolling at 720×560, 760×600, 1024×768, or
       1440×900.
@@ -189,8 +195,8 @@
       extraction.
 - [ ] Physical two-Mac and hardware evidence is listed separately as PASS,
       FAIL, or NOT RUN.
-- [ ] No v0.23.0 release claim is made until the dedicated
-      [physical checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
+- [ ] No v0.24.0 physical or production-trust claim is made until the dedicated
+      [physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
       records exact-asset results. Two-machine music, Shared Track, recording,
       Studio, external-editor, accessibility, signing, installation, and
       platform-trust gates all currently remain **NOT RUN**.

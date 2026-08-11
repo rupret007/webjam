@@ -1,21 +1,25 @@
-# Recording and Studio — v0.23.0 source candidate
+# Recording and Studio — v0.24.0 source candidate
 
-> v0.23.0 is unpublished source. GitHub **Latest** remains immutable v0.22.5.
+> GitHub **Latest** remains immutable v0.23.0 until v0.24.0's protected
+> promotion passes.
 > Physical recording, Shared Track audibility/isolation, playback, recovery,
 > long-session, and external-editor gates remain **NOT RUN** until exact
-> v0.23.0 package evidence is recorded.
+> v0.24.0 package evidence is recorded.
 
 ## Recording is separate from live music
 
 Jamulus owns the live interface and mix. WebJam’s optional Local Originals are
-a separate capture path for this Mac’s first two interface inputs. They are not
-a prerequisite for a jam and they do not change Jamulus settings.
+a separate capture path for named mono/stereo tracks totaling up to 32 enabled
+input channels. Recording Setup allocates enabled Local-Original tracks to
+device channels sequentially; an empty configuration preserves the compatible
+two-input default. They are
+not a prerequisite for a jam and they do not change Jamulus settings.
 
 When the host presses **Record Session** for the first time, WebJam asks:
 
 - **Record Shared Jam Only** — start the synchronized host take now.
-- **Also Keep This Mac’s Inputs** — open Recording Setup and explicitly choose
-  a valid two-channel Local Originals input before recording.
+- **Also Keep This Mac’s Inputs** — open Recording Setup, choose a valid input,
+  and review or edit the named Local Original tracks before recording.
 
 The host keeps shared recording authority. Guests can opt into Local Originals
 only when the active private session supports them; they are never interrupted
@@ -273,7 +277,7 @@ requested operation.
 
 Export never rewrites the original take.
 
-## v0.23.0 evidence boundary
+## v0.24.0 evidence boundary
 
 Automated source tests can establish state-machine, identity, source
 validation, timing-model, persistence/recovery, rendering, waveform, export,
@@ -281,12 +285,12 @@ privacy, and headless UI behavior. They cannot establish acoustic audibility,
 latency, direct-monitor isolation, interface recovery, or how a packaged build
 feels to musicians.
 
-For v0.23.0, two-machine music, Shared Track audibility and independent mix,
+For v0.24.0, two-machine music, Shared Track audibility and independent mix,
 count-in/record alignment, authoritative server stems, Local Original transfer,
 hardware interruption, long recording, Studio playback, external-editor
 import, packaged accessibility, SmartScreen, Gatekeeper, signing, and
 notarization remain **NOT RUN**. Record them with the
-[v0.23 physical checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
+[v0.24 physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
 against an exact asset, build ID, SHA-256, environment, and evidence location.
 
 ## Historical v0.22.4 evidence boundary

@@ -1072,7 +1072,7 @@ class BandCheckDialog(QDialog):
             )
         elif manual:
             count = len(manual)
-            text = f"Automated checks passed; confirm {count} Webex setting{'s' if count != 1 else ''}."
+            text = f"Automated checks passed; confirm {count} conversation setting{'s' if count != 1 else ''}."
         else:
             text = "Ready to play — all required checks passed."
         if warnings:

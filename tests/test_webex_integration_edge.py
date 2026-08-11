@@ -14,13 +14,13 @@ from webex_integration import (
 class TestExternalWebexLauncher(unittest.TestCase):
     def test_open_webex_meeting_returns_false_when_browser_refuses(self):
         with patch("webex_integration.webbrowser.open", return_value=False):
-            self.assertFalse(open_webex_meeting("https://example.com/meet"))
+            self.assertFalse(open_webex_meeting("https://meet.jit.si/WebJamBand"))
 
     def test_open_webex_meeting_returns_false_on_exception(self):
         with patch(
             "webex_integration.webbrowser.open", side_effect=RuntimeError("boom")
         ):
-            self.assertFalse(open_webex_meeting("https://example.com/meet"))
+            self.assertFalse(open_webex_meeting("https://meet.jit.si/WebJamBand"))
 
     def test_join_opens_browser_without_claiming_connected(self):
         controller = WebexController("https://example.webex.com/meet/test")
@@ -48,6 +48,24 @@ class TestExternalWebexLauncher(unittest.TestCase):
             controller.meeting_url,
             "https://old.webex.com/meet/original",
         )
+
+    def test_generic_provider_hands_the_validated_url_to_the_os_exactly_once(self):
+        requested = "https://meet.jit.si/WebJamBand?private=1#join"
+        controller = WebexController(requested)
+        controller.logger = MagicMock()
+        with patch(
+            "webex_integration.webbrowser.open",
+            return_value=True,
+        ) as opener:
+            self.assertTrue(controller.join_meeting_url(requested))
+
+        opener.assert_called_once_with(requested)
+        rendered = " ".join(
+            str(value) for value in controller.logger.info.call_args.args
+        )
+        self.assertIn("generic", rendered)
+        self.assertNotIn("meet.jit.si", rendered)
+        self.assertNotIn("WebJamBand", rendered)
 
     def test_factory_preserves_external_only_contract(self):
         controller = create_webex_controller("https://example.webex.com/meet/test")

@@ -1,9 +1,9 @@
-"""Truthful external Webex launcher for WebJam.
+"""Truthful external meeting-link launcher for WebJam.
 
-WebJam does not embed, join, monitor, or control a Webex meeting. The native
-Webex application (or system browser) owns authentication, media devices, and
-meeting state. This module reports only whether handing the trusted meeting
-URL to the operating system succeeded.
+WebJam does not embed, join, monitor, or control an external meeting. The
+selected service (or system browser) owns authentication, media devices, and
+meeting state. This compatibility-named module reports only whether handing a
+validated meeting URL to the operating system succeeded.
 """
 
 from __future__ import annotations
@@ -14,6 +14,8 @@ from enum import Enum
 from core.logging_config import configure_logging
 from core.settings import load_settings
 from core.meeting_link import (
+    GENERIC_MEETING_SERVICE_KEY,
+    identify_meeting_service,
     is_allowed_meeting_link,
     meeting_link_hostname,
     normalize_meeting_url,
@@ -21,7 +23,7 @@ from core.meeting_link import (
 
 
 class WebexLaunchState(str, Enum):
-    """The complete Webex state contract exposed by WebJam."""
+    """The complete external meeting-handoff state exposed by WebJam."""
 
     NOT_OPENED = "Not opened"
     OPENING = "Opening…"
@@ -31,11 +33,17 @@ class WebexLaunchState(str, Enum):
 
 def _meeting_hostname(url: str) -> str:
     """Return a safe logging label without meeting path/query/fragment."""
+
+    service = identify_meeting_service(url)
+    if service == GENERIC_MEETING_SERVICE_KEY:
+        # A custom/company domain is private diagnostic data.  The musician can
+        # see it in the editable UI field, but logs receive only this category.
+        return "generic"
     return meeting_link_hostname(url) or "unknown"
 
 
 class WebexController:
-    """Open a trusted meeting URL in native Webex or the default browser."""
+    """Open one validated meeting URL through the operating system."""
 
     def __init__(self, meeting_url: str):
         self.settings = load_settings()
@@ -58,7 +66,7 @@ class WebexController:
         """Hand the meeting URL to the OS and return whether launch succeeded.
 
         ``name`` and ``email`` are retained for one call-signature compatibility
-        cycle but are intentionally unused; native Webex owns identity.
+        cycle but are intentionally unused; the meeting service owns identity.
         """
         del name, email
         return self.join_meeting_url(self.meeting_url)
@@ -80,7 +88,7 @@ class WebexController:
             self.launch_state = WebexLaunchState.OPEN_FAILED
             self.last_error = type(exc).__name__
             self.logger.warning(
-                "Webex external launch failed (host=%s, error=%s)",
+                "Meeting-link external launch failed (host=%s, error=%s)",
                 hostname,
                 type(exc).__name__,
             )
@@ -89,12 +97,12 @@ class WebexController:
         self.browser_opened = True
         self.launch_state = WebexLaunchState.OPENED_EXTERNALLY
         self.last_error = ""
-        self.logger.info("Webex opened externally (host=%s)", hostname)
+        self.logger.info("Meeting link opened externally (host=%s)", hostname)
         return True
 
 
 def open_webex_meeting(url: str) -> bool:
-    """Open a trusted Webex URL without constructing a long-lived controller."""
+    """Open a validated meeting URL without a long-lived controller."""
     controller = WebexController(url)
     return controller.join_meeting()
 

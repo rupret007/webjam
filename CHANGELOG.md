@@ -6,8 +6,16 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ## [Unreleased]
 
-> Development after the exact v0.23.0 private test candidate belongs here.
+> Development after the exact v0.24.0 private test candidate belongs here.
 > Every published tag and asset remains immutable historical evidence.
+
+## [0.24.0] — Recording-first workstation private test candidate (2026-08-11)
+
+> This candidate packages the recording-first work after immutable v0.23.0 as a new
+> identity. Publication requires the exact annotated tag, four-platform tag
+> CI, eight-asset draft, checksums, fallback proof, and protected promotion.
+> Automated evidence does not convert any physical-musician **NOT RUN** result
+> to PASS.
 
 ### Record Session — one authoritative recording plan (step 1)
 
@@ -15,7 +23,8 @@ All notable improvements and features for the WebJam music collaboration platfor
   `SessionRecordingPlan` per take, binding session/take identity, plan
   generation, the proven roster, expected server stems, Shared Track
   fingerprint and playback generation, configurable input maps (up to 32
-  mono/stereo tracks with Local Original opt-in), count-in/pre-roll, the
+  rows and 32 enabled Local Original input channels across mono/stereo
+  tracks), count-in/pre-roll, the
   storage readiness verdict, expected source inventory, and creation
   time. Construction fails closed on any invalid fact — including
   action-needed storage — the repr is redacted, the public projection is
@@ -34,21 +43,21 @@ All notable improvements and features for the WebJam music collaboration platfor
   gate lands next - and a binding failure logs and never blocks a take
   that would succeed today.
 
-### Record Session — configurable input-map settings (step 2, part 1)
+### Record Session — configurable input-map settings (step 2, part 1 checkpoint)
 
 - Added the `input_maps` settings field: up to 32 named mono/stereo local
-  input tracks with enable and Local Original opt-in, strictly coerced on
-  load (one malformed entry rejects the whole list, so a half-valid
-  configuration can never silently record fewer tracks than the musician
-  believes are armed) and fail-safe to the compatibility rule that an
-  enabled local capture with no configured maps means today's fixed two
-  host stems. `configured_input_map_bindings()` parses the field into
-  validated plan bindings for the coming editor UI. The capture layer
-  still records the fixed two-stem map until it is generalized, so the
-  SessionRecordingPlan continues to bind capture truth, not
-  configuration intent - the plan doc records that boundary explicitly.
+  input rows with enable and Local Original opt-in, capped at 32 enabled
+  Local Original input channels. It is strictly coerced on load: one
+  malformed or over-capacity non-empty map disables supplemental capture so
+  it can never silently record fewer or different tracks than the musician
+  selected. An intentionally empty map retains the compatibility rule that
+  enabled local capture means the fixed two host stems.
+  `configured_input_map_bindings()` parses the field into validated plan
+  bindings for the coming editor UI. At this intermediate checkpoint, the
+  capture layer still recorded the fixed two-stem map; phase 8 below
+  supersedes that limitation and makes the configured map authoritative.
 
-### Record Session — capture engine accepts mapped track lists (step 2, part 2)
+### Record Session — capture engine accepts mapped track lists (step 2, part 2 checkpoint)
 
 - Generalized `LocalInputCapture` from the hard-wired two-stem pair to a
   validated list of 1-32 uniquely named mono tracks mapped onto unique
@@ -57,9 +66,9 @@ All notable improvements and features for the WebJam music collaboration platfor
   also records the exact track map and true stream width). Track names
   are restricted to a conservative filesystem-safe alphabet and hostile
   specifications fail closed. The default remains exactly the historical
-  host-guitar/host-vocal pair, and the recording coordinator still uses
-  that default - switching it to the configured input maps follows once
-  Local Original classification and storage budgets derive from the map.
+  host-guitar/host-vocal pair. At this intermediate checkpoint, the recording
+  coordinator still used that default; phase 8 below completes configured-map
+  capture, Local Original classification, and storage budgeting.
 
 ### Record Session — per-source recording truth projection (step 3, part 1)
 
@@ -128,13 +137,14 @@ All notable improvements and features for the WebJam music collaboration platfor
   WebJam verifies and activates). Future authenticated integrations
   extend this boundary; nothing claims them today.
 - The conversation card names the saved link's service in its title -
-  "Zoom conversation", "Google Meet video" - falling back to Webex, and
-  gains a Copy Link action that is enabled only when a validated link is
-  saved and copies the normalized URL with a confirmation flash.
+  "Zoom conversation", "Google Meet video" - while unknown providers use
+  neutral Conversation wording. It gains a Copy Link action that is enabled
+  only when a validated link is saved and copies the normalized URL with a
+  confirmation flash.
 
 ### Verification — full-repository closing sweep (step 7)
 
-- All 249 test files pass under CI-style per-file isolation with
+- All 250 tracked test modules pass under CI-style per-file isolation with
   offscreen Qt; pinned ruff, diff-check, and the release-metadata and
   workflow-limit contracts are clean. The sweep surfaced and fixed one
   robustness gap: the participant-card badge tests now dispose widgets
@@ -151,18 +161,19 @@ All notable improvements and features for the WebJam music collaboration platfor
   plan, the finalization's required-stem count, the storage budget (per
   track instead of a hardcoded 2), and diagnostics. Take classification
   recognizes configured stems alongside the legacy pair, with stable
-  local channel numbering. An enabled capture with no valid
-  configuration still records exactly the legacy host-guitar/host-vocal
-  pair; capture disabled still records nothing. Explicit device-channel
-  selection and non-Local-Original input tracks stay reserved for the
-  editor-UI phase.
+  local channel numbering. Only a genuinely empty configuration retains the
+  legacy host-guitar/host-vocal pair. A malformed or over-capacity non-empty
+  map fails closed, and an intentionally opted-out map records no local stems;
+  capture disabled also records nothing. Explicit device-channel selection
+  stays reserved for a later editor phase.
 
 ### Record Session — input-track editor (phase 9)
 
 - Recording Setup gains an "Edit Input Tracks…" editor: add, name, and
   remove local input tracks, each mono or stereo with enable and Local
   Original opt-in, validated through the same rules the settings loader
-  enforces (non-empty, unique, bounded, control-free names; 1-32 tracks).
+  enforces (non-empty, unique, bounded, control-free names; up to 32 rows and
+  32 enabled Local Original input channels).
   Saved tracks drive capture through the phase-8 resolver; an empty editor
   keeps the default two isolated stems. A summary line shows the current
   configuration. Explicit per-track device-channel selection stays
@@ -178,22 +189,33 @@ All notable improvements and features for the WebJam music collaboration platfor
   unchanged. `overloaded_sources()` exposes the sticky state (master flag
   plus clipped channel ids) for diagnostics and a future badge.
 
-### Conversation — multi-service meeting links
+### Conversation — provider-neutral meeting links
 
-- The saved conversation link now accepts Webex, Zoom, Microsoft Teams,
-  Google Meet, and FaceTime meeting links through one hardened HTTPS-only
-  policy (no userinfo, custom ports, percent-encoded hosts, or lookalike
-  domains). **Join / Open Meeting** hands any accepted link to the
-  operating system exactly once; WebJam still never claims join, mute, or
-  meeting state on any service. FaceTime links open only on a Mac, and the
-  handoff error says so honestly on other platforms.
-- Settings, setup wizard, and first-run link fields name the detected
-  service (for example "Zoom site: us02web.zoom.us"), and every supported
-  service's link is redacted to its origin in logs, mappings, and support
-  bundles exactly like Webex links.
-- Native app detection, bring-forward, and publisher verification remain
-  Webex-only in this phase; other services open through the default
-  browser or their own installed app's link handler.
+- The saved conversation link now accepts any meeting platform that supplies
+  a public HTTPS URL with a DNS hostname through one hardened policy (no
+  userinfo, custom ports, local/special-use names, IP literals, percent-encoded
+  hosts, or known-brand lookalikes). **Join / Open Meeting** hands any accepted
+  link to the operating system exactly once; WebJam still never claims join,
+  mute, provider verification, or meeting state. FaceTime links open only on a
+  Mac, and the handoff error says so honestly on other platforms.
+- Settings, setup wizard, and first-run link fields use friendly labels for
+  known Webex, Zoom, Microsoft Teams, Google Meet, and FaceTime links (for
+  example "Zoom site: us02web.zoom.us") and neutral wording for any other
+  accepted provider. Known allowlisted services may be redacted to their
+  origin; unknown-provider URLs and hostnames are fully removed from logs,
+  mappings, diagnostics, and Support Bundles.
+- Native app detection, Cisco installation guidance, bring-forward, mute
+  guidance, and publisher verification remain Webex-only; every other service
+  opens through the default browser or its installed link handler.
+
+## [0.23.0] — Shared Track and native multitrack private test candidate (2026-08-10)
+
+> The exact publication state is authoritative at the
+> [v0.23.0 release page](https://github.com/rupret007/webjam/releases/tag/v0.23.0).
+> Published immutable as GitHub **Latest** on 2026-08-10 from tag commit
+> `416186a3ea9cddc1ff01a2b0d61f5e1d5dfc70c8`, tag CI run `31368570400`,
+> release `367773776`, and protected promotion run `31371289158`. Publication
+> does not convert any physical-musician **NOT RUN** result to PASS.
 
 ### One native Shared Track experience
 
@@ -292,20 +314,11 @@ All notable improvements and features for the WebJam music collaboration platfor
   and record results only against an exact package name, build ID, SHA-256,
   environment, and evidence location.
 
-## [0.23.0] — Shared Track and native multitrack private test candidate (2026-08-10)
-
-> The exact publication state is authoritative at the
-> [v0.23.0 release page](https://github.com/rupret007/webjam/releases/tag/v0.23.0).
-> Published immutable as GitHub **Latest** on 2026-08-10 from tag commit
-> `416186a3ea9cddc1ff01a2b0d61f5e1d5dfc70c8`, tag CI run `31368570400`,
-> release `367773776`, and protected promotion run `31371289158`. Publication
-> does not convert any physical-musician **NOT RUN** result to PASS.
-
 ## [0.22.5] — 2026-08-07 reference-demo reliability private test candidate
 
 > Published as the immutable GitHub **Latest** unsigned/ad-hoc private test
-> candidate after tag CI, exact draft verification, checksums, and protected
-> promotion passed.
+> candidate at the time, after tag CI, exact draft verification, checksums,
+> and protected promotion passed. It is preserved as historical evidence.
 
 ### Demo safety and presentation
 

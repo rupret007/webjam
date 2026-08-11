@@ -13,6 +13,13 @@
 > release `367773776`. Every physical/credentialed gate remains **NOT RUN**
 > until separately observed against exact checksums.
 
+> **v0.24.0 candidate boundary:** this recording-first line is a new package
+> identity. It must use an exact annotated `v0.24.0` tag at the then-current
+> `master`, a unique successful tag CI with all four desktop artifacts, one
+> eight-asset draft and checksum manifest, proof that sealed v3 rejects
+> v0.24.0, and an exact pinned fallback-only protected promotion. Never rebuild
+> or replace v0.23.0 assets with this source.
+
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version
 tags may promote its explicitly unsigned/ad-hoc outputs as a private test
@@ -22,15 +29,17 @@ signed platform release, once their GitHub Environments have real protection
 rules and credentials. Do not reuse a package from a different source commit or
 replace assets on a published tag.
 
-For v0.23.0, never reuse the v0.22.5 v3 catalog: it authorizes exact WebJam
+For v0.24.0, never reuse the v0.22.5 v3 catalog: it authorizes exact WebJam
 0.22.5 only. The exact `publish-v023-testing-release.yml` lane must first prove
-that v3 verifies for v0.22.5 and is rejected for v0.23.0, then bind one
+that historical v0.23 promotion verified v3 for v0.22.5 and rejected v0.23.0.
+A separate pinned v0.24 fallback-only lane must prove the same historical
+catalog is rejected for v0.24.0, then bind one
 successful tag CI run, exact draft inventory, all asset digests, the checksum
 manifest, and the protected `release-latest` environment before publication.
 That private test candidate uses embedded Jamulus 3.12.2 only when no compatible
 managed catalog exists. A new immutable signed channel remains mandatory before
 managed 3.12.3 downloads can be advertised. Run the
-[v0.23 physical checklist](../V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
+[v0.24 physical checklist](../V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
 against exact assets; automation cannot convert its **NOT RUN** rows to PASS.
 
 ## Supported targets
@@ -217,10 +226,12 @@ rehearsals succeed,
 physical acceptance is recorded, and GitHub immutable releases are enabled.
 Those gates do not block the explicitly unsigned/ad-hoc private-candidate lane.
 
-The repository currently has three GitHub Environments, but as of 2026-07-29
-all three have empty protection rules and no deployment-branch policy. Treat
-their names as workflow routing only, not as an approval boundary, until a
-repository administrator configures them:
+The repository currently has three GitHub Environments. As of 2026-08-11,
+`release-latest` requires review by maintainer `rupret007`, permits that
+single maintainer to review a private-candidate deployment, and restricts
+deployments to the `master` branch. Administrator bypass remains available.
+The two native trust environments still have empty protection rules and no
+deployment-branch policy, so treat their names as workflow routing only:
 
 - `windows-release`, containing only the two Windows secrets and pinned
   `WINDOWS_CODESIGN_SUBJECT` environment variable when using the eligible PFX
@@ -231,16 +242,16 @@ repository administrator configures them:
 - `release-latest`, containing no signing secret and protecting the final
   revalidation-and-publication job.
 
-Configure required reviewers, prevent self-review, disable administrator
-bypass when the repository policy allows it, and restrict deployment branches
-and tags to the approved rehearsal ref and version tags. The two trust workflow
-jobs are already isolated and explicitly bound to their environments with
-`deployment: false`; the publisher is bound separately to `release-latest`.
-Environment secrets remain unavailable until applicable protection rules pass.
-Do not copy trust credentials into repository-level secrets. The current trust
-environments contain no release credentials, so protection and credential
-provisioning remain production-trusted-release blockers but not
-private-candidate blockers.
+For a production-trusted release, require an independent reviewer, prevent
+self-review, disable administrator bypass when repository policy allows it,
+and restrict the native trust deployments to approved rehearsal refs and
+version tags. The two trust workflow jobs are already isolated and explicitly
+bound to their environments with `deployment: false`; the publisher is bound
+separately to `release-latest`. Environment secrets remain unavailable until
+applicable protection rules pass. Do not copy trust credentials into
+repository-level secrets. The current native trust environments contain no
+release credentials, so protection and credential provisioning remain
+production-trusted-release blockers but not private-candidate blockers.
 
 ## Manual release gates
 
@@ -771,7 +782,7 @@ Publication completed on 2026-08-07 UTC for commit
 `d7d0039759e8334407fe2e6ed9e42edf0d7ef639`. Source CI run `31206070715`,
 component-package verification run `31208008965`, tag CI run `31208271585`,
 and protected promotion run `31210531934` all passed. Immutable release ID
-`366957478` is GitHub **Latest** at
+`366957478` was GitHub **Latest** when published and remains immutable at
 https://github.com/rupret007/webjam/releases/tag/v0.22.5. Its exact eight assets
 include checksum manifest `WebJam-v0.22.5-SHA256SUMS.txt`; the separate
 immutable v3 component release is ID `366930115` at tag

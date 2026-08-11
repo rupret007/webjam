@@ -98,24 +98,24 @@ class TestToggleButtonState(unittest.TestCase):
         finally:
             self.controller.settings.host_server_enabled = False
 
-    def test_webex_navigation_button_stays_side_effect_free_when_not_opened(self):
+    def test_conversation_navigation_stays_side_effect_free_when_not_opened(self):
         self.controller.bridge.jamulus_state = "Not launched"
         self.controller.bridge.webex_state = "Not opened"
         self.controller._refresh_readiness()
         self.assertEqual(
-            self.window.session_strip._video_button.text(), "Webex Controls"
+            self.window.session_strip._video_button.text(), "Conversation"
         )
         self.assertEqual(
             self.window.session_strip._video_button.property("webexLaunchAction"),
-            "Open Webex",
+            "Join / Open Meeting",
         )
 
-    def test_webex_navigation_does_not_turn_into_a_reopen_action(self):
+    def test_conversation_navigation_does_not_turn_into_a_reopen_action(self):
         self.controller.bridge.jamulus_state = "Not launched"
         self.controller.bridge.webex_state = "Opened externally"
         self.controller._refresh_readiness()
         self.assertEqual(
-            self.window.session_strip._video_button.text(), "Webex Controls"
+            self.window.session_strip._video_button.text(), "Conversation"
         )
         self.assertEqual(
             self.window.session_strip._video_button.property("webexLaunchAction"),

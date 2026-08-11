@@ -1,9 +1,9 @@
-WebJam v0.23.0 private test candidate for Windows x64
+WebJam v0.24.0 private test candidate for Windows x64
 ======================================================
 
 PRIVATE TEST CANDIDATE: use this package only when its exact filename appears
-in the v0.23.0 GitHub release and its SHA-256 matches that release's manifest.
-Do not use the immutable v0.22.5 checksum manifest for this build.
+in the v0.24.0 GitHub release and its SHA-256 matches that release's manifest.
+Do not use the immutable v0.23.0 checksum manifest for this build.
 Physical audio, hardware, SmartScreen, publisher-signing, and managed-device
 gates remain NOT RUN unless the release evidence names this exact file and
 SHA-256.
@@ -36,8 +36,8 @@ explicit approval and may display UAC or SmartScreen. WebJam verifies the
 installed version after setup. It never hides elevation or installs while a
 jam, recording, Shared Track, reconnect, or Jamulus launch is active.
 
-The sealed v0.22.5 catalog does not authorize v0.23.0 and is rejected. Until a
-new signed v0.23 catalog exists, this candidate uses the embedded Jamulus
+The sealed v0.22.5 catalog does not authorize v0.24.0 and is rejected. Until a
+new signed v0.24 catalog exists, this candidate uses the embedded Jamulus
 3.12.2 fallback rather than offering a managed 3.12.3 download.
 
 If an update is unavailable or you are offline, WebJam offers the exact
@@ -45,15 +45,19 @@ bundled Jamulus 3.12.2 fallback installer from the Host/Join screen. Jamulus is
 a separate application. On a managed work PC, your organization's application
 policy may require IT approval even though WebJam itself installs per user.
 
-Webex is optional and is not bundled. In a session, choose Webex Controls on
-WebJam's main rail or More > Webex Controls to show Conversation controls; this
-does not open or rejoin the meeting. This Windows package can locate Webex but
-does not yet perform the required Authenticode publisher verification, so Show
-Webex App and the focus-based Mute in Webex guidance stay unavailable. Join /
-Open Meeting is the only saved-link handoff. If the native app is missing, Get
-Webex opens Cisco's official Windows x64 installer after you confirm. Cisco owns
-that download, license, installation, sign-in, and updates. Jamulus remains the
-music path; keep Webex muted while playing to avoid delayed duplicate audio.
+Conversation/video is optional and is not bundled. Any meeting platform can
+use the explicit Join / Open Meeting handoff when its link is public HTTPS with
+a DNS hostname and passes WebJam's safety checks. Known Webex, Zoom, Teams,
+Google Meet, and FaceTime links receive friendly labels; another accepted
+provider remains neutral and is not natively verified. FaceTime is Mac-only,
+and WebJam never claims join or mute. This Windows package can locate Webex but
+does not yet perform the required Authenticode publisher verification, so the
+Webex-only Show Webex App and focus-based Mute in Webex guidance stay
+unavailable. Join / Open Meeting is the only saved-link handoff. If the native
+Webex app is missing, Get Webex opens Cisco's official Windows x64 installer
+after you confirm. Cisco owns that download, license, installation, sign-in,
+and updates. Jamulus remains the music path; keep the selected meeting service
+muted while playing to avoid delayed duplicate audio.
 
 This candidate has no trusted WebJam publisher signature. A future signed
 release must show the expected publisher, but even a valid signature would not

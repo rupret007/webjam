@@ -127,6 +127,85 @@ def test_resolve_capture_tracks_is_the_single_capture_truth():
     assert capture._required_input_channels == 2
 
 
+def test_resolver_never_records_opted_out_rows_or_truncates_capacity():
+    from core.session_recording_plan import resolve_capture_tracks
+
+    settings = AppSettings(local_capture_enabled=True)
+    settings.input_maps = [
+        _entry(name="Guide", channels=2, local_original_enabled=False),
+        _entry(name="Muted", channels=1, enabled=False),
+    ]
+    assert resolve_capture_tracks(settings) == ()
+
+    settings.input_maps = [
+        _entry(name=f"Stereo {index}", channels=2)
+        for index in range(17)
+    ]
+    assert resolve_capture_tracks(settings) == ()
+
+    settings.input_maps = [
+        _entry(name=f"Mono {index}", channels=1)
+        for index in range(33)
+    ]
+    assert resolve_capture_tracks(settings) == ()
+
+    settings.input_maps = [
+        _entry(name="Unsafe flag", enabled="false")
+    ]
+    assert resolve_capture_tracks(settings) == ()
+
+    settings.input_maps = [
+        _entry(name=f"Mono {index}", channels=1)
+        for index in range(30)
+    ] + [_entry(name="Last Stereo", channels=2)]
+    resolved = resolve_capture_tracks(settings)
+    assert len(resolved) == 32
+    assert resolved[-1] == ("local-Last Stereo R", 31)
+
+
+def test_over_capacity_persisted_map_disables_capture_instead_of_defaulting(
+    tmp_path,
+    monkeypatch,
+):
+    config = tmp_path / "config.json"
+    config.write_text(
+        json.dumps(
+            {
+                "local_capture_enabled": True,
+                "input_maps": [
+                    _entry(name=f"Stereo {index}", channels=2)
+                    for index in range(17)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("WEBJAM_LOCAL_CAPTURE_ENABLED", "true")
+    loaded = load_settings(str(config))
+
+    assert loaded.input_maps == []
+    assert loaded.local_capture_enabled is False
+
+
+def test_long_and_colliding_map_names_resolve_to_valid_unique_capture_stems():
+    from core.session_recording_plan import resolve_capture_tracks
+
+    settings = AppSettings(local_capture_enabled=True)
+    settings.input_maps = [
+        _entry(name="A" * 128, channels=1),
+        _entry(name="A" * 127 + "B", channels=1),
+        _entry(name="C" * 128, channels=2),
+    ]
+
+    resolved = resolve_capture_tracks(settings)
+
+    assert len(resolved) == 4
+    stems = [stem for stem, _channel in resolved]
+    assert len({stem.casefold() for stem in stems}) == 4
+    assert all(1 <= len(stem) <= 64 for stem in stems)
+
+
 def test_configured_stems_classify_as_local_and_enumerate_stably():
     from core.take_library import is_local_stem_name
 

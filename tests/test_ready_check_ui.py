@@ -233,7 +233,7 @@ class TestReadyCheckShortcut(unittest.TestCase):
         dialog._apply_report((dialog._scan_id, report))
         self.assertEqual(
             dialog._summary.text(),
-            "Automated checks passed; confirm 1 Webex setting.",
+            "Automated checks passed; confirm 1 conversation setting.",
         )
         verify = dialog._report_content.findChild(QCheckBox, "ReadyCheckMark")
         self.assertIsNotNone(verify)
@@ -257,7 +257,7 @@ class TestReadyCheckShortcut(unittest.TestCase):
         dialog._scan_id += 1
         report = ReadyCheckReport(items=[
             CheckItem(
-                f"Webex setting {index}",
+                f"Conversation setting {index}",
                 False,
                 "Confirm this setting in native Webex before the rehearsal.",
                 manual_verification=True,

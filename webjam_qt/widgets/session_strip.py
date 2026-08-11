@@ -177,11 +177,11 @@ class SessionStrip(QFrame):
         # should not look like a checklist musicians must operate.
         self._test_button.setVisible(False)
 
-        self._video_button = QPushButton("Webex Controls")
+        self._video_button = QPushButton("Conversation")
         self._video_button.setObjectName("GhostButton")
-        self._video_button.setAccessibleName("Show Webex conversation controls")
+        self._video_button.setAccessibleName("Show conversation controls")
         self._video_button.setToolTip(
-            "Show WebJam's Webex conversation controls.\n"
+            "Show WebJam's conversation controls.\n"
             "This does not open or rejoin the meeting."
         )
         self._video_button.setAccessibleDescription(
@@ -301,7 +301,7 @@ class SessionStrip(QFrame):
         jamulus_updates_action.triggered.connect(
             lambda: self.tool_requested.emit("jamulus_updates")
         )
-        conversation_action = QAction("Webex Controls", tools_menu)
+        conversation_action = QAction("Conversation", tools_menu)
         conversation_action.setToolTip(
             "Show Conversation controls without opening the meeting."
         )
@@ -375,7 +375,7 @@ class SessionStrip(QFrame):
         tools_menu.addAction(support_action)
         tools_menu.addAction(about_action)
         # Backward-compatible reference used by set_video_state(). Both this
-        # menu item and the direct Webex button navigate through the same
+        # menu item and the direct Conversation button navigate through the same
         # side-effect-free Conversation route.
         self._video_action = conversation_action
         self._test_night_action: QAction | None = None
@@ -464,7 +464,7 @@ class SessionStrip(QFrame):
 
         return {
             "Copy Invite": "Invite",
-            "Webex Controls": "Webex",
+            "Conversation": "Talk",
             "● Record Session": "● Record",
             "■ Stop Recording": "■ Stop",
             "■ Finish Stop": "■ Finish",
@@ -497,7 +497,7 @@ class SessionStrip(QFrame):
             self._compact_control_label("Copy Invite")
         )
         self._video_button.setText(
-            self._compact_control_label("Webex Controls")
+            self._compact_control_label("Conversation")
         )
         self._record_button.setText(
             self._compact_control_label(self._record_button_full_text)
@@ -516,28 +516,28 @@ class SessionStrip(QFrame):
         """
 
         self._video_button.setProperty("webexLaunchAction", label)
+        accessible_label = "Open Meeting" if label == "Open Webex" else str(label)
         self._video_button.setEnabled(self._tools_enabled)
         self._video_button.setAccessibleDescription(
             "Show WebJam's Conversation panel without opening the meeting "
-            f"link. External handoff status: {label}."
+            f"link. External handoff status: {accessible_label}."
         )
         self._video_action.setEnabled(self._tools_enabled)
 
     def set_video_configured(self, configured: bool) -> None:
         self._video_action.setText(
-            "Webex Controls"
+            "Conversation"
             if configured
-            else "Set Up Webex Controls"
+            else "Set Up Conversation"
         )
         self._video_button.setToolTip(
             (
-                "Show WebJam's Webex conversation controls.\n"
+                "Show WebJam's conversation controls.\n"
                 "This does not open or rejoin the meeting."
             )
             if configured
             else (
-                "Show Conversation controls and add a Webex Meeting or "
-                "Personal Room link."
+                "Show Conversation controls and add a public HTTPS meeting link."
             )
         )
 

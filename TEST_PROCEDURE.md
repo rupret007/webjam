@@ -1,9 +1,9 @@
-# WebJam v0.23.0 source and physical test procedure
+# WebJam v0.24.0 source and physical test procedure
 
-> v0.23.0 is an unpublished Shared Track, Record Session, and Studio source
-> candidate. No v0.23.0 package, checksum manifest, component catalog, or
-> physical result exists. GitHub **Latest** remains immutable v0.22.5. Every
-> v0.23.0 physical, credentialed, signing, and platform-trust gate is
+> v0.24.0 is a recording-first, Studio, and provider-neutral conversation source
+> candidate. GitHub **Latest** remains immutable v0.23.0 until protected v0.24
+> promotion. No v0.24.0 physical result exists. Every v0.24.0 physical,
+> credentialed, signing, and platform-trust gate is
 > **NOT RUN**.
 
 ## Scope
@@ -99,16 +99,22 @@ Review at minimum:
   completes.
 - Restart recovery handles stalled but alive Jamulus processes by force-restarting
   the process after repeated heartbeat timeout, then continuing regular auto-reconnect.
-- Webex is optional and a failure does not stop music.
+- Every meeting service is optional and a failure does not stop music. The
+  provider-neutral link policy accepts a public HTTPS DNS-host destination and
+  rejects credentials, custom ports, local/special-use names, IP literals,
+  percent-encoded hosts, and known-brand lookalikes.
 - Native Webex detection reports only bounded installation/version/publisher
   state; explicit installation opens an approved Cisco HTTPS URL and never
   stores credentials, downloads/executes a package silently, or changes
   Jamulus audio.
-- Direct **Webex Controls** and **More → Webex Controls** reveal the same panel
+- Direct **Conversation** and **More → Conversation** reveal the same panel
   without URL handoff. Repeated navigation, Settings changes, Studio return,
   and **Show Webex App** never hand off a meeting URL; only **Join / Open
-  Meeting** hands off one validated URL per explicit click. Webex may restore
-  whichever of its own windows or screens it already owns.
+  Meeting** hands off one validated URL per explicit click. Known Webex, Zoom,
+  Microsoft Teams, Google Meet, and FaceTime links receive friendly labels;
+  another accepted provider stays neutral and is never called natively
+  verified. Webex may restore whichever of its own windows or screens it
+  already owns.
 - On macOS, **Show Webex App** re-verifies any pre-running Cisco PID, validates
   a retained Core Foundation file-reference URL against Cisco's designated
   requirement, and passes that same bound object directly to `NSWorkspace`.
@@ -138,7 +144,8 @@ Review at minimum:
 - Diagnostics and the saved Support Bundle include bounded updater/catalog/
   fallback, Webex-app, and Reference Track source/route facts without paths,
   source names, URLs, meeting links, musician names, tokens, credentials, or
-  raw exceptions.
+  raw exceptions. Unknown-provider URLs and hostnames are fully redacted;
+  known allowlisted providers may retain only their origin-level projection.
 - First **Record Session** offers shared-only versus Local Originals.
 - Record Session exposes Idle, Preparing, Count-in, Recording, Stopping,
   Finalizing, Ready, Needs attention, and cleanup pending without allowing a
@@ -228,7 +235,8 @@ Review at minimum:
    absence of `NSAppDataUsageDescription` from every Mac bundle, signatures,
    fresh extraction, and archive SHA-256.
 5. Launch the fresh app and inspect Host, Join, Jamulus Updates, direct
-   Webex/Shared Track/Studio actions, Webex installed/missing/focus/open behavior,
+   Conversation/Shared Track/Studio actions, generic and known-provider meeting
+   handoff, Webex installed/missing/focus/open behavior,
    Recording Setup, Shared Track load/route separation, Record Session states, Studio
    Arrange/comp/undo/autosave/export, standalone Reference Studio
    project/import/playback/mix/bounce, Support diagnostics, End/Leave, and
@@ -238,10 +246,10 @@ Review at minimum:
 6. Preserve the current rollback package before installing any freshly verified
    candidate app.
 
-## v0.23.0 physical musician gate
+## v0.24.0 physical musician gate
 
-Do not reuse a v0.22.5 observation or a source-test result. Run the dedicated
-[v0.23.0 Shared Track and recording physical checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
+Do not reuse a v0.23.0 observation or a source-test result. Run the dedicated
+[v0.24.0 recording-first physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
 against exact candidate assets on at least two physical machines with named
 interfaces and headphones. Its multi-machine, macOS/BlackHole, Linux/JACK,
 recording, recovery, Studio, export, accessibility, and package-trust rows are

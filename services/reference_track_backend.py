@@ -1517,8 +1517,9 @@ class MacOSBlackHoleReferenceBackend:
             return ReferenceTrackCapability(
                 False,
                 "macos",
-                "Shared Track can't share BlackHole with the Webex audience "
-                "bridge. Switch Webex to talkback or video-only first.",
+                "Shared Track can't share BlackHole with the Conversation "
+                "audience bridge. Switch Conversation to talkback or "
+                "video-only first.",
                 backend="blackhole",
                 reason_code="audience_bridge_conflict",
             )

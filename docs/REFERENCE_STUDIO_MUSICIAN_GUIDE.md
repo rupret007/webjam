@@ -5,9 +5,9 @@ a backing track. It can open without a WebJam session, Webex, or Jamulus. Its
 local playback and recording choices do not change the device, buffer, mix, or
 connection owned by Jamulus.
 
-> **Published candidate guide:** this document targets the immutable v0.22.5
-> GitHub **Latest** private test candidate. Verify the downloaded checksum
-> before use.
+> **Candidate guide:** this document describes Reference Studio in v0.24.0.
+> GitHub **Latest** remains immutable v0.23.0 until protected v0.24 promotion;
+> always verify the exact downloaded asset and checksum before use.
 
 Windows packages are unsigned. Mac packages are ad-hoc signed and unnotarized.
 Automated checks do not prove that a particular interface, driver, speaker, or
@@ -152,7 +152,7 @@ clipped-sample count, and deterministic RMS dBFS. RMS is not an integrated-LUFS
 mastering measurement. Treat clipping as a reason to lower track, effect, send,
 or master gain and bounce again.
 
-MP3 bounce is intentionally absent from the v0.22.5 candidate. It appears only
+MP3 bounce is intentionally absent from the v0.24.0 candidate. It appears only
 if a separate encoder adapter has passed the product's identity,
 output-decoding,
 and license-policy self-tests. Use WAV or FLAC for a lossless handoff.
@@ -164,7 +164,7 @@ and license-policy self-tests. Use WAV or FLAC for a lossless handoff.
 | Host/Join | Jamulus | Live low-latency rehearsal; WebJam observes and conducts the private session |
 | Session recording and Studio | WebJam recorder plus immutable completed-take evidence | Review, arrange, comp, and export a recorded rehearsal |
 | Standalone Reference Studio | Local Reference Studio playback/recording backend | Write, play along, record local ideas, arrange, mix, and bounce without joining |
-| Reference Track pilot | Separate `WebJam Track` Jamulus participant | Capability-gated host source pilot; packaged Play stays fail-closed until the Mac proves the isolated route, and physical audibility remains **NOT RUN** |
+| Shared Track live route | Separate `WebJam Track` Jamulus participant | Capability-gated host source; packaged Play stays fail-closed until the Mac proves the isolated route, and physical audibility remains **NOT RUN** |
 
 Do not route Reference Studio into Jamulus by assumption. A future explicit
 feature would need to prove ownership, feedback isolation, return-fader state,

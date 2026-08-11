@@ -294,36 +294,42 @@ class FirstRunSetupDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(Space.MD)
 
-        url_label = QLabel("Meeting or Personal Room link")
+        url_label = QLabel(
+            "Meeting link (any platform)"
+        )
         url_label.setObjectName("FirstRunFieldLabel")
         self._webex_url = QLineEdit(self._settings.webex_url)
         self._webex_url.setPlaceholderText(
-            "https://your-site.webex.com/meet/your-room"
+            "Paste a public https:// meeting link"
         )
-        self._webex_url.setAccessibleName("Webex meeting or Personal Room link")
+        self._webex_url.setAccessibleName(
+            "Optional meeting link for conversation or video"
+        )
+        self._webex_url.setToolTip(
+            "Paste a public HTTPS meeting link from any platform. If you "
+            "forget the https:// prefix, WebJam adds it."
+        )
         self._webex_url.textChanged.connect(self._on_webex_text_changed)
         self._webex_error = _body("", name="FirstRunError")
-        self._webex_error.setAccessibleName(
-            "Webex meeting or Personal Room link error"
-        )
+        self._webex_error.setAccessibleName("Meeting link error")
         self._webex_error.setVisible(False)
         self._webex_site = _body("", name="FirstRunStatus")
-        self._webex_site.setAccessibleName("Webex site")
+        self._webex_site.setAccessibleName("Meeting service site")
         self._webex_site.setVisible(False)
         layout.addWidget(url_label)
         layout.addWidget(self._webex_url)
         layout.addWidget(self._webex_site)
         layout.addWidget(self._webex_error)
         layout.addWidget(_body(
-            "Webex handles sign-in, your camera and microphone, and the "
-            "meeting itself. Your WebJam musician name does not change your "
-            "Webex identity."
+            "Your selected meeting service handles sign-in, camera, microphone, "
+            "and meeting controls. Your WebJam musician name does not change "
+            "your identity there."
         ))
 
-        signal_flow = QLabel("MUSIC  ·  JAMULUS      TALK  ·  WEBEX")
+        signal_flow = QLabel("MUSIC  ·  JAMULUS      TALK  ·  MEETING SERVICE")
         signal_flow.setObjectName("FirstRunSignalFlow")
         signal_flow.setAccessibleName(
-            "Jamulus carries music and Webex carries conversation"
+            "Jamulus carries music and the selected meeting service carries conversation"
         )
         layout.addWidget(signal_flow)
 
@@ -523,7 +529,7 @@ class FirstRunSetupDialog(QDialog):
         self._back.setVisible(second)
         self._title.setText("Optional video room" if second else "Choose your setup")
         self._subtitle.setText(
-            "Paste a Webex room if the band uses one, or finish without it."
+            "Paste a public HTTPS meeting link if the band uses one, or finish without it."
             if second else "Tell WebJam what this Mac will do."
         )
         self._progress.setText(f"{step + 1} of 2")

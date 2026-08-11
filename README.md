@@ -4,8 +4,8 @@
 
 WebJam is a musician-first desktop conductor for low-latency rehearsal,
 recording, arrangement, and creative review. It brings the session lifecycle,
-Jamulus, optional Webex conversation, Reference Studio, and an owner-controlled
-iPhone companion into one understandable workflow—without pretending to own
+Jamulus, provider-neutral meeting conversation, Reference Studio, and an
+owner-controlled iPhone companion into one understandable workflow—without pretending to own
 the systems that should remain independent.
 
 [![WebJam CI](https://github.com/rupret007/webjam/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/rupret007/webjam/actions/workflows/ci.yml)
@@ -13,18 +13,20 @@ the systems that should remain independent.
 [![Latest release](https://img.shields.io/github/v/release/rupret007/webjam?label=Latest%20test%20candidate)](https://github.com/rupret007/webjam/releases/latest)
 
 > **Testing download:** GitHub [**Latest**](https://github.com/rupret007/webjam/releases/latest)
-> is **v0.23.0**, the current unsigned private test candidate. Its exact
-> annotated tag, four-platform CI, eight-asset inventory, checksums, fallback
-> proof, and protected promotion passed. Windows is unsigned; macOS is ad-hoc
-> signed and unnotarized. v0.22.5 remains immutable historical evidence.
+> is the only current downloadable-test pointer. Immutable v0.23.0 remains
+> Latest until v0.24.0's exact annotated tag, four-platform CI, eight-asset
+> inventory, checksums, fallback proof, and protected promotion all pass.
+> Windows is unsigned; macOS is ad-hoc signed and unnotarized.
 
 > **Source boundary:** the exact v0.23.0 tag, checksums, and protected promotion
 > are the downloadable-release evidence. Do not substitute an untagged checkout
 > or a later documentation commit for the immutable published package.
 
-> **Current release candidate:** v0.23.0 contains the native **Shared Track**,
-> **Record Session**, and multitrack Studio workflow. Every physical v0.23.0
-> gate remains **NOT RUN** until musicians test these exact packages.
+> **Current source candidate:** v0.24.0 advances the native **Shared Track**,
+> **Record Session**, multitrack Studio, configurable Local Originals, and
+> provider-neutral conversation handoff. Use a v0.24.0 package only when its exact
+> filename and SHA-256 appear on the v0.24.0 GitHub release. Every physical
+> v0.24.0 gate remains **NOT RUN** until musicians test those exact packages.
 
 New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 [First Jam](FIRST_JAM.md); this README is the complete technical story.
@@ -33,9 +35,9 @@ New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 
 | Area | Current state |
 | --- | --- |
-| Product | Musician-facing desktop conductor around Jamulus, Webex, Studio, and Pocket Stage |
+| Product | Musician-facing desktop conductor around Jamulus, optional meeting-service conversation, Studio, and Pocket Stage |
 | Published line | v0.23.0 GitHub Latest private test candidate; verify its checksum manifest |
-| Current development | Changes after the immutable v0.23.0 tag belong under Changelog Unreleased |
+| Current development | v0.24.0 recording-first private test candidate; v0.23.0 remains immutable |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -56,7 +58,7 @@ WebJam is a conductor, not a replacement for the tools musicians already trust.
 2. Configure interface, channels, headphones, and buffer in Jamulus.
 3. Confirm the authenticated music connection, then use **Band Check / Verify
    Sound** if needed.
-4. Open **Webex Controls** only when conversation or video is wanted; use
+4. Open **Conversation** only when conversation or video is wanted; use
    **Join / Open Meeting** for an explicit meeting-link handoff.
 5. As host, choose **Add Shared Track** or drop a supported song on the live
    surface; loading does not start playback, and Play remains fail-closed until
@@ -73,7 +75,7 @@ WebJam is a conductor, not a replacement for the tools musicians already trust.
 | --- | --- |
 | WebJam | Private-session lifecycle, invitations, session truth, recording, Studio, export, recovery |
 | Jamulus | Live interface, input/output channels, buffer, jitter, musician mix, and music connection |
-| Webex | Optional talking/video meeting and its own microphone, camera, speaker, and participant state |
+| Meeting service | Optional talking/video meeting and its own microphone, camera, speaker, and participant state |
 
 ## Live rehearsal flow
 
@@ -89,7 +91,7 @@ WebJam is a conductor, not a replacement for the tools musicians already trust.
    automatically; the host then copies the invitation.
 6. Play a note and make sure you can hear each other. Use **More → Band Check
    / Verify Sound** if you need help.
-7. Choose the direct **Webex Controls** action if your band wants conversation
+7. Choose the direct **Conversation** action if your band wants conversation
    or video. It shows WebJam's Conversation controls without opening a meeting;
    music remains in Jamulus.
 8. The host can add a **Shared Track** from the live surface. Its proven route
@@ -163,11 +165,21 @@ clusters and accepts at most 16 UTF-16 units. WebJam now enforces that one
 contract at every entry point and previews the actual 8+8 layout instead of
 allowing Jamulus to silently shorten an identity.
 
-## Optional Webex app
+## Optional conversation apps
 
-WebJam still stores only a musician's Meeting or Personal Room link. The direct
-**Webex Controls** action and **More → Webex Controls** reveal the Conversation
-panel and never launch or rejoin a meeting. On macOS, **Show Webex App** works
+WebJam accepts any meeting platform that provides a link passing one
+provider-neutral policy: a public HTTPS URL with a DNS hostname, no embedded
+credentials or custom port, and no local/special-use or IP-literal hostname.
+Known Webex, Zoom, Microsoft Teams, Google Meet, and FaceTime links receive
+friendly service labels; other accepted providers use neutral meeting-service
+wording. All use the same explicit **Join / Open Meeting** handoff, and the
+normalized link can be copied. WebJam never claims that a handoff joined,
+muted, found participants, or verified an unknown provider. FaceTime links are
+Mac-only. Native detection, publisher proof, installation, mute guidance, and
+bring-forward remain explicitly Webex-only.
+
+The direct **Conversation** action and **More → Conversation** reveal the
+Conversation panel and never launch or rejoin a meeting. On macOS, **Show Webex App** works
 without a meeting handoff: each click re-verifies the exact Cisco bundle. If
 Webex is running, WebJam verifies its exact PID and asks macOS to activate it.
 If Webex is stopped, WebJam launches that verified app itself with no URL or
@@ -183,8 +195,8 @@ Direct native activation stays disabled when WebJam cannot prove the app's
 publisher on that platform. The current Windows and Linux packages can detect
 an app location but do not establish a trusted publisher identity, so
 **Show Webex App** and its focus-based mute guidance stay unavailable there;
-**Join / Open Meeting** still uses the validated Webex link through the
-operating system or supported browser.
+**Join / Open Meeting** still uses the validated saved link through the
+operating system or default browser.
 
 Webex owns sign-in, camera, microphone, speakers, participants, mute, and
 meeting state. Because the external native app does not expose verifiable mute
@@ -377,9 +389,11 @@ and [physical pilot runbook](docs/plans/webjam-reference-track-macos-pilot.md).
 
 Recording is optional and starts only when the host presses **Record Session**.
 On a host's first recording, WebJam asks whether to record the shared Jamulus
-take only or also retain this Mac's first two interface inputs as Local
-Originals. The latter choice opens the clearly labeled Recording Setup panel;
-it never changes Jamulus music settings.
+take only or also retain this Mac's configured Local Originals. Recording
+Setup can define named mono/stereo tracks totaling up to 32 enabled Local
+Original input channels; tracks map sequentially to device channels, while an
+empty configuration preserves the compatible two-input default. The input-map
+editor never changes Jamulus music settings.
 
 The live action names the real lifecycle: **Preparing**, **Count-in**,
 **Recording**, **Stopping**, **Finalizing**, **Ready**, **Needs attention**, or
@@ -406,6 +420,11 @@ reorder that whole song block across every track as one undoable ripple edit.
 Complete or explicitly recovered recordings from the same session can be added
 as take lanes, auditioned without changing the saved comp, and selected with
 Option/Alt-drag quick-swipe ranges.
+
+The live cards show conservative host-side per-source recording truth without
+inventing guest evidence. Studio adds an undoable **Reset Mix** that preserves
+export inclusion, keeps overload indicators latched for the playback epoch,
+and automatically selects and opens a durably finalized take.
 
 Arrange also has a mouse-free path: Arrow keys select rows and regions,
 Alt+Left/Right nudges, bracket shortcuts trim to the playhead, and keyboard
@@ -461,8 +480,8 @@ prompt can still appear when an audio input is used.
 WebJam never writes device, channel, buffer, jitter, quality, or mix values to
 the musician's native profile, and it never reads or overwrites the regular
 `Jamulus.ini`. WebJam's private restart records contain only allowlisted
-profile identity and phase hashes—never invitation URLs, Webex URLs,
-credentials, device identifiers, raw paths, or notes.
+profile identity and phase hashes—never invitation URLs, meeting URLs or
+provider hostnames, credentials, device identifiers, raw paths, or notes.
 
 ## Published release and source state
 
@@ -472,21 +491,24 @@ successful protected promotion behind GitHub
 [Latest](https://github.com/rupret007/webjam/releases/latest) are downloadable
 evidence. Do not use an untagged checkout or ordinary branch build as a release.
 
-The current source tree reports **v0.23.0**. The exact
+The current source tree reports **v0.24.0**. Use it only when the exact
+[v0.24.0 release](https://github.com/rupret007/webjam/releases/tag/v0.24.0)
+exists with the expected eight assets and checksum manifest. Until its
+protected promotion succeeds, the exact
 [v0.23.0 release](https://github.com/rupret007/webjam/releases/tag/v0.23.0)
-is GitHub Latest and immutable; its tag CI and protected promotion are the
-package evidence. The immutable
+remains GitHub Latest and immutable; its tag CI and protected promotion are
+its package evidence. The immutable
 [v0.22.5 release](https://github.com/rupret007/webjam/releases/tag/v0.22.5)
 retains its original assets and evidence as a historical candidate.
 
-v0.23.0 is the separate Shared Track, Record Session, and multitrack Studio
-identity. Its private testing-release lane does not reuse or weaken the sealed
-v3 catalog, which authorizes only exact WebJam 0.22.5. Instead, promotion proves
-that v3 is rejected for v0.23.0 and publishes the exact frozen packages with
-the reviewed embedded Jamulus 3.12.2 fallback. The baked compatibility policy
-also recognizes the audited 3.12.3 identity through exact v0.23.0, but managed
-3.12.3 download remains unavailable until a new signed version-specific channel
-exists. Physical musician results remain **NOT RUN** until separately recorded.
+v0.24.0 is a new recording-first identity and never replaces v0.23.0 bytes.
+Its fallback-only testing lane must prove that sealed v3 remains valid for
+historical v0.22.5 and is rejected for v0.24.0, then publish the exact frozen
+packages with the reviewed embedded Jamulus 3.12.2. The baked compatibility policy
+recognizes the already audited 3.12.2 and 3.12.3 identities through exact
+v0.24.0 only; managed 3.12.3 download remains unavailable until a new signed
+version-specific channel exists. Physical musician results remain **NOT RUN**
+until separately recorded.
 
 Published tags and assets remain immutable historical evidence. In particular,
 v0.20.0 history must not be moved. The v0.21.0 history must not be moved or
@@ -583,15 +605,18 @@ issued public code-signing keys are normally hardware- or service-backed, so a
 production-trusted release still needs an explicit signing-provider choice and
 integration.
 The repository has `windows-release`, `macos-release`, and `release-latest`
-GitHub Environments, but they currently have no protection rules; the two trust
-environments also have no release credentials, and no credentialed rehearsal
-has completed. Configure required reviewers, deployment restrictions, and
-credential isolation before using them as production-trust controls. A managed
-Windows PC may still require IT approval even after valid publisher signing;
-candidate packages must never be described as production-trusted installers.
+GitHub Environments. `release-latest` requires a maintainer review and accepts
+deployments from `master` only; it contains no signing secret. The two native
+trust environments still need protection rules and credentials, and no
+credentialed rehearsal has completed. Configure independent reviewers,
+deployment restrictions, and credential isolation before using those paths as
+production-trust controls. A managed Windows PC may still require IT approval
+even after valid publisher signing; candidate packages must never be described
+as production-trusted installers.
 
 Automated source and package checks are evidence for code and archive
-integrity—not a substitute for musicians hearing one another. For v0.23.0,
+integrity—not a substitute for musicians hearing one another. For v0.24.0,
+immutable v0.23.0,
 historical v0.22.5, and immutable earlier lines,
 real two-Mac audio, physical interface disconnect/reconnect, sleep/wake,
 interruption and recording recovery, long-session operation, external-editor
@@ -605,8 +630,9 @@ promote a package or claim audibility.
 
 - [Documentation index](docs/README.md)
 - [Project brief for technical stakeholders](docs/PROJECT_BRIEF.md)
-- [v0.23.0 candidate notes and release history](CHANGELOG.md)
-- [v0.23.0 Shared Track and recording physical checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
+- [v0.24.0 candidate notes and release history](CHANGELOG.md)
+- [v0.24.0 recording-first physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
+- [Historical v0.23.0 Shared Track checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.18 unified-guidance pilot checklist](V018_UNIFIED_GUIDANCE_PILOT.md)
 - [First jam](FIRST_JAM.md)
 - [Musician guide](USER_GUIDE.md)

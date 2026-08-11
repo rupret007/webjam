@@ -487,6 +487,30 @@ def test_session_hud_primary_action_is_generic_and_accessible(qapp):
     retried.assert_not_called()
 
 
+def test_session_hud_inline_meeting_link_uses_available_width(qapp):
+    hud = SessionHud()
+    hud.resize(1120, 180)
+    hud.set_state(
+        "Add Meeting Link",
+        "Paste a supported meeting link.",
+        action_text="Save Meeting Link",
+        action_visible=True,
+        action_kind="save_meeting_link",
+        secondary_action_text="Not Now",
+        secondary_action_visible=True,
+        secondary_action_kind="skip_meeting_link",
+        input_visible=True,
+        input_placeholder="Paste a public https:// meeting link",
+        input_accessible_name="Meeting link",
+    )
+    hud.show()
+    qapp.processEvents()
+
+    assert hud._input.width() >= 500
+    assert hud._action.isVisibleTo(hud)
+    assert hud._secondary_action.isVisibleTo(hud)
+
+
 def test_host_invite_uses_hud_copy_action_only_after_real_server_readiness(
     qapp, tmp_path
 ):

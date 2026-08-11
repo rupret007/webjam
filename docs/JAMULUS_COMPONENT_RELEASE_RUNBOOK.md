@@ -19,6 +19,14 @@
 > 3.12.3 identities through exact WebJam 0.23.0 only, allowing a known fallback;
 > that baked compatibility is not a signed v0.23 managed-update catalog.
 
+> **v0.24.0 private testing candidate:** the sealed v3 catalog likewise cannot
+> authorize v0.24.0 and must not move. Current source extends the unchanged,
+> CI-exercised 3.12.2/3.12.3 baked identities through exact WebJam 0.24.0 only
+> and rejects 0.24.1. A fallback-only protected publisher may package embedded
+> 3.12.2 after proving catalog rejection; managed download still requires a
+> new fixed channel, monotonic sequence, offline signature, exact inventory,
+> independent redownload, and frozen-package verification.
+
 This runbook records the sealed v1/v2 history and current v3 catalog channel. The
 catalog tells WebJam which exact
 Jamulus client/server packages are approved. It does not publish WebJam,

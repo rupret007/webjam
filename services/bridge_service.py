@@ -33,6 +33,11 @@ from core.jamulus_compatibility import (
 )
 from core.jamulus_component_resolver import ValidatedExternalComponent
 from core.jamulus_name import validate_jamulus_name
+from core.meeting_link import (
+    GENERIC_MEETING_SERVICE_KEY,
+    identify_meeting_service,
+    meeting_service_label,
+)
 from core.jamulus_rpc_client import (
     DEFAULT_SECRET_PATH,
     JamulusRpcMonitorSnapshot,
@@ -78,6 +83,13 @@ _HASH_CHUNK_BYTES = 1024 * 1024
 _EMBEDDED_JAMULUS_VERSION = "3.12.2"
 _AUDIO_FEEDBACK_SCAN_TIMEOUT_SECONDS = 0.5
 _AUDIO_FEEDBACK_SCAN_LOCK = threading.Lock()
+
+
+def _meeting_service_name(url: object) -> str:
+    service = identify_meeting_service(str(url or ""))
+    if service in {None, GENERIC_MEETING_SERVICE_KEY}:
+        return ""
+    return meeting_service_label(service)
 
 
 def _bounded_audio_feedback_scan(scanner: Callable[[], object]) -> object | None:
@@ -4664,7 +4676,7 @@ class BridgeService:
         self.schedule_ui_callback(_guarded)
 
     def launch_webex(self, manual: bool = True, reconnect: bool = False):
-        """Open Webex externally and report only the launch result.
+        """Open the configured meeting link and report only the handoff result.
 
         ``reconnect`` remains in the signature for one compatibility cycle but
         is intentionally ignored: WebJam cannot observe an external meeting
@@ -4674,18 +4686,26 @@ class BridgeService:
             return
 
         launch_url = str(getattr(self.settings, "webex_url", "") or "").strip()
+        service_name = _meeting_service_name(launch_url)
         launch_generation = self._begin_webex_launch()
         if launch_generation is None:
             if manual:
                 self.set_status_banner(
-                    "Webex is already opening externally."
+                    f"{service_name} is already opening externally."
+                    if service_name
+                    else "The meeting link is already opening externally."
                 )
             return False
             
         if manual:
             self.metrics_service.increment("metric_webex_open_attempt")
             
-        self.set_status_banner("Opening Webex externally…", color="#BF5700")
+        self.set_status_banner(
+            f"Opening {service_name} externally…"
+            if service_name
+            else "Opening the meeting link externally…",
+            color="#BF5700",
+        )
         self._schedule_webex_ui_if_current(
             launch_generation,
             self.refresh_readiness,
@@ -4736,7 +4756,15 @@ class BridgeService:
                     self._schedule_webex_ui_if_current(
                         launch_generation,
                         lambda: self.set_status_banner(
-                            "Opened externally—finish joining in Webex."
+                            (
+                                "Opened externally—finish joining in "
+                                f"{service_name}."
+                            )
+                            if service_name
+                            else (
+                                "Opened externally—finish joining in your "
+                                "meeting service."
+                            )
                         ),
                     )
             except Exception as exc:
@@ -4751,7 +4779,10 @@ class BridgeService:
                     WebexLaunchState.OPEN_FAILED,
                 ):
                     return
-                LOGGER.warning("External Webex launch failed: %s", type(exc).__name__)
+                LOGGER.warning(
+                    "External meeting launch failed: %s",
+                    type(exc).__name__,
+                )
                 self.metrics_service.increment("metric_webex_open_failed")
                 self._schedule_webex_ui_if_current(
                     launch_generation,
@@ -4767,12 +4798,25 @@ class BridgeService:
                 self._schedule_webex_ui_if_current(
                     launch_generation,
                     lambda: self.show_actionable_error(
-                        "Webex Open Failed",
-                        what_failed="The configured Webex meeting could not be opened.",
-                        likely_cause="Default browser issue, network filtering, invalid meeting URL, or transient launch issue.",
+                        f"{service_name} Open Failed"
+                        if service_name
+                        else "Meeting Link Open Failed",
+                        what_failed=(
+                            f"The configured {service_name} meeting could not "
+                            "be opened."
+                            if service_name
+                            else (
+                                "The configured meeting link could not be "
+                                "opened."
+                            )
+                        ),
+                        likely_cause=(
+                            "Default browser issue, network filtering, invalid "
+                            "meeting URL, or transient launch issue."
+                        ),
                         next_action=(
-                            "Open Settings, verify the Meeting or Personal "
-                            "Room link, then try again."
+                            "Open Settings, verify the meeting link, then try "
+                            "again."
                         ),
                         retry_callback=lambda: self.launch_webex(manual=True),
                         copy_text=launch_url,

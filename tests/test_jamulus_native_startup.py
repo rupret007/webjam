@@ -1257,6 +1257,52 @@ def test_webex_save_failure_restores_the_in_memory_settings() -> None:
     assert controller._startup_attempt["input_error"]
 
 
+def test_startup_zoom_save_refreshes_the_conversation_card() -> None:
+    controller = _controller(hosting=False)
+    controller._startup_attempt = {"generation": 1, "role": "guest"}
+    controller.window.session_hud.input_text = mock.Mock(
+        return_value="zoom.us/j/1234567890"
+    )
+    controller.window.session_strip.set_video_configured = mock.Mock()
+    controller.window.session_strip.set_video_state = mock.Mock()
+    controller.window.webex_embed = SimpleNamespace(
+        set_service_label=mock.Mock(),
+        set_meeting_configured=mock.Mock(),
+        set_launch_status=mock.Mock(),
+    )
+    controller.window.set_status_video = mock.Mock()
+    controller.webex = SimpleNamespace(
+        meeting_url="",
+        launch_state=None,
+        browser_opened=False,
+        last_error="",
+    )
+    controller.bridge.invalidate_webex_launch = mock.Mock()
+    controller.bridge.webex_controller = controller.webex
+    controller.bridge.webex_state = "Not opened"
+    controller._show_startup_invite_ready = mock.Mock()
+
+    with mock.patch("core.settings.save_settings"):
+        controller._save_startup_webex_link()
+
+    assert controller.settings.webex_url == "https://zoom.us/j/1234567890"
+    assert controller.webex.meeting_url == controller.settings.webex_url
+    controller.window.webex_embed.set_service_label.assert_called_once_with(
+        "Zoom"
+    )
+    controller.window.webex_embed.set_meeting_configured.assert_called_once_with(
+        True
+    )
+    controller.window.webex_embed.set_launch_status.assert_called_once_with(
+        "Not opened"
+    )
+    controller.window.session_strip.set_video_state.assert_called_once_with(
+        "Open Zoom",
+        enabled=True,
+    )
+    controller._show_startup_invite_ready.assert_called_once_with(1)
+
+
 def test_music_readiness_requires_authenticated_connection_and_one_local_identity() -> None:
     controller = _controller(hosting=True)
     controller.bridge.jamulus_state = "Running"

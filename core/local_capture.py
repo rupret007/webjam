@@ -1,8 +1,9 @@
 """Failure-safe supplemental capture for isolated host inputs.
 
-Jamulus remains the live-audio authority.  This service records the selected
-Core Audio device's first two inputs as local mono stems so a host can retain
-separate instrument and vocal tracks without changing the network path.
+Jamulus remains the live-audio authority. This service records an explicit map
+of up to 32 local device channels as isolated mono stems without changing the
+network path. The historical default remains inputs 1–2 only when no map was
+configured.
 
 Real-time layout: the sounddevice callback copies each block into a fixed,
 preallocated SPSC ring; a dedicated writer thread does every disk write,

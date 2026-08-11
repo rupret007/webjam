@@ -1,7 +1,8 @@
 # WebJam closed-pilot handoff
 
-> **Published candidate pilot:** this worksheet targets the exact immutable
-> v0.22.5 GitHub **Latest** packages. Verify the downloaded checksum before use.
+> **Historical published-candidate pilot:** this worksheet targets the exact
+> immutable v0.22.5 packages, which were GitHub **Latest** when this pilot was
+> frozen. They are not the current download. Verify the checksum before use.
 
 The v0.22.5 private test candidate passed its exact tag build, draft
 verification, and protected promotion before publication. It is intended to

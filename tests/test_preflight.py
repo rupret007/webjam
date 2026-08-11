@@ -113,7 +113,7 @@ class TestReadyCheck(unittest.TestCase):
             with mock.patch("core.audio_routing.scan_loopback_devices") as scan:
                 rep = preflight.run_ready_check(s)
         scan.assert_not_called()
-        self.assertNotIn("Webex audio bridge", {i.name for i in rep.items})
+        self.assertNotIn("Conversation audio bridge", {i.name for i in rep.items})
         self.assertTrue(rep.automated_ok)
 
     def test_bridge_mac_requires_virtual_device(self):
@@ -123,7 +123,7 @@ class TestReadyCheck(unittest.TestCase):
             )
             with mock.patch("core.audio_routing.scan_loopback_devices", _bad_audio):
                 rep = preflight.run_ready_check(s)
-        item = next(i for i in rep.items if i.name == "Webex audio bridge")
+        item = next(i for i in rep.items if i.name == "Conversation audio bridge")
         self.assertTrue(item.required)
         self.assertFalse(rep.all_ok)
 
@@ -244,6 +244,33 @@ class TestReadyCheck(unittest.TestCase):
         self.assertEqual(len(manual_names), 5)
         self.assertNotIn("Standard microphone mode", manual_names)
 
+    def test_non_webex_manual_checks_are_provider_neutral(self):
+        cases = (
+            ("https://us02web.zoom.us/j/123", "Zoom"),
+            ("https://meet.jit.si/WebJamBand", "meeting service"),
+        )
+        with tempfile.NamedTemporaryFile() as jam:
+            for url, label in cases:
+                with self.subTest(url=url):
+                    rep = preflight.run_ready_check(
+                        _settings(
+                            jamulus_candidates=[jam.name],
+                            webex_url=url,
+                            webex_audio_mode="talkback",
+                        )
+                    )
+                    manual = [
+                        item for item in rep.items if item.manual_verification
+                    ]
+                    self.assertEqual(len(manual), 4)
+                    copy = " ".join(
+                        f"{item.name} {item.detail}" for item in manual
+                    )
+                    self.assertIn(label, copy)
+                    self.assertNotIn("Webex", copy)
+                    self.assertNotIn("Optimize for My Voice", copy)
+                    self.assertNotIn("meet.jit.si", copy)
+
     def test_recorder_unreachable_detail_is_actionable(self):
         with tempfile.NamedTemporaryFile() as jam, \
                 tempfile.NamedTemporaryFile() as secret:
@@ -302,7 +329,7 @@ class TestReadyCheck(unittest.TestCase):
             with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio):
                 rep = preflight.run_ready_check(s)
         self.assertTrue(rep.all_ok)
-        self.assertNotIn("Webex companion", {item.name for item in rep.items})
+        self.assertNotIn("Conversation companion", {item.name for item in rep.items})
         self.assertFalse(any(item.manual_verification for item in rep.items))
 
     def test_webex_http_url_fails(self):
@@ -314,7 +341,7 @@ class TestReadyCheck(unittest.TestCase):
             with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio):
                 rep = preflight.run_ready_check(s)
         self.assertTrue(rep.all_ok)
-        item = next(i for i in rep.items if i.name == "Webex companion")
+        item = next(i for i in rep.items if i.name == "Conversation companion")
         self.assertFalse(item.ok)
         self.assertFalse(item.required)
         self.assertIn("https", item.detail.lower())
@@ -328,11 +355,11 @@ class TestReadyCheck(unittest.TestCase):
             with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio):
                 rep = preflight.run_ready_check(s)
 
-        item = next(i for i in rep.items if i.name == "Webex companion")
+        item = next(i for i in rep.items if i.name == "Conversation companion")
         self.assertFalse(item.ok)
         self.assertIn("control characters", item.detail)
 
-    def test_non_webex_url_fails(self):
+    def test_reserved_example_domain_fails(self):
         with tempfile.NamedTemporaryFile() as jam:
             s = _settings(
                 jamulus_candidates=[jam.name],
@@ -341,10 +368,27 @@ class TestReadyCheck(unittest.TestCase):
             with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio):
                 rep = preflight.run_ready_check(s)
         self.assertTrue(rep.all_ok)
-        item = next(i for i in rep.items if i.name == "Webex companion")
+        item = next(i for i in rep.items if i.name == "Conversation companion")
         self.assertFalse(item.ok)
         self.assertFalse(item.required)
-        self.assertIn("Webex, Zoom, Microsoft Teams", item.detail)
+        self.assertIn("public DNS domain", item.detail)
+
+    def test_generic_public_meeting_service_passes_without_exposing_host(self):
+        with tempfile.NamedTemporaryFile() as jam:
+            s = _settings(
+                jamulus_candidates=[jam.name],
+                webex_url="https://meet.jit.si/WebJamBand?private=1#join",
+            )
+            with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio):
+                rep = preflight.run_ready_check(s)
+        item = next(i for i in rep.items if i.name == "Conversation companion")
+        self.assertTrue(item.ok)
+        self.assertEqual(
+            item.detail,
+            "meeting service configured — opens externally",
+        )
+        self.assertNotIn("meet.jit.si", rep.to_text())
+        self.assertNotIn("WebJamBand", rep.to_text())
 
     def test_webex_success_exposes_hostname_but_not_private_destination(self):
         private_path = "private-room"
@@ -360,7 +404,7 @@ class TestReadyCheck(unittest.TestCase):
             with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio):
                 rep = preflight.run_ready_check(s)
 
-        item = next(i for i in rep.items if i.name == "Webex companion")
+        item = next(i for i in rep.items if i.name == "Conversation companion")
         self.assertTrue(item.ok)
         self.assertFalse(item.required)
         self.assertEqual(

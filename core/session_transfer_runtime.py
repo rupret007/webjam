@@ -2020,6 +2020,7 @@ class GuestPeerSession:
         installation_path: str | Path,
         capture_enabled: Callable[[], bool],
         capture_config: Callable[[], tuple[int, int, int]],
+        capture_tracks: Callable[[], tuple[tuple[str, int], ...]] | None = None,
         capture_factory: Callable[..., object] | None = None,
         on_originals_changed: Callable[[Path], None] | None = None,
         on_guidance_changed: Callable[[], None] | None = None,
@@ -2036,6 +2037,7 @@ class GuestPeerSession:
         self.installation_id = load_or_create_installation_id(self.installation_path)
         self.capture_enabled = capture_enabled
         self.capture_config = capture_config
+        self.capture_tracks = capture_tracks
         self.capture_factory = capture_factory
         self._on_originals_changed = on_originals_changed
         self._on_guidance_changed = on_guidance_changed
@@ -2064,6 +2066,7 @@ class GuestPeerSession:
         self._capture = None
         self._active_take_id = ""
         self._capture_started_config: tuple[int, int, int] | None = None
+        self._capture_started_tracks: tuple[tuple[str, int], ...] | None = None
         self._guidance_notification_generation = 0
         self._pending: list[PendingLocalSegment] = []
         self._stop_event = threading.Event()
@@ -2424,16 +2427,19 @@ class GuestPeerSession:
         blocksize: int,
         *,
         take_id: str,
+        tracks: tuple[tuple[str, int], ...] | None,
     ):
         if self.capture_factory is not None:
-            return self.capture_factory(
-                root,
-                device=device,
-                samplerate=rate,
-                blocksize=blocksize,
-                take_id=take_id,
-                session_id=self.invite.session_id,
-            )
+            factory_kwargs = {
+                "device": device,
+                "samplerate": rate,
+                "blocksize": blocksize,
+                "take_id": take_id,
+                "session_id": self.invite.session_id,
+            }
+            if tracks is not None:
+                factory_kwargs["tracks"] = tracks
+            return self.capture_factory(root, **factory_kwargs)
         from core.local_capture import LocalInputCapture
 
         return LocalInputCapture(
@@ -2443,6 +2449,7 @@ class GuestPeerSession:
             blocksize=blocksize,
             take_id=take_id,
             session_id=self.invite.session_id,
+            tracks=tracks,
         )
 
     def _start_capture(self, take_id: str) -> None:
@@ -2454,6 +2461,16 @@ class GuestPeerSession:
                 needs_attention="A new take started before the prior stop."
             )
         device, rate, blocksize = self.capture_config()
+        tracks = (
+            tuple(self.capture_tracks())
+            if self.capture_tracks is not None
+            else None
+        )
+        if tracks == ():
+            # The musician opted every configured Local Original out (or the
+            # map failed closed) between presence publication and take start.
+            # Never reinterpret that as LocalInputCapture's legacy pair.
+            return
         originals = self.queue_path.parent
         originals.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(originals, 0o700)
@@ -2463,11 +2480,13 @@ class GuestPeerSession:
             int(rate),
             int(blocksize),
             take_id=take_id,
+            tracks=tracks,
         )
         capture.start()
         self._capture = capture
         self._active_take_id = take_id
         self._capture_started_config = (int(device), int(rate), int(blocksize))
+        self._capture_started_tracks = tracks
         self._notify_guidance_changed()
 
     def _finalize_capture(self, *, needs_attention: str = "") -> None:
@@ -2497,6 +2516,19 @@ class GuestPeerSession:
             errors.append(
                 "The selected input device or sample rate changed during this take; "
                 "the preserved segment uses the configuration captured at its start."
+            )
+        current_tracks = (
+            tuple(self.capture_tracks())
+            if self.capture_tracks is not None
+            else None
+        )
+        if (
+            self._capture_started_tracks is not None
+            and current_tracks != self._capture_started_tracks
+        ):
+            errors.append(
+                "The Local Original input map changed during this take; the "
+                "preserved segment uses the map captured at its start."
             )
         capture_device = getattr(result, "capture_device", None)
         device_id = str(getattr(capture_device, "device_id", "") or "")
@@ -2569,6 +2601,7 @@ class GuestPeerSession:
             with self._lock:
                 self._pending.append(PendingLocalSegment(descriptor, source_path))
         self._capture_started_config = None
+        self._capture_started_tracks = None
         self._save_queue()
         self._notify_originals_changed()
 

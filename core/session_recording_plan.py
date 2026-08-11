@@ -28,6 +28,8 @@ from core.recording_readiness import RecordingStorageCheck, RecordingStorageStat
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _MAX_NAME_CHARS = 128
 _MAX_INPUT_TRACKS = 32
+_MAX_CAPTURE_CHANNELS = 32
+_MAX_CAPTURE_STEM_CHARS = 64
 _MAX_FRAMES = 2**31
 
 
@@ -112,10 +114,10 @@ def _capture_stem(name: str, index: int) -> str:
     """Deterministically sanitize one configured name into a capture stem."""
 
     cleaned = _CAPTURE_STEM_SAFE_RE.sub("-", str(name or ""))
-    cleaned = " ".join(cleaned.split())[:60].strip(" -_")
+    cleaned = " ".join(cleaned.split())[:58].strip(" -_")
     if not cleaned or not cleaned[0].isalnum():
         cleaned = f"track-{index + 1}"
-    return f"local-{cleaned}"
+    return f"local-{cleaned}"[:_MAX_CAPTURE_STEM_CHARS].rstrip(" -_")
 
 
 def resolve_capture_tracks(settings: object) -> tuple[tuple[str, int], ...]:
@@ -133,7 +135,13 @@ def resolve_capture_tracks(settings: object) -> tuple[tuple[str, int], ...]:
 
     if not bool(getattr(settings, "local_capture_enabled", False)):
         return ()
+    raw = getattr(settings, "input_maps", None)
     bindings = configured_input_map_bindings(settings)
+    if not bindings:
+        # Only the genuinely empty/default configuration retains the legacy
+        # pair. A malformed non-empty map fails closed instead of unexpectedly
+        # recording the first two inputs.
+        return LEGACY_CAPTURE_TRACKS if raw in (None, []) else ()
     tracks: list[tuple[str, int]] = []
     seen: set[str] = set()
     channel = 0
@@ -141,23 +149,32 @@ def resolve_capture_tracks(settings: object) -> tuple[tuple[str, int], ...]:
         if not binding.enabled or not binding.local_original_enabled:
             continue
         base = _capture_stem(binding.track_name, index)
-        parts = (
-            ((base, channel),)
-            if binding.channel_count == 1
-            else ((f"{base} L", channel), (f"{base} R", channel + 1))
-        )
+        if channel + binding.channel_count > _MAX_CAPTURE_CHANNELS:
+            return ()
+        parts = ((base, channel),)
+        if binding.channel_count == 2:
+            stereo_base = base[: _MAX_CAPTURE_STEM_CHARS - 2].rstrip(" -_")
+            parts = (
+                (f"{stereo_base} L", channel),
+                (f"{stereo_base} R", channel + 1),
+            )
         for stem, stem_channel in parts:
             unique = stem
             suffix = 2
             while unique.lower() in seen:
-                unique = f"{stem}-{suffix}"
+                suffix_text = f"-{suffix}"
+                unique = (
+                    stem[: _MAX_CAPTURE_STEM_CHARS - len(suffix_text)]
+                    .rstrip(" -_")
+                    + suffix_text
+                )
                 suffix += 1
             seen.add(unique.lower())
             tracks.append((unique, stem_channel))
         channel += binding.channel_count
-        if len(tracks) >= 32 or channel > 63:
-            break
-    return tuple(tracks) if tracks else LEGACY_CAPTURE_TRACKS
+    # A valid map with every row disabled or opted out means no Local Original
+    # capture. It must never fall back to the legacy pair.
+    return tuple(tracks)
 
 
 def configured_input_map_bindings(
@@ -166,28 +183,27 @@ def configured_input_map_bindings(
     """Parse the musician's configured input maps from settings.
 
     Returns only strictly valid bindings (the settings loader already
-    fail-safes malformed lists to empty). NOTE: until the capture layer is
-    generalized, an enabled local capture records the fixed two host stems
-    regardless of this configuration; the SessionRecordingPlan therefore
-    binds capture truth, not this wish-list. This helper feeds the editor
-    UI and becomes authoritative only when capture consumes it.
+    fail-safes malformed lists to empty). The capture resolver consumes these
+    bindings directly and enforces the separate 32-channel capture ceiling.
     """
 
     raw = getattr(settings, "input_maps", None)
     if not isinstance(raw, list):
         return ()
+    if len(raw) > _MAX_INPUT_TRACKS:
+        return ()
     bindings: list[InputMapBinding] = []
     try:
-        for entry in raw[:_MAX_INPUT_TRACKS]:
+        for entry in raw:
             if not isinstance(entry, dict):
                 return ()
             bindings.append(
                 InputMapBinding(
                     track_name=entry.get("name", ""),
                     channel_count=entry.get("channels", 0),
-                    enabled=bool(entry.get("enabled", True)),
-                    local_original_enabled=bool(
-                        entry.get("local_original_enabled", False)
+                    enabled=entry.get("enabled", True),
+                    local_original_enabled=entry.get(
+                        "local_original_enabled", False
                     ),
                 )
             )
@@ -304,6 +320,13 @@ class SessionRecordingPlan:
         for entry in input_maps:
             if not isinstance(entry, InputMapBinding):
                 raise ValueError("input_maps entries must be InputMapBinding.")
+        capture_channels = sum(
+            entry.channel_count
+            for entry in input_maps
+            if entry.enabled and entry.local_original_enabled
+        )
+        if capture_channels > _MAX_CAPTURE_CHANNELS:
+            raise ValueError("input_maps exceeds the 32-channel capture limit.")
         names = [entry.track_name for entry in input_maps]
         if len(set(names)) != len(names):
             raise ValueError("input map track names must be unique.")

@@ -483,6 +483,16 @@ class TestWebexPage(unittest.TestCase):
         page = _WebexPage(AppSettings(webex_url="https://org.webex.com/meet/bandroom"))
         self.assertTrue(page.validatePage())
 
+    def test_supported_non_webex_url_passes_and_identifies_service(self):
+        from webjam_qt.windows.setup_wizard import _WebexPage
+
+        page = _WebexPage(
+            AppSettings(webex_url="https://zoom.us/j/1234567890")
+        )
+
+        self.assertTrue(page.validatePage())
+        self.assertEqual(page._site.text(), "Zoom site: zoom.us")
+
     def test_http_url_fails(self):
         from webjam_qt.windows.setup_wizard import _WebexPage
         page = _WebexPage(AppSettings(webex_url="http://org.webex.com/meet/x"))
@@ -491,10 +501,36 @@ class TestWebexPage(unittest.TestCase):
         self.assertFalse(page._url_hint.isHidden())
         self.assertTrue(page._url_hint.text())
 
-    def test_non_webex_url_fails(self):
+    def test_generic_public_service_url_passes_with_neutral_identity(self):
+        from webjam_qt.windows.setup_wizard import _WebexPage
+        page = _WebexPage(AppSettings(webex_url="https://meet.jit.si/WebJamBand"))
+        self.assertTrue(page.validatePage())
+        self.assertEqual(page._site.text(), "Meeting service site: meet.jit.si")
+
+    def test_reserved_service_url_still_fails(self):
         from webjam_qt.windows.setup_wizard import _WebexPage
         page = _WebexPage(AppSettings(webex_url="https://example.com/meet/x"))
         self.assertFalse(page.validatePage())
+
+    def test_meeting_link_copy_is_provider_neutral(self):
+        from PySide6.QtWidgets import QLabel
+        from webjam_qt.windows.setup_wizard import _WebexPage
+
+        page = _WebexPage(AppSettings(webex_url=""))
+        copy = " ".join(label.text() for label in page.findChildren(QLabel))
+
+        self.assertEqual(page.title(), "Meeting Conversation")
+        self.assertIn(
+            "Meeting link (any platform)",
+            copy,
+        )
+        self.assertEqual(
+            page._url.accessibleName(),
+            "Meeting link for conversation or video",
+        )
+        self.assertEqual(page._site.accessibleName(), "Meeting service site")
+        self.assertIn("selected meeting service handles sign-in", copy)
+        self.assertNotIn("Webex handles sign-in", copy)
 
     def test_bare_word_fails(self):
         from webjam_qt.windows.setup_wizard import _WebexPage
@@ -559,7 +595,10 @@ class TestRoutingPage(unittest.TestCase):
         copy = " ".join(label.text() for label in page.findChildren(QLabel))
         self.assertEqual(page.findChildren(QRadioButton), [])
         self.assertTrue(page.isComplete())
-        self.assertIn("does not configure Jamulus or Webex", copy)
+        self.assertIn(
+            "does not configure Jamulus or your meeting service",
+            copy,
+        )
         self.assertNotIn("Audience broadcast bridge", copy)
         self.assertNotIn("Choose how this Mac uses Webex audio", page.subTitle())
 

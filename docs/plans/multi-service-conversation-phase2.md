@@ -1,13 +1,16 @@
 # Multi-service conversation — Phase 2+ plan
 
-> Status: plan. Phase 1 (service-neutral link policy, handoff, redaction,
-> and the verified-identity registry in `core/meeting_link.py`) is
-> implemented on the v0.22.5 line. Nothing below is implemented unless a
+> Status: plan. Phase 1 (provider-neutral hardened public-HTTPS link policy,
+> generic fallback, handoff, redaction, and the verified-identity registry in
+> `core/meeting_link.py`) is
+> implemented on the v0.24.0 source line. Nothing below is implemented unless a
 > changelog entry says so.
 
 WebJam's conversation model is one truthful action on every service:
 validate a saved HTTPS link, hand it to the operating system once, claim
-nothing about join, mute, or meeting state. Phase 2 extends the *verified
+nothing about join, mute, provider identity, or meeting state. Known services
+receive friendly labels; every other accepted provider remains neutral and
+its URL/hostname is fully redacted from support surfaces. Phase 2 extends the *verified
 native app* experience (detect, bring forward, honest installed/not-installed
 status) from Webex to Zoom, Microsoft Teams, and FaceTime, using the same
 codesign-anchored pattern. Phase 3 records the credentialed API tier as

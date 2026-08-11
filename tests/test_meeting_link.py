@@ -1,4 +1,5 @@
 from core.meeting_link import (
+    GENERIC_MEETING_SERVICE_KEY,
     SUPPORTED_MEETING_SERVICES_TEXT,
     identify_meeting_service,
     is_allowed_meeting_link,
@@ -9,7 +10,7 @@ from core.meeting_link import (
 )
 
 
-def test_all_supported_services_validate_and_identify():
+def test_all_known_services_validate_and_identify():
     cases = {
         "https://myband.webex.com/meet/practice": ("webex", "myband.webex.com"),
         "https://webex.com/meet/practice": ("webex", "webex.com"),
@@ -44,6 +45,22 @@ def test_all_supported_services_validate_and_identify():
         assert meeting_link_hostname(url) == hostname, url
 
 
+def test_unrelated_public_https_hosts_use_neutral_generic_provider():
+    cases = (
+        ("https://meet.jit.si/WebJamBand?config.prejoinPageEnabled=true", "meet.jit.si"),
+        ("whereby.com/webjam-band", "whereby.com"),
+        ("https://sessions.custom-company.co/rooms/private#join", "sessions.custom-company.co"),
+    )
+    for url, hostname in cases:
+        assert meeting_link_error(url) is None, url
+        assert is_allowed_meeting_link(url), url
+        assert identify_meeting_service(url) == GENERIC_MEETING_SERVICE_KEY, url
+        assert meeting_service_label(identify_meeting_service(url)) == (
+            "Meeting service"
+        )
+        assert meeting_link_hostname(url) == hostname
+
+
 def test_lookalike_and_hostile_links_are_rejected():
     rejected = (
         "https://zoom.us.evil.example/j/123",
@@ -52,12 +69,23 @@ def test_lookalike_and_hostile_links_are_rejected():
         "https://facetime.apple.com.evil.example/join",
         "https://notzoom.us/j/123",
         "https://gmeet.google.com/abc",
+        "https://webex-login.evil.com/meet/123",
+        "https://teams.evil.com/join/123",
         "https://example.com/meet/band",
         "http://zoom.us/j/123",
         "https://user:pass@zoom.us/j/123",
         "https://zoom.us:8443/j/123",
         "https://%7aoom.us/j/123",
         "https://localhost/meet",
+        "https://127.0.0.1/meet",
+        "https://10.0.0.8/meet",
+        "https://[::1]/meet",
+        "https://conference.local/meet",
+        "https://conference.internal/meet",
+        "https://conference.test/meet",
+        "https://xn--wbe-xpa.example.co/meet",
+        "https://meet.jit.si:/room",
+        "https://meet.jit.si\\@evil.com/room",
         "https://zoom..us/j/123",
         "https://zoom.us/j/1 23",
         "https://meet.google.com/abc\n-defg",
@@ -71,12 +99,27 @@ def test_lookalike_and_hostile_links_are_rejected():
         assert meeting_link_hostname(url) == "", url
 
 
-def test_unknown_host_error_names_every_supported_service():
-    error = meeting_link_error("https://example.com/meet/band")
+def test_empty_link_help_names_known_services_and_the_generic_option():
+    error = meeting_link_error("")
     assert error is not None
     assert SUPPORTED_MEETING_SERVICES_TEXT in error
     for name in ("Webex", "Zoom", "Microsoft Teams", "Google Meet", "FaceTime"):
         assert name in SUPPORTED_MEETING_SERVICES_TEXT, name
+    assert "another meeting platform" in SUPPORTED_MEETING_SERVICES_TEXT
+
+
+def test_known_service_lookalikes_never_receive_a_branded_identity():
+    for url in (
+        "https://zoom.us.evil.com/j/123",
+        "https://notzoom.us/j/123",
+        "https://gmeet.google.com/abc",
+        "https://webex-login.evil.com/meet/123",
+    ):
+        assert meeting_link_error(url)
+        assert identify_meeting_service(url) is None
+        assert meeting_service_label(identify_meeting_service(url)) == (
+            "meeting service"
+        )
 
 
 def test_service_labels_are_human_readable():
@@ -85,6 +128,7 @@ def test_service_labels_are_human_readable():
     assert meeting_service_label("teams") == "Microsoft Teams"
     assert meeting_service_label("google_meet") == "Google Meet"
     assert meeting_service_label("facetime") == "FaceTime"
+    assert meeting_service_label(GENERIC_MEETING_SERVICE_KEY) == "Meeting service"
     assert meeting_service_label(None) == "meeting service"
     assert meeting_service_label("unknown") == "meeting service"
 
@@ -95,12 +139,14 @@ def test_facetime_handoff_is_macos_only_and_the_error_is_honest():
     for platform in ("win32", "linux"):
         error = meeting_handoff_platform_error(facetime, platform=platform)
         assert error is not None and "Mac" in error
+        assert "another browser-capable meeting link" in error
     # Non-FaceTime services carry no platform restriction anywhere.
     for url in (
         "https://myband.webex.com/meet/practice",
         "https://zoom.us/j/123",
         "https://teams.microsoft.com/l/meetup-join/19",
         "https://meet.google.com/abc-defg-hij",
+        "https://meet.jit.si/webjam-band",
     ):
         for platform in ("darwin", "win32", "linux"):
             assert (
@@ -141,6 +187,19 @@ def test_meeting_links_redact_to_origin_only_in_logs_and_mappings():
     # The historical webex_url settings field may hold any supported link.
     mapping = redact_mapping({"webex_url": "https://zoom.us/j/123?pwd=s"})
     assert mapping["webex_url"] == "https://zoom.us/[redacted]"
+
+    # Generic hosts may reveal a private company/community name. Diagnostics
+    # retain neither that host nor its room, query, or fragment.
+    generic = "https://sessions.custom-company.co/private-room?token=x#join"
+    assert redact_meeting_url(generic) == "[redacted]"
+    assert redact_mapping({"webex_url": generic})["webex_url"] == "[redacted]"
+    redacted_generic = redact_text(f"opening {generic} now")
+    assert redacted_generic.startswith("opening [redacted]")
+    for private in ("custom-company", "private-room", "token=x", "join"):
+        assert private not in redacted_generic
+    assert redact_text("opening http://zoom.us/private-room?token=x") == (
+        "opening [redacted]"
+    )
 
 
 def test_app_identity_registry_matches_the_live_webex_contract():
@@ -211,6 +270,18 @@ def test_meeting_provider_adapter_carries_recognition_facts_only():
         "https://facetime.apple.com/join#v=1&p=a", platform="win32"
     )
     assert "Mac" in facetime_on_windows.platform_error
+
+    generic = meeting_provider_for_link(
+        "https://meet.jit.si/WebJamBand?private=1#join"
+    )
+    assert generic is not None
+    assert (generic.key, generic.label) == (
+        GENERIC_MEETING_SERVICE_KEY,
+        "Meeting service",
+    )
+    assert generic.link_hostname == "meet.jit.si"
+    assert generic.native_detection_supported is False
+    assert generic.platform_error == ""
 
     assert meeting_provider_for_link("https://example.com/x") is None
     assert meeting_provider_for_link("") is None

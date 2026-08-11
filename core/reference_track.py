@@ -1709,8 +1709,9 @@ class ReferenceTrackController:
                 )
             if context.audience_bridge_active:
                 return self._fail_locked(
-                    "Shared Track can't share BlackHole with the Webex audience "
-                    "bridge. Switch Webex to talkback or video-only first.",
+                    "Shared Track can't share BlackHole with the Conversation "
+                    "audience bridge. Switch Conversation to talkback or "
+                    "video-only first.",
                     recoverable_route=True,
                 )
             if self._stream is None:

@@ -1,8 +1,8 @@
-# WebJam musician guide — v0.23.0 source candidate
+# WebJam musician guide — v0.24.0 source candidate
 
-> v0.23.0 is unpublished source. GitHub **Latest** remains the exact immutable
-> v0.22.5 package. The Shared Track, Record Session, and revised Studio flow in
-> this guide require an exact v0.23.0 test build; all physical and
+> GitHub **Latest** remains the exact immutable v0.23.0 package until v0.24.0's
+> protected promotion passes. The recording-first and revised Studio flow in
+> this guide requires an exact v0.24.0 test build; all physical and
 > platform-trust gates remain **NOT RUN**.
 
 ## Follow the current guide
@@ -28,13 +28,17 @@ Jamulus is the live music engine. It owns your interface, inputs, outputs,
 channels, buffer, jitter, feedback protection, and musician mix. Configure
 those in Jamulus, not in WebJam.
 
-Webex is optional talking/video. The direct **Webex Controls** action reveals
-Conversation without opening or rejoining a meeting. WebJam can validate and
-explicitly open a link, but it does not claim that Webex joined, muted,
-selected devices, or sees anyone. WebJam also checks whether the native Webex
-app is installed. If it is missing, an explicit button opens Cisco's official
-installer in your browser; WebJam does not save a Webex password or
-install/update Webex silently.
+Any meeting platform can provide optional talking/video when its meeting link
+is a public HTTPS URL with a DNS hostname and passes WebJam's safety checks.
+Known Webex, Zoom, Microsoft Teams, Google Meet, and FaceTime links receive
+friendly labels; any other accepted provider uses neutral Conversation
+wording. The direct **Conversation** action reveals the controls without
+opening or rejoining a meeting. WebJam can validate and explicitly open the
+link, but it does not claim that the service joined, muted, selected devices,
+or sees anyone, and it does not natively verify an unknown provider. WebJam's
+native app checks are exclusively for Webex. If Webex is missing, an explicit
+button opens Cisco's official installer in your browser; WebJam does not save
+a Webex password or install/update Webex silently.
 
 ## Host a Jam
 
@@ -64,7 +68,7 @@ The main session rail keeps the everyday destinations visible:
 
 | Action | What it does |
 | --- | --- |
-| Webex Controls | Shows Conversation controls without opening the saved link |
+| Conversation | Shows meeting controls without opening the saved link |
 | Shared Track | Host-only live waveform and transport; loading never starts playback |
 | Studio | Opens live completed-take review, or the current song workspace when WebJam was opened in Reference Studio |
 
@@ -74,7 +78,7 @@ Cmd/Ctrl+3 so there is one obvious route to the existing workspace.
 | Item | What it does |
 | --- | --- |
 | Audio Settings in Jamulus | Brings the owned Jamulus window forward; use its Audio/Network Settings menu |
-| Webex Controls | Routes to the same Conversation panel as the direct action; it has no launch side effect |
+| Conversation | Routes to the same panel as the direct action; it has no launch side effect |
 | Jamulus Updates… | Checks WebJam's signed compatibility catalog, downloads an approved update, waits until the session is idle, and offers explicit OS approval; managed previous-version rollback is macOS-only |
 | Recording Setup | Sets Local Originals and takes storage; it does not alter Jamulus music routing |
 | Shared Track… | Routes to the same host-only transport; source loading is independent, and current-source Play becomes eligible only after the Mac proves the required local BlackHole route |
@@ -83,7 +87,8 @@ Cmd/Ctrl+3 so there is one obvious route to the existing workspace.
 | Band Check / Verify Sound | Observes an already-live session without restarting it |
 | Support | Creates a sanitized bundle only when you ask |
 
-In Conversation on macOS, **Show Webex App** re-verifies Cisco's installed app.
+In Conversation on macOS, the Webex-only **Show Webex App** action re-verifies
+Cisco's installed app.
 If Webex is running, it dynamically verifies the exact Cisco PID and asks macOS
 to activate that same app. If Webex is stopped, it launches the verified app
 itself with no URL or document argument, then proves the exact path, PID,
@@ -284,9 +289,12 @@ exact controlled source build using the
 
 The host controls the shared multitrack take. At the first **Record Session**
 click, choose either **Record Shared Jam Only** or **Also Keep This Mac’s
-Inputs**. The first choice begins the shared take. The second opens Recording Setup so the musician
-can explicitly choose an eligible two-channel local-capture device. A guest is
-never blocked from joining because Local Originals are not configured.
+Inputs**. The first choice begins the shared take. The second opens Recording
+Setup so the musician can choose an eligible local-capture device and edit
+named mono/stereo input tracks totaling up to 32 enabled Local Original input
+channels. Tracks allocate device channels sequentially; an empty track list
+preserves the compatible two-input default. A guest is never blocked from
+joining because Local Originals are not configured.
 
 WebJam shows the take's actual progression: **Idle**, **Preparing**,
 **Count-in**, **Recording**, **Stopping**, **Finalizing**, **Ready**, **Needs
@@ -334,7 +342,7 @@ and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
 manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
-v0.23.0 source tree.
+v0.24.0 source tree.
 
 Edited Studio packages require the secure descriptor-relative export available
 on macOS/Linux. On Windows, Studio instead labels the action **Export Aligned

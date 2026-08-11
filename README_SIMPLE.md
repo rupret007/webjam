@@ -1,20 +1,22 @@
 # WebJam, simply
 
-> **Private candidate guide:** use GitHub
-> [Latest](https://github.com/rupret007/webjam/releases/latest) for the current
-> **v0.23.0** checksum-verified test package. Windows is unsigned; macOS is
-> ad-hoc signed and unnotarized.
+> **Private candidate guide:** GitHub
+> [Latest](https://github.com/rupret007/webjam/releases/latest) remains the
+> checksum-verified v0.23.0 package until protected v0.24.0 promotion. Windows
+> is unsigned; macOS is ad-hoc signed and unnotarized.
 
 > **Source note:** use the exact release tag and attached checksum manifest as
-> download evidence; an untagged checkout is not a substitute. v0.23.0 adds
-> Shared Track, Record Session, and Studio improvements and is now GitHub
-> Latest.
+> download evidence; an untagged checkout is not a substitute. v0.24.0 adds
+> configurable Local Originals, clearer per-source recording truth, Studio
+> Reset Mix/overload feedback, and provider-neutral meeting-link handoff.
 
 WebJam helps a band start playing together. It keeps the session, invite, and
-recordings organized. Jamulus handles the music. Webex is optional for talking
-or video.
+recordings organized. Jamulus handles the music. Any meeting platform can be
+optional for talking or video when it provides a public HTTPS meeting link
+that passes WebJam's safety checks.
 
-Current downloadable candidate: **v0.23.0**. Its four-platform release covers
+Current source candidate: **v0.24.0**. Use its downloads only when the exact
+v0.24.0 GitHub release and checksum manifest exist. The four-platform release covers
 Windows, Ubuntu 22.04, Intel Mac, and
 Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc
 signed and not notarized. The current line uses `cryptography` 50.0.0 for three
@@ -61,20 +63,26 @@ does not start, stop, configure, or feed Jamulus.
 ## If you need help
 
 - **Sound needs attention:** choose **More → Audio Settings in Jamulus**.
-- **Talking/video:** choose the direct **Webex Controls** action (or **More →
-  Webex Controls**). It only shows Conversation. On macOS, **Show Webex App**
+- **Talking/video:** choose the direct **Conversation** action (or **More →
+  Conversation**). It does not open a meeting. Save a public HTTPS meeting link,
+  then use **Join / Open Meeting** for the explicit handoff. Webex, Zoom,
+  Microsoft Teams, Google Meet, and FaceTime receive friendly labels; any
+  other accepted provider stays neutrally labeled. On macOS, the separate
+  Webex-only **Show Webex App** action
   re-verifies and activates the exact Cisco process when running. If stopped,
   it launches the verified app itself with no URL or browser; Webex chooses its
   own screen. Only **Join / Open Meeting** performs the one explicit
   meeting-link handoff. **Open Webex to Mute** shows the verified app so you can use
   its own Mute control; WebJam never claims it changed Webex or Jamulus.
-  Windows and Linux use **Join / Open Meeting** because their current packages
+  FaceTime links are Mac-only. Windows and Linux use **Join / Open Meeting**
+  because their current packages
   do not verify the native app publisher. If the app is missing, WebJam can
   open Cisco's official installer page after you confirm; it does not save a
   Webex password or install silently.
 - **Something failed:** use **More → Band Check / Verify Sound** and the
   support/diagnostics action. The report includes bounded Jamulus updater and
-  Webex app state without local paths, meeting links, names, or credentials.
+  Webex app state without local paths, meeting links, provider hostnames,
+  names, or credentials.
 - **Recording:** the host chooses **Record Session**. The first time, choose
   shared recording only or also keep this Mac’s separate Local Originals.
   Wait through Preparing, Count-in, Recording, Stopping, and Finalizing; only
@@ -88,7 +96,7 @@ does not start, stop, configure, or feed Jamulus.
   scanning. In published v0.22.5 on Mac, an official 48-kHz BlackHole 16ch/64ch
   route may make Play available only after machine certification; choosing
   Play still performs exact live isolation checks and fails closed on
-  uncertainty. In v0.23.0 source, the live deck also shows a progressive
+  uncertainty. The live deck also shows a progressive
   waveform, count-in, dropouts, and cleanup; Replace/Remove stay stopped-only.
   Guests receive bounded, path-free host state without transport authority;
   older peer state may show only the dedicated channel. Neither is physical
@@ -116,7 +124,7 @@ Waveforms load in the background and recorded gaps remain silence. Studio
 autosaves choices to a separate file; a failed save keeps the edit pending and
 the recorded take safe. Real two-Mac output, hardware interruption/recovery,
 external-editor import, physical Reference Studio audio, and signed-install
-gates are **NOT RUN** for v0.23.0. Publishing a private candidate does not
+gates are **NOT RUN** for v0.24.0. Publishing a private candidate does not
 convert them to PASS. Use the
-[v0.23 physical checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
+[v0.24 physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
 for the exact multi-machine evidence to collect.

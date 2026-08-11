@@ -1,12 +1,14 @@
-# Developing WebJam v0.23.0
+# Developing WebJam v0.24.0
 
-> **Current candidate source:** this guide describes unpublished v0.23.0
-> Shared Track, Record Session, and Studio development. GitHub **Latest**
-> remains immutable v0.22.5.
+> **Current candidate source:** this guide describes v0.24.0 recording-first,
+> configurable Local Original, Studio, and provider-neutral conversation
+> development. GitHub **Latest** remains immutable v0.23.0 until the protected
+> v0.24 promotion passes.
 
-> **Release boundary:** the exact v0.22.5 tag and checksum-verified assets remain
-> authoritative for the published download. No v0.23.0 tag, package, checksum,
-> component authorization, or physical result exists yet.
+> **Release boundary:** the exact v0.23.0 tag and checksum-verified assets remain
+> authoritative for the published download until GitHub Latest changes. A
+> v0.24.0 build is testable only when its exact tag, asset, and checksum are
+> recorded; no physical result exists yet.
 
 ## Local setup
 
@@ -23,7 +25,7 @@ Use the repository virtual environment:
 For Studio arrangement changes, run the focused model, persistence, history,
 controller, renderer, comping, waveform, export, and Qt integration modules in
 addition to the full suite. The physical-output and external-editor gates in
-`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.23.0.
+`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.24.0.
 
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
@@ -117,7 +119,11 @@ Linux/JACK real-Jamulus companion and its evidence boundary are documented in
   window-text scraping.
 - JSON-RPC is for process, authentication, roster, connection, chat, and
   recorder facts—not device configuration.
-- Keep Webex external and truthful: opening a URL is not a joined/muted claim.
+- Keep meeting services external and truthful: the generic boundary accepts
+  only hardened public HTTPS DNS-host links, and opening one is not a
+  joined/muted or provider-verification claim. Keep native publisher,
+  installer, mute-guidance, and bring-forward work Webex-specific. Fully
+  redact unknown-provider URLs and hostnames from logs and support mappings.
 - Keep Local Originals behind explicit Recording Setup and Studio output in
   Studio.
 - Keep Shared Track on the existing separately owned `WebJam Track` Jamulus
@@ -143,7 +149,7 @@ Linux/JACK real-Jamulus companion and its evidence boundary are documented in
 - UI surfaces render the shared snapshot and route semantic actions back to an
   owner. They must not start work while rendering.
 - Creative Pulse content stays local and cannot mutate conductor facts. No
-  cloud model, agent, or SDK belongs in the v0.19 production path.
+  cloud model, agent, or SDK belongs in the v0.24 candidate path.
 - Public consumers get only `to_public_dict()` followed by their own strict
   allowlist. Never add free-form copy, notes, names, channel IDs, addresses,
   devices, paths, invitations, credentials, tokens, or raw exceptions.
@@ -168,12 +174,13 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree's package identity is `0.23.0`, an unpublished candidate. It
+The source tree's package identity is `0.24.0`, an unsigned private test
+candidate. It
 must receive its own exact tag, asset inventory, checksums, exact-target
-component catalog, tag CI, and verified promotion before it can become a
-download. The v0.22.5 tag, eight-asset inventory, checksums, v3 component
-catalog, tag CI, and verified promotion remain the immutable GitHub **Latest**
-release evidence and must not be reused.
+component/fallback proof, tag CI, and verified promotion before it can become a
+download. The v0.23.0 tag, eight-asset inventory, checksums, tag CI, and
+verified promotion remain the immutable GitHub **Latest** release evidence
+until v0.24.0 promotion and must not be reused.
 Published v0.20.0, v0.21.0, v0.22.0, v0.22.1, v0.22.2, v0.22.3, v0.22.4,
 and v0.22.5 tags and assets remain immutable historical evidence and must never
 be overwritten or served under a moved tag.

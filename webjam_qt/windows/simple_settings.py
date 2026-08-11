@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 from core.jamulus_name import JamulusNameError, validate_jamulus_name
 from core.settings import AppSettings, save_settings
 from core.meeting_link import (
+    GENERIC_MEETING_SERVICE_KEY,
     identify_meeting_service,
     meeting_link_error,
     meeting_link_hostname,
@@ -141,14 +142,14 @@ class SimpleSettingsDialog(QDialog):
         conversation = self._section("Conversation")
         self._conversation_toggle = QToolButton()
         self._conversation_toggle.setObjectName("SimpleSettingsDisclosure")
-        self._conversation_toggle.setText("Webex (optional)")
+        self._conversation_toggle.setText("Meeting link (optional)")
         self._conversation_toggle.setCheckable(True)
         self._conversation_toggle.setToolButtonStyle(
             Qt.ToolButtonStyle.ToolButtonTextBesideIcon
         )
         self._conversation_toggle.setArrowType(Qt.ArrowType.RightArrow)
         self._conversation_toggle.setAccessibleName(
-            "Optional Webex meeting or Personal Room link"
+            "Optional meeting link for conversation or video"
         )
         conversation.layout().addWidget(self._conversation_toggle)
         self._conversation_body = QWidget()
@@ -156,27 +157,29 @@ class SimpleSettingsDialog(QDialog):
         conversation_body.setContentsMargins(0, Space.SM, 0, 0)
         conversation_body.setSpacing(Space.XS)
         video_note = QLabel(
-            "Webex is optional for talking or video. Webex handles sign-in, "
-            "camera, microphone, and meeting controls. Your WebJam musician "
-            "name does not change your Webex identity."
+            "Conversation and video are optional. WebJam opens a supported "
+            "meeting link externally. Your selected meeting service handles "
+            "sign-in, camera, microphone, and meeting controls; your WebJam "
+            "musician name does not change your identity there."
         )
         video_note.setObjectName("SimpleSettingsHint")
         video_note.setWordWrap(True)
-        video_label = self._field_label("Meeting link (Webex, Zoom, Teams, Meet, or FaceTime)")
-        self._video = QLineEdit(settings.webex_url)
-        self._video.setPlaceholderText(
-            "https://your-site.webex.com/meet/your-room"
+        video_label = self._field_label(
+            "Meeting link (any platform)"
         )
-        self._video.setAccessibleName("Webex meeting or Personal Room link")
+        self._video = QLineEdit(settings.webex_url)
+        self._video.setPlaceholderText("Paste a public https:// meeting link")
+        self._video.setAccessibleName("Optional meeting link")
         self._video_site = QLabel("")
         self._video_site.setObjectName("SimpleSettingsHint")
         self._video_site.setTextFormat(Qt.TextFormat.PlainText)
         self._video_site.setVisible(False)
-        self._open_webex = QPushButton("Open in Webex")
+        self._open_webex = QPushButton("Open Meeting Link")
         self._open_webex.setObjectName("QuietButton")
-        self._open_webex.setAccessibleName("Open this link in Webex")
+        self._open_webex.setAccessibleName("Open this meeting link externally")
         self._open_webex.setAccessibleDescription(
-            "Opens the entered link externally. Sign-in and joining remain in Webex."
+            "Opens the entered link externally. Sign-in and joining remain "
+            "in the selected meeting service."
         )
         self._open_webex.clicked.connect(self._open_webex_test)
         self._get_webex = QPushButton("Get Webex from Cisco")
@@ -189,7 +192,7 @@ class SimpleSettingsDialog(QDialog):
         self._get_webex.clicked.connect(self.install_webex_requested.emit)
         self._webex_status = QLabel("")
         self._webex_status.setObjectName("SimpleSettingsHint")
-        self._webex_status.setAccessibleName("Webex link test result")
+        self._webex_status.setAccessibleName("Meeting link test result")
         self._webex_status.setWordWrap(True)
         self._webex_status.setTextFormat(Qt.TextFormat.PlainText)
         self._webex_status.setVisible(False)
@@ -303,18 +306,32 @@ class SimpleSettingsDialog(QDialog):
             return
         if url != self._video.text().strip():
             self._video.setText(url)
+        service_key = identify_meeting_service(url)
+        service = meeting_service_label(service_key)
+        destination = (
+            "your meeting service"
+            if service_key == GENERIC_MEETING_SERVICE_KEY
+            else service
+        )
         try:
             opened = bool(self._webex_opener(url))
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning(
-                "External Webex test launch failed (%s)", type(exc).__name__
+                "External meeting-link test launch failed (%s)",
+                type(exc).__name__,
             )
             opened = False
         self._webex_status.setText(
-            "Opened externally—finish joining in Webex. Choose Save to keep "
-            "this link in WebJam."
+            f"Opened externally—finish joining in {destination}. Choose Save to "
+            "keep this link in WebJam."
             if opened
-            else "Webex could not be opened. Check your browser or Webex app and try again."
+            else (
+                f"{service} could not be opened. Check your browser or "
+                "meeting app and try again."
+                if service_key != GENERIC_MEETING_SERVICE_KEY
+                else "The meeting link could not be opened. Check your browser "
+                "or meeting app and try again."
+            )
         )
         self._webex_status.setVisible(True)
         self._announce(self._webex_status)
@@ -370,7 +387,7 @@ class SimpleSettingsDialog(QDialog):
             if error:
                 self._show_error(error, focus=self._video)
                 return False
-        # This dialog owns only identity and the optional Webex link. A modal
+        # This dialog owns only identity and the optional meeting link. A modal
         # Qt dialog continues processing native invitation callbacks; merge
         # into the controller's latest settings object so a role/endpoint
         # replacement cannot be overwritten by this dialog's stale hidden

@@ -18,7 +18,7 @@ keeps the product story and five-minute demo intentionally short.
 ## Product and architecture
 
 - [Architecture](../ARCHITECTURE.md) — system boundaries and ownership between
-  WebJam, Jamulus, Webex, Reference Studio, and Pocket Stage.
+  WebJam, Jamulus, provider-neutral meeting handoff, Reference Studio, and Pocket Stage.
 - [Recording and Studio](../RECORDING_AND_STUDIO.md) — Record Session, Shared
   Track source identity, Local Originals, editing, export, recovery, and
   evidence boundaries.
@@ -30,9 +30,9 @@ keeps the product story and five-minute demo intentionally short.
   — iPhone owner-device preview and its trust model.
 - [Webex decision record](adr/0004-webex-external-launch-and-future-oauth.md)
   — external handoff today; OAuth or an embedded companion remains future work.
-- [Webex companion guidance](../WEBEX_AUDIO_MODES.md) — the canonical
-  description of the Conversation controls and what WebJam does and does not
-  claim about the external Webex app.
+- [Conversation companion guidance](../WEBEX_AUDIO_MODES.md) — the canonical
+  description of provider-neutral meeting handoff plus the separate Webex-only
+  native controls and their claim boundary.
 - [Quick help map](../QUICK_HELP_MAP.md) and
   [help routing map](../HELP_ROUTING_MAP.md) — need→action and
   musician-question→answer tables for support conversations.
@@ -44,7 +44,8 @@ keeps the product story and five-minute demo intentionally short.
 - [Test procedure](../TEST_PROCEDURE.md) — automated evidence and the physical /
   credentialed ledger. **NOT RUN** is not a claim of failure; it means evidence
   has not yet been collected against an exact package.
-- [v0.23 Shared Track and recording physical checklist](../V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
+- [v0.24 recording-first physical checklist](../V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
+- [Historical v0.23 Shared Track and recording checklist](../V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
   — exact multi-machine, macOS/BlackHole, Linux/JACK, hardware, recording,
   Studio, accessibility, and recovery observations. Every row begins
   **NOT RUN**.

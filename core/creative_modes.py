@@ -19,7 +19,7 @@ CREATIVE_MODES: tuple[CreativeMode, ...] = (
         label="Music Jam",
         default_template="Band Rehearsal",
         default_goal="Lock timing and balance for one full song run.",
-        quick_help="Launch Jamulus first, then Webex. Keep latency and VU peaks in check.",
+        quick_help="Launch Jamulus first, then optional Conversation. Keep latency and VU peaks in check.",
         review_prompts=(
             "What section needs a tighter groove?",
             "Which channel needs level or pan adjustment?",
@@ -107,4 +107,3 @@ def get_mode_by_label_or_default(label: str) -> CreativeMode:
         if mode.label == label:
             return mode
     return CREATIVE_MODES[0]
-

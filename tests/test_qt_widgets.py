@@ -231,7 +231,7 @@ class TestSessionStrip(unittest.TestCase):
         s._audio_button.click()
         self.assertEqual(len(results), 1)
 
-    def test_main_webex_button_navigates_without_requesting_a_meeting_launch(self):
+    def test_main_conversation_button_navigates_without_requesting_a_meeting_launch(self):
         s = self._strip()
         tools = []
         launches = []
@@ -240,7 +240,12 @@ class TestSessionStrip(unittest.TestCase):
         s._video_button.click()
         self.assertEqual(tools, ["conversation"])
         self.assertEqual(launches, [])
-        self.assertEqual(s._video_button.text(), "Webex Controls")
+        self.assertEqual(s._video_button.text(), "Conversation")
+        self.assertEqual(
+            s._video_button.accessibleName(),
+            "Show conversation controls",
+        )
+        self.assertNotIn("Webex", s._video_button.toolTip())
 
     def test_main_studio_button_uses_the_canonical_workspace_route(self):
         s = self._strip()
@@ -414,12 +419,12 @@ class TestSessionStrip(unittest.TestCase):
         self.assertNotIn("Prior Host Song.wav", s._shared_track_surface.toolTip())
         self.assertEqual(s._shared_track_waveform._position, 0.0)
 
-    def test_webex_menu_label_recovers_after_link_is_configured(self):
+    def test_conversation_menu_label_recovers_after_link_is_configured(self):
         s = self._strip()
         s.set_video_configured(False)
-        self.assertEqual(s._video_action.text(), "Set Up Webex Controls")
+        self.assertEqual(s._video_action.text(), "Set Up Conversation")
         s.set_video_configured(True)
-        self.assertEqual(s._video_action.text(), "Webex Controls")
+        self.assertEqual(s._video_action.text(), "Conversation")
 
     def test_external_handoff_progress_never_disables_conversation_navigation(self):
         s = self._strip()
@@ -428,11 +433,26 @@ class TestSessionStrip(unittest.TestCase):
 
         self.assertTrue(s._video_button.isEnabled())
         self.assertTrue(s._video_action.isEnabled())
-        self.assertEqual(s._video_button.text(), "Webex Controls")
+        self.assertEqual(s._video_button.text(), "Conversation")
         self.assertEqual(
             s._video_button.property("webexLaunchAction"),
             "Opening…",
         )
+
+    def test_conversation_navigation_neutralizes_legacy_webex_status_copy(self):
+        s = self._strip()
+
+        s.set_video_state("Open Webex")
+
+        self.assertEqual(
+            s._video_button.property("webexLaunchAction"),
+            "Open Webex",
+        )
+        self.assertIn(
+            "External handoff status: Open Meeting",
+            s._video_button.accessibleDescription(),
+        )
+        self.assertNotIn("Webex", s._video_button.accessibleDescription())
 
     def test_every_more_menu_action_emits_its_semantic_request(self):
         s = self._strip()
@@ -446,7 +466,7 @@ class TestSessionStrip(unittest.TestCase):
             # first-class button on the session bar, not a menu duplicate.
             "Sound Settings…": "audio_settings",
             "Check for Updates…": "jamulus_updates",
-            "Webex Controls": "conversation",
+            "Conversation": "conversation",
             "Recording Setup…": "recording_setup",
             "Shared Track…": "reference_track",
             "Notes": "canvas",
@@ -673,7 +693,7 @@ class TestParticipantGrid(unittest.TestCase):
         # semantics visible without becoming a second workspace.
         self.assertLessEqual(embed.maximumHeight(), 152)
 
-    def test_webex_launch_status_updates_accessible_truth(self):
+    def test_unconfigured_meeting_launch_status_updates_accessible_truth(self):
         from unittest.mock import patch
 
         from PySide6.QtGui import QAccessible
@@ -686,15 +706,15 @@ class TestParticipantGrid(unittest.TestCase):
 
         self.assertEqual(
             embed._status_label.accessibleName(),
-            "Webex launch status",
+            "Meeting launch status",
         )
         self.assertEqual(
             embed._status_label.accessibleDescription(),
-            "Opened externally—finish joining in Webex.",
+            "Opened externally—finish joining in your meeting service.",
         )
         self.assertEqual(
             embed._fallback_btn.accessibleDescription(),
-            "Opened externally—finish joining in Webex.",
+            "Opened externally—finish joining in your meeting service.",
         )
         announce.assert_called_once()
 
@@ -927,6 +947,10 @@ class TestConductorWindow(unittest.TestCase):
             self.assertTrue(w.session_strip._video_button.isVisibleTo(w))
             self.assertTrue(w.session_strip._studio_button.isVisibleTo(w))
             self.assertEqual(w.session_strip._tools_button.text(), "More ▾")
+            self.assertEqual(
+                w.webex_embed.accessibleName(),
+                "External meeting launch and audio role",
+            )
         finally:
             w.close()
 
@@ -1190,7 +1214,7 @@ class TestConductorWindow(unittest.TestCase):
                 self.assertLess(first.geometry().right(), second.geometry().left())
             self.assertEqual(strip._invite_button.text(), "Invite")
             self.assertEqual(strip._record_button.text(), "■ Finish")
-            self.assertEqual(strip._video_button.text(), "Webex")
+            self.assertEqual(strip._video_button.text(), "Talk")
             self.assertEqual(strip._audio_button.text(), "Try End")
             self.assertEqual(
                 strip._record_button.accessibleName(),
@@ -1245,7 +1269,7 @@ class TestConductorWindow(unittest.TestCase):
         self.assertIn("Choose <b>Studio</b>", body)
         self.assertIn("build a song project", body)
         self.assertIn("review completed session takes", body)
-        self.assertIn("Choose <b>Webex Controls</b> to show Conversation", body)
+        self.assertIn("Choose <b>Conversation</b> to show meeting controls", body)
         self.assertIn(
             "<b>Show Webex App</b> brings the verified application forward",
             body,
@@ -1301,7 +1325,7 @@ class TestConductorWindow(unittest.TestCase):
             w.show_about()
 
         body = set_text.call_args.args[0]
-        self.assertIn("WebJam v0.23.0", body)
+        self.assertIn("WebJam v0.24.0", body)
         self.assertIn("aaaaaaaaaaaa", body)
         self.assertIn("macos-arm64", body)
         self.assertIn("Private test candidate", body)

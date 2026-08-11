@@ -1,8 +1,8 @@
 # v0.24.0 — recording-first workstation plan
 
-> Status: plan for the v0.24.0 source candidate. v0.23.0 is the immutable
-> GitHub Latest. Nothing below is implemented unless the changelog's
-> Unreleased section says so. Physical gates remain **NOT RUN**.
+> Status: implementation plan and audit record for the v0.24.0 source
+> candidate. v0.23.0 is the immutable GitHub Latest at source freeze. The
+> changelog is authoritative for what landed. Physical gates remain **NOT RUN**.
 
 Product decision: v0.24.0 prioritizes the recording and Studio experience —
 Shared Track → rehearse → multitrack Record Session → truthful finalization →
@@ -19,7 +19,7 @@ project-recording engine (`core/project_recording.py`, punch/count-in/
 pre-roll frame binding, writer-owned publication) with manifest journal and
 readiness checks; Local Originals; take recovery; non-destructive Studio with
 multi-region editing and Overdub in Reference Studio; privacy/redaction and
-support-bundle allowlists; the multi-service meeting-link policy and
+support-bundle allowlists; the provider-neutral meeting-link policy and
 app-identity registry (carried onto this line under Unreleased).
 
 ## Gap analysis against the recording-first goals
@@ -53,13 +53,13 @@ app-identity registry (carried onto this line under Unreleased).
    of duplicating.
 6. Mixer and export — MOSTLY PRESENT. Keep schema-v2 fail-closed export;
    add the compact live-adjacent mixer view only after the source cards.
-7. Meeting Companion — FOUNDATION DONE on this branch (recognition,
-   validation, labels, redaction, identity registry, platform matrix in
-   docs/plans/multi-service-conversation-phase2.md). Remaining: provider
-   adapter object boundary, guest visibility, copy-link, recent choices,
-   and the explicit decision on generic-HTTPS fallback (today unknown hosts
-   fail closed; a generic fallback must be a deliberate, labelled policy
-   change, not silent acceptance).
+7. Meeting Companion — PROVIDER-NEUTRAL HANDOFF DONE on this branch
+   (recognition, validation, labels, redaction, identity registry, adapter
+   object, Copy Link, and platform matrix in
+   docs/plans/multi-service-conversation-phase2.md). The explicit generic
+   policy accepts hardened public HTTPS DNS-host meeting links with neutral
+   wording and full unknown-provider URL/hostname redaction; it does not claim
+   native verification. Remaining: guest visibility and recent choices.
 8. Accessibility/responsive QA — apply the Part 9 checklist to the new
    recording workspace as it is built; the existing suites already cover
    several geometry/accessibility contracts.
@@ -185,13 +185,17 @@ recognition facts only (key, label, hostname, platform gate,
 native-detection support — true solely for Webex, the one app WebJam
 verifies). Authenticated integrations extend this object later; nothing
 claims them today. The conversation card follows the saved link's
-service in its title ("Zoom conversation"), falls back to Webex, and
+service in its title ("Zoom conversation") while generic providers use
+neutral Conversation wording, and
 gains a Copy Link action enabled only with a validated saved link,
-copying the normalized URL with a flash confirmation. Remaining
-companion items, deliberately out: guest-visible provider surface (needs
-the same wire-schema review as guest badges), recent-choice memory
-(privacy review first), and the generic-HTTPS fallback decision, which
-stays fail-closed until explicitly made as a labelled policy change.
+copying the normalized URL with a flash confirmation. The later explicit
+generic-HTTPS policy decision accepts any public HTTPS DNS-host meeting link
+that passes the same hardening rules, without treating acceptance as provider
+verification. Unknown-provider URLs and hostnames are fully redacted from
+logs/support mappings; known allowlisted services may retain an origin-only
+projection. Remaining companion items, deliberately out: guest-visible
+provider surface (needs the same wire-schema review as guest badges) and
+recent-choice memory (privacy review first).
 
 ## Step 7 closing verification record (2026-08-11)
 
@@ -204,12 +208,11 @@ new participant-card test file needed deterministic widget disposal
 teardown) — landed with the sweep. Physical gates remain NOT RUN, as
 always, until humans run exact packages.
 
-v0.24.0 readiness: the branch carries the plan, four completed steps
-(1, 3, 4, 5, 6), step 2's engine+schema halves, and the meeting-platform
-foundation. READY FOR HANDS-ON SOURCE TESTING of the landed behavior.
-Not yet a release candidate: step 2's classification/budget coherence
-pass, the deferred mixer latches, and the editor UI remain, each with
-seams documented above.
+This was the step-7 checkpoint. Phases 8–11 below subsequently completed the
+classification/budget coherence pass, input-track editor, sticky overload
+latch, and verified completed-take auto-open guard. The resulting v0.24.0 line
+is ready for an unsigned/ad-hoc private testing package; physical and
+production-trust gates remain NOT RUN.
 
 ## Phase 8 — step 2 coherence pass completed (2026-08-11)
 

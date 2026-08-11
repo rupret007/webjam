@@ -1,8 +1,9 @@
 # Pocket Stage iPhone app
 
-> **Published candidate source:** these setup instructions describe the kit in
-> the matching immutable v0.22.5 GitHub **Latest** Mac candidate. Physical
-> iPhone installation and pairing remain **NOT RUN**.
+> **Candidate source:** these setup instructions describe the kit packaged with
+> exact v0.24.0 Mac test assets. GitHub **Latest** remains immutable v0.23.0
+> until protected v0.24 promotion. Physical iPhone installation and pairing
+> remain **NOT RUN**.
 
 This folder contains a reproducible XcodeGen app specification, the complete
 iPhone SwiftUI source, and a strict cross-platform protocol package. Generated
@@ -45,7 +46,7 @@ transport.
 1. Install the full **Xcode** app from Apple and open it once. In **Xcode →
    Settings → Accounts**, add the Apple ID that will own the free Personal
    Team.
-2. From a matching v0.22.5 Mac candidate, open **Pocket Stage iPhone
+2. From a matching v0.24.0 Mac candidate, open **Pocket Stage iPhone
    Setup**, then open **WebJamPocketStage.xcodeproj** directly. If Finder does
    not associate it with Xcode, use **Xcode → File → Open** and select the
    project. **Open Pocket Stage in Xcode.command** is an optional convenience

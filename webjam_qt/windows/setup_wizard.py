@@ -4,7 +4,7 @@ SetupWizard — first-run configuration wizard.
 Guides new users through:
   Page 0 — Welcome
   Page 1 — Jamulus server (host + port)
-  Page 2 — Webex meeting (URL)
+  Page 2 — Meeting conversation (URL)
   Page 3 — Optional local recording input
   Page 4 — All done
 
@@ -98,7 +98,7 @@ class _WelcomePage(QWizardPage):
         super().__init__()
         self.setTitle("Welcome to WebJam")
         self.setSubTitle(
-            "WebJam coordinates Jamulus music, native Webex conversation, "
+            "WebJam coordinates Jamulus music, external meeting conversation, "
             "recording, and session notes."
         )
 
@@ -108,7 +108,7 @@ class _WelcomePage(QWizardPage):
         layout.addWidget(_body_label(
             "This short wizard will configure:\n\n"
             "  \u2022  Your Jamulus server connection\n"
-            "  \u2022  Your Webex meeting link\n"
+            "  \u2022  Your meeting link\n"
             "  \u2022  An optional local meter and recording input\n\n"
             "You can change any setting later from the Settings panel."
         ))
@@ -540,30 +540,26 @@ class _JamulusPage(QWizardPage):
 
 
 # ---------------------------------------------------------------------------
-# Page 2 — Webex
+# Page 2 — Meeting conversation
 # ---------------------------------------------------------------------------
 class _WebexPage(QWizardPage):
     def __init__(self, settings: AppSettings) -> None:
         super().__init__()
-        self.setTitle("Webex Conversation")
-        self.setSubTitle(
-            "Enter the meeting or Personal Room link your band uses."
-        )
+        self.setTitle("Meeting Conversation")
+        self.setSubTitle("Enter the public HTTPS meeting link your band uses.")
 
         layout = QVBoxLayout(self)
         layout.setSpacing(Space.MD)
 
-        layout.addWidget(_section_label("Meeting or Personal Room link"))
+        layout.addWidget(_section_label(
+            "Meeting link (any platform)"
+        ))
         self._url = QLineEdit(settings.webex_url)
-        self._url.setPlaceholderText(
-            "https://your-site.webex.com/meet/your-room"
-        )
-        self._url.setAccessibleName("Webex meeting or Personal Room link")
+        self._url.setPlaceholderText("Paste a public https:// meeting link")
+        self._url.setAccessibleName("Meeting link for conversation or video")
         self._url.setToolTip(
-            "Enter your Webex Meeting or Personal Room link. If you forget "
-            "the https:// prefix, "
-            "we'll add it for you.\n\n"
-            "Example: https://your-site.webex.com/meet/your-room"
+            "Paste a public HTTPS meeting link from any platform. If you "
+            "forget the https:// prefix, WebJam adds it."
         )
         layout.addWidget(self._url)
 
@@ -576,16 +572,17 @@ class _WebexPage(QWizardPage):
 
         self._site = _body_label("")
         self._site.setTextFormat(Qt.TextFormat.PlainText)
-        self._site.setAccessibleName("Webex site")
+        self._site.setAccessibleName("Meeting service site")
         self._site.setVisible(False)
         layout.addWidget(self._site)
 
         layout.addWidget(_body_label(
-            "WebJam opens this room in the native Webex app or your default "
-            "browser. Webex handles sign-in, camera, microphone, and meeting "
-            "controls. Your WebJam musician name does not change your Webex "
-            "identity, and WebJam never claims to know whether you joined. "
-            "Jamulus remains the performance-audio path."
+            "WebJam opens this link in your default browser or the service's "
+            "installed app. The selected meeting service handles sign-in, "
+            "camera, microphone, and meeting controls. Your WebJam musician "
+            "name does not change your identity there, and WebJam never claims "
+            "to know whether you joined. Jamulus remains the performance-audio "
+            "path."
         ))
         layout.addStretch(1)
         self._validate_url_live(self._url.text())
@@ -653,7 +650,7 @@ class _RoutingPage(QWizardPage):
         super().__init__()
         self.setTitle("Local Meter and Recording")
         self.setSubTitle(
-            "Jamulus owns band audio and Webex owns conversation. "
+            "Jamulus owns band audio; your meeting service owns conversation. "
             "This optional input is for WebJam's meter and local stems only."
         )
         self._complete = True
@@ -713,9 +710,9 @@ class _RoutingPage(QWizardPage):
         layout = QVBoxLayout(content)
         layout.setSpacing(Space.MD)
         layout.addWidget(_body_label(
-            "This selection does not configure Jamulus or Webex. Choose the "
-            "input whose signal WebJam should meter. Enable the optional stem "
-            "only if you also want WebJam to record that local input."
+            "This selection does not configure Jamulus or your meeting service. "
+            "Choose the input whose signal WebJam should meter. Enable the "
+            "optional stem only if you also want WebJam to record that local input."
         ))
         layout.addWidget(self._capture_chk)
         layout.addWidget(self._capture_hint)
@@ -830,7 +827,7 @@ class _DonePage(QWizardPage):
             "Quick-start:\n"
             "  1.  Open Band Check (F2)\n"
             "  2.  Click \u201cStart Audio\u201d — WebJam will connect to your Jamulus server\n"
-            "  3.  Click \u201cOpen Webex\u201d and finish joining in Webex\n"
+            "  3.  Click \u201cJoin / Open Meeting\u201d and finish joining in your meeting service\n"
             "  4.  Adjust faders as musicians join the session\n\n"
             "You can reopen this wizard any time from the Settings panel."
         ))

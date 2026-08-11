@@ -1,9 +1,9 @@
-"""Lightweight external-Webex conversation card for the live workspace.
+"""External meeting card with separate native-Webex controls.
 
-WebJam never embeds, authenticates, joins, monitors, or controls a Webex
-meeting. The native Webex application or system browser owns sign-in, media
-devices, meeting membership, mute state, and leave state. This widget keeps
-navigation, app activation, and an explicit meeting-link handoff separate.
+WebJam never embeds, authenticates, joins, monitors, or controls a meeting.
+The selected service or system browser owns sign-in, media devices, meeting
+membership, mute state, and leave state. This widget keeps the generic link
+handoff separate from its explicitly labeled native Webex app controls.
 """
 
 from __future__ import annotations
@@ -55,9 +55,10 @@ class WebexEmbed(QFrame):
         self._native_app_available = False
         self._native_action_busy = False
         self._native_focus_restore: QPushButton | None = None
-        self._service_label = "Webex"
+        self._service_label = ""
+        self._launch_status = "Not opened"
 
-        self._title_label = QLabel("Webex conversation")
+        self._title_label = QLabel("Conversation")
         self._title_label.setObjectName("WebexEmbedTitle")
         self._title_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
@@ -79,13 +80,15 @@ class WebexEmbed(QFrame):
         self._mode_label.setWordWrap(True)
         self._mode_label.setObjectName("BodyLabel")
 
-        self._status_label = QLabel("Webex has not been opened from WebJam yet.")
+        self._status_label = QLabel(
+            "No meeting link has been opened from WebJam yet."
+        )
         self._status_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
         self._status_label.setWordWrap(True)
         self._status_label.setObjectName("WebexStatusLabel")
-        self._status_label.setAccessibleName("Webex launch status")
+        self._status_label.setAccessibleName("Meeting launch status")
         self._status_label.setAccessibleDescription(self._status_label.text())
 
         self._bring_forward_btn = QPushButton("Show Webex App")
@@ -124,12 +127,12 @@ class WebexEmbed(QFrame):
 
         self._fallback_btn = QPushButton("Join / Open Meeting")
         self._fallback_btn.setObjectName("GhostButton")
-        self._fallback_btn.setAccessibleName("Join or open the Webex meeting")
+        self._fallback_btn.setAccessibleName("Join or open the meeting link")
         self._fallback_btn.setAccessibleDescription(
-            "Explicitly open the configured meeting in Webex or a browser."
+            "Explicitly open the configured link in its meeting service or a browser."
         )
         self._fallback_btn.setToolTip(
-            "Open the configured meeting link once in Webex or your browser.\n"
+            "Open the configured meeting link once in its service or your browser.\n"
             "Use Show Webex App to bring the app forward without reopening the link."
         )
         self._fallback_btn.clicked.connect(self.open_meeting_requested.emit)
@@ -149,13 +152,13 @@ class WebexEmbed(QFrame):
 
         self._change_link_btn = QPushButton("Add Link")
         self._change_link_btn.setObjectName("GhostButton")
-        self._change_link_btn.setAccessibleName("Add Webex meeting link")
+        self._change_link_btn.setAccessibleName("Add a meeting link from any platform")
         self._change_link_btn.setAccessibleDescription(
-            "Open WebJam Settings to add a meeting link (Webex, Zoom, "
-            "Microsoft Teams, Google Meet, or FaceTime)."
+            "Open WebJam Settings to add a public HTTPS meeting link from "
+            "any meeting platform."
         )
         self._change_link_btn.setToolTip(
-            "Open Settings to add or change the Webex meeting link."
+            "Open Settings to add or change the meeting link."
         )
         self._change_link_btn.clicked.connect(self.change_link_requested.emit)
 
@@ -213,6 +216,8 @@ class WebexEmbed(QFrame):
         )
         actions.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self._render_audio_guidance()
+        self._render_launch_status()
+        self._render_link_accessibility()
 
     def fallback_button(self) -> QPushButton:
         """Return the explicit external meeting-link handoff button."""
@@ -235,7 +240,7 @@ class WebexEmbed(QFrame):
         return self._mute_btn
 
     def change_link_button(self) -> QPushButton:
-        """Return the Webex-link Settings action."""
+        """Return the meeting-link Settings action."""
 
         return self._change_link_btn
 
@@ -383,11 +388,13 @@ class WebexEmbed(QFrame):
     def set_service_label(self, label: str) -> None:
         """Name the saved link's meeting service on the card truthfully."""
 
-        clean = " ".join(str(label or "").split())[:32] or "Webex"
+        clean = " ".join(str(label or "").split())[:32]
         if clean == self._service_label:
             return
         self._service_label = clean
         self._render_audio_guidance()
+        self._render_launch_status()
+        self._render_link_accessibility()
 
     def set_meeting_configured(self, configured: bool) -> None:
         """Render whether Join/Open has a trusted saved link to hand off."""
@@ -397,36 +404,52 @@ class WebexEmbed(QFrame):
         self._change_link_btn.setText(
             "Change Link" if self._meeting_configured else "Add Link"
         )
-        self._change_link_btn.setAccessibleName(
-            (
-                "Change Webex meeting link"
-                if self._meeting_configured
-                else "Add Webex meeting link"
-            )
-        )
-        self._change_link_btn.setAccessibleDescription(
-            "Open WebJam Settings to "
-            + (
-                "change the saved meeting link."
-                if self._meeting_configured
-                else "add a meeting link (Webex, Zoom, Microsoft Teams, "
-                "Google Meet, or FaceTime)."
-            )
-        )
+        self._render_link_accessibility()
+        self._render_audio_guidance()
         self._sync_meeting_action()
         self._sync_native_actions()
 
     def set_launch_status(self, status: str) -> None:
         """Show external-launch truth without implying meeting membership."""
 
-        descriptions = {
-            "Not opened": "Webex has not been opened from WebJam yet.",
-            "Opening…": "Opening Webex externally…",
-            "Opened externally": "Opened externally—finish joining in Webex.",
-            "Open failed": "Webex could not be opened. Retry or check Settings.",
-        }
+        self._launch_status = str(status)
+        self._render_launch_status()
+
+    def _render_launch_status(self) -> None:
+        """Render the saved provider's handoff state, never meeting membership."""
+
+        status = self._launch_status
+        service = self._service_label
+        descriptions = (
+            {
+                "Not opened": f"{service} has not been opened from WebJam yet.",
+                "Opening…": f"Opening {service} externally…",
+                "Opened externally": (
+                    f"Opened externally—finish joining in {service}."
+                ),
+                "Open failed": (
+                    f"{service} could not be opened. Retry or check Settings."
+                ),
+            }
+            if service
+            else {
+                "Not opened": (
+                    "No meeting link has been opened from WebJam yet."
+                ),
+                "Opening…": "Opening the meeting link externally…",
+                "Opened externally": (
+                    "Opened externally—finish joining in your meeting service."
+                ),
+                "Open failed": (
+                    "The meeting link could not be opened. Retry or check Settings."
+                ),
+            }
+        )
         description = descriptions.get(status, str(status))
         self._status_label.setText(description)
+        self._status_label.setAccessibleName(
+            f"{service} launch status" if service else "Meeting launch status"
+        )
         self._status_label.setAccessibleDescription(description)
         self._announce_description_change(self._status_label)
         button_text = (
@@ -439,8 +462,68 @@ class WebexEmbed(QFrame):
         self._fallback_btn.setText(button_text)
         self._launch_busy = status == "Opening…"
         self._sync_meeting_action()
-        self._fallback_btn.setAccessibleName(button_text)
+        if service:
+            accessible_name = (
+                f"Opening {service} meeting"
+                if status == "Opening…"
+                else f"Open {service} meeting again"
+                if status == "Opened externally"
+                else f"Join or open the {service} meeting"
+            )
+        else:
+            accessible_name = (
+                "Opening the meeting link"
+                if status == "Opening…"
+                else "Open the meeting link again"
+                if status == "Opened externally"
+                else "Join or open the meeting link"
+            )
+        self._fallback_btn.setAccessibleName(accessible_name)
         self._fallback_btn.setAccessibleDescription(description)
+        destination = f"{service} or your browser" if service else (
+            "its service or your browser"
+        )
+        self._fallback_btn.setToolTip(
+            f"Open the configured meeting link once in {destination}.\n"
+            "Use Show Webex App to bring Webex forward without reopening the link."
+        )
+
+    def _render_link_accessibility(self) -> None:
+        """Keep link-edit semantics aligned with the detected provider."""
+
+        service = self._service_label
+        if service:
+            accessible_name = (
+                f"Change {service} meeting link"
+                if self._meeting_configured
+                else f"Add {service} meeting link"
+            )
+        else:
+            accessible_name = (
+                "Change the saved meeting link"
+                if self._meeting_configured
+                else "Add a meeting link from any platform"
+            )
+        self._change_link_btn.setAccessibleName(accessible_name)
+        self._change_link_btn.setAccessibleDescription(
+            "Open WebJam Settings to "
+            + (
+                (
+                    f"change the saved {service} meeting link."
+                    if service
+                    else "change the saved meeting link."
+                )
+                if self._meeting_configured
+                else "add a public HTTPS link from any meeting platform."
+            )
+        )
+        self._change_link_btn.setToolTip(
+            (
+                f"Open Settings to add or change the {service} meeting link."
+                if service
+                else "Open Settings to add or change the meeting link."
+            )
+        )
 
     def focus_primary_action(self) -> None:
         """Place keyboard focus on the safest useful Conversation action."""
@@ -455,7 +538,7 @@ class WebexEmbed(QFrame):
         target.setFocus(Qt.FocusReason.ShortcutFocusReason)
 
     def set_audio_mode(self, mode: str) -> None:
-        """Render concise role guidance for the selected Webex audio mode."""
+        """Render concise role guidance for the selected meeting audio mode."""
 
         self._audio_mode = (
             mode
@@ -468,16 +551,16 @@ class WebexEmbed(QFrame):
         """Compatibility guard: embedded meetings are no longer supported."""
 
         if not is_allowed_meeting_link(meeting_url):
-            LOGGER.warning("Webex launch card refused an untrusted meeting URL")
+            LOGGER.warning("Meeting card refused an untrusted meeting URL")
         else:
             LOGGER.warning(
-                "Embedded Webex is retired; use the external launch action"
+                "Embedded meetings are retired; use the external launch action"
             )
         self.meeting_state_changed.emit("error")
         return False
 
     def leave_meeting(self) -> None:
-        """Compatibility no-op because WebJam does not own external Webex."""
+        """Compatibility no-op because WebJam does not own external meetings."""
 
     def shutdown(self) -> None:
         """Compatibility no-op; this card owns no browser or media process."""
@@ -536,24 +619,58 @@ class WebexEmbed(QFrame):
 
     def _render_audio_guidance(self) -> None:
         service = self._service_label
-        titles = {
-            "talkback": f"{service} conversation",
-            "video_only": f"{service} video",
-            "audience_bridge": f"{service} audience feed",
-        }
-        guidance = {
-            "talkback": (
-                "Keep Webex muted while playing. To speak, mute your audio "
-                "interface or end the WebJam session first."
-            ),
-            "video_only": (
-                "Join Webex without computer audio; music stays in Jamulus."
-            ),
-            "audience_bridge": (
-                "Advanced audience feed: musicians must disconnect Webex audio "
-                "to prevent delayed duplicate music."
-            ),
-        }
+        titles = (
+            {
+                "talkback": f"{service} conversation",
+                "video_only": f"{service} video",
+                "audience_bridge": f"{service} audience feed",
+            }
+            if service
+            else {
+                "talkback": "Conversation",
+                "video_only": "Conversation video",
+                "audience_bridge": "Conversation audience feed",
+            }
+        )
+        guidance = (
+            {
+                "talkback": (
+                    f"Keep {service} muted while playing. To speak, mute your "
+                    "audio interface or end the WebJam session first."
+                ),
+                "video_only": (
+                    f"Join {service} without computer audio; music stays in Jamulus."
+                ),
+                "audience_bridge": (
+                    "Advanced audience feed: musicians must disconnect "
+                    f"{service} audio to prevent delayed duplicate music."
+                ),
+            }
+            if service
+            else {
+                "talkback": (
+                    (
+                        "Keep your meeting service muted while you play. To "
+                        "speak, mute your audio interface or end the WebJam "
+                        "session first."
+                    )
+                    if self._meeting_configured
+                    else (
+                        "After adding a meeting link, keep that service muted "
+                        "while playing. To speak, mute your audio interface or "
+                        "end the WebJam session first."
+                    )
+                ),
+                "video_only": (
+                    "Join your meeting service without computer audio; music "
+                    "stays in Jamulus."
+                ),
+                "audience_bridge": (
+                    "Advanced audience feed: musicians must disconnect meeting "
+                    "audio to prevent delayed duplicate music."
+                ),
+            }
+        )
         self._title_label.setText(titles[self._audio_mode])
         self._mode_label.setText(guidance[self._audio_mode])
 

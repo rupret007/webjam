@@ -366,7 +366,7 @@ def test_optional_configured_webex_can_only_warn() -> None:
             CheckItem("Jamulus server set", True),
             CheckItem("Meter and local recording input", True),
             CheckItem("Host recorder", True, required=False),
-            CheckItem("Webex companion", False, "bad URL", required=False),
+            CheckItem("Conversation companion", False, "bad URL", required=False),
         ]
     )
     settings = SimpleNamespace(

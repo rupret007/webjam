@@ -198,9 +198,9 @@ class TestExternalWebexLaunchCard(unittest.TestCase):
     def test_external_card_title_matches_audio_role(self):
         embed = self._make_embed()
         expected = {
-            "talkback": "Webex conversation",
-            "video_only": "Webex video",
-            "audience_bridge": "Webex audience feed",
+            "talkback": "Conversation",
+            "video_only": "Conversation video",
+            "audience_bridge": "Conversation audience feed",
         }
         for mode, title in expected.items():
             embed.set_audio_mode(mode)
@@ -210,15 +210,18 @@ class TestExternalWebexLaunchCard(unittest.TestCase):
         embed = self._make_embed()
         embed.set_launch_status("Opened externally")
         self.assertEqual(embed.fallback_button().text(), "Open Again")
-        # Accessible name mirrors the visible label; the external-launch truth
-        # lives in the description so "Opening…" never reads as
-        # "Opening… externally".
-        self.assertEqual(embed.fallback_button().accessibleName(), "Open Again")
+        self.assertEqual(
+            embed.fallback_button().accessibleName(),
+            "Open the meeting link again",
+        )
         self.assertIn(
             "externally", embed.fallback_button().accessibleDescription()
         )
         embed.set_launch_status("Opening…")
-        self.assertEqual(embed.fallback_button().accessibleName(), "Opening…")
+        self.assertEqual(
+            embed.fallback_button().accessibleName(),
+            "Opening the meeting link",
+        )
 
     def test_external_card_disables_launch_while_opening(self):
         embed = self._make_embed()

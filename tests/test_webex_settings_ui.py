@@ -1,4 +1,4 @@
-"""Musician-facing Webex settings remain external-only and truthful."""
+"""Musician-facing meeting-link settings remain external-only and truthful."""
 
 from __future__ import annotations
 
@@ -34,10 +34,31 @@ def test_settings_names_meeting_or_personal_room_and_derives_site(tmp_path):
     )
 
     labels = " ".join(label.text() for label in dialog.findChildren(QLabel))
-    assert "Meeting link (Webex, Zoom, Teams, Meet, or FaceTime)" in labels
+    assert (
+        "Meeting link (any platform)"
+        in labels
+    )
     assert dialog._video_site.text() == "Webex site: team.webex.com"
     assert "private-room" not in dialog._video_site.text()
     assert "private" not in dialog._video_site.text()
+
+
+def test_settings_meeting_link_controls_use_provider_neutral_copy(tmp_path):
+    dialog = _dialog(tmp_path, opener=lambda _url: True)
+
+    assert dialog._conversation_toggle.text() == "Meeting link (optional)"
+    assert dialog._conversation_toggle.accessibleName() == (
+        "Optional meeting link for conversation or video"
+    )
+    assert dialog._video.accessibleName() == "Optional meeting link"
+    assert dialog._open_webex.text() == "Open Meeting Link"
+    assert dialog._open_webex.accessibleName() == (
+        "Open this meeting link externally"
+    )
+    assert "selected meeting service" in (
+        dialog._open_webex.accessibleDescription()
+    )
+    assert dialog._webex_status.accessibleName() == "Meeting link test result"
 
 
 def test_settings_opens_on_named_identity_field_not_structural_scroll_area(
@@ -87,6 +108,40 @@ def test_open_action_normalizes_and_reports_external_handoff(tmp_path):
         dialog._webex_status.text()
     )
     announce.assert_called_once()
+
+
+def test_open_action_reports_the_detected_non_webex_service(tmp_path):
+    opened: list[str] = []
+    dialog = _dialog(tmp_path, opener=lambda url: opened.append(url) or True)
+    dialog._video.setText("zoom.us/j/1234567890")
+
+    dialog._open_webex.click()
+
+    assert opened == ["https://zoom.us/j/1234567890"]
+    assert dialog._webex_status.text() == (
+        "Opened externally—finish joining in Zoom. Choose Save to keep "
+        "this link in WebJam."
+    )
+    assert "Webex" not in dialog._webex_status.text()
+
+
+def test_generic_public_meeting_link_opens_once_with_neutral_copy(tmp_path):
+    opened: list[str] = []
+    dialog = _dialog(tmp_path, opener=lambda url: opened.append(url) or True)
+    dialog._video.setText("meet.jit.si/WebJamBand?private=1#join")
+
+    dialog._open_webex.click()
+
+    assert opened == ["https://meet.jit.si/WebJamBand?private=1#join"]
+    assert dialog._video_site.text() == "Meeting service site: meet.jit.si"
+    assert dialog._webex_status.text() == (
+        "Opened externally—finish joining in your meeting service. Choose "
+        "Save to keep this link in WebJam."
+    )
+    assert all(
+        provider not in dialog._webex_status.text()
+        for provider in ("Webex", "Zoom", "Microsoft Teams", "Google Meet")
+    )
 
 
 def test_invalid_link_never_reaches_external_opener(tmp_path):
@@ -240,8 +295,9 @@ def test_settings_store_no_webex_identity_or_password_fields(tmp_path):
         for field in fields
     )
     copy = " ".join(label.text() for label in dialog.findChildren(QLabel))
-    assert "Webex handles sign-in" in copy
-    assert "does not change your Webex identity" in copy
+    assert "selected meeting service handles sign-in" in copy
+    assert "does not change your identity there" in copy
+    assert "Webex handles sign-in" not in copy
 
 
 def test_settings_name_preview_and_validation_share_jamulus_contract(
@@ -285,6 +341,20 @@ def test_save_persists_only_normalized_link_for_webex(tmp_path):
         "webex_guest_issuer_secret",
     ):
         assert retired not in data
+
+
+def test_save_persists_normalized_generic_public_meeting_link(tmp_path):
+    dialog = _dialog(tmp_path, opener=lambda _url: True)
+    dialog._video.setText("meet.jit.si/WebJamBand?private=1#join")
+
+    assert dialog._save() is True
+
+    data = json.loads(
+        Path(dialog._settings.config_file).read_text(encoding="utf-8")
+    )
+    assert data["webex_url"] == (
+        "https://meet.jit.si/WebJamBand?private=1#join"
+    )
 
 
 def test_save_merges_visible_fields_into_latest_controller_settings(tmp_path):

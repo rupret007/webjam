@@ -1,14 +1,14 @@
-# WebJam help routing — v0.23.0 source candidate
+# WebJam help routing — v0.24.0 source candidate
 
-> GitHub **Latest** remains immutable v0.22.5. These Shared Track and Record
-> Session labels target unpublished v0.23.0 source.
+> GitHub **Latest** remains immutable v0.23.0 until protected v0.24 promotion.
+> These recording-first labels target v0.24.0 source.
 
 | Musician says | Answer / action |
 | --- | --- |
 | “I can’t find my interface.” | Open **More → Audio Settings in Jamulus**. Choose it in Jamulus, not WebJam. |
 | “I need to change buffer or channels.” | Use Jamulus Audio/Network Settings. |
 | “Where is the Start Session button?” | Host or Join already starts the required session work. Set up Jamulus; WebJam moves into the session automatically after it sees the connection. |
-| “Why did Webex open a browser?” | Only **Join / Open Meeting** hands off the saved link. On macOS, **Show Webex App** re-verifies Cisco's app, then activates or launches that exact app with no URL or browser; Webex chooses its own screen. |
+| “Why did a meeting open in my browser or app?” | Only **Join / Open Meeting** hands off a saved public HTTPS meeting link. Known Webex, Zoom, Teams, Google Meet, and FaceTime links receive friendly labels; another accepted provider stays neutral. WebJam does not claim the service joined or that an unknown provider was natively verified. On macOS, the separate Webex-only **Show Webex App** action re-verifies Cisco's app and never passes it the link. |
 | “Can WebJam mute Webex?” | No. On macOS, **Open Webex to Mute** shows the verified app so the musician can use Webex's own Mute control. WebJam never claims mute success or touches Jamulus. |
 | “Why is Show Webex App unavailable?” | Direct native activation requires verified publisher identity. Current Windows/Linux packages use **Join / Open Meeting** because that proof is unavailable there. |
 | “Where is Studio?” | Use the direct **Studio** action or Cmd/Ctrl+3. Studio is intentionally absent from More. |

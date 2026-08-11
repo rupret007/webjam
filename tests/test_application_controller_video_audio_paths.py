@@ -111,7 +111,7 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         action = next(
             action
             for action in c.window.session_strip._tools_button.menu().actions()
-            if action.text() == "Webex Controls"
+            if action.text() == "Conversation"
         )
 
         action.trigger()
@@ -149,9 +149,27 @@ class TestExternalWebexLaunch(_ControllerTestBase):
             {"action": "meeting-handoff", "result": "accepted"},
         )
 
-    def test_rejected_single_flight_launch_never_leaves_opening_ui(self):
+    def test_generic_public_meeting_link_uses_neutral_single_handoff(self):
         c = self.controller
-        c.settings.webex_url = "https://example.webex.com/meet/new-room"
+        c.settings.webex_url = "https://meet.jit.si/WebJamBand?private=1#join"
+        c.bridge.launch_webex = MagicMock(return_value=True)
+
+        c._on_join_video()
+
+        self.assertEqual(c.webex.meeting_url, c.settings.webex_url)
+        c.bridge.launch_webex.assert_called_once_with(manual=True)
+        c.window.session_strip.set_video_state.assert_called_with(
+            "Opening…", enabled=False
+        )
+        c.window.webex_embed.set_launch_status.assert_called_once_with("Opening…")
+        self.assertNotIn(
+            "Webex",
+            " ".join(str(call) for call in c.window.flash_message.call_args_list),
+        )
+
+    def test_rejected_zoom_single_flight_uses_provider_and_never_leaves_opening_ui(self):
+        c = self.controller
+        c.settings.webex_url = "https://zoom.us/j/1234567890"
         c.bridge.webex_state = "Not opened"
         c.bridge.launch_webex = MagicMock(return_value=False)
 
@@ -160,14 +178,14 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         c.bridge.launch_webex.assert_called_once_with(manual=True)
         c.window.set_status_video.assert_called_with("Not opened")
         c.window.session_strip.set_video_state.assert_called_with(
-            "Open Webex",
+            "Open Zoom",
             enabled=True,
         )
         c.window.webex_embed.set_launch_status.assert_called_with(
             "Not opened"
         )
         self.assertIn(
-            "previous Webex open request",
+            "previous Zoom open request",
             c.window.flash_message.call_args.args[0],
         )
 
@@ -1022,14 +1040,14 @@ class TestSettingsWizard(_ControllerTestBase):
         finally:
             c._ready_check_dialog = None
 
-    def test_accepted_with_changed_webex_url_warns_after_external_launch(self):
+    def test_accepted_with_changed_provider_warns_after_external_launch(self):
         c = self.controller
         c.settings.webex_url = "https://example.webex.com/meet/old"
         c.webex.meeting_url = c.settings.webex_url
         c.bridge.webex_state = "Opened externally"
         c.bridge.launch_webex = MagicMock()
         fresh = AppSettings()
-        fresh.webex_url = "https://example.webex.com/meet/other"
+        fresh.webex_url = "https://zoom.us/j/1234567890"
         with patch.object(
             c.bridge,
             "invalidate_webex_launch",
@@ -1044,7 +1062,7 @@ class TestSettingsWizard(_ControllerTestBase):
         )
         self.assertEqual(c.bridge.webex_state, "Not opened")
         c.window.session_strip.set_video_state.assert_called_with(
-            "Open Webex",
+            "Open Zoom",
             enabled=True,
         )
         c.bridge.launch_webex.assert_not_called()

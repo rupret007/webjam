@@ -363,8 +363,9 @@ class TestSupportArtifact(unittest.TestCase):
         ):
             self.assertNotIn(private, safe_log)
         self.assertIn("https://example.webex.com/[redacted]", safe_log)
-        self.assertIn("https://updates.example.invalid/[redacted]", safe_log)
-        self.assertIn("http://[redacted-ip]/[redacted]", safe_log)
+        self.assertNotIn("updates.example.invalid", safe_log)
+        self.assertNotIn("192.168.1.7", safe_log)
+        self.assertGreaterEqual(safe_log.count("[redacted]"), 3)
         self.assertIn("webjam://[redacted]", safe_log)
 
     def test_path_scrubbing_covers_adversarial_names_uris_and_windows_forms(self):

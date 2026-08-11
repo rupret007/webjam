@@ -848,7 +848,7 @@ _OFFICIAL_RELEASES = {
     "3.12.2": {
         "tag": "r3_12_2",
         "commit": "ffca974ed4e47b8f4621f3b583c00db2f87974fa",
-        "webjam_range": ("0.21.0", "0.23.0"),
+        "webjam_range": ("0.21.0", "0.24.0"),
         "artifacts": {
             ComponentTarget.WINDOWS_X64: (
                 "jamulus_3.12.2_win.exe",
@@ -885,7 +885,7 @@ _OFFICIAL_RELEASES = {
     "3.12.3": {
         "tag": "r3_12_3",
         "commit": "74dc422116983a2173eb917cb4d6a403886b31e5",
-        "webjam_range": ("0.22.0", "0.23.0"),
+        "webjam_range": ("0.22.0", "0.24.0"),
         "artifacts": {
             ComponentTarget.WINDOWS_X64: (
                 "jamulus_3.12.3_win.exe",

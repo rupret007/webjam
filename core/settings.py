@@ -28,6 +28,7 @@ def _as_bool(value: object) -> bool:
 
 
 _MAX_INPUT_MAPS = 32
+_MAX_LOCAL_CAPTURE_CHANNELS = 32
 
 
 def _coerce_input_maps(value: object) -> list:
@@ -42,6 +43,7 @@ def _coerce_input_maps(value: object) -> list:
         return []
     cleaned: list = []
     seen_names: set = set()
+    selected_channels = 0
     for entry in value:
         if not isinstance(entry, dict):
             return []
@@ -69,6 +71,10 @@ def _coerce_input_maps(value: object) -> list:
                 "local_original_enabled": local_original,
             }
         )
+        if enabled and local_original:
+            selected_channels += channels
+            if selected_channels > _MAX_LOCAL_CAPTURE_CHANNELS:
+                return []
     return cleaned
 
 
@@ -110,7 +116,13 @@ def _coerce_settings_data(data: dict) -> None:
         data["jamulus_candidates"] = candidates if candidates else defaults["jamulus_candidates"]
     # Structured input maps: strict per-entry validation; fail-safe to [].
     if "input_maps" in data:
-        data["input_maps"] = _coerce_input_maps(data["input_maps"])
+        raw_input_maps = data["input_maps"]
+        data["input_maps"] = _coerce_input_maps(raw_input_maps)
+        # A non-empty malformed/over-capacity map must never degrade into the
+        # empty-list compatibility default and unexpectedly record inputs 1–2.
+        # Disable supplemental capture until the musician repairs the map.
+        if raw_input_maps and not data["input_maps"]:
+            data["local_capture_enabled"] = False
     # String fields: ensure str
     for key in ("jamulus_server", "webex_url", "config_file", "mix_file",
                 "server_rpc_secret_file", "takes_directory",
@@ -220,6 +232,10 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         except Exception as exc:
             _logger.warning("Failed to parse settings file %s: %s - using defaults", file_path, exc)
 
+    persisted_input_map_invalid = bool(
+        loaded_data.get("input_maps")
+    ) and not bool(_coerce_input_maps(loaded_data.get("input_maps")))
+
     # Migrate the one-release legacy bridge flag before coercion.  Explicit
     # new fields always win over their legacy-derived values.
     if "webex_audio_mode" not in loaded_data and "webex_audio_bridge_enabled" in loaded_data:
@@ -316,6 +332,10 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
             data["local_capture_enabled"] = legacy_bridge
 
     _coerce_settings_data(data)
+    if persisted_input_map_invalid:
+        # An environment opt-in must not turn a rejected persisted map into
+        # the legacy two-input default. The musician must repair the map first.
+        data["local_capture_enabled"] = False
     valid_keys = {f.name for f in AppSettings.__dataclass_fields__.values()}
     data = {k: v for k, v in data.items() if k in valid_keys}
     settings = AppSettings(**data)

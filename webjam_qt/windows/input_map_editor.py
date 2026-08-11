@@ -22,10 +22,12 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -33,6 +35,7 @@ from PySide6.QtWidgets import (
 from webjam_qt.theme.tokens import Space
 
 _MAX_ROWS = 32
+_MAX_CAPTURE_CHANNELS = 32
 _MAX_NAME_CHARS = 128
 
 
@@ -117,7 +120,8 @@ class InputMapEditorDialog(QDialog):
         subtitle = QLabel(
             "Name the local inputs Record Session captures as isolated Local "
             "Originals. Tracks record on your interface's inputs in this "
-            "order; a stereo track uses two inputs. Leave this empty to keep "
+            "order; a stereo track uses two inputs. Up to 32 enabled Local "
+            "Original input channels are supported. Leave this empty to keep "
             "the default two isolated stems."
         )
         subtitle.setObjectName("SimpleSettingsSubtitle")
@@ -125,9 +129,21 @@ class InputMapEditorDialog(QDialog):
         root.addWidget(title)
         root.addWidget(subtitle)
 
-        self._rows_container = QVBoxLayout()
+        self._rows_widget = QWidget()
+        self._rows_container = QVBoxLayout(self._rows_widget)
+        self._rows_container.setContentsMargins(0, 0, 0, 0)
         self._rows_container.setSpacing(Space.XS)
-        root.addLayout(self._rows_container)
+        self._rows_scroll = QScrollArea()
+        self._rows_scroll.setObjectName("InputTrackScroll")
+        self._rows_scroll.setAccessibleName("Configured input tracks")
+        self._rows_scroll.setWidgetResizable(True)
+        self._rows_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._rows_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._rows_scroll.setMinimumHeight(160)
+        self._rows_scroll.setWidget(self._rows_widget)
+        root.addWidget(self._rows_scroll, stretch=1)
 
         for entry in list(input_maps or [])[:_MAX_ROWS]:
             if isinstance(entry, dict):
@@ -146,7 +162,6 @@ class InputMapEditorDialog(QDialog):
         self._error.setTextFormat(Qt.TextFormat.PlainText)
         self._error.setVisible(False)
         root.addWidget(self._error)
-        root.addStretch(1)
 
         footer = QHBoxLayout()
         footer.addStretch(1)
@@ -160,6 +175,7 @@ class InputMapEditorDialog(QDialog):
         footer.addWidget(cancel)
         footer.addWidget(save)
         root.addLayout(footer)
+        self.resize(760, 560)
 
     def _add_row(self, entry: Optional[dict] = None) -> None:
         if len(self._rows) >= _MAX_ROWS:
@@ -195,6 +211,7 @@ class InputMapEditorDialog(QDialog):
 
         maps: list[dict] = []
         seen: set[str] = set()
+        selected_channels = 0
         for index, row in enumerate(self._rows):
             entry = row.to_entry()
             name = entry["name"]
@@ -212,6 +229,16 @@ class InputMapEditorDialog(QDialog):
                 return False, f"Two tracks are both named '{name}'.", []
             seen.add(name.casefold())
             maps.append(entry)
+            if entry["enabled"] and entry["local_original_enabled"]:
+                selected_channels += entry["channels"]
+                if selected_channels > _MAX_CAPTURE_CHANNELS:
+                    return (
+                        False,
+                        "Enabled Local Originals use more than 32 input "
+                        "channels. Disable a track or change a stereo track "
+                        "to mono.",
+                        [],
+                    )
         return True, "", maps
 
     def _save(self) -> None:

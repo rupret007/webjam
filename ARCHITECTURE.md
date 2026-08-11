@@ -1,13 +1,14 @@
-# WebJam architecture — v0.23.0 source candidate
+# WebJam architecture — v0.24.0 source candidate
 
-> This document describes unpublished v0.23.0 source. GitHub **Latest** remains
-> immutable v0.22.5. All v0.23.0 physical, credentialed, signing, and platform
+> This document describes the v0.24.0 source candidate. GitHub **Latest** remains
+> immutable v0.23.0 until the v0.24 protected promotion passes. All v0.24.0
+> physical, credentialed, signing, and platform
 > trust gates stay **NOT RUN**.
 
 ## Product boundary
 
-WebJam is an orchestration layer around unmodified Jamulus and optional Webex.
-The boundary is deliberate:
+WebJam is an orchestration layer around unmodified Jamulus and optional
+meeting services reached through hardened external links. The boundary is deliberate:
 
 | Layer | Responsibility |
 | --- | --- |
@@ -23,7 +24,7 @@ The boundary is deliberate:
 | `ios/` | XcodeGen app specification, native SwiftUI companion, strict Swift protocol/transport tests, and owner-device Personal Team workflow |
 | `core/jamulus_roster_identity.py`, `core/session_transfer*.py` | Process-bound ordered-roster observations, cooperative Presence v2 correlation, Local Original obligations, and resumable verified delivery |
 | Jamulus | Live devices, channels, buffer, jitter, quality, mix, and actual music connection |
-| Webex | Conversation/video meeting state and device controls |
+| Meeting service | Conversation/video meeting state and device controls |
 
 Standalone Reference Studio has its own project and local-audio lifecycle. It
 does not start, join, stop, configure, or feed Jamulus. Its persistence,
@@ -90,15 +91,24 @@ controls/newlines/overlength input, preserves valid Unicode, and exposes the
 8+8 mixer-layout preview. Every editor, migration, profile, launch argument,
 and RPC path passes through that same validator.
 
-## Webex boundary
+## Meeting-service and native Webex boundary
 
-WebJam persists only a Meeting or Personal Room link and reports external
-handoff—not meeting membership. Webex owns authentication, participant
-identity, camera, microphone, speakers, mute, and meeting state. Native app
-detection is diagnostic convenience; an explicit install action opens only an
-approved Cisco HTTPS URL and does not download or execute a package itself.
+WebJam persists one meeting link only after a provider-neutral policy accepts
+it as a public HTTPS URL with a DNS hostname. The policy rejects credentials,
+custom ports, local/special-use names, IP literals, percent-encoded hosts, and
+known-brand lookalikes. Known Webex, Zoom, Microsoft Teams, Google Meet, and
+FaceTime origins map to friendly provider facts; any other accepted origin
+maps to a neutral generic provider. This is external handoff—not provider
+authentication, verification, or meeting membership. The selected service
+owns participant identity, camera, microphone, speakers, mute, and meeting
+state. Validation performs no DNS lookup, HTTP request, redirect, or
+reachability probe; the operating system owns the later user-authorized
+handoff. FaceTime keeps its Mac-only platform gate. Native app detection remains
+a Webex-specific diagnostic convenience; an explicit install action opens
+only an approved Cisco HTTPS URL and does not download or execute a package
+itself.
 
-The direct Live **Webex Controls** action and **More → Webex Controls** are
+The direct Live **Conversation** action and **More → Conversation** are
 navigation only. They reveal the Conversation panel without opening the link.
 On macOS, **Show Webex App** dynamically finds the exact Cisco process when
 running and re-verifies that PID. It creates a retained Core Foundation
@@ -118,13 +128,17 @@ there. None of those actions alter Jamulus. The direct
 **Studio** action reuses the existing session/offline Studio route rather than
 creating another editor lifecycle.
 
-The controller retains at most 12 allowlisted Webex action/result events for
+The controller retains at most 12 allowlisted conversation action/result events for
 diagnosis: Conversation navigation, show-app or mute guidance, and meeting
 handoff. The Support Bundle sanitizer revalidates those finite values and
 optional reason codes; no URL, meeting ID, account, participant, app path,
-credential, or raw exception crosses the boundary.
+credential, or raw exception crosses the boundary. Known allowlisted services
+may retain only an origin-level redaction where that bounded projection is
+needed. An unknown provider's URL and hostname are fully redacted from logs,
+mappings, diagnostics, and Support Bundles; generic acceptance never promotes
+it to natively verified status.
 
-The v0.23.0 UI presents one canonical **Shared Track** workflow; existing
+The v0.24.0 UI carries forward one canonical **Shared Track** workflow; existing
 `ReferenceTrack*` types, paths, tests, and the ADR remain compatibility names
 for the established route engine, not a second live feature. Shared Track
 separates source and route authority. A host can load, decode the first bounded
@@ -216,7 +230,7 @@ participants into session-local slots. Neither surface receives notes, titles,
 musician names, channel IDs, invitations, addresses, device names, paths,
 tokens, credentials, or raw exceptions.
 
-No model SDK or cloud assistant is part of v0.23.0. A future model-assisted
+No model SDK or cloud assistant is part of v0.24.0. A future model-assisted
 creative feature may be considered only as explicit opt-in, off the real-time
 path, read-only, privacy-gated, unable to issue session commands or create
 operational facts, and visibly labeled as a suggestion. The deterministic
@@ -316,10 +330,10 @@ shared guidance contract and into `SessionHud`, the stage, Canvas, and Studio:
 Jamulus setup is not a WebJam approval gate: WebJam watches for fresh,
 authenticated connection proof and moves into the session automatically. It
 does not call that proof audibility; musicians play a note and verify each
-other, with Band Check available if help is needed. The direct **Webex
-Controls** action and its **More → Webex Controls** alias reveal the same optional
-Conversation panel without opening a meeting, and Webex never delays the
-session or invite. Direct **Shared Track** and **Studio** actions likewise
+other, with Band Check available if help is needed. The direct
+**Conversation** action and its **More → Conversation** alias reveal the same optional
+Conversation panel without opening a meeting, and no meeting service delays
+the session or invite. Direct **Shared Track** and **Studio** actions likewise
 reuse their existing live-session destinations.
 
 The persisted attempt record holds only a digest ID, generation, role, safe
@@ -411,7 +425,7 @@ of the same immutable take/project boundary. A finalized take is eligible for
 Studio only after its required manifest/media checks settle. Studio track
 headers distinguish musician, Shared Track, and Local Original sources while
 retaining the existing arrangement, comping, mixer, autosave, recovery, and
-export systems; v0.23.0 does not introduce another editor or duplicate audio
+export systems; v0.24.0 does not introduce another editor or duplicate audio
 engine.
 
 The guest projection is host-state continuity, not distributed local playback,
@@ -425,7 +439,7 @@ outstanding guest Local Original transfer.
 ## Truth and failure behavior
 
 Jamulus RPC supplies process/authentication/roster/connection facts, never an
-invented audio-device or Webex claim. A human confirmation supplies audibility.
+invented audio-device or meeting-state claim. A human confirmation supplies audibility.
 End/Leave stops only WebJam-owned processes and hosts finalize recording before
 server shutdown. Band Check is an optional live observer; it does not restart
 or configure the music engine.

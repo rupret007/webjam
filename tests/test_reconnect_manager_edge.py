@@ -396,6 +396,45 @@ class TestReconnectManagerEdge(unittest.TestCase):
 
     @patch("services.bridge_service.threading.Thread",
            side_effect=lambda *a, **kw: _ImmediateThread(*a, **kw))
+    def test_zoom_handoff_feedback_names_the_detected_provider(self, _thread_mock):
+        bridge = _make_bridge()
+        bridge.settings.webex_url = "https://zoom.us/j/1234567890"
+        bridge.webex_controller.join_meeting_url.return_value = True
+
+        bridge.launch_webex(manual=True, reconnect=False)
+
+        bridge.set_status_banner.assert_any_call(
+            "Opening Zoom externally…",
+            color="#BF5700",
+        )
+        bridge.set_status_banner.assert_any_call(
+            "Opened externally—finish joining in Zoom."
+        )
+
+    @patch("services.bridge_service.threading.Thread",
+           side_effect=lambda *a, **kw: _ImmediateThread(*a, **kw))
+    def test_generic_handoff_is_once_and_uses_neutral_feedback(self, _thread_mock):
+        bridge = _make_bridge()
+        generic_url = "https://meet.jit.si/WebJamBand?private=1#join"
+        bridge.settings.webex_url = generic_url
+        bridge.webex_controller.join_meeting_url.return_value = True
+
+        bridge.launch_webex(manual=True, reconnect=False)
+
+        bridge.webex_controller.join_meeting_url.assert_called_once_with(generic_url)
+        bridge.set_status_banner.assert_any_call(
+            "Opening the meeting link externally…",
+            color="#BF5700",
+        )
+        bridge.set_status_banner.assert_any_call(
+            "Opened externally—finish joining in your meeting service."
+        )
+        rendered = " ".join(str(call) for call in bridge.set_status_banner.call_args_list)
+        for provider in ("Webex", "Zoom", "Microsoft Teams", "Google Meet"):
+            self.assertNotIn(provider, rendered)
+
+    @patch("services.bridge_service.threading.Thread",
+           side_effect=lambda *a, **kw: _ImmediateThread(*a, **kw))
     def test_launch_webex_skips_success_reporting_when_shutdown_requested_during_open(
         self, _thread_mock
     ):
@@ -423,10 +462,13 @@ class TestReconnectManagerEdge(unittest.TestCase):
         "services.bridge_service.threading.Thread",
         side_effect=lambda *a, **kw: _ImmediateThread(*a, **kw),
     )
-    def test_webex_open_failure_does_not_interrupt_running_jamulus(
+    def test_teams_open_failure_names_provider_and_does_not_interrupt_jamulus(
         self, _thread_mock
     ):
         bridge = _make_bridge()
+        bridge.settings.webex_url = (
+            "https://teams.microsoft.com/l/meetup-join/example"
+        )
         bridge.jamulus_state = "Running"
         bridge.webex_controller.join_meeting_url.return_value = False
         bridge.webex_controller.last_error = "RuntimeError"
@@ -436,6 +478,9 @@ class TestReconnectManagerEdge(unittest.TestCase):
         self.assertEqual(bridge.webex_state, "Open failed")
         self.assertEqual(bridge.jamulus_state, "Running")
         bridge.jamulus_controller.stop.assert_not_called()
+        call = bridge.show_actionable_error.call_args
+        self.assertEqual(call.args[0], "Microsoft Teams Open Failed")
+        self.assertIn("Microsoft Teams meeting", call.kwargs["what_failed"])
 
     def test_invalidated_webex_open_cannot_publish_stale_success(self):
         bridge = _make_bridge()

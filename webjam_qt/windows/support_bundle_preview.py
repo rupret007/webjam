@@ -47,7 +47,7 @@ class SupportBundlePreviewDialog(QDialog):
         root.addWidget(title)
 
         privacy = QLabel(
-            "No recordings, session notes, Webex content, meeting links, "
+            "No recordings, session notes, meeting-service content, meeting links, "
             "authentication secrets, or arbitrary personal files are included."
         )
         privacy.setObjectName("SupportPreviewPrivacy")

@@ -3956,6 +3956,13 @@ class RecordingCoordinator:
             from core.local_capture import LocalInputCapture
 
             capture_tracks = resolve_capture_tracks(self._c.settings)
+            if not capture_tracks:
+                # A valid map may intentionally opt every row out. Do not
+                # translate that consent into LocalInputCapture's legacy pair.
+                with self._capture_lock:
+                    self._local_capture = None
+                    self._local_capture_track_count = 0
+                return True
             capture = LocalInputCapture(
                 root,
                 device=self._c.settings.audio_input_device_index,
@@ -3963,14 +3970,12 @@ class RecordingCoordinator:
                 blocksize=self._c.settings.audio_blocksize,
                 take_id=self._take_id,
                 session_id=self._session_id,
-                tracks=capture_tracks or None,
+                tracks=capture_tracks,
             )
             capture.start()
             with self._capture_lock:
                 self._local_capture = capture
-                self._local_capture_track_count = (
-                    len(capture_tracks) or 2
-                )
+                self._local_capture_track_count = len(capture_tracks)
             return True
         except Exception:  # noqa: BLE001 - device errors can contain private paths
             LOGGER.warning("Isolated host capture preflight failed.")
@@ -3978,14 +3983,15 @@ class RecordingCoordinator:
             self._set_phase(RecorderPhase.ERROR)
             self._c._show_actionable_error(
                 "Recording Preflight Failed",
-                what_failed="WebJam couldn't open the selected two-channel input.",
+                what_failed="WebJam couldn't open the selected local input map.",
                 likely_cause=(
                     "The selected interface is unavailable, is not at 48 kHz, "
-                    "or another application prevented two-channel capture."
+                    "does not provide every mapped channel, or another "
+                    "application prevented capture."
                 ),
                 next_action=(
-                    "Keep Jamulus running, verify the selected interface inputs "
-                    "1–2 at 48 kHz in Band Check, then retry. No server recording "
+                    "Keep Jamulus running, verify the selected interface and "
+                    "mapped inputs at 48 kHz, then retry. No server recording "
                     "was started."
                 ),
                 retry_callback=self.on_record_requested,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+import re
 import struct
 import tempfile
 import threading
@@ -23,6 +24,8 @@ from PySide6.QtWidgets import (
     QApplication,
     QLabel,
     QMessageBox,
+    QPushButton,
+    QScrollArea,
     QStackedWidget,
     QWidget,
 )
@@ -3606,10 +3609,10 @@ def test_simple_settings_contains_no_blackhole_or_rpc_language(tmp_path):
     rendered = " ".join(widget.text() for widget in dialog.findChildren(QLabel)).lower()
     assert "blackhole" not in rendered
     assert "rpc" not in rendered
-    assert "port" not in rendered
+    assert re.search(r"\bport\b", rendered) is None
 
 
-def test_recording_setup_saves_two_channel_capture_without_moving_studio_output(
+def test_recording_setup_saves_default_capture_without_moving_studio_output(
     tmp_path,
 ):
     settings = AppSettings(
@@ -3635,6 +3638,83 @@ def test_recording_setup_saves_two_channel_capture_without_moving_studio_output(
     assert data["local_capture_enabled"] is True
     assert data["local_capture_choice_made"] is True
     assert data["audio_input_device_index"] == 7
+
+
+def test_recording_setup_validates_configured_channel_count_and_opt_out(tmp_path):
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        local_capture_enabled=True,
+        audio_input_device_index=2,
+        input_maps=[
+            {
+                "name": "Voice",
+                "channels": 1,
+                "enabled": True,
+                "local_original_enabled": True,
+            }
+        ],
+    )
+    with patch(
+        "webjam_qt.windows.recording_setup.list_input_devices",
+        return_value=[{"name": "Mono USB", "channels": 1, "index": 2}],
+    ):
+        dialog = RecordingSetupDialog(settings)
+
+    dialog._save()
+    saved = json.loads(Path(settings.config_file).read_text())
+    assert saved["audio_input_device_index"] == 2
+    assert saved["input_maps"][0]["name"] == "Voice"
+
+    opted_out = AppSettings(
+        config_file=str(tmp_path / "opted-out.json"),
+        local_capture_enabled=True,
+        audio_input_device_index=2,
+        input_maps=[
+            {
+                "name": "Guide",
+                "channels": 1,
+                "enabled": True,
+                "local_original_enabled": False,
+            }
+        ],
+    )
+    with patch(
+        "webjam_qt.windows.recording_setup.list_input_devices",
+        return_value=[{"name": "Mono USB", "channels": 1, "index": 2}],
+    ):
+        opted_out_dialog = RecordingSetupDialog(opted_out)
+
+    opted_out_dialog._save()
+    assert not opted_out_dialog._error.isHidden()
+    assert "Turn on at least one Local Original" in opted_out_dialog._error.text()
+    assert not Path(opted_out.config_file).exists()
+
+
+def test_recording_setup_refuses_interface_with_too_few_mapped_inputs(tmp_path):
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        local_capture_enabled=True,
+        audio_input_device_index=7,
+        input_maps=[
+            {
+                "name": "Room",
+                "channels": 2,
+                "enabled": True,
+                "local_original_enabled": True,
+            }
+        ],
+    )
+    with patch(
+        "webjam_qt.windows.recording_setup.list_input_devices",
+        return_value=[{"name": "Mono USB", "channels": 1, "index": 7}],
+    ):
+        dialog = RecordingSetupDialog(settings)
+
+    dialog._save()
+
+    assert not dialog._error.isHidden()
+    assert "needs 2 input channels" in dialog._error.text()
+    assert not Path(settings.config_file).exists()
 
 
 def test_local_originals_choice_is_a_recording_time_decision():
@@ -3666,6 +3746,56 @@ def test_recording_setup_preserves_explicit_joiner_local_original_preference(tmp
     assert dialog._capture.isChecked()
     assert not dialog._input.isHidden()
     assert "host confirms a take" in dialog._capture_help.text()
+
+
+def test_recording_setup_keeps_compact_content_scrollable_and_footer_visible(
+    tmp_path,
+):
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        local_capture_enabled=True,
+        audio_input_device_index=7,
+        takes_directory=str(tmp_path / "takes"),
+        input_maps=[
+            {
+                "name": "Lead Vocal",
+                "channels": 1,
+                "enabled": True,
+                "local_original_enabled": True,
+            },
+            {
+                "name": "Stereo Keys",
+                "channels": 2,
+                "enabled": True,
+                "local_original_enabled": True,
+            },
+        ],
+    )
+    with patch(
+        "webjam_qt.windows.recording_setup.list_input_devices",
+        return_value=[{"name": "Studio 8", "channels": 8, "index": 7}],
+    ):
+        dialog = RecordingSetupDialog(settings)
+    dialog.resize(620, 440)
+    dialog.show()
+    APP.processEvents()
+
+    scroll = dialog.findChild(QScrollArea, "RecordingSetupScrollArea")
+    save = next(
+        button
+        for button in dialog.findChildren(QPushButton)
+        if button.text() == "Save Recording Setup"
+    )
+    assert scroll is not None
+    for label in (dialog._capture_help, dialog._tracks_summary):
+        assert label.height() >= label.heightForWidth(label.width())
+    assert save.isVisibleTo(dialog)
+    assert save.geometry().bottom() <= dialog.contentsRect().bottom()
+
+    dialog.resize(620, 360)
+    APP.processEvents()
+    assert scroll.verticalScrollBar().maximum() > 0
+    assert save.isVisibleTo(dialog)
 
 
 def test_legacy_invite_disables_false_local_original_claim(tmp_path):

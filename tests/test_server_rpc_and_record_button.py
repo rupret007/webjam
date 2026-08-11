@@ -3407,6 +3407,28 @@ class TestRecordButtonWiring(unittest.TestCase):
         c.recording._local_capture = None
         c.settings.local_capture_enabled = False
 
+    def test_opted_out_input_map_never_starts_legacy_capture(self):
+        c = self.controller
+        c.settings.local_capture_enabled = True
+        c.settings.takes_directory = "/tmp/takes"
+        c.settings.input_maps = [
+            {
+                "name": "Guide",
+                "channels": 2,
+                "enabled": True,
+                "local_original_enabled": False,
+            }
+        ]
+
+        with patch("core.local_capture.LocalInputCapture") as capture_cls:
+            self.assertTrue(c.recording._start_local_capture())
+
+        capture_cls.assert_not_called()
+        self.assertIsNone(c.recording._local_capture)
+        self.assertEqual(c.recording._local_capture_track_count, 0)
+        c.settings.input_maps = []
+        c.settings.local_capture_enabled = False
+
     def test_local_capture_failure_blocks_server_start(self):
         c = self.controller
         c.settings.webex_audio_mode = "video_only"

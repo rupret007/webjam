@@ -172,7 +172,7 @@ def test_optional_webex_note_never_blocks_start_session() -> None:
             ),
             BandCheckStep(
                 BandCheckStepKey.WEBEX,
-                "Webex companion",
+                "Conversation companion",
                 BandCheckStatus.WARNING,
                 "Optional conversation note.",
                 required=False,

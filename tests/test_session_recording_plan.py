@@ -93,6 +93,17 @@ def test_valid_plan_binds_every_fact_and_is_immutable():
         ),
         (
             "input_maps",
+            tuple(
+                InputMapBinding(
+                    track_name=f"Stereo {i}",
+                    channel_count=2,
+                    local_original_enabled=True,
+                )
+                for i in range(17)
+            ),
+        ),
+        (
+            "input_maps",
             (
                 InputMapBinding(track_name="Same", channel_count=1),
                 InputMapBinding(track_name="Same", channel_count=2),

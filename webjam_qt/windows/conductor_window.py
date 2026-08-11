@@ -240,7 +240,7 @@ class ConductorWindow(QMainWindow):
         self.session_strip.setAccessibleName("Session controls strip")
         self.side_rail.setAccessibleName("Navigation rail")
         self.participant_grid.setAccessibleName("Participant mixer grid")
-        self.webex_embed.setAccessibleName("Webex external launch and audio role")
+        self.webex_embed.setAccessibleName("External meeting launch and audio role")
         self.session_canvas.setAccessibleName("Session notes canvas")
         self.recording_studio.setAccessibleName("Multitrack recording studio")
 
@@ -482,7 +482,7 @@ class ConductorWindow(QMainWindow):
                 "<b>4.</b> The host presses <b>Record Session</b> for synchronized tracks.<br>"
                 "<b>5.</b> Choose <b>Studio</b> to build a song project or "
                 "review completed session takes.<br>"
-                "<b>6.</b> Choose <b>Webex Controls</b> to show Conversation. "
+                "<b>6.</b> Choose <b>Conversation</b> to show meeting controls. "
                 "<b>Show Webex App</b> brings the verified application forward "
                 "without reopening a meeting link; Webex chooses which of its "
                 "windows is shown. Only "

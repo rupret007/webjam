@@ -56,8 +56,7 @@ class SessionHud(QFrame):
         status_layout.addWidget(self._status)
         status_layout.addWidget(self._detail)
         status_layout.addWidget(self._input)
-        layout.addLayout(status_layout)
-        layout.addStretch(1)
+        layout.addLayout(status_layout, 1)
 
         self._secondary_action = QPushButton()
         self._secondary_action.setObjectName("GhostButton")

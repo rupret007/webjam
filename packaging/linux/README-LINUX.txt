@@ -1,9 +1,9 @@
-WEBJAM v0.23.0 PRIVATE TEST CANDIDATE FOR LINUX x64
+WEBJAM v0.24.0 PRIVATE TEST CANDIDATE FOR LINUX x64
 ===================================================
 
 PRIVATE TEST CANDIDATE: use this package only when its exact filename appears
-in the v0.23.0 GitHub release and its SHA-256 matches that release's manifest.
-Do not use the immutable v0.22.5 checksum manifest for this build.
+in the v0.24.0 GitHub release and its SHA-256 matches that release's manifest.
+Do not use the immutable v0.23.0 checksum manifest for this build.
 Physical audio, hardware, signed-install, and distribution-policy gates
 remain NOT RUN unless the release evidence names this exact file and SHA-256.
 
@@ -36,8 +36,8 @@ always requires your explicit approval. WebJam never invokes hidden sudo and
 never installs while a jam, recording, Shared Track, reconnect, or Jamulus
 launch is active.
 
-The sealed v0.22.5 catalog does not authorize v0.23.0 and is rejected. Until a
-new signed v0.23 catalog exists, this candidate uses the embedded Jamulus
+The sealed v0.22.5 catalog does not authorize v0.24.0 and is rejected. Until a
+new signed v0.24 catalog exists, this candidate uses the embedded Jamulus
 3.12.2 fallback rather than offering a managed 3.12.3 download.
 
 1. When offline or when no approved update is ready, install the included,
@@ -56,14 +56,17 @@ new signed v0.23 catalog exists, this candidate uses the embedded Jamulus
 3. Choose Join a Jam and paste the invitation from the Mac host. Jamulus owns
    the audio interface, channels, buffer, headphones, and monitor mix.
 
-Webex is optional and is not bundled. Choose Webex Controls on WebJam's main
-session rail or More > Webex Controls to show Conversation controls without
-opening or rejoining the meeting. This Linux package can locate Webex but does
-not establish a trusted publisher identity, so Show Webex App and the
-focus-based Mute in Webex guidance stay unavailable. Join / Open Meeting hands
-off the saved link to a supported browser. Cisco owns Webex installation,
-sign-in, and updates. Keep Webex muted while playing because Jamulus remains
-the music path.
+Conversation/video is optional and is not bundled. Any meeting platform can
+use the explicit Join / Open Meeting handoff when its link is public HTTPS with
+a DNS hostname and passes WebJam's safety checks. Known Webex, Zoom, Teams,
+Google Meet, and FaceTime links receive friendly labels; another accepted
+provider remains neutral and is not natively verified. FaceTime is Mac-only,
+and WebJam never claims join or mute. This Linux package can locate Webex but
+does not establish a trusted publisher identity, so the Webex-only Show Webex
+App and focus-based Mute in Webex guidance stay unavailable. Join / Open
+Meeting hands off the saved link to the default browser or installed link
+handler. Cisco owns Webex installation, sign-in, and updates. Keep the selected
+meeting service muted while playing because Jamulus remains the music path.
 
 This ZIP is not a distro-native signed package. Verify the published SHA-256
 before extracting it. WebJam separately verifies its packaged transport hash,
