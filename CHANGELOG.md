@@ -168,6 +168,16 @@ All notable improvements and features for the WebJam music collaboration platfor
   configuration. Explicit per-track device-channel selection stays
   reserved (tracks allocate inputs sequentially, the resolver's default).
 
+### Studio — sticky per-take overload latch (phase 10)
+
+- A clip during playback now stays lit on the lane and master meters for
+  the rest of the take instead of vanishing on the next UI tick, so a
+  single mid-take overload is actionable. The latch is sticky within one
+  playback epoch and clears cleanly when transport restarts or seeks,
+  computed inside the existing level lock so the realtime meter path is
+  unchanged. `overloaded_sources()` exposes the sticky state (master flag
+  plus clipped channel ids) for diagnostics and a future badge.
+
 ### Conversation — multi-service meeting links
 
 - The saved conversation link now accepts Webex, Zoom, Microsoft Teams,

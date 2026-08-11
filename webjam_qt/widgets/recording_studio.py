@@ -273,6 +273,13 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._pending_stereo_levels: dict[int, tuple[int, float, float, bool]] = {}
         self._pending_master_level: tuple[int, float, float, bool] | None = None
         self._level_lock = threading.Lock()
+        # Sticky overload latch: once a lane or the master clips during one
+        # playback epoch, it stays lit until the epoch changes (transport
+        # start or seek), so a single mid-take clip is not lost to the next
+        # UI tick. Reset per epoch so a fresh pass reads clean.
+        self._overload_epoch = -1
+        self._overloaded_lanes: set[int] = set()
+        self._master_overloaded = False
         self._pending_finished_epoch: int | None = None
         self._pending_playback_error: tuple[int, PlaybackError] | None = None
         self._playback_prepare_results: queue.SimpleQueue[
@@ -2651,6 +2658,16 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             for lane in self._lanes.values():
                 lane.waveform.set_playhead(0.0, duration)
 
+    def overloaded_sources(self) -> tuple[bool, tuple[int, ...]]:
+        """Return (master_overloaded, clipped_channel_ids) for this pass.
+
+        Sticky within one playback epoch: a single clip stays reported
+        until transport restarts or seeks, so a musician can act on a take
+        that overloaded once mid-playback instead of missing the flash.
+        """
+
+        return self._master_overloaded, tuple(sorted(self._overloaded_lanes))
+
     def _clear_playback_meters(self) -> None:
         """Clear queued and visible levels without moving the transport."""
 
@@ -2658,6 +2675,9 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             self._pending_levels.clear()
             self._pending_stereo_levels.clear()
             self._pending_master_level = None
+        self._overload_epoch = -1
+        self._overloaded_lanes.clear()
+        self._master_overloaded = False
         self._master_meter.set_stereo_levels(0.0, 0.0, clipped=False)
         for lane in self._lanes.values():
             lane.set_stereo_levels(0.0, 0.0, clipped=False)
@@ -2848,6 +2868,11 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             finished_epoch = self._pending_finished_epoch
             self._pending_finished_epoch = None
         current_epoch = self._player.playback_epoch
+        if current_epoch != self._overload_epoch:
+            # A new transport pass or seek: clear the sticky overload latch.
+            self._overload_epoch = current_epoch
+            self._overloaded_lanes = set()
+            self._master_overloaded = False
         for channel_id, (epoch, level) in pending.items():
             if epoch != current_epoch:
                 continue
@@ -2860,15 +2885,23 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 continue
             lane = self._lanes.get(int(channel_id))
             if lane is not None:
-                lane.set_stereo_levels(left, right, clipped=clipped)
+                if clipped:
+                    self._overloaded_lanes.add(int(channel_id))
+                lane.set_stereo_levels(
+                    left,
+                    right,
+                    clipped=int(channel_id) in self._overloaded_lanes,
+                )
         if master is not None and master[0] == current_epoch:
             _epoch, master_left, master_right, master_clipped = master
         else:
             master_left, master_right, master_clipped = 0.0, 0.0, False
+        if master_clipped:
+            self._master_overloaded = True
         self._master_meter.set_stereo_levels(
             master_left,
             master_right,
-            clipped=master_clipped,
+            clipped=self._master_overloaded,
         )
         self._drain_waveform_results()
         self._studio_waveforms.drain()

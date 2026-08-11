@@ -243,6 +243,20 @@ flag. Reserved for later: explicit device-channel selection (sequential
 allocation is the documented default) and a device picker keyed on
 stable device IDs.
 
+## Phase 10 — sticky overload latch (2026-08-11, unattended)
+
+The first of the two deferred mixer items. The completed-take Studio now
+latches clip state per playback epoch: once a lane or the master clips,
+its meter stays lit until transport restarts or seeks (epoch change),
+reusing the existing meter rendering (feed `sticky OR current` clipped)
+so no widget or geometry changes and the realtime path is untouched.
+`overloaded_sources()` exposes it. One existing ruler/meter test pinned
+the old clear-next-tick behavior and was updated to the sticky semantics
+(the epoch-reset clear is covered by the dedicated latch test). Still
+deferred: Reference Studio mixer meters (that dialog is state-free; a
+live feed needs the take-Studio epoch pattern) and a visible per-lane
+overload badge (geometry-pinned; `overloaded_sources()` is the seam).
+
 ## Sequencing (each step lands with focused regression tests)
 
 1. SessionRecordingPlan consolidation + Finalizing-gate condition tests.

@@ -554,8 +554,12 @@ def test_studio_ruler_selection_gap_and_meter_share_the_recorded_timeline(tmp_pa
         studio._on_stereo_levels_bg(epoch, {1: (0.2, 0.4, False)})
         studio._on_master_level_bg(epoch, (0.1, 0.2, False))
         studio._tick()
-        assert studio._lanes[1]._meter._clipped is False
-        assert studio._master_meter._clipped is False
+        # The overload latch is sticky within one playback epoch: a clip
+        # earlier this pass stays lit even though this tick is clean. It
+        # clears only when transport restarts or seeks; the dedicated
+        # overload-latch test covers that epoch-reset path.
+        assert studio._lanes[1]._meter._clipped is True
+        assert studio._master_meter._clipped is True
         studio._select_track(1)
         assert studio._lanes[1]._selected
         assert not studio._lanes[0]._selected
@@ -3809,5 +3813,52 @@ def test_reset_mix_is_one_undo_and_preserves_export_choices(tmp_path):
         assert restored.pan == pytest.approx(-0.4)
         assert restored.muted is True
         assert studio._studio_state.master.gain == pytest.approx(2.2)
+    finally:
+        studio.shutdown()
+
+
+def test_overload_latch_is_sticky_within_a_take_and_clears_on_transport(tmp_path):
+    _take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        studio._toggle_play()
+        assert _wait_until(lambda: studio._player.is_playing)
+        epoch = studio._player.playback_epoch
+        channel = next(iter(studio._lanes))
+
+        # A single mid-take clip on one lane and the master.
+        studio._on_stereo_levels_bg(epoch, {channel: (0.9, 0.9, True)})
+        studio._on_master_level_bg(epoch, (0.9, 0.9, True))
+        studio._tick()
+        master_over, clipped = studio.overloaded_sources()
+        assert master_over is True
+        assert channel in clipped
+        assert studio._master_meter._clipped is True
+        assert studio._lanes[channel]._meter._clipped is True
+
+        # The very next tick reports no clip, but the latch stays lit.
+        studio._on_stereo_levels_bg(epoch, {channel: (0.2, 0.2, False)})
+        studio._on_master_level_bg(epoch, (0.2, 0.2, False))
+        studio._tick()
+        master_over, clipped = studio.overloaded_sources()
+        assert master_over is True
+        assert channel in clipped
+        assert studio._lanes[channel]._meter._clipped is True
+
+        # Restarting transport (new epoch) clears the latch.
+        studio._toggle_play()  # pause
+        studio._toggle_play()  # resume -> new epoch
+        new_epoch = studio._player.playback_epoch
+        assert new_epoch != epoch
+        studio._on_stereo_levels_bg(new_epoch, {channel: (0.2, 0.2, False)})
+        studio._on_master_level_bg(new_epoch, (0.2, 0.2, False))
+        studio._tick()
+        master_over, clipped = studio.overloaded_sources()
+        assert master_over is False
+        assert clipped == ()
     finally:
         studio.shutdown()
