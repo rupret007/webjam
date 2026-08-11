@@ -1212,9 +1212,15 @@ ALIGNMENT_METHOD = "envelope+refine-v2"
 
 
 def is_local_stem_name(name: str) -> bool:
-    """True for supplemental host stems (host-guitar*.wav / host-vocal*.wav)."""
+    """True for supplemental host stems.
+
+    Recognizes the legacy fixed pair (host-guitar*/host-vocal*) and every
+    configured input-map stem, which carries the ``local-`` prefix.
+    """
     lowered = name.lower()
-    return lowered.endswith(".wav") and lowered.startswith(_LOCAL_STEM_PREFIXES)
+    return lowered.endswith(".wav") and lowered.startswith(
+        (*_LOCAL_STEM_PREFIXES, "local-")
+    )
 
 
 def _envelope_100hz(signal):
@@ -1981,6 +1987,18 @@ def write_take_manifest(
     participants_by_id: dict[str, Participant] = {}
     project_sample_rate = 48_000
     grouped_tracks: dict[str, dict[str, object]] = {}
+    # Stable per-take local ordering: enumerate local stems by sorted
+    # filename (the legacy pair keeps 0=host-guitar, 1=host-vocal).
+    local_channel_by_name = {
+        name: index
+        for index, name in enumerate(
+            sorted(
+                track.path.name.lower()
+                for track in take.tracks
+                if track.source in {"local_ssl", "local_isolated"}
+            )
+        )
+    }
     for order, track in enumerate(take.tracks):
         local = track.source in {"local_ssl", "local_isolated"}
         source_fingerprint = ""
@@ -1991,8 +2009,8 @@ def write_take_manifest(
             )
             source_type = SourceType.LOCAL_ISOLATED
             quality = SourceQuality.UNVERIFIED
-            local_channel = (
-                0 if track.path.name.lower().startswith("host-guitar") else 1
+            local_channel = local_channel_by_name.get(
+                track.path.name.lower(), 0
             )
             group_key = f"local:{order}"
             project_start_frame = 0

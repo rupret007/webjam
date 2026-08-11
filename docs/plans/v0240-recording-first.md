@@ -211,6 +211,26 @@ Not yet a release candidate: step 2's classification/budget coherence
 pass, the deferred mixer latches, and the editor UI remain, each with
 seams documented above.
 
+## Phase 8 — step 2 coherence pass completed (2026-08-11)
+
+Configured input maps now drive recording end to end through one
+resolver, `resolve_capture_tracks(settings)`: enabled Local-Original
+entries map onto sequential device channels in list order (stereo
+entries split into L/R mono stems), names sanitize deterministically
+into `local-` prefixed filesystem-safe stems, disabled and
+non-Local-Original entries consume nothing, and the legacy fixed pair
+remains the exact behavior for an enabled capture with no valid
+configuration. The same resolver feeds capture (`LocalInputCapture`
+tracks), the per-take SessionRecordingPlan (capture truth, not intent),
+required local stems at finalization (take-scoped count captured at
+capture start), the storage budget (per-track reserve instead of the
+hardcoded 2), and diagnostics. Take classification recognizes
+`local-` stems alongside the legacy pair, and local channel numbers
+enumerate stably by sorted filename (legacy order preserved). Still
+deferred to the editor-UI phase: explicit device-channel selection
+(sequential allocation is the documented default) and non-Local-Original
+input tracks, which are reserved and skipped.
+
 ## Sequencing (each step lands with focused regression tests)
 
 1. SessionRecordingPlan consolidation + Finalizing-gate condition tests.

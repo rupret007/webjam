@@ -164,10 +164,11 @@ class AppSettings:
     # mapping {"name": str, "channels": 1|2, "enabled": bool,
     # "local_original_enabled": bool}. Strictly coerced on load: any
     # malformed entry clears the whole list, which falls back to the
-    # compatibility rule (local_capture_enabled + empty maps means today's
-    # two fixed host stems). The capture layer still records the fixed
-    # two-stem map until it is generalized; this field feeds the editor
-    # and the SessionRecordingPlan truth first.
+    # compatibility rule (local_capture_enabled + empty maps means the
+    # legacy two fixed host stems). Enabled Local-Original entries are
+    # recorded for real: resolve_capture_tracks() maps them onto
+    # sequential device channels and drives capture, the per-take plan,
+    # required stems, and storage budgets.
     input_maps: list = field(default_factory=list)
     local_capture_enabled: bool = False
     # The first host Record click asks whether this Mac should retain isolated

@@ -74,3 +74,64 @@ def test_default_is_empty_and_compat_rule_is_the_fixed_two_stem_map():
     # capture with an empty configured list means the fixed two host stems,
     # which the recording coordinator binds into the plan as capture truth.
     assert settings.local_capture_enabled is False
+
+
+def test_resolve_capture_tracks_is_the_single_capture_truth():
+    from core.session_recording_plan import (
+        LEGACY_CAPTURE_TRACKS,
+        resolve_capture_tracks,
+    )
+
+    settings = AppSettings()
+    # Capture off -> nothing, regardless of configuration.
+    settings.local_capture_enabled = False
+    settings.input_maps = [_entry()]
+    assert resolve_capture_tracks(settings) == ()
+
+    # Capture on, no valid config -> the legacy fixed pair, unchanged.
+    settings.local_capture_enabled = True
+    settings.input_maps = []
+    assert resolve_capture_tracks(settings) == LEGACY_CAPTURE_TRACKS
+
+    # Configured maps: sequential channels, stereo splits into L/R stems,
+    # disabled and non-Local-Original entries consume nothing.
+    settings.input_maps = [
+        _entry(name="Guitar DI", channels=1),
+        _entry(name="Skipped", channels=1, enabled=False),
+        _entry(name="Not LO", channels=1, local_original_enabled=False),
+        _entry(name="Room Pair", channels=2),
+    ]
+    resolved = resolve_capture_tracks(settings)
+    assert resolved == (
+        ("local-Guitar DI", 0),
+        ("local-Room Pair L", 1),
+        ("local-Room Pair R", 2),
+    )
+
+    # Hostile names sanitize deterministically and never collide.
+    settings.input_maps = [
+        _entry(name="Björn/../etc"),
+        _entry(name="Björn:*?"),
+    ]
+    resolved = resolve_capture_tracks(settings)
+    assert len(resolved) == 2
+    assert len({stem.lower() for stem, _c in resolved}) == 2
+    for stem, _channel in resolved:
+        assert stem.startswith("local-")
+        assert "/" not in stem and ".." not in stem
+
+    # Every resolved stem is accepted by the capture engine's validator.
+    from core.local_capture import LocalInputCapture
+
+    capture = LocalInputCapture(".", samplerate=48000, tracks=resolved)
+    assert capture._required_input_channels == 2
+
+
+def test_configured_stems_classify_as_local_and_enumerate_stably():
+    from core.take_library import is_local_stem_name
+
+    assert is_local_stem_name("local-Guitar DI.wav")
+    assert is_local_stem_name("host-guitar.wav")
+    assert is_local_stem_name("host-vocal-local.wav")
+    assert not is_local_stem_name("1-Jeff-something.wav")
+    assert not is_local_stem_name("local-Guitar DI.flac")

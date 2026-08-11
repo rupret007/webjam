@@ -55,6 +55,7 @@ def recording_storage_budget(
     *,
     expected_server_tracks: int,
     local_originals_enabled: bool,
+    local_original_tracks: int | None = None,
 ) -> tuple[int, int]:
     """Return conservative start and warning reserves for PCM24/48-kHz takes.
 
@@ -66,7 +67,15 @@ def recording_storage_budget(
     """
 
     server_tracks = max(1, int(expected_server_tracks))
-    channels = server_tracks * 2 + (2 if local_originals_enabled else 0)
+    if local_original_tracks is None:
+        local_channels = 2 if local_originals_enabled else 0
+    else:
+        local_channels = (
+            max(0, min(32, int(local_original_tracks)))
+            if local_originals_enabled
+            else 0
+        )
+    channels = server_tracks * 2 + local_channels
     bytes_per_second = channels * _PCM24_48K_MONO_BYTES_PER_SECOND
     minimum = max(
         _MINIMUM_FREE_BYTES,
@@ -84,6 +93,7 @@ def check_recording_storage(
     *,
     expected_server_tracks: int,
     local_originals_enabled: bool,
+    local_original_tracks: int | None = None,
     disk_usage: Callable[[str | Path], object] = shutil.disk_usage,
 ) -> RecordingStorageCheck:
     """Check whether storage is safe enough to arm a new real-session take.
@@ -125,6 +135,7 @@ def check_recording_storage(
     minimum, warning = recording_storage_budget(
         expected_server_tracks=expected_server_tracks,
         local_originals_enabled=local_originals_enabled,
+        local_original_tracks=local_original_tracks,
     )
     if free_bytes < minimum:
         return RecordingStorageCheck(

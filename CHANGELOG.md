@@ -142,6 +142,21 @@ All notable improvements and features for the WebJam music collaboration platfor
   QWidgets crashes Qt offscreen teardown. Physical-musician gates remain
   NOT RUN until exact packages are tested by hand.
 
+### Record Session — configured input maps drive recording (phase 8)
+
+- Configured input maps are no longer a wish-list: one resolver maps
+  enabled Local-Original entries onto sequential device channels (stereo
+  entries become L/R mono stems, hostile names sanitize into safe
+  `local-` stems) and drives the actual capture, the per-take recording
+  plan, the finalization's required-stem count, the storage budget (per
+  track instead of a hardcoded 2), and diagnostics. Take classification
+  recognizes configured stems alongside the legacy pair, with stable
+  local channel numbering. An enabled capture with no valid
+  configuration still records exactly the legacy host-guitar/host-vocal
+  pair; capture disabled still records nothing. Explicit device-channel
+  selection and non-Local-Original input tracks stay reserved for the
+  editor-UI phase.
+
 ### Conversation — multi-service meeting links
 
 - The saved conversation link now accepts Webex, Zoom, Microsoft Teams,

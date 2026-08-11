@@ -142,7 +142,16 @@ class DiagnosticsExporter:
             getattr(self.settings, "local_capture_enabled", None)
         )
         if isinstance(local_capture_enabled, bool):
-            channels["recorded"] = 2 if local_capture_enabled else 0
+            try:
+                from core.session_recording_plan import (
+                    resolve_capture_tracks,
+                )
+
+                channels["recorded"] = len(
+                    resolve_capture_tracks(self.settings)
+                )
+            except Exception:  # noqa: BLE001 - diagnostics best-effort
+                channels["recorded"] = 2 if local_capture_enabled else 0
         recorder_health = self._recorder_health()
         process_cleanup, port_cleanup = self._cleanup_snapshot()
         export_counts = {

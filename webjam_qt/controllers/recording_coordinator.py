@@ -59,6 +59,7 @@ from core.recording_sources import (
 from core.session_recording_plan import (
     InputMapBinding,
     SessionRecordingPlan,
+    resolve_capture_tracks,
 )
 from core.jamulus_roster_identity import (
     JamulusRosterIdentityError,
@@ -360,6 +361,7 @@ class RecordingCoordinator:
         # all hand off the capture; the lock makes the hand-off atomic so the
         # stream is finalized exactly once.
         self._capture_lock = threading.Lock()
+        self._local_capture_track_count = 0
         # One active take keeps its own bounded, privacy-safe recording facts.
         # WebJam-observed timestamps after recorder-state confirmation are
         # deliberately separate from the optional local-input capture times.
@@ -3541,23 +3543,19 @@ class RecordingCoordinator:
                         0, int(getattr(storage, "required_bytes", 0) or 0)
                     ),
                 )
-            # Today's local capture is a fixed two-mono-stem map recorded to
-            # host-guitar/host-vocal when enabled; the plan states exactly
-            # that until the configurable input-map editor replaces it.
-            input_maps: tuple[InputMapBinding, ...] = ()
-            if bool(self._c.settings.local_capture_enabled):
-                input_maps = (
-                    InputMapBinding(
-                        track_name="host-guitar",
-                        channel_count=1,
-                        local_original_enabled=True,
-                    ),
-                    InputMapBinding(
-                        track_name="host-vocal",
-                        channel_count=1,
-                        local_original_enabled=True,
-                    ),
+            # The plan binds capture truth: exactly the stems the resolved
+            # input map will record for this take (legacy fixed pair when
+            # nothing valid is configured; empty when capture is off).
+            input_maps = tuple(
+                InputMapBinding(
+                    track_name=stem,
+                    channel_count=1,
+                    local_original_enabled=True,
                 )
+                for stem, _channel in resolve_capture_tracks(
+                    self._c.settings
+                )
+            )
             plan = SessionRecordingPlan(
                 session_id=str(self._session_id or "") or "unbound-session",
                 take_id=self._take_id,
@@ -3670,6 +3668,7 @@ class RecordingCoordinator:
                     retry_callback=self.on_record_requested,
                 )
                 return
+        resolved_capture_tracks = resolve_capture_tracks(self._c.settings)
         storage = check_recording_storage(
             self._c.settings.takes_directory,
             # A ready Shared Track joins only after the server recorder starts,
@@ -3680,6 +3679,7 @@ class RecordingCoordinator:
                 len(real_participants) + int(planned_shared_track)
             ),
             local_originals_enabled=bool(self._c.settings.local_capture_enabled),
+            local_original_tracks=len(resolved_capture_tracks),
         )
         if not storage.can_start:
             self._set_phase(RecorderPhase.ERROR)
@@ -3934,7 +3934,9 @@ class RecordingCoordinator:
         """Start optional isolated local-input capture independently of Webex."""
         self.recover_interrupted_recordings()
         if not self._c.settings.local_capture_enabled:
-            self._local_capture = None
+            with self._capture_lock:
+                self._local_capture = None
+                self._local_capture_track_count = 0
             return True
         root = (self._c.settings.takes_directory or "").strip()
         if not root:
@@ -3953,6 +3955,7 @@ class RecordingCoordinator:
         try:
             from core.local_capture import LocalInputCapture
 
+            capture_tracks = resolve_capture_tracks(self._c.settings)
             capture = LocalInputCapture(
                 root,
                 device=self._c.settings.audio_input_device_index,
@@ -3960,10 +3963,14 @@ class RecordingCoordinator:
                 blocksize=self._c.settings.audio_blocksize,
                 take_id=self._take_id,
                 session_id=self._session_id,
+                tracks=capture_tracks or None,
             )
             capture.start()
             with self._capture_lock:
                 self._local_capture = capture
+                self._local_capture_track_count = (
+                    len(capture_tracks) or 2
+                )
             return True
         except Exception:  # noqa: BLE001 - device errors can contain private paths
             LOGGER.warning("Isolated host capture preflight failed.")
@@ -4822,6 +4829,12 @@ class RecordingCoordinator:
         # concurrent shutdown salvage can still preserve the audio while we
         # are polling for the take directory.
         required_local = 1 if self._local_capture is not None else 0
+        with self._capture_lock:
+            required_local_count = (
+                int(getattr(self, '_local_capture_track_count', 0) or 0)
+                if required_local
+                else 0
+            )
         recording_receipts, recording_identity_errors = (
             self._final_recording_receipt_snapshot()
         )
@@ -4886,7 +4899,7 @@ class RecordingCoordinator:
                 result = write_take_manifest(
                     recovered,
                     expected_tracks=self._expected_tracks,
-                    required_local_stems=2 if required_local else 0,
+                    required_local_stems=required_local_count,
                     local_started_utc=started_utc,
                     local_duration_s=duration_s,
                     capture_errors=(
@@ -4957,7 +4970,7 @@ class RecordingCoordinator:
             result = write_take_manifest(
                 take_dir,
                 expected_tracks=self._expected_tracks,
-                required_local_stems=2 if required_local else 0,
+                required_local_stems=required_local_count,
                 local_started_utc=started_utc,
                 local_duration_s=duration_s,
                 capture_errors=capture_errors,

@@ -101,6 +101,65 @@ class InputMapBinding:
         return "InputMapBinding(private=[redacted])"
 
 
+LEGACY_CAPTURE_TRACKS: tuple[tuple[str, int], ...] = (
+    ("host-guitar", 0),
+    ("host-vocal", 1),
+)
+_CAPTURE_STEM_SAFE_RE = re.compile(r"[^A-Za-z0-9 _-]+")
+
+
+def _capture_stem(name: str, index: int) -> str:
+    """Deterministically sanitize one configured name into a capture stem."""
+
+    cleaned = _CAPTURE_STEM_SAFE_RE.sub("-", str(name or ""))
+    cleaned = " ".join(cleaned.split())[:60].strip(" -_")
+    if not cleaned or not cleaned[0].isalnum():
+        cleaned = f"track-{index + 1}"
+    return f"local-{cleaned}"
+
+
+def resolve_capture_tracks(settings: object) -> tuple[tuple[str, int], ...]:
+    """The capture-truth (stem, device_channel) list for one take.
+
+    Configured, enabled Local-Original entries map onto sequential device
+    channels in list order; a stereo entry becomes two mono stems on
+    consecutive channels. Configured stems carry the ``local-`` prefix so
+    take classification recognizes them. With local capture enabled but no
+    valid configuration, the legacy fixed pair applies unchanged; with
+    local capture disabled, nothing is captured. Entries that are enabled
+    but not Local Originals are reserved for the future multitrack-input
+    phase and are skipped without consuming channels.
+    """
+
+    if not bool(getattr(settings, "local_capture_enabled", False)):
+        return ()
+    bindings = configured_input_map_bindings(settings)
+    tracks: list[tuple[str, int]] = []
+    seen: set[str] = set()
+    channel = 0
+    for index, binding in enumerate(bindings):
+        if not binding.enabled or not binding.local_original_enabled:
+            continue
+        base = _capture_stem(binding.track_name, index)
+        parts = (
+            ((base, channel),)
+            if binding.channel_count == 1
+            else ((f"{base} L", channel), (f"{base} R", channel + 1))
+        )
+        for stem, stem_channel in parts:
+            unique = stem
+            suffix = 2
+            while unique.lower() in seen:
+                unique = f"{stem}-{suffix}"
+                suffix += 1
+            seen.add(unique.lower())
+            tracks.append((unique, stem_channel))
+        channel += binding.channel_count
+        if len(tracks) >= 32 or channel > 63:
+            break
+    return tuple(tracks) if tracks else LEGACY_CAPTURE_TRACKS
+
+
 def configured_input_map_bindings(
     settings: object,
 ) -> tuple[InputMapBinding, ...]:
