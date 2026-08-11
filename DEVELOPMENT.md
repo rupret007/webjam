@@ -1,14 +1,14 @@
 # Developing WebJam v0.24.0
 
-> **Current candidate source:** this guide describes v0.24.0 recording-first,
+> **Current release line:** this guide describes v0.24.0 recording-first,
 > configurable Local Original, Studio, and provider-neutral conversation
-> development. GitHub **Latest** remains immutable v0.23.0 until the protected
-> v0.24 promotion passes.
+> development. The exact v0.24.0 tag is the immutable GitHub **Latest** private
+> test release.
 
-> **Release boundary:** the exact v0.23.0 tag and checksum-verified assets remain
-> authoritative for the published download until GitHub Latest changes. A
-> v0.24.0 build is testable only when its exact tag, asset, and checksum are
-> recorded; no physical result exists yet.
+> **Release boundary:** only the exact tagged v0.24.0 assets and attached
+> checksum manifest are authoritative for the current download. An untagged
+> checkout, branch artifact, or later documentation commit is not a release;
+> no v0.24.0 physical result exists yet.
 
 ## Local setup
 
@@ -149,7 +149,7 @@ Linux/JACK real-Jamulus companion and its evidence boundary are documented in
 - UI surfaces render the shared snapshot and route semantic actions back to an
   owner. They must not start work while rendering.
 - Creative Pulse content stays local and cannot mutate conductor facts. No
-  cloud model, agent, or SDK belongs in the v0.24 candidate path.
+  cloud model, agent, or SDK belongs in the v0.24 release line.
 - Public consumers get only `to_public_dict()` followed by their own strict
   allowlist. Never add free-form copy, notes, names, channel IDs, addresses,
   devices, paths, invitations, credentials, tokens, or raw exceptions.
@@ -174,13 +174,13 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree's package identity is `0.24.0`, an unsigned private test
-candidate. It
-must receive its own exact tag, asset inventory, checksums, exact-target
-component/fallback proof, tag CI, and verified promotion before it can become a
-download. The v0.23.0 tag, eight-asset inventory, checksums, tag CI, and
-verified promotion remain the immutable GitHub **Latest** release evidence
-until v0.24.0 promotion and must not be reused.
+The source tree's package identity is `0.24.0`. Its exact annotated tag,
+eight-asset inventory, checksums, exact-target component/fallback proof, tag CI,
+and protected promotion passed before it became the immutable GitHub
+**Latest** private test download. Windows remains unsigned and macOS remains
+ad-hoc signed and unnotarized. The v0.23.0 tag, asset inventory, checksums, tag
+CI, and protected promotion remain immutable historical release evidence and
+must not be reused.
 Published v0.20.0, v0.21.0, v0.22.0, v0.22.1, v0.22.2, v0.22.3, v0.22.4,
 and v0.22.5 tags and assets remain immutable historical evidence and must never
 be overwritten or served under a moved tag.

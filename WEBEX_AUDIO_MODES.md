@@ -1,7 +1,7 @@
-# Conversation companion guidance — v0.24.0 source candidate
+# Conversation companion guidance — v0.24.0 private test release
 
-> GitHub **Latest** remains immutable v0.23.0 until protected v0.24 promotion.
-> Every external meeting-app behavior remains a separate physical gate.
+> GitHub **Latest** is immutable v0.24.0. Every external meeting-app behavior
+> remains a separate physical gate.
 
 Any meeting service is optional for talking or video. Jamulus carries the
 music.

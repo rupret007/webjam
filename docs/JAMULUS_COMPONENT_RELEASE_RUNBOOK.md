@@ -8,24 +8,27 @@
 > remain immutable. Neither historical tag, release, nor signed asset moved for
 > the v0.22.5 transition.
 
-> **v0.23.0 private testing candidate:** sealed v3 authorizes exact WebJam
-> 0.22.5 and cannot authorize 0.23.0. The v0.23 testing-release workflow proves
-> that rejection and publishes only a fallback-capable desktop candidate; it
-> does not publish, move, or replace a component channel. A managed v0.23 update
+> **v0.23.0 published fallback-only desktop state:** sealed v3 authorizes exact
+> WebJam 0.22.5 and cannot authorize 0.23.0. The v0.23 testing-release workflow
+> proved that rejection and published only a fallback-capable desktop
+> candidate; it does not publish, move, or replace a component channel. A
+> managed v0.23 update
 > still requires a new fixed versioned channel, the next monotonic sequence,
 > future expiry, exact inventory, offline signature, independent redownload,
 > and frozen-package verification. Every such component step is **NOT RUN**.
-> Current source narrowly authorizes the unchanged audited Jamulus 3.12.2 and
+> That source narrowly authorizes the unchanged audited Jamulus 3.12.2 and
 > 3.12.3 identities through exact WebJam 0.23.0 only, allowing a known fallback;
 > that baked compatibility is not a signed v0.23 managed-update catalog.
 
-> **v0.24.0 private testing candidate:** the sealed v3 catalog likewise cannot
-> authorize v0.24.0 and must not move. Current source extends the unchanged,
+> **v0.24.0 published fallback-only desktop state:** the protected publisher
+> proved that sealed v3 cannot authorize v0.24.0 and did not move it. The exact
+> v0.24.0 source extends the unchanged,
 > CI-exercised 3.12.2/3.12.3 baked identities through exact WebJam 0.24.0 only
-> and rejects 0.24.1. A fallback-only protected publisher may package embedded
-> 3.12.2 after proving catalog rejection; managed download still requires a
-> new fixed channel, monotonic sequence, offline signature, exact inventory,
-> independent redownload, and frozen-package verification.
+> and rejects 0.24.1. The immutable GitHub Latest private test release packages
+> embedded 3.12.2 after that catalog-rejection proof; managed download still
+> requires a new fixed channel, monotonic sequence, offline signature, exact
+> inventory, independent redownload, and frozen-package verification. Every
+> component publication step for such a new channel remains **NOT RUN**.
 
 This runbook records the sealed v1/v2 history and current v3 catalog channel. The
 catalog tells WebJam which exact

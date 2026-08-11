@@ -11,11 +11,12 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ## [0.24.0] — Recording-first workstation private test candidate (2026-08-11)
 
-> This candidate packages the recording-first work after immutable v0.23.0 as a new
-> identity. Publication requires the exact annotated tag, four-platform tag
-> CI, eight-asset draft, checksums, fallback proof, and protected promotion.
-> Automated evidence does not convert any physical-musician **NOT RUN** result
-> to PASS.
+> Published on 2026-08-11 as the immutable GitHub **Latest** private test
+> candidate and a new identity after immutable v0.23.0. Exact annotated tag,
+> four-platform tag CI, eight-asset draft, checksums, fallback proof, and
+> protected promotion passed. Windows remains unsigned; macOS remains ad-hoc
+> signed and unnotarized. Automated evidence does not convert any
+> physical-musician **NOT RUN** result to PASS.
 
 ### Record Session — one authoritative recording plan (step 1)
 

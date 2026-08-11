@@ -1,9 +1,9 @@
 # WebJam, simply
 
-> **Private candidate guide:** GitHub
-> [Latest](https://github.com/rupret007/webjam/releases/latest) remains the
-> checksum-verified v0.23.0 package until protected v0.24.0 promotion. Windows
-> is unsigned; macOS is ad-hoc signed and unnotarized.
+> **Private test release:** GitHub
+> [Latest](https://github.com/rupret007/webjam/releases/latest) is the immutable,
+> checksum-verified v0.24.0 package set. Windows is unsigned; macOS is ad-hoc
+> signed and unnotarized.
 
 > **Source note:** use the exact release tag and attached checksum manifest as
 > download evidence; an untagged checkout is not a substitute. v0.24.0 adds
@@ -15,8 +15,9 @@ recordings organized. Jamulus handles the music. Any meeting platform can be
 optional for talking or video when it provides a public HTTPS meeting link
 that passes WebJam's safety checks.
 
-Current source candidate: **v0.24.0**. Use its downloads only when the exact
-v0.24.0 GitHub release and checksum manifest exist. The four-platform release covers
+Current private test release: **v0.24.0**. Use only the exact assets attached to
+the immutable v0.24.0 GitHub release and verify them with its checksum manifest.
+The four-platform release covers
 Windows, Ubuntu 22.04, Intel Mac, and
 Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc
 signed and not notarized. The current line uses `cryptography` 50.0.0 for three

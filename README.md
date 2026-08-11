@@ -13,20 +13,24 @@ the systems that should remain independent.
 [![Latest release](https://img.shields.io/github/v/release/rupret007/webjam?label=Latest%20test%20candidate)](https://github.com/rupret007/webjam/releases/latest)
 
 > **Testing download:** GitHub [**Latest**](https://github.com/rupret007/webjam/releases/latest)
-> is the only current downloadable-test pointer. Immutable v0.23.0 remains
-> Latest until v0.24.0's exact annotated tag, four-platform CI, eight-asset
-> inventory, checksums, fallback proof, and protected promotion all pass.
-> Windows is unsigned; macOS is ad-hoc signed and unnotarized.
+> is the only current downloadable-test pointer. It resolves to immutable
+> v0.24.0, published from exact tag commit
+> `9edada8613b5aca6fec6a4110e2322611ad6658e` after four-platform CI,
+> eight-asset inventory, checksums, fallback proof, and protected promotion
+> passed. Windows is unsigned; macOS is ad-hoc signed and unnotarized.
 
-> **Source boundary:** the exact v0.23.0 tag, checksums, and protected promotion
-> are the downloadable-release evidence. Do not substitute an untagged checkout
-> or a later documentation commit for the immutable published package.
+> **Source boundary:** the exact v0.24.0 tag, checksums, and protected promotion
+> are the downloadable-release evidence. Do not substitute an untagged checkout,
+> branch artifact, or later documentation commit for the immutable published
+> package.
 
-> **Current source candidate:** v0.24.0 advances the native **Shared Track**,
+> **Current private test release:** v0.24.0 advances the native **Shared Track**,
 > **Record Session**, multitrack Studio, configurable Local Originals, and
-> provider-neutral conversation handoff. Use a v0.24.0 package only when its exact
-> filename and SHA-256 appear on the v0.24.0 GitHub release. Every physical
-> v0.24.0 gate remains **NOT RUN** until musicians test those exact packages.
+> provider-neutral conversation handoff. Use a v0.24.0 package only when its
+> exact filename and SHA-256 appear on the immutable
+> [v0.24.0 GitHub release](https://github.com/rupret007/webjam/releases/tag/v0.24.0).
+> Every physical v0.24.0 gate remains **NOT RUN** until musicians test those
+> exact packages.
 
 New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 [First Jam](FIRST_JAM.md); this README is the complete technical story.
@@ -36,8 +40,8 @@ New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 | Area | Current state |
 | --- | --- |
 | Product | Musician-facing desktop conductor around Jamulus, optional meeting-service conversation, Studio, and Pocket Stage |
-| Published line | v0.23.0 GitHub Latest private test candidate; verify its checksum manifest |
-| Current development | v0.24.0 recording-first private test candidate; v0.23.0 remains immutable |
+| Published line | Immutable v0.24.0 GitHub Latest private test candidate; verify its checksum manifest |
+| Current development | v0.24.0 recording-first line; later documentation commits do not replace tagged packages |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -491,19 +495,21 @@ successful protected promotion behind GitHub
 [Latest](https://github.com/rupret007/webjam/releases/latest) are downloadable
 evidence. Do not use an untagged checkout or ordinary branch build as a release.
 
-The current source tree reports **v0.24.0**. Use it only when the exact
+The current source tree reports **v0.24.0**. The exact
 [v0.24.0 release](https://github.com/rupret007/webjam/releases/tag/v0.24.0)
-exists with the expected eight assets and checksum manifest. Until its
-protected promotion succeeds, the exact
+is immutable GitHub Latest with the expected eight assets and checksum
+manifest. Source CI `31540572960`, successful tag CI `31542495182` attempt 2,
+and protected publisher run `31546157181` are its package evidence; release ID
+`368897541` was published at `2026-08-11T23:23:12Z`. The exact
 [v0.23.0 release](https://github.com/rupret007/webjam/releases/tag/v0.23.0)
-remains GitHub Latest and immutable; its tag CI and protected promotion are
-its package evidence. The immutable
+remains immutable historical evidence with its original tag CI and protected
+promotion. The immutable
 [v0.22.5 release](https://github.com/rupret007/webjam/releases/tag/v0.22.5)
 retains its original assets and evidence as a historical candidate.
 
 v0.24.0 is a new recording-first identity and never replaces v0.23.0 bytes.
-Its fallback-only testing lane must prove that sealed v3 remains valid for
-historical v0.22.5 and is rejected for v0.24.0, then publish the exact frozen
+Its fallback-only testing lane proved that sealed v3 remains valid for
+historical v0.22.5 and is rejected for v0.24.0, then published the exact frozen
 packages with the reviewed embedded Jamulus 3.12.2. The baked compatibility policy
 recognizes the already audited 3.12.2 and 3.12.3 identities through exact
 v0.24.0 only; managed 3.12.3 download remains unavailable until a new signed
@@ -630,7 +636,7 @@ promote a package or claim audibility.
 
 - [Documentation index](docs/README.md)
 - [Project brief for technical stakeholders](docs/PROJECT_BRIEF.md)
-- [v0.24.0 candidate notes and release history](CHANGELOG.md)
+- [v0.24.0 release notes and history](CHANGELOG.md)
 - [v0.24.0 recording-first physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
 - [Historical v0.23.0 Shared Track checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.18 unified-guidance pilot checklist](V018_UNIFIED_GUIDANCE_PILOT.md)

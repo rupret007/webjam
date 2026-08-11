@@ -1,9 +1,10 @@
 # WebJam v0.23.0 Shared Track and recording physical test checklist
 
 > **Current status:** every physical row in this document is **NOT RUN**.
-> The immutable v0.23.0 private test candidate is GitHub Latest, but publication
-> does not change that status. Record the selected package names, checksums, and
-> physical test environment below before changing any physical result.
+> The immutable v0.23.0 private test candidate is now a historical release; it
+> was GitHub Latest when published. Supersession does not change this ledger's
+> status. Record the selected package names, checksums, and physical test
+> environment below before changing any physical result.
 
 Use this ledger for physical multi-machine, Jamulus, BlackHole, JACK, hardware,
 recording, and Studio validation. Automated tests are prerequisite evidence,
@@ -36,7 +37,7 @@ Complete this before changing any row from **NOT RUN**:
 | Candidate version | `0.23.0` |
 | Git commit | `416186a3ea9cddc1ff01a2b0d61f5e1d5dfc70c8` |
 | Build/CI run ID | Tag CI `31368570400`; protected promotion `31371289158` |
-| GitHub release | Immutable Latest release `367773776`, tag `v0.23.0` |
+| GitHub release | Immutable historical release `367773776`, tag `v0.23.0`; it was Latest when published |
 | Host asset filename | **NOT RUN — exact v0.23.0 asset not selected for physical test** |
 | Host asset SHA-256 | **NOT RUN — not recorded** |
 | Guest A asset filename / SHA-256 | **NOT RUN — not recorded** |

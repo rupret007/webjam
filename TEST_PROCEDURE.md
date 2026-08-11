@@ -1,10 +1,9 @@
-# WebJam v0.24.0 source and physical test procedure
+# WebJam v0.24.0 release and physical test procedure
 
-> v0.24.0 is a recording-first, Studio, and provider-neutral conversation source
-> candidate. GitHub **Latest** remains immutable v0.23.0 until protected v0.24
-> promotion. No v0.24.0 physical result exists. Every v0.24.0 physical,
-> credentialed, signing, and platform-trust gate is
-> **NOT RUN**.
+> v0.24.0 is the immutable GitHub **Latest** recording-first, Studio, and
+> provider-neutral conversation private test release. No v0.24.0 physical
+> result exists. Every v0.24.0 physical, credentialed, signing, and
+> platform-trust gate is **NOT RUN**.
 
 ## Scope
 

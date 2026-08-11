@@ -1,7 +1,8 @@
-# WebJam quick help — v0.24.0 source candidate
+# WebJam quick help — v0.24.0 private test release
 
-> GitHub **Latest** remains immutable v0.23.0 until protected v0.24 promotion.
-> These recording-first labels target v0.24.0 source.
+> GitHub **Latest** is immutable v0.24.0. These recording-first labels target
+> the exact checksum-verified private test release; physical results remain
+> **NOT RUN** until observed against those packages.
 
 | Need | Use |
 | --- | --- |

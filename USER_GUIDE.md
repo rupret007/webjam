@@ -1,9 +1,9 @@
-# WebJam musician guide — v0.24.0 source candidate
+# WebJam musician guide — v0.24.0 private test release
 
-> GitHub **Latest** remains the exact immutable v0.23.0 package until v0.24.0's
-> protected promotion passes. The recording-first and revised Studio flow in
-> this guide requires an exact v0.24.0 test build; all physical and
-> platform-trust gates remain **NOT RUN**.
+> GitHub **Latest** is the exact immutable v0.24.0 private test release. The
+> recording-first and revised Studio flow in this guide requires an exact
+> checksum-verified v0.24.0 release asset; all physical and platform-trust
+> gates remain **NOT RUN**.
 
 ## Follow the current guide
 
@@ -209,7 +209,7 @@ Physical iPhone pairing, OS permission/firewall recovery, interruption,
 accessibility, mix correctness, recording, and rehearsal tests are **NOT RUN**
 until recorded against exact builds.
 
-## Shared Track — macOS source candidate
+## Shared Track — macOS private test release
 
 The host can choose **Add Shared Track**, drop one supported local file on the
 live-session surface, or open **Shared Track** / **More → Shared Track…** for

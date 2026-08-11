@@ -1,9 +1,10 @@
-# WebJam architecture — v0.24.0 source candidate
+# WebJam architecture — v0.24.0 private test release
 
-> This document describes the v0.24.0 source candidate. GitHub **Latest** remains
-> immutable v0.23.0 until the v0.24 protected promotion passes. All v0.24.0
-> physical, credentialed, signing, and platform
-> trust gates stay **NOT RUN**.
+> This document describes the immutable v0.24.0 GitHub **Latest** private test
+> release. Its exact tagged packages are published from commit
+> `9edada8613b5aca6fec6a4110e2322611ad6658e`; a later documentation commit is
+> not package evidence. All v0.24.0 physical, credentialed, signing, and
+> platform-trust gates stay **NOT RUN**.
 
 ## Product boundary
 

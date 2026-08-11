@@ -1,7 +1,6 @@
-# Recording and Studio — v0.24.0 source candidate
+# Recording and Studio — v0.24.0 private test release
 
-> GitHub **Latest** remains immutable v0.23.0 until v0.24.0's protected
-> promotion passes.
+> GitHub **Latest** is the immutable v0.24.0 private test release.
 > Physical recording, Shared Track audibility/isolation, playback, recovery,
 > long-session, and external-editor gates remain **NOT RUN** until exact
 > v0.24.0 package evidence is recorded.

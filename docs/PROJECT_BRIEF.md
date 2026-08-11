@@ -1,10 +1,9 @@
 # WebJam project brief
 
 **Review date:** 2026-08-11
-**Status:** v0.24.0 is the recording-first source/package candidate. Immutable
-v0.23.0 remains GitHub Latest until v0.24's tag builds, checksums, fallback
-proof, and protected promotion pass. Every v0.24 physical-musician gate is
-**NOT RUN**.
+**Status:** v0.24.0 is the immutable GitHub Latest recording-first private test
+release. Its tag builds, checksums, fallback proof, and protected promotion
+passed; every v0.24 physical-musician gate remains **NOT RUN**.
 
 ## Executive summary
 
@@ -61,7 +60,7 @@ the full contract.
 
 ## Verified status
 
-- The published v0.23.0 release contains Windows x64, Ubuntu 22.04 x64, Intel
+- The published v0.24.0 release contains Windows x64, Ubuntu 22.04 x64, Intel
   Mac, and Apple-silicon Mac packages plus an exact checksum manifest.
 - `cryptography` 50.0.0 remediates the three audited runtime CVEs; the Intel
   Mac source-build exception is explicit, hash-locked, and separately verified.
@@ -71,9 +70,9 @@ the full contract.
 - Physical two-Mac audibility, hardware recovery, meeting handoff, Pocket Stage
   owner-device pairing, signing/notarization, and long-session evidence remain
   **NOT RUN**. Automated green does not mean those gates passed.
-- v0.24.0 publication requires its exact tag, package inventory, checksum
+- v0.24.0 publication passed its exact tag, package inventory, checksum
   manifest, fallback proof, and protected promotion. The sealed v0.22.5 catalog
-  is explicitly rejected for v0.24.0 and is not evidence for the changed line.
+  was explicitly rejected for v0.24.0 and is not evidence for the changed line.
 
 ## Current product line
 
@@ -109,8 +108,10 @@ claimed as implemented in this repository.
    the current downloadable candidate and verify its checksum manifest. Use
    immutable [v0.23.0](https://github.com/rupret007/webjam/releases/tag/v0.23.0)
    only when evaluating that historical baseline.
-3. If no v0.24.0 release exists yet, build it from one recorded source commit
-   for evaluation without representing that branch build as published.
+3. Confirm Latest resolves to the immutable
+   [v0.24.0 release](https://github.com/rupret007/webjam/releases/tag/v0.24.0)
+   and use only its exact checksum-verified assets; a branch artifact is not a
+   release substitute.
 4. Run one Host/Join rehearsal with wired headphones and Jamulus, then exercise
    Shared Track, Record Session, finalization, and Studio.
 5. Open **Conversation** without joining, then test the explicit Join/Open
@@ -125,9 +126,9 @@ claimed as implemented in this repository.
   signed and unnotarized.
 - The v3 Jamulus component catalog is sealed at exact sequence 6 for v0.22.5.
   The v1/v0.22.3 and v2/v0.22.4 channels remain immutable historical evidence.
-- A fallback-only v0.24.0 private testing release requires complete desktop
-  asset/checksum evidence and protected release-environment ownership. A new
-  exact-target component authorization remains mandatory before managed 3.12.3
-  download can be enabled. Nothing may move or replace the sealed v0.22.5
-  catalog, tag, or assets; physical results stay in the
+- The fallback-only v0.24.0 private testing release has complete desktop
+  asset/checksum evidence and passed its protected release-environment gate. A
+  new exact-target component authorization remains mandatory before managed
+  3.12.3 download can be enabled. Nothing may move or replace the sealed
+  v0.22.5 catalog, tag, or assets; physical results stay in the
   [v0.24 checklist](../V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md).

@@ -8,17 +8,16 @@
 > source line.
 
 > **v0.23.0 published testing boundary:** the Shared Track, Record Session, and
-> Studio candidate is immutable GitHub Latest. Tag CI `31368570400` produced its
-> exact eight assets; protected promotion `31371289158` verified and published
-> release `367773776`. Every physical/credentialed gate remains **NOT RUN**
-> until separately observed against exact checksums.
+> Studio candidate is an immutable historical release. Tag CI `31368570400`
+> produced its exact eight assets; protected promotion `31371289158` verified
+> and published release `367773776`. Every physical/credentialed gate remains
+> **NOT RUN** until separately observed against exact checksums.
 
-> **v0.24.0 candidate boundary:** this recording-first line is a new package
-> identity. It must use an exact annotated `v0.24.0` tag at the then-current
-> `master`, a unique successful tag CI with all four desktop artifacts, one
-> eight-asset draft and checksum manifest, proof that sealed v3 rejects
-> v0.24.0, and an exact pinned fallback-only protected promotion. Never rebuild
-> or replace v0.23.0 assets with this source.
+> **v0.24.0 published testing boundary:** this recording-first line is the
+> immutable GitHub Latest private test release. Its exact annotated tag,
+> successful four-target tag CI, eight-asset draft and checksum manifest,
+> sealed-v3 rejection proof, and pinned protected promotion passed. Never
+> rebuild or replace v0.24.0 or v0.23.0 assets with later source.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version
@@ -30,12 +29,11 @@ rules and credentials. Do not reuse a package from a different source commit or
 replace assets on a published tag.
 
 For v0.24.0, never reuse the v0.22.5 v3 catalog: it authorizes exact WebJam
-0.22.5 only. The exact `publish-v023-testing-release.yml` lane must first prove
-that historical v0.23 promotion verified v3 for v0.22.5 and rejected v0.23.0.
-A separate pinned v0.24 fallback-only lane must prove the same historical
-catalog is rejected for v0.24.0, then bind one
-successful tag CI run, exact draft inventory, all asset digests, the checksum
-manifest, and the protected `release-latest` environment before publication.
+0.22.5 only. The historical `publish-v023-testing-release.yml` lane proved v3
+for v0.22.5 and rejected v0.23.0. The pinned v0.24 fallback-only lane likewise
+proved that catalog is rejected for v0.24.0, then bound one successful tag CI
+run, the exact draft inventory, all asset digests, the checksum manifest, and
+the protected `release-latest` environment before publication.
 That private test candidate uses embedded Jamulus 3.12.2 only when no compatible
 managed catalog exists. A new immutable signed channel remains mandatory before
 managed 3.12.3 downloads can be advertised. Run the
@@ -787,3 +785,72 @@ https://github.com/rupret007/webjam/releases/tag/v0.22.5. Its exact eight assets
 include checksum manifest `WebJam-v0.22.5-SHA256SUMS.txt`; the separate
 immutable v3 component release is ID `366930115` at tag
 `jamulus-components-v3`.
+
+### v0.24.0 recording-first candidate — published Latest record
+
+v0.24.0 is an immutable private test release and a new package identity after
+v0.23.0. It was published as GitHub **Latest** at
+https://github.com/rupret007/webjam/releases/tag/v0.24.0. Never move its
+annotated tag, rebuild or replace an asset, edit the immutable release, or
+substitute a later `master` commit or branch artifact for its tagged bytes.
+
+The complete publication chain is pinned below:
+
+| Evidence | Exact value |
+| --- | --- |
+| Annotated tag | `v0.24.0` |
+| Annotated tag object | `99cb3798a925a39b70159e3a1a56166e98b5c316` |
+| Peeled tag/source commit | `9edada8613b5aca6fec6a4110e2322611ad6658e` |
+| Source/master CI | `31540572960` |
+| Successful tag CI | `31542495182`, attempt 2 |
+| Tag draft-release job | `93953326611` |
+| Release-control commit | `28c9d673985f81729b316f352f13704ffd0e845e` |
+| Release-control CI | `31544471336` |
+| Protected publisher | run `31546157181`; proof job `93959002476`; publish job `93959070227` |
+| GitHub release | ID `368897541`; published `2026-08-11T23:23:12Z` |
+| Exact release-body SHA-256 | `7eeee822a22929289d3d6aee792050e34633366b4f6708a5c9592f4a97315487` |
+| Canonical asset-inventory SHA-256 | `83f9724cb83c79087c14e07beb873ef690ed43ac7a1d83218af1a0dc786a4184` |
+
+The inventory digest above is over the compact JSON array of
+`{id,name,size,digest}` objects sorted by asset name. The exact immutable asset
+inventory is:
+
+| Asset ID | Filename | Size (bytes) | GitHub digest |
+| ---: | --- | ---: | --- |
+| `510747174` | `WebJam-linux-x64.zip` | `168017509` | `sha256:a8d4dd3bc0d6d3b8244baa85bd26fc12cf7e81bcd4187267c41a16bf471591c9` |
+| `510747172` | `WebJam-macos-arm64-ADHOC-TEST-ONLY.zip` | `216031863` | `sha256:4f95e0e7de5ae59a9aec296869f1fd4d5f8c598e76a95a45981b7827f28cabc4` |
+| `510747168` | `WebJam-macos-x64-ADHOC-TEST-ONLY.zip` | `222343926` | `sha256:91d2dd05024ea558bd81b2a596a09c545ad9f72ae690c2ef7bce1d6d33360da5` |
+| `510747169` | `WebJam-v0.24.0-SHA256SUMS.txt` | `749` | `sha256:e24810b3d73c4032bc578f8eb236f64f450152c907843763830bbf8300b081d1` |
+| `510747170` | `WebJam-v0.24.0-macos-arm64-ADHOC-TEST-ONLY.dmg` | `217132079` | `sha256:1d6c698aab8382a8098a96b6602345e4bcb98770aaab6e56397a33f02d1d951a` |
+| `510747175` | `WebJam-v0.24.0-macos-x64-ADHOC-TEST-ONLY.dmg` | `223311523` | `sha256:1af795ab85ee246cf2c36785400e86a7f35b91883ed03a2097616e48039feac8` |
+| `510747173` | `WebJam-v0.24.0-windows-x64-UNSIGNED-TEST-ONLY-setup.exe` | `144648416` | `sha256:b463ddefb753f3ee745dcf7a58e20d2b69274d3814c9c1daf54c7a46aaf5b4bc` |
+| `510747171` | `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip` | `165359997` | `sha256:422b457f02291fbe5ecd55728b4d66ee4cde5112526d1461b8c1fa792639b79c` |
+
+The checksum manifest's own GitHub digest is
+`sha256:e24810b3d73c4032bc578f8eb236f64f450152c907843763830bbf8300b081d1`.
+Its seven package entries are exactly:
+
+```text
+a8d4dd3bc0d6d3b8244baa85bd26fc12cf7e81bcd4187267c41a16bf471591c9  WebJam-linux-x64.zip
+4f95e0e7de5ae59a9aec296869f1fd4d5f8c598e76a95a45981b7827f28cabc4  WebJam-macos-arm64-ADHOC-TEST-ONLY.zip
+91d2dd05024ea558bd81b2a596a09c545ad9f72ae690c2ef7bce1d6d33360da5  WebJam-macos-x64-ADHOC-TEST-ONLY.zip
+1d6c698aab8382a8098a96b6602345e4bcb98770aaab6e56397a33f02d1d951a  WebJam-v0.24.0-macos-arm64-ADHOC-TEST-ONLY.dmg
+1af795ab85ee246cf2c36785400e86a7f35b91883ed03a2097616e48039feac8  WebJam-v0.24.0-macos-x64-ADHOC-TEST-ONLY.dmg
+b463ddefb753f3ee745dcf7a58e20d2b69274d3814c9c1daf54c7a46aaf5b4bc  WebJam-v0.24.0-windows-x64-UNSIGNED-TEST-ONLY-setup.exe
+422b457f02291fbe5ecd55728b4d66ee4cde5112526d1461b8c1fa792639b79c  WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip
+```
+
+Source CI, successful tag CI attempt 2, its draft-release job, release-control
+CI, protected read-only proof, protected publish job, and the post-publication
+Latest redownload all passed. The protected publisher proved that immutable v3
+sequence 6 remains valid only for exact WebJam 0.22.5 and rejects v0.24.0; no
+component tag, release, or asset moved. The v0.24.0 packages therefore retain
+the reviewed embedded Jamulus 3.12.2 fallback. Managed 3.12.3 download remains
+unavailable until a new immutable signed version-specific channel exists.
+
+Windows remains unsigned. Both Mac architectures remain ad-hoc signed and
+unnotarized. Publication and automation do not prove physical audibility,
+recording, Studio, meeting-platform handoff, SmartScreen, Gatekeeper, signing,
+or notarization. Every such v0.24.0 result remains **NOT RUN** in the
+[recording-first physical checklist](../V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
+until dated evidence names one exact asset and checksum.

@@ -30,10 +30,10 @@ support bundles, or unredacted local paths.
 Jamulus, meeting services, Python dependencies, Qt, and operating-system trust systems
 have their own upstream security channels. WebJam-specific orchestration,
 privacy projection, package verification, updater, transport, and lifecycle
-issues belong here. The published v0.23.0 GitHub **Latest** download, the
-v0.24.0 testing candidate, and their immutable predecessors share this
-test-only trust boundary: Windows is unsigned and macOS is ad-hoc signed and
-unnotarized.
+issues belong here. Immutable v0.24.0 is the current GitHub **Latest** private
+test download. It, historical v0.23.0, and their immutable predecessors share
+this test-only trust boundary: Windows is unsigned and macOS is ad-hoc signed
+and unnotarized.
 
 The Conversation boundary accepts any meeting provider only through a
 hardened public HTTPS DNS-host link; it rejects embedded credentials, custom

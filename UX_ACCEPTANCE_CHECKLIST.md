@@ -1,7 +1,6 @@
 # WebJam v0.24.0 UX acceptance checklist
 
-> Immutable v0.23.0 remains GitHub **Latest** until v0.24.0's protected
-> promotion passes.
+> Immutable v0.24.0 is GitHub **Latest** for private testing.
 > Every physical and platform-trust gate stays **NOT RUN** until recorded
 > against an exact v0.24.0 asset.
 

@@ -5,9 +5,9 @@ a backing track. It can open without a WebJam session, Webex, or Jamulus. Its
 local playback and recording choices do not change the device, buffer, mix, or
 connection owned by Jamulus.
 
-> **Candidate guide:** this document describes Reference Studio in v0.24.0.
-> GitHub **Latest** remains immutable v0.23.0 until protected v0.24 promotion;
-> always verify the exact downloaded asset and checksum before use.
+> **Private test release guide:** this document describes Reference Studio in
+> immutable GitHub **Latest** v0.24.0. Always verify the exact downloaded asset
+> against the attached checksum manifest before use.
 
 Windows packages are unsigned. Mac packages are ad-hoc signed and unnotarized.
 Automated checks do not prove that a particular interface, driver, speaker, or
@@ -152,7 +152,7 @@ clipped-sample count, and deterministic RMS dBFS. RMS is not an integrated-LUFS
 mastering measurement. Treat clipping as a reason to lower track, effect, send,
 or master gain and bounce again.
 
-MP3 bounce is intentionally absent from the v0.24.0 candidate. It appears only
+MP3 bounce is intentionally absent from the v0.24.0 private test release. It appears only
 if a separate encoder adapter has passed the product's identity,
 output-decoding,
 and license-policy self-tests. Use WAV or FLAC for a lossless handoff.

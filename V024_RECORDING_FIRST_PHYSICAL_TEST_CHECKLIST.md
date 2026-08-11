@@ -28,18 +28,24 @@ Complete this table before changing any result:
 | Evidence field | Value |
 | --- | --- |
 | Candidate version | `0.24.0` |
-| Annotated tag and commit | **NOT RUN — verify exact `v0.24.0` tag on GitHub** |
-| Tag CI and protected promotion run IDs | **NOT RUN — not recorded** |
-| GitHub release ID | **NOT RUN — not recorded** |
-| Host asset filename and SHA-256 | **NOT RUN — not recorded** |
-| Guest asset filename(s) and SHA-256 | **NOT RUN — not recorded** |
-| Jamulus client/server identity | **NOT RUN — not recorded** |
+| Annotated tag and commit | `v0.24.0`; tag object `99cb3798a925a39b70159e3a1a56166e98b5c316`; peeled commit `9edada8613b5aca6fec6a4110e2322611ad6658e` |
+| Tag CI and protected promotion run IDs | source CI `31540572960`; successful tag CI `31542495182` attempt 2; release-control CI `31544471336`; protected publisher `31546157181` |
+| GitHub release ID | immutable Latest release `368897541`, published `2026-08-11T23:23:12Z` |
+| Host asset filename and SHA-256 | **NOT RUN — no physical host package selected.** Exact eligible package IDs, filenames, and hashes are frozen in the release runbook. |
+| Guest asset filename(s) and SHA-256 | **NOT RUN — no physical guest package selected.** Exact eligible package IDs, filenames, and hashes are frozen in the release runbook. |
+| Jamulus client/server identity | Packaged automated identity is the reviewed embedded 3.12.2 fallback; sealed v3 sequence 6 rejects v0.24.0, so no managed download is authorized. Physical client/server identity is **NOT RUN**. |
 | Test machines, OS versions, interfaces, and headphones | **NOT RUN — not recorded** |
 | Test date/time zone and musician aliases | **NOT RUN — not recorded** |
 | Sanitized evidence location | **NOT RUN — not recorded** |
 
 If any tag, commit, package, lock, component, or checksum changes, start a new
 ledger.
+
+The complete eight-asset IDs, sizes, GitHub digests, seven-entry checksum
+manifest, and protected publication chain are frozen in the
+[desktop release runbook](docs/DESKTOP_RELEASE_RUNBOOK.md). Recording exact
+release identity here does not change any physical action or release-decision
+row from **NOT RUN**.
 
 ## A. Package and clean-start boundary
 

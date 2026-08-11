@@ -4,6 +4,11 @@ This index is the front door for WebJam's documentation. Start with the
 audience that matches what you are trying to do; the root [README](../README.md)
 keeps the product story and five-minute demo intentionally short.
 
+> **Current testing release:** immutable GitHub **Latest** is v0.24.0. Use only
+> an exact release asset verified by `WebJam-v0.24.0-SHA256SUMS.txt`. Windows is
+> unsigned; macOS is ad-hoc signed and unnotarized; every physical test remains
+> **NOT RUN** until recorded against those packages.
+
 ## Start here
 
 | Audience | Read | Outcome |

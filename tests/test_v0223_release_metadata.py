@@ -38,7 +38,7 @@ COMPONENT_UPDATE_SOURCE = (
 ).read_text(encoding="utf-8")
 
 
-def test_v0240_is_the_source_candidate_identity() -> None:
+def test_v0240_is_the_published_source_identity() -> None:
     match = re.search(
         r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$',
         VERSION_SOURCE,
@@ -62,7 +62,9 @@ def test_v0240_is_the_source_candidate_identity() -> None:
     assert "Only the exact tag, release assets, checksum manifest" in normalized
     assert "v0.24.0 is a new recording-first identity" in normalized
     assert "v0.23.0 bytes" in normalized
-    assert "publish the exact frozen packages with the reviewed embedded" in normalized
+    assert "Immutable v0.24.0 GitHub Latest private test candidate" in normalized
+    assert "release ID `368897541`" in normalized
+    assert "published the exact frozen packages with the reviewed embedded" in normalized
     assert (
         "real-world MP3, Reference Track, and first-demo reliability closeout"
         in normalized
@@ -124,26 +126,34 @@ def test_candidate_catalog_payload_tracks_v0240_without_rewriting_v0225() -> Non
     )
 
 
-def test_current_guides_separate_v0240_source_from_v0230_history() -> None:
+def test_current_guides_separate_v0240_release_from_v0230_history() -> None:
     expected = {
-        "ARCHITECTURE.md": "# WebJam architecture — v0.24.0 source candidate",
+        "ARCHITECTURE.md": "# WebJam architecture — v0.24.0 private test release",
         "CLOSED_PILOT_PLAYBOOK.md": "v0.22.5 private test candidate",
         "DEVELOPMENT.md": "# Developing WebJam v0.24.0",
-        "FIRST_JAM.md": "# First Jam — WebJam v0.24.0 source candidate",
+        "FIRST_JAM.md": "# First Jam — WebJam v0.24.0 private test release",
         "README_SIMPLE.md": "use the exact release tag and attached checksum manifest",
-        "TEST_PROCEDURE.md": "# WebJam v0.24.0 source and physical test procedure",
-        "USER_GUIDE.md": "# WebJam musician guide — v0.24.0 source candidate",
+        "SECURITY.md": "Immutable v0.24.0 is the current GitHub **Latest**",
+        "TEST_PROCEDURE.md": "# WebJam v0.24.0 release and physical test procedure",
+        "USER_GUIDE.md": "# WebJam musician guide — v0.24.0 private test release",
         "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.24.0 UX acceptance checklist",
         "RECORDING_AND_STUDIO.md": (
-            "# Recording and Studio — v0.24.0 source candidate"
+            "# Recording and Studio — v0.24.0 private test release"
         ),
-        "WEBEX_AUDIO_MODES.md": "# Conversation companion guidance — v0.24.0",
+        "WEBEX_AUDIO_MODES.md": (
+            "# Conversation companion guidance — v0.24.0 private test release"
+        ),
         "ios/README.md": "exact v0.24.0 Mac test assets",
         "requirements-lock/README.md": (
-            "The v0.24.0 candidate inherits the exact dependency locks"
+            "The immutable v0.24.0 private test release uses the exact dependency locks"
         ),
         "WEBJAM_V0225_DEMO_READINESS.md": "# WebJam v0.22.5 two-musician demo readiness",
-        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": "describes Reference Studio in v0.24.0",
+        "V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md": (
+            "Immutable historical release `367773776`, tag `v0.23.0`"
+        ),
+        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": (
+            "immutable GitHub **Latest** v0.24.0"
+        ),
     }
     for relative_path, marker in expected.items():
         assert marker in (ROOT / relative_path).read_text(encoding="utf-8")
@@ -178,6 +188,7 @@ def test_changelog_marks_v024_candidate_and_keeps_prior_history() -> None:
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "## [Unreleased]" in changelog
     assert "## [0.24.0] — Recording-first workstation" in changelog
+    assert "Published on 2026-08-11 as the immutable GitHub **Latest**" in changelog
     assert "## [0.23.0] — Shared Track and native multitrack" in changelog
     assert "exact publication state is authoritative" in changelog
     assert "## [0.22.5] — 2026-08-07" in changelog
@@ -196,6 +207,144 @@ def test_v0240_physical_checklist_is_linked_and_every_result_is_not_run() -> Non
     ]
     assert len(result_rows) >= 10
     assert all(line.endswith("| **NOT RUN** |") for line in result_rows)
+    identity_section = checklist.split("## Exact candidate identity\n", 1)[1].split(
+        "\n## A. Package and clean-start boundary", 1
+    )[0]
+    assert "| Host asset filename and SHA-256 | **NOT RUN" in identity_section
+    assert "| Guest asset filename(s) and SHA-256 | **NOT RUN" in identity_section
+    assert "Physical client/server identity is **NOT RUN**" in identity_section
+    decision_section = checklist.split("## Release decision summary\n", 1)[1]
+    decision_rows = [
+        line
+        for line in decision_section.splitlines()
+        if line.startswith("| ") and "Gate family" not in line and "---" not in line
+    ]
+    assert len(decision_rows) == 11
+    assert all("| **NOT RUN** | None |" in line for line in decision_rows)
+    assert "Release recommendation: **NOT RUN" in decision_section
+
+
+def test_v0240_publication_evidence_is_exact_and_current_guides_are_post_release() -> None:
+    runbook = (ROOT / "docs" / "DESKTOP_RELEASE_RUNBOOK.md").read_text(
+        encoding="utf-8"
+    )
+    section = runbook.split(
+        "### v0.24.0 recording-first candidate — published Latest record\n", 1
+    )[1]
+    for marker in (
+        "99cb3798a925a39b70159e3a1a56166e98b5c316",
+        "9edada8613b5aca6fec6a4110e2322611ad6658e",
+        "31540572960",
+        "31542495182`, attempt 2",
+        "93953326611",
+        "28c9d673985f81729b316f352f13704ffd0e845e",
+        "31544471336",
+        "31546157181",
+        "93959002476",
+        "93959070227",
+        "368897541",
+        "2026-08-11T23:23:12Z",
+        "7eeee822a22929289d3d6aee792050e34633366b4f6708a5c9592f4a97315487",
+        "83f9724cb83c79087c14e07beb873ef690ed43ac7a1d83218af1a0dc786a4184",
+        "https://github.com/rupret007/webjam/releases/tag/v0.24.0",
+    ):
+        assert marker in section
+
+    expected_assets = (
+        (
+            "510747174",
+            "WebJam-linux-x64.zip",
+            "168017509",
+            "sha256:a8d4dd3bc0d6d3b8244baa85bd26fc12cf7e81bcd4187267c41a16bf471591c9",
+        ),
+        (
+            "510747172",
+            "WebJam-macos-arm64-ADHOC-TEST-ONLY.zip",
+            "216031863",
+            "sha256:4f95e0e7de5ae59a9aec296869f1fd4d5f8c598e76a95a45981b7827f28cabc4",
+        ),
+        (
+            "510747168",
+            "WebJam-macos-x64-ADHOC-TEST-ONLY.zip",
+            "222343926",
+            "sha256:91d2dd05024ea558bd81b2a596a09c545ad9f72ae690c2ef7bce1d6d33360da5",
+        ),
+        (
+            "510747169",
+            "WebJam-v0.24.0-SHA256SUMS.txt",
+            "749",
+            "sha256:e24810b3d73c4032bc578f8eb236f64f450152c907843763830bbf8300b081d1",
+        ),
+        (
+            "510747170",
+            "WebJam-v0.24.0-macos-arm64-ADHOC-TEST-ONLY.dmg",
+            "217132079",
+            "sha256:1d6c698aab8382a8098a96b6602345e4bcb98770aaab6e56397a33f02d1d951a",
+        ),
+        (
+            "510747175",
+            "WebJam-v0.24.0-macos-x64-ADHOC-TEST-ONLY.dmg",
+            "223311523",
+            "sha256:1af795ab85ee246cf2c36785400e86a7f35b91883ed03a2097616e48039feac8",
+        ),
+        (
+            "510747173",
+            "WebJam-v0.24.0-windows-x64-UNSIGNED-TEST-ONLY-setup.exe",
+            "144648416",
+            "sha256:b463ddefb753f3ee745dcf7a58e20d2b69274d3814c9c1daf54c7a46aaf5b4bc",
+        ),
+        (
+            "510747171",
+            "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip",
+            "165359997",
+            "sha256:422b457f02291fbe5ecd55728b4d66ee4cde5112526d1461b8c1fa792639b79c",
+        ),
+    )
+    asset_rows = re.findall(
+        r"(?m)^\| `(\d+)` \| `([^`]+)` \| `(\d+)` \| `(sha256:[0-9a-f]{64})` \|$",
+        section,
+    )
+    assert asset_rows == list(expected_assets)
+
+    checksum_block = section.split(
+        "Its seven package entries are exactly:\n\n```text\n", 1
+    )[1].split("\n```", 1)[0]
+    expected_checksums = [
+        (digest.removeprefix("sha256:"), name)
+        for _asset_id, name, _size, digest in expected_assets
+        if name != "WebJam-v0.24.0-SHA256SUMS.txt"
+    ]
+    assert [tuple(line.split("  ", 1)) for line in checksum_block.splitlines()] == (
+        expected_checksums
+    )
+
+    current_documents = (
+        "README.md",
+        "ARCHITECTURE.md",
+        "DEVELOPMENT.md",
+        "FIRST_JAM.md",
+        "HELP_ROUTING_MAP.md",
+        "QUICK_HELP_MAP.md",
+        "README_SIMPLE.md",
+        "SECURITY.md",
+        "RECORDING_AND_STUDIO.md",
+        "TEST_PROCEDURE.md",
+        "USER_GUIDE.md",
+        "UX_ACCEPTANCE_CHECKLIST.md",
+        "WEBEX_AUDIO_MODES.md",
+        "docs/PROJECT_BRIEF.md",
+        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md",
+    )
+    forbidden = (
+        "GitHub **Latest** remains immutable v0.23.0",
+        "v0.23.0 remains GitHub Latest",
+        "until protected v0.24 promotion",
+        "until v0.24.0's protected promotion",
+        "If no v0.24.0 release exists yet",
+    )
+    for relative_path in current_documents:
+        content = (ROOT / relative_path).read_text(encoding="utf-8")
+        assert not any(marker in content for marker in forbidden), relative_path
 
 
 def test_candidate_package_copy_is_explicit_about_platform_trust() -> None:

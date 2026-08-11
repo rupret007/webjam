@@ -1,8 +1,8 @@
-# First Jam — WebJam v0.24.0 source candidate
+# First Jam — WebJam v0.24.0 private test release
 
-> GitHub **Latest** remains the immutable, checksum-verified v0.23.0 candidate
-> until v0.24.0's protected promotion passes. Use these recording-first steps
-> only with an exact v0.24.0 test build, and record every physical
+> GitHub **Latest** is the immutable, checksum-verified v0.24.0 private test
+> release. Use these recording-first steps only with an exact v0.24.0 release
+> asset whose SHA-256 matches the attached manifest, and record every physical
 > rehearsal gate as **NOT RUN** until it is actually observed.
 
 ## Host
