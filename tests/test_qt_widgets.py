@@ -257,6 +257,159 @@ class TestSessionStrip(unittest.TestCase):
         self.assertEqual(tools, ["takes"])
         self.assertEqual(s._studio_button.accessibleName(), "Open Studio")
 
+    def test_music_profile_preserves_established_live_control_copy(self):
+        from core.creative_modes import get_creator_profile_by_key_or_default
+
+        s = self._strip()
+        s.set_creator_profile(get_creator_profile_by_key_or_default("music"))
+
+        self.assertEqual(
+            s._audio_button.accessibleName(),
+            "Start or end the band session",
+        )
+        self.assertEqual(
+            s._audio_button.toolTip(),
+            "Start or end the band's live music session. WebJam handles the engine.",
+        )
+        self.assertEqual(
+            s._record_button.accessibleName(),
+            "Start or stop band-server multitrack recording",
+        )
+        self.assertEqual(
+            s._record_button.toolTip(),
+            "Record one synchronized track per connected musician.\n"
+            "Open Studio to see the tracks, waveforms, and playback mix.",
+        )
+        self.assertEqual(s._invite_button.accessibleName(), "Copy band invite")
+        self.assertEqual(
+            s._invite_button.toolTip(),
+            "Copy one complete link to send to a bandmate.",
+        )
+        self.assertEqual(s._ready_action.text(), "Band Check\tF2")
+        self.assertEqual(
+            s._diagnostics_action.text(),
+            "Band Check / Verify Sound\tF2",
+        )
+        self.assertEqual(
+            s._audio_settings_action.toolTip(),
+            "Bring Jamulus forward. Jamulus owns your instrument, headphones, "
+            "and buffer.",
+        )
+        s.set_audio_state("End Session")
+        self.assertEqual(
+            s._audio_button.accessibleDescription(),
+            "Band session action. Current action: End Session.",
+        )
+        s.set_recording_phase("starting")
+        self.assertEqual(
+            s._record_button.accessibleDescription(),
+            "Recording is being armed on the band server.",
+        )
+        s.set_video_configured(True)
+        self.assertEqual(
+            s._video_button.toolTip(),
+            "Show WebJam's conversation controls.\n"
+            "This does not open or rejoin the meeting.",
+        )
+
+    def test_non_music_profiles_remove_music_terms_and_keep_native_boundaries(self):
+        from core.creative_modes import get_creator_profile_by_key_or_default
+
+        scenarios = (
+            (
+                "podcast_voice",
+                "Sound Check\tF2",
+                "Sound Check / Verify Voice\tF2",
+                "speaker",
+            ),
+            (
+                "review_rehearsal",
+                "Session Check\tF2",
+                "Session Check / Verify Audio\tF2",
+                "participant",
+            ),
+        )
+        for profile_key, check_action, diagnostics_action, participant in scenarios:
+            with self.subTest(profile_key=profile_key):
+                s = self._strip()
+                s.set_creator_profile(
+                    get_creator_profile_by_key_or_default(profile_key)
+                )
+                s.set_audio_state("End Session")
+                s.set_recording_phase("starting")
+                s.set_video_configured(True)
+                s.set_video_state("Open Webex")
+
+                self.assertEqual(s._ready_action.text(), check_action)
+                self.assertEqual(s._diagnostics_action.text(), diagnostics_action)
+                self.assertIn(participant, s._record_button.toolTip().casefold())
+                self.assertIn("Jamulus", s._audio_settings_action.toolTip())
+                self.assertIn("Jamulus", s._record_button.accessibleDescription())
+                self.assertIn(
+                    "never directly or automatically taps a meeting app",
+                    s._video_button.accessibleDescription().casefold(),
+                )
+                self.assertIn(
+                    "External handoff status: Open Meeting",
+                    s._video_button.accessibleDescription(),
+                )
+                rendered = " ".join(
+                    (
+                        s._audio_button.accessibleName(),
+                        s._audio_button.toolTip(),
+                        s._audio_button.accessibleDescription(),
+                        s._record_button.accessibleName(),
+                        s._record_button.toolTip(),
+                        s._record_button.accessibleDescription(),
+                        s._invite_button.accessibleName(),
+                        s._invite_button.toolTip(),
+                        s._studio_button.accessibleName(),
+                        s._studio_button.accessibleDescription(),
+                        s._studio_button.toolTip(),
+                        s._video_button.accessibleName(),
+                        s._video_button.toolTip(),
+                        s._video_button.accessibleDescription(),
+                        s._test_button.text(),
+                        s._test_button.accessibleName(),
+                        s._ready_action.text(),
+                        s._practice_action.text(),
+                        s._practice_action.toolTip(),
+                        s._audio_settings_action.toolTip(),
+                        s._recording_setup_action.toolTip(),
+                        s._reference_track_button.accessibleDescription(),
+                        s._reference_track_button.toolTip(),
+                        s._reference_track_action.toolTip(),
+                        s._pocket_stage_action.toolTip(),
+                        s._diagnostics_action.text(),
+                        s._tools_button.accessibleDescription(),
+                    )
+                ).casefold()
+                for music_only in (
+                    "band server",
+                    "band-server",
+                    "bandmate",
+                    "musician",
+                    "instrument",
+                    "live jam",
+                    "the jam",
+                    "song project",
+                ):
+                    self.assertNotIn(music_only, rendered)
+                s.close()
+
+        review = self._strip()
+        review.set_creator_profile(
+            get_creator_profile_by_key_or_default("review_rehearsal")
+        )
+        self.assertIn(
+            "playback review",
+            review._studio_button.accessibleDescription().casefold(),
+        )
+        self.assertIn(
+            "track export",
+            review._studio_button.accessibleDescription().casefold(),
+        )
+
     def test_main_reference_track_button_is_host_only_and_uses_canonical_route(self):
         s = self._strip()
         tools = []
@@ -887,6 +1040,36 @@ class TestConductorWindow(unittest.TestCase):
         from webjam_qt import __version__
         self.assertIn(__version__, w.windowTitle())
 
+    def test_creator_profiles_drive_truthful_shell_studio_and_local_notes_copy(self):
+        from core.creative_modes import get_creator_profile_by_key_or_default
+
+        w = self._window()
+        podcast = get_creator_profile_by_key_or_default("podcast_voice")
+        w.set_creator_profile(podcast, locked=True)
+
+        self.assertIn("Podcast & Voice", w.windowTitle())
+        self.assertEqual(
+            w.session_strip._subtitle.text(),
+            "Podcast & Voice · Host profile",
+        )
+        self.assertIn("speaker", w.recording_studio._subtitle.text())
+        self.assertIn(
+            "Record Session captures Jamulus server stems",
+            w.recording_studio._subtitle.text(),
+        )
+        self.assertIn("Local production notes", w.session_canvas._notes.placeholderText())
+        self.assertIn("not shared", w.session_canvas.accessibleDescription())
+
+        review = get_creator_profile_by_key_or_default("review_rehearsal")
+        w.set_creator_profile(review, locked=True)
+        self.assertIn("Preview", w.windowTitle())
+        self.assertEqual(
+            w.session_strip._subtitle.text(),
+            "Review & Rehearsal · Preview · Host profile",
+        )
+        self.assertIn("no visual-media sync", w.session_canvas._notes.placeholderText())
+        self.assertIn("media timecode", w.session_canvas.accessibleDescription())
+
     def test_supported_narrow_minimum_size(self):
         w = self._window()
         # Leave room for native frame/title-bar chrome inside a physical
@@ -1304,6 +1487,53 @@ class TestConductorWindow(unittest.TestCase):
         self.assertIn("Control+Shift+R — Reset every fader", body)
         self.assertNotIn("Ctrl+1", body)
 
+    def test_help_and_recording_status_follow_creator_profile(self):
+        from core.creative_modes import get_creator_profile_by_key_or_default
+        from unittest import mock
+
+        scenarios = (
+            (
+                "podcast_voice",
+                ("Podcast & Voice", "Host Remote Recording", "Sound Check"),
+                ("musician", "Host a Jam", "Band Check"),
+                "every speaker",
+            ),
+            (
+                "review_rehearsal",
+                ("Review & Rehearsal Preview", "Host Review", "playback-only"),
+                ("musician", "Host a Jam", "Band Check"),
+                "every participant",
+            ),
+        )
+        for profile_key, present, absent, status_token in scenarios:
+            with self.subTest(profile_key=profile_key):
+                w = self._window()
+                w.set_creator_profile(
+                    get_creator_profile_by_key_or_default(profile_key)
+                )
+                with mock.patch(
+                    "PySide6.QtWidgets.QMessageBox.exec",
+                    return_value=0,
+                ), mock.patch(
+                    "PySide6.QtWidgets.QMessageBox.setText",
+                ) as set_text:
+                    w.show_help()
+                body = set_text.call_args.args[0]
+                for token in present:
+                    self.assertIn(token, body)
+                for token in absent:
+                    self.assertNotIn(token, body)
+                self.assertIn(status_token, w._status_recording.toolTip())
+                self.assertIn(
+                    "WebJam never directly or automatically taps a meeting app",
+                    w._status_recording.accessibleDescription(),
+                )
+                self.assertIn(
+                    "Do not route meeting or system audio into those inputs",
+                    w._status_recording.accessibleDescription(),
+                )
+                w.close()
+
     def test_about_copy_reports_version_build_target_and_trust(self):
         w = self._window()
         from unittest import mock
@@ -1325,7 +1555,8 @@ class TestConductorWindow(unittest.TestCase):
             w.show_about()
 
         body = set_text.call_args.args[0]
-        self.assertIn("WebJam v0.24.0", body)
+        self.assertIn("WebJam v0.25.0", body)
+        self.assertIn("multitrack collaboration for creators", body)
         self.assertIn("aaaaaaaaaaaa", body)
         self.assertIn("macos-arm64", body)
         self.assertIn("Private test candidate", body)

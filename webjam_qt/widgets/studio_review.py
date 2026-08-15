@@ -911,6 +911,7 @@ class TrackLane(QFrame):
         export_track_id: str = "",
         track_number: int = 0,
         source: str = "jamulus_server",
+        source_badge_label: str = "",
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -919,6 +920,8 @@ class TrackLane(QFrame):
         self._selected = False
         self._live = False
         self._trim_available = True
+        self._take_editing_enabled = True
+        self._track_export_enabled = True
         self.setObjectName("StudioTrackLane")
         self.setFixedHeight(100)
         self.setAccessibleName(f"{name} track")
@@ -946,9 +949,12 @@ class TrackLane(QFrame):
         self._name = QLabel(name)
         self._name.setObjectName("StudioTrackName")
         self._name.setMinimumWidth(0)
-        self._source_badge = QLabel(_safe_source_label(source))
+        resolved_source_label = (
+            str(source_badge_label or "").strip() or _safe_source_label(source)
+        )
+        self._source_badge = QLabel(resolved_source_label)
         self._source_badge.setObjectName("StudioTrackSource")
-        self._source_badge.setAccessibleName(f"{_safe_source_label(source)} source")
+        self._source_badge.setAccessibleName(f"{resolved_source_label} source")
 
         # This is deliberately an ephemeral export choice. It changes neither
         # the recording nor its durable project manifest; it simply narrows the
@@ -1090,20 +1096,53 @@ class TrackLane(QFrame):
     def set_live_mode(self, live: bool) -> None:
         """Hide playback-only controls that cannot affect the live Jamulus mix."""
         self._live = bool(live)
-        self._pan.setVisible(not self._live)
-        self._pan_value.setVisible(not self._live)
-        self._trim.setVisible(not self._live and self._trim_available)
-        self._trim_value.setVisible(not self._live and self._trim_available)
-        self._gain_value.setVisible(not self._live)
+        recorded_mix_visible = not self._live and self._take_editing_enabled
+        live_or_editable = self._live or self._take_editing_enabled
+        self._mute.setVisible(live_or_editable)
+        self._solo.setVisible(live_or_editable)
+        self._gain.setVisible(live_or_editable)
+        self._pan.setVisible(recorded_mix_visible)
+        self._pan_value.setVisible(recorded_mix_visible)
+        self._trim.setVisible(recorded_mix_visible and self._trim_available)
+        self._trim_value.setVisible(recorded_mix_visible and self._trim_available)
+        self._gain_value.setVisible(recorded_mix_visible)
         self._track_export_include.setVisible(
-            not self._live and bool(self._export_track_id)
+            not self._live
+            and self._take_editing_enabled
+            and self._track_export_enabled
+            and bool(self._export_track_id)
         )
+
+    def set_take_review_capabilities(
+        self,
+        *,
+        editing_enabled: bool,
+        track_export_enabled: bool,
+    ) -> None:
+        """Apply a take's read-only/edit/export product boundary to this lane."""
+
+        self._take_editing_enabled = bool(editing_enabled)
+        self._track_export_enabled = bool(track_export_enabled)
+        self.set_live_mode(self._live)
+        if (
+            not self._take_editing_enabled
+            and "Playback and source review only"
+            not in self.accessibleDescription()
+        ):
+            self.setAccessibleDescription(
+                f"{self.accessibleDescription()} Playback and source review only; "
+                "mix editing and track export are unavailable."
+            )
 
     def set_trim_available(self, available: bool) -> None:
         """Show trim only when the active project can persist and render it."""
 
         self._trim_available = bool(available)
-        visible = not self._live and self._trim_available
+        visible = (
+            not self._live
+            and self._take_editing_enabled
+            and self._trim_available
+        )
         self._trim.setVisible(visible)
         self._trim_value.setVisible(visible)
 
@@ -1114,7 +1153,9 @@ class TrackLane(QFrame):
         self._track_export_include.blockSignals(False)
 
     def set_track_export_enabled(self, enabled: bool) -> None:
-        self._track_export_include.setEnabled(bool(enabled))
+        self._track_export_include.setEnabled(
+            bool(enabled) and self._track_export_enabled
+        )
 
     def set_mix_state(
         self,

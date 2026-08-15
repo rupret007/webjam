@@ -70,9 +70,11 @@ def test_current_candidate_identity_cannot_be_confused_with_old_release() -> Non
     match = re.search(r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$', VERSION_SOURCE, re.M)
     assert match is not None
     version = match.group(1)
-    assert version == "0.24.0"
+    assert version == "0.25.0"
     assert version != "0.22.5"  # Immutable historical release.
-    assert PROJECT_README.startswith("# WebJam\n\n## Unified creative collaboration for live music")
+    assert PROJECT_README.startswith(
+        "# WebJam\n\n## Native creator collaboration and multitrack recording"
+    )
     assert f"## [{version}]" in CHANGELOG
     assert "v0.20.0 history must not be moved" in PROJECT_README
     assert "**Reference Studio** is a standalone" in PROJECT_README

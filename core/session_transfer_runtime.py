@@ -24,6 +24,7 @@ from core.network_invite import BandInvite, create_invite_link
 from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
 from core.session_transfer import (
     EnrollmentRegistry,
+    LocalOriginalObligation,
     ParticipantEnrollment,
     PresenceBinding,
     PresenceV2Challenge,
@@ -71,6 +72,9 @@ _PEER_ALIGNMENT_MAX_RESIDUAL_MS = 2.0
 _PEER_ALIGNMENT_MIN_ANCHORS = 3
 _MANIFEST_RECONCILE_MAX_ATTEMPTS = 3
 _RECONCILE_RETRY = object()
+_ZERO_LOCAL_ORIGINAL_MAP_FINGERPRINT = hashlib.sha256(
+    b"webjam-local-original-map-v1:disabled"
+).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +93,7 @@ class _ParticipantInventoryDisposition:
 
 def _participant_inventory_disposition(
     items: Iterable[object],
+    obligation: LocalOriginalObligation | None = None,
 ) -> _ParticipantInventoryDisposition:
     """Validate one participant's immutable input/segment declaration.
 
@@ -98,6 +103,25 @@ def _participant_inventory_disposition(
     """
 
     records = tuple(items)
+    if obligation is not None and obligation.exact:
+        expected_count = int(obligation.track_count or 0)
+        if expected_count == 0:
+            if records:
+                return _ParticipantInventoryDisposition(
+                    "needs_attention",
+                    issue=(
+                        "local original uploaded media despite its pre-take "
+                        "zero-track obligation."
+                    ),
+                )
+            return _ParticipantInventoryDisposition("complete")
+        if not records:
+            return _ParticipantInventoryDisposition(
+                "missing",
+                input_count=expected_count,
+                segment_count=expected_count,
+                issue="declared local-original inventory has not arrived.",
+            )
     if not records:
         return _ParticipantInventoryDisposition("missing")
     declarations = {
@@ -121,6 +145,38 @@ def _participant_inventory_disposition(
             issue="local original declared contradictory take inventories.",
         )
     input_count, segment_count = next(iter(declarations))
+    if obligation is not None and obligation.exact:
+        expected_count = int(obligation.track_count or 0)
+        if input_count != expected_count or segment_count != expected_count:
+            return _ParticipantInventoryDisposition(
+                "needs_attention",
+                input_count=input_count,
+                segment_count=segment_count,
+                issue=(
+                    "local original did not match its pre-take logical-track "
+                    "obligation."
+                ),
+            )
+        fingerprints = {
+            str(
+                getattr(
+                    item.descriptor,
+                    "inventory_map_fingerprint",
+                    "",
+                )
+                or ""
+            )
+            for item in records
+        }
+        if fingerprints != {obligation.map_fingerprint}:
+            return _ParticipantInventoryDisposition(
+                "needs_attention",
+                input_count=input_count,
+                segment_count=segment_count,
+                issue=(
+                    "local original did not match its pre-take input-map fingerprint."
+                ),
+            )
     if len(records) < segment_count:
         return _ParticipantInventoryDisposition(
             "receiving",
@@ -149,6 +205,22 @@ def _participant_inventory_disposition(
         "complete",
         input_count=input_count,
         segment_count=segment_count,
+    )
+
+
+def _obligation_contract_key(
+    obligations: Iterable[LocalOriginalObligation],
+) -> tuple[tuple[str, int | None, str, bool], ...]:
+    return tuple(
+        sorted(
+            (
+                item.participant_id,
+                item.track_count,
+                item.map_fingerprint,
+                item.capture_requested,
+            )
+            for item in obligations
+        )
     )
 
 
@@ -362,6 +434,8 @@ class _DesiredPresenceV2:
     rpc_connection_generation: int
     audio_connection_generation: int
     capture_enabled: bool
+    local_original_track_count: int | None = None
+    local_original_map_fingerprint: str = ""
 
     def __post_init__(self) -> None:
         digest = _presence_digest_text(self.ordered_roster_digest)
@@ -382,9 +456,7 @@ class _DesiredPresenceV2:
         object.__setattr__(
             self,
             "process_generation",
-            _presence_int(
-                self.process_generation, "process_generation", positive=True
-            ),
+            _presence_int(self.process_generation, "process_generation", positive=True),
         )
         object.__setattr__(
             self,
@@ -406,6 +478,18 @@ class _DesiredPresenceV2:
         )
         if type(self.capture_enabled) is not bool:
             raise ValueError("capture_enabled must be a boolean.")
+        contract = LocalOriginalObligation(
+            participant_id="00000000-0000-0000-0000-000000000000",
+            track_count=self.local_original_track_count,
+            map_fingerprint=self.local_original_map_fingerprint,
+            capture_requested=self.capture_enabled,
+        )
+        object.__setattr__(self, "local_original_track_count", contract.track_count)
+        object.__setattr__(
+            self,
+            "local_original_map_fingerprint",
+            contract.map_fingerprint,
+        )
 
     def __repr__(self) -> str:
         return "_DesiredPresenceV2(private=[redacted])"
@@ -432,6 +516,10 @@ class HostPeerSession:
         self._root: Path | None = None
         self._registered_takes: dict[str, Path] = {}
         self._expected_by_take: dict[str, tuple[str, ...]] = {}
+        self._local_original_obligations_by_take: dict[
+            str, tuple[LocalOriginalObligation, ...]
+        ] = {}
+        self._prepared_local_original_obligation_takes: set[str] = set()
         self._capture_cursor_by_take: dict[str, int] = {}
         self._presence_readiness_issue_by_take: dict[str, str] = {}
         # One take can be registered directly while the maintenance worker is
@@ -481,6 +569,7 @@ class HostPeerSession:
         takes_root: str | Path,
         installation_path: str | Path,
         display_name: str,
+        creator_profile_key: str = "music",
     ) -> None:
         with self._lock:
             if (
@@ -502,7 +591,11 @@ class HostPeerSession:
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(root, 0o700)
         registry = EnrollmentRegistry(root, credentials)
-        control = SessionControlState(root, credentials.session_id)
+        control = SessionControlState(
+            root,
+            credentials.session_id,
+            creator_profile_key=creator_profile_key,
+        )
         transfers = TransferStore(root, credentials.session_id)
         server = SessionPeerServer(
             bind_host,
@@ -538,6 +631,8 @@ class HostPeerSession:
             self._root = root
             self._registered_takes.clear()
             self._expected_by_take.clear()
+            self._local_original_obligations_by_take.clear()
+            self._prepared_local_original_obligation_takes.clear()
             self._capture_cursor_by_take.clear()
             self._presence_readiness_issue_by_take.clear()
             self._take_reconcile_locks.clear()
@@ -619,6 +714,8 @@ class HostPeerSession:
                 self._root = None
                 self._registered_takes.clear()
                 self._expected_by_take.clear()
+                self._local_original_obligations_by_take.clear()
+                self._prepared_local_original_obligation_takes.clear()
                 self._capture_cursor_by_take.clear()
                 self._presence_readiness_issue_by_take.clear()
                 self._take_reconcile_locks.clear()
@@ -773,9 +870,7 @@ class HostPeerSession:
         if ordinal >= count:
             raise ValueError("self_ordinal must identify a roster row.")
         fingerprint = _presence_fingerprint_text(host_roster_fingerprint)
-        ambiguous = _presence_ordinal_tuple(
-            ambiguous_ordinals, roster_count=count
-        )
+        ambiguous = _presence_ordinal_tuple(ambiguous_ordinals, roster_count=count)
         challenge = self.registry.install_presence_v2_roster(
             ordered_roster_digest,
             roster_count,
@@ -790,9 +885,7 @@ class HostPeerSession:
             challenge.ordered_roster_digest,
             challenge.roster_count,
             ordinal,
-            _presence_int(
-                process_generation, "process_generation", positive=True
-            ),
+            _presence_int(process_generation, "process_generation", positive=True),
             _presence_int(
                 rpc_connection_generation,
                 "rpc_connection_generation",
@@ -828,6 +921,8 @@ class HostPeerSession:
         topology_epoch: int,
         presence_generation: int,
         capture_enabled: bool,
+        local_original_track_count: int | None = None,
+        local_original_map_fingerprint: str = "",
     ) -> PresenceV2Proof | None:
         """Publish the enrolled host's challenge-scoped roster ordinal."""
 
@@ -842,6 +937,8 @@ class HostPeerSession:
             rpc_connection_generation=rpc_connection_generation,
             audio_connection_generation=audio_connection_generation,
             capture_enabled=capture_enabled,
+            local_original_track_count=local_original_track_count,
+            local_original_map_fingerprint=local_original_map_fingerprint,
         )
         fingerprint = _presence_fingerprint_text(host_roster_fingerprint)
         ambiguous = _presence_ordinal_tuple(
@@ -884,9 +981,9 @@ class HostPeerSession:
                 topology_epoch=topology_epoch,
                 presence_generation=generation,
                 capture_enabled=desired.capture_enabled,
-                _allow_ambiguous_ordinal=(
-                    desired.self_ordinal in ambiguous
-                ),
+                local_original_track_count=desired.local_original_track_count,
+                local_original_map_fingerprint=(desired.local_original_map_fingerprint),
+                _allow_ambiguous_ordinal=(desired.self_ordinal in ambiguous),
             )
             self._host_presence_v2_generation = generation
             self._host_presence_v2_desired = desired
@@ -902,9 +999,7 @@ class HostPeerSession:
             enrollment = self.host_enrollment
             desired = self._host_presence_v2_desired
             desired_fingerprint = self._host_presence_v2_desired_fingerprint
-            desired_ambiguous = (
-                self._host_presence_v2_desired_ambiguous_ordinals
-            )
+            desired_ambiguous = self._host_presence_v2_desired_ambiguous_ordinals
             key = self._recording_roster_key
             if registry is None or enrollment is None or desired is None:
                 return None
@@ -941,11 +1036,13 @@ class HostPeerSession:
                     and proof.audio_connection_generation
                     == desired.audio_connection_generation
                     and proof.capture_enabled == desired.capture_enabled
+                    and proof.local_original_track_count
+                    == desired.local_original_track_count
+                    and proof.local_original_map_fingerprint
+                    == desired.local_original_map_fingerprint
                 ):
                     return proof
-            generation = max(
-                time.time_ns(), self._host_presence_v2_generation + 1
-            )
+            generation = max(time.time_ns(), self._host_presence_v2_generation + 1)
             try:
                 proof = registry.bind_presence_v2(
                     enrollment.participant_id,
@@ -961,6 +1058,10 @@ class HostPeerSession:
                     topology_epoch=challenge.topology_epoch,
                     presence_generation=generation,
                     capture_enabled=desired.capture_enabled,
+                    local_original_track_count=(desired.local_original_track_count),
+                    local_original_map_fingerprint=(
+                        desired.local_original_map_fingerprint
+                    ),
                     _allow_ambiguous_ordinal=(
                         desired.self_ordinal in desired_ambiguous
                     ),
@@ -1003,6 +1104,152 @@ class HostPeerSession:
         if registry is not None:
             registry.invalidate_presence_v2()
 
+    def recording_local_original_obligations(
+        self,
+    ) -> tuple[LocalOriginalObligation, ...]:
+        """Return current authenticated, path-free guest capture contracts.
+
+        Older v2 peers remain represented with ``track_count=None`` so a
+        caller can surface a readiness problem instead of treating an
+        imprecise capture opt-in as an exact zero-track promise.
+        """
+
+        registry = self.registry
+        if registry is None:
+            return ()
+        self._refresh_host_recording_presence()
+        host_id = self.host_enrollment.participant_id if self.host_enrollment else ""
+        return tuple(
+            obligation
+            for obligation in registry.current_local_original_obligations()
+            if obligation.participant_id != host_id
+        )
+
+    def recording_local_original_obligation_issues(self) -> tuple[str, ...]:
+        """Explain why current guest obligations cannot safely gate a take."""
+
+        registry = self.registry
+        if registry is None:
+            return ("The authenticated peer registry is unavailable.",)
+        host_id = self.host_enrollment.participant_id if self.host_enrollment else ""
+        proofs = self.recording_presence_snapshot()
+        fresh_ids = {proof.participant_id for proof in proofs}
+        # Enrollment is a durable reconnect identity, not evidence that a peer
+        # is in the current Jamulus roster. Only an enrollment that still owns
+        # a reconciled live channel may create a legacy/missing-proof issue;
+        # otherwise a departed guest would block every future take forever.
+        live_enrolled_guest_ids = {
+            enrollment.participant_id
+            for enrollment in registry.participants()
+            if enrollment.participant_id != host_id
+            and registry.presence_for_participant(enrollment.participant_id) is not None
+        }
+        issues: list[str] = []
+        if not registry.presence_v2_configured():
+            if live_enrolled_guest_ids:
+                issues.append(
+                    "An enrolled guest cannot declare an exact Local Original inventory."
+                )
+        else:
+            missing = tuple(
+                participant_id
+                for participant_id in registry.recording_presence_missing_participant_ids()
+                if participant_id != host_id
+            )
+            if missing:
+                issues.append(
+                    "A connected guest has not renewed its exact Local Original inventory."
+                )
+            if live_enrolled_guest_ids - fresh_ids:
+                issues.append(
+                    "An enrolled guest has no exact Local Original inventory proof."
+                )
+        if any(
+            proof.participant_id != host_id and proof.local_original_track_count is None
+            for proof in proofs
+        ):
+            issues.append(
+                "A guest's Local Original opt-in does not include an exact logical-track inventory."
+            )
+        return tuple(dict.fromkeys(issues))
+
+    def prepare_local_original_obligations(
+        self, take_id: str
+    ) -> tuple[tuple[LocalOriginalObligation, ...], tuple[str, ...]]:
+        """Freeze an exact, authenticated guest plan before recording starts.
+
+        The two snapshots close the small gap between reading the contract and
+        its readiness state. Any authenticated change during that interval is
+        reported as an issue, never accepted as a silently different plan.
+        """
+
+        canonical_take = str(uuid.UUID(str(take_id)))
+        before = self.recording_local_original_obligations()
+        issues = list(self.recording_local_original_obligation_issues())
+        obligations = self.recording_local_original_obligations()
+        if _obligation_contract_key(before) != _obligation_contract_key(obligations):
+            issues.append(
+                "A guest's Local Original inventory changed during pre-take validation."
+            )
+        with self._lock:
+            prior = self._local_original_obligations_by_take.get(canonical_take)
+            if prior is not None and _obligation_contract_key(
+                prior
+            ) != _obligation_contract_key(obligations):
+                issues.append(
+                    "That take already has a different Local Original inventory plan."
+                )
+            elif not issues:
+                self._local_original_obligations_by_take[canonical_take] = obligations
+                self._prepared_local_original_obligation_takes.add(canonical_take)
+        return obligations, tuple(dict.fromkeys(issues))
+
+    def discard_prepared_local_original_obligations(self, take_id: str) -> bool:
+        """Retire an unused preflight snapshot without touching take evidence.
+
+        The operation is idempotent and succeeds only for a snapshot still
+        marked as prepared. Once recording state has published that take, the
+        immutable contract remains owned by its validation/recovery lifecycle.
+        """
+
+        try:
+            canonical_take = str(uuid.UUID(str(take_id)))
+        except (TypeError, ValueError, AttributeError):
+            return False
+        control = self.control
+        if control is not None:
+            snapshot = control.snapshot()
+            if (
+                snapshot.take_id == canonical_take
+                and snapshot.signal is not RecordingSignal.IDLE
+            ):
+                return False
+        with self._lock:
+            if canonical_take not in self._prepared_local_original_obligation_takes:
+                return False
+            if (
+                canonical_take in self._expected_by_take
+                or canonical_take in self._capture_cursor_by_take
+                or canonical_take in self._presence_readiness_issue_by_take
+                or canonical_take in self._registered_takes
+            ):
+                return False
+            self._prepared_local_original_obligation_takes.discard(canonical_take)
+            self._local_original_obligations_by_take.pop(canonical_take, None)
+            return True
+
+    def local_original_obligations_for_take(
+        self, take_id: str
+    ) -> tuple[LocalOriginalObligation, ...]:
+        """Return the immutable pre-take guest contracts frozen for ``take_id``."""
+
+        try:
+            canonical_take = str(uuid.UUID(str(take_id)))
+        except (TypeError, ValueError, AttributeError):
+            return ()
+        with self._lock:
+            return self._local_original_obligations_by_take.get(canonical_take, ())
+
     def _update_expected_capture_participants(self, take_id: str) -> None:
         """Union enrolled-peer Local Original obligations for one take."""
 
@@ -1011,6 +1258,27 @@ class HostPeerSession:
             return
         host_id = self.host_enrollment.participant_id if self.host_enrollment else ""
         expected = set(self._expected_by_take.get(take_id, ()))
+        current_obligations = self.recording_local_original_obligations()
+        with self._lock:
+            # ``control.begin`` has already published this take, so its
+            # prepared snapshot is now immutable take evidence.
+            self._prepared_local_original_obligation_takes.discard(take_id)
+            frozen_obligations = self._local_original_obligations_by_take.get(take_id)
+            if frozen_obligations is None:
+                frozen_obligations = current_obligations
+                self._local_original_obligations_by_take[take_id] = frozen_obligations
+            elif _obligation_contract_key(
+                current_obligations
+            ) != _obligation_contract_key(frozen_obligations):
+                self._presence_readiness_issue_by_take.setdefault(
+                    take_id,
+                    "A guest's Local Original inventory changed after the take began.",
+                )
+        expected.update(
+            obligation.participant_id
+            for obligation in current_obligations
+            if obligation.capture_requested
+        )
         if registry.presence_v2_configured():
             cursor = self._capture_cursor_by_take.setdefault(
                 take_id, registry.presence_v2_capture_cursor()
@@ -1067,9 +1335,7 @@ class HostPeerSession:
             for enrollment in registry.participants():
                 if enrollment.participant_id == host_id:
                     continue
-                binding = registry.presence_for_participant(
-                    enrollment.participant_id
-                )
+                binding = registry.presence_for_participant(enrollment.participant_id)
                 if binding is not None and binding.capture_enabled:
                     expected.add(enrollment.participant_id)
         self._expected_by_take[take_id] = tuple(sorted(expected))
@@ -1215,7 +1481,19 @@ class HostPeerSession:
                     return False
                 transfers = self.transfers
                 expected = set(self._expected_by_take.get(canonical_take, ()))
-            if not expected:
+                obligations = {
+                    item.participant_id: item
+                    for item in self._local_original_obligations_by_take.get(
+                        canonical_take, ()
+                    )
+                }
+                readiness_issue = self._presence_readiness_issue_by_take.get(
+                    canonical_take, ""
+                )
+            if readiness_issue:
+                return False
+            participants_to_check = expected | set(obligations)
+            if not participants_to_check:
                 return True
             try:
                 inventory = transfers.inventory(canonical_take)
@@ -1227,13 +1505,14 @@ class HostPeerSession:
                     getattr(getattr(item, "descriptor", None), "participant_id", "")
                     or ""
                 )
-                if participant_id in expected:
+                if participant_id in participants_to_check:
                     by_participant.setdefault(participant_id, []).append(item)
             dispositions = {
                 participant_id: _participant_inventory_disposition(
-                    by_participant.get(participant_id, ())
+                    by_participant.get(participant_id, ()),
+                    obligations.get(participant_id),
                 )
-                for participant_id in expected
+                for participant_id in participants_to_check
             }
             if any(
                 disposition.status == "needs_attention"
@@ -1309,7 +1588,10 @@ class HostPeerSession:
         while (
             sum(
                 count
-                for (lease_generation, _thread_id), count in self._callback_leases.items()
+                for (
+                    lease_generation,
+                    _thread_id,
+                ), count in self._callback_leases.items()
                 if lease_generation == generation
             )
             > own_leases
@@ -1417,6 +1699,10 @@ class HostPeerSession:
             transfers = self.transfers
             registry = self.registry
             expected_ids = self._expected_by_take.get(take_id, ())
+            obligation_by_id = {
+                item.participant_id: item
+                for item in self._local_original_obligations_by_take.get(take_id, ())
+            }
             readiness_issue = self._presence_readiness_issue_by_take.get(take_id, "")
         from core.take_project import (
             AlignmentState,
@@ -1451,10 +1737,10 @@ class HostPeerSession:
             return False
         inventory = transfers.inventory(take_id)
         display_by_id = {
-            item.participant_id: item.display_name
-            for item in registry.participants()
+            item.participant_id: item.display_name for item in registry.participants()
         }
         expected = set(expected_ids)
+        expected.update(obligation_by_id)
         expected.update(item.descriptor.participant_id for item in inventory)
         received_by_participant: dict[str, list] = {}
         for item in inventory:
@@ -1484,13 +1770,19 @@ class HostPeerSession:
             name = display_by_id.get(participant_id, "Musician")
             participant_items = received_by_participant.get(participant_id, [])
             inventory_disposition = _participant_inventory_disposition(
-                participant_items
+                participant_items,
+                obligation_by_id.get(participant_id),
             )
             participant_status = "missing"
             segment_summaries: list[dict] = []
             if participant_id not in participants:
                 participants[participant_id] = Participant(participant_id, name)
-            if not participant_items:
+            exact_zero = bool(
+                (obligation := obligation_by_id.get(participant_id)) is not None
+                and obligation.exact
+                and obligation.track_count == 0
+            )
+            if not participant_items and not exact_zero:
                 transfer_errors.append(
                     f"{PEER_TRANSFER_ERROR_PREFIX}{name}'s local original has not arrived."
                 )
@@ -1630,9 +1922,7 @@ class HostPeerSession:
                                 has_signal=None,
                             ),
                         ),
-                        alignment=AlignmentState(
-                            method=_PEER_ALIGNMENT_INITIAL_METHOD
-                        ),
+                        alignment=AlignmentState(method=_PEER_ALIGNMENT_INITIAL_METHOD),
                     )
                     tracks_by_id[track.track_id] = track
                     segment_ids.add(project_segment_id)
@@ -1653,32 +1943,25 @@ class HostPeerSession:
                         "reason": "The attached local original could not be identified in the take project.",
                     }
                 else:
-                    alignment_method = str(
-                        attached_track.alignment.method or ""
-                    ).strip().lower()
+                    alignment_method = (
+                        str(attached_track.alignment.method or "").strip().lower()
+                    )
                     manual_nudge = float(attached_track.alignment.manual_nudge_s)
                     retrying_reference = alignment_method.startswith(
                         _PEER_ALIGNMENT_WAITING_PREFIX
                     )
                     if (
-                        (
-                            alignment_method == _PEER_ALIGNMENT_INITIAL_METHOD
-                            or retrying_reference
-                        )
-                        and not manual_nudge
-                    ):
+                        alignment_method == _PEER_ALIGNMENT_INITIAL_METHOD
+                        or retrying_reference
+                    ) and not manual_nudge:
                         alignment_reason = ""
                         uncertainty_code = ""
                         reference_track = None
                         if descriptor.capture_errors or descriptor.gap_frames:
-                            alignment_reason = (
-                                "The local original has declared capture gaps or errors."
-                            )
+                            alignment_reason = "The local original has declared capture gaps or errors."
                             uncertainty_code = "incomplete-source"
                         elif not _track_media_is_verified(attached_track, folder):
-                            alignment_reason = (
-                                "The attached local original no longer matches its recorded checksum."
-                            )
+                            alignment_reason = "The attached local original no longer matches its recorded checksum."
                             uncertainty_code = "attachment-checksum-mismatch"
                         else:
                             reference_track = _same_participant_reference_track(
@@ -1687,9 +1970,7 @@ class HostPeerSession:
                                 take_root=folder,
                             )
                             if reference_track is None:
-                                alignment_reason = (
-                                    "No verified same-participant Jamulus server reference is available."
-                                )
+                                alignment_reason = "No verified same-participant Jamulus server reference is available."
                                 uncertainty_code = (
                                     "no-verified-same-participant-reference"
                                 )
@@ -1715,15 +1996,17 @@ class HostPeerSession:
                                 alignment=alignment,
                             )
                             tracks_by_id[attached_track.track_id] = attached_track
-                            segment_summaries[-1]["alignment"] = _peer_alignment_summary(
-                                attached_track,
-                                status=(
-                                    "waiting_for_reference"
-                                    if waiting_for_reference
-                                    else "uncertain"
-                                ),
-                                timing_ready=False,
-                                reason=alignment_reason,
+                            segment_summaries[-1]["alignment"] = (
+                                _peer_alignment_summary(
+                                    attached_track,
+                                    status=(
+                                        "waiting_for_reference"
+                                        if waiting_for_reference
+                                        else "uncertain"
+                                    ),
+                                    timing_ready=False,
+                                    reason=alignment_reason,
+                                )
                             )
                         else:
                             try:
@@ -1774,11 +2057,13 @@ class HostPeerSession:
                                     alignment=alignment,
                                 )
                                 tracks_by_id[attached_track.track_id] = attached_track
-                                segment_summaries[-1]["alignment"] = _peer_alignment_summary(
-                                    attached_track,
-                                    status="aligned",
-                                    timing_ready=True,
-                                    reason="Strong shared transient evidence verified this local original against its server track.",
+                                segment_summaries[-1]["alignment"] = (
+                                    _peer_alignment_summary(
+                                        attached_track,
+                                        status="aligned",
+                                        timing_ready=True,
+                                        reason="Strong shared transient evidence verified this local original against its server track.",
+                                    )
                                 )
                             else:
                                 if result is None:
@@ -1788,9 +2073,7 @@ class HostPeerSession:
                                             + "analysis-unavailable"
                                         )
                                     )
-                                    alignment_reason = (
-                                        "WebJam could not read enough timing evidence to verify this local original."
-                                    )
+                                    alignment_reason = "WebJam could not read enough timing evidence to verify this local original."
                                 else:
                                     alignment = replace(
                                         result.state,
@@ -1809,11 +2092,13 @@ class HostPeerSession:
                                     alignment=alignment,
                                 )
                                 tracks_by_id[attached_track.track_id] = attached_track
-                                segment_summaries[-1]["alignment"] = _peer_alignment_summary(
-                                    attached_track,
-                                    status="uncertain",
-                                    timing_ready=False,
-                                    reason=alignment_reason,
+                                segment_summaries[-1]["alignment"] = (
+                                    _peer_alignment_summary(
+                                        attached_track,
+                                        status="uncertain",
+                                        timing_ready=False,
+                                        reason=alignment_reason,
+                                    )
                                 )
                     elif alignment_method.startswith(_PEER_ALIGNMENT_VERIFIED_PREFIX):
                         segment_summaries[-1]["alignment"] = _peer_alignment_summary(
@@ -1834,31 +2119,21 @@ class HostPeerSession:
                         )
                     else:
                         if alignment_method.startswith(_PEER_ALIGNMENT_WAITING_PREFIX):
-                            alignment_reason = (
-                                "No verified same-participant Jamulus server reference is available."
-                            )
+                            alignment_reason = "No verified same-participant Jamulus server reference is available."
                             alignment_status = "waiting_for_reference"
                         elif alignment_method.endswith("incomplete-source"):
-                            alignment_reason = (
-                                "The local original has declared capture gaps or errors."
-                            )
+                            alignment_reason = "The local original has declared capture gaps or errors."
                             alignment_status = "uncertain"
                         elif alignment_method.endswith("attachment-checksum-mismatch"):
-                            alignment_reason = (
-                                "The attached local original no longer matches its recorded checksum."
-                            )
+                            alignment_reason = "The attached local original no longer matches its recorded checksum."
                             alignment_status = "uncertain"
                         elif alignment_method.endswith(
                             "no-verified-same-participant-reference"
                         ):
-                            alignment_reason = (
-                                "No verified same-participant Jamulus server reference is available."
-                            )
+                            alignment_reason = "No verified same-participant Jamulus server reference is available."
                             alignment_status = "waiting_for_reference"
                         elif alignment_method.endswith("analysis-unavailable"):
-                            alignment_reason = (
-                                "WebJam could not read enough timing evidence to verify this local original."
-                            )
+                            alignment_reason = "WebJam could not read enough timing evidence to verify this local original."
                             alignment_status = "uncertain"
                         else:
                             alignment_reason = (
@@ -1876,7 +2151,9 @@ class HostPeerSession:
                     transfer_errors.append(
                         f"{PEER_TRANSFER_ERROR_PREFIX}{name}'s local original needs attention."
                     )
-            if participant_items:
+            if exact_zero and not participant_items:
+                participant_status = "verified"
+            elif participant_items:
                 if inventory_disposition.status == "needs_attention":
                     participant_status = "needs_attention"
                 elif inventory_disposition.status != "complete":
@@ -1904,6 +2181,18 @@ class HostPeerSession:
                         "input_count": inventory_disposition.input_count,
                         "segment_count": inventory_disposition.segment_count,
                         "received_segments": len(participant_items),
+                        **(
+                            {
+                                "planned_track_count": obligation_by_id[
+                                    participant_id
+                                ].track_count,
+                                "planned_map_fingerprint": obligation_by_id[
+                                    participant_id
+                                ].map_fingerprint,
+                            }
+                            if participant_id in obligation_by_id
+                            else {}
+                        ),
                     },
                     "segments": segment_summaries,
                 }
@@ -1970,8 +2259,7 @@ class HostPeerSession:
         if (
             prior_bytes != manifest_before
             or not isinstance(prior_payload, dict)
-            or int(prior_payload.get("revision", 0) or 0)
-            != base_manifest_revision
+            or int(prior_payload.get("revision", 0) or 0) != base_manifest_revision
         ):
             return _RECONCILE_RETRY
         payload = updated.to_dict()
@@ -2020,7 +2308,7 @@ class GuestPeerSession:
         installation_path: str | Path,
         capture_enabled: Callable[[], bool],
         capture_config: Callable[[], tuple[int, int, int]],
-        capture_tracks: Callable[[], tuple[tuple[str, int], ...]] | None = None,
+        capture_tracks: Callable[[], tuple[object, ...]] | None = None,
         capture_factory: Callable[..., object] | None = None,
         on_originals_changed: Callable[[Path], None] | None = None,
         on_guidance_changed: Callable[[], None] | None = None,
@@ -2056,9 +2344,8 @@ class GuestPeerSession:
         self._presence_generation = 0
         self._presence_observation_epoch = 0
         self._desired_presence_v2: _DesiredPresenceV2 | None = None
-        self._bound_presence_v2: (
-            tuple[_DesiredPresenceV2, str, int, int] | None
-        ) = None
+        self._desired_presence_v2_capture_override: bool | None = None
+        self._bound_presence_v2: tuple[_DesiredPresenceV2, str, int, int] | None = None
         self._presence_v2_generation = 0
         self._presence_v2_observation_epoch = 0
         self._presence_v2_topology_epoch = 0
@@ -2066,7 +2353,8 @@ class GuestPeerSession:
         self._capture = None
         self._active_take_id = ""
         self._capture_started_config: tuple[int, int, int] | None = None
-        self._capture_started_tracks: tuple[tuple[str, int], ...] | None = None
+        self._capture_started_tracks: tuple[object, ...] | None = None
+        self._capture_started_obligation: tuple[int, str] | None = None
         self._guidance_notification_generation = 0
         self._pending: list[PendingLocalSegment] = []
         self._stop_event = threading.Event()
@@ -2168,6 +2456,39 @@ class GuestPeerSession:
             # name, and capture preference.
             self._bound_presence = None
 
+    def _current_local_original_contract(
+        self, *, capture_enabled: bool | None = None
+    ) -> tuple[bool, int | None, str, tuple[object, ...] | None]:
+        """Resolve a name-free logical-track contract without exposing config.
+
+        A malformed map deliberately returns the legacy/unknown shape. The
+        host can still authenticate the peer, but exact-take readiness then
+        fails closed instead of silently treating a bad map as zero tracks.
+        """
+
+        requested = (
+            bool(self.capture_enabled()) if capture_enabled is None else capture_enabled
+        )
+        if type(requested) is not bool:
+            raise ValueError("capture_enabled must be a boolean.")
+        if not requested:
+            return False, 0, _ZERO_LOCAL_ORIGINAL_MAP_FINGERPRINT, ()
+        try:
+            tracks = (
+                tuple(self.capture_tracks())
+                if self.capture_tracks is not None
+                else None
+            )
+            if tracks == ():
+                return False, 0, _ZERO_LOCAL_ORIGINAL_MAP_FINGERPRINT, tracks
+            from core.local_capture import local_capture_track_map_fingerprint
+
+            fingerprint = local_capture_track_map_fingerprint(tracks)
+            count = 2 if tracks is None else len(tracks)
+            return True, count, fingerprint, tracks
+        except Exception:  # noqa: BLE001 - local names/paths stay private
+            return True, None, "", None
+
     def observe_presence_v2(
         self,
         display_name: str,
@@ -2188,7 +2509,9 @@ class GuestPeerSession:
         cooperative claim and invitations are intended for trusted bandmates.
         """
 
-        enabled = bool(self.capture_enabled()) if capture_enabled is None else capture_enabled
+        enabled, track_count, map_fingerprint, _tracks = (
+            self._current_local_original_contract(capture_enabled=capture_enabled)
+        )
         desired = _DesiredPresenceV2(
             display_name=display_name,
             ordered_roster_digest=ordered_roster_digest,
@@ -2198,6 +2521,8 @@ class GuestPeerSession:
             rpc_connection_generation=rpc_connection_generation,
             audio_connection_generation=audio_connection_generation,
             capture_enabled=enabled,
+            local_original_track_count=track_count,
+            local_original_map_fingerprint=map_fingerprint,
         )
         with self._lock:
             if (
@@ -2207,9 +2532,8 @@ class GuestPeerSession:
             ):
                 return
             self._desired_presence_v2 = desired
-            self._desired_presence_v2_topology_epoch = (
-                self._presence_v2_topology_epoch
-            )
+            self._desired_presence_v2_capture_override = capture_enabled
+            self._desired_presence_v2_topology_epoch = self._presence_v2_topology_epoch
             self._presence_v2_observation_epoch += 1
             self._bound_presence_v2 = None
 
@@ -2223,6 +2547,7 @@ class GuestPeerSession:
             return
         with lock:
             self._desired_presence_v2 = None
+            self._desired_presence_v2_capture_override = None
             self._desired_presence_v2_topology_epoch = 0
             self._bound_presence_v2 = None
             self._presence_v2_observation_epoch += 1
@@ -2265,9 +2590,9 @@ class GuestPeerSession:
             state_changed
             and state.signal
             in {
-            RecordingSignal.FINALIZING,
-            RecordingSignal.COMPLETE,
-            RecordingSignal.NEEDS_ATTENTION,
+                RecordingSignal.FINALIZING,
+                RecordingSignal.COMPLETE,
+                RecordingSignal.NEEDS_ATTENTION,
             }
         )
         if published_terminal_early:
@@ -2294,8 +2619,7 @@ class GuestPeerSession:
         if (
             state_changed
             and not published_terminal_early
-            and self._guidance_notification_generation
-            == guidance_before_work
+            and self._guidance_notification_generation == guidance_before_work
         ):
             # Recording and Shared Track presentation share this bounded poll.
             # Capture/upload transitions can issue the same semantic
@@ -2344,6 +2668,25 @@ class GuestPeerSession:
     def _publish_presence_v2_if_needed(self) -> None:
         if self.enrollment is None:
             return
+        with self._lock:
+            observed = self._desired_presence_v2
+            capture_override = self._desired_presence_v2_capture_override
+        if observed is not None:
+            enabled, track_count, map_fingerprint, _tracks = (
+                self._current_local_original_contract(capture_enabled=capture_override)
+            )
+            refreshed = replace(
+                observed,
+                capture_enabled=enabled,
+                local_original_track_count=track_count,
+                local_original_map_fingerprint=map_fingerprint,
+            )
+            if refreshed != observed:
+                with self._lock:
+                    if self._desired_presence_v2 == observed:
+                        self._desired_presence_v2 = refreshed
+                        self._presence_v2_observation_epoch += 1
+                        self._bound_presence_v2 = None
         challenge = self.client.presence_v2_challenge(self.enrollment)
         with self._lock:
             known_topology = self._presence_v2_topology_epoch
@@ -2352,9 +2695,7 @@ class GuestPeerSession:
                 if self._desired_presence_v2 is not None:
                     # The first session challenge follows the first local RPC
                     # observation; there is no older topology to replay.
-                    self._desired_presence_v2_topology_epoch = (
-                        challenge.topology_epoch
-                    )
+                    self._desired_presence_v2_topology_epoch = challenge.topology_epoch
             elif known_topology != challenge.topology_epoch:
                 had_desired = self._desired_presence_v2 is not None
                 self._presence_v2_topology_epoch = challenge.topology_epoch
@@ -2409,13 +2750,14 @@ class GuestPeerSession:
             topology_epoch=challenge.topology_epoch,
             presence_generation=self._presence_v2_generation,
             capture_enabled=desired.capture_enabled,
+            local_original_track_count=desired.local_original_track_count,
+            local_original_map_fingerprint=(desired.local_original_map_fingerprint),
         )
         with self._lock:
             if (
                 self._presence_v2_observation_epoch == observation_epoch
                 and self._desired_presence_v2 == desired
-                and self._desired_presence_v2_topology_epoch
-                == challenge.topology_epoch
+                and self._desired_presence_v2_topology_epoch == challenge.topology_epoch
             ):
                 self._bound_presence_v2 = expected_bound
 
@@ -2427,7 +2769,7 @@ class GuestPeerSession:
         blocksize: int,
         *,
         take_id: str,
-        tracks: tuple[tuple[str, int], ...] | None,
+        tracks: tuple[object, ...] | None,
     ):
         if self.capture_factory is not None:
             factory_kwargs = {
@@ -2460,17 +2802,28 @@ class GuestPeerSession:
             self._finalize_capture(
                 needs_attention="A new take started before the prior stop."
             )
-        device, rate, blocksize = self.capture_config()
-        tracks = (
-            tuple(self.capture_tracks())
-            if self.capture_tracks is not None
-            else None
+        enabled, track_count, map_fingerprint, tracks = (
+            self._current_local_original_contract()
         )
-        if tracks == ():
+        if not enabled or track_count == 0:
             # The musician opted every configured Local Original out (or the
             # map failed closed) between presence publication and take start.
             # Never reinterpret that as LocalInputCapture's legacy pair.
             return
+        with self._lock:
+            desired = self._desired_presence_v2
+        if track_count is None or (
+            desired is not None
+            and (
+                desired.local_original_track_count != track_count
+                or desired.local_original_map_fingerprint != map_fingerprint
+            )
+        ):
+            self.last_error = (
+                "The Local Original input map needs a fresh pre-take proof."
+            )
+            return
+        device, rate, blocksize = self.capture_config()
         originals = self.queue_path.parent
         originals.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(originals, 0o700)
@@ -2487,6 +2840,7 @@ class GuestPeerSession:
         self._active_take_id = take_id
         self._capture_started_config = (int(device), int(rate), int(blocksize))
         self._capture_started_tracks = tracks
+        self._capture_started_obligation = (track_count, map_fingerprint)
         self._notify_guidance_changed()
 
     def _finalize_capture(self, *, needs_attention: str = "") -> None:
@@ -2518,9 +2872,7 @@ class GuestPeerSession:
                 "the preserved segment uses the configuration captured at its start."
             )
         current_tracks = (
-            tuple(self.capture_tracks())
-            if self.capture_tracks is not None
-            else None
+            tuple(self.capture_tracks()) if self.capture_tracks is not None else None
         )
         if (
             self._capture_started_tracks is not None
@@ -2530,12 +2882,50 @@ class GuestPeerSession:
                 "The Local Original input map changed during this take; the "
                 "preserved segment uses the map captured at its start."
             )
+        current_enabled, current_count, current_fingerprint, _tracks = (
+            self._current_local_original_contract()
+        )
+        if self._capture_started_obligation is not None and (
+            not current_enabled
+            or (current_count, current_fingerprint) != self._capture_started_obligation
+        ):
+            errors.append("The Local Original obligation changed during this take.")
         capture_device = getattr(result, "capture_device", None)
         device_id = str(getattr(capture_device, "device_id", "") or "")
         gaps = tuple(getattr(result, "gaps", ()) or ())
         source_files = tuple(getattr(result, "files", ()) or ())
         inventory_input_count = len(source_files)
         inventory_segment_count = len(source_files)
+        planned_count, inventory_map_fingerprint = self._capture_started_obligation or (
+            0,
+            "",
+        )
+        result_tracks = getattr(result, "tracks", None)
+        if result_tracks is not None:
+            try:
+                from core.local_capture import local_capture_track_map_fingerprint
+
+                actual_tracks = tuple(result_tracks)
+                actual_fingerprint = local_capture_track_map_fingerprint(actual_tracks)
+                if (
+                    len(actual_tracks) != planned_count
+                    or actual_fingerprint != inventory_map_fingerprint
+                ):
+                    errors.append(
+                        "The finalized Local Original input map did not match "
+                        "its pre-take obligation."
+                    )
+                inventory_map_fingerprint = actual_fingerprint
+            except Exception:  # noqa: BLE001 - result names stay private
+                errors.append(
+                    "The finalized Local Original input map could not be verified."
+                )
+                inventory_map_fingerprint = ""
+        if inventory_input_count != planned_count:
+            errors.append(
+                "The finalized Local Original inventory did not match its "
+                "pre-take logical-track count."
+            )
         for channel, source in enumerate(source_files):
             source_path = Path(source).resolve()
             try:
@@ -2595,6 +2985,7 @@ class GuestPeerSession:
                 source_channel=channel,
                 inventory_input_count=inventory_input_count,
                 inventory_segment_count=inventory_segment_count,
+                inventory_map_fingerprint=inventory_map_fingerprint,
                 capture_errors=tuple(dict.fromkeys(errors)),
                 gaps=tuple(channel_gaps),
             )
@@ -2602,6 +2993,7 @@ class GuestPeerSession:
                 self._pending.append(PendingLocalSegment(descriptor, source_path))
         self._capture_started_config = None
         self._capture_started_tracks = None
+        self._capture_started_obligation = None
         self._save_queue()
         self._notify_originals_changed()
 

@@ -243,6 +243,39 @@ def test_manual_nudge_is_separate_and_restore_is_idempotent():
     assert restored.restore_automatic() == restored
 
 
+def test_reference_playback_generation_round_trips_and_rejects_invalid_values():
+    alignment = AlignmentState(
+        confidence=1.0,
+        method="jamulus-lof-v1",
+        reference_fingerprint_sha256="ab" * 32,
+        reference_playback_generation=17,
+    )
+
+    assert AlignmentState.from_dict(alignment.to_dict()) == alignment
+    with pytest.raises(TakeProjectError, match="playback_generation"):
+        AlignmentState(reference_playback_generation=True)
+
+
+def test_session_evidence_persists_creator_profile_and_migrates_legacy_keys():
+    podcast = SessionEvidence(creator_profile_key="podcast_voice")
+    assert not podcast.is_empty
+    assert podcast.to_dict()["creator_profile_key"] == "podcast_voice"
+    assert SessionEvidence.from_dict(podcast.to_dict()) == podcast
+
+    planned = SessionEvidence(recording_plan_fingerprint="ab" * 32)
+    assert not planned.is_empty
+
+    assert SessionEvidence.from_dict({}).creator_profile_key == "music"
+    assert (
+        SessionEvidence(creator_profile_key="music_jam").creator_profile_key
+        == "music"
+    )
+    with pytest.raises(TakeProjectError, match="creator_profile_key"):
+        SessionEvidence(creator_profile_key="future_unknown_profile")
+    with pytest.raises(TakeProjectError, match="recording_plan_fingerprint"):
+        SessionEvidence(recording_plan_fingerprint="not-a-digest")
+
+
 @pytest.mark.parametrize(
     "unsafe",
     ["../outside.wav", "/tmp/outside.wav", "folder/../../outside.wav", "C:\\audio.wav"],

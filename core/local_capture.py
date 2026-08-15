@@ -1,9 +1,9 @@
 """Failure-safe supplemental capture for isolated host inputs.
 
 Jamulus remains the live-audio authority. This service records an explicit map
-of up to 32 local device channels as isolated mono stems without changing the
-network path. The historical default remains inputs 1–2 only when no map was
-configured.
+of up to 32 logical local tracks / 32 unique device channels as isolated mono
+or stereo stems without changing the network path. The historical default
+remains two mono inputs only when no map was configured.
 
 Real-time layout: the sounddevice callback copies each block into a fixed,
 preallocated SPSC ring; a dedicated writer thread does every disk write,
@@ -13,8 +13,10 @@ PortAudio capture path. WebJam records the selected device metadata, but
 cannot prove that Jamulus is using the same physical input or that both
 applications share an identical route.
 """
+
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -33,59 +35,193 @@ from core.project_audio import CaptureBlockRing
 
 LOGGER = logging.getLogger("webjam.local_capture")
 
-# Parameterized capture tracks: (stem, device_channel_index). The default is
-# the historical fixed pair; stems become filenames, so they are restricted
-# to a conservative, path-safe alphabet.
-_DEFAULT_CAPTURE_TRACKS: tuple[tuple[str, int], ...] = (
-    ("host-guitar", 0),
-    ("host-vocal", 1),
-)
 _MAX_CAPTURE_TRACKS = 32
-_MAX_CAPTURE_CHANNEL = 63
+_MAX_CAPTURE_CHANNELS = 32
+_CAPTURE_TRACK_MAP_FINGERPRINT_SCHEMA = 1
 _TRACK_STEM_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _-]{0,63}$")
+
+
+class LocalCaptureError(RuntimeError):
+    """Raised when supplemental capture cannot start or finish safely."""
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class LocalCaptureTrack:
+    """One stable logical WAV mapped to one mono or adjacent stereo input.
+
+    ``stem`` is the path-safe identity used for the WAV filename.
+    ``source_channels`` are zero-based PortAudio device-channel indices. A
+    stereo track always keeps its adjacent pair together in one two-channel
+    file; it is never expanded into independent left/right stems.
+
+    Iteration exposes the historical ``(stem, first_channel)`` shape so older
+    mono-only callers that unpack resolver results continue to work. New code
+    must use :attr:`source_channels` to retain stereo truth.
+    """
+
+    stem: str
+    source_channels: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.stem, str):
+            raise LocalCaptureError("A local capture track name must be text.")
+        stem = self.stem.strip()
+        if stem != self.stem or not _TRACK_STEM_RE.fullmatch(stem):
+            raise LocalCaptureError(
+                "A local capture track name is not filesystem-safe."
+            )
+        try:
+            channels = tuple(self.source_channels)
+        except TypeError as exc:
+            raise LocalCaptureError(
+                "A local capture track channel map must be a sequence."
+            ) from exc
+        if len(channels) not in (1, 2):
+            raise LocalCaptureError("A local capture track must be mono or stereo.")
+        if any(
+            isinstance(channel, bool)
+            or not isinstance(channel, int)
+            or not 0 <= channel < _MAX_CAPTURE_CHANNELS
+            for channel in channels
+        ):
+            raise LocalCaptureError("A local capture channel index is out of range.")
+        if len(channels) == 2 and channels[1] != channels[0] + 1:
+            raise LocalCaptureError(
+                "A stereo local capture track requires adjacent input channels."
+            )
+        object.__setattr__(self, "stem", stem)
+        object.__setattr__(self, "source_channels", channels)
+
+    @property
+    def channel_count(self) -> int:
+        return len(self.source_channels)
+
+    @property
+    def first_source_channel(self) -> int:
+        return self.source_channels[0]
+
+    def __iter__(self):
+        """Yield the legacy mono tuple projection for unpacking compatibility."""
+
+        yield self.stem
+        yield self.first_source_channel
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, LocalCaptureTrack):
+            return (
+                self.stem == other.stem
+                and self.source_channels == other.source_channels
+            )
+        if isinstance(other, tuple) and len(other) == 2:
+            other_stem, other_channels = other
+            if isinstance(other_channels, int) and not isinstance(other_channels, bool):
+                return (
+                    self.channel_count == 1
+                    and self.stem == other_stem
+                    and self.first_source_channel == other_channels
+                )
+            if isinstance(other_channels, (list, tuple)):
+                return self.stem == other_stem and self.source_channels == tuple(
+                    other_channels
+                )
+        return False
+
+    def __hash__(self) -> int:
+        legacy_channels: int | tuple[int, ...] = (
+            self.first_source_channel
+            if self.channel_count == 1
+            else self.source_channels
+        )
+        return hash((self.stem, legacy_channels))
+
+
+# The default remains the historical fixed pair. The typed representation is
+# internal-compatible with legacy tuple inputs accepted by the constructor.
+_DEFAULT_CAPTURE_TRACKS: tuple[LocalCaptureTrack, ...] = (
+    LocalCaptureTrack("host-guitar", (0,)),
+    LocalCaptureTrack("host-vocal", (1,)),
+)
 
 
 def _validated_capture_tracks(
     tracks: object,
-) -> tuple[tuple[str, int], ...]:
+) -> tuple[LocalCaptureTrack, ...]:
     if tracks is None:
         return _DEFAULT_CAPTURE_TRACKS
-    entries = tuple(tracks)
+    try:
+        entries = tuple(tracks)
+    except TypeError as exc:
+        raise LocalCaptureError("Local capture tracks must be a sequence.") from exc
     if not 1 <= len(entries) <= _MAX_CAPTURE_TRACKS:
-        raise LocalCaptureError(
-            "Local capture supports between 1 and 32 input tracks."
-        )
-    cleaned: list[tuple[str, int]] = []
+        raise LocalCaptureError("Local capture supports between 1 and 32 input tracks.")
+    cleaned: list[LocalCaptureTrack] = []
     stems: set[str] = set()
     channels: set[int] = set()
     for entry in entries:
-        stem, channel = entry
-        raw_stem = str(stem or "")
-        if any(ord(char) < 0x20 or ord(char) == 0x7F for char in raw_stem):
-            raise LocalCaptureError(
-                "A local capture track name is not filesystem-safe."
+        if isinstance(entry, LocalCaptureTrack):
+            track = entry
+        else:
+            try:
+                stem, channel_spec = entry
+            except (TypeError, ValueError) as exc:
+                raise LocalCaptureError(
+                    "A local capture track specification is invalid."
+                ) from exc
+            raw_stem = str(stem or "")
+            if any(ord(char) < 0x20 or ord(char) == 0x7F for char in raw_stem):
+                raise LocalCaptureError(
+                    "A local capture track name is not filesystem-safe."
+                )
+            source_channels = (
+                tuple(channel_spec)
+                if isinstance(channel_spec, (list, tuple))
+                else (channel_spec,)
             )
-        stem = raw_stem.strip()
-        if not _TRACK_STEM_RE.fullmatch(stem):
-            raise LocalCaptureError(
-                "A local capture track name is not filesystem-safe."
-            )
-        if isinstance(channel, bool) or not isinstance(channel, int):
-            raise LocalCaptureError(
-                "A local capture channel index must be an integer."
-            )
-        if not 0 <= channel <= _MAX_CAPTURE_CHANNEL:
-            raise LocalCaptureError(
-                "A local capture channel index is out of range."
-            )
-        if stem in stems or channel in channels:
+            track = LocalCaptureTrack(raw_stem.strip(), source_channels)
+        stem_key = track.stem.casefold()
+        if stem_key in stems or channels.intersection(track.source_channels):
             raise LocalCaptureError(
                 "Local capture tracks must use unique names and channels."
             )
-        stems.add(stem)
-        channels.add(channel)
-        cleaned.append((stem, channel))
+        stems.add(stem_key)
+        channels.update(track.source_channels)
+        if len(channels) > _MAX_CAPTURE_CHANNELS:
+            raise LocalCaptureError(
+                "Local capture supports at most 32 unique input channels."
+            )
+        cleaned.append(track)
     return tuple(cleaned)
+
+
+def local_capture_track_map_fingerprint(tracks: object) -> str:
+    """Bind an exact logical input topology without exposing track names.
+
+    The ordered map includes each logical ordinal, mono/stereo width, and
+    zero-based source-channel indices. Stable stems are still validated so the
+    same value can safely be passed to :class:`LocalInputCapture`, but neither
+    stems nor any path/device fact enter the digest.
+    """
+
+    validated = _validated_capture_tracks(tracks)
+    payload = {
+        "schema": _CAPTURE_TRACK_MAP_FINGERPRINT_SCHEMA,
+        "tracks": [
+            {
+                "ordinal": ordinal,
+                "channel_count": track.channel_count,
+                "source_channels": list(track.source_channels),
+            }
+            for ordinal, track in enumerate(validated)
+        ],
+    }
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("ascii")
+    return hashlib.sha256(canonical).hexdigest()
+
 
 # The default ring accepts callback blocks through 8,192 frames without asking
 # PortAudio to use a fixed block size. At two float32 channels, 512 slots stay
@@ -106,7 +242,8 @@ _SILENCE_CHUNK_FRAMES = 48_000
 _DEFERRED_RECOVERY_GRACE_S = 0.25
 _RECOVERY_METADATA = "webjam-local-capture.json"
 _RECOVERY_REPORT = "RECOVERY.json"
-_RECOVERY_SCHEMA = 1
+_LEGACY_RECOVERY_SCHEMA = 1
+_RECOVERY_SCHEMA = 2
 # A real local take must survive more than an in-memory capture ring. One
 # second at the fixed capture rate is frequent enough to make a sudden process
 # exit recoverable without putting any I/O on PortAudio's callback thread.
@@ -114,18 +251,16 @@ _DURABLE_CHECKPOINT_FRAMES = 48_000
 _RECOVERY_GAP_CAP = 128
 
 
-class LocalCaptureError(RuntimeError):
-    """Raised when supplemental capture cannot start or finish safely."""
-
-
 @dataclass(frozen=True)
 class LocalCaptureGap:
     """A half-open interval where source audio was replaced by silence.
 
-    ``channels`` follow the fixed local-stem order (host guitar, host vocal),
-    even when final attachment fails and ``LocalCaptureResult.files`` is
-    empty.  The interval is expressed on the capture's absolute 48 kHz frame
-    timeline, so callers can disclose and align discontinuities precisely.
+    ``channels`` are zero-based logical-track ordinals in
+    :attr:`LocalCaptureResult.tracks`, not physical source-channel indices.
+    They remain stable even when final attachment fails and
+    ``LocalCaptureResult.files`` is empty. The interval is expressed on the
+    capture's absolute 48 kHz frame timeline, so callers can disclose and
+    align discontinuities precisely.
     """
 
     start_frame: int
@@ -150,6 +285,7 @@ class LocalCaptureResult:
     recovery_dir: Path | None = None
     capture_device: object | None = None
     durable_frames: int = 0
+    tracks: tuple[LocalCaptureTrack, ...] = ()
 
     @property
     def gap_count(self) -> int:
@@ -172,15 +308,17 @@ class RecoveredLocalCapture:
     sample_rate: int = 0
     gaps: tuple[LocalCaptureGap, ...] = ()
     capture_device: object | None = None
+    tracks: tuple[LocalCaptureTrack, ...] = ()
 
 
 class LocalInputCapture:
-    """Record mapped device channels to atomic mono WAV files.
+    """Record mapped logical inputs to atomic mono or stereo WAV files.
 
     Defaults to the historical fixed pair (host-guitar on channel 0,
-    host-vocal on channel 1); callers may map 1-32 uniquely named mono
-    tracks onto unique device channels instead. One input stream carries
-    every mapped channel; the writer thread owns all file publication.
+    host-vocal on channel 1). Callers may supply :class:`LocalCaptureTrack`
+    values, while historical ``(stem, channel)`` tuples remain mono tracks.
+    One input stream carries every mapped channel; the writer thread owns all
+    file publication.
     """
 
     def __init__(
@@ -208,9 +346,7 @@ class LocalInputCapture:
         self._temp_dir: Path | None = None
         self._parts: list[Path] = []
         self._ring_capacity = _CAPTURE_RING_MAX_BLOCKS
-        self._ring_block_frames = (
-            self.blocksize or _CAPTURE_RING_DEFAULT_BLOCK_FRAMES
-        )
+        self._ring_block_frames = self.blocksize or _CAPTURE_RING_DEFAULT_BLOCK_FRAMES
         self._capture_ring: CaptureBlockRing | None = None
         self._writer_scratch: np.ndarray | None = None
         self._generation = 0
@@ -227,7 +363,16 @@ class LocalInputCapture:
         self._next_input_frame = 0
         self._final_input_frame: int | None = None
         self._tracks = _validated_capture_tracks(tracks)
-        self._track_channels = tuple(channel for _stem, channel in self._tracks)
+        self._track_channels = tuple(
+            channel for track in self._tracks for channel in track.source_channels
+        )
+        scratch_offset = 0
+        track_scratch_slices: list[tuple[int, int]] = []
+        for track in self._tracks:
+            next_offset = scratch_offset + track.channel_count
+            track_scratch_slices.append((scratch_offset, next_offset))
+            scratch_offset = next_offset
+        self._track_scratch_slices = tuple(track_scratch_slices)
         self._required_input_channels = max(self._track_channels) + 1
         self._all_writer_channels = tuple(range(len(self._tracks)))
         self._writer_frames = [0] * len(self._tracks)
@@ -253,13 +398,18 @@ class LocalInputCapture:
             self._temp_dir = self.root / f".webjam-capture-{uuid.uuid4().hex}"
             self._temp_dir.mkdir(mode=0o700)
             self._parts = [
-                self._temp_dir / f"{stem}.wav.part"
-                for stem, _channel in self._tracks
+                self._temp_dir / f"{track.stem}.wav.part" for track in self._tracks
             ]
             self._writers = [
-                sf.SoundFile(str(path), mode="w", samplerate=self.samplerate,
-                             channels=1, format="WAV", subtype="PCM_24")
-                for path in self._parts
+                sf.SoundFile(
+                    str(path),
+                    mode="w",
+                    samplerate=self.samplerate,
+                    channels=track.channel_count,
+                    format="WAV",
+                    subtype="PCM_24",
+                )
+                for path, track in zip(self._parts, self._tracks)
             ]
 
             sd.check_input_settings(
@@ -271,7 +421,7 @@ class LocalInputCapture:
             ring_block_frames = int(self._ring_block_frames)
             bytes_per_slot = (
                 ring_block_frames
-                * len(self._tracks)
+                * len(self._track_channels)
                 * np.dtype(np.float32).itemsize
             )
             memory_bounded_capacity = max(
@@ -351,7 +501,9 @@ class LocalInputCapture:
                 callback=callback,
             )
             self._writer_thread = threading.Thread(
-                target=self._writer_loop, daemon=True, name="local-capture-writer",
+                target=self._writer_loop,
+                daemon=True,
+                name="local-capture-writer",
             )
             self._writer_thread.start()
             self._started_monotonic = time.monotonic()
@@ -382,10 +534,7 @@ class LocalInputCapture:
             "started_utc": self._started_utc,
             "sample_rate": self.samplerate,
             "channels": self._required_input_channels,
-            "tracks": [
-                {"stem": stem, "channel": channel}
-                for stem, channel in self._tracks
-            ],
+            "tracks": _capture_tracks_payload(self._tracks),
             "parts": [path.name for path in self._parts],
             "take_id": self.take_id,
             "session_id": self.session_id,
@@ -403,7 +552,7 @@ class LocalInputCapture:
         )
 
     def _checkpoint_audio_durability(self, *, force: bool = False) -> bool:
-        """Flush and fsync both stems before advancing recovery metadata.
+        """Flush and fsync every stem before advancing recovery metadata.
 
         ``soundfile.flush`` commits libsndfile's buffered frames; an explicit
         file fsync then commits the resulting WAV bytes.  Both happen on the
@@ -412,7 +561,10 @@ class LocalInputCapture:
         final manifest cannot pretend the local original was crash-durable.
         """
         durable_frames = min(self._writer_frames, default=0)
-        if not force and durable_frames - self._durable_frames < _DURABLE_CHECKPOINT_FRAMES:
+        if (
+            not force
+            and durable_frames - self._durable_frames < _DURABLE_CHECKPOINT_FRAMES
+        ):
             return True
         try:
             for path, writer in zip(self._parts, self._writers):
@@ -495,19 +647,20 @@ class LocalInputCapture:
                     self._all_writer_channels,
                     "queue_overflow",
                 )
-                for channel in range(len(self._writers)):
-                    self._pad_writer_to(channel, start_frame)
+                for track_index in range(len(self._writers)):
+                    self._pad_writer_to(track_index, start_frame)
             elif start_frame < timeline_frame:
                 self._record_error(
                     "Local capture received an out-of-order audio block."
                 )
 
-            for channel in range(len(self._writers)):
-                self._write_channel_block(
-                    channel,
-                    start_frame,
-                    scratch[:frame_count, channel],
+            for track_index, (first, stop) in enumerate(self._track_scratch_slices):
+                samples = (
+                    scratch[:frame_count, first]
+                    if stop - first == 1
+                    else scratch[:frame_count, first:stop]
                 )
+                self._write_track_block(track_index, start_frame, samples)
             timeline_frame = max(timeline_frame, end_frame)
             self._checkpoint_audio_durability()
 
@@ -521,20 +674,20 @@ class LocalInputCapture:
                 self._all_writer_channels,
                 "queue_overflow",
             )
-        for channel in range(len(self._writers)):
-            if not self._pad_writer_to(channel, target):
+        for track_index in range(len(self._writers)):
+            if not self._pad_writer_to(track_index, target):
                 self._writer_incomplete = True
-            if self._writer_frames[channel] != target:
+            if self._writer_frames[track_index] != target:
                 self._writer_incomplete = True
                 self._record_error(
-                    f"Local capture channel {channel + 1} ended at frame "
-                    f"{self._writer_frames[channel]} instead of {target}."
+                    f"Local capture channel {track_index + 1} ended at frame "
+                    f"{self._writer_frames[track_index]} instead of {target}."
                 )
         self._checkpoint_audio_durability(force=True)
 
-    def _writer_position(self, channel: int, *, expected: int | None = None) -> int:
+    def _writer_position(self, track_index: int, *, expected: int | None = None) -> int:
         """Refresh a writer's position when its implementation exposes it."""
-        writer = self._writers[channel]
+        writer = self._writers[track_index]
         position = expected
         tell = getattr(writer, "tell", None)
         if callable(tell):
@@ -543,62 +696,73 @@ class LocalInputCapture:
             except Exception:  # noqa: BLE001
                 pass
         if position is not None:
-            self._writer_frames[channel] = max(0, position)
-        return self._writer_frames[channel]
+            self._writer_frames[track_index] = max(0, position)
+        return self._writer_frames[track_index]
 
-    def _pad_writer_to(self, channel: int, target_frame: int) -> bool:
+    def _pad_writer_to(self, track_index: int, target_frame: int) -> bool:
         """Write silence until one stem reaches ``target_frame``."""
-        writer = self._writers[channel]
-        while self._writer_frames[channel] < target_frame:
+        writer = self._writers[track_index]
+        track = self._tracks[track_index]
+        while self._writer_frames[track_index] < target_frame:
             frame_count = min(
                 _SILENCE_CHUNK_FRAMES,
-                target_frame - self._writer_frames[channel],
+                target_frame - self._writer_frames[track_index],
             )
-            expected = self._writer_frames[channel] + frame_count
+            expected = self._writer_frames[track_index] + frame_count
             try:
-                writer.write(np.zeros(frame_count, dtype="float32"))
+                shape = (
+                    frame_count
+                    if track.channel_count == 1
+                    else (frame_count, track.channel_count)
+                )
+                writer.write(np.zeros(shape, dtype="float32"))
             except Exception:  # noqa: BLE001 - writer details may contain paths
                 self._record_error(
-                    f"Local capture silence write failed on channel "
-                    f"{channel + 1}."
+                    f"Local capture silence write failed on channel {track_index + 1}."
                 )
-                self._writer_position(channel)
+                self._writer_position(track_index)
                 return False
-            self._writer_position(channel, expected=expected)
-        return self._writer_frames[channel] == target_frame
+            self._writer_position(track_index, expected=expected)
+        return self._writer_frames[track_index] == target_frame
 
-    def _write_channel_block(
-        self, channel: int, start_frame: int, samples: np.ndarray
+    def _write_track_block(
+        self, track_index: int, start_frame: int, samples: np.ndarray
     ) -> None:
         """Place a source block on its absolute timeline for one stem."""
         end_frame = start_frame + len(samples)
-        if not self._pad_writer_to(channel, start_frame):
+        if not self._pad_writer_to(track_index, start_frame):
             self._record_gap(
-                start_frame, end_frame - start_frame, (channel,), "write_failure"
+                start_frame,
+                end_frame - start_frame,
+                (track_index,),
+                "write_failure",
             )
             return
 
-        position = self._writer_frames[channel]
+        position = self._writer_frames[track_index]
         if position >= end_frame:
             return
         offset = max(0, position - start_frame)
         expected = end_frame
         try:
-            self._writers[channel].write(samples[offset:])
+            self._writers[track_index].write(samples[offset:])
         except Exception:  # noqa: BLE001 - writer details may contain paths
             self._record_error(
-                f"Local capture write failed on channel {channel + 1}."
+                f"Local capture write failed on channel {track_index + 1}."
             )
-            position = self._writer_position(channel)
+            position = self._writer_position(track_index)
             gap_start = min(end_frame, max(start_frame, position))
             if gap_start < end_frame:
                 self._record_gap(
-                    gap_start, end_frame - gap_start, (channel,), "write_failure"
+                    gap_start,
+                    end_frame - gap_start,
+                    (track_index,),
+                    "write_failure",
                 )
-            if not self._pad_writer_to(channel, end_frame):
+            if not self._pad_writer_to(track_index, end_frame):
                 self._writer_incomplete = True
             return
-        self._writer_position(channel, expected=expected)
+        self._writer_position(track_index, expected=expected)
 
     def _record_gap(
         self,
@@ -677,11 +841,7 @@ class LocalInputCapture:
             self._callback_status_events - self._callback_overflow_events,
         )
         if other_status_events:
-            suffix = (
-                f" (×{other_status_events})"
-                if other_status_events > 1
-                else ""
-            )
+            suffix = f" (×{other_status_events})" if other_status_events > 1 else ""
             errors.append(f"Audio device reported an input status{suffix}")
         if self._callback_format_events:
             count = self._callback_format_events
@@ -733,9 +893,7 @@ class LocalInputCapture:
                 self._writers.clear()
                 self._writer_thread = None
                 errors = self._collect_errors()
-                self._promote_recovery_parts(
-                    reason="writer_timeout", errors=errors
-                )
+                self._promote_recovery_parts(reason="writer_timeout", errors=errors)
                 self._finalized = True
 
         self._recovery_thread = threading.Thread(
@@ -745,9 +903,7 @@ class LocalInputCapture:
         )
         self._recovery_thread.start()
 
-    def _promote_recovery_parts(
-        self, *, reason: str, errors: list[str]
-    ) -> Path | None:
+    def _promote_recovery_parts(self, *, reason: str, errors: list[str]) -> Path | None:
         """Move closed partial media out of a hidden working directory."""
         if self._temp_dir is None or not self._temp_dir.exists():
             return self._temp_dir
@@ -798,9 +954,7 @@ class LocalInputCapture:
                 try:
                     os.chmod(target, 0o600)
                 except OSError:
-                    errors.append(
-                        "Could not protect one recovered local-audio file."
-                    )
+                    errors.append("Could not protect one recovered local-audio file.")
         self._temp_dir = recovered
         self._parts = [*promoted, *retained]
         recovery_payload = {
@@ -814,6 +968,7 @@ class LocalInputCapture:
             "durable_frames": self._durable_frames,
             "take_id": self.take_id,
             "session_id": self.session_id,
+            "tracks": _capture_tracks_payload(self._tracks),
             "gaps": _capture_gaps_payload(self._snapshot_gaps()),
             "files": [path.name for path in self._parts],
             "errors": list(errors),
@@ -840,8 +995,12 @@ class LocalInputCapture:
         with self._finalize_lock:
             if self._finalized:
                 return LocalCaptureResult(
-                    (), self._started_utc, self._started_monotonic, 0.0,
+                    (),
+                    self._started_utc,
+                    self._started_monotonic,
+                    0.0,
                     ("Local capture was already finalized.",),
+                    tracks=self._tracks,
                 )
             if not self._stopped_monotonic:
                 self._stopped_monotonic = time.monotonic()
@@ -854,10 +1013,17 @@ class LocalInputCapture:
                         "finalization may be retried after the writer stops."
                     )
                 return LocalCaptureResult(
-                    (), self._started_utc, self._started_monotonic,
+                    (),
+                    self._started_utc,
+                    self._started_monotonic,
                     max(0.0, self._stopped_monotonic - self._started_monotonic),
-                    tuple(errors), self._snapshot_gaps(), self._next_input_frame,
-                    recovery_dir, self._capture_device, self._durable_frames,
+                    tuple(errors),
+                    self._snapshot_gaps(),
+                    self._next_input_frame,
+                    recovery_dir,
+                    self._capture_device,
+                    self._durable_frames,
+                    self._tracks,
                 )
 
             self._finalized = True
@@ -875,10 +1041,17 @@ class LocalInputCapture:
                     reason="incomplete_writer", errors=errors
                 )
                 return LocalCaptureResult(
-                    (), self._started_utc, self._started_monotonic,
+                    (),
+                    self._started_utc,
+                    self._started_monotonic,
                     max(0.0, self._stopped_monotonic - self._started_monotonic),
-                    tuple(errors), self._snapshot_gaps(), self._next_input_frame,
-                    recovery_dir, self._capture_device, self._durable_frames,
+                    tuple(errors),
+                    self._snapshot_gaps(),
+                    self._next_input_frame,
+                    recovery_dir,
+                    self._capture_device,
+                    self._durable_frames,
+                    self._tracks,
                 )
 
             destination = Path(take_dir)
@@ -913,25 +1086,28 @@ class LocalInputCapture:
                 try:
                     os.chmod(final, 0o600)
                 except OSError:
-                    errors.append(
-                        "Could not protect isolated stem."
-                    )
+                    errors.append("Could not protect isolated stem.")
                 final_files.append(final)
             self._cleanup_temp_dir(preserve=attach_failed, errors=errors)
             return LocalCaptureResult(
-                tuple(final_files), self._started_utc, self._started_monotonic,
+                tuple(final_files),
+                self._started_utc,
+                self._started_monotonic,
                 max(0.0, self._stopped_monotonic - self._started_monotonic),
-                tuple(errors), self._snapshot_gaps(), self._next_input_frame,
-                None, self._capture_device, self._durable_frames,
+                tuple(errors),
+                self._snapshot_gaps(),
+                self._next_input_frame,
+                None,
+                self._capture_device,
+                self._durable_frames,
+                self._tracks,
             )
 
     def _cleanup_temp_dir(self, *, preserve: bool, errors: list[str]) -> None:
         if self._temp_dir is None:
             return
         if preserve and any(part.exists() for part in self._parts):
-            self._promote_recovery_parts(
-                reason="attachment_failed", errors=errors
-            )
+            self._promote_recovery_parts(reason="attachment_failed", errors=errors)
         else:
             shutil.rmtree(self._temp_dir, ignore_errors=True)
         self._temp_dir = None
@@ -1017,7 +1193,23 @@ def _capture_device_payload(device: object | None) -> dict | None:
     return candidate if isinstance(candidate, dict) else None
 
 
-def _capture_gaps_payload(gaps: tuple[LocalCaptureGap, ...] | list[LocalCaptureGap]) -> list[dict]:
+def _capture_tracks_payload(
+    tracks: tuple[LocalCaptureTrack, ...] | list[LocalCaptureTrack],
+) -> list[dict[str, object]]:
+    """Serialize the exact logical-to-device channel map for recovery."""
+
+    return [
+        {
+            "stem": track.stem,
+            "source_channels": list(track.source_channels),
+        }
+        for track in tuple(tracks)[:_MAX_CAPTURE_TRACKS]
+    ]
+
+
+def _capture_gaps_payload(
+    gaps: tuple[LocalCaptureGap, ...] | list[LocalCaptureGap],
+) -> list[dict]:
     """Serialize only bounded, frame-exact local-capture gap evidence."""
     return [
         {
@@ -1054,6 +1246,38 @@ def _recovered_capture_device(metadata: dict) -> object | None:
         return CaptureDevice.from_dict(value)
     except Exception:  # noqa: BLE001 - old/corrupt metadata remains recoverable
         return None
+
+
+def _recovered_capture_tracks(metadata: dict) -> tuple[LocalCaptureTrack, ...]:
+    """Restore schema-v2 channel maps and schema-v1 mono track records."""
+
+    value = metadata.get("tracks")
+    if not isinstance(value, list) or not value:
+        return ()
+    recovered: list[LocalCaptureTrack] = []
+    try:
+        for item in value[: _MAX_CAPTURE_TRACKS + 1]:
+            if not isinstance(item, dict):
+                return ()
+            if "source_channels" in item:
+                raw_channels = item.get("source_channels")
+                if not isinstance(raw_channels, list):
+                    return ()
+                channels = tuple(raw_channels)
+            elif "channel" in item:
+                # Schema v1 stored one mono device channel per file.
+                channels = (item.get("channel"),)
+            else:
+                return ()
+            recovered.append(
+                LocalCaptureTrack(
+                    stem=item.get("stem"),
+                    source_channels=channels,
+                )
+            )
+        return _validated_capture_tracks(recovered)
+    except (LocalCaptureError, TypeError, ValueError):
+        return ()
 
 
 def _recovered_capture_gaps(metadata: dict) -> tuple[LocalCaptureGap, ...]:
@@ -1093,7 +1317,10 @@ def _read_recovery_metadata(path: Path, errors: list[str], *, label: str) -> dic
     except (OSError, json.JSONDecodeError):
         errors.append(f"The {label} was unreadable.")
         return {}
-    if not isinstance(value, dict) or value.get("schema") != _RECOVERY_SCHEMA:
+    if not isinstance(value, dict) or value.get("schema") not in {
+        _LEGACY_RECOVERY_SCHEMA,
+        _RECOVERY_SCHEMA,
+    }:
         errors.append(f"The {label} was malformed.")
         return {}
     return value
@@ -1129,7 +1356,11 @@ def _has_final_recovery_project(directory: Path) -> bool:
 
 def _visible_recovery_candidate(directory: Path) -> RecoveredLocalCapture | None:
     """Return an unmanifested visible recovery folder for a safe reattempt."""
-    if directory.is_symlink() or not directory.is_dir() or _has_final_recovery_project(directory):
+    if (
+        directory.is_symlink()
+        or not directory.is_dir()
+        or _has_final_recovery_project(directory)
+    ):
         return None
     files = _recovery_audio_files(directory)
     if not files:
@@ -1162,6 +1393,7 @@ def _visible_recovery_candidate(directory: Path) -> RecoveredLocalCapture | None
         sample_rate=_metadata_nonnegative_int(metadata.get("sample_rate")),
         gaps=_recovered_capture_gaps(metadata),
         capture_device=_recovered_capture_device(metadata),
+        tracks=_recovered_capture_tracks(metadata),
     )
 
 
@@ -1205,9 +1437,7 @@ def recover_stale_local_captures(
         stamp = time.strftime("%Y%m%d-%H%M%S")
         destination = base / f"Recovered-local-{stamp}"
         if destination.exists():
-            destination = base / (
-                f"Recovered-local-{stamp}-{uuid.uuid4().hex[:8]}"
-            )
+            destination = base / (f"Recovered-local-{stamp}-{uuid.uuid4().hex[:8]}")
         try:
             source.replace(destination)
         except OSError:
@@ -1247,9 +1477,7 @@ def recover_stale_local_captures(
                 try:
                     os.chmod(output, 0o600)
                 except OSError:
-                    errors.append(
-                        "Could not protect one recovered local-audio file."
-                    )
+                    errors.append("Could not protect one recovered local-audio file.")
         payload = {
             "schema": _RECOVERY_SCHEMA,
             "status": "recovered_partial",
@@ -1261,6 +1489,7 @@ def recover_stale_local_captures(
             "session_id": _canonical_optional_uuid(metadata.get("session_id")),
             "total_frames": _metadata_nonnegative_int(metadata.get("total_frames")),
             "durable_frames": _metadata_nonnegative_int(metadata.get("durable_frames")),
+            "tracks": _capture_tracks_payload(_recovered_capture_tracks(metadata)),
             "gaps": _capture_gaps_payload(_recovered_capture_gaps(metadata)),
             "files": [path.name for path in files],
             "errors": errors,
@@ -1288,10 +1517,13 @@ def recover_stale_local_captures(
                 session_id=_canonical_optional_uuid(metadata.get("session_id")),
                 started_utc=str(metadata.get("started_utc", ""))[:64],
                 total_frames=_metadata_nonnegative_int(metadata.get("total_frames")),
-                durable_frames=_metadata_nonnegative_int(metadata.get("durable_frames")),
+                durable_frames=_metadata_nonnegative_int(
+                    metadata.get("durable_frames")
+                ),
                 sample_rate=_metadata_nonnegative_int(metadata.get("sample_rate")),
                 gaps=_recovered_capture_gaps(metadata),
                 capture_device=_recovered_capture_device(metadata),
+                tracks=_recovered_capture_tracks(metadata),
             )
         )
     # A process can die after promoting a hidden capture but before the

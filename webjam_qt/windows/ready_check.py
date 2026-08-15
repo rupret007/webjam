@@ -48,6 +48,7 @@ from core.band_check_audio import (
     StudioCheckEvidence,
     validate_studio_scratch,
 )
+from core.creative_modes import get_creator_profile_by_key_or_default
 from core.redaction import redact_text
 from webjam_qt.platform_permissions import microphone_permission_status
 from webjam_qt.widgets.accessible import set_labeled_action
@@ -81,6 +82,88 @@ class BandCheckDialog(QDialog):
     _report_ready = Signal(object)
     _scratch_ready = Signal(object)
 
+    @property
+    def _check_label(self) -> str:
+        if self._creator_profile.key == "podcast_voice":
+            return "Sound Check"
+        if self._creator_profile.key == "review_rehearsal":
+            return "Session Check (Preview)"
+        return "Band Check"
+
+    def _profile_text(self, value: object) -> str:
+        """Adapt presentation copy without renaming Band Check evidence keys."""
+
+        text = str(value or "")
+        if self._creator_profile.key == "music":
+            return text
+        if self._creator_profile.key == "podcast_voice":
+            replacements = (
+                ("Ready to Jam", "Ready to Record"),
+                ("Ready to play", "Ready to record"),
+                ("Close Band Check", "Close Sound Check"),
+                ("Band Check", "Sound Check"),
+                ("Connection and music path", "Connection and recording path"),
+                ("live music path", "live recording-audio path"),
+                ("music path", "recording-audio path"),
+                ("Music path", "Recording-audio path"),
+                ("music engine", "audio engine"),
+                ("Music engine", "Audio engine"),
+                ("band server", "session audio server"),
+                ("Band server", "Session audio server"),
+                ("bandmate", "speaker"),
+                ("Bandmate", "Speaker"),
+                ("band signal", "speaker audio"),
+                ("Band signal", "Speaker audio"),
+                ("musician", "speaker"),
+                ("Musician", "Speaker"),
+                ("instrument input", "microphone input"),
+                ("instrument", "microphone"),
+                ("Play or sing", "Speak"),
+                ("play or sing", "speak"),
+                ("Both play a note", "Both speak"),
+                ("Both play", "Both speak"),
+                ("Play a note", "Speak"),
+                ("play a note", "speak"),
+                ("before the jam", "before recording"),
+                ("while playing", "during the recording session"),
+                ("carries the music", "carries WebJam recording audio"),
+            )
+        else:
+            replacements = (
+                ("Ready to Jam", "Ready for Review (Preview)"),
+                ("Ready to play", "Ready for review (Preview)"),
+                ("Close Band Check", "Close Session Check"),
+                ("Band Check", "Session Check"),
+                ("Connection and music path", "Connection and review-audio path"),
+                ("live music path", "live review-audio path"),
+                ("music path", "review-audio path"),
+                ("Music path", "Review-audio path"),
+                ("music engine", "audio engine"),
+                ("Music engine", "Audio engine"),
+                ("band server", "session audio server"),
+                ("Band server", "Session audio server"),
+                ("bandmate", "participant"),
+                ("Bandmate", "Participant"),
+                ("band signal", "participant audio"),
+                ("Band signal", "Participant audio"),
+                ("musician", "participant"),
+                ("Musician", "Participant"),
+                ("instrument input", "audio input"),
+                ("instrument", "audio source"),
+                ("Play or sing", "Make some sound"),
+                ("play or sing", "make some sound"),
+                ("Both play a note", "Both make some sound"),
+                ("Both play", "Both make some sound"),
+                ("Play a note", "Make some sound"),
+                ("play a note", "make some sound"),
+                ("before the jam", "before the review session"),
+                ("while playing", "during the review session"),
+                ("carries the music", "carries live review audio"),
+            )
+        for source, replacement in replacements:
+            text = text.replace(source, replacement)
+        return text
+
     def __init__(
         self,
         settings_provider: Callable[[], object],
@@ -91,10 +174,15 @@ class BandCheckDialog(QDialog):
         host_server_service: object | None = None,
         start_session_when_ready: bool = False,
         settings_generation_provider: Callable[[], int] | None = None,
+        creator_profile_key: str = "music",
     ) -> None:
         super().__init__(parent)
+        self._creator_profile = get_creator_profile_by_key_or_default(
+            creator_profile_key
+        )
+        check_label = self._check_label
         self.setObjectName("BandCheckDialog")
-        self.setWindowTitle("WebJam — Band Check")
+        self.setWindowTitle(f"WebJam — {check_label}")
         # Keep the client area short enough to leave room for the native
         # title bar on a 600-pixel-tall display. Longer reports already scroll
         # inside ``_report``, so they must not make the dialog taller.
@@ -127,7 +215,7 @@ class BandCheckDialog(QDialog):
         root.setContentsMargins(24, 24, 24, 16)
         root.setSpacing(12)
 
-        eyebrow = QLabel("BAND CHECK")
+        eyebrow = QLabel(check_label.upper())
         eyebrow.setObjectName("BandCheckEyebrow")
         root.addWidget(eyebrow)
         title = QLabel(
@@ -141,8 +229,10 @@ class BandCheckDialog(QDialog):
             "Three quick proofs: your input, your headphones, and a five-second "
             "recording. Nothing plays or records until you press its button."
             if mode is BandCheckMode.PRE_SESSION
-            else "Band Check keeps connection, music-data, and hearing evidence "
-            "separate. It will not restart the music engine or band server."
+            else self._profile_text(
+                "Band Check keeps connection, music-data, and hearing evidence "
+                "separate. It will not restart the music engine or band server."
+            )
         )
         intro.setObjectName("BandCheckIntro")
         intro.setWordWrap(True)
@@ -151,8 +241,8 @@ class BandCheckDialog(QDialog):
         self._summary = QLabel("Checking your setup…")
         self._summary.setObjectName("ReadySummary")
         self._summary.setWordWrap(True)
-        self._summary.setAccessibleName("Band Check result")
-        self._summary.setAccessibleDescription("Band Check is running")
+        self._summary.setAccessibleName(f"{check_label} result")
+        self._summary.setAccessibleDescription(f"{check_label} is running")
         root.addWidget(self._summary)
 
         self._next = QLabel("Next: checking the setup.")
@@ -187,7 +277,7 @@ class BandCheckDialog(QDialog):
         self._report = QScrollArea()
         self._report.setWidgetResizable(True)
         self._report.setFrameShape(QScrollArea.Shape.NoFrame)
-        self._report.setAccessibleName("Band Check details")
+        self._report.setAccessibleName(f"{check_label} details")
         self._report_content = QWidget()
         self._report_layout = QVBoxLayout(self._report_content)
         self._report_layout.setContentsMargins(0, 0, 0, 0)
@@ -205,7 +295,11 @@ class BandCheckDialog(QDialog):
         )
         settings.clicked.connect(self.settings_requested.emit)
         footer.addWidget(settings)
-        practice = QPushButton("Practice Solo")
+        practice = QPushButton(
+            "Practice Solo"
+            if self._creator_profile.key == "music"
+            else "Test Input Solo"
+        )
         practice.setObjectName("GhostButton")
         practice.clicked.connect(self.practice_requested.emit)
         footer.addWidget(practice)
@@ -255,7 +349,7 @@ class BandCheckDialog(QDialog):
         self._scratch_played = False
         self._scan_id += 1
         scan_id = self._scan_id
-        self._summary.setText("Checking your setup…")
+        self._summary.setText(self._profile_text("Checking your setup…"))
         self._summary.setProperty("result", "checking")
         self._next.setText("Next: checking the setup.")
         self._primary.setEnabled(False)
@@ -330,12 +424,15 @@ class BandCheckDialog(QDialog):
             BandCheckOutcome.WARNING: "warn",
             BandCheckOutcome.ACTION_NEEDED: "fail",
         }[outcome]
-        self._summary.setText(outcome.value)
+        rendered_outcome = self._profile_text(outcome.value)
+        rendered_action = self._profile_text(session.primary_action)
+        self._summary.setText(rendered_outcome)
         self._summary.setProperty("result", result)
         self._summary.setAccessibleDescription(
-            f"Band Check result: {outcome.value}. Next: {session.primary_action}."
+            f"{self._check_label} result: {rendered_outcome}. "
+            f"Next: {rendered_action}."
         )
-        self._next.setText(f"Next: {session.primary_action}.")
+        self._next.setText(f"Next: {rendered_action}.")
         self._repolish(self._summary)
         self._refresh_action_button()
 
@@ -354,12 +451,13 @@ class BandCheckDialog(QDialog):
             BandCheckStatus.NOT_APPLICABLE: "OPTIONAL",
         }
         mark_text = words[step.status]
-        safe_detail = _safe_report_text(step.detail)
-        row.setAccessibleName(f"{mark_text}: {step.title}. {safe_detail}")
+        safe_detail = self._profile_text(_safe_report_text(step.detail))
+        rendered_title = self._profile_text(step.title)
+        row.setAccessibleName(f"{mark_text}: {rendered_title}. {safe_detail}")
         mark = QLabel(mark_text)
         mark.setObjectName("ReadyCheckMark")
         mark.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
-        title = QLabel(step.title)
+        title = QLabel(rendered_title)
         title.setObjectName("ReadyCheckName")
         title.setTextFormat(Qt.TextFormat.PlainText)
         detail = QLabel(safe_detail)
@@ -409,7 +507,7 @@ class BandCheckDialog(QDialog):
                 label = "Record 5 Seconds"
             self._secondary.setText("Record Again")
             self._secondary.setVisible(True)
-        set_labeled_action(self._primary, label)
+        set_labeled_action(self._primary, self._profile_text(label))
         self._primary.setEnabled(True)
 
     def _find_action_step(self) -> BandCheckStepKey | None:
@@ -1009,9 +1107,13 @@ class BandCheckDialog(QDialog):
         self._clear_rows()
         self._session = None
         self._scan_failed = True
-        self._summary.setText(BandCheckOutcome.ACTION_NEEDED.value)
+        self._summary.setText(
+            self._profile_text(BandCheckOutcome.ACTION_NEEDED.value)
+        )
         self._summary.setProperty("result", "fail")
-        self._next.setText("Next: close Band Check and try again.")
+        self._next.setText(
+            self._profile_text("Next: close Band Check and try again.")
+        )
         detail = QLabel("Band Check could not inspect this setup.")
         detail.setTextFormat(Qt.TextFormat.PlainText)
         detail.setWordWrap(True)
@@ -1079,7 +1181,7 @@ class BandCheckDialog(QDialog):
             text += (
                 f" {len(warnings)} optional warning{'s' if len(warnings) != 1 else ''}."
             )
-        self._summary.setText(text)
+        self._summary.setText(self._profile_text(text))
 
     def _add_legacy_row(self, item) -> QFrame:
         row = QFrame()
@@ -1099,7 +1201,7 @@ class BandCheckDialog(QDialog):
         row.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         row.setAccessibleName(
             f"{'Passed' if item.ok else 'Manual verification' if manual else 'Required failure' if item.required else 'Optional warning'}: "
-            f"{_safe_report_text(item.name)}"
+            f"{self._profile_text(_safe_report_text(item.name))}"
         )
         if manual:
             mark = QCheckBox("VERIFY")
@@ -1114,10 +1216,14 @@ class BandCheckDialog(QDialog):
             mark = QLabel("PASS" if item.ok else "FIX" if item.required else "OPTIONAL")
         mark.setObjectName("ReadyCheckMark")
         mark.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
-        name = QLabel(_safe_report_text(item.name))
+        name = QLabel(self._profile_text(_safe_report_text(item.name)))
         name.setObjectName("ReadyCheckName")
         name.setTextFormat(Qt.TextFormat.PlainText)
-        detail = QLabel(_safe_report_text(item.detail or "No additional details"))
+        detail = QLabel(
+            self._profile_text(
+                _safe_report_text(item.detail or "No additional details")
+            )
+        )
         detail.setObjectName("ReadyCheckDetail")
         detail.setTextFormat(Qt.TextFormat.PlainText)
         detail.setWordWrap(True)

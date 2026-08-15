@@ -68,3 +68,40 @@ def test_controller_owned_view_switching_and_take_review_action() -> None:
     assert events == ["takes"]
     shell.show_home()
     assert shell.current_view() == "home"
+
+
+def test_podcast_profile_is_applied_across_shell_home_and_workspace() -> None:
+    shell = _shell()
+    shell.set_creator_profile("podcast_voice")
+
+    assert shell.creator_profile_key == "podcast_voice"
+    assert shell.home.creator_profile_key == "podcast_voice"
+    assert shell.workspace.creator_profile_key == "podcast_voice"
+    assert shell.home.title.text() == "Podcast & Voice Studio"
+    assert shell.home.play_along_button.text() == "New Recording"
+    assert shell.home.new_button.text() == "New Episode Project"
+    assert shell.home.recent_label.text() == "Recent Episodes"
+    visible_home_copy = " ".join(
+        (
+            shell.home.subtitle.text(),
+            shell.home.play_along_button.text(),
+            shell.home.play_along_button.accessibleDescription(),
+            shell.home.empty_recent.text(),
+        )
+    ).casefold()
+    for music_only_term in ("play along", "backing", "song section", "songwriting"):
+        assert music_only_term not in visible_home_copy
+
+
+def test_review_preview_truthfully_disables_local_studio_entry_points() -> None:
+    shell = _shell()
+    shell.set_creator_profile("review_rehearsal")
+
+    assert "preview" in shell.home.title.text().casefold()
+    assert "not available" in shell.home.subtitle.text().casefold()
+    assert not shell.home.play_along_button.isEnabled()
+    assert not shell.home.new_button.isEnabled()
+    assert not shell.home.open_button.isEnabled()
+    assert not shell.home.recent_list.isEnabled()
+    assert not shell.workspace.import_backing_button.isEnabled()
+    assert not shell.workspace.add_track_button.isEnabled()

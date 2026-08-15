@@ -151,6 +151,20 @@ class StudioEditingToolbar(QWidget):
             "Remove Crossfade": "No Xfade",
         }.get(full_text, full_text)
 
+    def _set_action_presentation(
+        self,
+        button: QPushButton,
+        full_text: str,
+        *,
+        accessible_name: str,
+        description: str,
+    ) -> None:
+        """Keep compact visual copy and the current semantic action aligned."""
+
+        button.setText(self._label(full_text))
+        button.setAccessibleName(accessible_name)
+        button.setAccessibleDescription(description)
+
     def set_compact(self, compact: bool) -> None:
         """Use bounded visual copy while preserving complete accessible names."""
 
@@ -429,35 +443,64 @@ class StudioEditingToolbar(QWidget):
             self.region_fades_button,
         ):
             control.setEnabled(region is not None)
-        if region is None or context.document is None:
-            self.cycle_region_button.setText(self._label("Cycle Region"))
-            self.region_fades_button.setText(self._label("5 ms Fades"))
-        else:
-            cycle = context.document.cycle_range
-            self.cycle_region_button.setText(
-                self._label(
-                    "Clear Cycle"
-                    if cycle is not None
-                    and cycle.start_frame == region.timeline_start_frame
-                    and cycle.end_frame == region.timeline_end_frame
-                    else "Cycle Region"
-                )
-            )
-            self.region_fades_button.setText(
-                self._label(
-                    "Remove Fades"
-                    if region.fade_in_frames or region.fade_out_frames
-                    else "5 ms Fades"
-                )
-            )
+        cycle = context.document.cycle_range if context.document is not None else None
+        clears_cycle = bool(
+            region is not None
+            and cycle is not None
+            and cycle.start_frame == region.timeline_start_frame
+            and cycle.end_frame == region.timeline_end_frame
+        )
+        self._set_action_presentation(
+            self.cycle_region_button,
+            "Clear Cycle" if clears_cycle else "Cycle Region",
+            accessible_name=(
+                "Clear cycle range for selected region"
+                if clears_cycle
+                else "Set cycle range to selected region"
+            ),
+            description=(
+                "Clear the cycle range that matches the selected region."
+                if clears_cycle
+                else "Loop playback over the selected region."
+            ),
+        )
+        removes_fades = bool(
+            region is not None and (region.fade_in_frames or region.fade_out_frames)
+        )
+        self._set_action_presentation(
+            self.region_fades_button,
+            "Remove Fades" if removes_fades else "5 ms Fades",
+            accessible_name=(
+                "Remove fades from selected region"
+                if removes_fades
+                else "Add fades to selected region"
+            ),
+            description=(
+                "Remove the selected region's fade-in and fade-out without "
+                "changing its source audio."
+                if removes_fades
+                else "Add click-safe 5 millisecond equal-power fades to the "
+                "selected region without changing its source audio."
+            ),
+        )
         crossfade = self.selected_crossfade_target() if visible else None
         self.crossfade_button.setEnabled(crossfade is not None)
-        self.crossfade_button.setText(
-            self._label(
-                "Remove Crossfade"
-                if crossfade is not None and crossfade[2] is not None
-                else "Crossfade"
-            )
+        removes_crossfade = crossfade is not None and crossfade[2] is not None
+        self._set_action_presentation(
+            self.crossfade_button,
+            "Remove Crossfade" if removes_crossfade else "Crossfade",
+            accessible_name=(
+                "Remove crossfade from selected overlapping regions"
+                if removes_crossfade
+                else "Add crossfade to selected overlapping regions"
+            ),
+            description=(
+                "Remove the equal-power crossfade between the selected "
+                "overlapping regions."
+                if removes_crossfade
+                else "Add an equal-power crossfade across the nearest overlap "
+                "with the selected region."
+            ),
         )
 
 

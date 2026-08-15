@@ -75,6 +75,9 @@ def test_sentry_hooks_sanitize_nested_event_and_breadcrumb_payloads() -> None:
             "enrollment_capability": "runtime-sentinel-capability-DO-NOT-LEAK",
             "peer": "203.0.113.44:3478",
             "path": "/Users/alice/Library/Logs/WebJam.log",
+            "fallback_media": "~/Music/Private Take.wav",
+            "windows_media": "%USERPROFILE%\\Music\\Private Take.wav",
+            "/Volumes/Client Masters/Secret Project/key.wav": "unavailable",
         },
     }
     safe_event = before_send(event, {})
@@ -82,6 +85,8 @@ def test_sentry_hooks_sanitize_nested_event_and_breadcrumb_payloads() -> None:
     assert "runtime-sentinel" not in rendered
     assert "203.0.113.44" not in rendered
     assert "/Users/alice" not in rendered
+    assert "~/Music" not in rendered
+    assert "%USERPROFILE%" not in rendered
     assert "webjam://join" not in rendered
 
     before_breadcrumb = captured["before_breadcrumb"]
@@ -93,10 +98,74 @@ def test_sentry_hooks_sanitize_nested_event_and_breadcrumb_payloads() -> None:
     assert "secret" not in repr(safe_crumb)
 
 
+def test_sentry_hooks_remove_external_and_home_relative_private_paths() -> None:
+    captured: dict[str, object] = {}
+    fake_sdk = SimpleNamespace(init=lambda **kwargs: captured.update(kwargs))
+    settings = AppSettings(
+        enable_sentry=True,
+        sentry_dsn="https://public@example.invalid/1",
+    )
+
+    with patch.dict(sys.modules, {"sentry_sdk": fake_sdk}):
+        configure_sentry(settings)
+
+    before_send = captured["before_send"]
+    event = {
+        "release": "0.25.0",
+        "logentry": {
+            "message": (
+                "Track export failed for "
+                "/Volumes/Client Masters/Secret Project/take-001.wav"
+            ),
+        },
+        "exception": {
+            "values": [
+                {
+                    "type": "OSError",
+                    "value": (
+                        "decoder failed at /Users/alice/Music/Secret Artist/take.wav"
+                    ),
+                    "stacktrace": {
+                        "frames": [
+                            {
+                                "filename": "Private Project.py",
+                                "abs_path": (
+                                    "/Volumes/Client Masters/Secret Project/source.py"
+                                ),
+                                "function": "render_take",
+                            }
+                        ]
+                    },
+                }
+            ]
+        },
+    }
+
+    safe = before_send(event, {})
+    rendered = repr(safe)
+    for private in (
+        "Client Masters",
+        "Secret Project",
+        "Private Project.py",
+        "Secret Artist",
+        "take.wav",
+        "/Users/alice",
+        "/Volumes/",
+        "$HOME/",
+    ):
+        assert private not in rendered
+    assert "[redacted-path]" in rendered
+    assert safe["release"] == "0.25.0"
+    frame = safe["exception"]["values"][0]["stacktrace"]["frames"][0]
+    assert frame["function"] == "render_take"
+
+
 def test_sentry_hooks_drop_non_mapping_payloads() -> None:
     captured: dict[str, object] = {}
     fake_sdk = SimpleNamespace(init=lambda **kwargs: captured.update(kwargs))
-    settings = AppSettings(enable_sentry=True, sentry_dsn="https://public@example.invalid/1")
+    settings = AppSettings(
+        enable_sentry=True, sentry_dsn="https://public@example.invalid/1"
+    )
 
     with patch.dict(sys.modules, {"sentry_sdk": fake_sdk}):
         configure_sentry(settings)

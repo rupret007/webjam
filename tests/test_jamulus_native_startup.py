@@ -1210,6 +1210,85 @@ def test_native_sound_setup_watches_connection_without_a_completion_click() -> N
     assert "secondary_action_text" not in call.kwargs
 
 
+@pytest.mark.parametrize(
+    ("profile_key", "phase", "role", "expected_title", "detail_tokens"),
+    (
+        (
+            "podcast_voice",
+            "conversation",
+            "host",
+            "Add conversation if you use it",
+            (
+                "never directly or automatically taps a meeting app",
+                "Record Session captures Jamulus server stems",
+                "Do not route meeting or system audio into those inputs",
+            ),
+        ),
+        (
+            "review_rehearsal",
+            "invite_ready",
+            "host",
+            "Your review session is ready (Preview)",
+            ("local notes only", "no visual-media sync", "media timecode"),
+        ),
+        (
+            "podcast_voice",
+            "confirm_sound",
+            "guest",
+            "Listen for your microphone",
+            ("your voice", "returning cleanly"),
+        ),
+    ),
+)
+def test_creator_profile_drives_truthful_native_startup_copy(
+    profile_key, phase, role, expected_title, detail_tokens
+) -> None:
+    controller = _controller(hosting=role == "host")
+    controller.settings.last_creator_profile_key = profile_key
+    controller._startup_attempt = {
+        "generation": 1,
+        "role": role,
+        "phase": phase,
+    }
+    controller._session_conductor_facts = mock.Mock(
+        return_value=SessionConductorFacts(
+            role=SessionRole.HOST if role == "host" else SessionRole.GUEST
+        )
+    )
+    controller._observe_session_conductor_facts = mock.Mock()
+    controller._focus_initial_hud_action = mock.Mock()
+    controller._persist_startup_attempt = mock.Mock()
+
+    ApplicationController._render_startup_journey(controller)
+
+    call = controller.window.session_hud.set_state.call_args
+    assert call.args[0] == expected_title
+    for token in detail_tokens:
+        assert token in call.args[1]
+
+
+@pytest.mark.parametrize(
+    ("profile_key", "expected"),
+    (
+        (
+            "podcast_voice",
+            "2 speakers connected · Speaker audio detected; speak to check your input.",
+        ),
+        (
+            "review_rehearsal",
+            "2 participants connected · Session audio detected; make some sound to check your input.",
+        ),
+    ),
+)
+def test_connected_audio_detail_uses_creator_vocabulary(profile_key, expected) -> None:
+    controller = _controller(hosting=False)
+    controller.settings.last_creator_profile_key = profile_key
+    controller._local_audio_seen = False
+    controller._remote_audio_seen = True
+
+    assert ApplicationController._connected_audio_detail(controller, 2) == expected
+
+
 def test_native_sound_setup_primary_action_brings_jamulus_forward() -> None:
     controller = _controller(hosting=False)
     controller._bring_jamulus_forward = mock.Mock()
@@ -1217,6 +1296,49 @@ def test_native_sound_setup_primary_action_brings_jamulus_forward() -> None:
     controller._on_conductor_action_requested("bring_jamulus")
 
     controller._bring_jamulus_forward.assert_called_once_with()
+
+
+def test_review_preview_rejects_stale_track_export_action() -> None:
+    controller = _controller(hosting=True)
+    controller.settings.last_creator_profile_key = "review_rehearsal"
+    controller._render_session_conductor = mock.Mock()
+    controller._on_rail_view_changed = mock.Mock()
+    controller.window.recording_studio = SimpleNamespace(
+        _export_tracks=mock.Mock(),
+        _take_list=mock.Mock(),
+    )
+
+    controller._on_conductor_action_requested("export_tracks")
+
+    controller._render_session_conductor.assert_called_once_with()
+    controller._on_rail_view_changed.assert_not_called()
+    controller.window.recording_studio._export_tracks.assert_not_called()
+
+
+@pytest.mark.parametrize("action", ("record", "stop_recording"))
+def test_review_preview_can_start_and_stop_session_recording(action: str) -> None:
+    controller = _controller(hosting=True)
+    controller.settings.last_creator_profile_key = "review_rehearsal"
+    controller._on_record_requested = mock.Mock()
+
+    controller._on_conductor_action_requested(action)
+
+    controller._on_record_requested.assert_called_once_with()
+
+
+@pytest.mark.parametrize("action", ("review_take", "select_take"))
+def test_review_preview_can_open_completed_take_review(action: str) -> None:
+    controller = _controller(hosting=True)
+    controller.settings.last_creator_profile_key = "review_rehearsal"
+    controller._on_rail_view_changed = mock.Mock()
+    take_list = mock.Mock()
+    controller.window.recording_studio = SimpleNamespace(_take_list=take_list)
+
+    controller._on_conductor_action_requested(action)
+
+    controller._on_rail_view_changed.assert_called_once_with("takes")
+    if action == "select_take":
+        take_list.setFocus.assert_called_once()
 
 
 def test_native_guest_peer_never_starts_for_a_cancelled_or_remote_journey() -> None:

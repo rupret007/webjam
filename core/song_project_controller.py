@@ -310,6 +310,7 @@ class SongProjectController:
         tempo_bpm: float = 120.0,
         time_signature: TimeSignature | None = None,
         project_id: str | None = None,
+        creator_profile_key: str = "music",
     ) -> SongProjectControllerSnapshot:
         with self._lock:
             if self._dirty_locked():
@@ -325,6 +326,7 @@ class SongProjectController:
                 tempo_bpm=tempo_bpm,
                 time_signature=time_signature,
                 project_id=project_id,
+                creator_profile_key=creator_profile_key,
             )
         except (SongProjectError, SongProjectStoreError, OSError):
             raise SongProjectControllerError(

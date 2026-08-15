@@ -4,9 +4,10 @@ import json
 import logging
 import os
 import sys
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from core.creative_modes import canonical_creator_profile_key
 from core.jamulus_name import (
     recover_jamulus_name,
     validate_jamulus_name,
@@ -29,6 +30,19 @@ def _as_bool(value: object) -> bool:
 
 _MAX_INPUT_MAPS = 32
 _MAX_LOCAL_CAPTURE_CHANNELS = 32
+_DEFAULT_CREATOR_PROFILE_KEY = "music"
+
+
+def _coerce_creator_profile_key(value: object) -> str:
+    """Return one canonical, non-sensitive creator profile preference."""
+
+    canonical = canonical_creator_profile_key(value)
+    if canonical is None:
+        # The rejected value is user-controlled persisted data. Never include
+        # it in logs or support evidence.
+        _logger.debug("Invalid creator profile preference; using default")
+        return _DEFAULT_CREATOR_PROFILE_KEY
+    return canonical
 
 
 def _coerce_input_maps(value: object) -> list:
@@ -106,6 +120,10 @@ def _coerce_settings_data(data: dict) -> None:
             _logger.debug("Invalid webex_audio_mode in config; using talkback")
             mode = defaults["webex_audio_mode"]
         data["webex_audio_mode"] = mode
+    if "last_creator_profile_key" in data:
+        data["last_creator_profile_key"] = _coerce_creator_profile_key(
+            data["last_creator_profile_key"]
+        )
     # List of strings
     if "jamulus_candidates" in data:
         v = data["jamulus_candidates"]
@@ -175,8 +193,9 @@ class AppSettings:
     # Configurable local input maps for Record Session. Each entry is a
     # mapping {"name": str, "channels": 1|2, "enabled": bool,
     # "local_original_enabled": bool}. Strictly coerced on load: any
-    # malformed entry clears the whole list, which falls back to the
-    # compatibility rule (local_capture_enabled + empty maps means the
+    # malformed entry clears the whole list and disables Local Originals
+    # until the map is repaired. Only a genuinely empty configuration may use
+    # the compatibility rule (local_capture_enabled + empty maps means the
     # legacy two fixed host stems). Enabled Local-Original entries are
     # recorded for real: resolve_capture_tracks() maps them onto
     # sequential device channels and drives capture, the per-take plan,
@@ -192,6 +211,9 @@ class AppSettings:
     log_level: str = "INFO"
     log_file: str = str(Path.home() / ".webjam.log")
     musician_name: str = "WebJam Musician"
+    # Canonical launch preference only. A host/session/project profile will
+    # have its own authority when those boundaries adopt creator profiles.
+    last_creator_profile_key: str = _DEFAULT_CREATOR_PROFILE_KEY
     # Companion API — optional localhost HTTP bridge for DAWs/editors/scripts.
     # Opt-in: starts on launch only when enabled and fastapi/uvicorn exist.
     companion_api_enabled: bool = False
@@ -453,5 +475,8 @@ def save_settings(settings: AppSettings) -> None:
     payload["musician_name"] = validate_jamulus_name(
         settings.musician_name
     ).value
+    payload["last_creator_profile_key"] = _coerce_creator_profile_key(
+        settings.last_creator_profile_key
+    )
     payload.pop("webex_audio_mode", None)
     atomic_write_text(path, json.dumps(payload, indent=2), mode=0o600)

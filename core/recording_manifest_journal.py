@@ -1,10 +1,10 @@
 """Crash-safe, private evidence journals for in-progress recordings.
 
 The final ``webjam-take.json`` manifest is written only after a take is
-stopped.  This module provides a deliberately narrow checkpoint while a
-recording is live: its payload is only :class:`SessionEvidence`, bound to a
-canonical take UUID.  It never persists settings, invite links, credentials,
-or raw diagnostic output.
+stopped. This module checkpoints :class:`SessionEvidence` and, when available,
+the exact private :class:`SessionRecordingPlan`, both bound to a canonical take
+UUID. It never persists settings, invite links, credentials, or raw diagnostic
+output.
 
 Journals are kept below the caller-supplied takes root in a private directory.
 Writes first fsync a private temporary file and then use an atomic filesystem
@@ -24,10 +24,12 @@ import tempfile
 from typing import Any, Mapping
 import uuid
 
+from core.session_recording_plan import SessionRecordingPlan
 from core.take_project import RecoveryStatus, SessionEvidence
 
 
-JOURNAL_SCHEMA_VERSION = 1
+LEGACY_JOURNAL_SCHEMA_VERSION = 1
+JOURNAL_SCHEMA_VERSION = 2
 JOURNAL_DIRECTORY_NAME = ".webjam-recording-evidence"
 JOURNAL_FILE_SUFFIX = ".json"
 JOURNAL_FILE_MODE = 0o600
@@ -55,6 +57,7 @@ class JournalLoadResult:
     evidence: SessionEvidence
     trusted: bool
     error: str = ""
+    plan: SessionRecordingPlan | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,7 +83,7 @@ class PendingJournalScan:
 
 
 class RecordingManifestJournal:
-    """Own crash-safe SessionEvidence checkpoints below one takes root."""
+    """Own crash-safe evidence and plan checkpoints below one takes root."""
 
     def __init__(self, takes_root: str | Path) -> None:
         self.takes_root = Path(takes_root).expanduser().resolve(strict=False)
@@ -97,7 +100,13 @@ class RecordingManifestJournal:
 
         return self._directory / f"{_canonical_take_id(take_id)}{JOURNAL_FILE_SUFFIX}"
 
-    def create(self, take_id: str, evidence: SessionEvidence) -> Path:
+    def create(
+        self,
+        take_id: str,
+        evidence: SessionEvidence,
+        *,
+        plan: SessionRecordingPlan | None = None,
+    ) -> Path:
         """Create a new journal without ever exposing a partial file.
 
         A journal is intentionally immutable at creation time.  Repeated
@@ -106,7 +115,7 @@ class RecordingManifestJournal:
         """
 
         canonical_take_id = _canonical_take_id(take_id)
-        payload = _serialized_payload(canonical_take_id, evidence)
+        payload = _serialized_payload(canonical_take_id, evidence, plan)
         directory = self._journal_directory(create=True)
         path = directory / f"{canonical_take_id}{JOURNAL_FILE_SUFFIX}"
         temporary = _write_private_temporary(directory, payload)
@@ -129,11 +138,17 @@ class RecordingManifestJournal:
             except FileNotFoundError:
                 pass
 
-    def update(self, take_id: str, evidence: SessionEvidence) -> Path:
-        """Atomically replace an existing journal with typed evidence."""
+    def update(
+        self,
+        take_id: str,
+        evidence: SessionEvidence,
+        *,
+        plan: SessionRecordingPlan | None = None,
+    ) -> Path:
+        """Atomically replace a journal with typed evidence and optional plan."""
 
         canonical_take_id = _canonical_take_id(take_id)
-        payload = _serialized_payload(canonical_take_id, evidence)
+        payload = _serialized_payload(canonical_take_id, evidence, plan)
         directory = self._journal_directory(create=True)
         path = directory / f"{canonical_take_id}{JOURNAL_FILE_SUFFIX}"
         _require_regular_file(path)
@@ -179,10 +194,15 @@ class RecordingManifestJournal:
                 object_pairs_hook=_reject_duplicate_keys,
                 parse_constant=_reject_json_constant,
             )
-            evidence = _parse_payload(decoded, canonical_take_id)
+            evidence, plan = _parse_payload(decoded, canonical_take_id)
         except (TypeError, ValueError, RecordingManifestJournalError):
             return _untrusted_result(canonical_take_id)
-        return JournalLoadResult(canonical_take_id, evidence, trusted=True)
+        return JournalLoadResult(
+            canonical_take_id,
+            evidence,
+            trusted=True,
+            plan=plan,
+        )
 
     def remove(self, take_id: str) -> bool:
         """Atomically remove a journal entry; return false when it is absent."""
@@ -230,7 +250,9 @@ class RecordingManifestJournal:
         for path in paths:
             take_id = _take_id_from_journal_name(path.name)
             if not take_id:
-                untrusted_entries.append(JournalDirectoryIssue("journal_untrusted_name"))
+                untrusted_entries.append(
+                    JournalDirectoryIssue("journal_untrusted_name")
+                )
                 continue
             result = self.load(take_id)
             if result is None:
@@ -244,9 +266,7 @@ class RecordingManifestJournal:
         """Return only trusted canonical UUID checkpoints ready for recovery."""
 
         return tuple(
-            result.take_id
-            for result in self.list_pending().journals
-            if result.trusted
+            result.take_id for result in self.list_pending().journals if result.trusted
         )
 
     def _journal_directory(self, *, create: bool) -> Path | None:
@@ -302,17 +322,41 @@ def _take_id_from_journal_name(name: str) -> str:
     return canonical if stem == canonical else ""
 
 
-def _serialized_payload(take_id: str, evidence: SessionEvidence) -> bytes:
+def _serialized_payload(
+    take_id: str,
+    evidence: SessionEvidence,
+    plan: SessionRecordingPlan | None,
+) -> bytes:
     if not isinstance(evidence, SessionEvidence):
-        raise TypeError("Recording journal evidence must be a SessionEvidence instance.")
+        raise TypeError(
+            "Recording journal evidence must be a SessionEvidence instance."
+        )
     if len(evidence.recovery_notes) > MAX_RECOVERY_NOTES:
         raise RecordingManifestJournalError("Too many recording recovery notes.")
     if len(evidence.timeline) > MAX_TIMELINE_EVENTS:
         raise RecordingManifestJournalError("Too many recording timeline events.")
+    if plan is not None:
+        if not isinstance(plan, SessionRecordingPlan):
+            raise TypeError(
+                "Recording journal plan must be a SessionRecordingPlan instance."
+            )
+        if plan.take_id != take_id:
+            raise RecordingManifestJournalError(
+                "Recording plan take identity does not match the journal."
+            )
+        fingerprint = plan.plan_fingerprint()
+        if evidence.recording_plan_fingerprint != fingerprint:
+            raise RecordingManifestJournalError(
+                "Recording plan fingerprint does not match session evidence."
+            )
+        private_plan: dict[str, object] | None = plan.to_private_dict()
+    else:
+        private_plan = None
     payload = {
         "schema_version": JOURNAL_SCHEMA_VERSION,
         "take_id": take_id,
         "session": evidence.to_dict(),
+        "plan": private_plan,
     }
     try:
         encoded = (
@@ -360,7 +404,9 @@ def _read_private_file(path: Path) -> str:
     try:
         file_stat = os.fstat(descriptor)
         if not stat.S_ISREG(file_stat.st_mode):
-            raise RecordingManifestJournalError("Recording journal is not a regular file.")
+            raise RecordingManifestJournalError(
+                "Recording journal is not a regular file."
+            )
         if file_stat.st_mode & 0o777 != JOURNAL_FILE_MODE:
             raise RecordingManifestJournalError(
                 "Recording journal permissions are not private."
@@ -401,22 +447,49 @@ def _fsync_directory(directory: Path) -> None:
         os.close(descriptor)
 
 
-def _parse_payload(value: Any, expected_take_id: str) -> SessionEvidence:
+def _parse_payload(
+    value: Any,
+    expected_take_id: str,
+) -> tuple[SessionEvidence, SessionRecordingPlan | None]:
     if not isinstance(value, Mapping):
         raise ValueError("Journal is not an object.")
-    _require_keys(value, {"schema_version", "take_id", "session"})
     schema_version = value.get("schema_version")
-    if isinstance(schema_version, bool) or schema_version != JOURNAL_SCHEMA_VERSION:
+    if isinstance(schema_version, bool) or not isinstance(schema_version, int):
+        raise ValueError("Unsupported journal schema.")
+    if schema_version == LEGACY_JOURNAL_SCHEMA_VERSION:
+        _require_keys(value, {"schema_version", "take_id", "session"})
+    elif schema_version == JOURNAL_SCHEMA_VERSION:
+        _require_keys(value, {"schema_version", "take_id", "session", "plan"})
+    else:
         raise ValueError("Unsupported journal schema.")
     stored_take_id = value.get("take_id")
-    if not isinstance(stored_take_id, str) or _canonical_take_id(stored_take_id) != expected_take_id:
+    if (
+        not isinstance(stored_take_id, str)
+        or _canonical_take_id(stored_take_id) != expected_take_id
+    ):
         raise ValueError("Journal take identity does not match.")
     session = value.get("session")
     _validate_session_shape(session)
     try:
-        return SessionEvidence.from_dict(session)
+        evidence = SessionEvidence.from_dict(session)
     except Exception as exc:
         raise ValueError("Journal session evidence is invalid.") from exc
+    if schema_version == LEGACY_JOURNAL_SCHEMA_VERSION:
+        return evidence, None
+    private_plan = value.get("plan")
+    if private_plan is None:
+        return evidence, None
+    if not isinstance(private_plan, Mapping):
+        raise ValueError("Journal recording plan is invalid.")
+    try:
+        plan = SessionRecordingPlan.from_private_dict(
+            private_plan,
+            expected_take_id=expected_take_id,
+            expected_fingerprint_sha256=evidence.recording_plan_fingerprint,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Journal recording plan is invalid.") from exc
+    return evidence, plan
 
 
 def _validate_session_shape(value: Any) -> None:
@@ -431,6 +504,7 @@ def _validate_session_shape(value: Any) -> None:
         "recovery_notes",
         "timeline",
         "recording_plan_fingerprint",
+        "creator_profile_key",
     }
     _require_known_keys(value, allowed)
     recovery_status = value.get("recovery_status")
@@ -443,6 +517,7 @@ def _validate_session_shape(value: Any) -> None:
         "started_utc",
         "ended_utc",
         "recording_plan_fingerprint",
+        "creator_profile_key",
     ):
         if key in value and not isinstance(value[key], str):
             raise ValueError("Journal text field is invalid.")
@@ -481,8 +556,7 @@ def _validate_timeline_item(value: Any) -> None:
         if key in value and not isinstance(value[key], str):
             raise ValueError("Journal timeline text is invalid.")
     if "at_s" in value and (
-        isinstance(value["at_s"], bool)
-        or not isinstance(value["at_s"], (int, float))
+        isinstance(value["at_s"], bool) or not isinstance(value["at_s"], (int, float))
     ):
         raise ValueError("Journal timeline position is invalid.")
 

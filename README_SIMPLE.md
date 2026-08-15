@@ -6,14 +6,24 @@
 > signed and unnotarized.
 
 > **Source note:** use the exact release tag and attached checksum manifest as
-> download evidence; an untagged checkout is not a substitute. v0.24.0 adds
-> configurable Local Originals, clearer per-source recording truth, Studio
-> Reset Mix/overload feedback, and provider-neutral meeting-link handoff.
+> download evidence; an untagged checkout is not a substitute. The current
+> v0.25.0 source candidate has not been published as a release.
 
-WebJam helps a band start playing together. It keeps the session, invite, and
-recordings organized. Jamulus handles the music. Any meeting platform can be
+WebJam helps creators start a live audio session and keep its separate tracks
+organized. Jamulus handles low-latency audio. Any meeting platform can be
 optional for talking or video when it provides a public HTTPS meeting link
-that passes WebJam's safety checks.
+that passes WebJam's safety checks. WebJam never directly or automatically taps
+the meeting app, browser, or system output. Local Originals record only the
+input devices you explicitly select, so do not route meeting or system audio
+into those inputs.
+
+The v0.25.0 source candidate offers Music and Podcast & Voice as GA creator
+profiles. Review & Rehearsal is visibly Preview: it supports live WebJam-audio
+Host/Join, Record Session, local notes, and playback/read-only review of a
+completed session take. It blocks standalone projects, take editing/comp/mix
+mutation, track export, shared notes, visual sync, and media timecode. No
+profile directly or automatically taps a meeting app, browser, or system
+output.
 
 Current private test release: **v0.24.0**. Use only the exact assets attached to
 the immutable v0.24.0 GitHub release and verify them with its checksum manifest.
@@ -30,20 +40,22 @@ helper that removes quarantine from WebJam only.
 
 ## Start playing
 
-1. Choose **Host a Jam** if this Mac is starting the rehearsal, or **Join a
-   Jam** if a bandmate sent a link.
-2. When Jamulus opens, choose your interface, input channels, headphones, and
+1. Choose **Music**, **Podcast & Voice**, or **Review & Rehearsal (Preview)**.
+2. Choose the profile's **Host** or **Join** action: Music uses Host/Join,
+   Podcast uses Host Remote Recording/Join Recording, and Review uses Host
+   Review/Join Review.
+3. When Jamulus opens, choose your interface, input channels, headphones, and
    buffer there.
-3. WebJam moves into the session automatically when it sees the authenticated
+4. WebJam moves into the session automatically when it sees the authenticated
    Jamulus connection.
-4. The host copies the invite. Play a note and make sure bandmates hear each
+5. The host copies the invite. Make sound and verify participants hear each
    other.
 
-That is the whole live-music path.
+That is the whole live-session path.
 
 WebJam keeps a known-good Jamulus copy for offline use. **More → Jamulus
 Updates** checks only WebJam-approved, signed update information. Downloads do
-not interrupt a jam, and installation waits until music, recording, practice,
+not interrupt a live session, and installation waits until audio, recording, practice,
 reconnection, and Shared Track are stopped. The operating system still asks
 before installation. If an update fails, WebJam keeps the current and previous
 managed copies available on macOS. On Windows and Linux, the operating system
@@ -52,14 +64,16 @@ claiming it can roll back the system package.
 
 Jamulus displays a name on a second line after eight characters and accepts no
 more than 16 UTF-16 units. WebJam shows that preview anywhere you enter your
-musician name, so it will not be silently shortened later.
+Jamulus display name, so it will not be silently shortened later.
 
-## Write or rehearse a song locally
+## Create locally
 
-Choose **Reference Studio** when you want to play with a backing track, record
-ideas, rearrange named sections, mix, or bounce a WAV/FLAC demo without joining
-a live jam. Reference Studio owns a separate local project and audio path; it
-does not start, stop, configure, or feed Jamulus.
+Music and Podcast & Voice can use their local-project actions to play with
+reference audio, record ideas, rearrange sections/chapters, mix, or bounce a
+WAV/FLAC result without joining
+a live session. Reference Studio owns a separate local project and audio path; it
+does not start, stop, configure, or feed Jamulus. Review & Rehearsal keeps this
+action unavailable in Preview.
 
 ## If you need help
 
@@ -80,12 +94,19 @@ does not start, stop, configure, or feed Jamulus.
   do not verify the native app publisher. If the app is missing, WebJam can
   open Cisco's official installer page after you confirm; it does not save a
   Webex password or install silently.
-- **Something failed:** use **More → Band Check / Verify Sound** and the
+- **Something failed:** use the profile's **Band Check**, **Sound Check**, or
+  **Session Check** and the
   support/diagnostics action. The report includes bounded Jamulus updater and
   Webex app state without local paths, meeting links, provider hostnames,
   names, or credentials.
 - **Recording:** the host chooses **Record Session**. The first time, choose
   shared recording only or also keep this Mac’s separate Local Originals.
+  Each mono input row becomes one mono file; each stereo row becomes one true
+  two-channel file. WebJam freezes the exact server stems, Shared Track,
+  host input topology, and guest Local Original obligations before capture and
+  rechecks them before Ready. WebJam does not directly tap meeting-app,
+  browser, or system-output audio. Local Originals record the selected input
+  devices, so do not route meeting or system audio into those inputs.
   Wait through Preparing, Count-in, Recording, Stopping, and Finalizing; only
   Ready means the take finished safely.
 - **Shared Track:** during a hosted session choose **Shared Track**, select
@@ -102,21 +123,23 @@ does not start, stop, configure, or feed Jamulus.
   Guests receive bounded, path-free host state without transport authority;
   older peer state may show only the dedicated channel. Neither is physical
   synchronization or audibility proof.
-- **Review a take:** choose the direct **Studio** action. Choose a playback output only
-  while reviewing a take. Move or trim regions on the Arrange timeline, use
-  Undo/Redo, or add a safely matched repeated recording as a take lane and
-  Option/Alt-drag the parts you want in the comp.
-- **Export for another editor:** Track Export makes edited and original 24-bit
-  stems, a rough mix, markers, instructions, provenance, and checksums. The
-  recording manifest and WAVs are never rewritten. Edited Studio packages use
-  the secure macOS/Linux path; Windows clearly offers aligned originals and a
-  reference mix without region edits, fades, comps, sections, master
+- **Review a take:** choose the direct **Studio** action and select a playback
+  output there. Review & Rehearsal Preview permits playback, scrubbing, and
+  source inspection only. In Music or Podcast & Voice, you can also move or
+  trim regions, use Undo/Redo, add a safely matched take lane, and comp a range.
+- **Export for another editor:** in Music or Podcast & Voice, Track Export makes
+  edited and original 24-bit stems, a rough mix, markers, instructions,
+  provenance, and checksums. Review & Rehearsal Preview has no Track Export.
+  The recording manifest and WAVs are never rewritten. Edited Studio packages
+  use the secure macOS/Linux path; Windows clearly offers aligned originals and
+  a reference mix without region edits, fades, comps, sections, master
   processing, or attached/repeated take lanes.
-- **Verify an already-live jam:** choose **More → Band Check / Verify Sound**.
+- **Verify an already-live session:** choose the profile's **Band Check**,
+  **Sound Check**, or **Session Check**.
   It observes the session and does not replace Jamulus setup.
 
 WebJam uses black, white, neutral gray, and burnt orange. The three-loop mark
-means musicians playing together; it does not represent a Logic integration.
+means creators collaborating; it does not represent a Logic integration.
 
 For the technical overview, evidence boundary, architecture, and roadmap, see
 the [project brief](docs/PROJECT_BRIEF.md) and [documentation index](docs/README.md).
@@ -125,7 +148,9 @@ Waveforms load in the background and recorded gaps remain silence. Studio
 autosaves choices to a separate file; a failed save keeps the edit pending and
 the recorded take safe. Real two-Mac output, hardware interruption/recovery,
 external-editor import, physical Reference Studio audio, and signed-install
-gates are **NOT RUN** for v0.24.0. Publishing a private candidate does not
+gates are **NOT RUN** for v0.25.0. Publishing a private candidate does not
 convert them to PASS. Use the
-[v0.24 physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
-for the exact multi-machine evidence to collect.
+[v0.25 physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
+for the exact multi-machine evidence to collect. The
+[v0.24 checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md) remains
+immutable historical evidence for the current GitHub Latest package.

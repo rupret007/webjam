@@ -32,7 +32,7 @@ import numpy as np
 import soundfile as sf
 
 from core.file_io import atomic_write_text
-from core.local_capture import LocalCaptureGap, LocalCaptureResult
+from core.local_capture import LocalCaptureGap, LocalCaptureResult, LocalCaptureTrack
 from core.network_invite import BandInvite, parse_invite_link
 from core.session_transfer import (
     RecordingSignal,
@@ -109,11 +109,13 @@ class _SyntheticCapture:
         plan: _SyntheticCapturePlan,
         samplerate: int,
         take_id: str,
+        tracks: tuple[LocalCaptureTrack, ...],
     ) -> None:
         self.root = Path(root)
         self.plan = plan
         self.samplerate = int(samplerate)
         self.take_id = take_id
+        self.tracks = tracks
         self.started = False
         self.stop_calls = 0
 
@@ -140,6 +142,7 @@ class _SyntheticCapture:
             total_frames=_FRAMES,
             capture_device=SimpleNamespace(device_id=""),
             durable_frames=_FRAMES,
+            tracks=self.tracks,
         )
 
 
@@ -159,6 +162,7 @@ class _SyntheticCaptureFactory:
         blocksize: int,
         take_id: str,
         session_id: str,
+        tracks: tuple[LocalCaptureTrack, ...],
     ) -> _SyntheticCapture:
         del device, blocksize, session_id
         if not self._plans:
@@ -168,6 +172,7 @@ class _SyntheticCaptureFactory:
             plan=self._plans.pop(0),
             samplerate=samplerate,
             take_id=take_id,
+            tracks=tracks,
         )
         self.instances.append(capture)
         return capture
@@ -264,8 +269,12 @@ class DualMusicianRehearsalLab:
         os.chmod(self.artifact_root, 0o700)
         cleanup: dict[str, object] = {}
         try:
-            self._measure("host_start", "real_loopback_component", 5_000, self._start_host)
-            self._measure("invite_privacy", "source_observed", 2_000, self._exercise_invite)
+            self._measure(
+                "host_start", "real_loopback_component", 5_000, self._start_host
+            )
+            self._measure(
+                "invite_privacy", "source_observed", 2_000, self._exercise_invite
+            )
             self._measure(
                 "enrollment_identity",
                 "real_loopback_component",
@@ -376,7 +385,11 @@ class DualMusicianRehearsalLab:
         )
         if not host.active or not isinstance(host.server, SessionPeerServer):
             raise AssertionError("The real host peer service did not become active.")
-        if host.credentials is None or host.host_enrollment is None or host.peer_port <= 0:
+        if (
+            host.credentials is None
+            or host.host_enrollment is None
+            or host.peer_port <= 0
+        ):
             raise AssertionError("The host did not issue a usable private session.")
         self._host = host
         self._primary_peer_port = host.peer_port
@@ -403,7 +416,9 @@ class DualMusicianRehearsalLab:
     def _exercise_invite(self) -> None:
         host = self._require_host()
         if host.credentials is None:
-            raise AssertionError("The host credentials disappeared before invite creation.")
+            raise AssertionError(
+                "The host credentials disappeared before invite creation."
+            )
         # A real v2 invite must use an RFC1918 address. The parsed invite is
         # subsequently copied to a loopback-only endpoint for this isolated lab.
         invite_url = host.invite_link(
@@ -415,9 +430,15 @@ class DualMusicianRehearsalLab:
         if not isinstance(parsed, BandInvite) or not parsed.peer_enabled:
             raise AssertionError("The private invitation did not round-trip.")
         if parsed.invite_token != host.credentials.invite_token:
-            raise AssertionError("The parsed invite did not retain its enrollment bearer.")
-        if host.credentials.invite_token in repr(parsed) or host.credentials.invite_token in repr(host.credentials):
-            raise AssertionError("Private invite credentials appeared in a runtime repr.")
+            raise AssertionError(
+                "The parsed invite did not retain its enrollment bearer."
+            )
+        if host.credentials.invite_token in repr(
+            parsed
+        ) or host.credentials.invite_token in repr(host.credentials):
+            raise AssertionError(
+                "Private invite credentials appeared in a runtime repr."
+            )
         self._invite = BandInvite(
             host="127.0.0.1",
             port=parsed.port,
@@ -468,8 +489,13 @@ class DualMusicianRehearsalLab:
         guest.observe_presence(7, "Guest musician")
         first = guest.poll_once()
         second = guest.poll_once()
-        if first.signal is not RecordingSignal.IDLE or second.signal is not RecordingSignal.IDLE:
-            raise AssertionError("The newly enrolled guest did not observe idle recording state.")
+        if (
+            first.signal is not RecordingSignal.IDLE
+            or second.signal is not RecordingSignal.IDLE
+        ):
+            raise AssertionError(
+                "The newly enrolled guest did not observe idle recording state."
+            )
         if not guest.participant_id or guest.enrollment is None:
             raise AssertionError("The guest did not receive a durable enrollment.")
         host = self._require_host()
@@ -520,7 +546,9 @@ class DualMusicianRehearsalLab:
             except SessionTransferError:
                 pass
             else:
-                raise AssertionError("The lab control-plane outage unexpectedly succeeded.")
+                raise AssertionError(
+                    "The lab control-plane outage unexpectedly succeeded."
+                )
         finally:
             guest.client.port = original_port
         if guest.active_take_id != take_id:
@@ -540,7 +568,9 @@ class DualMusicianRehearsalLab:
         )
         initial = load_take_project(take_dir)
         if initial.status is not ProjectStatus.NEEDS_ATTENTION or not initial.errors:
-            raise AssertionError("Missing guest media was not made visible before recovery.")
+            raise AssertionError(
+                "Missing guest media was not made visible before recovery."
+            )
         guest.poll_once()
         self._reconcile_until(take_id, take_dir, lambda item: bool(item.tracks))
         project = load_take_project(take_dir)
@@ -550,7 +580,9 @@ class DualMusicianRehearsalLab:
             if track.source_type is SourceType.LOCAL_ISOLATED
         ]
         if len(local_tracks) != 1:
-            raise AssertionError("The gapped guest transfer attached more or fewer than one track.")
+            raise AssertionError(
+                "The gapped guest transfer attached more or fewer than one track."
+            )
         segment = local_tracks[0].primary_segment
         if (
             project.status is not ProjectStatus.NEEDS_ATTENTION
@@ -559,23 +591,35 @@ class DualMusicianRehearsalLab:
             or segment.gaps[0].start_frame != _GAP_START
             or segment.gaps[0].frame_count != _GAP_FRAMES
         ):
-            raise AssertionError("The synthetic source gap was not disclosed through transfer reconciliation.")
+            raise AssertionError(
+                "The synthetic source gap was not disclosed through transfer reconciliation."
+            )
         if self._factory is None or len(self._factory.instances) != 1:
-            raise AssertionError("The first bounded capture was not created exactly once.")
+            raise AssertionError(
+                "The first bounded capture was not created exactly once."
+            )
         if self._factory.instances[0].stop_calls != 1:
-            raise AssertionError("The first bounded capture was not finalized exactly once.")
+            raise AssertionError(
+                "The first bounded capture was not finalized exactly once."
+            )
         gapped_take = load_take(take_dir)
         if gapped_take is None:
-            raise AssertionError("The gapped project could not be opened for export safety.")
+            raise AssertionError(
+                "The gapped project could not be opened for export safety."
+            )
         blocked_export_root = self.artifact_root / "gapped-export-attempt"
         try:
             export_track_package(gapped_take, destination_root=blocked_export_root)
         except TakeExportError:
             pass
         else:
-            raise AssertionError("A disclosed partial source was exported as if it were ready.")
+            raise AssertionError(
+                "A disclosed partial source was exported as if it were ready."
+            )
         if blocked_export_root.exists() and any(blocked_export_root.iterdir()):
-            raise AssertionError("The blocked gapped export left a visible package behind.")
+            raise AssertionError(
+                "The blocked gapped export left a visible package behind."
+            )
         self._gapped_take_dir = take_dir
         self._evidence.append(
             {
@@ -614,7 +658,9 @@ class DualMusicianRehearsalLab:
         )
         missing = load_take_project(take_dir)
         if missing.status is not ProjectStatus.NEEDS_ATTENTION:
-            raise AssertionError("The host did not disclose the pending clean transfer.")
+            raise AssertionError(
+                "The host did not disclose the pending clean transfer."
+            )
         # Finalize through the real guest runtime, then deliberately publish a
         # first real HTTP chunk. The queued guest upload must inspect that host
         # checkpoint and resume from it, rather than attach a duplicate segment.
@@ -629,7 +675,9 @@ class DualMusicianRehearsalLab:
         source_bytes = pending.source.read_bytes()
         partial_size = min(1_024, len(source_bytes) - 1)
         if partial_size <= 0:
-            raise AssertionError("The bounded source was too small for a partial upload.")
+            raise AssertionError(
+                "The bounded source was too small for a partial upload."
+            )
         partial = guest.client._request(
             "PUT",
             "/v1/segment",
@@ -645,16 +693,24 @@ class DualMusicianRehearsalLab:
             },
         )
         if int(partial["received_bytes"]) != partial_size or bool(partial["complete"]):
-            raise AssertionError("The host did not retain the expected resumable partial.")
+            raise AssertionError(
+                "The host did not retain the expected resumable partial."
+            )
         checkpoint = guest.client.transfer_status(guest.enrollment, pending.descriptor)
         if checkpoint.complete or checkpoint.received_bytes != partial_size:
-            raise AssertionError("The guest could not observe the host partial-upload checkpoint.")
+            raise AssertionError(
+                "The guest could not observe the host partial-upload checkpoint."
+            )
         guest._upload_pending()
         resumed = next(
-            item for item in guest.pending_segments if item.descriptor == pending.descriptor
+            item
+            for item in guest.pending_segments
+            if item.descriptor == pending.descriptor
         )
         if resumed.status != "verified":
-            raise AssertionError("The guest queue did not resume and verify its partial upload.")
+            raise AssertionError(
+                "The guest queue did not resume and verify its partial upload."
+            )
         self._reconcile_until(
             take_id,
             take_dir,
@@ -666,22 +722,35 @@ class DualMusicianRehearsalLab:
             for track in project.tracks
             if track.source_type is SourceType.LOCAL_ISOLATED
         ]
-        if len(local_tracks) != 1 or local_tracks[0].media_status is not MediaStatus.AVAILABLE:
-            raise AssertionError("The clean guest transfer did not attach as verified media.")
+        if (
+            len(local_tracks) != 1
+            or local_tracks[0].media_status is not MediaStatus.AVAILABLE
+        ):
+            raise AssertionError(
+                "The clean guest transfer did not attach as verified media."
+            )
         if project.session_evidence.recovery_status is not RecoveryStatus.RECOVERED:
-            raise AssertionError("The delayed clean transfer did not leave recovery evidence.")
+            raise AssertionError(
+                "The delayed clean transfer did not leave recovery evidence."
+            )
         if not any(
             event.event == "peer_original_recovered"
             for event in project.session_evidence.timeline
         ):
-            raise AssertionError("The clean transfer recovery timeline event is missing.")
+            raise AssertionError(
+                "The clean transfer recovery timeline event is missing."
+            )
         # Repeated host reconciliation is a real idempotence check, not a mock.
         if host.reconcile_take(take_id, take_dir):
             raise AssertionError("A stable clean transfer was attached more than once.")
         if self._factory is None or len(self._factory.instances) != 2:
-            raise AssertionError("The clean bounded capture was not created exactly once.")
+            raise AssertionError(
+                "The clean bounded capture was not created exactly once."
+            )
         if self._factory.instances[1].stop_calls != 1:
-            raise AssertionError("The clean bounded capture was not finalized exactly once.")
+            raise AssertionError(
+                "The clean bounded capture was not finalized exactly once."
+            )
         self._clean_take_dir = take_dir
         self._evidence.append(
             {
@@ -714,13 +783,19 @@ class DualMusicianRehearsalLab:
             round((time.perf_counter() - returning_join_started) * 1000),
         )
         if reconnected.participant_id != original_id:
-            raise AssertionError("Guest relaunch changed the durable participant identity.")
+            raise AssertionError(
+                "Guest relaunch changed the durable participant identity."
+            )
         host = self._require_host()
         if host.registry is None or len(host.registry.participants()) != 2:
-            raise AssertionError("Guest relaunch created a duplicate enrollment record.")
+            raise AssertionError(
+                "Guest relaunch created a duplicate enrollment record."
+            )
         rebound = host.registry.presence_for_participant(original_id)
         if rebound is None or rebound.display_name != "Guest musician returning":
-            raise AssertionError("Returning guest presence did not retain its renamed identity.")
+            raise AssertionError(
+                "Returning guest presence did not retain its renamed identity."
+            )
         clean_dir = self._require_clean_take_dir()
         clean_project = load_take_project(clean_dir)
         before_tracks = len(
@@ -739,7 +814,9 @@ class DualMusicianRehearsalLab:
             ]
         )
         if before_tracks != 1 or after_tracks != 1:
-            raise AssertionError("Guest reconnect duplicated or removed clean project media.")
+            raise AssertionError(
+                "Guest reconnect duplicated or removed clean project media."
+            )
         self._reconnected_guest = reconnected
         self._evidence.append(
             {
@@ -764,7 +841,9 @@ class DualMusicianRehearsalLab:
             if track.source_type is SourceType.LOCAL_ISOLATED
         ]
         if len(local_tracks) != 1:
-            raise AssertionError("The clean project lost its guest source before Studio.")
+            raise AssertionError(
+                "The clean project lost its guest source before Studio."
+            )
         # The synthetic host and guest WAVs are generated at the same known
         # zero origin. This fixture alignment permits export mechanics to be
         # exercised; it is explicitly not production alignment evidence.
@@ -806,7 +885,9 @@ class DualMusicianRehearsalLab:
         seek_s = min(0.1, player.duration_s / 2.0)
         player.seek(seek_s)
         if abs(player.position_s - seek_s) > 1 / _RATE:
-            raise AssertionError("Studio transport did not seek to the requested project time.")
+            raise AssertionError(
+                "Studio transport did not seek to the requested project time."
+            )
         player.stop()
 
         state = load_studio_state(take_dir)
@@ -832,7 +913,9 @@ class DualMusicianRehearsalLab:
             or not saved_guest.export_included
             or not sidecar.is_file()
         ):
-            raise AssertionError("Studio state did not persist by durable track identity.")
+            raise AssertionError(
+                "Studio state did not persist by durable track identity."
+            )
         if (take_dir / "webjam-take.json").read_bytes() != manifest_before_studio:
             raise AssertionError("Studio state changed immutable project evidence.")
 
@@ -852,9 +935,13 @@ class DualMusicianRehearsalLab:
             include_processed_stems=True,
         )
         if len(export.stems) != 2 or not export.manifest.is_file():
-            raise AssertionError("The dual-track export did not produce its expected package.")
+            raise AssertionError(
+                "The dual-track export did not produce its expected package."
+            )
         if export.checksums is None or export.analysis is None:
-            raise AssertionError("The dual-track export omitted checksum or analysis evidence.")
+            raise AssertionError(
+                "The dual-track export omitted checksum or analysis evidence."
+            )
         for stem in export.stems:
             info = sf.info(str(stem))
             if (
@@ -862,7 +949,9 @@ class DualMusicianRehearsalLab:
                 or int(info.samplerate) != _RATE
                 or int(info.frames) != export.frames
             ):
-                raise AssertionError("The exported stem is not a zero-aligned 48 kHz PCM24 WAV.")
+                raise AssertionError(
+                    "The exported stem is not a zero-aligned 48 kHz PCM24 WAV."
+                )
         manifest = json.loads(export.manifest.read_text(encoding="utf-8"))
         if (
             manifest.get("bit_depth") != 24
@@ -870,17 +959,25 @@ class DualMusicianRehearsalLab:
             or not manifest.get("all_stems_same_length")
             or manifest.get("external_editor_physically_verified") is not False
         ):
-            raise AssertionError("Export evidence made an invalid external-editor claim.")
+            raise AssertionError(
+                "Export evidence made an invalid external-editor claim."
+            )
         for track in manifest.get("tracks", []):
             output = export.folder / str(track["output_filename"])
             if _sha256(output) != track["output_sha256"]:
-                raise AssertionError("The export manifest checksum disagrees with its rendered stem.")
+                raise AssertionError(
+                    "The export manifest checksum disagrees with its rendered stem."
+                )
         for line in export.checksums.read_text(encoding="utf-8").splitlines():
             digest, filename = line.split("  ", 1)
             if _sha256(export.folder / filename) != digest:
-                raise AssertionError("The export checksum inventory is not self-consistent.")
+                raise AssertionError(
+                    "The export checksum inventory is not self-consistent."
+                )
         analysis = json.loads(export.analysis.read_text(encoding="utf-8"))
-        analysis_by_name = {item["filename"]: item for item in analysis.get("files", [])}
+        analysis_by_name = {
+            item["filename"]: item for item in analysis.get("files", [])
+        }
         analyzed_files = [*export.stems, *export.processed_stems, export.mixdown]
         for audio in analyzed_files:
             observed = analysis_by_name.get(audio.name)
@@ -890,7 +987,9 @@ class DualMusicianRehearsalLab:
                 or observed["sample_rate"] != _RATE
                 or observed["frames"] != export.frames
             ):
-                raise AssertionError("The export audio analysis is incomplete or inconsistent.")
+                raise AssertionError(
+                    "The export audio analysis is incomplete or inconsistent."
+                )
         for relative, before in source_bytes.items():
             if (take_dir / relative).read_bytes() != before:
                 raise AssertionError("Studio/export mutated an original source WAV.")
@@ -922,7 +1021,9 @@ class DualMusicianRehearsalLab:
                 continue
             payload = path.read_bytes()
             if any(item in payload for item in forbidden):
-                raise AssertionError("A private runtime value appeared in a lab artifact.")
+                raise AssertionError(
+                    "A private runtime value appeared in a lab artifact."
+                )
 
     def _reconcile_until(
         self,
@@ -936,7 +1037,9 @@ class DualMusicianRehearsalLab:
             project = load_take_project(take_dir)
             if predicate(project):
                 return
-        raise AssertionError("Host reconciliation did not reach its expected durable state.")
+        raise AssertionError(
+            "Host reconciliation did not reach its expected durable state."
+        )
 
     def _write_base_project(self, take_dir: Path, take_id: str) -> None:
         host = self._require_host()
@@ -1002,6 +1105,7 @@ class DualMusicianRehearsalLab:
             installation_path=self.artifact_root / "guest-installation.json",
             capture_enabled=lambda: True,
             capture_config=lambda: (0, _RATE, 128),
+            capture_tracks=lambda: (LocalCaptureTrack("input-1", (0,)),),
             capture_factory=capture_factory,
         )
 
@@ -1099,7 +1203,9 @@ class DualMusicianRehearsalLab:
             and not leaked_threads
             and originals_preserved
         ):
-            raise AssertionError("The source-level cleanup/relaunch checks did not pass.")
+            raise AssertionError(
+                "The source-level cleanup/relaunch checks did not pass."
+            )
         return cleanup
 
     def _report_document(self, cleanup: dict[str, object]) -> dict[str, object]:
@@ -1175,7 +1281,9 @@ class DualMusicianRehearsalLab:
         rendered = json.dumps(payload, sort_keys=True)
         forbidden = {item for item in self._forbidden if item}
         if any(item in rendered for item in forbidden):
-            raise AssertionError("The durable lab report contains a private runtime value.")
+            raise AssertionError(
+                "The durable lab report contains a private runtime value."
+            )
         for key in ("invite_token", "participant_token", "peer_port", "session_id"):
             if f'"{key}"' in rendered:
                 raise AssertionError("The durable lab report contains an unsafe field.")

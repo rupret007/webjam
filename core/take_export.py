@@ -370,13 +370,13 @@ def _write_project_track(
     import numpy as np
     import soundfile as sf  # type: ignore
 
-    channels = {int(segment.channels) for segment in track.segments}
-    if len(channels) != 1:
+    try:
+        channel_count = int(track.channel_count)
+    except (AttributeError, ValueError) as exc:
         raise TakeExportError(
-            f"{track.name} changes channel configuration between segments; "
-            "review that track before export."
-        )
-    channel_count = channels.pop()
+            f"{track.name} does not have one supported mono/stereo channel "
+            "layout; review that track before export."
+        ) from exc
     drift_scale = 1.0 + float(track.alignment.drift_ppm) / 1_000_000.0
     if drift_scale <= 0.0:
         raise TakeExportError(f"{track.name} has an invalid drift transform.")
@@ -627,7 +627,12 @@ def validated_project_export_tracks(
     explicit-silence, or verified peer-alignment evidence.
     """
 
-    from core.take_project import MediaStatus, ProjectStatus, TakeProject
+    from core.take_project import (
+        MediaStatus,
+        ProjectStatus,
+        TakeProject,
+        TakeProjectError,
+    )
 
     if not isinstance(project, TakeProject):
         raise TakeExportError("A schema-v2 take project is required for export.")
@@ -647,6 +652,17 @@ def validated_project_export_tracks(
     )
     if not selected:
         raise TakeExportError("No project tracks are selected for export.")
+    invalid_topology: list[str] = []
+    for track in selected:
+        try:
+            track.channel_count
+        except TakeProjectError:
+            invalid_topology.append(track.name)
+    if invalid_topology:
+        raise TakeExportError(
+            "Review tracks with an unsupported or changing channel layout before "
+            "export: " + ", ".join(invalid_topology)
+        )
     usable = {MediaStatus.AVAILABLE, MediaStatus.RECOVERED}
     blocked = [
         track.name

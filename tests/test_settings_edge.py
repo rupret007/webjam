@@ -4,8 +4,8 @@ import json
 import os
 import tempfile
 import unittest
-from unittest.mock import patch
 from pathlib import Path
+from unittest.mock import patch
 
 import core.settings as settings_module
 from core.settings import (
@@ -29,6 +29,7 @@ class TestSettingsDefaults(unittest.TestCase):
         self.assertFalse(s.webex_audio_bridge_enabled)
         self.assertFalse(hasattr(s, "webex_config_file"))
         self.assertEqual(s.take_playback_output_device, "")
+        self.assertEqual(s.last_creator_profile_key, "music")
 
     def test_macos_runtime_paths_are_owned_by_webjam_in_source_mode(self):
         from core.settings import jamulus_client_rpc_secret_path
@@ -202,6 +203,94 @@ class TestSettingsMalformedJson(unittest.TestCase):
             self.assertTrue(s.enable_sentry)
         finally:
             os.remove(path)
+
+
+class TestCreatorProfileSettings(unittest.TestCase):
+    def test_old_settings_without_profile_load_as_music(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as config:
+            json.dump({"jamulus_port": 22125}, config)
+            config.flush()
+            loaded = load_settings(config.name)
+
+        self.assertEqual(loaded.jamulus_port, 22125)
+        self.assertEqual(loaded.last_creator_profile_key, "music")
+
+    def test_canonical_profiles_round_trip(self):
+        for profile_key in ("music", "podcast_voice", "review_rehearsal"):
+            with self.subTest(profile_key=profile_key), tempfile.TemporaryDirectory() as d:
+                path = os.path.join(d, "settings.json")
+                save_settings(
+                    AppSettings(
+                        config_file=path,
+                        last_creator_profile_key=profile_key,
+                    )
+                )
+                saved = json.loads(Path(path).read_text(encoding="utf-8"))
+                loaded = load_settings(path)
+
+            self.assertEqual(saved["last_creator_profile_key"], profile_key)
+            self.assertEqual(loaded.last_creator_profile_key, profile_key)
+
+    def test_every_legacy_profile_key_is_canonicalized_on_load(self):
+        expected = {
+            "music_jam": "music",
+            "visual_studio": "review_rehearsal",
+            "writers_room": "review_rehearsal",
+            "design_critique": "review_rehearsal",
+            "storyboard_film_room": "review_rehearsal",
+        }
+        for legacy_key, canonical_key in expected.items():
+            with self.subTest(legacy_key=legacy_key), tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json"
+            ) as config:
+                json.dump({"last_creator_profile_key": legacy_key}, config)
+                config.flush()
+                loaded = load_settings(config.name)
+
+            self.assertEqual(loaded.last_creator_profile_key, canonical_key)
+
+    def test_legacy_profile_key_is_serialized_only_as_canonical(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "settings.json")
+            settings = AppSettings(
+                config_file=path,
+                last_creator_profile_key="writers_room",
+            )
+            save_settings(settings)
+            saved = json.loads(Path(path).read_text(encoding="utf-8"))
+
+        self.assertEqual(saved["last_creator_profile_key"], "review_rehearsal")
+        self.assertNotIn("mode", saved)
+        self.assertNotIn("creator_mode", saved)
+
+    def test_unknown_profile_values_fail_safe_without_logging_the_value(self):
+        hostile = "private-unknown-profile-value"
+        for value in (hostile, "", None, 42, {"profile": hostile}):
+            with self.subTest(value_type=type(value).__name__), tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json"
+            ) as config:
+                json.dump({"last_creator_profile_key": value}, config)
+                config.flush()
+                with patch.object(settings_module._logger, "debug") as logged:
+                    loaded = load_settings(config.name)
+
+            self.assertEqual(loaded.last_creator_profile_key, "music")
+            self.assertNotIn(hostile, str(logged.call_args_list))
+
+    def test_unknown_in_memory_profile_saves_as_music_without_logging_value(self):
+        hostile = "private-unknown-profile-value"
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "settings.json")
+            settings = AppSettings(
+                config_file=path,
+                last_creator_profile_key=hostile,
+            )
+            with patch.object(settings_module._logger, "debug") as logged:
+                save_settings(settings)
+            saved = json.loads(Path(path).read_text(encoding="utf-8"))
+
+        self.assertEqual(saved["last_creator_profile_key"], "music")
+        self.assertNotIn(hostile, str(logged.call_args_list))
 
 
 class TestSettingsBoundaryPorts(unittest.TestCase):

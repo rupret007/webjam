@@ -117,6 +117,55 @@ def test_legacy_session_snapshot_defaults_to_idle_shared_track(
     state = client.state(enrollment)
 
     assert state.shared_track == SharedTrackSessionSnapshot()
+    assert state.creator_profile_key == "music"
+
+
+def test_creator_profile_is_authenticated_durable_session_context(
+    tmp_path: Path,
+) -> None:
+    credentials = SessionCredentials.create()
+    registry = EnrollmentRegistry(tmp_path, credentials)
+    control = SessionControlState(
+        tmp_path,
+        credentials.session_id,
+        creator_profile_key="podcast_voice",
+    )
+    transfers = TransferStore(tmp_path, credentials.session_id)
+    enrollment = registry.enroll(
+        _id(),
+        "Guest",
+        invite_token=credentials.invite_token,
+    )
+    control.begin(_id(), started_utc="2026-08-15T12:00:00Z")
+    server = SessionPeerServer(
+        "127.0.0.1",
+        0,
+        registry=registry,
+        control=control,
+        transfers=transfers,
+    )
+    server.start()
+    try:
+        client = SessionPeerClient(
+            server.address[0],
+            server.address[1],
+            credentials=credentials,
+        )
+        observed = client.state(enrollment)
+    finally:
+        server.stop()
+
+    assert observed.creator_profile_key == "podcast_voice"
+    assert SessionControlState(
+        tmp_path,
+        credentials.session_id,
+    ).snapshot().creator_profile_key == "podcast_voice"
+    with pytest.raises(ValueError, match="creator_profile_key"):
+        SessionControlState(
+            tmp_path / "unsupported",
+            _id(),
+            creator_profile_key="future_profile",
+        )
 
 
 def test_shared_track_publication_is_idempotent_monotonic_and_memory_only(

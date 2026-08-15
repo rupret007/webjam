@@ -382,16 +382,19 @@ def test_transfer_descriptor_inventory_is_bounded_and_legacy_wire_is_readable(
         source_channel=1,
         inventory_input_count=2,
         inventory_segment_count=3,
+        inventory_map_fingerprint=hashlib.sha256(b"logical-map").hexdigest(),
     )
     assert TransferDescriptor.from_mapping(asdict(declared)) == declared
 
     legacy_payload = asdict(declared)
     legacy_payload.pop("inventory_input_count")
     legacy_payload.pop("inventory_segment_count")
+    legacy_payload.pop("inventory_map_fingerprint")
     legacy_payload["source_channel"] = 0
     legacy = TransferDescriptor.from_mapping(legacy_payload)
     assert legacy.inventory_input_count == 0
     assert legacy.inventory_segment_count == 0
+    assert legacy.inventory_map_fingerprint == ""
 
     with pytest.raises(ValueError, match="both be declared"):
         replace(declared, inventory_segment_count=0)
@@ -406,6 +409,10 @@ def test_transfer_descriptor_inventory_is_bounded_and_legacy_wire_is_readable(
     with pytest.raises(ValueError, match="non-negative integer"):
         TransferDescriptor.from_mapping(
             {**asdict(declared), "inventory_input_count": True}
+        )
+    with pytest.raises(ValueError, match="lowercase SHA-256"):
+        TransferDescriptor.from_mapping(
+            {**asdict(declared), "inventory_map_fingerprint": True}
         )
 
 

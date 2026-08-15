@@ -330,9 +330,11 @@ class TestSessionMetadataPersistence(unittest.TestCase):
                 path = f"{tmp}/.webjam_session.json"
                 self.assertTrue(os.path.exists(path))
                 data = json.loads(open(path).read())
-                self.assertEqual(data["title"], "Saved Session")
+                self.assertEqual(data["schema_version"], 2)
+                music = data["profiles"]["music"]
+                self.assertEqual(music["title"], "Saved Session")
                 if non_default:
-                    self.assertEqual(data["mode"], non_default)
+                    self.assertEqual(music["mode"], non_default)
             finally:
                 controller.shutdown()
                 # Restore HOME for subsequent tests

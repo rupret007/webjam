@@ -1,4 +1,5 @@
 """Supplemental host capture is atomic and failure-safe."""
+
 from __future__ import annotations
 
 import builtins
@@ -22,7 +23,9 @@ import soundfile as sf
 import core.local_capture as local_capture
 from core.local_capture import (
     LocalCaptureError,
+    LocalCaptureTrack,
     LocalInputCapture,
+    local_capture_track_map_fingerprint,
     recover_stale_local_captures,
 )
 
@@ -39,10 +42,12 @@ class _FakeStream:
         self.callback = callback
 
     def start(self):
-        block = np.column_stack((
-            np.full(4800, 0.25, dtype="float32"),
-            np.full(4800, -0.125, dtype="float32"),
-        ))
+        block = np.column_stack(
+            (
+                np.full(4800, 0.25, dtype="float32"),
+                np.full(4800, -0.125, dtype="float32"),
+            )
+        )
         self.callback(block, len(block), None, "")
 
     def stop(self):
@@ -66,8 +71,9 @@ class TestLocalInputCapture(TestCase):
             },
             query_hostapis=lambda _index: {"name": "Test Audio"},
         )
-        with tempfile.TemporaryDirectory() as d, patch.dict(
-            sys.modules, {"sounddevice": fake_sd}
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(sys.modules, {"sounddevice": fake_sd}),
         ):
             root = Path(d)
             capture = LocalInputCapture(root, samplerate=48000)
@@ -103,18 +109,23 @@ class TestLocalInputCapture(TestCase):
 
         class _OneSecondStream(_FakeStream):
             def start(self):
-                block = np.column_stack((
-                    np.full(4_800, 0.25, dtype="float32"),
-                    np.full(4_800, -0.125, dtype="float32"),
-                ))
+                block = np.column_stack(
+                    (
+                        np.full(4_800, 0.25, dtype="float32"),
+                        np.full(4_800, -0.125, dtype="float32"),
+                    )
+                )
                 for _ in range(10):
                     self.callback(block, len(block), None, "")
 
         take_id = str(uuid.uuid4())
         session_id = str(uuid.uuid4())
-        with tempfile.TemporaryDirectory() as d, patch.dict(
-            sys.modules,
-            {"sounddevice": _fake_sd(lambda **kwargs: _OneSecondStream(**kwargs))},
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(
+                sys.modules,
+                {"sounddevice": _fake_sd(lambda **kwargs: _OneSecondStream(**kwargs))},
+            ),
         ):
             root = Path(d)
             capture = LocalInputCapture(
@@ -139,6 +150,14 @@ class TestLocalInputCapture(TestCase):
         self.assertEqual(payload["session_id"], session_id)
         self.assertEqual(payload["durable_frames"], 48_000)
         self.assertEqual(payload["writer_frames"], [48_000, 48_000])
+        self.assertEqual(payload["schema"], 2)
+        self.assertEqual(
+            payload["tracks"],
+            [
+                {"source_channels": [0], "stem": "host-guitar"},
+                {"source_channels": [1], "stem": "host-vocal"},
+            ],
+        )
 
     def test_device_open_failure_cleans_partial_files(self):
         private_detail = "/Users/private-musician/Secret Interface"
@@ -148,8 +167,9 @@ class TestLocalInputCapture(TestCase):
             ),
             InputStream=lambda **kwargs: _FakeStream(**kwargs),
         )
-        with tempfile.TemporaryDirectory() as d, patch.dict(
-            sys.modules, {"sounddevice": fake_sd}
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(sys.modules, {"sounddevice": fake_sd}),
         ):
             root = Path(d)
             capture = LocalInputCapture(root)
@@ -183,8 +203,9 @@ class TestLocalInputCapture(TestCase):
         fake_sf = SimpleNamespace(
             SoundFile=lambda path, **kwargs: _RecordingWriter(path, **kwargs)
         )
-        with tempfile.TemporaryDirectory() as d, patch.dict(
-            sys.modules, {"sounddevice": _fake_sd(), "soundfile": fake_sf}
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(sys.modules, {"sounddevice": _fake_sd(), "soundfile": fake_sf}),
         ):
             capture = LocalInputCapture(Path(d), samplerate=48000)
             capture.start()
@@ -248,9 +269,12 @@ class TestLocalInputCapture(TestCase):
         fake_sf = SimpleNamespace(
             SoundFile=lambda path, **kwargs: _PositionWriter(path, **kwargs)
         )
-        with tempfile.TemporaryDirectory() as d, patch.dict(
-            sys.modules,
-            {"sounddevice": fake_sd, "soundfile": fake_sf},
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(
+                sys.modules,
+                {"sounddevice": fake_sd, "soundfile": fake_sf},
+            ),
         ):
             root = Path(d)
             capture = LocalInputCapture(root, samplerate=48_000, blocksize=8)
@@ -285,12 +309,8 @@ class TestLocalInputCapture(TestCase):
                         hot.enter_context(patch.object(Path, name, forbidden))
                     hot.enter_context(patch.object(builtins, "open", forbidden))
                     hot.enter_context(patch.object(logging.Logger, "_log", forbidden))
-                    hot.enter_context(
-                        patch.object(threading.Event, "wait", forbidden)
-                    )
-                    hot.enter_context(
-                        patch.object(threading.Event, "set", forbidden)
-                    )
+                    hot.enter_context(patch.object(threading.Event, "wait", forbidden))
+                    hot.enter_context(patch.object(threading.Event, "set", forbidden))
                     hot.enter_context(
                         patch.object(queue_module.Queue, "put_nowait", forbidden)
                     )
@@ -313,9 +333,12 @@ class TestLocalInputCapture(TestCase):
                 return None
 
         fake_sd = _fake_sd(lambda **kwargs: _ManualStream(**kwargs))
-        with tempfile.TemporaryDirectory() as d, patch.dict(
-            sys.modules,
-            {"sounddevice": fake_sd},
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(
+                sys.modules,
+                {"sounddevice": fake_sd},
+            ),
         ):
             root = Path(d)
             capture = LocalInputCapture(root, samplerate=48_000, blocksize=8)
@@ -346,16 +369,18 @@ class TestLocalInputCapture(TestCase):
                     self.callback(block, len(block), None, status)
 
         fake_sd = _fake_sd(lambda **kwargs: _SpammyStream(**kwargs))
-        with tempfile.TemporaryDirectory() as d, patch.dict(
-            sys.modules, {"sounddevice": fake_sd}
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(sys.modules, {"sounddevice": fake_sd}),
         ):
             capture = LocalInputCapture(Path(d), samplerate=48000)
             capture.start()
             result = capture.stop_into(Path(d) / "take")
         self.assertLessEqual(len(result.errors), 21)
-        self.assertTrue(any(
-            "input overflow" in e and "×1000" in e for e in result.errors
-        ), result.errors)
+        self.assertTrue(
+            any("input overflow" in e and "×1000" in e for e in result.errors),
+            result.errors,
+        )
 
     def test_capture_ring_overflow_drops_blocks_with_counted_error(self):
         release = threading.Event()
@@ -385,17 +410,18 @@ class TestLocalInputCapture(TestCase):
             SoundFile=lambda path, **kwargs: _BlockingWriter(path, **kwargs)
         )
         fake_sd = _fake_sd(lambda **kwargs: _FloodingStream(**kwargs))
-        with tempfile.TemporaryDirectory() as d, patch.dict(
-            sys.modules, {"sounddevice": fake_sd, "soundfile": fake_sf}
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(sys.modules, {"sounddevice": fake_sd, "soundfile": fake_sf}),
         ):
             capture = LocalInputCapture(Path(d), samplerate=48000)
             capture.start()
             write_started.wait(timeout=10)
             release.set()
             result = capture.stop_into(Path(d) / "take")
-        self.assertTrue(any(
-            "blocks were dropped" in e for e in result.errors
-        ), result.errors)
+        self.assertTrue(
+            any("blocks were dropped" in e for e in result.errors), result.errors
+        )
 
     def test_overflow_gaps_preserve_absolute_timeline_and_silence(self):
         """Separated mid-stream drops become exact zero intervals; later
@@ -439,10 +465,12 @@ class TestLocalInputCapture(TestCase):
 
         class _SeparatedOverflowStream(_FakeStream):
             def _send(self, value):
-                block = np.column_stack((
-                    np.full(4, value, dtype="float32"),
-                    np.full(4, -value, dtype="float32"),
-                ))
+                block = np.column_stack(
+                    (
+                        np.full(4, value, dtype="float32"),
+                        np.full(4, -value, dtype="float32"),
+                    )
+                )
                 self.callback(block, len(block), None, "")
 
             def start(self):
@@ -469,8 +497,9 @@ class TestLocalInputCapture(TestCase):
             SoundFile=lambda path, **kwargs: _GatedSoundFile(path, **kwargs)
         )
         fake_sd = _fake_sd(lambda **kwargs: _SeparatedOverflowStream(**kwargs))
-        with tempfile.TemporaryDirectory() as d, patch.dict(
-            sys.modules, {"sounddevice": fake_sd, "soundfile": fake_sf}
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(sys.modules, {"sounddevice": fake_sd, "soundfile": fake_sf}),
         ):
             root = Path(d)
             capture = LocalInputCapture(root, samplerate=48000)
@@ -480,15 +509,17 @@ class TestLocalInputCapture(TestCase):
             guitar, guitar_rate = sf.read(str(result.files[0]), dtype="float32")
             vocal, vocal_rate = sf.read(str(result.files[1]), dtype="float32")
 
-        expected = np.concatenate((
-            np.full(4, 0.1),
-            np.full(4, 0.2),
-            np.zeros(4),
-            np.full(4, 0.3),
-            np.full(4, 0.4),
-            np.zeros(4),
-            np.full(4, 0.5),
-        ))
+        expected = np.concatenate(
+            (
+                np.full(4, 0.1),
+                np.full(4, 0.2),
+                np.zeros(4),
+                np.full(4, 0.3),
+                np.full(4, 0.4),
+                np.zeros(4),
+                np.full(4, 0.5),
+            )
+        )
         self.assertEqual((guitar_rate, vocal_rate), (48000, 48000))
         self.assertEqual((len(guitar), len(vocal)), (28, 28))
         self.assertEqual(result.total_frames, 28)
@@ -538,18 +569,21 @@ class TestLocalInputCapture(TestCase):
         class _ThreeBlockStream(_FakeStream):
             def start(self):
                 for value in (0.1, 0.2, 0.3):
-                    block = np.column_stack((
-                        np.full(4, value, dtype="float32"),
-                        np.full(4, -value, dtype="float32"),
-                    ))
+                    block = np.column_stack(
+                        (
+                            np.full(4, value, dtype="float32"),
+                            np.full(4, -value, dtype="float32"),
+                        )
+                    )
                     self.callback(block, len(block), None, "")
 
         fake_sf = SimpleNamespace(
             SoundFile=lambda path, **kwargs: _FailOnceSoundFile(path, **kwargs)
         )
         fake_sd = _fake_sd(lambda **kwargs: _ThreeBlockStream(**kwargs))
-        with tempfile.TemporaryDirectory() as d, patch.dict(
-            sys.modules, {"sounddevice": fake_sd, "soundfile": fake_sf}
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(sys.modules, {"sounddevice": fake_sd, "soundfile": fake_sf}),
         ):
             root = Path(d)
             capture = LocalInputCapture(root, samplerate=48000)
@@ -575,17 +609,104 @@ class TestLocalInputCapture(TestCase):
         )
         np.testing.assert_allclose(
             vocal,
-            np.concatenate((
-                np.full(4, -0.1),
-                np.full(4, -0.2),
-                np.full(4, -0.3),
-            )),
+            np.concatenate(
+                (
+                    np.full(4, -0.1),
+                    np.full(4, -0.2),
+                    np.full(4, -0.3),
+                )
+            ),
             atol=2e-6,
         )
         self.assertIn("Local capture write failed on channel 1.", result.errors)
-        self.assertFalse(any(
-            "transient test write failure" in error for error in result.errors
-        ), result.errors)
+        self.assertFalse(
+            any("transient test write failure" in error for error in result.errors),
+            result.errors,
+        )
+
+    def test_stereo_write_failure_inserts_two_channel_silence_without_shift(self):
+        class _FailOnceStereoSoundFile:
+            def __init__(self, path, **kwargs):
+                self._failed = False
+                self._inner = sf.SoundFile(str(path), **kwargs)
+
+            def write(self, data):
+                if (
+                    not self._failed
+                    and len(data)
+                    and np.allclose(float(data[0, 0]), 0.2)
+                ):
+                    self._failed = True
+                    raise OSError("private stereo writer detail")
+                self._inner.write(data)
+
+            def tell(self):
+                return self._inner.tell()
+
+            def flush(self):
+                self._inner.flush()
+
+            def close(self):
+                self._inner.close()
+
+        class _ThreeStereoBlockStream(_FakeStream):
+            def start(self):
+                for value in (0.1, 0.2, 0.3):
+                    block = np.column_stack(
+                        (
+                            np.full(4, value, dtype="float32"),
+                            np.full(4, -value, dtype="float32"),
+                        )
+                    )
+                    self.callback(block, len(block), None, "")
+
+        fake_sf = SimpleNamespace(
+            SoundFile=lambda path, **kwargs: _FailOnceStereoSoundFile(path, **kwargs)
+        )
+        fake_sd = _fake_sd(lambda **kwargs: _ThreeStereoBlockStream(**kwargs))
+        tracks = (LocalCaptureTrack("local-Room", (0, 1)),)
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(sys.modules, {"sounddevice": fake_sd, "soundfile": fake_sf}),
+        ):
+            root = Path(d)
+            capture = LocalInputCapture(
+                root,
+                samplerate=48_000,
+                tracks=tracks,
+            )
+            capture.start()
+            result = capture.stop_into(root / "take")
+            recovered, rate = sf.read(
+                str(result.files[0]),
+                dtype="float32",
+                always_2d=True,
+            )
+
+        self.assertEqual(rate, 48_000)
+        self.assertEqual(result.tracks, tracks)
+        self.assertEqual(result.total_frames, 12)
+        self.assertEqual(recovered.shape, (12, 2))
+        self.assertEqual(
+            [
+                (gap.start_frame, gap.frame_count, gap.channels, gap.reason)
+                for gap in result.gaps
+            ],
+            [(4, 4, (0,), "write_failure")],
+        )
+        np.testing.assert_allclose(
+            recovered,
+            np.column_stack(
+                (
+                    np.concatenate((np.full(4, 0.1), np.zeros(4), np.full(4, 0.3))),
+                    np.concatenate((np.full(4, -0.1), np.zeros(4), np.full(4, -0.3))),
+                )
+            ),
+            atol=2e-6,
+        )
+        self.assertFalse(
+            any("private stereo writer detail" in item for item in result.errors)
+        )
 
     def test_writer_timeout_retains_open_parts_without_taking_ownership(self):
         """A timed-out finalizer cannot flush, close, or move a handle that
@@ -630,9 +751,11 @@ class TestLocalInputCapture(TestCase):
         fake_sf = SimpleNamespace(
             SoundFile=lambda path, **kwargs: _SlowWriter(path, **kwargs)
         )
-        with tempfile.TemporaryDirectory() as d, patch.dict(
-            sys.modules, {"sounddevice": _fake_sd(), "soundfile": fake_sf}
-        ), patch("core.local_capture._WRITER_JOIN_TIMEOUT_S", 0.02):
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(sys.modules, {"sounddevice": _fake_sd(), "soundfile": fake_sf}),
+            patch("core.local_capture._WRITER_JOIN_TIMEOUT_S", 0.02),
+        ):
             root = Path(d)
             capture = LocalInputCapture(root, samplerate=48000)
             capture.start()
@@ -650,10 +773,13 @@ class TestLocalInputCapture(TestCase):
                 len(list(timed_out.recovery_dir.glob("*.part"))),  # type: ignore[union-attr]
                 2,
             )
-            self.assertTrue(any(
-                "were not flushed, closed, or moved" in error
-                for error in timed_out.errors
-            ), timed_out.errors)
+            self.assertTrue(
+                any(
+                    "were not flushed, closed, or moved" in error
+                    for error in timed_out.errors
+                ),
+                timed_out.errors,
+            )
 
             release_write.set()
             capture._writer_thread.join(timeout=1)
@@ -670,8 +796,9 @@ class TestLocalInputCapture(TestCase):
 
     def test_never_overwrites_existing_take_file(self):
         """A server track named like a local stem must not be clobbered."""
-        with tempfile.TemporaryDirectory() as d, patch.dict(
-            sys.modules, {"sounddevice": _fake_sd()}
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(sys.modules, {"sounddevice": _fake_sd()}),
         ):
             root = Path(d)
             take = root / "take"
@@ -687,11 +814,13 @@ class TestLocalInputCapture(TestCase):
         self.assertIn("host-guitar-local.wav", attached)
         self.assertTrue(any("attached as" in e for e in result.errors))
         from core.take_library import is_local_stem_name
+
         self.assertTrue(is_local_stem_name("host-guitar-local.wav"))
 
     def test_permission_hardening_failure_never_hides_finalized_audio(self):
-        with tempfile.TemporaryDirectory() as d, patch.dict(
-            sys.modules, {"sounddevice": _fake_sd()}
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(sys.modules, {"sounddevice": _fake_sd()}),
         ):
             root = Path(d)
             capture = LocalInputCapture(root, samplerate=48000)
@@ -712,8 +841,9 @@ class TestLocalInputCapture(TestCase):
         )
 
     def test_failed_attach_preserves_audio_in_recovery_folder(self):
-        with tempfile.TemporaryDirectory() as d, patch.dict(
-            sys.modules, {"sounddevice": _fake_sd()}
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(sys.modules, {"sounddevice": _fake_sd()}),
         ):
             root = Path(d)
             take = root / "take"
@@ -727,9 +857,7 @@ class TestLocalInputCapture(TestCase):
                 os.chmod(take, 0o700)
             recovered = list(root.glob("Recovered-local-*"))
             recovered_parts = (
-                list(recovered[0].glob("*.recovered-partial.wav"))
-                if recovered
-                else []
+                list(recovered[0].glob("*.recovered-partial.wav")) if recovered else []
             )
         self.assertTrue(any("Could not attach" in e for e in result.errors))
         self.assertTrue(any("preserved" in e for e in result.errors), result.errors)
@@ -789,7 +917,10 @@ class TestLocalInputCapture(TestCase):
             root = Path(d)
             hidden = root / ".webjam-capture-linked"
             hidden.mkdir(mode=0o700)
-            for name, value in (("host-guitar.wav.part", 0.2), ("host-vocal.wav.part", -0.1)):
+            for name, value in (
+                ("host-guitar.wav.part", 0.2),
+                ("host-vocal.wav.part", -0.1),
+            ):
                 sf.write(
                     hidden / name,
                     np.full(480, value, dtype="float32"),
@@ -810,6 +941,10 @@ class TestLocalInputCapture(TestCase):
                         "session_id": session_id,
                         "total_frames": 600,
                         "durable_frames": 480,
+                        "tracks": [
+                            {"stem": "host-guitar", "channel": 0},
+                            {"stem": "host-vocal", "channel": 1},
+                        ],
                         "gaps": [
                             {
                                 "start_frame": 480,
@@ -841,15 +976,96 @@ class TestLocalInputCapture(TestCase):
             self.assertEqual(item.durable_frames, 480)
             self.assertEqual(item.sample_rate, 48_000)
             self.assertEqual(
-                [(gap.start_frame, gap.frame_count, gap.channels, gap.reason) for gap in item.gaps],
+                item.tracks,
+                (
+                    LocalCaptureTrack("host-guitar", (0,)),
+                    LocalCaptureTrack("host-vocal", (1,)),
+                ),
+            )
+            self.assertEqual(
+                [
+                    (gap.start_frame, gap.frame_count, gap.channels, gap.reason)
+                    for gap in item.gaps
+                ],
                 [(480, 120, (0, 1), "queue_overflow")],
             )
             self.assertEqual(item.capture_device.display_name, "Interface")
             report = json.loads((item.recovery_dir / "RECOVERY.json").read_text())
             self.assertEqual(report["take_id"], take_id)
             self.assertEqual(report["durable_frames"], 480)
+            self.assertEqual(report["schema"], 2)
+            self.assertEqual(
+                report["tracks"],
+                [
+                    {"source_channels": [0], "stem": "host-guitar"},
+                    {"source_channels": [1], "stem": "host-vocal"},
+                ],
+            )
 
-    def test_visible_recovery_without_final_project_is_reoffered_for_reconciliation(self):
+    def test_startup_recovery_round_trips_a_stereo_logical_channel_map(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            hidden = root / ".webjam-capture-stereo"
+            hidden.mkdir(mode=0o700)
+            stereo_part = hidden / "local-Room.wav.part"
+            sf.write(
+                stereo_part,
+                np.column_stack(
+                    (
+                        np.full(480, 0.2, dtype="float32"),
+                        np.full(480, -0.25, dtype="float32"),
+                    )
+                ),
+                48_000,
+                format="WAV",
+                subtype="PCM_24",
+            )
+            (hidden / "webjam-local-capture.json").write_text(
+                json.dumps(
+                    {
+                        "schema": 2,
+                        "pid": 99999999,
+                        "started_utc": "2026-08-15T00:00:00Z",
+                        "sample_rate": 48_000,
+                        "tracks": [
+                            {
+                                "stem": "local-Room",
+                                "source_channels": [4, 5],
+                            }
+                        ],
+                        "total_frames": 480,
+                        "durable_frames": 480,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            recovered = recover_stale_local_captures(root, minimum_age_s=0)
+
+            self.assertEqual(len(recovered), 1)
+            item = recovered[0]
+            self.assertEqual(
+                item.tracks,
+                (LocalCaptureTrack("local-Room", (4, 5)),),
+            )
+            self.assertEqual(len(item.files), 1)
+            self.assertEqual(sf.info(item.files[0]).channels, 2)
+            report = json.loads(
+                (item.recovery_dir / "RECOVERY.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                report["tracks"],
+                [
+                    {
+                        "source_channels": [4, 5],
+                        "stem": "local-Room",
+                    }
+                ],
+            )
+
+    def test_visible_recovery_without_final_project_is_reoffered_for_reconciliation(
+        self,
+    ):
         """A crash after promotion must not leave playable PCM orphaned."""
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
@@ -904,9 +1120,7 @@ class TestLocalInputCapture(TestCase):
             )
             active_part = active / "host-guitar.wav.part"
             active_part.write_bytes(b"live")
-            self.assertFalse(
-                recover_stale_local_captures(root, minimum_age_s=0)
-            )
+            self.assertFalse(recover_stale_local_captures(root, minimum_age_s=0))
             self.assertEqual(active_part.read_bytes(), b"live")
 
             # Once the checkpoint no longer names a live process, a malicious
@@ -925,8 +1139,9 @@ class TestLocalInputCapture(TestCase):
             self.assertTrue(any("unsafe" in error for error in recovered[0].errors))
 
     def test_stop_into_is_idempotent(self):
-        with tempfile.TemporaryDirectory() as d, patch.dict(
-            sys.modules, {"sounddevice": _fake_sd()}
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(sys.modules, {"sounddevice": _fake_sd()}),
         ):
             root = Path(d)
             capture = LocalInputCapture(root, samplerate=48000)
@@ -945,12 +1160,14 @@ class TestConfigurableCaptureTracks(TestCase):
     def test_mapped_tracks_publish_named_stems_from_their_own_channels(self):
         class _FourChannelStream(_FakeStream):
             def start(self):
-                block = np.column_stack((
-                    np.full(4800, 0.1, dtype="float32"),
-                    np.full(4800, 0.2, dtype="float32"),
-                    np.full(4800, 0.3, dtype="float32"),
-                    np.full(4800, 0.4, dtype="float32"),
-                ))
+                block = np.column_stack(
+                    (
+                        np.full(4800, 0.1, dtype="float32"),
+                        np.full(4800, 0.2, dtype="float32"),
+                        np.full(4800, 0.3, dtype="float32"),
+                        np.full(4800, 0.4, dtype="float32"),
+                    )
+                )
                 self.callback(block, len(block), None, "")
 
         seen = {}
@@ -960,15 +1177,16 @@ class TestConfigurableCaptureTracks(TestCase):
 
         fake_sd = SimpleNamespace(
             check_input_settings=_check,
-            InputStream=lambda **kwargs: seen.update(
-                stream_channels=kwargs.get("channels")
-            )
-            or _FourChannelStream(**kwargs),
+            InputStream=lambda **kwargs: (
+                seen.update(stream_channels=kwargs.get("channels"))
+                or _FourChannelStream(**kwargs)
+            ),
             query_devices=lambda device, kind: {"name": "Quad", "hostapi": 0},
             query_hostapis=lambda _index: {"name": "Test Audio"},
         )
-        with tempfile.TemporaryDirectory() as d, patch.dict(
-            sys.modules, {"sounddevice": fake_sd}
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(sys.modules, {"sounddevice": fake_sd}),
         ):
             root = Path(d)
             capture = LocalInputCapture(
@@ -978,18 +1196,15 @@ class TestConfigurableCaptureTracks(TestCase):
             )
             capture.start()
             checkpoint = json.loads(
-                next(root.glob(".webjam-capture-*/webjam-local-capture.json"))
-                .read_text(encoding="utf-8")
+                next(
+                    root.glob(".webjam-capture-*/webjam-local-capture.json")
+                ).read_text(encoding="utf-8")
             )
             result = capture.stop_into(root / "take")
-            audio = {
-                path.name: sf.read(str(path))[0] for path in result.files
-            }
+            audio = {path.name: sf.read(str(path))[0] for path in result.files}
         self.assertEqual(seen["channels"], 3)
         self.assertEqual(seen["stream_channels"], 3)
-        self.assertEqual(
-            sorted(audio), ["bass-di.wav", "room-mic.wav"]
-        )
+        self.assertEqual(sorted(audio), ["bass-di.wav", "room-mic.wav"])
         # Each stem carries its own mapped device channel, not channel 0/1.
         self.assertAlmostEqual(float(audio["bass-di.wav"][0]), 0.3, places=3)
         self.assertAlmostEqual(float(audio["room-mic.wav"][0]), 0.1, places=3)
@@ -997,19 +1212,153 @@ class TestConfigurableCaptureTracks(TestCase):
         self.assertEqual(
             checkpoint["tracks"],
             [
-                {"channel": 2, "stem": "bass-di"},
-                {"channel": 0, "stem": "room-mic"},
+                {"source_channels": [2], "stem": "bass-di"},
+                {"source_channels": [0], "stem": "room-mic"},
             ],
         )
-        self.assertEqual(
-            result.capture_device.channel_indices, (2, 0)
-        )
+        self.assertEqual(result.capture_device.channel_indices, (2, 0))
         self.assertFalse(result.errors)
+
+    def test_typed_stereo_track_stays_one_true_two_channel_pcm24_wav(self):
+        class _FourChannelStream(_FakeStream):
+            def start(self):
+                block = np.column_stack(
+                    (
+                        np.full(480, 0.1, dtype="float32"),
+                        np.full(480, 0.2, dtype="float32"),
+                        np.full(480, -0.3, dtype="float32"),
+                        np.full(480, 0.4, dtype="float32"),
+                    )
+                )
+                self.callback(block, len(block), None, "")
+
+        fake_sd = SimpleNamespace(
+            check_input_settings=lambda **_kwargs: None,
+            InputStream=lambda **kwargs: _FourChannelStream(**kwargs),
+            query_devices=lambda device, kind: {"name": "Quad", "hostapi": 0},
+            query_hostapis=lambda _index: {"name": "Test Audio"},
+        )
+        tracks = (
+            LocalCaptureTrack("local-Keys", (1, 2)),
+            LocalCaptureTrack("local-Talkback", (3,)),
+        )
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(sys.modules, {"sounddevice": fake_sd}),
+        ):
+            root = Path(d)
+            capture = LocalInputCapture(
+                root,
+                samplerate=48_000,
+                tracks=tracks,
+            )
+            capture.start()
+            checkpoint = json.loads(
+                next(
+                    root.glob(".webjam-capture-*/webjam-local-capture.json")
+                ).read_text(encoding="utf-8")
+            )
+            result = capture.stop_into(root / "take")
+            stereo, rate = sf.read(
+                str(root / "take" / "local-Keys.wav"),
+                dtype="float32",
+                always_2d=True,
+            )
+            mono_info = sf.info(str(root / "take" / "local-Talkback.wav"))
+            stereo_info = sf.info(str(root / "take" / "local-Keys.wav"))
+
+        self.assertEqual(
+            [path.name for path in result.files],
+            [
+                "local-Keys.wav",
+                "local-Talkback.wav",
+            ],
+        )
+        self.assertEqual(rate, 48_000)
+        self.assertEqual(stereo.shape, (480, 2))
+        np.testing.assert_allclose(stereo[:, 0], 0.2, atol=2e-6)
+        np.testing.assert_allclose(stereo[:, 1], -0.3, atol=2e-6)
+        self.assertEqual(stereo_info.channels, 2)
+        self.assertEqual(stereo_info.subtype, "PCM_24")
+        self.assertEqual(mono_info.channels, 1)
+        self.assertEqual(mono_info.subtype, "PCM_24")
+        self.assertEqual(result.capture_device.channel_indices, (1, 2, 3))
+        self.assertEqual(
+            checkpoint["tracks"],
+            [
+                {"source_channels": [1, 2], "stem": "local-Keys"},
+                {"source_channels": [3], "stem": "local-Talkback"},
+            ],
+        )
+        self.assertEqual(checkpoint["writer_frames"], [0, 0])
+        self.assertEqual(result.tracks, tracks)
+        self.assertFalse(result.errors)
+
+    def test_accepts_32_logical_mono_tracks_and_rejects_the_33rd(self):
+        tracks = tuple(
+            LocalCaptureTrack(f"local-Track-{index + 1}", (index,))
+            for index in range(32)
+        )
+
+        capture = LocalInputCapture(Path("."), samplerate=48_000, tracks=tracks)
+
+        self.assertEqual(capture._tracks, tracks)
+        self.assertEqual(capture._required_input_channels, 32)
+        self.assertEqual(len(capture._track_channels), 32)
+        with self.assertRaises(LocalCaptureError):
+            LocalInputCapture(
+                Path("."),
+                samplerate=48_000,
+                tracks=(*tracks, LocalCaptureTrack("local-Extra", (0,))),
+            )
+
+    def test_track_map_fingerprint_binds_topology_without_names(self):
+        typed = (
+            LocalCaptureTrack("private-Artist-Name", (0, 1)),
+            LocalCaptureTrack("private-Microphone-Name", (3,)),
+        )
+        renamed_legacy = (
+            ("anonymous-stereo", (0, 1)),
+            ("anonymous-mono", 3),
+        )
+
+        fingerprint = local_capture_track_map_fingerprint(typed)
+
+        self.assertRegex(fingerprint, r"^[0-9a-f]{64}$")
+        self.assertEqual(hash(LocalCaptureTrack("mono", (3,))), hash(("mono", 3)))
+        self.assertEqual(
+            hash(LocalCaptureTrack("stereo", (0, 1))),
+            hash(("stereo", (0, 1))),
+        )
+        self.assertEqual(
+            fingerprint,
+            local_capture_track_map_fingerprint(renamed_legacy),
+        )
+        self.assertNotEqual(
+            fingerprint,
+            local_capture_track_map_fingerprint(
+                (
+                    LocalCaptureTrack("private-Artist-Name", (0,)),
+                    LocalCaptureTrack("private-Microphone-Name", (1, 2)),
+                )
+            ),
+        )
+        with self.assertRaises(LocalCaptureError):
+            local_capture_track_map_fingerprint(
+                (
+                    LocalCaptureTrack("one", (0, 1)),
+                    LocalCaptureTrack("overlap", (1,)),
+                )
+            )
 
     def test_default_tracks_remain_the_fixed_host_pair(self):
         capture = LocalInputCapture(Path("."), samplerate=48000)
         self.assertEqual(
-            capture._tracks, (("host-guitar", 0), ("host-vocal", 1))
+            capture._tracks,
+            (
+                LocalCaptureTrack("host-guitar", (0,)),
+                LocalCaptureTrack("host-vocal", (1,)),
+            ),
         )
         self.assertEqual(capture._required_input_channels, 2)
 
@@ -1026,7 +1375,25 @@ class TestConfigurableCaptureTracks(TestCase):
             (("a", 64),),
             (("a", True),),
             (("a", "0"),),
+            (
+                LocalCaptureTrack("stereo-a", (0, 1)),
+                LocalCaptureTrack("mono-overlap", (1,)),
+            ),
         )
         for tracks in hostile:
             with self.assertRaises(LocalCaptureError, msg=repr(tracks)):
                 LocalInputCapture(Path("."), samplerate=48000, tracks=tracks)
+
+        with self.assertRaises(LocalCaptureError, msg="non-adjacent stereo"):
+            LocalCaptureTrack("wide-pair", (0, 2))
+        with self.assertRaises(LocalCaptureError, msg="too many channels"):
+            LocalCaptureTrack("surround", (0, 1, 2))
+        with self.assertRaises(LocalCaptureError, msg="casefold collision"):
+            LocalInputCapture(
+                Path("."),
+                samplerate=48000,
+                tracks=(
+                    LocalCaptureTrack("Keys", (0,)),
+                    LocalCaptureTrack("keys", (1,)),
+                ),
+            )

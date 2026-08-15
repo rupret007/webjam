@@ -1,29 +1,36 @@
 # WebJam project brief
 
-**Review date:** 2026-08-11
-**Status:** v0.24.0 is the immutable GitHub Latest recording-first private test
-release. Its tag builds, checksums, fallback proof, and protected promotion
-passed; every v0.24 physical-musician gate remains **NOT RUN**.
+**Review date:** 2026-08-15
+**Status:** v0.25.0 is an unpublished creator-multitrack source candidate.
+v0.24.0 remains immutable GitHub Latest; every v0.25 physical/hardware gate is
+**NOT RUN**.
 
 ## Executive summary
 
-WebJam is a musician-first desktop conductor for collaborative rehearsal and
-creative review. It coordinates a private session, invitation, recording, and
+WebJam is a creator-first desktop conductor for collaborative audio work and
+review. It coordinates a private session, invitation, recording, and
 recovery experience around Jamulus's low-latency audio path; optionally opens
 any meeting platform whose public HTTPS link passes WebJam's safety policy for
 conversation/video; and provides a standalone Reference Studio for
-writing, arranging, overdubbing, and exporting ideas.
+writing, voice production, arranging, overdubbing, and exporting ideas.
 
-The product thesis is simple: musicians should have one clear place to conduct
+Music and Podcast & Voice are GA creator profiles. Review & Rehearsal is
+Preview: it supports live WebJam-audio Host/Join, Record Session, a local-only
+scratchpad, and playback/read-only review of completed session takes. It blocks
+standalone projects, take editing/comp/mix mutation, track export,
+shared notes, visual sync, and media timecode. No profile directly or
+automatically taps a meeting app, browser, or system output.
+
+The product thesis is simple: creators should have one clear place to conduct
 the session while each specialist system keeps the responsibility it is good at.
 WebJam does not replace Jamulus's audio engine, a meeting service's state, or
 the operating system's security decisions.
 
 ## The user problem
 
-Remote music tools are powerful but fragmented. A band must coordinate an audio
-client, a meeting application, recording state, invitations, recovery, and
-creative follow-up while trying to stay in the musical moment. WebJam turns
+Remote creative-audio tools are powerful but fragmented. A group must coordinate
+an audio client, a meeting application, recording state, invitations, recovery,
+and creative follow-up while trying to stay in the moment. WebJam turns
 those transitions into a shared, inspectable workflow with explicit next steps
 and truthful failure states.
 
@@ -31,7 +38,8 @@ and truthful failure states.
 
 | Surface | Purpose | Owner of the critical truth |
 | --- | --- | --- |
-| Host / Join | Start or enter a private rehearsal | WebJam session conductor + Jamulus |
+| Creator profile | Select Music, Podcast & Voice, or Review & Rehearsal presentation and capability gates | WebJam profile registry |
+| Host / Join | Start or enter a private live session | WebJam session conductor + Jamulus |
 | Conversation | Provider-neutral public-HTTPS meeting handoff; friendly labels for Webex/Zoom/Teams/Meet/FaceTime; separate native Webex focus guidance | Selected meeting service |
 | Record Session | Capture and finalize a session with durable identity | WebJam recorder + Jamulus evidence |
 | Reference Studio | Local writing, arrangement, take lanes, overdub, and bounce | WebJam Studio backend |
@@ -41,12 +49,12 @@ and truthful failure states.
 ## Architecture in one view
 
 ```text
-Musician
+Creator
    │
    ▼
 WebJam desktop conductor ── session / Shared Track / recording / Studio / guidance
    │                 │
-   │                 ├── Jamulus client/server ── live music, devices, mix, jitter
+   │                 ├── Jamulus client/server ── live audio, devices, mix, jitter
    │                 ├── Meeting app/browser ─── conversation and video
    │                 └── Pocket Stage iPhone ─── owner-device control preview
    │
@@ -73,20 +81,27 @@ the full contract.
 - v0.24.0 publication passed its exact tag, package inventory, checksum
   manifest, fallback proof, and protected promotion. The sealed v0.22.5 catalog
   was explicitly rejected for v0.24.0 and is not evidence for the changed line.
+- Current v0.25.0 source binds each take to the exact roster/server stems,
+  Shared Track identity/generation, host mono/stereo topology, guest Local
+  Original obligations, storage verdict, and expected source count. One stereo
+  row remains one true two-channel file through recovery, Studio, and export.
 
 ## Current product line
 
-v0.24.0 builds on v0.23.0's canonical **Shared Track** and **Record Session**
-flow with a recording-first live surface, clearer per-source recording truth,
-configurable named mono/stereo Local Originals within a 32-channel ceiling,
-safer finalization and Studio handoff, mix reset and overload recovery, and a
-provider-neutral handoff for any hardened public HTTPS meeting link. Known
-services receive friendly labels; generic providers remain neutral and receive
-no native-verification claim. Exact
+v0.25.0 builds on immutable v0.24.0 with persisted creator profiles and an
+authoritative take-scoped recording plan. Local Originals are logical mono or
+true stereo sources within a 32-channel ceiling; exact guest obligations,
+Shared Track generation, source inventory, recovery, Studio, and export remain
+fail-closed. It also retains a provider-neutral handoff for any hardened public
+HTTPS meeting link. WebJam never directly or automatically taps a meeting app,
+browser, or system output. Local Originals record explicitly selected input
+devices, so users must not route meeting or system-output audio into those
+inputs. Known services receive friendly labels; generic providers remain
+neutral and receive no native-verification claim. Exact
 Jamulus correlation, bounded guest observation, and fail-closed take/export
 evidence remain the authority.
 
-This is a new versioned source identity, not a patch to v0.23.0. Familiar DAW
+This is a new source identity, not a patch to v0.24.0. Familiar DAW
 interactions are used for clarity and musical flow without copying Apple
 artwork, exact layouts, assets, or trade dress. Physical audibility, isolation,
 alignment, recovery, output, and packaged UX remain **NOT RUN**.
@@ -103,7 +118,7 @@ claimed as implemented in this repository.
 
 ## Five-minute evaluation
 
-1. Read the [root README](../README.md) and [musician guide](../USER_GUIDE.md).
+1. Read the [root README](../README.md) and [creator guide](../USER_GUIDE.md).
 2. Use [GitHub Latest](https://github.com/rupret007/webjam/releases/latest) for
    the current downloadable candidate and verify its checksum manifest. Use
    immutable [v0.23.0](https://github.com/rupret007/webjam/releases/tag/v0.23.0)
@@ -112,11 +127,15 @@ claimed as implemented in this repository.
    [v0.24.0 release](https://github.com/rupret007/webjam/releases/tag/v0.24.0)
    and use only its exact checksum-verified assets; a branch artifact is not a
    release substitute.
-4. Run one Host/Join rehearsal with wired headphones and Jamulus, then exercise
-   Shared Track, Record Session, finalization, and Studio.
+4. In a v0.25.0 source evaluation, choose a profile first, then use its Host or
+   Join action with wired headphones and Jamulus. Exercise Shared Track, Record
+   Session, finalization, and the profile's permitted Studio path.
 5. Open **Conversation** without joining, then test the explicit Join/Open
    action only with an approved sandbox account.
-6. Open Reference Studio and inspect the separate non-destructive project workflow.
+6. In Music or Podcast & Voice, inspect the separate non-destructive local
+   project workflow. In Review & Rehearsal, verify that standalone create/open,
+   edit/comp/mix mutation, and export remain blocked while completed-session
+   take playback stays read-only.
 7. Record every physical result against the exact artifact name, build ID, and
    SHA-256; leave anything not physically observed as **NOT RUN**.
 
@@ -131,4 +150,6 @@ claimed as implemented in this repository.
   new exact-target component authorization remains mandatory before managed
   3.12.3 download can be enabled. Nothing may move or replace the sealed
   v0.22.5 catalog, tag, or assets; physical results stay in the
-  [v0.24 checklist](../V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md).
+  immutable [v0.24 checklist](../V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md).
+  Future v0.25.0 package observations belong only in the
+  [v0.25 checklist](../V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md).

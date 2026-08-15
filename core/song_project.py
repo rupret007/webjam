@@ -23,8 +23,11 @@ from enum import Enum
 from pathlib import PurePosixPath
 from typing import Any, Iterable, Mapping
 
+from core.creative_modes import canonical_creator_profile_key
 
-SONG_PROJECT_SCHEMA_VERSION = 1
+SONG_PROJECT_SCHEMA_VERSION = 2
+LEGACY_SONG_PROJECT_SCHEMA_VERSION = 1
+DEFAULT_CREATOR_PROFILE_KEY = "music"
 DEFAULT_PROJECT_SAMPLE_RATE = 48_000
 MIN_PROJECT_SAMPLE_RATE = 8_000
 MAX_PROJECT_SAMPLE_RATE = 384_000
@@ -629,12 +632,26 @@ class SongProject:
     backing_media_id: str | None = None
     revision: int = 0
     schema_version: int = SONG_PROJECT_SCHEMA_VERSION
+    creator_profile_key: str = DEFAULT_CREATOR_PROFILE_KEY
 
     def __post_init__(self) -> None:
-        if self.schema_version != SONG_PROJECT_SCHEMA_VERSION:
+        if (
+            type(self.schema_version) is not int
+            or self.schema_version != SONG_PROJECT_SCHEMA_VERSION
+        ):
             raise SongProjectError(
                 f"Unsupported song project schema: {self.schema_version!r}."
             )
+        creator_profile_key = canonical_creator_profile_key(self.creator_profile_key)
+        if creator_profile_key is None:
+            raise SongProjectError(
+                "creator_profile_key must identify a supported creator profile."
+            )
+        object.__setattr__(
+            self,
+            "creator_profile_key",
+            creator_profile_key,
+        )
         object.__setattr__(self, "project_id", _uuid(self.project_id, "project_id"))
         object.__setattr__(
             self,
@@ -726,6 +743,7 @@ class SongProject:
         tempo_bpm: float = 120.0,
         time_signature: TimeSignature | None = None,
         project_id: str | None = None,
+        creator_profile_key: str = DEFAULT_CREATOR_PROFILE_KEY,
     ) -> "SongProject":
         return cls(
             project_id=project_id or str(uuid.uuid4()),
@@ -733,6 +751,7 @@ class SongProject:
             project_sample_rate=project_sample_rate,
             tempo_bpm=tempo_bpm,
             time_signature=time_signature or TimeSignature(),
+            creator_profile_key=creator_profile_key,
         )
 
     def _bumped(self, **changes: object) -> "SongProject":
@@ -829,6 +848,7 @@ class SongProject:
     def to_dict(self) -> dict[str, object]:
         return {
             "schema_version": self.schema_version,
+            "creator_profile_key": self.creator_profile_key,
             "project_id": self.project_id,
             "revision": self.revision,
             "name": self.name,
@@ -844,39 +864,59 @@ class SongProject:
     def from_dict(cls, value: Mapping[str, Any]) -> "SongProject":
         if not isinstance(value, Mapping):
             raise SongProjectError("Project manifest root must be an object.")
+        schema_version = value.get("schema_version")
+        if type(schema_version) is not int:
+            raise SongProjectError(
+                f"Unsupported song project schema: {schema_version!r}."
+            )
+        if schema_version == LEGACY_SONG_PROJECT_SCHEMA_VERSION:
+            # Schema 1 predates creator profiles and therefore has exactly one
+            # truthful interpretation. Keep its old shape strict so a hidden
+            # profile field cannot bypass the schema-2 contract.
+            allowed = {
+                "schema_version",
+                "project_id",
+                "revision",
+                "name",
+                "project_sample_rate",
+                "tempo_bpm",
+                "time_signature",
+                "backing_media_id",
+                "tracks",
+                "media",
+            }
+            creator_profile_key = DEFAULT_CREATOR_PROFILE_KEY
+        elif schema_version == SONG_PROJECT_SCHEMA_VERSION:
+            allowed = {
+                "schema_version",
+                "creator_profile_key",
+                "project_id",
+                "revision",
+                "name",
+                "project_sample_rate",
+                "tempo_bpm",
+                "time_signature",
+                "backing_media_id",
+                "tracks",
+                "media",
+            }
+            creator_profile_key = value.get("creator_profile_key")
+        else:
+            raise SongProjectError(
+                f"Unsupported song project schema: {schema_version!r}."
+            )
         _strict_keys(
             value,
-            allowed={
-                "schema_version",
-                "project_id",
-                "revision",
-                "name",
-                "project_sample_rate",
-                "tempo_bpm",
-                "time_signature",
-                "backing_media_id",
-                "tracks",
-                "media",
-            },
-            required={
-                "schema_version",
-                "project_id",
-                "revision",
-                "name",
-                "project_sample_rate",
-                "tempo_bpm",
-                "time_signature",
-                "backing_media_id",
-                "tracks",
-                "media",
-            },
+            allowed=allowed,
+            required=allowed,
             label="Project manifest",
         )
         signature = value["time_signature"]
         if not isinstance(signature, Mapping):
             raise SongProjectError("time_signature must be an object.")
         return cls(
-            schema_version=value["schema_version"],
+            schema_version=SONG_PROJECT_SCHEMA_VERSION,
+            creator_profile_key=creator_profile_key,
             project_id=value["project_id"],
             revision=value["revision"],
             name=value["name"],
@@ -904,14 +944,16 @@ class SongProject:
 
 
 def song_project_from_dict(value: Mapping[str, Any]) -> SongProject:
-    """Compatibility-friendly functional parser for a schema-1 manifest."""
+    """Compatibility-friendly functional parser for a supported manifest."""
 
     return SongProject.from_dict(value)
 
 
 __all__ = [
+    "DEFAULT_CREATOR_PROFILE_KEY",
     "DEFAULT_PROJECT_SAMPLE_RATE",
     "InputMapping",
+    "LEGACY_SONG_PROJECT_SCHEMA_VERSION",
     "MAX_MEDIA_FILE_BYTES",
     "MAX_PROJECT_MEDIA",
     "MAX_PROJECT_MEDIA_BYTES",

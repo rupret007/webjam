@@ -362,6 +362,105 @@ def _reordered_project_take(tmp_path):
     return take, (bass, drums, guitar), (bass_audio, drums_audio, guitar_audio)
 
 
+def test_schema2_raw_export_preserves_one_stereo_logical_source(tmp_path):
+    take_dir = tmp_path / "Stereo Local Take"
+    take_dir.mkdir()
+    source = take_dir / "local-synth-bus.wav"
+    samples = np.column_stack(
+        (
+            np.linspace(-0.4, 0.4, 2048, dtype="float32"),
+            np.linspace(0.3, -0.3, 2048, dtype="float32"),
+        )
+    )
+    _write(source, samples)
+    participant_id = new_project_id()
+    track = _project_track(
+        "Synth Bus",
+        participant_id,
+        (_project_segment(source, take_dir),),
+        order=0,
+        alignment=AlignmentState(confidence=1.0, method="test-alignment"),
+    )
+    project = TakeProject(
+        session_id=new_project_id(),
+        take_id=new_project_id(),
+        session_title="Stereo Take",
+        take_name=take_dir.name,
+        status=ProjectStatus.COMPLETE,
+        project_sample_rate=RATE,
+        participants=(Participant(participant_id, "Jeff"),),
+        tracks=(track,),
+    )
+    write_take_project(take_dir, project)
+    take = load_take(take_dir)
+
+    assert take is not None
+    assert take.track_count == 1
+    assert take.tracks[0].channel_count == 2
+    result = export_track_package(
+        take,
+        destination_root=tmp_path / "stereo-exports",
+        chunk_frames=1024,
+    )
+
+    assert len(result.stems) == 1
+    assert sf.info(result.stems[0]).channels == 2
+    rendered, rate = sf.read(result.stems[0], dtype="float32", always_2d=True)
+    assert rate == RATE
+    np.testing.assert_allclose(rendered, samples, atol=2.0 / (2**15))
+    evidence = json.loads(result.manifest.read_text(encoding="utf-8"))
+    assert len(evidence["tracks"]) == 1
+    assert evidence["tracks"][0]["output_channels"] == 2
+    assert evidence["tracks"][0]["segments"][0]["channels"] == 2
+
+
+def test_schema2_export_fails_closed_when_reconnect_changes_channel_layout(tmp_path):
+    take_dir = tmp_path / "Changing Topology Take"
+    take_dir.mkdir()
+    mono = take_dir / "mono.wav"
+    stereo = take_dir / "stereo.wav"
+    _write(mono, np.full(1024, 0.2, dtype="float32"))
+    _write(
+        stereo,
+        np.column_stack(
+            (
+                np.full(1024, 0.3, dtype="float32"),
+                np.full(1024, 0.4, dtype="float32"),
+            )
+        ),
+    )
+    participant_id = new_project_id()
+    track = _project_track(
+        "Changing Bus",
+        participant_id,
+        (
+            _project_segment(mono, take_dir),
+            _project_segment(stereo, take_dir, start=1024),
+        ),
+        order=0,
+        alignment=AlignmentState(confidence=1.0, method="test-alignment"),
+    )
+    project = TakeProject(
+        session_id=new_project_id(),
+        take_id=new_project_id(),
+        session_title="Changing Topology",
+        take_name=take_dir.name,
+        status=ProjectStatus.COMPLETE,
+        project_sample_rate=RATE,
+        participants=(Participant(participant_id, "Jeff"),),
+        tracks=(track,),
+    )
+    write_take_project(take_dir, project)
+    take = load_take(take_dir)
+    destination = tmp_path / "blocked-exports"
+
+    assert take is not None
+    assert take.tracks[0].channel_count == 0
+    with pytest.raises(TakeExportError, match="changing channel layout"):
+        export_track_package(take, destination_root=destination)
+    assert not destination.exists()
+
+
 def test_schema2_track_export_resamples_drift_segments_and_writes_evidence(tmp_path):
     take_dir = tmp_path / "Project Take"
     take_dir.mkdir()

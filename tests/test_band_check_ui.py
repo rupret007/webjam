@@ -6,6 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from types import SimpleNamespace  # noqa: E402
 from unittest import mock  # noqa: E402
 
+import pytest  # noqa: E402
 from PySide6.QtCore import QPoint, QRect  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
@@ -107,6 +108,51 @@ def test_dialog_uses_band_check_name_exact_outcome_and_plain_next_action() -> No
         assert dialog._next.text() == "Next: Check Input."
         assert dialog._primary.text() == "Check Input"
         assert dialog._primary.accessibleName() == "Check Input"
+    finally:
+        dialog.close()
+
+
+@pytest.mark.parametrize(
+    ("profile_key", "window_title", "expected_text"),
+    (
+        (
+            "podcast_voice",
+            "WebJam — Sound Check",
+            ("Audio engine", "Your microphone input", "speak"),
+        ),
+        (
+            "review_rehearsal",
+            "WebJam — Session Check (Preview)",
+            ("Audio engine", "Your audio input", "make some sound"),
+        ),
+    ),
+)
+def test_creator_profile_adapts_check_copy_without_changing_evidence_keys(
+    profile_key, window_title, expected_text
+) -> None:
+    session = _session()
+    with mock.patch(
+        "webjam_qt.windows.ready_check.build_band_check_session",
+        return_value=session,
+    ):
+        dialog = BandCheckDialog(
+            lambda: _settings(),
+            mode=session.mode,
+            creator_profile_key=profile_key,
+        )
+        dialog.show()
+        for _ in range(30):
+            APP.processEvents()
+            if dialog._session is not None:
+                break
+    try:
+        rendered = "\n".join(
+            label.text() for label in dialog.findChildren(QLabel)
+        )
+        assert dialog.windowTitle() == window_title
+        for token in expected_text:
+            assert token.casefold() in rendered.casefold()
+        assert session.step(BandCheckStepKey.MUSIC_ENGINE).title == "Music engine"
     finally:
         dialog.close()
 

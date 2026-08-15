@@ -32,9 +32,7 @@ _LIVE_ROOT_MODULES = (
     "webjam_qt_main.py",
 )
 
-_GET_LOGGER_RE = re.compile(
-    r"logging\.getLogger\(\s*(?P<argument>[^)]*?)\s*\)"
-)
+_GET_LOGGER_RE = re.compile(r"logging\.getLogger\(\s*(?P<argument>[^)]*?)\s*\)")
 
 
 class TestLoggingConfigEdge(unittest.TestCase):
@@ -115,16 +113,69 @@ class TestLoggingConfigEdge(unittest.TestCase):
                 offenders.append(f"{source}: {argument}")
         self.assertEqual(offenders, [])
 
-    def test_configure_logging_falls_back_to_stream_handler_when_file_handler_fails(self):
+    def test_configure_logging_falls_back_to_stream_handler_when_file_handler_fails(
+        self,
+    ):
         class _ExplodingRotatingHandler:
             def __init__(self, *_args, **_kwargs):
                 raise OSError("disk blocked")
 
-        with patch("core.logging_config.RotatingFileHandler", new=_ExplodingRotatingHandler):
+        with patch(
+            "core.logging_config.RotatingFileHandler", new=_ExplodingRotatingHandler
+        ):
             logger = configure_logging(AppSettings(log_file="C:/invalid/webjam.log"))
 
         self.assertEqual(len(logger.handlers), 1)
         self.assertIsInstance(logger.handlers[0], logging.StreamHandler)
+
+    def test_logging_redacts_path_arguments_and_raw_tracebacks(self):
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            log_path = temp_dir / "webjam.log"
+            logger = configure_logging(AppSettings(log_file=str(log_path)))
+            external = Path("/Volumes/Client Masters/Secret Project/Private Take.wav")
+            logger.info("Waveform source: %s", external)
+            logger.info("String path: %s", str(external))
+            logger.warning("Worker detail: %s", f"decoder failed at {external}")
+            logger.warning(f"Colon-prefixed detail:path:{external}")
+            logger.info("Home-relative path: %s", "~/Music/Private Take.wav")
+            logger.info(
+                "Windows home-relative path: %s",
+                "%USERPROFILE%\\Music\\Private Take.wav",
+            )
+            logger.info("Mapping with private key: %s", {str(external): "failed"})
+            logger.info("Fixed category remains: %s", "device_unavailable")
+            try:
+                raise OSError(f"decoder failed at {external}")
+            except OSError as exc:
+                logger.exception("Track export failed for %s: %s", external, exc)
+            for handler in logger.handlers:
+                flush = getattr(handler, "flush", None)
+                if callable(flush):
+                    flush()
+
+            payload = log_path.read_text(encoding="utf-8")
+            for private in (
+                "Client Masters",
+                "Secret Project",
+                "Private Take.wav",
+                "/Volumes/",
+                "~/Music/",
+                "%USERPROFILE%",
+                "decoder failed",
+                __file__,
+            ):
+                self.assertNotIn(private, payload)
+            self.assertGreaterEqual(payload.count("[redacted-path]"), 8)
+            self.assertIn("[OSError]", payload)
+            self.assertIn("[exception_type=OSError]", payload)
+            self.assertIn("device_unavailable", payload)
+        finally:
+            for handler in list(logger.handlers):
+                if isinstance(handler, logging.FileHandler):
+                    logger.removeHandler(handler)
+                    handler.close()
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

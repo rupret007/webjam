@@ -32,6 +32,11 @@ from PySide6.QtWidgets import (
     QToolButton,
 )
 
+from core.creative_modes import CreatorProfile
+from core.meeting_link import (
+    MEETING_DIRECT_CAPTURE_BOUNDARY,
+    RECORD_SESSION_MEETING_CAPTURE_NOTICE,
+)
 from webjam_qt.theme.brand import BrandMark
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.shared_track_waveform import SharedTrackWaveform
@@ -86,8 +91,17 @@ class SessionStrip(QFrame):
         self._recording_seen_active = False
         self._recording_phase = "idle"
         self._compact_control_labels = False
+        self._creator_profile_key = "music"
+        self._creator_profile_label = "Music"
+        self._creator_profile_locked = False
+        self._creator_profile_preview = False
+        self._participant_singular = "musician"
+        self._participant_plural = "musicians"
+        self._session_noun = "music session"
+        self._reference_audio_noun = "backing track"
         self._record_button_full_text = "● Record Session"
         self._audio_button_full_text = "Start Session"
+        self._video_configured = True
         self.setAcceptDrops(True)
         # --- Widgets
         self._logo = BrandMark(28)
@@ -161,7 +175,7 @@ class SessionStrip(QFrame):
         self._test_button = QToolButton()
         self._test_button.setText("Band Check ▾")
         self._test_button.setObjectName("GhostButton")
-        self._test_button.setAccessibleName("Band Check and solo practice")
+        self._test_button.setAccessibleName("Band Check and Practice Solo")
         self._test_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         test_menu = QMenu(self._test_button)
         self._ready_action = QAction("Band Check\tF2", test_menu)
@@ -286,11 +300,11 @@ class SessionStrip(QFrame):
             QToolButton.ToolButtonPopupMode.InstantPopup
         )
         tools_menu = QMenu(self._tools_button)
-        audio_action = QAction("Sound Settings…", tools_menu)
-        audio_action.setToolTip(
+        self._audio_settings_action = QAction("Sound Settings…", tools_menu)
+        self._audio_settings_action.setToolTip(
             "Bring Jamulus forward. Jamulus owns your instrument, headphones, and buffer."
         )
-        audio_action.triggered.connect(
+        self._audio_settings_action.triggered.connect(
             lambda: self.tool_requested.emit("audio_settings")
         )
         jamulus_updates_action = QAction("Check for Updates…", tools_menu)
@@ -308,8 +322,8 @@ class SessionStrip(QFrame):
         conversation_action.triggered.connect(
             lambda: self.tool_requested.emit("conversation")
         )
-        recording_action = QAction("Recording Setup…", tools_menu)
-        recording_action.triggered.connect(
+        self._recording_setup_action = QAction("Recording Setup…", tools_menu)
+        self._recording_setup_action.triggered.connect(
             lambda: self.tool_requested.emit("recording_setup")
         )
         self._reference_track_action = QAction("Shared Track…", tools_menu)
@@ -319,8 +333,10 @@ class SessionStrip(QFrame):
         self._reference_track_action.triggered.connect(
             lambda: self.tool_requested.emit("reference_track")
         )
-        notes_action = QAction("Notes", tools_menu)
-        notes_action.triggered.connect(lambda: self.tool_requested.emit("canvas"))
+        self._notes_action = QAction("Notes", tools_menu)
+        self._notes_action.triggered.connect(
+            lambda: self.tool_requested.emit("canvas")
+        )
         self._pocket_stage_action = QAction("Use iPhone as Pocket Stage…", tools_menu)
         self._pocket_stage_action.setToolTip(
             "Pair an iPhone as a secure instrument-side session remote."
@@ -328,8 +344,10 @@ class SessionStrip(QFrame):
         self._pocket_stage_action.triggered.connect(
             lambda: self.tool_requested.emit("pocket_stage")
         )
-        diagnostics_action = QAction("Band Check / Verify Sound\tF2", tools_menu)
-        diagnostics_action.triggered.connect(
+        self._diagnostics_action = QAction(
+            "Band Check / Verify Sound\tF2", tools_menu
+        )
+        self._diagnostics_action.triggered.connect(
             lambda: self.tool_requested.emit("diagnostics")
         )
         help_action = QAction("Help", tools_menu)
@@ -343,16 +361,16 @@ class SessionStrip(QFrame):
         # component implements it. Studio is not repeated here because it is
         # already a first-class button on the session bar.
         # Sound
-        tools_menu.addAction(audio_action)
-        tools_menu.addAction(diagnostics_action)
+        tools_menu.addAction(self._audio_settings_action)
+        tools_menu.addAction(self._diagnostics_action)
         tools_menu.addSeparator()
         # Meeting
         tools_menu.addAction(conversation_action)
         tools_menu.addSeparator()
         # This session
-        tools_menu.addAction(recording_action)
+        tools_menu.addAction(self._recording_setup_action)
         tools_menu.addAction(self._reference_track_action)
-        tools_menu.addAction(notes_action)
+        tools_menu.addAction(self._notes_action)
         tools_menu.addAction(self._pocket_stage_action)
         # Resetting the invite acts on this session, so it belongs with the
         # session group rather than trailing the About item.
@@ -422,6 +440,287 @@ class SessionStrip(QFrame):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+    def set_creator_profile(
+        self,
+        profile: CreatorProfile,
+        *,
+        locked: bool = False,
+    ) -> None:
+        """Apply creator vocabulary without changing recording authority."""
+
+        if not isinstance(profile, CreatorProfile):
+            raise TypeError("profile must be a CreatorProfile")
+        self._creator_profile_key = profile.key
+        self._creator_profile_label = profile.label
+        self._creator_profile_locked = bool(locked)
+        self._creator_profile_preview = profile.is_preview
+        self._participant_singular = profile.vocabulary.participant_singular
+        self._participant_plural = profile.vocabulary.participant_plural
+        self._session_noun = profile.vocabulary.session_noun
+        self._reference_audio_noun = profile.vocabulary.reference_audio_noun
+        self._sync_subtitle()
+        self._subtitle.setVisible(True)
+        self._title_input.setAccessibleDescription(
+            f"Title for this {profile.vocabulary.session_noun}."
+        )
+        self._sync_creator_profile_controls()
+
+    def _sync_creator_profile_controls(self) -> None:
+        """Apply live-shell vocabulary without changing native ownership truth."""
+
+        profile_key = self._creator_profile_key
+        if profile_key == "music":
+            audio_name = "Start or end the band session"
+            audio_tip = (
+                "Start or end the band's live music session. WebJam handles the engine."
+            )
+            record_name = "Start or stop band-server multitrack recording"
+            record_tip = (
+                "Record one synchronized track per connected musician.\n"
+                "Open Studio to see the tracks, waveforms, and playback mix."
+            )
+            invite_name = "Copy band invite"
+            invite_tip = "Copy one complete link to send to a bandmate."
+            studio_name = "Open Studio"
+            studio_description = (
+                "Open completed take review during a live jam or the song project "
+                "workspace when WebJam was opened in Reference Studio."
+            )
+            studio_tip = "Open Studio to review completed takes and work on the song."
+            conversation_name = "Show conversation controls"
+            check_label = "Band Check"
+            check_menu_label = "Band Check / Verify Sound"
+            practice_label = "Practice Solo"
+            practice_tip = "Start a private local Jamulus practice session"
+            audio_settings_tip = (
+                "Bring Jamulus forward. Jamulus owns your instrument, headphones, "
+                "and buffer."
+            )
+            recording_setup_tip = (
+                "Configure band-server recording and optional Local Originals."
+            )
+            reference_description = (
+                "Open the host-controlled Shared Track player. Adding and inspecting "
+                "a song does not start playback."
+            )
+            reference_tip = (
+                "Open Shared Track to load and inspect a song.\n"
+                "Playback remains locked until its isolated Jamulus route is proven."
+            )
+            reference_action_tip = (
+                "Route a host-controlled song into the jam as its own Jamulus "
+                "participant."
+            )
+            pocket_stage_tip = (
+                "Pair an iPhone as a secure instrument-side session remote."
+            )
+        elif profile_key == "podcast_voice":
+            audio_name = "Start or end the recording session"
+            audio_tip = (
+                "Start or end the speakers' live WebJam audio session. WebJam "
+                "controls the native Jamulus engine; the meeting app remains an "
+                f"external handoff. {MEETING_DIRECT_CAPTURE_BOUNDARY}"
+            )
+            record_name = "Start or stop synchronized voice recording"
+            record_tip = (
+                "Record one synchronized Jamulus-server track per connected speaker, "
+                "plus explicitly enabled Local Originals.\n"
+                f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE} Open Studio to review "
+                "the tracks, waveforms, and playback mix."
+            )
+            invite_name = "Copy recording session invite"
+            invite_tip = "Copy one complete WebJam link to send to another speaker."
+            studio_name = "Open Podcast & Voice Studio"
+            studio_description = (
+                "Open completed voice-take review during a live recording session or "
+                "the local Podcast & Voice project workspace."
+            )
+            studio_tip = (
+                "Open Studio to review completed voice takes or work on the recording."
+            )
+            conversation_name = "Show recording-session conversation controls"
+            check_label = "Sound Check"
+            check_menu_label = "Sound Check / Verify Voice"
+            practice_label = "Solo Voice"
+            practice_tip = "Start a private local Jamulus voice session"
+            audio_settings_tip = (
+                "Bring Jamulus forward. Jamulus owns your microphone, headphones, "
+                "and buffer."
+            )
+            recording_setup_tip = (
+                "Configure synchronized voice recording and optional Local Originals."
+            )
+            reference_description = (
+                "Open the host-controlled Shared Track player. Adding and inspecting "
+                "reference audio does not start playback."
+            )
+            reference_tip = (
+                "Open Shared Track to load and inspect reference audio.\n"
+                "Playback remains locked until its isolated Jamulus route is proven."
+            )
+            reference_action_tip = (
+                "Route host-controlled reference audio into the recording session as "
+                "its own Jamulus participant."
+            )
+            pocket_stage_tip = (
+                "Pair an iPhone as a secure recording-session remote."
+            )
+        else:
+            audio_name = "Start or end the review session"
+            audio_tip = (
+                "Start or end the participants' live WebJam audio session. WebJam "
+                "controls the native Jamulus engine; the meeting app remains an "
+                f"external handoff. {MEETING_DIRECT_CAPTURE_BOUNDARY}"
+            )
+            record_name = "Start or stop synchronized WebJam audio recording"
+            record_tip = (
+                "Record one synchronized Jamulus-server track per connected "
+                "participant, plus explicitly enabled Local Originals.\n"
+                f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE} Preview take review "
+                "supports playback only; editing and track export are unavailable."
+            )
+            invite_name = "Copy review session invite"
+            invite_tip = "Copy one complete WebJam link to send to another participant."
+            studio_name = "Open completed take review"
+            studio_description = (
+                "Open completed WebJam-audio takes for playback review. This Preview "
+                "does not support take editing, local projects, or track export."
+            )
+            studio_tip = (
+                "Review completed WebJam-audio takes in playback-only Preview mode."
+            )
+            conversation_name = "Show review-session conversation controls"
+            check_label = "Session Check"
+            check_menu_label = "Session Check / Verify Audio"
+            practice_label = "Private Review Audio"
+            practice_tip = "Start a private local Jamulus audio session for review"
+            audio_settings_tip = (
+                "Bring Jamulus forward. Jamulus owns your audio input, headphones, "
+                "and buffer."
+            )
+            recording_setup_tip = (
+                "Configure live WebJam-path recording. Local projects, take editing, "
+                "and track export remain unavailable in this Preview."
+            )
+            reference_description = (
+                "Open the host-controlled Shared Track player. Adding and inspecting "
+                "reference audio does not start playback."
+            )
+            reference_tip = (
+                "Open Shared Track to load and inspect reference audio.\n"
+                "Playback remains locked until its isolated Jamulus route is proven."
+            )
+            reference_action_tip = (
+                "Route host-controlled reference audio into the review session as its "
+                "own Jamulus participant."
+            )
+            pocket_stage_tip = "Pair an iPhone as a secure review-session remote."
+
+        self._audio_button.setAccessibleName(audio_name)
+        self._audio_button.setToolTip(audio_tip)
+        self._record_button.setAccessibleName(record_name)
+        self._record_button.setToolTip(record_tip)
+        self._invite_button.setAccessibleName(invite_name)
+        self._invite_button.setToolTip(invite_tip)
+        self._studio_button.setAccessibleName(studio_name)
+        self._studio_button.setAccessibleDescription(studio_description)
+        self._studio_button.setToolTip(studio_tip)
+        self._video_button.setAccessibleName(conversation_name)
+        self._test_button.setText(f"{check_label} ▾")
+        self._test_button.setAccessibleName(f"{check_label} and {practice_label}")
+        self._ready_action.setText(f"{check_label}\tF2")
+        self._ready_action.setToolTip(
+            "Check your input, headphones, connection, and recording readiness"
+        )
+        self._practice_action.setText(f"{practice_label}\tCtrl+P")
+        self._practice_action.setToolTip(practice_tip)
+        self._audio_settings_action.setToolTip(audio_settings_tip)
+        self._recording_setup_action.setToolTip(recording_setup_tip)
+        self._reference_track_button.setAccessibleDescription(reference_description)
+        self._reference_track_button.setToolTip(reference_tip)
+        self._reference_track_action.setToolTip(reference_action_tip)
+        self._pocket_stage_action.setToolTip(pocket_stage_tip)
+        self._diagnostics_action.setText(f"{check_menu_label}\tF2")
+        self._notes_action.setToolTip(
+            "Open local session notes. Notes stay on this computer and are not "
+            "media-timecode synchronized."
+        )
+        self._tools_button.setAccessibleDescription(
+            f"Open sound settings, {check_label}, conversation, recording, Shared "
+            "Track, local notes, and WebJam support options."
+        )
+        self._sync_conversation_presentation()
+        self._sync_audio_action_accessibility()
+        self._sync_recording_profile_accessibility()
+
+    def _conversation_policy_copy(self) -> str:
+        if self._creator_profile_key == "podcast_voice":
+            return RECORD_SESSION_MEETING_CAPTURE_NOTICE
+        if self._creator_profile_key == "review_rehearsal":
+            return (
+                f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE} "
+                "Visual media and media timecode are not synchronized."
+            )
+        return ""
+
+    def _sync_conversation_presentation(self) -> None:
+        self._video_action.setText(
+            "Conversation" if self._video_configured else "Set Up Conversation"
+        )
+        tooltip = (
+            "Show WebJam's conversation controls.\n"
+            "This does not open or rejoin the meeting."
+            if self._video_configured
+            else "Show Conversation controls and add a public HTTPS meeting link."
+        )
+        policy = self._conversation_policy_copy()
+        if policy:
+            tooltip = f"{tooltip}\n{policy}"
+        self._video_button.setToolTip(tooltip)
+        self._video_action.setToolTip(tooltip)
+        self._sync_conversation_accessibility()
+
+    def _sync_conversation_accessibility(self) -> None:
+        description = (
+            "Show WebJam's Conversation panel without opening the meeting link."
+        )
+        raw_status = self._video_button.property("webexLaunchAction")
+        if raw_status:
+            status = "Open Meeting" if raw_status == "Open Webex" else str(raw_status)
+            description = f"{description} External handoff status: {status}."
+        policy = self._conversation_policy_copy()
+        if policy:
+            description = f"{description} {policy}"
+        self._video_button.setAccessibleDescription(description)
+
+    def _sync_audio_action_accessibility(self) -> None:
+        label = self._audio_button_full_text
+        if self._creator_profile_key == "music":
+            description = f"Band session action. Current action: {label}."
+        else:
+            description = (
+                f"{self._session_noun.capitalize()} action. Current action: {label}. "
+                "WebJam controls the native Jamulus audio path; the meeting app "
+                f"remains an external handoff. {MEETING_DIRECT_CAPTURE_BOUNDARY}"
+            )
+        self._audio_button.setAccessibleDescription(description)
+
+    def _sync_recording_profile_accessibility(self) -> None:
+        if self._recording_phase == "starting":
+            description = (
+                "Recording is being armed on the band server."
+                if self._creator_profile_key == "music"
+                else "Recording is being armed on the WebJam-hosted Jamulus server."
+            )
+            self._record_button.setAccessibleDescription(description)
+        elif self._recording_phase == "idle":
+            description = (
+                "Start band-server multitrack recording."
+                if self._creator_profile_key == "music"
+                else f"Start synchronized WebJam audio recording for this {self._session_noun}."
+            )
+            self._record_button.setAccessibleDescription(description)
+
     def start_session_clock(self) -> None:
         self._elapsed_seconds = 0
         self._update_timer_label()
@@ -454,9 +753,7 @@ class SessionStrip(QFrame):
             }
         )
         self._audio_button.setAccessibleName(label)
-        self._audio_button.setAccessibleDescription(
-            f"Band session action. Current action: {label}."
-        )
+        self._sync_audio_action_accessibility()
 
     @staticmethod
     def _compact_control_text(label: str) -> str:
@@ -516,30 +813,13 @@ class SessionStrip(QFrame):
         """
 
         self._video_button.setProperty("webexLaunchAction", label)
-        accessible_label = "Open Meeting" if label == "Open Webex" else str(label)
         self._video_button.setEnabled(self._tools_enabled)
-        self._video_button.setAccessibleDescription(
-            "Show WebJam's Conversation panel without opening the meeting "
-            f"link. External handoff status: {accessible_label}."
-        )
+        self._sync_conversation_accessibility()
         self._video_action.setEnabled(self._tools_enabled)
 
     def set_video_configured(self, configured: bool) -> None:
-        self._video_action.setText(
-            "Conversation"
-            if configured
-            else "Set Up Conversation"
-        )
-        self._video_button.setToolTip(
-            (
-                "Show WebJam's conversation controls.\n"
-                "This does not open or rejoin the meeting."
-            )
-            if configured
-            else (
-                "Show Conversation controls and add a public HTTPS meeting link."
-            )
-        )
+        self._video_configured = bool(configured)
+        self._sync_conversation_presentation()
 
     def set_tools_enabled(self, enabled: bool) -> None:
         self._tools_enabled = bool(enabled)
@@ -576,7 +856,11 @@ class SessionStrip(QFrame):
             self._record_button.setEnabled(False)
             self._record_elapsed.setText("PREPARING")
             self._record_elapsed.setVisible(True)
-            description = "Recording is being armed on the band server."
+            description = (
+                "Recording is being armed on the band server."
+                if self._creator_profile_key == "music"
+                else "Recording is being armed on the WebJam-hosted Jamulus server."
+            )
         elif phase == "count_in":
             self._recording_seen_active = True
             self._set_record_button_label("■ Stop Recording")
@@ -656,7 +940,11 @@ class SessionStrip(QFrame):
                 self._record_elapsed.setVisible(True)
             else:
                 self._record_elapsed.setVisible(False)
-            description = "Start band-server multitrack recording."
+            description = (
+                "Start band-server multitrack recording."
+                if self._creator_profile_key == "music"
+                else f"Start synchronized WebJam audio recording for this {self._session_noun}."
+            )
         self._record_button.setAccessibleName(self._record_button_full_text)
         self._record_button.setAccessibleDescription(description)
         self._record_button.setVisible(self._recording_control_available)
@@ -957,6 +1245,22 @@ class SessionStrip(QFrame):
         self.mode_changed.emit(self._mode_picker.currentData() or "")
 
     def _sync_subtitle(self) -> None:
+        if hasattr(self, "_creator_profile_label"):
+            if self._creator_profile_preview:
+                status = (
+                    "Preview · Host profile"
+                    if self._creator_profile_locked
+                    else "Preview"
+                )
+            else:
+                status = "Host profile" if self._creator_profile_locked else "Ready"
+            self._subtitle.setText(
+                f"{self._creator_profile_label} · {status}"
+            )
+            self._subtitle.setAccessibleName(
+                f"Creator profile: {self._creator_profile_label}; {status}"
+            )
+            return
         label = self._mode_picker.currentText()
         self._subtitle.setText(f"{label} · WebJam")
 

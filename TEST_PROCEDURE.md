@@ -1,14 +1,13 @@
-# WebJam v0.24.0 release and physical test procedure
+# WebJam v0.25.0 source-candidate test procedure
 
-> v0.24.0 is the immutable GitHub **Latest** recording-first, Studio, and
-> provider-neutral conversation private test release. No v0.24.0 physical
-> result exists. Every v0.24.0 physical, credentialed, signing, and
-> platform-trust gate is **NOT RUN**.
+> v0.25.0 is unpublished source. GitHub **Latest** remains immutable v0.24.0.
+> No v0.25.0 physical result exists; every v0.25.0 physical, credentialed,
+> signing, and platform-trust gate is **NOT RUN**.
 
 ## Scope
 
 This procedure distinguishes automated source/package evidence from physical
-musician evidence. A passing source suite does not certify two-Mac audibility,
+participant evidence. A passing source suite does not certify two-Mac audibility,
 hardware changes, sleep/wake, interruption recovery, or external-editor import.
 
 The dependency boundary inherited from v0.22.5 pins `cryptography` 50.0.0 for
@@ -73,9 +72,25 @@ Review at minimum:
 - One accepted conductor snapshot drives HUD, passive stage, Session Canvas,
   recording/Studio feedback, diagnostics, and Companion guidance without
   contradictory phase or action copy.
-- Host, guest, and practice roles cover setup, Band Check, invite/join, live,
+- Host, guest, and practice roles cover setup, Band/Sound/Session Check,
+  invite/join, live,
   record/stop/validation, guest media, Studio, export, reconnect, cleanup,
   final failure, and indeterminate restart recovery.
+- Music and Podcast & Voice remain GA; Review & Rehearsal remains visibly
+  Preview. Review allows live WebJam-audio Record Session and playback/read-only
+  take review, but blocks standalone projects, take editing/comp/mix mutation,
+  track export, shared notes, visual sync, and media timecode. No profile
+  directly or automatically taps a meeting app, browser, or system output.
+- Podcast & Voice uses **Sound Check** and Review & Rehearsal uses **Session
+  Check (Preview)** without renaming the underlying bounded readiness evidence.
+- Each take plan binds and rechecks the exact roster/server stems, Shared Track
+  fingerprint and playback generation, host logical mono/stereo topology,
+  guest Local Original obligations, storage verdict, and expected source count.
+- A mono row yields one mono PCM-24 file; a stereo row yields one true
+  two-channel PCM-24 file that remains stereo through recovery, Studio, and
+  export. Verify that the plan contains only authoritative server stems,
+  Shared Track, and explicitly planned Local Originals; do not feed meeting or
+  system-output audio into the selected Local Original inputs during the test.
 - Notes and Creative Pulse cannot change operational phase/action/output facts
   and never enter diagnostics or Companion output.
 - Guidance generation/revision guards reject stale observations; identical
@@ -87,7 +102,8 @@ Review at minimum:
   authored content, or raw exceptions.
 - Host starts a private server before launching the client.
 - Guest launches native Jamulus from one parsed invite.
-- The normal launch has no WebJam input/output form or Band Check gate.
+- The normal launch has no WebJam input/output form or profile-specific Check
+  gate.
 - Jamulus receives filename-only `--inifile WebJam-native-v0.16.ini`, no
   `--nogui`, and WebJam writes no profile content.
 - Connection proof requires owned process, authenticated RPC, intended path,
@@ -142,7 +158,7 @@ Review at minimum:
   native mixer behavior.
 - Diagnostics and the saved Support Bundle include bounded updater/catalog/
   fallback, Webex-app, and Reference Track source/route facts without paths,
-  source names, URLs, meeting links, musician names, tokens, credentials, or
+  source names, URLs, meeting links, participant names, tokens, credentials, or
   raw exceptions. Unknown-provider URLs and hostnames are fully redacted;
   known allowlisted providers may retain only their origin-level projection.
 - First **Record Session** offers shared-only versus Local Originals.
@@ -181,7 +197,7 @@ Review at minimum:
 - When a Shared Track is ready, confirmed recording start triggers its
   count-in/play path. One Stop Recording request coordinates both owners while
   requiring independent recorder validation and route-cleanup truth.
-- Authoritative recorder mapping includes every eligible musician exactly once
+- Authoritative recorder mapping includes every eligible participant exactly once
   and presents `LIVE_REFERENCE` as **Shared Track** with a stable source
   identity across takes. Ambiguous roster/filename evidence, missing media,
   explicit gaps, and unverified timing fail closed.
@@ -245,7 +261,15 @@ Review at minimum:
 6. Preserve the current rollback package before installing any freshly verified
    candidate app.
 
-## v0.24.0 physical musician gate
+## v0.25.0 creator-multitrack physical gate
+
+Run the dedicated
+[v0.25.0 creator-multitrack physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
+only against exact future tagged assets and their checksum manifest. Do not
+reuse source-test results, a branch artifact, or a v0.24.0 observation. Every
+row currently remains **NOT RUN**.
+
+## v0.24.0 physical musician gate — immutable historical checklist
 
 Do not reuse a v0.23.0 observation or a source-test result. Run the dedicated
 [v0.24.0 recording-first physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)

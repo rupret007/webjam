@@ -11,6 +11,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.creative_modes import (
+    CreatorProfile,
+    get_creator_profile_by_key,
+    get_creator_profile_by_key_or_default,
+)
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.recording_studio import RecordingStudio
 from webjam_qt.widgets.reference_studio_workspace import ReferenceStudioWorkspace
@@ -34,6 +39,7 @@ class ReferenceStudioShell(QWidget):
         if not isinstance(take_review, RecordingStudio):
             raise TypeError("take_review must be a RecordingStudio.")
         super().__init__(parent)
+        self._creator_profile = get_creator_profile_by_key_or_default("music")
         self.setObjectName("ReferenceStudioShell")
         self.setAccessibleName("Reference Studio")
         self._take_review = take_review
@@ -72,15 +78,51 @@ class ReferenceStudioShell(QWidget):
         self.home.new_project_requested.connect(self.new_project_requested.emit)
         self.home.open_project_requested.connect(self.open_project_requested.emit)
         self.home.play_along_requested.connect(self.play_along_requested.emit)
-        self.home.recent_project_requested.connect(
-            self.recent_project_requested.emit
-        )
+        self.home.recent_project_requested.connect(self.recent_project_requested.emit)
         self.review_takes_button.clicked.connect(self._request_take_review)
+        self.set_creator_profile(self._creator_profile)
         self.show_home()
 
     @property
     def take_review(self) -> RecordingStudio:
         return self._take_review
+
+    @property
+    def creator_profile_key(self) -> str:
+        return self._creator_profile.key
+
+    def set_creator_profile(self, value: CreatorProfile | str) -> None:
+        """Apply one canonical profile across every standalone Studio surface."""
+
+        key = value.key if isinstance(value, CreatorProfile) else value
+        profile = get_creator_profile_by_key(key)
+        if profile is None:
+            raise ValueError("creator profile is unsupported.")
+        self._creator_profile = profile
+        self.home.set_creator_profile(profile)
+        self.workspace.set_creator_profile(profile)
+        if profile.key == "music":
+            self.setAccessibleDescription(
+                "Create or open a music project, or review completed session takes."
+            )
+            self.review_takes_button.setText("Review Session Takes")
+            self.review_takes_button.setAccessibleName("Review completed session takes")
+        elif profile.key == "podcast_voice":
+            self.setAccessibleDescription(
+                "Create or open an episode project, or review completed session recordings."
+            )
+            self.review_takes_button.setText("Review Session Recordings")
+            self.review_takes_button.setAccessibleName(
+                "Review completed session recordings"
+            )
+        else:
+            self.setAccessibleDescription(
+                "Review and Rehearsal Preview supports completed take review but not local multitrack projects."
+            )
+            self.review_takes_button.setText("Review Existing Session Takes")
+            self.review_takes_button.setAccessibleName(
+                "Review existing completed session takes"
+            )
 
     def _request_take_review(self) -> None:
         self.show_take_review()
@@ -88,7 +130,10 @@ class ReferenceStudioShell(QWidget):
 
     def show_home(self) -> None:
         self.stack.setCurrentIndex(0)
-        self.home.play_along_button.setFocus()
+        if self.home.play_along_button.isEnabled():
+            self.home.play_along_button.setFocus()
+        else:
+            self.review_takes_button.setFocus()
 
     def show_project(self) -> None:
         self.stack.setCurrentWidget(self.workspace)

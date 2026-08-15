@@ -18,11 +18,15 @@ support-bundle discipline.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import re
 from dataclasses import dataclass, field
+from typing import Any, Mapping
 
+from core.creative_modes import canonical_creator_profile_key
 from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
+from core.local_capture import LocalCaptureTrack
 from core.recording_readiness import RecordingStorageCheck, RecordingStorageStatus
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -31,6 +35,35 @@ _MAX_INPUT_TRACKS = 32
 _MAX_CAPTURE_CHANNELS = 32
 _MAX_CAPTURE_STEM_CHARS = 64
 _MAX_FRAMES = 2**31
+_MAX_STORAGE_BYTES = (1 << 63) - 1
+_MAX_STORAGE_DETAIL_CHARS = 512
+_MAX_GENERATION = (1 << 63) - 1
+_MAX_EXPECTED_SOURCES = (
+    MAX_JAMULUS_ROSTER_ROWS * (_MAX_INPUT_TRACKS + 1)
+    + _MAX_INPUT_TRACKS
+    + 1
+)
+
+SESSION_RECORDING_PLAN_PRIVATE_SCHEMA_VERSION = 1
+_PRIVATE_PLAN_KEYS = {
+    "schema_version",
+    "session_id",
+    "take_id",
+    "plan_generation",
+    "roster",
+    "expected_server_stems",
+    "count_in_frames",
+    "pre_roll_frames",
+    "storage",
+    "expected_source_count",
+    "created_at_utc",
+    "shared_track",
+    "shared_track_planned",
+    "input_maps",
+    "guest_local_originals",
+    "creator_profile_key",
+    "plan_fingerprint_sha256",
+}
 
 
 def _clean_identity(value: object, label: str) -> str:
@@ -48,6 +81,79 @@ def _bounded_frames(value: object, label: str) -> int:
     if not 0 <= value <= _MAX_FRAMES:
         raise ValueError(f"{label} is outside the supported limits.")
     return value
+
+
+def _strict_mapping(
+    value: object,
+    label: str,
+    expected_keys: set[str],
+) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} must be an object.")
+    if set(value) != expected_keys:
+        raise ValueError(f"{label} fields do not match the private schema.")
+    if any(not isinstance(key, str) for key in value):
+        raise ValueError(f"{label} contains a non-text field name.")
+    return value
+
+
+def _strict_text(value: object, label: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be text.")
+    cleaned = _clean_identity(value, label)
+    if cleaned != value:
+        raise ValueError(f"{label} must use its canonical text form.")
+    return cleaned
+
+
+def _strict_int(value: object, label: str, *, minimum: int = 0) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{label} must be an integer.")
+    if value < minimum:
+        raise ValueError(f"{label} is outside the supported limits.")
+    return value
+
+
+def _strict_bool(value: object, label: str) -> bool:
+    if type(value) is not bool:
+        raise ValueError(f"{label} must be a boolean.")
+    return value
+
+
+def _strict_creator_profile_key(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("creator_profile_key must be text.")
+    canonical = canonical_creator_profile_key(value)
+    if canonical is None or canonical != value:
+        raise ValueError("creator_profile_key must be a canonical profile key.")
+    return canonical
+
+
+def _strict_storage_detail(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("storage.detail must be text.")
+    if (
+        not value
+        or value.strip() != value
+        or len(value) > _MAX_STORAGE_DETAIL_CHARS
+        or any(ord(char) < 0x20 or ord(char) == 0x7F for char in value)
+    ):
+        raise ValueError("storage.detail must be bounded canonical text.")
+    return value
+
+
+def _strict_storage_bytes(
+    value: object,
+    label: str,
+    *,
+    optional: bool = False,
+) -> int | None:
+    if optional and value is None:
+        return None
+    integer = _strict_int(value, label)
+    if integer > _MAX_STORAGE_BYTES:
+        raise ValueError(f"{label} is outside the supported limits.")
+    return integer
 
 
 @dataclass(frozen=True, repr=False)
@@ -71,8 +177,8 @@ class SharedTrackBinding:
             self.playback_generation, int
         ):
             raise ValueError("playback_generation must be an integer.")
-        if self.playback_generation < 1:
-            raise ValueError("playback_generation must be positive.")
+        if not 1 <= self.playback_generation <= _MAX_GENERATION:
+            raise ValueError("playback_generation is outside the supported limits.")
         object.__setattr__(self, "source_fingerprint_sha256", fingerprint)
 
     def __repr__(self) -> str:
@@ -92,7 +198,7 @@ class InputMapBinding:
         object.__setattr__(
             self, "track_name", _clean_identity(self.track_name, "track_name")
         )
-        if self.channel_count not in (1, 2):
+        if isinstance(self.channel_count, bool) or self.channel_count not in (1, 2):
             raise ValueError("channel_count must be 1 (mono) or 2 (stereo).")
         if type(self.enabled) is not bool:
             raise ValueError("enabled must be a boolean.")
@@ -103,9 +209,45 @@ class InputMapBinding:
         return "InputMapBinding(private=[redacted])"
 
 
-LEGACY_CAPTURE_TRACKS: tuple[tuple[str, int], ...] = (
-    ("host-guitar", 0),
-    ("host-vocal", 1),
+@dataclass(frozen=True, repr=False)
+class GuestLocalOriginalBinding:
+    """One authenticated guest's exact path-free pre-take inventory."""
+
+    participant_id: str
+    track_count: int
+    map_fingerprint_sha256: str
+    presence_generation: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "participant_id",
+            _clean_identity(self.participant_id, "participant_id"),
+        )
+        if (
+            isinstance(self.track_count, bool)
+            or not isinstance(self.track_count, int)
+            or not 0 <= self.track_count <= _MAX_INPUT_TRACKS
+        ):
+            raise ValueError("guest track_count is outside the supported limits.")
+        fingerprint = str(self.map_fingerprint_sha256 or "").lower()
+        if not _SHA256_RE.fullmatch(fingerprint):
+            raise ValueError("guest map fingerprint must be a SHA-256 digest.")
+        object.__setattr__(self, "map_fingerprint_sha256", fingerprint)
+        if (
+            isinstance(self.presence_generation, bool)
+            or not isinstance(self.presence_generation, int)
+            or not 0 <= self.presence_generation <= _MAX_GENERATION
+        ):
+            raise ValueError("guest presence_generation is outside the limit.")
+
+    def __repr__(self) -> str:
+        return "GuestLocalOriginalBinding(private=[redacted])"
+
+
+LEGACY_CAPTURE_TRACKS: tuple[LocalCaptureTrack, ...] = (
+    LocalCaptureTrack("host-guitar", (0,)),
+    LocalCaptureTrack("host-vocal", (1,)),
 )
 _CAPTURE_STEM_SAFE_RE = re.compile(r"[^A-Za-z0-9 _-]+")
 
@@ -120,17 +262,17 @@ def _capture_stem(name: str, index: int) -> str:
     return f"local-{cleaned}"[:_MAX_CAPTURE_STEM_CHARS].rstrip(" -_")
 
 
-def resolve_capture_tracks(settings: object) -> tuple[tuple[str, int], ...]:
-    """The capture-truth (stem, device_channel) list for one take.
+def resolve_capture_tracks(settings: object) -> tuple[LocalCaptureTrack, ...]:
+    """The logical mono/stereo capture-track list for one take.
 
     Configured, enabled Local-Original entries map onto sequential device
-    channels in list order; a stereo entry becomes two mono stems on
-    consecutive channels. Configured stems carry the ``local-`` prefix so
-    take classification recognizes them. With local capture enabled but no
-    valid configuration, the legacy fixed pair applies unchanged; with
-    local capture disabled, nothing is captured. Entries that are enabled
-    but not Local Originals are reserved for the future multitrack-input
-    phase and are skipped without consuming channels.
+    channels in list order. A stereo entry remains one logical track mapped
+    to two adjacent channels and therefore becomes one true two-channel WAV.
+    Configured stems carry the ``local-`` prefix so take classification
+    recognizes them. With local capture enabled but no valid configuration,
+    the legacy fixed pair applies unchanged; with local capture disabled,
+    nothing is captured. Entries that are enabled but not Local Originals are
+    skipped without consuming channels.
     """
 
     if not bool(getattr(settings, "local_capture_enabled", False)):
@@ -142,7 +284,7 @@ def resolve_capture_tracks(settings: object) -> tuple[tuple[str, int], ...]:
         # pair. A malformed non-empty map fails closed instead of unexpectedly
         # recording the first two inputs.
         return LEGACY_CAPTURE_TRACKS if raw in (None, []) else ()
-    tracks: list[tuple[str, int]] = []
+    tracks: list[LocalCaptureTrack] = []
     seen: set[str] = set()
     channel = 0
     for index, binding in enumerate(bindings):
@@ -151,26 +293,22 @@ def resolve_capture_tracks(settings: object) -> tuple[tuple[str, int], ...]:
         base = _capture_stem(binding.track_name, index)
         if channel + binding.channel_count > _MAX_CAPTURE_CHANNELS:
             return ()
-        parts = ((base, channel),)
-        if binding.channel_count == 2:
-            stereo_base = base[: _MAX_CAPTURE_STEM_CHARS - 2].rstrip(" -_")
-            parts = (
-                (f"{stereo_base} L", channel),
-                (f"{stereo_base} R", channel + 1),
+        unique = base
+        suffix = 2
+        while unique.casefold() in seen:
+            suffix_text = f"-{suffix}"
+            unique = (
+                base[: _MAX_CAPTURE_STEM_CHARS - len(suffix_text)].rstrip(" -_")
+                + suffix_text
             )
-        for stem, stem_channel in parts:
-            unique = stem
-            suffix = 2
-            while unique.lower() in seen:
-                suffix_text = f"-{suffix}"
-                unique = (
-                    stem[: _MAX_CAPTURE_STEM_CHARS - len(suffix_text)]
-                    .rstrip(" -_")
-                    + suffix_text
-                )
-                suffix += 1
-            seen.add(unique.lower())
-            tracks.append((unique, stem_channel))
+            suffix += 1
+        seen.add(unique.casefold())
+        tracks.append(
+            LocalCaptureTrack(
+                stem=unique,
+                source_channels=tuple(range(channel, channel + binding.channel_count)),
+            )
+        )
         channel += binding.channel_count
     # A valid map with every row disabled or opted out means no Local Original
     # capture. It must never fall back to the legacy pair.
@@ -202,9 +340,7 @@ def configured_input_map_bindings(
                     track_name=entry.get("name", ""),
                     channel_count=entry.get("channels", 0),
                     enabled=entry.get("enabled", True),
-                    local_original_enabled=entry.get(
-                        "local_original_enabled", False
-                    ),
+                    local_original_enabled=entry.get("local_original_enabled", False),
                 )
             )
     except ValueError:
@@ -232,20 +368,22 @@ class SessionRecordingPlan:
     shared_track: SharedTrackBinding | None = None
     shared_track_planned: bool = False
     input_maps: tuple[InputMapBinding, ...] = field(default_factory=tuple)
+    creator_profile_key: str = "music"
+    guest_local_originals: tuple[GuestLocalOriginalBinding, ...] = field(
+        default_factory=tuple
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(
             self, "session_id", _clean_identity(self.session_id, "session_id")
         )
-        object.__setattr__(
-            self, "take_id", _clean_identity(self.take_id, "take_id")
-        )
+        object.__setattr__(self, "take_id", _clean_identity(self.take_id, "take_id"))
         if isinstance(self.plan_generation, bool) or not isinstance(
             self.plan_generation, int
         ):
             raise ValueError("plan_generation must be an integer.")
-        if self.plan_generation < 1:
-            raise ValueError("plan_generation must be positive.")
+        if not 1 <= self.plan_generation <= _MAX_GENERATION:
+            raise ValueError("plan_generation is outside the supported limits.")
 
         roster = tuple(
             (
@@ -258,9 +396,7 @@ class SessionRecordingPlan:
             raise ValueError("A recording plan requires a proven roster.")
         if len(roster) > MAX_JAMULUS_ROSTER_ROWS:
             raise ValueError("roster exceeds the supported limit.")
-        if len({participant_id for participant_id, _name in roster}) != len(
-            roster
-        ):
+        if len({participant_id for participant_id, _name in roster}) != len(roster):
             raise ValueError("roster participant ids must be unique.")
         object.__setattr__(self, "roster", roster)
 
@@ -287,6 +423,15 @@ class SessionRecordingPlan:
 
         if not isinstance(self.storage, RecordingStorageCheck):
             raise ValueError("storage must be a RecordingStorageCheck.")
+        if not isinstance(self.storage.status, RecordingStorageStatus):
+            raise ValueError("storage.status must be a RecordingStorageStatus.")
+        _strict_storage_detail(self.storage.detail)
+        _strict_storage_bytes(
+            self.storage.free_bytes,
+            "storage.free_bytes",
+            optional=True,
+        )
+        _strict_storage_bytes(self.storage.required_bytes, "storage.required_bytes")
         if self.storage.status is RecordingStorageStatus.ACTION_NEEDED:
             # Fail closed: a plan must never exist for storage that cannot
             # accept the recording it describes.
@@ -298,8 +443,8 @@ class SessionRecordingPlan:
             self.expected_source_count, int
         ):
             raise ValueError("expected_source_count must be an integer.")
-        if self.expected_source_count < 1:
-            raise ValueError("expected_source_count must be at least 1.")
+        if not 1 <= self.expected_source_count <= _MAX_EXPECTED_SOURCES:
+            raise ValueError("expected_source_count is outside the supported limits.")
 
         created = _clean_identity(self.created_at_utc, "created_at_utc")
         object.__setattr__(self, "created_at_utc", created)
@@ -310,9 +455,7 @@ class SessionRecordingPlan:
             if not isinstance(self.shared_track, SharedTrackBinding):
                 raise ValueError("shared_track must be a SharedTrackBinding.")
             if not self.shared_track_planned:
-                raise ValueError(
-                    "a bound shared_track requires shared_track_planned."
-                )
+                raise ValueError("a bound shared_track requires shared_track_planned.")
 
         input_maps = tuple(self.input_maps)
         if len(input_maps) > _MAX_INPUT_TRACKS:
@@ -331,6 +474,49 @@ class SessionRecordingPlan:
         if len(set(names)) != len(names):
             raise ValueError("input map track names must be unique.")
         object.__setattr__(self, "input_maps", input_maps)
+        creator_profile_key = canonical_creator_profile_key(
+            self.creator_profile_key
+        )
+        if creator_profile_key is None:
+            raise ValueError("creator_profile_key is unsupported.")
+        object.__setattr__(
+            self,
+            "creator_profile_key",
+            creator_profile_key,
+        )
+        guest_local_originals = tuple(self.guest_local_originals)
+        if len(guest_local_originals) > MAX_JAMULUS_ROSTER_ROWS:
+            raise ValueError("guest_local_originals exceeds the participant limit.")
+        if any(
+            not isinstance(item, GuestLocalOriginalBinding)
+            for item in guest_local_originals
+        ):
+            raise ValueError(
+                "guest_local_originals entries must be GuestLocalOriginalBinding."
+            )
+        guest_ids = [item.participant_id for item in guest_local_originals]
+        if len(set(guest_ids)) != len(guest_ids):
+            raise ValueError("guest Local Original participant ids must be unique.")
+        if not set(guest_ids).issubset(set(stems)):
+            raise ValueError(
+                "guest Local Original participants must be planned server sources."
+            )
+        object.__setattr__(self, "guest_local_originals", guest_local_originals)
+
+        host_local_count = sum(
+            1
+            for entry in input_maps
+            if entry.enabled and entry.local_original_enabled
+        )
+        exact_source_count = (
+            len(stems)
+            + host_local_count
+            + sum(item.track_count for item in guest_local_originals)
+        )
+        if self.expected_source_count != exact_source_count:
+            raise ValueError(
+                "expected_source_count must exactly match every planned source."
+            )
 
     def __repr__(self) -> str:
         return "SessionRecordingPlan(private=[redacted])"
@@ -353,8 +539,304 @@ class SessionRecordingPlan:
             "shared_track_planned": self.shared_track_planned,
             "shared_track_bound": self.shared_track is not None,
             "input_map_count": len(self.input_maps),
+            "guest_local_original_participant_count": len(
+                self.guest_local_originals
+            ),
+            "guest_local_original_track_count": sum(
+                item.track_count for item in self.guest_local_originals
+            ),
+            "creator_profile_key": self.creator_profile_key,
             "created_at_utc": self.created_at_utc,
         }
+
+    def _private_facts(self) -> dict[str, object]:
+        """Return the canonical full-fidelity facts covered by the digest."""
+
+        return {
+            "schema_version": SESSION_RECORDING_PLAN_PRIVATE_SCHEMA_VERSION,
+            "session_id": self.session_id,
+            "take_id": self.take_id,
+            "plan_generation": self.plan_generation,
+            "roster": [
+                {
+                    "participant_id": participant_id,
+                    "display_name": display_name,
+                }
+                for participant_id, display_name in self.roster
+            ],
+            "expected_server_stems": list(self.expected_server_stems),
+            "count_in_frames": self.count_in_frames,
+            "pre_roll_frames": self.pre_roll_frames,
+            "storage": {
+                "status": self.storage.status.value,
+                "detail": self.storage.detail,
+                "free_bytes": self.storage.free_bytes,
+                "required_bytes": self.storage.required_bytes,
+            },
+            "expected_source_count": self.expected_source_count,
+            "created_at_utc": self.created_at_utc,
+            "shared_track": (
+                None
+                if self.shared_track is None
+                else {
+                    "source_fingerprint_sha256": (
+                        self.shared_track.source_fingerprint_sha256
+                    ),
+                    "playback_generation": self.shared_track.playback_generation,
+                }
+            ),
+            "shared_track_planned": self.shared_track_planned,
+            "input_maps": [
+                {
+                    "track_name": entry.track_name,
+                    "channel_count": entry.channel_count,
+                    "enabled": entry.enabled,
+                    "local_original_enabled": entry.local_original_enabled,
+                }
+                for entry in self.input_maps
+            ],
+            "guest_local_originals": [
+                {
+                    "participant_id": entry.participant_id,
+                    "track_count": entry.track_count,
+                    "map_fingerprint_sha256": entry.map_fingerprint_sha256,
+                    "presence_generation": entry.presence_generation,
+                }
+                for entry in self.guest_local_originals
+            ],
+            "creator_profile_key": self.creator_profile_key,
+        }
+
+    def to_private_dict(self) -> dict[str, object]:
+        """Serialize every plan fact for private, permission-protected storage.
+
+        Unlike :meth:`to_public_dict`, this contains participant names, input
+        labels, and the Shared Track source digest. Callers must never expose
+        it through diagnostics or UI. The embedded fingerprint covers the
+        complete canonical payload and is revalidated during deserialization.
+        """
+
+        payload = self._private_facts()
+        payload["plan_fingerprint_sha256"] = self.plan_fingerprint()
+        return payload
+
+    @classmethod
+    def from_private_dict(
+        cls,
+        value: Mapping[str, Any],
+        *,
+        expected_take_id: str | None = None,
+        expected_fingerprint_sha256: str | None = None,
+    ) -> "SessionRecordingPlan":
+        """Rebuild and authenticate a private plan payload.
+
+        The wire shape is exact: missing, additional, incorrectly typed, or
+        non-canonical values fail closed. The supplied fingerprint and any
+        caller-provided take/fingerprint binding are checked only after all
+        nested values have been reconstructed through the typed dataclasses.
+        """
+
+        payload = _strict_mapping(value, "recording plan", _PRIVATE_PLAN_KEYS)
+        schema_version = _strict_int(
+            payload["schema_version"],
+            "recording plan schema_version",
+            minimum=1,
+        )
+        if schema_version != SESSION_RECORDING_PLAN_PRIVATE_SCHEMA_VERSION:
+            raise ValueError("Unsupported private recording plan schema.")
+
+        raw_roster = payload["roster"]
+        if not isinstance(raw_roster, list):
+            raise ValueError("recording plan roster must be a list.")
+        roster: list[tuple[str, str]] = []
+        for raw_entry in raw_roster:
+            entry = _strict_mapping(
+                raw_entry,
+                "recording plan roster entry",
+                {"participant_id", "display_name"},
+            )
+            roster.append(
+                (
+                    _strict_text(entry["participant_id"], "participant_id"),
+                    _strict_text(entry["display_name"], "display_name"),
+                )
+            )
+
+        raw_stems = payload["expected_server_stems"]
+        if not isinstance(raw_stems, list):
+            raise ValueError("expected_server_stems must be a list.")
+        stems = tuple(_strict_text(stem, "expected_server_stem") for stem in raw_stems)
+
+        raw_storage = _strict_mapping(
+            payload["storage"],
+            "recording plan storage",
+            {"status", "detail", "free_bytes", "required_bytes"},
+        )
+        raw_status = raw_storage["status"]
+        if not isinstance(raw_status, str):
+            raise ValueError("storage.status must be text.")
+        try:
+            storage_status = RecordingStorageStatus(raw_status)
+        except ValueError as exc:
+            raise ValueError("storage.status is unsupported.") from exc
+        storage = RecordingStorageCheck(
+            status=storage_status,
+            detail=_strict_storage_detail(raw_storage["detail"]),
+            free_bytes=_strict_storage_bytes(
+                raw_storage["free_bytes"],
+                "storage.free_bytes",
+                optional=True,
+            ),
+            required_bytes=_strict_storage_bytes(
+                raw_storage["required_bytes"],
+                "storage.required_bytes",
+            ),
+        )
+
+        raw_shared_track = payload["shared_track"]
+        shared_track: SharedTrackBinding | None
+        if raw_shared_track is None:
+            shared_track = None
+        else:
+            shared_payload = _strict_mapping(
+                raw_shared_track,
+                "recording plan shared_track",
+                {"source_fingerprint_sha256", "playback_generation"},
+            )
+            source_fingerprint = shared_payload["source_fingerprint_sha256"]
+            if not isinstance(source_fingerprint, str) or not _SHA256_RE.fullmatch(
+                source_fingerprint
+            ):
+                raise ValueError("Shared Track fingerprint is invalid.")
+            shared_track = SharedTrackBinding(
+                source_fingerprint_sha256=source_fingerprint,
+                playback_generation=_strict_int(
+                    shared_payload["playback_generation"],
+                    "playback_generation",
+                    minimum=1,
+                ),
+            )
+
+        raw_input_maps = payload["input_maps"]
+        if not isinstance(raw_input_maps, list):
+            raise ValueError("recording plan input_maps must be a list.")
+        input_maps: list[InputMapBinding] = []
+        for raw_entry in raw_input_maps:
+            entry = _strict_mapping(
+                raw_entry,
+                "recording plan input map",
+                {
+                    "track_name",
+                    "channel_count",
+                    "enabled",
+                    "local_original_enabled",
+                },
+            )
+            input_maps.append(
+                InputMapBinding(
+                    track_name=_strict_text(entry["track_name"], "track_name"),
+                    channel_count=_strict_int(
+                        entry["channel_count"],
+                        "channel_count",
+                        minimum=1,
+                    ),
+                    enabled=_strict_bool(entry["enabled"], "enabled"),
+                    local_original_enabled=_strict_bool(
+                        entry["local_original_enabled"],
+                        "local_original_enabled",
+                    ),
+                )
+            )
+
+        raw_guest_local_originals = payload["guest_local_originals"]
+        if not isinstance(raw_guest_local_originals, list):
+            raise ValueError("recording plan guest_local_originals must be a list.")
+        guest_local_originals: list[GuestLocalOriginalBinding] = []
+        for raw_entry in raw_guest_local_originals:
+            entry = _strict_mapping(
+                raw_entry,
+                "recording plan guest Local Original",
+                {
+                    "participant_id",
+                    "track_count",
+                    "map_fingerprint_sha256",
+                    "presence_generation",
+                },
+            )
+            map_fingerprint = entry["map_fingerprint_sha256"]
+            if not isinstance(map_fingerprint, str) or not _SHA256_RE.fullmatch(
+                map_fingerprint
+            ):
+                raise ValueError("guest map fingerprint is invalid.")
+            guest_local_originals.append(
+                GuestLocalOriginalBinding(
+                    participant_id=_strict_text(
+                        entry["participant_id"], "participant_id"
+                    ),
+                    track_count=_strict_int(entry["track_count"], "track_count"),
+                    map_fingerprint_sha256=map_fingerprint,
+                    presence_generation=_strict_int(
+                        entry["presence_generation"], "presence_generation"
+                    ),
+                )
+            )
+
+        serialized_fingerprint = payload["plan_fingerprint_sha256"]
+        if not isinstance(serialized_fingerprint, str) or not _SHA256_RE.fullmatch(
+            serialized_fingerprint
+        ):
+            raise ValueError("recording plan fingerprint is invalid.")
+
+        plan = cls(
+            session_id=_strict_text(payload["session_id"], "session_id"),
+            take_id=_strict_text(payload["take_id"], "take_id"),
+            plan_generation=_strict_int(
+                payload["plan_generation"],
+                "plan_generation",
+                minimum=1,
+            ),
+            roster=tuple(roster),
+            expected_server_stems=stems,
+            count_in_frames=_bounded_frames(
+                payload["count_in_frames"], "count_in_frames"
+            ),
+            pre_roll_frames=_bounded_frames(
+                payload["pre_roll_frames"], "pre_roll_frames"
+            ),
+            storage=storage,
+            expected_source_count=_strict_int(
+                payload["expected_source_count"],
+                "expected_source_count",
+                minimum=1,
+            ),
+            created_at_utc=_strict_text(payload["created_at_utc"], "created_at_utc"),
+            shared_track=shared_track,
+            shared_track_planned=_strict_bool(
+                payload["shared_track_planned"], "shared_track_planned"
+            ),
+            input_maps=tuple(input_maps),
+            creator_profile_key=_strict_creator_profile_key(
+                payload["creator_profile_key"]
+            ),
+            guest_local_originals=tuple(guest_local_originals),
+        )
+        actual_fingerprint = plan.plan_fingerprint()
+        if not hmac.compare_digest(serialized_fingerprint, actual_fingerprint):
+            raise ValueError("recording plan fingerprint does not match its facts.")
+        if expected_take_id is not None:
+            if (
+                not isinstance(expected_take_id, str)
+                or plan.take_id != expected_take_id
+            ):
+                raise ValueError("recording plan take identity does not match.")
+        if expected_fingerprint_sha256 is not None:
+            if not isinstance(
+                expected_fingerprint_sha256, str
+            ) or not _SHA256_RE.fullmatch(expected_fingerprint_sha256):
+                raise ValueError("expected recording plan fingerprint is invalid.")
+            if not hmac.compare_digest(expected_fingerprint_sha256, actual_fingerprint):
+                raise ValueError("recording plan fingerprint binding does not match.")
+        return plan
 
     def plan_fingerprint(self) -> str:
         """A stable digest binding every planned fact for this take.
@@ -364,37 +846,11 @@ class SessionRecordingPlan:
         plan's outcome.
         """
 
-        canonical = {
-            "session_id": self.session_id,
-            "take_id": self.take_id,
-            "plan_generation": self.plan_generation,
-            "roster": list(list(entry) for entry in self.roster),
-            "expected_server_stems": list(self.expected_server_stems),
-            "count_in_frames": self.count_in_frames,
-            "pre_roll_frames": self.pre_roll_frames,
-            "storage_required_bytes": self.storage.required_bytes,
-            "expected_source_count": self.expected_source_count,
-            "shared_track_planned": self.shared_track_planned,
-            "shared_track": (
-                None
-                if self.shared_track is None
-                else [
-                    self.shared_track.source_fingerprint_sha256,
-                    self.shared_track.playback_generation,
-                ]
-            ),
-            "input_maps": [
-                [
-                    entry.track_name,
-                    entry.channel_count,
-                    entry.enabled,
-                    entry.local_original_enabled,
-                ]
-                for entry in self.input_maps
-            ],
-            "created_at_utc": self.created_at_utc,
-        }
         payload = json.dumps(
-            canonical, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+            self._private_facts(),
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+            allow_nan=False,
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()

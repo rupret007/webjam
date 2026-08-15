@@ -36,6 +36,12 @@ from PySide6.QtWidgets import (
 )
 
 from core.audio_routing import list_output_devices
+from core.creative_modes import (
+    CreatorProfile,
+    get_creator_profile_by_key,
+    get_creator_profile_by_key_or_default,
+)
+from core.meeting_link import RECORD_SESSION_MEETING_CAPTURE_NOTICE
 from core.musician_guidance import (
     MusicianGuidanceSnapshot,
     StudioGuidanceFacts,
@@ -89,6 +95,8 @@ from webjam_qt.widgets.studio_review import (
     _fmt_db,
     _fmt_time,
     _is_synchronized_source,
+    _safe_source_description,
+    _safe_source_label,
     _timeline_gaps_for_track,
     _waveform_peaks,
     _waveform_source_key,
@@ -242,6 +250,14 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         super().__init__(parent)
         self.setObjectName("RecordingStudio")
         self.setAccessibleName("Multitrack Studio")
+        self._live_creator_profile = get_creator_profile_by_key_or_default("music")
+        self._active_creator_profile: CreatorProfile | None = (
+            self._live_creator_profile
+        )
+        self._creator_profile_key = "music"
+        self._participant_singular = "musician"
+        self._participant_plural = "musicians"
+        self._session_noun = "music session"
         self._takes_dir = str(takes_dir or "")
         self._takes: list[TakeInfo] = []
         self._current: Optional[TakeInfo] = None
@@ -355,6 +371,12 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._player._on_error_epoch = self._on_playback_error_bg
 
         self._build_ui()
+        self._studio_title_elide_timer = QTimer(self)
+        self._studio_title_elide_timer.setSingleShot(True)
+        self._studio_title_elide_timer.setInterval(0)
+        self._studio_title_elide_timer.timeout.connect(
+            self._sync_studio_title
+        )
         self._studio_waveform_schedule_timer = QTimer(self)
         self._studio_waveform_schedule_timer.setSingleShot(True)
         self._studio_waveform_schedule_timer.setInterval(30)
@@ -385,17 +407,22 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         top = QHBoxLayout()
         title_block = QVBoxLayout()
         title_block.setSpacing(2)
-        eyebrow = QLabel("MULTITRACK STUDIO")
-        eyebrow.setObjectName("StudioEyebrow")
-        self._title = QLabel("Record the whole band")
+        self._eyebrow = QLabel("MULTITRACK STUDIO")
+        self._eyebrow.setObjectName("StudioEyebrow")
+        self._studio_title_text = "Record the whole band"
+        self._title = QLabel(self._studio_title_text)
         self._title.setObjectName("StudioTitle")
+        self._title.setAccessibleName(self._studio_title_text)
+        self._title.setAccessibleDescription(
+            f"Studio title: {self._studio_title_text}"
+        )
         self._subtitle = QLabel(
             "Every connected musician lands on a separate synchronized track."
         )
         self._subtitle.setObjectName("StudioSubtitle")
         self._subtitle.setWordWrap(True)
         self._subtitle.setMinimumWidth(0)
-        title_block.addWidget(eyebrow)
+        title_block.addWidget(self._eyebrow)
         title_block.addWidget(self._title)
         title_block.addWidget(self._subtitle)
         top.addLayout(title_block, 1)
@@ -684,6 +711,10 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
 
         self._track_scroll = QScrollArea()
         self._track_scroll.setObjectName("StudioTrackScroll")
+        self._track_scroll.setAccessibleName("Recorded track lanes")
+        self._track_scroll.setAccessibleDescription(
+            "Scrollable synchronized tracks and their available review controls."
+        )
         self._track_scroll.setWidgetResizable(True)
         self._track_scroll.setFrameShape(QFrame.Shape.NoFrame)
         # Keep the one-lane mixer usefully visible alongside the compact
@@ -703,6 +734,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         # overlap it.  Standalone Arrange surfaces retain their larger hint.
         self._studio_arrange.setMinimumSize(480, 150)
         self._studio_arrange.setVisible(False)
+        self._studio_arrange.setEnabled(False)
         self._connect_studio_arrange()
         self._arrange_mixer_splitter = QSplitter(Qt.Orientation.Vertical)
         self._arrange_mixer_splitter.setChildrenCollapsible(False)
@@ -818,6 +850,39 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         super().resizeEvent(event)
         self._update_inspector_visibility()
         self._sync_timeline_ruler_inset()
+        # Child widths settle after this resize callback. Re-elide on the next
+        # event-loop turn so a long take/session name never paints beneath the
+        # fixed Back/Setup/Record actions at the compact Studio floor.
+        self._studio_title_elide_timer.start()
+
+    def _set_studio_title(self, value: object) -> None:
+        """Keep a full accessible title while fitting the visible title row."""
+
+        self._studio_title_text = str(value or "")
+        self._title.setAccessibleName(self._studio_title_text or "Studio title")
+        self._title.setAccessibleDescription(
+            f"Studio title: {self._studio_title_text}"
+        )
+        self._sync_studio_title()
+        self._studio_title_elide_timer.start()
+
+    def _sync_studio_title(self) -> None:
+        """Render the full title or a truthful right-elided compact form."""
+
+        if not hasattr(self, "_title"):
+            return
+        full_title = str(getattr(self, "_studio_title_text", "") or "")
+        available = self._title.contentsRect().width()
+        visible_title = full_title
+        if full_title and available > 0:
+            visible_title = self._title.fontMetrics().elidedText(
+                full_title,
+                Qt.TextElideMode.ElideRight,
+                available,
+            )
+        if self._title.text() != visible_title:
+            self._title.setText(visible_title)
+        self._title.setToolTip(full_title if visible_title != full_title else "")
 
     def minimumSizeHint(self) -> QSize:  # noqa: N802
         """Return the supported compact workspace floor when details are a drawer."""
@@ -881,6 +946,11 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         """Keep Arrange and its one-lane mixer usable at the 760 px floor."""
 
         self._arrange_toolbar.set_compact(compact)
+        review_boundary = bool(
+            compact
+            and self._creator_profile_key == "review_rehearsal"
+            and not self._viewing_live
+        )
         button_height = 44
         controls = (
             self._live_btn,
@@ -914,7 +984,16 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             self._output_picker.setFixedHeight(40)
             self._arrange_toolbar.setFixedHeight(40)
             self._comp_toolbar.setFixedHeight(button_height)
-            self._hint.setFixedHeight(18)
+            # Review Preview's capability boundary must remain fully readable,
+            # not merely available through accessibility metadata. Reserve a
+            # compact three-line status record while leaving the mixer at its
+            # existing 88 px minimum. Music/Podcast retain their exact one-line
+            # compact layout.
+            self._hint.setFixedHeight(
+                max(48, self._hint.fontMetrics().lineSpacing() * 3 + Space.XS)
+                if review_boundary
+                else 18
+            )
         else:
             for widget in (
                 self._output_picker,
@@ -924,9 +1003,13 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             ):
                 widget.setMinimumHeight(0)
                 widget.setMaximumHeight(16_777_215)
-        if self._hint.property("compact") != compact:
+        if (
+            self._hint.property("compact") != compact
+            or self._hint.property("reviewBoundary") != review_boundary
+        ):
             self._hint.setProperty("compact", compact)
-            self._hint.setWordWrap(not compact)
+            self._hint.setProperty("reviewBoundary", review_boundary)
+            self._hint.setWordWrap(not compact or review_boundary)
             self._hint.style().unpolish(self._hint)
             self._hint.style().polish(self._hint)
         self._phase.setVisible(not compact)
@@ -1148,6 +1231,123 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         if self._viewing_live and changed:
             self._populate_live_lanes()
 
+    def set_creator_profile(self, profile: CreatorProfile) -> None:
+        """Set the live profile without relabeling a selected historical take."""
+
+        if not isinstance(profile, CreatorProfile):
+            raise TypeError("profile must be a CreatorProfile")
+        self._live_creator_profile = profile
+        if not self._viewing_live:
+            return
+        self._apply_creator_profile_presentation(profile)
+        self._populate_live_lanes()
+        self.set_recording_phase(self._phase_name)
+
+    def _take_review_allowed(self) -> bool:
+        profile = self._active_creator_profile
+        return bool(profile is not None and profile.capabilities.take_review)
+
+    def _take_editing_allowed(self) -> bool:
+        profile = self._active_creator_profile
+        return bool(profile is not None and profile.capabilities.take_editing)
+
+    def _track_export_allowed(self) -> bool:
+        profile = self._active_creator_profile
+        return bool(profile is not None and profile.capabilities.track_export)
+
+    def _recorded_source_badge_label(self, source: object) -> str:
+        source_key = str(getattr(source, "value", source) or "").strip().casefold()
+        if source_key != "jamulus_server":
+            return _safe_source_label(source)
+        if self._creator_profile_key == "podcast_voice":
+            return "SPEAKER"
+        if self._creator_profile_key == "review_rehearsal":
+            return "WEBJAM AUDIO"
+        return "MUSICIAN"
+
+    def _recorded_source_description(self, source: object) -> str:
+        source_key = str(getattr(source, "value", source) or "").strip().casefold()
+        if source_key != "jamulus_server":
+            return _safe_source_description(source)
+        if self._creator_profile_key == "podcast_voice":
+            return "Speaker (WebJam server track)"
+        if self._creator_profile_key == "review_rehearsal":
+            return "Participant (WebJam server track)"
+        return "Musician (band server track)"
+
+    def _live_input_description(self) -> str:
+        if self._creator_profile_key == "podcast_voice":
+            return "Live speaker input"
+        if self._creator_profile_key == "review_rehearsal":
+            return "Live participant WebJam-audio input"
+        return "Live musician input"
+
+    def _server_timeline_description(self, *, shared_track: bool) -> str:
+        if self._creator_profile_key == "music":
+            return (
+                "Shared Track · band server timeline reference"
+                if shared_track
+                else "Band server timeline reference"
+            )
+        return (
+            "Shared Track · WebJam server timeline reference"
+            if shared_track
+            else "WebJam server timeline reference"
+        )
+
+    def _arrangement_section_plural(self) -> str:
+        if self._creator_profile_key == "music":
+            return "song sections"
+        if self._creator_profile_key == "podcast_voice":
+            return "chapters"
+        return "sections"
+
+    def _apply_creator_profile_presentation(
+        self,
+        profile: CreatorProfile | None,
+    ) -> None:
+        """Apply profile vocabulary without changing the live saved preference."""
+
+        self._active_creator_profile = profile
+        if profile is None:
+            self._creator_profile_key = ""
+            self._participant_singular = "participant"
+            self._participant_plural = "participants"
+            self._session_noun = "recorded session"
+            self.setAccessibleName("Multitrack Take Review")
+            self._eyebrow.setText("TAKE REVIEW")
+            self._phase.setAccessibleName("Take playback and review status")
+        else:
+            self._creator_profile_key = profile.key
+            self._participant_singular = profile.vocabulary.participant_singular
+            self._participant_plural = profile.vocabulary.participant_plural
+            self._session_noun = profile.vocabulary.session_noun
+            self.setAccessibleName(
+                "Review and Rehearsal Preview Take Review"
+                if profile.key == "review_rehearsal"
+                else f"{profile.label} Multitrack Studio"
+            )
+            self._eyebrow.setText(
+                "TAKE REVIEW · PREVIEW"
+                if profile.key == "review_rehearsal"
+                else "MULTITRACK STUDIO"
+            )
+            self._phase.setAccessibleName(
+                "Review Preview recorder and playback status"
+                if profile.key == "review_rehearsal"
+                else "Multitrack recorder status"
+            )
+        self._record_btn.setAccessibleDescription(
+            "Record synchronized WebJam audio for this "
+            f"{self._session_noun}. {RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+        )
+        if self._phase_name == "recording":
+            self._phase_label = (
+                f"● RECORDING · one track per {self._participant_singular}"
+            )
+            self._render_studio_phase()
+        self._refresh_export_button()
+
     def set_live_levels(self, levels: dict[int, float]) -> None:
         if not self._viewing_live:
             return
@@ -1173,7 +1373,9 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             "preflight": "PREPARING THE SESSION…",
             "starting": "PREPARING TRACKS…",
             "count_in": "COUNT-IN · recording is already active",
-            "recording": "● RECORDING · one track per musician",
+            "recording": (
+                f"● RECORDING · one track per {self._participant_singular}"
+            ),
             "stopping": "STOPPING RECORDING…",
             "validating": detail or "FINALIZING THE TAKE…",
             "complete": "READY · TAKE SAVED",
@@ -1191,17 +1393,18 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             }:
                 self._recording_elapsed = 0.0
             self._show_live_session()
-            self._record_btn.setText(
+            set_labeled_action(
+                self._record_btn,
                 "■ Finish Stop"
                 if phase == "stop_failed"
                 else "■ Stop Recording"
             )
             self._refresh_record_button_enabled()
         elif phase in {"preflight", "starting", "stopping", "validating"}:
-            self._record_btn.setText("Working…")
+            set_labeled_action(self._record_btn, "Working…")
             self._record_btn.setEnabled(False)
         else:
-            self._record_btn.setText("● Record Session")
+            set_labeled_action(self._record_btn, "● Record Session")
             self._refresh_record_button_enabled()
         for lane in self._lanes.values():
             lane.waveform.set_recording(self._recording)
@@ -1219,7 +1422,8 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._record_btn.setEnabled(
             self._recording
             or (
-                not self._exporting
+                self._live_creator_profile.capabilities.session_recording
+                and not self._exporting
                 and not busy
                 and self._can_record
                 and bool(self._live_participants)
@@ -1264,7 +1468,8 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                     return
         if not self._takes and not self._live_participants:
             self._hint.setText(
-                "Start Session to add musicians, then press Record for synchronized tracks."
+                f"Start Session to add {self._participant_plural}, then press "
+                "Record for synchronized tracks."
             )
         if self._current is None:
             self._export_btn.setEnabled(False)
@@ -1278,9 +1483,37 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self.reload(select_path=path)
         if validation is not None:
             if path is None:
+                if self._creator_profile_key == "podcast_voice":
+                    self._hint.setText(
+                        "No completed recording was found. Run Sound Check, then "
+                        "record a short test take."
+                    )
+                elif self._creator_profile_key == "review_rehearsal":
+                    self._hint.setText(
+                        "No completed Review Preview take was found. Run Session "
+                        "Check, then record a short WebJam-audio test take."
+                    )
+                else:
+                    self._hint.setText(
+                        "No completed take was found. Run Band Check, then record "
+                        "a short test take."
+                    )
+            elif self._creator_profile_key == "review_rehearsal":
                 self._hint.setText(
-                    "No completed take was found. Run Band Check, then record "
-                    "a short test take."
+                    (
+                        "This Review Preview take needs source review. Playback "
+                        "remains available; editing and track export are unavailable."
+                    )
+                    if validation.errors
+                    else (
+                        "Review Preview take saved with something to inspect. "
+                        "Playback remains read-only."
+                        if validation.warnings
+                        else (
+                            "Review Preview take verified for read-only playback and "
+                            "source inspection."
+                        )
+                    )
                 )
             else:
                 self._hint.setText(
@@ -1634,6 +1867,10 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
     def _add_lane(self, lane: TrackLane, *, live: bool) -> None:
         self._lanes[lane.channel_id] = lane
         lane.set_live_mode(live)
+        lane.set_take_review_capabilities(
+            editing_enabled=live or self._take_editing_allowed(),
+            track_export_enabled=(not live and self._track_export_allowed()),
+        )
         lane.track_selected.connect(self._select_track)
         lane.mix_gesture_started.connect(self._begin_track_mix_gesture)
         lane.mix_gesture_finished.connect(self._end_track_mix_gesture)
@@ -1641,7 +1878,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             lane.gain_changed.connect(self.live_fader_changed.emit)
             lane.mute_changed.connect(self.live_mute_toggled.emit)
             lane.solo_changed.connect(self.live_solo_toggled.emit)
-        else:
+        elif self._take_editing_allowed():
             lane.trim_changed.connect(
                 lambda cid, value: self._player.set_trim_gain(cid, value / 100.0)
             )
@@ -1675,16 +1912,22 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
 
     def _set_playback_controls_visible(self, visible: bool) -> None:
         for widget in self._playback_controls:
-            widget.setVisible(visible)
+            allowed = widget is not self._export_btn or self._track_export_allowed()
+            widget.setVisible(visible and allowed)
         self._update_inspector_visibility()
 
     def _set_master_controls_visible(self, visible: bool) -> None:
         for widget in self._master_controls:
-            widget.setVisible(visible and self.width() >= 1080)
+            widget.setVisible(
+                visible
+                and self._take_editing_allowed()
+                and self.width() >= 1080
+            )
 
     def _populate_live_lanes(self) -> None:
         self._clear_lanes()
         self._studio_arrange.setVisible(False)
+        self._studio_arrange.setEnabled(False)
         self._arrange_toolbar.setVisible(False)
         self._comp_toolbar.setVisible(False)
         self._legacy_timeline.setVisible(True)
@@ -1692,10 +1935,24 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._set_master_controls_visible(False)
         self._live_btn.setVisible(False)
         self._new_take_btn.setVisible(False)
-        self._title.setText("Live multitrack session")
-        self._subtitle.setText(
-            "Connected musicians are mapped automatically after recorder proof."
-        )
+        if self._creator_profile_key == "podcast_voice":
+            self._set_studio_title("Live voice multitrack")
+            self._subtitle.setText(
+                "Each WebJam speaker is mapped after recorder proof. "
+                f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+            )
+        elif self._creator_profile_key == "review_rehearsal":
+            self._set_studio_title("Live review audio · Preview")
+            self._subtitle.setText(
+                "No visual-media sync, shared notes, or media timecode. "
+                f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+            )
+        else:
+            self._set_studio_title("Live multitrack session")
+            self._subtitle.setText(
+                f"Connected {self._participant_plural} are mapped automatically "
+                "after recorder proof."
+            )
         self._play_btn.setEnabled(False)
         self._stop_btn.setEnabled(False)
         self._scrub.setEnabled(False)
@@ -1717,7 +1974,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 "stop_failed",
             }
             detail = (
-                "RECORDING · live musician"
+                f"RECORDING · live {self._participant_singular}"
                 if recording_proven
                 else "CONNECTED · awaiting recorder proof"
             )
@@ -1729,28 +1986,41 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 )
             lane = TrackLane(
                 channel_id,
-                getattr(participant, "name", "Musician"),
+                getattr(
+                    participant,
+                    "name",
+                    self._participant_singular.title(),
+                ),
                 detail,
                 track_number=track_number,
                 source="jamulus_server",
+                source_badge_label=self._recorded_source_badge_label(
+                    "jamulus_server"
+                ),
             )
             lane.waveform.set_live(self._recording)
             self._add_lane(lane, live=True)
         if self._live_participants:
             if self._phase_name in {"count_in", "recording", "stop_failed"}:
                 self._hint.setText(
-                    f"Recording {len(self._live_participants)} proven musician "
-                    f"source{'s' if len(self._live_participants) != 1 else ''}."
+                    f"Recording {len(self._live_participants)} proven "
+                    f"{self._participant_singular} source"
+                    f"{'s' if len(self._live_participants) != 1 else ''}."
                 )
             else:
+                participant_noun = (
+                    self._participant_singular
+                    if len(self._live_participants) == 1
+                    else self._participant_plural
+                )
                 self._hint.setText(
-                    f"{len(self._live_participants)} connected musician"
-                    f"{'s' if len(self._live_participants) != 1 else ''}. "
+                    f"{len(self._live_participants)} connected {participant_noun}. "
                     "Press Record Session to verify and map recorder tracks."
                 )
         else:
             self._hint.setText(
-                "Start Session to add musicians, then press Record for synchronized tracks."
+                f"Start Session to add {self._participant_plural}, then press "
+                "Record for synchronized tracks."
             )
         self._sync_timeline_ruler_inset()
         if self._lanes:
@@ -1788,6 +2058,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         set_labeled_action(self._reveal_btn, "Show Take")
         self._export_btn.setEnabled(False)
         self._viewing_live = True
+        self._apply_creator_profile_presentation(self._live_creator_profile)
         if changed_take:
             self._guidance_take_revision += 1
         self._take_list.clearSelection()
@@ -1866,6 +2137,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         take = self._current
         if (
             take is None
+            or not self._track_export_allowed()
             or self._exporting
             or self._recording
             or self._phase_name not in {"idle", "complete", "needs_attention", "error"}
@@ -1886,11 +2158,23 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
     def _refresh_export_presentation(self) -> None:
         """Label the unsupported-platform path as originals-only."""
 
+        if not self._track_export_allowed():
+            set_labeled_action(
+                self._export_btn,
+                "Export Unavailable",
+                description="Track export is unavailable for this playback-only take.",
+            )
+            self._export_btn.setToolTip(
+                "Review & Rehearsal Preview provides playback and source review, "
+                "not track export."
+            )
+            return
+
         aligned_originals_only = (
             self._studio_state is not None and not studio_export_supported()
         )
         if aligned_originals_only:
-            self._export_btn.setText("Export Aligned Originals")
+            set_labeled_action(self._export_btn, "Export Aligned Originals")
             self._export_btn.setAccessibleName(
                 "Export aligned originals without Studio edits"
             )
@@ -1902,7 +2186,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 "own take."
             )
             return
-        self._export_btn.setText("Export Tracks")
+        set_labeled_action(self._export_btn, "Export Tracks")
         self._export_btn.setAccessibleName("Export aligned tracks")
         self._export_btn.setToolTip("")
 
@@ -1916,6 +2200,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         take = self._current
         if (
             take is None
+            or not self._track_export_allowed()
             or self._track_export_selection_key(take)
             != take_path.expanduser().resolve()
         ):
@@ -1964,7 +2249,11 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 self._take_list.blockSignals(False)
             self._hint.setText("Finish the current export before changing takes.")
             return
-        if row < 0 or row >= len(self._takes):
+        if row < 0:
+            if not self._viewing_live:
+                self._show_live_session()
+            return
+        if row >= len(self._takes):
             return
         if not self._flush_studio_state():
             if self._current is not None:
@@ -1985,6 +2274,9 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._viewing_live = False
         take = self._takes[row]
         self._current = take
+        self._apply_creator_profile_presentation(
+            get_creator_profile_by_key(take.creator_profile_key)
+        )
         self._guidance_take_revision += 1
         self._load_studio_state(take)
         if self._studio_state is not None and self._studio_project is not None:
@@ -2003,7 +2295,16 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 )
         else:
             self._player.load(take)
-        self._studio_arrange.setVisible(self._studio_state is not None)
+        editing_allowed = self._take_editing_allowed()
+        self._studio_arrange.setVisible(
+            self._studio_state is not None and editing_allowed
+        )
+        self._studio_arrange.setEnabled(
+            self._studio_state is not None and editing_allowed
+        )
+        self._arrange_toolbar.setVisible(
+            self._studio_state is not None and editing_allowed
+        )
         self._legacy_timeline.setVisible(self._studio_state is None)
         self._refresh_comp_controls()
         self._clear_lanes()
@@ -2012,20 +2313,31 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._set_master_controls_visible(self._studio_state is not None)
         self._live_btn.setVisible(True)
         self._new_take_btn.setVisible(True)
-        self._title.setText(take.display_name)
+        self._set_studio_title(take.display_name)
         blocked_statuses = {"missing", "damaged", "transfer_failed", "transferring"}
         missing_count = sum(
             getattr(track, "media_status", "available") in blocked_statuses
             for track in take.tracks
         )
+        if self._creator_profile_key == "podcast_voice":
+            track_summary = f"{take.track_count} synchronized voice tracks"
+        elif self._creator_profile_key == "review_rehearsal":
+            track_summary = (
+                f"Preview · read-only playback · {take.track_count} synchronized "
+                "WebJam audio tracks"
+            )
+        elif self._creator_profile_key == "music":
+            track_summary = f"{take.track_count} synchronized tracks"
+        else:
+            track_summary = f"{take.track_count} recorded tracks"
         if missing_count:
             self._subtitle.setText(
-                f"{take.track_count} tracks · {missing_count} missing · "
+                f"{track_summary} · {missing_count} missing · "
                 f"{_fmt_time(take.duration_s)}"
             )
         else:
             self._subtitle.setText(
-                f"{take.track_count} synchronized tracks · {_fmt_time(take.duration_s)}"
+                f"{track_summary} · {_fmt_time(take.duration_s)}"
             )
         playable = any(
             getattr(track, "media_status", "available") not in blocked_statuses
@@ -2045,8 +2357,16 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         info_by_path = {Path(track.path): track for track in take.tracks}
         info_by_channel = {index: track for index, track in enumerate(take.tracks)}
         self._track_info_by_channel = dict(info_by_channel)
-        selectable_track_ids = set(_selectable_track_export_track_ids(take))
-        selected_track_ids = self._selected_track_export_track_ids(take)
+        selectable_track_ids = (
+            set(_selectable_track_export_track_ids(take))
+            if self._track_export_allowed()
+            else set()
+        )
+        selected_track_ids = (
+            self._selected_track_export_track_ids(take)
+            if self._track_export_allowed()
+            else None
+        )
         for track in self._player.tracks:
             source_info = info_by_channel.get(
                 track.channel_id,
@@ -2065,9 +2385,17 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 }.get(media_status, "MEDIA NEEDS ATTENTION")
                 detail = f"{label} · restore or finish this track to continue"
             elif media_status == "partial":
-                detail = "PARTIAL TRACK · listen and review before export"
+                detail = (
+                    "PARTIAL TRACK · listen and inspect"
+                    if self._creator_profile_key == "review_rehearsal"
+                    else "PARTIAL TRACK · listen and review before export"
+                )
             elif media_status == "recovered":
-                detail = "RECOVERED TRACK · listen and review before export"
+                detail = (
+                    "RECOVERED TRACK · listen and inspect"
+                    if self._creator_profile_key == "review_rehearsal"
+                    else "RECOVERED TRACK · listen and review before export"
+                )
             else:
                 detail = (
                     "SYNCHRONIZED"
@@ -2084,6 +2412,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 ),
                 track_number=track.channel_id + 1,
                 source=track.source,
+                source_badge_label=self._recorded_source_badge_label(track.source),
             )
             if export_track_id in selectable_track_ids:
                 lane.set_track_export_included(
@@ -2167,19 +2496,44 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         if self._studio_state_error:
             self._hint.setText(self._studio_state_error)
         elif take.manifest_errors or take.manifest_warnings:
-            self._hint.setText(
-                _take_review_message(
-                    has_errors=bool(take.manifest_errors),
-                    has_warnings=bool(take.manifest_warnings),
+            if self._creator_profile_key == "review_rehearsal":
+                self._hint.setText(
+                    (
+                        "This Review Preview take needs source review. Playback "
+                        "remains available; editing and track export are unavailable."
+                    )
+                    if take.manifest_errors
+                    else (
+                        "Review Preview take saved with something to inspect. "
+                        "Playback remains read-only."
+                    )
                 )
-            )
+            else:
+                self._hint.setText(
+                    _take_review_message(
+                        has_errors=bool(take.manifest_errors),
+                        has_warnings=bool(take.manifest_warnings),
+                    )
+                )
         elif not verified:
-            self._hint.setText(
-                "Unverified take. Playback is available, but track export stays "
-                "locked until WebJam verifies the recording."
-            )
+            if self._creator_profile_key == "review_rehearsal":
+                self._hint.setText(
+                    "Unverified Review Preview take. Playback and source details "
+                    "remain available; editing and track export are unavailable."
+                )
+            else:
+                self._hint.setText(
+                    "Unverified take. Playback is available, but track export stays "
+                    "locked until WebJam verifies the recording."
+                )
         else:
-            if self._studio_state is not None and not studio_export_supported():
+            if self._creator_profile_key == "review_rehearsal":
+                self._hint.setText(
+                    "Review Preview take ready for playback and source inspection. "
+                    "This view is read-only; arrangement editing, mix changes, and "
+                    "track export are unavailable."
+                )
+            elif self._studio_state is not None and not studio_export_supported():
                 self._hint.setText(
                     "This platform can export aligned originals and a reference "
                     "rough mix. Arrangement edits, fades, comps, sections, and "
@@ -2194,6 +2548,13 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         """Publish a portable track package without creating an editor project."""
         take = self._current
         if take is None:
+            return
+        if not self._track_export_allowed():
+            self._hint.setText(
+                "Track export is unavailable in Review & Rehearsal Preview. "
+                "Playback and source inspection remain available."
+            )
+            self._refresh_export_button()
             return
         if not self._can_export_current_take():
             if not self._studio_export_context_ready(take):
@@ -2232,6 +2593,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 )
                 return
             if _studio_document_differs_from_default(studio_document, project):
+                section_plural = self._arrangement_section_plural()
                 answer = QMessageBox.question(
                     self,
                     "Export aligned originals?",
@@ -2239,7 +2601,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                     "Export Aligned Originals creates unity aligned WAV files and "
                     "a reference rough mix using the current track trim, gain, "
                     "pan, mute, and solo controls. Arrangement edits, region "
-                    "fades, comp choices, song sections, and master gain or "
+                    f"fades, comp choices, {section_plural}, and master gain or "
                     "limiter settings are not included. Attached or repeated "
                     "take-lane recordings are also not included; export each "
                     "from its own take.\n\nContinue?",
@@ -2290,7 +2652,11 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._setup_btn.setEnabled(False)
         self._record_btn.setEnabled(False)
         self._export_btn.setEnabled(False)
-        self._export_btn.setText("Exporting…")
+        set_labeled_action(
+            self._export_btn,
+            "Exporting…",
+            description="The current take export is in progress.",
+        )
         for lane in self._lanes.values():
             lane.set_track_export_enabled(False)
         if aligned_originals_only:
@@ -2368,7 +2734,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._setup_btn.setEnabled(True)
         self._refresh_record_button_enabled()
         for lane in self._lanes.values():
-            lane.set_track_export_enabled(True)
+            lane.set_track_export_enabled(self._track_export_allowed())
         self._refresh_export_button()
 
     def _finish_export(

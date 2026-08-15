@@ -16,9 +16,12 @@ import shutil
 import tempfile
 from typing import Callable
 
+from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
+
 
 _GIB = 1024**3
 _PCM24_48K_MONO_BYTES_PER_SECOND = 48_000 * 3
+_MAX_LOCAL_ORIGINAL_CHANNELS = 32 * (MAX_JAMULUS_ROSTER_ROWS + 1)
 _MINIMUM_FREE_BYTES = 1 * _GIB
 _WARNING_FREE_BYTES = 5 * _GIB
 _MINIMUM_RESERVE_SECONDS = 15 * 60
@@ -59,11 +62,13 @@ def recording_storage_budget(
 ) -> tuple[int, int]:
     """Return conservative start and warning reserves for PCM24/48-kHz takes.
 
-    Jamulus server tracks may be stereo; optional local originals are two mono
-    files.  The start reserve protects a useful initial segment of a take,
-    while the warning reserve represents a normal two-hour rehearsal.  Both
-    values deliberately stay bounded so a roster spike does not make the
-    product demand an unrealistic amount of free space.
+    Jamulus server tracks may be stereo. ``local_original_tracks`` retains its
+    historical API name, but an explicit value is the total mono-equivalent
+    channel count across host and guest Local Originals; a stereo logical track
+    therefore contributes two. The start reserve protects a useful initial
+    segment of a take, while the warning reserve represents a normal two-hour
+    rehearsal. Both values deliberately stay bounded so a roster spike does
+    not make the product demand an unrealistic amount of free space.
     """
 
     server_tracks = max(1, int(expected_server_tracks))
@@ -71,7 +76,10 @@ def recording_storage_budget(
         local_channels = 2 if local_originals_enabled else 0
     else:
         local_channels = (
-            max(0, min(32, int(local_original_tracks)))
+            max(
+                0,
+                min(_MAX_LOCAL_ORIGINAL_CHANNELS, int(local_original_tracks)),
+            )
             if local_originals_enabled
             else 0
         )

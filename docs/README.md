@@ -9,15 +9,19 @@ keeps the product story and five-minute demo intentionally short.
 > unsigned; macOS is ad-hoc signed and unnotarized; every physical test remains
 > **NOT RUN** until recorded against those packages.
 
+> **Current source:** v0.25.0 is an unpublished creator-profile and
+> authoritative multitrack candidate. Do not use a checkout or branch artifact
+> as a release. All v0.25.0 physical/hardware rows remain **NOT RUN**.
+
 ## Start here
 
 | Audience | Read | Outcome |
 | --- | --- | --- |
 | Evaluator or stakeholder | [Project brief](PROJECT_BRIEF.md) | Understand the product thesis, architecture, evidence, and roadmap |
-| New musician | [Simple-language guide](../README_SIMPLE.md) | Understand WebJam in plain words before anything technical |
-| Musician | [Musician guide](../USER_GUIDE.md) | Host, join, add a Shared Track, record, and recover a session |
-| First-time demo | [First Jam](../FIRST_JAM.md) | Follow the shortest live-rehearsal path |
-| Reference Studio user | [Reference Studio musician guide](REFERENCE_STUDIO_MUSICIAN_GUIDE.md) | Write, arrange, record, and bounce a local project |
+| New creator | [Simple-language guide](../README_SIMPLE.md) | Understand WebJam in plain words before anything technical |
+| Creator | [Creator guide](../USER_GUIDE.md) | Choose a profile, host/join, record, and follow that profile's Studio boundary |
+| First-time demo | [First Session](../FIRST_JAM.md) | Follow the shortest profile-first live-session path |
+| Reference Studio user | [Reference Studio guide](REFERENCE_STUDIO_MUSICIAN_GUIDE.md) | Write, arrange, record, and bounce a local project |
 | Developer | [Development guide](../DEVELOPMENT.md) | Set up the repository, preserve ownership boundaries, and run checks |
 
 ## Product and architecture
@@ -27,6 +31,8 @@ keeps the product story and five-minute demo intentionally short.
 - [Recording and Studio](../RECORDING_AND_STUDIO.md) — Record Session, Shared
   Track source identity, Local Originals, editing, export, recovery, and
   evidence boundaries.
+- [Creator profile contract](../CREATIVE_MODES_MVP_SPEC.md) — Music and Podcast
+  & Voice GA behavior plus the exact Review & Rehearsal Preview boundary.
 - [Reference Studio decision record](adr/0006-standalone-reference-studio-projects.md)
   — project and migration invariants.
 - [Reference Track decision record](adr/0005-reference-track-jamulus-participant.md)
@@ -49,6 +55,7 @@ keeps the product story and five-minute demo intentionally short.
 - [Test procedure](../TEST_PROCEDURE.md) — automated evidence and the physical /
   credentialed ledger. **NOT RUN** is not a claim of failure; it means evidence
   has not yet been collected against an exact package.
+- [v0.25 creator-multitrack physical checklist](../V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.24 recording-first physical checklist](../V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
 - [Historical v0.23 Shared Track and recording checklist](../V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
   — exact multi-machine, macOS/BlackHole, Linux/JACK, hardware, recording,

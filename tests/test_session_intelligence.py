@@ -121,6 +121,63 @@ class TestSessionIntelligence(unittest.TestCase):
         self.assertEqual(pulse.actions[0].owner, "Lee")
         self.assertEqual(pulse.actions[0].text, "ask to export the rehearsal mix")
 
+    def test_podcast_creator_profile_uses_voice_defaults_and_vocabulary(self):
+        pulse = build_session_pulse(
+            creator_profile_key="podcast_voice",
+            participants=[
+                {"name": "Host", "is_local": True},
+                {"name": "Guest", "is_local": False},
+            ],
+        )
+
+        self.assertEqual(pulse.mode_key, "podcast_voice")
+        self.assertEqual(pulse.mode_label, "Podcast & Voice")
+        self.assertEqual(
+            pulse.title,
+            "Capture clear isolated voices and finish a reviewable edit.",
+        )
+        self.assertEqual(pulse.stage, "Mic Check")
+        self.assertEqual(pulse.checkpoint, "mic check")
+        self.assertIn("2 speakers", pulse.summary)
+
+    def test_creator_profile_review_prompt_drives_next_step(self):
+        pulse = build_session_pulse(
+            creator_profile_key="podcast_voice",
+            notes="Loose idea for the cold open",
+        )
+
+        self.assertEqual(
+            pulse.next_step,
+            "Which edit most improves clarity or pacing?",
+        )
+
+    def test_creator_profile_section_vocabulary_shapes_checkpoints(self):
+        pulse = build_session_pulse(
+            creator_profile_key="podcast_voice",
+            notes="Mic check complete\nFirst take complete",
+        )
+
+        self.assertEqual(pulse.checkpoint, "chapter review")
+
+    def test_creator_profile_legacy_alias_canonicalizes(self):
+        pulse = build_session_pulse(
+            creator_profile_key="visual_studio",
+        )
+
+        self.assertEqual(pulse.mode_key, "review_rehearsal")
+        self.assertEqual(pulse.mode_label, "Review & Rehearsal")
+        self.assertEqual(pulse.checkpoint, "shared goal")
+
+    def test_unknown_creator_profile_falls_back_to_music(self):
+        pulse = build_session_pulse(
+            mode_key="design_critique",
+            creator_profile_key="unsupported_profile",
+        )
+
+        self.assertEqual(pulse.mode_key, "music")
+        self.assertEqual(pulse.mode_label, "Music")
+        self.assertEqual(pulse.checkpoint, "sound check")
+
 
 if __name__ == "__main__":
     unittest.main()

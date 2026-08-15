@@ -227,6 +227,52 @@ def test_affine_mapping_survives_split_and_move_with_rate_conversion(
     np.testing.assert_array_equal(moved_audio[5:10], unsplit[3:8])
 
 
+def test_stereo_logical_source_preserves_left_and_right_in_studio(tmp_path: Path) -> None:
+    samples = np.column_stack(
+        (
+            np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32),
+            np.array([0.8, 0.7, 0.6, 0.5], dtype=np.float32),
+        )
+    )
+    segment, _source = _segment(tmp_path, 27, samples, rate=8_000)
+    project = _project((_track(17, (segment,)),), rate=8_000)
+
+    rendered = StudioRenderer(
+        project,
+        default_studio_document(project),
+        tmp_path,
+    ).render_block(0, 4)
+
+    np.testing.assert_allclose(rendered, samples, atol=1e-7)
+
+
+def test_studio_rejects_reconnect_segments_that_change_channel_layout(
+    tmp_path: Path,
+) -> None:
+    mono, _ = _segment(
+        tmp_path,
+        28,
+        np.full(4, 0.2, dtype=np.float32),
+        rate=8_000,
+    )
+    stereo, _ = _segment(
+        tmp_path,
+        29,
+        np.column_stack(
+            (
+                np.full(4, 0.3, dtype=np.float32),
+                np.full(4, 0.4, dtype=np.float32),
+            )
+        ),
+        rate=8_000,
+        start=4,
+    )
+    project = _project((_track(18, (mono, stereo)),), rate=8_000)
+
+    with pytest.raises(StudioRenderError, match="mono/stereo channel layout"):
+        StudioRenderer(project, default_studio_document(project), tmp_path)
+
+
 def test_region_fades_equal_power_crossfade_and_full_mix_controls(
     tmp_path: Path,
 ) -> None:

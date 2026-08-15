@@ -12,6 +12,8 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
@@ -19,6 +21,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
+from core.creative_modes import CREATOR_PROFILES
 from core.network_invite import (
     InviteLinkError,
     create_invite_link,
@@ -80,13 +83,88 @@ def test_launch_shows_live_and_offline_music_paths(qapp, tmp_path):
         if button.isVisibleTo(dialog)
     ]
     assert [button.accessibleName() for button in visible_actions] == [
-        "Host a Jam",
-        "Join a Jam",
-        "Play Along / Record",
+        "Host",
+        "Join",
+        "New Music Project",
     ]
+    assert dialog.selected_creator_profile_key == "music"
     assert dialog.showing_choices
     assert not dialog._invite_input.isVisibleTo(dialog)
     dialog.close()
+
+
+def test_launch_creator_selector_uses_canonical_profiles_and_truthful_actions(
+    qapp,
+    tmp_path,
+):
+    with patch.object(sys, "platform", "darwin"):
+        dialog = LaunchDialog(AppSettings(config_file=str(tmp_path / "settings.json")))
+    dialog.resize(460, 480)
+    dialog.show()
+    qapp.processEvents()
+    try:
+        selector = dialog._creator_profile_selector
+        assert selector.accessibleName() == "What are you creating?"
+        assert selector.accessibleDescription()
+        assert [selector.itemData(index) for index in range(selector.count())] == [
+            profile.key for profile in CREATOR_PROFILES
+        ]
+        assert [selector.itemText(index) for index in range(selector.count())] == [
+            "Music (Ready)",
+            "Podcast & Voice (Ready)",
+            "Review & Rehearsal (Preview)",
+        ]
+        assert dialog.selected_creator_profile_key == "music"
+        assert dialog._host_button.text() == "Host"
+        assert dialog._join_button.text() == "Join"
+        assert dialog._studio_button.text() == "New Music Project"
+        for control in (
+            selector,
+            dialog._host_button,
+            dialog._join_button,
+            dialog._studio_button,
+        ):
+            assert control.isVisibleTo(dialog)
+            assert dialog.rect().contains(
+                control.mapTo(dialog, control.rect().topLeft())
+            )
+            assert dialog.rect().contains(
+                control.mapTo(dialog, control.rect().bottomRight())
+            )
+            assert control.accessibleDescription()
+        for button in (
+            dialog._host_button,
+            dialog._join_button,
+            dialog._studio_button,
+        ):
+            assert button.accessibleName() == button.text()
+
+        selector.setFocus()
+        QTest.keyClick(selector, Qt.Key.Key_Down)
+        qapp.processEvents()
+        assert selector.hasFocus()
+        assert dialog.selected_creator_profile_key == "podcast_voice"
+        assert dialog._host_button.text() == "Host Remote Recording"
+        assert dialog._join_button.text() == "Join Recording"
+        assert dialog._studio_button.text() == "New Local Recording"
+        assert dialog._studio_button.isVisibleTo(dialog)
+
+        QTest.keyClick(selector, Qt.Key.Key_Down)
+        qapp.processEvents()
+        assert dialog.selected_creator_profile_key == "review_rehearsal"
+        assert dialog._host_button.text() == "Host Review"
+        assert dialog._join_button.text() == "Join Review"
+        assert not dialog._studio_button.isVisibleTo(dialog)
+        assert not dialog._studio_button.isEnabled()
+        assert "Preview" in dialog._choice_helper.text()
+        assert "visual" in dialog._studio_button.accessibleDescription().lower()
+
+        dialog.show_join()
+        assert dialog._join_title.text() == "Join Review."
+        assert dialog._join_button_primary.text() == "Join Review"
+        assert dialog._join_button_primary.accessibleDescription()
+    finally:
+        dialog.close()
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX account full-name lookup")
@@ -146,7 +224,9 @@ def test_launch_exposes_exact_jamulus_wrap_preview_without_changing_saved_name(
         dialog.close()
 
 
-def test_reference_studio_choice_does_not_rewrite_live_settings(qapp, tmp_path):
+def test_reference_studio_choice_persists_profile_without_rewriting_live_settings(
+    qapp, tmp_path
+):
     config = tmp_path / "settings.json"
     settings = AppSettings(
         config_file=str(config),
@@ -154,15 +234,39 @@ def test_reference_studio_choice_does_not_rewrite_live_settings(qapp, tmp_path):
         host_server_enabled=False,
     )
     dialog = LaunchDialog(settings)
+    dialog._creator_profile_selector.setCurrentIndex(
+        dialog._creator_profile_selector.findData("music")
+    )
 
     dialog._studio_button.click()
 
     assert dialog.selected_role == "studio"
     assert dialog.session_name == "Reference Studio"
     assert dialog.result() == dialog.DialogCode.Accepted
-    assert not config.exists()
+    persisted = load_settings(config)
+    assert persisted.last_creator_profile_key == "music"
+    assert persisted.jamulus_server == "band.example"
+    assert persisted.host_server_enabled is False
     assert settings.jamulus_server == "band.example"
     assert settings.host_server_enabled is False
+
+
+def test_launch_restores_last_creator_profile_and_local_project_persists_it(
+    qapp, tmp_path
+):
+    config = tmp_path / "settings.json"
+    settings = AppSettings(
+        config_file=str(config),
+        last_creator_profile_key="podcast_voice",
+    )
+    dialog = LaunchDialog(settings)
+
+    assert dialog.selected_creator_profile_key == "podcast_voice"
+    dialog._studio_button.click()
+
+    assert dialog.selected_role == "studio"
+    assert dialog.session_name == "Host + Guest"
+    assert load_settings(config).last_creator_profile_key == "podcast_voice"
 
 
 def test_windows_clean_install_exposes_the_bundled_jamulus_installer(
@@ -402,7 +506,7 @@ def test_pasted_join_save_failure_is_visible_and_retryable(qapp, tmp_path):
     assert dialog._choice_error.text() == ""
     assert dialog._invite_input.text() == ""
     assert dialog._invite_input.hasFocus()
-    assert dialog._join_button_primary.text() == "Join Jam"
+    assert dialog._join_button_primary.text() == "Join"
     assert dialog._join_button_primary.isEnabled()
     dialog.close()
 
@@ -428,7 +532,7 @@ def test_cold_invitation_save_failure_is_visible_on_join_page(qapp, tmp_path):
     assert dialog._choice_error.text() == ""
     assert dialog._invite_input.text() == ""
     assert dialog._invite_input.hasFocus()
-    assert dialog._join_button_primary.text() == "Join Jam"
+    assert dialog._join_button_primary.text() == "Join"
     assert dialog._join_button_primary.isEnabled()
     dialog.close()
 

@@ -227,6 +227,7 @@ class ReferenceTrackOwnershipClaim:
     process_id: int
     generation: str
     source_fingerprint_sha256: str = ""
+    playback_generation: int = 0
 
     def __post_init__(self) -> None:
         if isinstance(self.udp_port, bool) or not 1 <= int(self.udp_port) <= 65_535:
@@ -243,6 +244,13 @@ class ReferenceTrackOwnershipClaim:
             r"[0-9a-f]{64}", source_fingerprint
         ) is None:
             raise ValueError("source_fingerprint_sha256 must be a SHA-256 digest")
+        playback_generation = self.playback_generation
+        if (
+            isinstance(playback_generation, bool)
+            or not isinstance(playback_generation, int)
+            or not 0 <= playback_generation <= (1 << 63) - 1
+        ):
+            raise ValueError("playback_generation is outside the supported range")
         object.__setattr__(self, "udp_port", int(self.udp_port))
         object.__setattr__(self, "process_id", int(self.process_id))
         object.__setattr__(self, "generation", generation)
@@ -251,6 +259,7 @@ class ReferenceTrackOwnershipClaim:
             "source_fingerprint_sha256",
             source_fingerprint,
         )
+        object.__setattr__(self, "playback_generation", playback_generation)
 
     def __repr__(self) -> str:
         return "ReferenceTrackOwnershipClaim(<redacted>)"
@@ -279,6 +288,11 @@ class ReferenceTrackSnapshot:
     count_in_active: bool = False
     waveform_peaks: tuple[float, ...] = ()
     waveform_progress: float = 0.0
+    # Monotonic, controller-local identity for one playback attempt.  It is
+    # deliberately path-free and lets Record Session bind a take to the exact
+    # play/restart generation it planned instead of accepting any later song
+    # playback as equivalent evidence.
+    playback_generation: int = 0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "state", ReferenceTrackState(self.state))
@@ -355,6 +369,14 @@ class ReferenceTrackSnapshot:
         if not math.isfinite(progress) or not 0.0 <= progress <= 1.0:
             raise ValueError("waveform_progress must be between zero and one")
         object.__setattr__(self, "waveform_progress", progress)
+        playback_generation = self.playback_generation
+        if (
+            isinstance(playback_generation, bool)
+            or not isinstance(playback_generation, int)
+            or not 0 <= playback_generation <= (1 << 63) - 1
+        ):
+            raise ValueError("playback_generation is outside the supported range")
+        object.__setattr__(self, "playback_generation", playback_generation)
 
     @property
     def loaded(self) -> bool:
@@ -1395,6 +1417,7 @@ class ReferenceTrackController:
         # resurrect an owned Jamulus client.
         self._launch_generation = 0
         self._source_generation = 0
+        self._playback_generation = 0
         self._capability = self._safe_capability(False)
 
     @property
@@ -1471,7 +1494,21 @@ class ReferenceTrackController:
             process_id=claim.process_id,
             generation=claim.generation,
             source_fingerprint_sha256=source_fingerprint,
+            playback_generation=self._playback_generation,
         )
+
+    def recording_source_fingerprint(self) -> str:
+        """Return the exact loaded source digest for pre-record planning.
+
+        The digest is content identity, not a filename or path.  It remains a
+        controller-to-recorder seam and is intentionally absent from public
+        snapshots, diagnostics, peer state, and support bundles.
+        """
+
+        with self._lock:
+            if self._stream is None or not self._source_fingerprint_sha256:
+                return ""
+            return self._source_fingerprint_sha256
 
     def refresh_capability(
         self, audience_bridge_active: bool = False
@@ -1764,6 +1801,7 @@ class ReferenceTrackController:
             self._error = ""
             self._recoverable_route_failure = False
             self._launch_generation += 1
+            self._playback_generation += 1
             launch_generation = self._launch_generation
             routing = self._snapshot_locked()
         self._notify(routing)
@@ -1880,6 +1918,7 @@ class ReferenceTrackController:
             self._require_open_locked()
             if self._stream is None or self._session is None:
                 raise ReferenceTrackError("Start Shared Track before restarting it.")
+            self._playback_generation += 1
             self._stream.restart(count_in=True)
             self._state = ReferenceTrackState.PLAYING
             self._error = ""
@@ -2201,6 +2240,7 @@ class ReferenceTrackController:
             count_in_active=count_in_active,
             waveform_peaks=waveform_peaks,
             waveform_progress=waveform_progress,
+            playback_generation=self._playback_generation,
         )
 
     def _fail_locked(

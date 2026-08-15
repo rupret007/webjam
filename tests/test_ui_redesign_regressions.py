@@ -164,6 +164,7 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
             dialog._logo,
             dialog._name_input,
             dialog._name_preview,
+            dialog._creator_profile_selector,
             dialog._host_button,
             dialog._join_button,
             dialog._studio_button,
@@ -202,6 +203,7 @@ def test_windows_launch_name_roles_and_installer_do_not_overlap_at_default_size(
         controls = (
             dialog._name_input,
             dialog._name_preview,
+            dialog._creator_profile_selector,
             dialog._host_button,
             dialog._join_button,
             dialog._studio_button,

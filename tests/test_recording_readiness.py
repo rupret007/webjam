@@ -32,6 +32,37 @@ def test_storage_budget_scales_with_the_real_recording_inventory() -> None:
     assert warning_small >= 5 * GIB
 
 
+def test_storage_budget_counts_stereo_and_multi_guest_local_channels() -> None:
+    mono_limit = recording_storage_budget(
+        expected_server_tracks=1,
+        local_originals_enabled=True,
+        local_original_tracks=32,
+    )
+    multi_guest_stereo = recording_storage_budget(
+        expected_server_tracks=1,
+        local_originals_enabled=True,
+        local_original_tracks=64,
+    )
+
+    assert multi_guest_stereo[0] > mono_limit[0]
+    assert multi_guest_stereo[1] > mono_limit[1]
+
+
+def test_storage_budget_bounds_untrusted_aggregate_local_channel_counts() -> None:
+    supported_maximum = recording_storage_budget(
+        expected_server_tracks=1,
+        local_originals_enabled=True,
+        local_original_tracks=32 * 257,
+    )
+    oversized = recording_storage_budget(
+        expected_server_tracks=1,
+        local_originals_enabled=True,
+        local_original_tracks=10**12,
+    )
+
+    assert oversized == supported_maximum
+
+
 def test_storage_preflight_blocks_missing_or_unavailable_folder(tmp_path) -> None:
     missing = tmp_path / "not-there"
     result = check_recording_storage(
@@ -50,7 +81,9 @@ def test_storage_preflight_blocks_dangerously_low_space_without_path(tmp_path) -
         tmp_path,
         expected_server_tracks=2,
         local_originals_enabled=True,
-        disk_usage=lambda _path: Usage(10 * GIB, 10 * GIB - 512 * 1024**2, 512 * 1024**2),
+        disk_usage=lambda _path: Usage(
+            10 * GIB, 10 * GIB - 512 * 1024**2, 512 * 1024**2
+        ),
     )
 
     assert result.status is RecordingStorageStatus.ACTION_NEEDED
@@ -85,7 +118,9 @@ def test_storage_preflight_treats_a_failed_disk_probe_as_actionable(tmp_path) ->
     assert str(tmp_path) not in result.detail
 
 
-def test_storage_preflight_blocks_a_folder_that_fails_a_real_write_probe(tmp_path) -> None:
+def test_storage_preflight_blocks_a_folder_that_fails_a_real_write_probe(
+    tmp_path,
+) -> None:
     with patch(
         "core.recording_readiness.tempfile.TemporaryFile",
         side_effect=OSError("private write failure"),

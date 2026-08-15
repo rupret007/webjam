@@ -78,8 +78,19 @@ def main() -> int:
         require_contains(checklist_file, marker, failures)
 
     require_contains(repo_file, "def increment_setting", failures)
-    require_contains(launch_file, "Host a Jam", failures)
-    require_contains(launch_file, "Join a Jam", failures)
+    for marker in (
+        "What are you creating?",
+        "_CREATOR_LAUNCH_COPY",
+        'host="Host"',
+        'join="Join"',
+        'local="New Music Project"',
+        'host="Host Remote Recording"',
+        'join="Join Recording"',
+        'local="New Local Recording"',
+        'host="Host Review"',
+        'join="Join Review"',
+    ):
+        require_contains(launch_file, marker, failures)
     require_contains(session_state_file, "PERMISSION_DENIED", failures)
     require_contains(tokens_file, '#BF5700', failures)
     require_contains(studio_file, "Export Tracks", failures)

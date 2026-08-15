@@ -34,9 +34,7 @@ from core.session_lifecycle import SessionLifecyclePhase
 
 
 _MAX_TRANSITIONS = 5
-_SAFE_TIMESTAMP_RE = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
-)
+_SAFE_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
 class GuidanceEvidence(str, Enum):
@@ -144,7 +142,9 @@ class GuidanceDisplayOverride:
     action_label: str = ""
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "primary_action", SessionPrimaryAction(self.primary_action))
+        object.__setattr__(
+            self, "primary_action", SessionPrimaryAction(self.primary_action)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,7 +225,8 @@ class MusicianGuidanceSnapshot:
         visible = tuple(
             output
             for output in self.outputs
-            if output.state not in {
+            if output.state
+            not in {
                 GuidanceState.NOT_STARTED,
                 GuidanceState.NOT_REQUIRED,
             }
@@ -261,9 +262,7 @@ class MusicianGuidanceSnapshot:
             "evidence": self.evidence.value,
             "recovery": self.recovery.value,
             "outputs": [item.to_public_dict() for item in self.outputs],
-            "transitions": [
-                item.to_public_dict() for item in self.transitions
-            ],
+            "transitions": [item.to_public_dict() for item in self.transitions],
         }
 
     def to_markdown(self) -> str:
@@ -286,9 +285,7 @@ class MusicianGuidanceSnapshot:
             lines.append(f"- {output.label}: {output.detail}")
         if self.transitions:
             lines.extend(["", "## Session record"])
-            lines.extend(
-                f"- {item.at}: {item.label}" for item in self.transitions
-            )
+            lines.extend(f"- {item.at}: {item.label}" for item in self.transitions)
         if creative is not None:
             lines.extend(
                 [
@@ -339,14 +336,18 @@ def build_musician_guidance(
         role=presentation.role,
         phase=presentation.phase,
         primary_action=primary_action,
-        primary_enabled=primary_action not in {
+        primary_enabled=primary_action
+        not in {
             SessionPrimaryAction.NONE,
             SessionPrimaryAction.WAIT,
         },
         primary_label=(
-            display_override.action_label
+            (
+                display_override.action_label
+                or primary_action.label_for(presentation.creator_profile_key)
+            )
             if display_override is not None
-            else presentation.primary_action.label
+            else presentation.action_label
         ),
         title=(display_override.title if display_override else presentation.title),
         message=(
@@ -406,10 +407,14 @@ def _take_output(
         and validation in {TakeValidationState.NOT_STARTED, TakeValidationState.UNKNOWN}
     ):
         value = (GuidanceState.WORKING, "Validation in progress")
-    elif validation in {
-        TakeValidationState.NEEDS_ATTENTION,
-        TakeValidationState.FAILED,
-    } or recorder is RecorderState.FAILED:
+    elif (
+        validation
+        in {
+            TakeValidationState.NEEDS_ATTENTION,
+            TakeValidationState.FAILED,
+        }
+        or recorder is RecorderState.FAILED
+    ):
         value = (GuidanceState.NEEDS_ATTENTION, "Review required")
     elif validation is TakeValidationState.UNKNOWN:
         value = (GuidanceState.NEEDS_ATTENTION, "Status unknown")

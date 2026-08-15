@@ -30,6 +30,14 @@
 > inventory, independent redownload, and frozen-package verification. Every
 > component publication step for such a new channel remains **NOT RUN**.
 
+> **v0.25.0 source-candidate fallback-only state:** sealed v3 still authorizes
+> exact WebJam 0.22.5 only and cannot authorize 0.25.0. The source registry
+> extends the unchanged audited 3.12.2/3.12.3 identities through exact WebJam
+> 0.25.0 and rejects 0.25.1 so the embedded fallback remains known, but that is
+> not a signed managed-update authorization. No v0.25 component tag, release,
+> sequence, asset, signature, or PASS evidence exists. A future managed update
+> requires a new fixed channel and the complete procedure below.
+
 This runbook records the sealed v1/v2 history and current v3 catalog channel. The
 catalog tells WebJam which exact
 Jamulus client/server packages are approved. It does not publish WebJam,

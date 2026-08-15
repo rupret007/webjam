@@ -530,6 +530,40 @@ def test_bounded_stream_play_pause_seek_loop_trim_and_count_in(
         stream.close()
 
 
+def test_controller_playback_generation_identifies_play_and_restart_attempts(
+    tmp_path: Path,
+) -> None:
+    backend = _Backend()
+    controller = ReferenceTrackController(backend, is_host=lambda: True)
+    controller.load(_audio_file(tmp_path / "generation.wav"))
+
+    assert controller.snapshot.playback_generation == 0
+    assert controller.play(_context()).playback_generation == 1
+    assert controller.pause().playback_generation == 1
+    # Resuming a paused route is the same playback attempt.
+    assert controller.play(_context()).playback_generation == 1
+    assert controller.restart().playback_generation == 2
+    assert controller.stop().playback_generation == 2
+    assert controller.play(_context()).playback_generation == 3
+    controller.close()
+
+
+def test_recording_source_fingerprint_is_private_loaded_source_identity(
+    tmp_path: Path,
+) -> None:
+    controller = ReferenceTrackController(_Backend(), is_host=lambda: True)
+    assert controller.recording_source_fingerprint() == ""
+    source = _audio_file(tmp_path / "private-source-name.wav")
+    controller.load(source)
+
+    fingerprint = controller.recording_source_fingerprint()
+    assert len(fingerprint) == 64
+    assert source.name not in fingerprint
+    controller.unload()
+    assert controller.recording_source_fingerprint() == ""
+    controller.close()
+
+
 def test_restart_while_playing_honors_the_beginning_of_the_song(
     tmp_path: Path,
 ) -> None:
@@ -971,6 +1005,7 @@ def test_controller_full_lifecycle_is_host_only_ephemeral_and_clean(
     assert recording_claim.source_fingerprint_sha256 == hashlib.sha256(
         source.read_bytes()
     ).hexdigest()
+    assert recording_claim.playback_generation == playing.playback_generation
     assert recording_claim.source_fingerprint_sha256 not in repr(controller.snapshot)
     assert recording_claim.source_fingerprint_sha256 not in repr(
         controller.public_diagnostics()

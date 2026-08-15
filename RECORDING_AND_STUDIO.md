@@ -1,43 +1,70 @@
-# Recording and Studio — v0.24.0 private test release
+# Recording and Studio — v0.25.0 source candidate
 
-> GitHub **Latest** is the immutable v0.24.0 private test release.
+> This document describes unpublished v0.25.0 source. GitHub **Latest** remains
+> the immutable v0.24.0 private test release.
 > Physical recording, Shared Track audibility/isolation, playback, recovery,
 > long-session, and external-editor gates remain **NOT RUN** until exact
-> v0.24.0 package evidence is recorded.
+> v0.25.0 package evidence is recorded.
 
-## Recording is separate from live music
+Music and Podcast & Voice are GA creator profiles with live recording,
+completed-take editing/mixing/export, and standalone local projects. Review &
+Rehearsal is Preview: it allows live WebJam-audio Record Session and
+playback/read-only review of a completed session take. It blocks standalone
+projects, take editing/comp/mix mutation, track export, shared notes, visual
+sync, and media timecode. No profile directly or automatically taps a meeting
+app, browser, or system output. Scratchpads are profile-scoped
+on one computer and are never shared, session-synchronized, or media-timecoded.
+
+WebJam never directly or automatically taps a meeting app, browser, or system
+output. Local Originals capture only the input devices a user explicitly
+selects, so do not route meeting or system audio into those inputs.
+
+## Recording is separate from live audio
 
 Jamulus owns the live interface and mix. WebJam’s optional Local Originals are
 a separate capture path for named mono/stereo tracks totaling up to 32 enabled
 input channels. Recording Setup allocates enabled Local-Original tracks to
 device channels sequentially; an empty configuration preserves the compatible
-two-input default. They are
-not a prerequisite for a jam and they do not change Jamulus settings.
+two-mono-input default. One mono row creates one mono PCM-24 WAV; one stereo row
+binds adjacent channels into one true two-channel PCM-24 WAV. An all-opted-out
+map creates no host Local Original. These logical identities survive recovery,
+Studio, gaps, and export. They are
+not a prerequisite for a live session and they do not change Jamulus settings.
 
 When the host presses **Record Session** for the first time, WebJam asks:
 
-- **Record Shared Jam Only** — start the synchronized host take now.
+- Use the profile's shared-take action — **Record Shared Jam Only**, **Record
+  Shared Voice Take Only**, or **Record Shared WebJam Audio Only** — to start
+  the synchronized host take without Local Originals.
 - **Also Keep This Mac’s Inputs** — open Recording Setup, choose a valid input,
   and review or edit the named Local Original tracks before recording.
 
 The host keeps shared recording authority. Guests can opt into Local Originals
 only when the active private session supports them; they are never interrupted
-while joining music.
+while joining live audio.
 
 ## Recording readiness
 
 WebJam checks takes storage, recorder control, the known roster, and any
 explicit local-capture setting when Record Session is requested. It does not
 perform those checks during Host or Join. A failed record preflight preserves
-the live jam and explains the next safe action.
+the live session and explains the next safe action.
+
+Before capture begins, one durable take-scoped recording plan binds the exact
+roster/server stems, Shared Track source fingerprint and playback generation,
+host logical mono/stereo topology, guest Local Original count/map obligations
+and presence generations, count-in/pre-roll, storage verdict, and expected
+source count. Finalization rechecks those exact facts. A reconnect, changed
+topology, missing/extra source, or substituted Shared Track cannot be accepted
+as the planned take.
 
 The live surface presents one authoritative progression:
 
-| State | Musician meaning |
+| State | Creator meaning |
 | --- | --- |
 | Idle | No recording generation owns the session |
 | Preparing | Storage, recorder, roster, and optional local input are being checked |
-| Count-in | The confirmed generation is counting the band in before captured performance |
+| Count-in | The confirmed generation is counting the session in before captured performance |
 | Recording | The shared take is actively being captured |
 | Stopping | New capture is blocked while active owners stop |
 | Finalizing | Stems, timing, manifests, checksums, and publication are being verified |
@@ -46,7 +73,7 @@ The live surface presents one authoritative progression:
 | Cleanup pending | An owned process or route could not yet be proved retired; retry Stop |
 
 A duplicate Record request cannot replace a generation that is preparing,
-recording, stopping, or finalizing. **Stop Recording** is one musician action,
+recording, stopping, or finalizing. **Stop Recording** is one host action,
 but recorder and Shared Track teardown remain independently proved owners; a
 clean result for one does not manufacture success for the other.
 
@@ -55,9 +82,9 @@ clean result for one does not manufacture success for the other.
 When a Shared Track is loaded and route-ready, confirmed recorder start owns
 its count-in/play transition. The route still enters Jamulus through the
 separately owned `WebJam Track` participant; WebJam does not mix a direct local
-copy into each musician's output. The server recorder's authoritative track is
+copy into each participant's output. The server recorder's authoritative track is
 classified as **Shared Track** in Studio and keeps a stable source identity
-across takes. It is not labeled as a musician or Local Original.
+across takes. It is not labeled as a participant or Local Original.
 
 The imported song remains immutable. Reconstructing the Studio source from it
 is allowed only through the recorded timing contract; if the authoritative
@@ -73,7 +100,7 @@ transfer. That confirms the file arrived intact; it does not by itself put the
 recording on the host take's timeline.
 
 WebJam marks a guest original ready for an aligned export only after it finds
-that same musician's verified Jamulus server reference and the recordings pass
+that same participant's verified Jamulus server reference and the recordings pass
 a strict timing check. WebJam records which reference it used and checks that
 reference is still intact when exporting. If the reference is missing or
 changed, the capture has gaps, or the timing evidence is inconclusive, the
@@ -99,8 +126,13 @@ absent from More so there is one obvious route rather than a duplicate entry.
 It uses familiar professional DAW interactions without copying Apple artwork,
 icons, exact layouts, or trade dress, and it is not a Logic integration. Open a
 completed or explicitly recovered schema-v2 take to use its multitrack review
-and Arrange workspace. The track list distinguishes musician, Shared Track,
+and Arrange workspace. The track list distinguishes participant, Shared Track,
 and Local Original sources before mixing or editing begins.
+
+The Arrange, comp, mix-mutation, sidecar, and export behavior below applies only
+to Music and Podcast & Voice. Review & Rehearsal Preview retains playback,
+scrubbing, and source inspection, but disables those mutation/export paths and
+does not create or load a Studio sidecar.
 
 ### Arrange and mix
 
@@ -161,7 +193,7 @@ separate **NOT RUN** observation.
 
 Select a destination track and choose **＋ Add Take** to use another complete
 or explicitly recovered recording from the same session. Studio offers only an
-unambiguous matching musician at the same project sample rate. Each source is
+unambiguous matching participant at the same project sample rate. Each source is
 bound by its complete take/track/segment identity; a similarly named or reused
 segment ID from another take is not interchangeable.
 
@@ -276,28 +308,31 @@ requested operation.
 
 Export never rewrites the original take.
 
-## v0.24.0 evidence boundary
+## v0.25.0 evidence boundary
 
 Automated source tests can establish state-machine, identity, source
 validation, timing-model, persistence/recovery, rendering, waveform, export,
 privacy, and headless UI behavior. They cannot establish acoustic audibility,
 latency, direct-monitor isolation, interface recovery, or how a packaged build
-feels to musicians.
+feels to creators.
 
-For v0.24.0, two-machine music, Shared Track audibility and independent mix,
+For v0.25.0, two-machine audio, Shared Track audibility and independent mix,
 count-in/record alignment, authoritative server stems, Local Original transfer,
 hardware interruption, long recording, Studio playback, external-editor
 import, packaged accessibility, SmartScreen, Gatekeeper, signing, and
 notarization remain **NOT RUN**. Record them with the
-[v0.24 physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
+[v0.25 physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 against an exact asset, build ID, SHA-256, environment, and evidence location.
+
+The [v0.24 checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md) remains
+immutable historical evidence for the current GitHub Latest release.
 
 ## Historical v0.22.4 evidence boundary
 
 Automated source tests cover the arrangement model, persistence/recovery,
 history/controller behavior, renderer, comping, source catalog, waveform
 pipeline, export transaction, and headless Qt interactions. Those checks do not
-prove that musicians heard the result through physical interfaces.
+prove that participants heard the result through physical interfaces.
 
 For the published v0.22.4 private test candidate, real two-Mac listening,
 interface disconnect/reconnect, sleep/wake, interruption and long-recording

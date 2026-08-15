@@ -19,6 +19,13 @@
 > sealed-v3 rejection proof, and pinned protected promotion passed. Never
 > rebuild or replace v0.24.0 or v0.23.0 assets with later source.
 
+> **v0.25.0 source-candidate boundary:** the current tree reports v0.25.0 but
+> no annotated tag, tag object/commit, successful tag CI run, draft release,
+> body digest, inventory digest, asset IDs/sizes/digests, checksum manifest, or
+> promotion result exists yet. GitHub Latest remains v0.24.0. The v0.25
+> publisher is deliberately non-executable until those post-tag facts are
+> recorded and independently reviewed.
+
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version
 tags may promote its explicitly unsigned/ad-hoc outputs as a private test
@@ -40,6 +47,44 @@ managed 3.12.3 downloads can be advertised. Run the
 [v0.24 physical checklist](../V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
 against exact assets; automation cannot convert its **NOT RUN** rows to PASS.
 
+For v0.25.0, the sealed v3 catalog must likewise be proved valid for historical
+v0.22.5 and rejected for exact v0.25.0. The source registry narrowly recognizes
+the unchanged audited Jamulus 3.12.2/3.12.3 identities through 0.25.0 and
+rejects 0.25.1; that baked policy is not a signed managed-update catalog. The
+candidate therefore remains fallback-only unless a new immutable signed
+version-specific component channel is separately completed.
+
+## v0.25.0 pre-promotion procedure
+
+The checked-in `.github/workflows/publish-v025-testing-release.yml` is a
+read-only placeholder with its only job forced false. It cannot publish or make
+a release Latest. Do not remove that guard before all of the following exist:
+
+1. Merge the fully reviewed source, docs, tests, version, SBOM, package copy,
+   and checklist to `master`; freeze release-related pushes.
+2. Create and push one annotated `v0.25.0` tag at the exact reviewed master
+   commit. Record the tag-object SHA and peeled tag-commit SHA.
+3. Let the tag run `.github/workflows/ci.yml` once successfully across all four
+   native targets and create the expected eight-asset draft. Record the unique
+   successful tag CI run ID and exact draft release ID.
+4. Query the draft through the GitHub API. Independently download every asset,
+   verify each GitHub SHA-256 digest, require the seven package entries in
+   `WebJam-v0.25.0-SHA256SUMS.txt`, then calculate the canonical release-body
+   and sorted `{id,name,size,digest}` inventory SHA-256 values.
+5. Replace every explicit `UNSET_POST_TAG_*` placeholder with those observed
+   values and replace the forced-false guard only in a separately reviewed
+   commit. The enabled workflow must preserve the v0.24 lane's exact tag,
+   descendant-master, unique tag-CI, immutable draft, eight-asset, checksum,
+   sealed-catalog-rejection, embedded-fallback, protected-environment, and
+   post-publication redownload checks, changed only for v0.25 pins.
+6. Rerun the workflow static tests from the release-control commit. Dispatch
+   only from exact `master` through `release-latest`, then independently verify
+   GitHub Latest and record the real evidence below the immutable v0.24 record.
+
+No value in this pre-promotion section is release evidence. Run the
+[v0.25 physical checklist](../V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
+only against the exact published asset hashes; all rows begin **NOT RUN**.
+
 ## Supported targets
 
 | Target | Runner | Preferred release asset | Portable fallback | Product scope |
@@ -49,8 +94,9 @@ against exact assets; automation cannot convert its **NOT RUN** rows to PASS.
 | Apple Silicon macOS | `macos-14` | `WebJam-v<VERSION>-macos-arm64-ADHOC-TEST-ONLY.dmg` | `WebJam-macos-arm64-ADHOC-TEST-ONLY.zip` | Host, Join, and Reference Studio |
 | Linux x64 | `ubuntu-22.04` | `WebJam-linux-x64.zip` | — | Join and Reference Studio on Ubuntu 22.04 x64 |
 
-Windows and Linux deliberately leave **Host a Jam** disabled. A release must
-not describe them as hosting replacements for the managed macOS Jamulus server.
+Windows and Linux deliberately leave the profile-specific **Host** action
+disabled. A release must not describe them as hosting replacements for the
+managed macOS Jamulus server.
 
 ## Private test-candidate lane
 
@@ -291,7 +337,7 @@ Before publishing, record the exact artifact SHA-256 and complete:
    remain unchanged throughout. Any App Data prompt is a package failure; do
    not grant it or add WebJam to Full Disk Access.
 7. For Presence v2 recorder correlation, use the exact packaged hash with a
-   hosted server and at least two independent musician clients. Record that
+   hosted server and at least two independent participant clients. Record that
    each client sees its own client-local channel zero while the host correlates
    distinct server ordinals and recorder stems. Repeat with the same visible
    name but distinct complete profiles, then with identical complete profiles:
@@ -299,7 +345,7 @@ Before publishing, record the exact artifact SHA-256 and complete:
    row must fail closed with truthful readiness and no guessed stem. Let the
    unchanged roster pass through two lease rotations during a take. Exercise a
    capture opt-in during rollover followed by opt-out, then disconnect and
-   reconnect one musician while producing identifiable audio before and after.
+   reconnect one participant while producing identifiable audio before and after.
    Verify one durable participant owns separate immutable media segments, the
    opted-in Local Original remains expected, server stems are not crossed, and
    missing/ambiguous evidence stays visible. Inspect logs, participant-registry
@@ -316,7 +362,7 @@ Presence v2 physical evidence currently remains:
 
 | Gate | Status |
 | --- | --- |
-| Two independent musician machines with distinct recorder stems | **NOT RUN** |
+| Two independent participant machines with distinct recorder stems | **NOT RUN** |
 | Same-name/distinct-profile and identical-full-profile behavior | **NOT RUN** |
 | Two live lease rotations during one take | **NOT RUN** |
 | Capture opt-in/opt-out and delivered Local Original | **NOT RUN** |

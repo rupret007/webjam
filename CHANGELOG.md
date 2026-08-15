@@ -1,13 +1,73 @@
 # WebJam Changelog
 
-All notable improvements and features for the WebJam music collaboration platform.
+All notable improvements and features for the WebJam creator collaboration platform.
 
 ---
 
 ## [Unreleased]
 
-> Development after the exact v0.24.0 private test candidate belongs here.
-> Every published tag and asset remains immutable historical evidence.
+> Work after the v0.25.0 source candidate belongs here. Every published tag,
+> release, and asset remains immutable historical evidence.
+
+## [0.25.0] — Creator profiles and authoritative multitrack source candidate
+
+> This source identity is not yet a GitHub release. GitHub **Latest** remains
+> immutable v0.24.0 until an exact annotated v0.25.0 tag, successful four-target
+> tag build, eight-asset draft, checksums, fallback proof, post-tag pins, and
+> protected promotion all complete. Windows remains unsigned; macOS remains
+> ad-hoc signed and unnotarized. Every v0.25 physical and hardware result is
+> **NOT RUN**.
+
+### Creator profiles
+
+- Added one persisted creator-profile boundary across launch, Host/Join,
+  readiness, live session, recording, Studio, local session records, and new
+  standalone projects. Legacy metadata without a profile migrates to Music.
+- **Music** and **Podcast & Voice** are GA profiles. Podcast & Voice applies
+  episode, reference-audio, speaker, microphone, and Sound Check language
+  plus voice-oriented local-project defaults without weakening recording or
+  export evidence.
+- **Review & Rehearsal** is visibly Preview. It allows live WebJam-audio
+  Host/Join, Record Session, local notes, and playback/read-only review of
+  completed session takes. It blocks standalone projects, take editing/comp/mix
+  mutation, track export, shared notes, visual sync, and media timecode. No
+  profile directly or automatically taps a meeting app, browser, or system
+  output.
+
+### Authoritative multitrack recording
+
+- A durable per-take recording plan now binds the exact roster/server stem IDs,
+  Shared Track content fingerprint and playback generation, host input map,
+  guest Local Original obligations, count-in, storage verdict, and expected
+  source count before capture begins. Finalization rechecks those exact facts
+  and fails closed on substitution, under/over-delivery, or topology drift.
+- Local input maps are logical tracks. A mono row creates one mono PCM-24 WAV;
+  a stereo row binds adjacent device channels into one true two-channel PCM-24
+  WAV. Stereo identity and gap evidence remain intact through recovery, take
+  loading, Studio rendering, and export. Opting out every row records no host
+  Local Original; only a genuinely empty legacy map uses two mono defaults.
+- Each participating guest freezes a take-scoped, path-free Local Original
+  count/map fingerprint and presence generation before host recording starts.
+  Reconnects, changed maps, missing or extra files, and source substitution are
+  refused rather than silently accepted as the planned take.
+- WebJam never directly or automatically taps a meeting app, browser, or system
+  output. Record Session captures authoritative Jamulus server stems and
+  explicitly planned Local Originals from input devices the user selects; users
+  must not route meeting or system-output audio into those inputs.
+
+### Meeting-platform and product boundaries
+
+- Any provider can use the hardened external handoff when its URL is public
+  HTTPS with a DNS hostname and has no credentials, custom port, IP literal, or
+  local/special-use destination. Known providers receive friendly labels;
+  unknown accepted providers remain neutral.
+- Native application verification, installation guidance, activation, and
+  focus-based mute guidance remain Webex-only. A successful link handoff never
+  claims meeting join, mute, participants, or recording.
+- Added a v0.25 physical checklist and a deliberately non-executable publisher
+  placeholder. Exact post-tag object/commit, tag CI, draft release, body, and
+  asset-inventory pins must be recorded before protected publication can be
+  enabled.
 
 ## [0.24.0] — Recording-first workstation private test candidate (2026-08-11)
 
@@ -2580,7 +2640,7 @@ protocol robustness, cross-platform pitfalls, and error UX.
 
 ---
 
-## Version 2.0 - Enhanced Edition (Current Release)
+## Version 2.0 - Enhanced Edition (historical legacy release)
 
 ### 🎉 Major New Features
 

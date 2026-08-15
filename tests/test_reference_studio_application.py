@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import time
@@ -15,6 +16,8 @@ import soundfile as sf
 
 from core.project_playback import ProjectPlaybackState
 from core.song_bounce import SongBounceRequest
+from core.song_project import LEGACY_SONG_PROJECT_SCHEMA_VERSION
+from core.song_project_store import PROJECT_MANIFEST_FILENAME
 from core.song_studio_reconcile import reconcile_song_studio_document
 from core.studio_project import (
     StudioAutomationInterpolation,
@@ -26,6 +29,7 @@ from core.take_player import TakePlayer
 import webjam_qt.controllers.reference_studio_application as reference_app
 from webjam_qt.controllers.reference_studio_application import (
     ReferenceStudioApplicationController,
+    ReferenceStudioApplicationError,
 )
 from webjam_qt.widgets.recording_studio import RecordingStudio
 from webjam_qt.widgets.reference_studio_shell import ReferenceStudioShell
@@ -87,6 +91,161 @@ def _wait_until(qapp: QApplication, predicate, timeout: float = 5.0) -> None:
             return
         time.sleep(0.005)
     raise AssertionError("Reference Studio work did not finish in time")
+
+
+def test_podcast_profile_creates_real_voice_multitrack_defaults(
+    tmp_path: Path,
+    qapp: QApplication,
+) -> None:
+    controller = ReferenceStudioApplicationController(
+        _shell(),
+        config_file=tmp_path / "settings.json",
+        creator_profile_key="podcast_voice",
+        output_backend=_ProjectOutput(),
+    )
+    try:
+        project = controller.create_project(
+            tmp_path / "Voice Session.webjam",
+            "Voice Session",
+        )
+        _wait_until(qapp, lambda: controller._catalog is not None)
+        assert project.creator_profile_key == "podcast_voice"
+        assert [track.name for track in project.tracks] == [
+            "Host Mic",
+            "Guest Mic",
+        ]
+        assert project.project_sample_rate == 48_000
+        assert controller._count_in is False
+        assert controller._metronome is False
+        assert controller.workspace.arrange.ruler_mode == "time"
+    finally:
+        assert controller.shutdown()
+
+
+def test_profile_callback_tracks_init_create_and_persisted_open(
+    tmp_path: Path,
+    qapp: QApplication,
+) -> None:
+    created_events: list[str] = []
+    creator_shell = _shell()
+    creator = ReferenceStudioApplicationController(
+        creator_shell,
+        config_file=tmp_path / "creator-settings.json",
+        creator_profile_key="podcast_voice",
+        profile_applied=created_events.append,
+        output_backend=_ProjectOutput(),
+    )
+    bundle = tmp_path / "Interview.webjam"
+    try:
+        assert created_events == ["podcast_voice"]
+        creator.create_project(bundle, "Interview")
+        _wait_until(qapp, lambda: creator._catalog is not None)
+        assert created_events == ["podcast_voice", "podcast_voice"]
+        assert creator_shell.creator_profile_key == "podcast_voice"
+        assert creator.close_project(choice="discard")
+    finally:
+        assert creator.shutdown()
+
+    opened_events: list[str] = []
+    opener_shell = _shell()
+    opener = ReferenceStudioApplicationController(
+        opener_shell,
+        config_file=tmp_path / "opener-settings.json",
+        profile_applied=opened_events.append,
+        output_backend=_ProjectOutput(),
+    )
+    try:
+        assert opened_events == ["music"]
+        opened = opener.open_project(bundle)
+        assert opened.creator_profile_key == "podcast_voice"
+        assert opened_events == ["music", "podcast_voice"]
+        assert opener_shell.creator_profile_key == "podcast_voice"
+        assert opener.workspace.creator_profile_key == "podcast_voice"
+    finally:
+        assert opener.shutdown()
+
+
+def test_review_preview_rejects_local_project_create_and_open(
+    tmp_path: Path,
+) -> None:
+    source = ReferenceStudioApplicationController(
+        _shell(),
+        config_file=tmp_path / "source-settings.json",
+        output_backend=_ProjectOutput(),
+    )
+    source_bundle = tmp_path / "Existing.webjam"
+    try:
+        source.create_project(source_bundle, "Existing")
+        assert source.close_project(choice="discard")
+    finally:
+        assert source.shutdown()
+
+    shell = _shell()
+    controller = ReferenceStudioApplicationController(
+        shell,
+        config_file=tmp_path / "review-settings.json",
+        creator_profile_key="review_rehearsal",
+        output_backend=_ProjectOutput(),
+    )
+    rejected = tmp_path / "Must Not Exist.webjam"
+    try:
+        with pytest.raises(
+            ReferenceStudioApplicationError,
+            match="cannot create local multitrack",
+        ):
+            controller.create_project(rejected, "Must Not Exist")
+        assert not rejected.exists()
+        with pytest.raises(
+            ReferenceStudioApplicationError,
+            match="cannot open local multitrack",
+        ):
+            controller.open_project(source_bundle)
+        assert not controller.project_open
+        assert shell.current_view() == "home"
+        assert shell.creator_profile_key == "review_rehearsal"
+    finally:
+        assert controller.shutdown()
+
+
+def test_schema_one_project_opens_as_music_and_notifies_callback(
+    tmp_path: Path,
+) -> None:
+    creator = ReferenceStudioApplicationController(
+        _shell(),
+        config_file=tmp_path / "legacy-source-settings.json",
+        creator_profile_key="podcast_voice",
+        output_backend=_ProjectOutput(),
+    )
+    bundle = tmp_path / "Legacy.webjam"
+    try:
+        creator.create_project(bundle, "Legacy")
+        assert creator.close_project(choice="discard")
+    finally:
+        assert creator.shutdown()
+
+    manifest_path = bundle / PROJECT_MANIFEST_FILENAME
+    manifest = json.loads(manifest_path.read_bytes())
+    manifest["schema_version"] = LEGACY_SONG_PROJECT_SCHEMA_VERSION
+    manifest.pop("creator_profile_key")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    events: list[str] = []
+    shell = _shell()
+    opener = ReferenceStudioApplicationController(
+        shell,
+        config_file=tmp_path / "legacy-open-settings.json",
+        creator_profile_key="podcast_voice",
+        profile_applied=events.append,
+        output_backend=_ProjectOutput(),
+    )
+    try:
+        opened = opener.open_project(bundle)
+        assert opened.creator_profile_key == "music"
+        assert opener.creator_profile_key == "music"
+        assert shell.creator_profile_key == "music"
+        assert events == ["podcast_voice", "music"]
+    finally:
+        assert opener.shutdown()
 
 
 def test_play_along_project_import_edit_save_reopen_and_transport(
@@ -469,19 +628,20 @@ def test_ruler_command_switches_between_elapsed_time_and_project_meter(
     controller._set_tempo(90.0)
     controller._set_time_signature(6, 8)
 
+    arrange = controller.workspace.arrange
+    assert arrange.ruler_mode == "bars"
     controller._dispatch_command("toggle_ruler")
 
-    arrange = controller.workspace.arrange
+    assert arrange.ruler_mode == "time"
+    assert "elapsed time" in controller._status
+
+    controller._dispatch_command("toggle_ruler")
+
     assert arrange.ruler_mode == "bars"
     assert arrange.ruler_tempo_bpm == 90.0
     assert arrange.ruler_beats_per_bar == 6
     assert arrange.ruler_beat_denominator == 8
     assert "bars and beats" in controller._status
-
-    controller._dispatch_command("toggle_ruler")
-
-    assert arrange.ruler_mode == "time"
-    assert "elapsed time" in controller._status
     assert controller.close_project(choice="discard")
     assert controller.shutdown()
 

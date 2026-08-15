@@ -22,9 +22,14 @@ from core.network_invite import (
     create_invite_link,
     parse_invite_link,
 )
-from core.local_capture import LocalCaptureGap
+from core.local_capture import (
+    LocalCaptureGap,
+    LocalCaptureTrack,
+    local_capture_track_map_fingerprint,
+)
 from core.session_transfer import (
     EnrollmentRegistry,
+    LocalOriginalObligation,
     RecordingSignal,
     SessionControlState,
     SessionCredentials,
@@ -40,6 +45,7 @@ from core.session_transfer_runtime import (
     GuestPeerSession,
     HostPeerSession,
     PEER_TRANSFER_ERROR_PREFIX,
+    _participant_inventory_disposition,
     is_private_lan_host,
 )
 from core.take_project import (
@@ -2173,3 +2179,80 @@ def test_host_peer_binding_accepts_only_private_lan_ipv4(
     host: str, expected: bool
 ) -> None:
     assert is_private_lan_host(host) is expected
+
+
+def test_pre_take_obligation_validates_zero_one_many_and_map_identity() -> None:
+    participant_id = _id()
+    zero = LocalOriginalObligation(
+        participant_id,
+        0,
+        hashlib.sha256(b"zero").hexdigest(),
+        capture_requested=False,
+    )
+    assert _participant_inventory_disposition((), zero).status == "complete"
+    unexpected = SimpleNamespace(
+        descriptor=SimpleNamespace(
+            inventory_input_count=1,
+            inventory_segment_count=1,
+            inventory_map_fingerprint=hashlib.sha256(b"one").hexdigest(),
+            source_channel=0,
+        )
+    )
+    assert (
+        _participant_inventory_disposition((unexpected,), zero).status
+        == "needs_attention"
+    )
+
+    one_fingerprint = hashlib.sha256(b"one").hexdigest()
+    one = LocalOriginalObligation(
+        participant_id,
+        1,
+        one_fingerprint,
+        capture_requested=True,
+    )
+    assert _participant_inventory_disposition((), one).status == "missing"
+    assert _participant_inventory_disposition((unexpected,), one).status == "complete"
+
+    many_fingerprint = hashlib.sha256(b"many").hexdigest()
+    many = LocalOriginalObligation(
+        participant_id,
+        3,
+        many_fingerprint,
+        capture_requested=True,
+    )
+
+    def records(count: int, declared: int, fingerprint: str):
+        return tuple(
+            SimpleNamespace(
+                descriptor=SimpleNamespace(
+                    inventory_input_count=declared,
+                    inventory_segment_count=declared,
+                    inventory_map_fingerprint=fingerprint,
+                    source_channel=index,
+                )
+            )
+            for index in range(count)
+        )
+
+    assert _participant_inventory_disposition(
+        records(2, 2, many_fingerprint), many
+    ).status == "needs_attention"
+    assert _participant_inventory_disposition(
+        records(4, 4, many_fingerprint), many
+    ).status == "needs_attention"
+    assert _participant_inventory_disposition(
+        records(3, 3, hashlib.sha256(b"substitute").hexdigest()), many
+    ).status == "needs_attention"
+    assert _participant_inventory_disposition(
+        records(3, 3, many_fingerprint), many
+    ).status == "complete"
+
+
+def test_guest_contract_fingerprint_excludes_stem_device_and_path(tmp_path: Path) -> None:
+    first = (LocalCaptureTrack("Private Vocal", (0, 1)),)
+    renamed = (LocalCaptureTrack("Dialogue Pair", (0, 1)),)
+    fingerprint = local_capture_track_map_fingerprint(first)
+    assert fingerprint == local_capture_track_map_fingerprint(renamed)
+    assert "Private Vocal" not in fingerprint
+    assert str(tmp_path) not in fingerprint
+    assert "Scarlett" not in fingerprint

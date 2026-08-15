@@ -24,6 +24,11 @@ from PySide6.QtWidgets import (
 )
 
 from core.audio_routing import list_input_devices
+from core.creative_modes import CreatorProfile, get_creator_profile_by_key
+from core.meeting_link import (
+    COMPACT_MEETING_CAPTURE_NOTICE,
+    RECORD_SESSION_MEETING_CAPTURE_NOTICE,
+)
 from core.settings import AppSettings, save_settings
 from webjam_qt.theme.tokens import Space
 
@@ -31,19 +36,89 @@ from webjam_qt.theme.tokens import Space
 LOGGER = logging.getLogger("webjam.qt.recording_setup")
 
 
+def _resolve_creator_profile(
+    creator_profile: CreatorProfile | str | None,
+) -> CreatorProfile:
+    if creator_profile is None:
+        profile = get_creator_profile_by_key("music")
+    elif isinstance(creator_profile, CreatorProfile):
+        profile = get_creator_profile_by_key(creator_profile.key)
+    elif isinstance(creator_profile, str):
+        profile = get_creator_profile_by_key(creator_profile)
+    else:
+        raise TypeError("creator_profile must be a CreatorProfile or profile key.")
+    if profile is None:
+        raise ValueError("creator profile is unsupported.")
+    return profile
+
+
 class LocalOriginalsChoiceDialog(QDialog):
     """Ask the one first-recording question without touching live audio.
 
-    The shared Jamulus take is always available on the host.  Keeping this
-    Mac's configured interface inputs is a separate, explicit recording choice
-    and therefore belongs here—not in Host, Join, or Jamulus setup.
+    The shared WebJam take is always available on the host. Keeping this Mac's
+    configured interface inputs is a separate, explicit recording choice and
+    therefore belongs here—not in Host, Join, or live-audio setup.
     """
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        *,
+        creator_profile: CreatorProfile | str | None = None,
+    ) -> None:
         super().__init__(parent)
+        profile = _resolve_creator_profile(creator_profile)
+        self._creator_profile = profile
         self.choice = ""
         self.setObjectName("LocalOriginalsChoiceDialog")
-        self.setWindowTitle("Keep a local original?")
+
+        if profile.key == "podcast_voice":
+            title_text = "Keep a local voice original?"
+            detail_text = (
+                "WebJam records the synchronized voice take either way. Optionally "
+                "keep selected Local Original inputs for Podcast & Voice Studio. "
+                f"{COMPACT_MEETING_CAPTURE_NOTICE}"
+            )
+            accessible_detail_text = (
+                "WebJam records the shared synchronized voice take from this "
+                "session either way. You can also keep selected inputs from this "
+                "Mac as Local Originals for Podcast & Voice Studio. "
+                f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+            )
+            shared_text = "Record Shared Voice Take Only"
+            shared_accessible_name = "Record shared WebJam voice take only"
+        elif profile.key == "review_rehearsal":
+            title_text = "Keep optional Local Originals?"
+            detail_text = (
+                "WebJam records synchronized audio either way. Optionally keep "
+                "selected Local Original inputs for source review; editing/export "
+                f"are unavailable. {COMPACT_MEETING_CAPTURE_NOTICE}"
+            )
+            accessible_detail_text = (
+                "WebJam records the shared synchronized WebJam audio take either "
+                "way. You can also keep selected inputs from this Mac as Local "
+                "Originals for playback and source review. Completed-take review "
+                "is playback-only: take editing and track export are unavailable. "
+                f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+            )
+            shared_text = "Record Shared WebJam Audio Only"
+            shared_accessible_name = "Record shared WebJam audio take only"
+        else:
+            # Preserve the shipped Music wording exactly.
+            title_text = "Keep a local original?"
+            detail_text = (
+                "WebJam will record the shared Jamulus take either way. You can "
+                "also keep configured inputs from this Mac as separate Local "
+                "Originals for Studio later. This does not change Jamulus "
+                "audio settings."
+            )
+            accessible_detail_text = detail_text
+            shared_text = "Record Shared Jam Only"
+            shared_accessible_name = "Record shared Jamulus take only"
+
+        self.setWindowTitle(title_text)
+        self.setAccessibleName(title_text)
+        self.setAccessibleDescription(accessible_detail_text)
         self.setModal(True)
         self.setMinimumWidth(560)
         self.resize(600, 310)
@@ -52,24 +127,19 @@ class LocalOriginalsChoiceDialog(QDialog):
         root.setContentsMargins(Space.XL, Space.XL, Space.XL, Space.LG)
         root.setSpacing(Space.MD)
 
-        title = QLabel("Keep a local original?")
+        title = QLabel(title_text)
         title.setObjectName("SimpleSettingsTitle")
         root.addWidget(title)
 
-        detail = QLabel(
-            "WebJam will record the shared Jamulus take either way. You can "
-            "also keep configured inputs from this Mac as separate Local "
-            "Originals for Studio later. This does not change Jamulus "
-            "audio settings."
-        )
+        detail = QLabel(detail_text)
         detail.setObjectName("SimpleSettingsSubtitle")
         detail.setWordWrap(True)
         root.addWidget(detail)
         root.addStretch(1)
 
-        shared = QPushButton("Record Shared Jam Only")
+        shared = QPushButton(shared_text)
         shared.setObjectName("PrimaryButton")
-        shared.setAccessibleName("Record shared Jamulus take only")
+        shared.setAccessibleName(shared_accessible_name)
         shared.clicked.connect(self._record_shared)
         root.addWidget(shared)
 
@@ -103,11 +173,14 @@ class RecordingSetupDialog(QDialog):
         *,
         local_originals_available: bool = True,
         takes_folder_editable: bool = True,
+        creator_profile: CreatorProfile | str | None = None,
     ) -> None:
         super().__init__(parent)
+        profile = _resolve_creator_profile(creator_profile)
         # Edit a draft. A failed atomic save must never leave the running
         # controller believing that unsaved preferences are active.
         self._settings = deepcopy(settings)
+        self._creator_profile = profile
         self._local_originals_available = bool(local_originals_available)
         self._takes_folder_editable = bool(takes_folder_editable)
         self.setObjectName("RecordingSetupDialog")
@@ -136,20 +209,118 @@ class RecordingSetupDialog(QDialog):
         scroll.setWidget(body)
         root.addWidget(scroll, 1)
 
+        if profile.key == "podcast_voice":
+            subtitle_text = (
+                (
+                    "The host records the synchronized WebJam voice take. Choose "
+                    "whether this Mac also keeps its configured interface inputs "
+                    "as Local Originals. Podcast & Voice Studio chooses its own "
+                    "playback output when you review a take. "
+                    f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+                )
+                if self._local_originals_available
+                else (
+                    "The host records the synchronized WebJam voice take. Podcast "
+                    "& Voice Studio chooses its own playback output when you "
+                    f"review a take. {RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+                )
+            )
+            unavailable_text = (
+                "Local originals are unavailable for this recording session. You "
+                "can still participate normally, and the host's synchronized "
+                "WebJam server track is kept."
+            )
+            capture_help_text = (
+                "Name mono or stereo voice tracks with Edit Voice Tracks. Enabled "
+                "Local Originals use device inputs sequentially, up to 32 channels "
+                "total. An empty track list keeps the compatible input 1–2 default. "
+                "The device must run at 48 kHz and be shareable with WebJam’s "
+                "Jamulus audio path. WebJam records only after the host confirms a "
+                "take."
+            )
+            edit_tracks_text = "Edit Voice Tracks…"
+            edit_tracks_accessible_name = (
+                "Edit the named local voice tracks Record Session captures"
+            )
+            locked_folder_tooltip = (
+                "End or restart the current recording session before changing its "
+                "Takes folder."
+            )
+        elif profile.key == "review_rehearsal":
+            subtitle_text = (
+                (
+                    "The host records the synchronized WebJam audio take. Choose "
+                    "whether this Mac also keeps its configured interface inputs "
+                    "as Local Originals. Completed-take review is playback-only; "
+                    "take editing and track export are unavailable. "
+                    f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+                )
+                if self._local_originals_available
+                else (
+                    "The host records the synchronized WebJam audio take. "
+                    "Completed-take review is playback-only; take editing and track "
+                    f"export are unavailable. {RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+                )
+            )
+            unavailable_text = (
+                "Local originals are unavailable for this review session. You can "
+                "still participate normally, and the host's synchronized WebJam "
+                "server track is kept."
+            )
+            capture_help_text = (
+                "Name mono or stereo sources with Configure Input Sources. Enabled "
+                "Local Originals use device inputs sequentially, up to 32 channels "
+                "total. An empty source list keeps the compatible input 1–2 default. "
+                "The device must run at 48 kHz and be shareable with WebJam’s "
+                "Jamulus audio path. WebJam records only after the host confirms a "
+                "take."
+            )
+            edit_tracks_text = "Configure Input Sources…"
+            edit_tracks_accessible_name = (
+                "Configure the named local input sources Record Session captures"
+            )
+            locked_folder_tooltip = (
+                "End or restart the current review session before changing its "
+                "Takes folder."
+            )
+        else:
+            # Preserve the shipped Music wording exactly.
+            subtitle_text = (
+                (
+                    "The host records the synchronized Jamulus take. Choose whether "
+                    "this Mac also keeps its configured interface inputs as Local "
+                    "Originals. Studio chooses its own playback output when you review a take."
+                )
+                if self._local_originals_available
+                else (
+                    "The host records the synchronized Jamulus take. Studio chooses "
+                    "its playback output when you review a take."
+                )
+            )
+            unavailable_text = (
+                "Local originals are unavailable for this session. You can "
+                "still play normally, and the host's synchronized server track is kept."
+            )
+            capture_help_text = (
+                "Name mono or stereo tracks with Edit Input Tracks. Enabled Local "
+                "Originals use device inputs sequentially, up to 32 channels total. "
+                "An empty track list keeps the compatible input 1–2 default. The "
+                "device must run at 48 kHz and be shareable with Jamulus. WebJam "
+                "records only after the host confirms a take."
+            )
+            edit_tracks_text = "Edit Input Tracks…"
+            edit_tracks_accessible_name = (
+                "Edit the named local input tracks Record Session captures"
+            )
+            locked_folder_tooltip = (
+                "End or restart the current jam before changing its Takes folder."
+            )
+
+        self.setAccessibleName("WebJam Recording Setup")
+        self.setAccessibleDescription(subtitle_text)
         title = QLabel("Recording setup")
         title.setObjectName("SimpleSettingsTitle")
-        subtitle = QLabel(
-            (
-                "The host records the synchronized Jamulus take. Choose whether "
-                "this Mac also keeps its configured interface inputs as Local "
-                "Originals. Studio chooses its own playback output when you review a take."
-            )
-            if self._local_originals_available
-            else (
-                "The host records the synchronized Jamulus take. Studio chooses "
-                "its playback output when you review a take."
-            )
-        )
+        subtitle = QLabel(subtitle_text)
         subtitle.setObjectName("SimpleSettingsSubtitle")
         subtitle.setWordWrap(True)
         content.addWidget(title)
@@ -166,10 +337,7 @@ class RecordingSetupDialog(QDialog):
         self._capture.setEnabled(self._local_originals_available)
         content.addWidget(self._capture)
 
-        self._capture_unavailable = QLabel(
-            "Local originals are unavailable for this session. You can "
-            "still play normally, and the host's synchronized server track is kept."
-        )
+        self._capture_unavailable = QLabel(unavailable_text)
         self._capture_unavailable.setObjectName("SimpleSettingsSubtitle")
         self._capture_unavailable.setWordWrap(True)
         self._capture_unavailable.setVisible(
@@ -177,13 +345,7 @@ class RecordingSetupDialog(QDialog):
         )
         content.addWidget(self._capture_unavailable)
 
-        self._capture_help = QLabel(
-            "Name mono or stereo tracks with Edit Input Tracks. Enabled Local "
-            "Originals use device inputs sequentially, up to 32 channels total. "
-            "An empty track list keeps the compatible input 1–2 default. The "
-            "device must run at 48 kHz and be shareable with Jamulus. WebJam "
-            "records only after the host confirms a take."
-        )
+        self._capture_help = QLabel(capture_help_text)
         self._capture_help.setObjectName("SimpleSettingsSubtitle")
         self._capture_help.setWordWrap(True)
         content.addWidget(self._capture_help)
@@ -222,11 +384,9 @@ class RecordingSetupDialog(QDialog):
             for entry in (getattr(settings, "input_maps", None) or [])
             if isinstance(entry, dict)
         ]
-        self._edit_tracks_btn = QPushButton("Edit Input Tracks…")
+        self._edit_tracks_btn = QPushButton(edit_tracks_text)
         self._edit_tracks_btn.setObjectName("GhostButton")
-        self._edit_tracks_btn.setAccessibleName(
-            "Edit the named local input tracks Record Session captures"
-        )
+        self._edit_tracks_btn.setAccessibleName(edit_tracks_accessible_name)
         self._edit_tracks_btn.clicked.connect(self._edit_input_tracks)
         self._tracks_summary = QLabel("")
         self._tracks_summary.setObjectName("SimpleSettingsSubtitle")
@@ -248,9 +408,7 @@ class RecordingSetupDialog(QDialog):
         choose_folder.setObjectName("GhostButton")
         choose_folder.setEnabled(self._takes_folder_editable)
         if not self._takes_folder_editable:
-            choose_folder.setToolTip(
-                "End or restart the current jam before changing its Takes folder."
-            )
+            choose_folder.setToolTip(locked_folder_tooltip)
         choose_folder.clicked.connect(self._choose_folder)
         folder_row.addWidget(choose_folder)
         show_folder = QPushButton("Show Folder")
@@ -323,9 +481,24 @@ class RecordingSetupDialog(QDialog):
     def _refresh_tracks_summary(self) -> None:
         count = len(self._input_maps)
         if count == 0:
-            self._tracks_summary.setText(
-                "Using the default two isolated stems (host-guitar, host-vocal)."
-            )
+            if self._creator_profile.key == "podcast_voice":
+                summary = (
+                    "No input map is configured. WebJam will keep the legacy "
+                    "two-input Local Original fallback (inputs 1–2) until you "
+                    "name voice tracks."
+                )
+            elif self._creator_profile.key == "review_rehearsal":
+                summary = (
+                    "No input map is configured. WebJam will keep the legacy "
+                    "two-input Local Original fallback (inputs 1–2) until you "
+                    "name the sources to keep."
+                )
+            else:
+                summary = (
+                    "Using the default two isolated stems "
+                    "(host-guitar, host-vocal)."
+                )
+            self._tracks_summary.setText(summary)
         else:
             active_channels = sum(
                 int(entry.get("channels", 0) or 0)
@@ -344,7 +517,11 @@ class RecordingSetupDialog(QDialog):
     def _edit_input_tracks(self) -> None:
         from webjam_qt.windows.input_map_editor import InputMapEditorDialog
 
-        dialog = InputMapEditorDialog(self._input_maps, parent=self)
+        dialog = InputMapEditorDialog(
+            self._input_maps,
+            parent=self,
+            creator_profile=self._creator_profile,
+        )
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._input_maps = dialog.result_maps()
             self._refresh_tracks_summary()

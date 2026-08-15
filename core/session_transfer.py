@@ -45,6 +45,7 @@ from socketserver import TCPServer
 from typing import Any, Callable, Iterable, Mapping
 from urllib.parse import parse_qs, quote, urlsplit
 
+from core.creative_modes import canonical_creator_profile_key
 from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
 from core.redaction import redact_text
 
@@ -125,6 +126,16 @@ def _presence_challenge_text(value: str) -> str:
 def _presence_fingerprint_text(value: str) -> str:
     if type(value) is not str or not _SHA256_PATTERN.fullmatch(value):
         raise ValueError("host_roster_fingerprint must be lowercase SHA-256.")
+    return value
+
+
+def _optional_sha256_text(value: object, label: str) -> str:
+    """Validate an optional lowercase SHA-256 without coercing private data."""
+
+    if type(value) is str and value == "":
+        return ""
+    if type(value) is not str or not _SHA256_PATTERN.fullmatch(value):
+        raise ValueError(f"{label} must be empty or lowercase SHA-256.")
     return value
 
 
@@ -416,6 +427,8 @@ class PresenceV2Proof:
     presence_generation: int
     capture_enabled: bool
     protocol_version: int = 2
+    local_original_track_count: int | None = None
+    local_original_map_fingerprint: str = ""
 
     def __post_init__(self) -> None:
         if type(self.protocol_version) is not int or self.protocol_version != 2:
@@ -453,6 +466,32 @@ class PresenceV2Proof:
         )
         if type(self.capture_enabled) is not bool:
             raise ValueError("capture_enabled must be a boolean.")
+        track_count = self.local_original_track_count
+        map_fingerprint = _optional_sha256_text(
+            self.local_original_map_fingerprint,
+            "local_original_map_fingerprint",
+        )
+        if track_count is None:
+            if map_fingerprint:
+                raise ValueError(
+                    "A Local Original map fingerprint requires an exact track count."
+                )
+        else:
+            track_count = _presence_int(
+                track_count, "local_original_track_count"
+            )
+            if track_count > _MAX_DECLARED_INPUTS:
+                raise ValueError(
+                    "local_original_track_count is outside the supported range."
+                )
+            if not map_fingerprint:
+                raise ValueError(
+                    "An exact Local Original track count requires a map fingerprint."
+                )
+            if self.capture_enabled != bool(track_count):
+                raise ValueError(
+                    "capture_enabled must match the exact Local Original track count."
+                )
         object.__setattr__(self, "participant_id", participant_id)
         object.__setattr__(self, "display_name", _clean_name(self.display_name))
         object.__setattr__(self, "ordered_roster_digest", digest)
@@ -465,6 +504,10 @@ class PresenceV2Proof:
         object.__setattr__(self, "challenge_epoch", challenge_epoch)
         object.__setattr__(self, "topology_epoch", topology_epoch)
         object.__setattr__(self, "presence_generation", presence_generation)
+        object.__setattr__(self, "local_original_track_count", track_count)
+        object.__setattr__(
+            self, "local_original_map_fingerprint", map_fingerprint
+        )
 
     @property
     def recorder_eligible(self) -> bool:
@@ -472,6 +515,72 @@ class PresenceV2Proof:
 
     def __repr__(self) -> str:
         return "PresenceV2Proof(private=[redacted])"
+
+
+@dataclass(frozen=True, repr=False)
+class LocalOriginalObligation:
+    """Path-free pre-take inventory promised by one authenticated peer.
+
+    ``track_count=None`` represents an older peer whose capture opt-in is
+    readable but cannot prove an exact inventory.  Current peers always bind a
+    non-negative logical-track count and a canonical, name-free map digest.
+    """
+
+    participant_id: str
+    track_count: int | None
+    map_fingerprint: str = ""
+    presence_generation: int = 0
+    capture_requested: bool = False
+
+    def __post_init__(self) -> None:
+        participant_id = _uuid_text(self.participant_id, "participant_id")
+        generation = _presence_int(
+            self.presence_generation, "presence_generation"
+        )
+        if type(self.capture_requested) is not bool:
+            raise ValueError("capture_requested must be a boolean.")
+        fingerprint = _optional_sha256_text(
+            self.map_fingerprint, "map_fingerprint"
+        )
+        count = self.track_count
+        if count is None:
+            if fingerprint:
+                raise ValueError(
+                    "A Local Original map fingerprint requires an exact track count."
+                )
+        else:
+            count = _presence_int(count, "track_count")
+            if count > _MAX_DECLARED_INPUTS:
+                raise ValueError("track_count is outside the supported range.")
+            if not fingerprint:
+                raise ValueError(
+                    "An exact Local Original track count requires a map fingerprint."
+                )
+            if self.capture_requested != bool(count):
+                raise ValueError(
+                    "capture_requested must match the exact Local Original track count."
+                )
+        object.__setattr__(self, "participant_id", participant_id)
+        object.__setattr__(self, "track_count", count)
+        object.__setattr__(self, "map_fingerprint", fingerprint)
+        object.__setattr__(self, "presence_generation", generation)
+
+    @property
+    def exact(self) -> bool:
+        return self.track_count is not None
+
+    @classmethod
+    def from_presence_proof(cls, proof: PresenceV2Proof) -> "LocalOriginalObligation":
+        return cls(
+            participant_id=proof.participant_id,
+            track_count=proof.local_original_track_count,
+            map_fingerprint=proof.local_original_map_fingerprint,
+            presence_generation=proof.presence_generation,
+            capture_requested=proof.capture_enabled,
+        )
+
+    def __repr__(self) -> str:
+        return "LocalOriginalObligation(private=[redacted])"
 
 
 @dataclass(repr=False)
@@ -1160,6 +1269,8 @@ class EnrollmentRegistry:
         topology_epoch: int,
         presence_generation: int,
         capture_enabled: bool,
+        local_original_track_count: int | None = None,
+        local_original_map_fingerprint: str = "",
         _allow_ambiguous_ordinal: bool = False,
     ) -> PresenceV2Proof:
         """Accept one fresh cooperative claim from an authenticated WebJam peer.
@@ -1186,6 +1297,8 @@ class EnrollmentRegistry:
             topology_epoch=topology_epoch,
             presence_generation=presence_generation,
             capture_enabled=capture_enabled,
+            local_original_track_count=local_original_track_count,
+            local_original_map_fingerprint=local_original_map_fingerprint,
         )
         with self._lock:
             record = next(
@@ -1488,6 +1601,38 @@ class EnrollmentRegistry:
                 )
             )
 
+    def current_local_original_obligations(
+        self,
+    ) -> tuple[LocalOriginalObligation, ...]:
+        """Return the newest authenticated contract across active rollover.
+
+        Pending proofs are not recorder-attribution evidence, but they are
+        authenticated monotonic Local Original promises. Including their
+        newest generation prevents a take begun during lease rollover from
+        freezing an already superseded input map.
+        """
+
+        with self._lock:
+            if not self.presence_v2_configured():
+                return ()
+            now = self._presence_v2_now_locked()
+            self._advance_presence_v2_epochs_locked(now)
+            newest: dict[str, PresenceV2Proof] = {}
+            for epoch in (self._presence_v2_active, self._presence_v2_pending):
+                if epoch is None or now >= epoch.expires_at:
+                    continue
+                for proof in epoch.by_participant.values():
+                    prior = newest.get(proof.participant_id)
+                    if (
+                        prior is None
+                        or proof.presence_generation > prior.presence_generation
+                    ):
+                        newest[proof.participant_id] = proof
+            return tuple(
+                LocalOriginalObligation.from_presence_proof(newest[participant_id])
+                for participant_id in sorted(newest)
+            )
+
     def legacy_capture_enabled_participant_ids(self) -> tuple[str, ...]:
         """Return v1 per-enrollment capture opt-ins without trusting channels."""
 
@@ -1740,6 +1885,7 @@ class SessionStateSnapshot:
     shared_track: SharedTrackSessionSnapshot = field(
         default_factory=SharedTrackSessionSnapshot
     )
+    creator_profile_key: str = "music"
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -1755,6 +1901,12 @@ class SessionStateSnapshot:
         if not isinstance(shared_track, SharedTrackSessionSnapshot):
             raise ValueError("shared_track must be a SharedTrackSessionSnapshot.")
         object.__setattr__(self, "shared_track", shared_track)
+        creator_profile_key = canonical_creator_profile_key(
+            self.creator_profile_key
+        )
+        if creator_profile_key is None:
+            raise ValueError("creator_profile_key is unsupported.")
+        object.__setattr__(self, "creator_profile_key", creator_profile_key)
 
 
 def _session_state_mapping(
@@ -1770,6 +1922,7 @@ def _session_state_mapping(
         "started_utc": snapshot.started_utc,
         "stopped_utc": snapshot.stopped_utc,
         "message": snapshot.message,
+        "creator_profile_key": snapshot.creator_profile_key,
     }
     if include_shared_track:
         payload["shared_track"] = snapshot.shared_track.to_mapping()
@@ -1779,7 +1932,13 @@ def _session_state_mapping(
 class SessionControlState:
     """Thread-safe, idempotent host recording signal observed by joiners."""
 
-    def __init__(self, root: str | Path, session_id: str) -> None:
+    def __init__(
+        self,
+        root: str | Path,
+        session_id: str,
+        *,
+        creator_profile_key: str = "music",
+    ) -> None:
         self.root = Path(root).expanduser().resolve()
         self.path = self.root / "webjam-session-state.json"
         self.session_id = _uuid_text(session_id, "session_id")
@@ -1790,6 +1949,7 @@ class SessionControlState:
             session_id=self.session_id,
             generation=0,
             signal=RecordingSignal.IDLE,
+            creator_profile_key=creator_profile_key,
         )
         self._load()
 
@@ -1808,6 +1968,7 @@ class SessionControlState:
                 started_utc=str(payload.get("started_utc", "")),
                 stopped_utc=str(payload.get("stopped_utc", "")),
                 message=str(payload.get("message", ""))[:240],
+                creator_profile_key=payload.get("creator_profile_key", "music"),
             )
         except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
             raise SessionTransferError(
@@ -2114,6 +2275,7 @@ class TransferDescriptor:
     gaps: tuple[TransferGap, ...] = ()
     inventory_input_count: int = 0
     inventory_segment_count: int = 0
+    inventory_map_fingerprint: str = ""
 
     def __post_init__(self) -> None:
         for field_name in ("session_id", "take_id", "participant_id", "segment_id"):
@@ -2145,6 +2307,10 @@ class TransferDescriptor:
         inventory_segment_count = _gap_integer(
             self.inventory_segment_count,
             "inventory_segment_count",
+        )
+        inventory_map_fingerprint = _optional_sha256_text(
+            self.inventory_map_fingerprint,
+            "inventory_map_fingerprint",
         )
         gap_frames = int(self.gap_frames)
         if source_channel < 0:
@@ -2195,6 +2361,9 @@ class TransferDescriptor:
         object.__setattr__(self, "source_channel", source_channel)
         object.__setattr__(self, "inventory_input_count", inventory_input_count)
         object.__setattr__(self, "inventory_segment_count", inventory_segment_count)
+        object.__setattr__(
+            self, "inventory_map_fingerprint", inventory_map_fingerprint
+        )
         object.__setattr__(self, "gap_frames", gap_frames)
         object.__setattr__(self, "gaps", tuple(structured_gaps))
         object.__setattr__(
@@ -2227,6 +2396,7 @@ class TransferDescriptor:
             source_channel=int(value.get("source_channel", 0)),
             inventory_input_count=value.get("inventory_input_count", 0),
             inventory_segment_count=value.get("inventory_segment_count", 0),
+            inventory_map_fingerprint=value.get("inventory_map_fingerprint", ""),
             gap_frames=int(value.get("gap_frames", 0)),
             capture_errors=tuple(value.get("capture_errors", ()))
             if isinstance(value.get("capture_errors", ()), (list, tuple))
@@ -2748,6 +2918,12 @@ class SessionPeerServer:
                             topology_epoch=payload["topology_epoch"],
                             presence_generation=payload["presence_generation"],
                             capture_enabled=capture_enabled,
+                            local_original_track_count=payload.get(
+                                "local_original_track_count"
+                            ),
+                            local_original_map_fingerprint=payload.get(
+                                "local_original_map_fingerprint", ""
+                            ),
                         )
                     except TransferAuthenticationError as exc:
                         self._error(HTTPStatus.UNAUTHORIZED, "unauthorized", str(exc))
@@ -3080,6 +3256,7 @@ class SessionPeerClient:
             shared_track=SharedTrackSessionSnapshot.from_mapping(
                 payload.get("shared_track")
             ),
+            creator_profile_key=payload.get("creator_profile_key", "music"),
         )
 
     def bind_presence(
@@ -3141,6 +3318,8 @@ class SessionPeerClient:
         topology_epoch: int,
         presence_generation: int,
         capture_enabled: bool,
+        local_original_track_count: int | None = None,
+        local_original_map_fingerprint: str = "",
     ) -> PresenceV2Proof:
         candidate = PresenceV2Proof(
             participant_id=enrollment.participant_id,
@@ -3156,6 +3335,8 @@ class SessionPeerClient:
             topology_epoch=topology_epoch,
             presence_generation=presence_generation,
             capture_enabled=capture_enabled,
+            local_original_track_count=local_original_track_count,
+            local_original_map_fingerprint=local_original_map_fingerprint,
         )
         payload = self._request(
             "POST",

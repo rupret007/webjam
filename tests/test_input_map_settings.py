@@ -1,5 +1,6 @@
 import json
 
+from core.local_capture import LocalCaptureTrack
 from core.session_recording_plan import configured_input_map_bindings
 from core.settings import AppSettings, load_settings, save_settings
 
@@ -93,7 +94,7 @@ def test_resolve_capture_tracks_is_the_single_capture_truth():
     settings.input_maps = []
     assert resolve_capture_tracks(settings) == LEGACY_CAPTURE_TRACKS
 
-    # Configured maps: sequential channels, stereo splits into L/R stems,
+    # Configured maps: sequential channels, stereo stays one logical WAV,
     # disabled and non-Local-Original entries consume nothing.
     settings.input_maps = [
         _entry(name="Guitar DI", channels=1),
@@ -103,9 +104,8 @@ def test_resolve_capture_tracks_is_the_single_capture_truth():
     ]
     resolved = resolve_capture_tracks(settings)
     assert resolved == (
-        ("local-Guitar DI", 0),
-        ("local-Room Pair L", 1),
-        ("local-Room Pair R", 2),
+        LocalCaptureTrack("local-Guitar DI", (0,)),
+        LocalCaptureTrack("local-Room Pair", (1, 2)),
     )
 
     # Hostile names sanitize deterministically and never collide.
@@ -159,8 +159,8 @@ def test_resolver_never_records_opted_out_rows_or_truncates_capacity():
         for index in range(30)
     ] + [_entry(name="Last Stereo", channels=2)]
     resolved = resolve_capture_tracks(settings)
-    assert len(resolved) == 32
-    assert resolved[-1] == ("local-Last Stereo R", 31)
+    assert len(resolved) == 31
+    assert resolved[-1] == LocalCaptureTrack("local-Last Stereo", (30, 31))
 
 
 def test_over_capacity_persisted_map_disables_capture_instead_of_defaulting(
@@ -200,10 +200,11 @@ def test_long_and_colliding_map_names_resolve_to_valid_unique_capture_stems():
 
     resolved = resolve_capture_tracks(settings)
 
-    assert len(resolved) == 4
-    stems = [stem for stem, _channel in resolved]
-    assert len({stem.casefold() for stem in stems}) == 4
+    assert len(resolved) == 3
+    stems = [track.stem for track in resolved]
+    assert len({stem.casefold() for stem in stems}) == 3
     assert all(1 <= len(stem) <= 64 for stem in stems)
+    assert resolved[-1].source_channels == (2, 3)
 
 
 def test_configured_stems_classify_as_local_and_enumerate_stably():

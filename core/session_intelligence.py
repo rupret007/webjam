@@ -11,7 +11,12 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
-from core.creative_modes import CreativeMode, get_mode_by_key_or_default
+from core.creative_modes import (
+    CreatorProfile,
+    CreativeMode,
+    get_creator_profile_by_key_or_default,
+    get_mode_by_key_or_default,
+)
 
 
 _MAX_ITEMS = 5
@@ -95,16 +100,45 @@ _CHECKPOINTS: dict[str, tuple[str, ...]] = {
     "storyboard_film_room": ("scene goal", "shot list", "continuity", "handoff"),
 }
 
+_CREATOR_CHECKPOINT_TEMPLATES: dict[str, tuple[str, ...]] = {
+    "music": ("sound check", "first run", "{section}", "save mix"),
+    "podcast_voice": (
+        "mic check",
+        "first take",
+        "{section} review",
+        "pickup plan",
+    ),
+    "review_rehearsal": (
+        "shared goal",
+        "first pass",
+        "{section} feedback",
+        "handoff",
+    ),
+}
+
+_PulseMode = CreativeMode | CreatorProfile
+
 
 def build_session_pulse(
     *,
-    mode_key: str,
+    mode_key: str = "music_jam",
+    creator_profile_key: object | None = None,
     title: str = "",
     notes: str = "",
     participants: Iterable[object] = (),
 ) -> SessionPulse:
-    """Build a local session pulse from the current session state."""
-    mode = get_mode_by_key_or_default(mode_key)
+    """Build a local session pulse from the current session state.
+
+    ``creator_profile_key`` is the current product contract.  ``mode_key``
+    remains available for older callers and retains its exact legacy
+    behavior when no creator profile is supplied.
+    """
+    profile = (
+        get_creator_profile_by_key_or_default(creator_profile_key)
+        if creator_profile_key is not None
+        else None
+    )
+    mode: _PulseMode = profile or get_mode_by_key_or_default(mode_key)
     parsed = _parse_notes(notes)
     participant_signal = _participant_signal(participants)
     checkpoint = _next_checkpoint(mode, notes)
@@ -114,7 +148,7 @@ def build_session_pulse(
         mode_key=mode.key,
         mode_label=mode.label,
         title=clean_title or mode.default_goal,
-        stage=_stage_for(parsed, notes, participant_signal, checkpoint),
+        stage=_stage_for(mode, parsed, notes, participant_signal, checkpoint),
         summary=_summary(mode, parsed, participant_signal, notes),
         next_step=_next_step(mode, parsed, checkpoint, notes),
         decisions=tuple(parsed["decisions"]),
@@ -229,8 +263,15 @@ def _truthy_field(obj: object, key: str) -> bool:
     return bool(getattr(obj, key, False))
 
 
-def _next_checkpoint(mode: CreativeMode, notes: str) -> str:
-    checkpoints = _CHECKPOINTS.get(mode.key, ())
+def _next_checkpoint(mode: _PulseMode, notes: str) -> str:
+    checkpoints = (
+        tuple(
+            item.format(section=mode.vocabulary.section_noun)
+            for item in _CREATOR_CHECKPOINT_TEMPLATES.get(mode.key, ())
+        )
+        if isinstance(mode, CreatorProfile)
+        else _CHECKPOINTS.get(mode.key, ())
+    )
     if not checkpoints:
         return mode.review_prompts[0] if mode.review_prompts else "the next checkpoint"
     lowered = notes.lower()
@@ -241,6 +282,7 @@ def _next_checkpoint(mode: CreativeMode, notes: str) -> str:
 
 
 def _stage_for(
+    mode: _PulseMode,
     parsed: dict[str, Sequence],
     notes: str,
     participant_signal: ParticipantSignal,
@@ -257,12 +299,17 @@ def _stage_for(
     if notes.strip():
         return "Exploration"
     if participant_signal.count > 1:
+        if isinstance(mode, CreatorProfile):
+            return {
+                "podcast_voice": "Mic Check",
+                "review_rehearsal": "Session Check",
+            }.get(mode.key, "Sound Check")
         return "Sound Check"
     return checkpoint.title()
 
 
 def _summary(
-    mode: CreativeMode,
+    mode: _PulseMode,
     parsed: dict[str, Sequence],
     participant_signal: ParticipantSignal,
     notes: str,
@@ -276,12 +323,20 @@ def _summary(
     if notes.strip():
         return f"{mode.label} has notes but no captured decision yet."
     if participant_signal.count > 1:
-        return f"{participant_signal.count} people are in the room; capture the first checkpoint."
+        participant_plural = (
+            mode.vocabulary.participant_plural
+            if isinstance(mode, CreatorProfile)
+            else "people"
+        )
+        return (
+            f"{participant_signal.count} {participant_plural} are in the room; "
+            "capture the first checkpoint."
+        )
     return "No creative notes yet; capture the shared goal when you’re ready."
 
 
 def _next_step(
-    mode: CreativeMode,
+    mode: _PulseMode,
     parsed: dict[str, Sequence],
     checkpoint: str,
     notes: str,

@@ -466,6 +466,57 @@ def test_export_is_authoritative_equal_length_and_evidence_complete(
     assert _digest(state) == state_hash
 
 
+def test_studio_export_preserves_stereo_local_original_as_one_source(tmp_path: Path) -> None:
+    take_dir = tmp_path / "stereo-take"
+    take_dir.mkdir()
+    samples = np.column_stack(
+        (
+            np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32),
+            np.array([0.8, 0.7, 0.6, 0.5], dtype=np.float32),
+        )
+    )
+    segment, _source = _segment(take_dir, 30, samples)
+    track = replace(
+        _track(31, "Stereo Synth Bus", segment, order=0),
+        source_type=SourceType.LOCAL_ISOLATED,
+        quality=SourceQuality.UNVERIFIED,
+        alignment=AlignmentState(confidence=1.0, method="test-alignment"),
+    )
+    project = TakeProject(
+        session_id=_id(301),
+        take_id=_id(302),
+        session_title="Stereo export",
+        take_name="Stereo take",
+        status=ProjectStatus.COMPLETE,
+        project_sample_rate=RATE,
+        participants=(),
+        tracks=(track,),
+    )
+    write_take_project(take_dir, project)
+    document = default_studio_document(project)
+
+    result = export_studio_arrangement(
+        project,
+        document,
+        take_dir,
+        destination_root=tmp_path / "stereo-studio-exports",
+        block_frames=3,
+        disk_reserve_bytes=0,
+    )
+
+    assert len(result.edited_stems) == 1
+    assert len(result.original_stems) == 1
+    for output in (*result.edited_stems, *result.original_stems):
+        assert sf.info(output).channels == 2
+        rendered = sf.read(output, dtype="float32", always_2d=True)[0]
+        np.testing.assert_allclose(rendered, samples, atol=2.0 / (2**23))
+    provenance = json.loads(result.provenance.read_text(encoding="utf-8"))
+    assert len(provenance["tracks"]) == 1
+    assert len(provenance["original_stems"]) == 1
+    assert provenance["sources"][0]["channels"] == 2
+    assert provenance["audio_format"]["channels"] == 2
+
+
 def test_player_stream_and_pcm24_export_share_one_complex_authoritative_mix(
     tmp_path: Path,
 ) -> None:

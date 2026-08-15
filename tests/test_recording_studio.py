@@ -18,7 +18,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
 import pytest
-from PySide6.QtCore import QPoint, QThread, QTimer, Qt
+from PySide6.QtCore import QPoint, QRect, QThread, QTimer, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.creative_modes import get_creator_profile_by_key_or_default
 from core.settings import AppSettings
 from core.network_invite import local_band_address
 from core.studio_project import (
@@ -48,6 +49,7 @@ from core.take_project import (
     MediaStatus,
     ProjectStatus,
     ProjectTrack,
+    SessionEvidence,
     SourceQuality,
     SourceType,
     TakeProject,
@@ -221,6 +223,8 @@ def _schema2_studio_take(
     *,
     server_source_type: SourceType = SourceType.JAMULUS_SERVER,
     server_name: str = "Band Drums",
+    creator_profile_key: str = "music",
+    warnings: tuple[str, ...] = (),
 ) -> tuple[Path, tuple[str, str]]:
     """Create a small genuine v2 take so Studio exercises its sidecar boundary."""
     take_dir = tmp_path / "Studio Project Take"
@@ -291,6 +295,10 @@ def _schema2_studio_take(
                 alignment=AlignmentState(confidence=0.92, method="test-alignment"),
             ),
         ),
+        session_evidence=SessionEvidence(
+            creator_profile_key=creator_profile_key,
+        ),
+        warnings=warnings,
     )
     write_take_project(take_dir, project)
     return take_dir, (server_id, local_id)
@@ -374,6 +382,440 @@ def _open_schema2_waveform_studio(
     )
     assert region_ids
     return studio, region_ids
+
+
+@pytest.mark.parametrize(
+    (
+        "take_profile_key",
+        "live_profile_key",
+        "review_accessible_name",
+        "review_summary",
+        "review_participant",
+        "restored_live_key",
+    ),
+    (
+        (
+            "podcast_voice",
+            "music",
+            "Podcast & Voice Multitrack Studio",
+            "synchronized voice tracks",
+            "speaker",
+            "music",
+        ),
+        (
+            "music",
+            "podcast_voice",
+            "Music Multitrack Studio",
+            "synchronized tracks",
+            "musician",
+            "podcast_voice",
+        ),
+        (
+            "",
+            "podcast_voice",
+            "Multitrack Take Review",
+            "recorded tracks",
+            "participant",
+            "podcast_voice",
+        ),
+    ),
+)
+def test_historical_take_profile_owns_review_copy_without_mutating_live_profile(
+    tmp_path,
+    take_profile_key,
+    live_profile_key,
+    review_accessible_name,
+    review_summary,
+    review_participant,
+    restored_live_key,
+):
+    take_dir = tmp_path / "Historical Take"
+    take_dir.mkdir()
+    audio = take_dir / "voice.wav"
+    _wav(audio)
+    take = TakeInfo(
+        path=take_dir,
+        name="Historical Take",
+        tracks=[TrackInfo(audio, "Voice", duration_s=1.0, samplerate=RATE)],
+        creator_profile_key=take_profile_key,
+    )
+    with patch(
+        "webjam_qt.widgets.recording_studio.discover_takes",
+        return_value=[take],
+    ):
+        studio = RecordingStudio(
+            str(tmp_path),
+            player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+        )
+        try:
+            studio.set_creator_profile(
+                get_creator_profile_by_key_or_default(live_profile_key)
+            )
+            studio._take_list.setCurrentRow(0)
+
+            assert studio.accessibleName() == review_accessible_name
+            assert review_summary in studio._subtitle.text()
+            assert studio._participant_singular == review_participant
+            assert studio._live_creator_profile.key == live_profile_key
+
+            studio._show_live_session()
+
+            assert studio._creator_profile_key == restored_live_key
+            assert studio._live_creator_profile.key == live_profile_key
+            if restored_live_key == "music":
+                assert studio._participant_singular == "musician"
+            else:
+                assert studio._participant_singular == "speaker"
+        finally:
+            studio.shutdown()
+
+
+def test_review_preview_live_session_can_record_webjam_audio() -> None:
+    studio = RecordingStudio(player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
+    requested: list[bool] = []
+    try:
+        studio.set_creator_profile(
+            get_creator_profile_by_key_or_default("review_rehearsal")
+        )
+        studio.record_requested.connect(lambda: requested.append(True))
+        studio.set_can_record(True)
+        studio.set_live_participants(
+            [SimpleNamespace(channel_id=4, name="Reviewer", is_local=True)]
+        )
+
+        assert studio._record_btn.isEnabled()
+        assert "Record Session" in studio._record_btn.accessibleName()
+        assert "never directly or automatically taps a meeting app" in (
+            studio._record_btn.accessibleDescription()
+        )
+        assert "Record Session captures Jamulus server stems" in (
+            studio._subtitle.text()
+        )
+        assert "Do not route meeting or system audio into those inputs" in (
+            studio._subtitle.text()
+        )
+        assert studio._lanes[4]._source_badge.text() == "WEBJAM AUDIO"
+        assert studio._inspector_values["source"].text() == (
+            "Live participant WebJam-audio input"
+        )
+
+        studio._record_btn.click()
+        assert requested == [True]
+    finally:
+        studio.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("profile_key", "expected"),
+    (
+        (
+            "music",
+            "No completed take was found. Run Band Check, then record a short test take.",
+        ),
+        (
+            "podcast_voice",
+            "No completed recording was found. Run Sound Check, then record a short test take.",
+        ),
+        (
+            "review_rehearsal",
+            "No completed Review Preview take was found. Run Session Check, then record a short WebJam-audio test take.",
+        ),
+    ),
+)
+def test_missing_completed_take_uses_creator_check_copy(
+    profile_key,
+    expected,
+) -> None:
+    studio = RecordingStudio(player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
+    try:
+        studio.set_creator_profile(
+            get_creator_profile_by_key_or_default(profile_key)
+        )
+        studio.on_take_completed(
+            None,
+            SimpleNamespace(errors=("missing",), warnings=()),
+        )
+        assert studio._hint.text() == expected
+    finally:
+        studio.shutdown()
+
+
+def test_review_preview_take_is_playback_only_without_sidecar_or_export(
+    tmp_path,
+) -> None:
+    take_dir, _track_ids = _schema2_studio_take(
+        tmp_path,
+        creator_profile_key="review_rehearsal",
+        warnings=("Inspect this source",),
+    )
+    sidecar = take_dir / ".webjam-studio-state.json"
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio.resize(1440, 900)
+        studio.show()
+        studio._on_take_selected(0)
+        APP.processEvents()
+
+        assert studio.accessibleName() == (
+            "Review and Rehearsal Preview Take Review"
+        )
+        assert studio._eyebrow.text() == "TAKE REVIEW · PREVIEW"
+        assert "read-only playback" in studio._subtitle.text()
+        assert "Playback remains read-only" in studio._hint.text()
+        assert "before export" not in studio._hint.text()
+        assert studio._studio_state is None
+        assert studio._studio_controller.take_path is None
+        assert not sidecar.exists()
+        assert studio._play_btn.isEnabled()
+        assert studio._scrub.isEnabled()
+        assert studio._reveal_btn.isEnabled()
+        assert studio._export_btn.isHidden()
+        assert not studio._export_btn.isEnabled()
+        assert studio._studio_arrange.isHidden()
+        assert not studio._studio_arrange.isEnabled()
+        assert studio._arrange_toolbar.isHidden()
+        assert studio._comp_toolbar.isHidden()
+
+        lane = studio._lanes[0]
+        assert lane._source_badge.text() == "WEBJAM AUDIO"
+        assert lane._source_badge.accessibleName() == "WEBJAM AUDIO source"
+        for control in (
+            lane._track_export_include,
+            lane._mute,
+            lane._solo,
+            lane._trim,
+            lane._gain,
+            lane._pan,
+        ):
+            assert control.isHidden()
+        assert "Playback and source review only" in lane.accessibleDescription()
+
+        # At the supported compact Studio floor the complete capability
+        # boundary stays visibly readable instead of becoming a clipped
+        # one-line status. The track list remains a named, reachable scroll
+        # surface below it.
+        studio.resize(760, 600)
+        APP.processEvents()
+        APP.processEvents()
+        assert studio._hint.wordWrap()
+        required = studio._hint.fontMetrics().boundingRect(
+            QRect(0, 0, studio._hint.contentsRect().width(), 10_000),
+            Qt.TextFlag.TextWordWrap,
+            studio._hint.text(),
+        )
+        assert required.height() <= studio._hint.contentsRect().height()
+        assert studio._track_scroll.height() >= 88
+        assert studio._track_scroll.accessibleName() == "Recorded track lanes"
+        assert not _widget_rect_in(studio, studio._hint).intersects(
+            _widget_rect_in(studio, studio._track_scroll)
+        )
+
+        studio._update_studio_state(0, gain=0.25)
+        assert not studio._perform_arrange_edit(
+            "Synthetic edit",
+            lambda document: document,
+            reload_audio=False,
+        )
+        with patch(
+            "webjam_qt.widgets.recording_studio.export_track_package"
+        ) as export:
+            studio._export_tracks()
+        export.assert_not_called()
+        assert not sidecar.exists()
+        assert "Track export is unavailable" in studio._hint.text()
+
+        studio._select_track(0)
+        assert studio._inspector_values["source"].text() == (
+            "Participant (WebJam server track)"
+        )
+        assert studio._inspector_values["export"].text() == (
+            "Unavailable in playback-only Review Preview"
+        )
+    finally:
+        studio.shutdown()
+
+
+def test_compact_take_title_elides_without_losing_full_accessible_name(
+    tmp_path,
+) -> None:
+    take_dir = tmp_path / "Long Podcast Take"
+    take_dir.mkdir()
+    audio = take_dir / "voice.wav"
+    _wav(audio)
+    full_title = (
+        "Episode 12 Remote Recording With Three Guests and Extended Director Notes"
+    )
+    take = TakeInfo(
+        path=take_dir,
+        name="Long Podcast Take",
+        tracks=[TrackInfo(audio, "Voice", duration_s=1.0, samplerate=RATE)],
+        session_title=full_title,
+        creator_profile_key="podcast_voice",
+    )
+    with patch(
+        "webjam_qt.widgets.recording_studio.discover_takes",
+        return_value=[take],
+    ):
+        studio = RecordingStudio(
+            str(tmp_path),
+            player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+        )
+        try:
+            studio.resize(760, 600)
+            studio.show()
+            studio._take_list.setCurrentRow(0)
+            APP.processEvents()
+            APP.processEvents()
+
+            assert studio._title.text() != full_title
+            assert studio._title.text().endswith("…")
+            assert studio._title.fontMetrics().horizontalAdvance(
+                studio._title.text()
+            ) <= studio._title.contentsRect().width()
+            assert studio._title.accessibleName() == full_title
+            assert studio._title.accessibleDescription() == (
+                f"Studio title: {full_title}"
+            )
+            assert studio._title.toolTip() == full_title
+
+            studio.resize(1440, 900)
+            APP.processEvents()
+            APP.processEvents()
+            assert studio._title.text() == full_title
+            assert studio._title.toolTip() == ""
+        finally:
+            studio.shutdown()
+
+
+def test_editable_music_take_restores_arrange_after_live_view(tmp_path) -> None:
+    _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio.resize(1440, 900)
+        studio.show()
+        studio._take_list.setCurrentRow(0)
+        APP.processEvents()
+
+        assert studio._studio_state is not None
+        assert not studio._studio_arrange.isHidden()
+        assert studio._studio_arrange.isEnabled()
+        assert not studio._arrange_toolbar.isHidden()
+
+        studio._show_live_session()
+        assert studio._studio_arrange.isHidden()
+        assert not studio._studio_arrange.isEnabled()
+        assert studio._arrange_toolbar.isHidden()
+
+        studio._on_take_selected(0)
+        APP.processEvents()
+        assert not studio._studio_arrange.isHidden()
+        assert studio._studio_arrange.isEnabled()
+        assert not studio._arrange_toolbar.isHidden()
+    finally:
+        studio.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("profile_key", "badge", "source_description"),
+    (
+        ("music", "MUSICIAN", "Musician (band server track)"),
+        ("podcast_voice", "SPEAKER", "Speaker (WebJam server track)"),
+        (
+            "review_rehearsal",
+            "WEBJAM AUDIO",
+            "Participant (WebJam server track)",
+        ),
+    ),
+)
+def test_recorded_server_source_copy_follows_take_profile(
+    tmp_path,
+    profile_key,
+    badge,
+    source_description,
+) -> None:
+    take_dir = tmp_path / profile_key
+    take_dir.mkdir()
+    audio = take_dir / "source.wav"
+    _wav(audio)
+    take = TakeInfo(
+        path=take_dir,
+        name="Profile Take",
+        tracks=[TrackInfo(audio, "Source", duration_s=1.0, samplerate=RATE)],
+        creator_profile_key=profile_key,
+    )
+    with patch(
+        "webjam_qt.widgets.recording_studio.discover_takes",
+        return_value=[take],
+    ):
+        studio = RecordingStudio(
+            str(tmp_path),
+            player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+        )
+        try:
+            studio._on_take_selected(0)
+            lane = studio._lanes[0]
+            assert lane._source_badge.text() == badge
+            assert lane._source_badge.accessibleName() == f"{badge} source"
+            studio._select_track(0)
+            assert studio._inspector_values["source"].text() == source_description
+        finally:
+            studio.shutdown()
+
+
+def test_finish_stop_remains_enabled_if_profile_loses_record_permission() -> None:
+    studio = RecordingStudio(player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
+    try:
+        review = get_creator_profile_by_key_or_default("review_rehearsal")
+        no_new_recording = replace(
+            review,
+            capabilities=replace(
+                review.capabilities,
+                session_recording=False,
+            ),
+        )
+        studio.set_creator_profile(no_new_recording)
+        studio.set_live_participants(
+            [SimpleNamespace(channel_id=8, name="Reviewer", is_local=True)]
+        )
+        assert not studio._record_btn.isEnabled()
+
+        studio.set_recording_phase("recording")
+        assert studio._record_btn.isEnabled()
+        assert studio._record_btn.text() == "■ Stop Recording"
+
+        studio.set_recording_phase("stop_failed")
+        assert studio._record_btn.isEnabled()
+        assert studio._record_btn.text() == "■ Finish Stop"
+    finally:
+        studio.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("profile_key", "expected"),
+    (
+        ("music", "song sections"),
+        ("podcast_voice", "chapters"),
+        ("review_rehearsal", "sections"),
+    ),
+)
+def test_arrangement_section_copy_follows_creator_profile(
+    profile_key,
+    expected,
+) -> None:
+    studio = RecordingStudio(player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
+    try:
+        studio.set_creator_profile(
+            get_creator_profile_by_key_or_default(profile_key)
+        )
+        assert studio._arrangement_section_plural() == expected
+    finally:
+        studio.shutdown()
 
 
 def test_live_session_arms_one_lane_per_musician():
@@ -859,11 +1301,14 @@ def test_arrange_toolbar_edits_reload_cycle_and_preserve_source_truth(tmp_path):
         assert studio._region_fades_btn.text() == "No Fades"
         assert studio._crossfade_btn.text() == "No Xfade"
         assert studio._crossfade_btn.accessibleName() == (
-            "Crossfade selected overlapping regions"
+            "Remove crossfade from selected overlapping regions"
         )
 
         studio._toggle_selected_crossfade()
         assert all(item.deleted for item in studio._studio_state.crossfades)
+        assert studio._crossfade_btn.accessibleName() == (
+            "Add crossfade to selected overlapping regions"
+        )
         assert studio._flush_studio_state()
     finally:
         studio.shutdown()
@@ -1351,6 +1796,8 @@ def test_export_blocks_navigation_until_worker_result_is_drained(tmp_path):
             current = studio._current
             studio._export_tracks()
             assert _wait_until(started.is_set)
+            assert studio._export_btn.text() == "Exporting…"
+            assert studio._export_btn.accessibleName() == "Exporting…"
             assert not studio._take_list.isEnabled()
             assert not studio._live_btn.isEnabled()
             assert not studio._new_take_btn.isEnabled()
@@ -1378,6 +1825,8 @@ def test_export_blocks_navigation_until_worker_result_is_drained(tmp_path):
             assert studio._new_take_btn.isEnabled()
             assert studio._setup_btn.isEnabled()
             assert studio._record_btn.isEnabled()
+            assert studio._export_btn.text() == "Export Tracks"
+            assert studio._export_btn.accessibleName() == "Export aligned tracks"
         finally:
             release.set()
             studio.shutdown()

@@ -55,7 +55,6 @@ from webjam_qt.widgets.studio_review import (
     _fmt_time,
     _is_shared_track_source,
     _is_synchronized_source,
-    _safe_source_description,
     _timeline_gaps_for_track,
 )
 
@@ -129,6 +128,8 @@ class StudioArrangementWorkflowMixin:
         self._master_gain_value.setText(_fmt_db(master.gain))
 
     def _on_master_gain_changed(self, value: int) -> None:
+        if not self._take_editing_allowed():
+            return
         gain = value / 100.0
         self._master_gain_value.setText(_fmt_db(gain))
         self._player.set_master_gain(gain)
@@ -180,6 +181,8 @@ class StudioArrangementWorkflowMixin:
         never silently re-include a track the musician excluded.
         """
 
+        if not self._take_editing_allowed():
+            return
         document = self._studio_state
         if document is None:
             return
@@ -221,6 +224,8 @@ class StudioArrangementWorkflowMixin:
         self._player.set_limiter_enabled(default_master.limiter_enabled)
 
     def _on_master_limiter_changed(self, enabled: bool) -> None:
+        if not self._take_editing_allowed():
+            return
         self._player.set_limiter_enabled(enabled)
         if self._studio_state is None:
             return
@@ -243,7 +248,11 @@ class StudioArrangementWorkflowMixin:
                 arrange.selected_region_id if arrange is not None else None
             ),
             playhead_frame=(arrange.playhead_frame if arrange is not None else 0),
-            studio_visible=self._studio_state is not None and not self._viewing_live,
+            studio_visible=(
+                self._take_editing_allowed()
+                and self._studio_state is not None
+                and not self._viewing_live
+            ),
         )
 
     # Compatibility delegates keep the existing RecordingStudio editing
@@ -473,6 +482,8 @@ class StudioArrangementWorkflowMixin:
         source_path: Path,
         source_track_id: str,
     ) -> None:
+        if not self._take_editing_allowed():
+            return
         primary = self._studio_project
         take_path = self._studio_state_take_path
         destination_id = self._studio_controller.selected_track_id
@@ -611,7 +622,11 @@ class StudioArrangementWorkflowMixin:
     def _refresh_comp_controls(self) -> None:
         if not hasattr(self, "_comp_toolbar"):
             return
-        studio_visible = self._studio_state is not None and not self._viewing_live
+        studio_visible = (
+            self._take_editing_allowed()
+            and self._studio_state is not None
+            and not self._viewing_live
+        )
         self._comp_toolbar.setVisible(studio_visible)
         selected_track = bool(
             self._studio_controller.selected_track_id if studio_visible else False
@@ -648,6 +663,8 @@ class StudioArrangementWorkflowMixin:
         reload_audio: bool,
         merge_key: str | None = None,
     ) -> bool:
+        if not self._take_editing_allowed():
+            return False
         try:
             before = self._studio_controller.document
             after = self._studio_controller.perform(
@@ -827,6 +844,8 @@ class StudioArrangementWorkflowMixin:
         )
 
     def _undo_arrange_edit(self) -> None:
+        if not self._take_editing_allowed():
+            return
         try:
             before = self._studio_controller.document
             after = self._studio_controller.undo()
@@ -838,6 +857,8 @@ class StudioArrangementWorkflowMixin:
         self._reload_arranged_playback()
 
     def _redo_arrange_edit(self) -> None:
+        if not self._take_editing_allowed():
+            return
         try:
             before = self._studio_controller.document
             after = self._studio_controller.redo()
@@ -904,7 +925,7 @@ class StudioArrangementWorkflowMixin:
             lane = self._lanes[channel_id]
             self._set_inspector_values(
                 status="RECORDING" if self._recording else "ARMED",
-                source="Live musician input",
+                source=self._live_input_description(),
                 timeline=(
                     f"REC {_fmt_time(self._recording_elapsed)}"
                     if self._recording
@@ -942,24 +963,27 @@ class StudioArrangementWorkflowMixin:
             getattr(source_info, "alignment_method", "unverified") or "unverified"
         )
         if _is_shared_track_source(source):
-            alignment = "Shared Track · band server timeline reference"
+            alignment = self._server_timeline_description(shared_track=True)
         elif _is_synchronized_source(source):
-            alignment = "Band server timeline reference"
+            alignment = self._server_timeline_description(shared_track=False)
         elif confidence > 0.0 and method != "unverified":
             alignment = f"Evidence {confidence:.2f} · {method}"
         else:
             alignment = "Needs verified timeline alignment"
         gaps = _timeline_gaps_for_track(source_info, self._current)
         track_id = self._state_track_id(source_info)
-        selected = self._selected_track_export_track_ids(self._current)
-        export = (
-            "Included in next track export"
-            if selected is None or track_id in selected
-            else "Left out of next track export"
-        )
+        if not self._track_export_allowed():
+            export = "Unavailable in playback-only Review Preview"
+        else:
+            selected = self._selected_track_export_track_ids(self._current)
+            export = (
+                "Included in next track export"
+                if selected is None or track_id in selected
+                else "Left out of next track export"
+            )
         self._set_inspector_values(
             status=status,
-            source=_safe_source_description(source),
+            source=self._recorded_source_description(source),
             timeline=timeline,
             alignment=alignment,
             gaps=(
@@ -985,6 +1009,15 @@ class StudioArrangementWorkflowMixin:
         self._studio_audition_lane_id = None
         if hasattr(self, "_studio_arrange"):
             self._studio_arrange.set_document(None)
+        if not self._take_editing_allowed():
+            try:
+                self._studio_controller.unload(discard_dirty=True)
+            except StudioControllerError:
+                LOGGER.warning(
+                    "Could not release Studio edit state for read-only take review",
+                    exc_info=True,
+                )
+            return
         if not _take_requires_studio_document(take):
             return
         if not _selectable_track_export_track_ids(take):
@@ -1104,6 +1137,8 @@ class StudioArrangementWorkflowMixin:
 
     def _update_studio_state(self, channel_id: int, **changes: object) -> None:
         """Stage a user edit and coalesce sidecar writes while a slider moves."""
+        if not self._take_editing_allowed():
+            return
         track = self._track_info_for_channel(channel_id)
         track_id = self._state_track_id(track)
         if self._studio_state is None or not track_id:

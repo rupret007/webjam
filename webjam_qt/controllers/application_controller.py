@@ -29,11 +29,18 @@ from typing import Optional
 from PySide6.QtCore import QObject, Qt, QTimer
 from PySide6.QtWidgets import QDialog, QMessageBox
 
-from core.creative_modes import CREATIVE_MODES, get_mode_by_key_or_default
+from core.creative_modes import (
+    CREATIVE_MODES,
+    canonical_creator_profile_key,
+    get_creator_profile_by_key_or_default,
+    get_mode_by_key_or_default,
+)
+from core.local_capture import LocalCaptureTrack
 from core.jamulus_rpc_client import (
     JamulusOrderedRosterProof,
     JamulusRpcMonitorIdentity,
 )
+from core.meeting_link import RECORD_SESSION_MEETING_CAPTURE_NOTICE
 from core.network_invite import BandInvite
 from core.pocket_stage import (
     MobileParticipant,
@@ -103,6 +110,81 @@ from webjam_qt.windows.conductor_window import ConductorWindow
 from webjam_qt.session_state import SessionPhase, SessionUiState
 
 LOGGER = logging.getLogger("webjam.qt.application_controller")
+
+
+def _creator_profile_for_controller(controller: object):
+    """Resolve presentation copy safely for real and partial controllers."""
+
+    profile = getattr(controller, "creator_profile", None)
+    profile_key = getattr(profile, "key", None)
+    if profile_key is None:
+        profile_key = getattr(controller, "_active_creator_profile_key", None)
+    if profile_key is None:
+        profile_key = getattr(
+            getattr(controller, "settings", None),
+            "last_creator_profile_key",
+            "music",
+        )
+    return get_creator_profile_by_key_or_default(profile_key)
+
+
+def _chat_rejection_copy(controller: object) -> str:
+    """Return one truthful reconnect instruction without changing Music copy."""
+
+    profile = _creator_profile_for_controller(controller)
+    if profile.key == "podcast_voice":
+        return (
+            "Message not sent. Reconnect to the recording session with your "
+            "speakers, then press Enter to try again."
+        )
+    if profile.key == "review_rehearsal":
+        return (
+            "Message not sent. Reconnect to the Preview review session with "
+            "your participants, then press Enter to try again."
+        )
+    return "Message not sent. Reconnect to your band, then press Enter to try again."
+
+
+def _live_quit_copy(
+    controller: object,
+    *,
+    hosting: bool,
+) -> tuple[str, str]:
+    """Return profile-aware live-session close copy; Music remains immutable."""
+
+    profile = _creator_profile_for_controller(controller)
+    if profile.key == "podcast_voice":
+        if hosting:
+            return (
+                "End recording session and quit?",
+                "Quitting WebJam ends this recording session for every connected "
+                "speaker.",
+            )
+        return (
+            "Leave recording session and quit?",
+            "Quitting WebJam disconnects you; the other speakers can continue "
+            "the recording session.",
+        )
+    if profile.key == "review_rehearsal":
+        if hosting:
+            return (
+                "End review session and quit? (Preview)",
+                "Quitting WebJam ends this Preview review session for every "
+                "connected participant.",
+            )
+        return (
+            "Leave review session and quit? (Preview)",
+            "Quitting WebJam disconnects you; the other participants can continue "
+            "the Preview review session.",
+        )
+    return (
+        "End jam and quit?" if hosting else "Leave jam and quit?",
+        (
+            "Quitting WebJam ends this jam for every connected musician."
+            if hosting
+            else "Quitting WebJam disconnects you; the band can keep playing."
+        ),
+    )
 
 
 def _meeting_service_name(url: object, *, fallback: str = "") -> str:
@@ -194,6 +276,16 @@ class ApplicationController(QObject):
         super().__init__(window)
         self.window = window
         self.settings = settings or load_settings()
+        self._active_creator_profile_key = (
+            canonical_creator_profile_key(
+                getattr(self.settings, "last_creator_profile_key", "music")
+            )
+            or "music"
+        )
+        self._creator_profile_host_owned = False
+        creator_setter = getattr(self.window, "set_creator_profile", None)
+        if callable(creator_setter):
+            creator_setter(self.creator_profile, locked=False)
         if not isinstance(offline_reference_studio, bool):
             raise TypeError("offline_reference_studio must be true or false")
         self._offline_reference_studio = offline_reference_studio
@@ -427,7 +519,10 @@ class ApplicationController(QObject):
             else SessionRole.GUEST
         )
         self.session_conductor = SessionConductor(
-            SessionConductorFacts(role=initial_role)
+            SessionConductorFacts(
+                role=initial_role,
+                creator_profile_key=self._active_creator_profile_key,
+            )
         )
         self._session_conductor_token = self.session_conductor.token
         # Pocket Stage is a separate, opt-in mobile service.  The gateway
@@ -520,12 +615,8 @@ class ApplicationController(QObject):
         # transport may retain the generation only while its exact runtime
         # object owns the continuation into the native Jamulus launch.
         self._startup_launch_authorization_generation = 0
-        self._pending_startup_launch_authorization: (
-            tuple[int, object] | None
-        ) = None
-        self._remote_startup_launch_continuation: (
-            tuple[int, object] | None
-        ) = None
+        self._pending_startup_launch_authorization: tuple[int, object] | None = None
+        self._remote_startup_launch_continuation: tuple[int, object] | None = None
         from core.jamulus_profile import StartupAttemptStore, StartupReadinessStore
 
         self._startup_readiness_store = StartupReadinessStore()
@@ -586,15 +677,14 @@ class ApplicationController(QObject):
         # roster. Hosted-server, UDP, and compatibility callbacks can still
         # feed JamulusController internals, but cannot connect the WebJam UI
         # or acknowledge primary-client recovery.
-        self.jamulus.register_identity_callback(
-            self._on_jamulus_participants
-        )
+        self.jamulus.register_identity_callback(self._on_jamulus_participants)
 
         # Session metadata persistence (notes + title + mode)
         self._persistence = SessionPersistence(
             window.session_strip,
             window.session_canvas,
             logger=LOGGER,
+            creator_profile_key=self._active_creator_profile_key,
         )
 
         # Mix save/load/restore (~/.webjam_mix.json).
@@ -619,6 +709,17 @@ class ApplicationController(QObject):
         self.reference_studio_projects = ReferenceStudioApplicationController(
             self.window.reference_studio,
             config_file=self.settings.config_file,
+            creator_profile_key=self._active_creator_profile_key,
+            profile_applied=(
+                (
+                    lambda key: self._apply_creator_profile_key(
+                        key,
+                        host_owned=False,
+                    )
+                )
+                if self._offline_reference_studio
+                else None
+            ),
             parent=self,
         )
 
@@ -656,12 +757,26 @@ class ApplicationController(QObject):
             prepared = False
         if prepared:
             return True
+        profile = _creator_profile_for_controller(self)
+        if profile.key == "review_rehearsal":
+            title = "Review state not saved (Preview)"
+            body = (
+                "Your captured sources remain protected, but WebJam could not "
+                "confirm that the current review state was saved. Check that "
+                "your Takes folder has free space and can be written to, then "
+                "try quitting again."
+            )
+        else:
+            title = "Studio edits not saved"
+            body = (
+                "Your recorded take is safe, but your Arrange and mix edits are "
+                "not saved. Check that your Takes folder has free space and can "
+                "be written to, then try quitting again."
+            )
         QMessageBox.information(
             self.window,
-            "Studio edits not saved",
-            "Your recorded take is safe, but your Arrange and mix edits are not "
-            "saved. Check that your Takes folder has free space and can be written "
-            "to, then try quitting again.",
+            title,
+            body,
         )
         return False
 
@@ -805,9 +920,7 @@ class ApplicationController(QObject):
         )
         if jamulus_update_service is not None:
             try:
-                updater_stopped = bool(
-                    jamulus_update_service.close(timeout=3.0)
-                )
+                updater_stopped = bool(jamulus_update_service.close(timeout=3.0))
             except Exception:  # noqa: BLE001 - updater cleanup fails closed
                 LOGGER.exception("Jamulus updater shutdown failed")
                 updater_stopped = False
@@ -1073,7 +1186,7 @@ class ApplicationController(QObject):
         try:
             from core.session_recording_plan import resolve_capture_tracks
 
-            def guest_capture_tracks() -> tuple[tuple[str, int], ...]:
+            def guest_capture_tracks() -> tuple[LocalCaptureTrack, ...]:
                 return resolve_capture_tracks(self.settings)
 
             self.guest_peer = GuestPeerSession(
@@ -1246,6 +1359,39 @@ class ApplicationController(QObject):
                     invoke(clear_projection)
                 else:
                     clear_projection()
+            if bool(getattr(self, "_creator_profile_host_owned", False)):
+                saved_profile_key = (
+                    canonical_creator_profile_key(
+                        getattr(self.settings, "last_creator_profile_key", "music")
+                    )
+                    or "music"
+                )
+                ApplicationController._apply_creator_profile_key(
+                    self,
+                    saved_profile_key,
+                    host_owned=False,
+                )
+                persistence = getattr(self, "_persistence", None)
+                clear_borrowed_title = getattr(
+                    persistence,
+                    "clear_borrowed_title",
+                    None,
+                )
+                if callable(clear_borrowed_title):
+                    clear_borrowed_title()
+                strip = getattr(getattr(self, "window", None), "session_strip", None)
+                set_session_title = getattr(strip, "set_session_title", None)
+                if callable(set_session_title):
+                    set_session_title(
+                        _creator_profile_for_controller(self).default_template
+                    )
+                load_metadata = getattr(
+                    persistence,
+                    "_load_session_metadata",
+                    None,
+                )
+                if callable(load_metadata):
+                    load_metadata()
         return cleanup_ok
 
     def _on_peer_take_updated(
@@ -1303,6 +1449,11 @@ class ApplicationController(QObject):
         state = getattr(guest, "last_state", None)
         if state is None:
             return
+        host_profile_key = canonical_creator_profile_key(
+            getattr(state, "creator_profile_key", "music")
+        )
+        if host_profile_key is not None:
+            self._apply_creator_profile_key(host_profile_key, host_owned=True)
         signal = str(getattr(getattr(state, "signal", None), "value", "idle"))
         phase = {
             "recording": "recording",
@@ -1311,10 +1462,7 @@ class ApplicationController(QObject):
             "needs_attention": "needs_attention",
         }.get(signal, "idle")
         shared = getattr(state, "shared_track", None)
-        if (
-            phase == "recording"
-            and bool(getattr(shared, "count_in_active", False))
-        ):
+        if phase == "recording" and bool(getattr(shared, "count_in_active", False)):
             phase = "count_in"
         self.window.session_strip.set_recording_phase(phase)
         self.window.recording_studio.set_recording_phase(phase)
@@ -1328,12 +1476,8 @@ class ApplicationController(QObject):
             position_s=float(getattr(shared, "position_s", 0.0) or 0.0),
             loop_start_s=float(getattr(shared, "loop_start_s", 0.0) or 0.0),
             loop_end_s=getattr(shared, "loop_end_s", None),
-            count_in_active=bool(
-                getattr(shared, "count_in_active", False)
-            ),
-            cleanup_pending=bool(
-                getattr(shared, "cleanup_pending", False)
-            ),
+            count_in_active=bool(getattr(shared, "count_in_active", False)),
+            cleanup_pending=bool(getattr(shared, "cleanup_pending", False)),
             error=(
                 "Shared Track needs host attention."
                 if bool(getattr(shared, "needs_attention", False))
@@ -1343,6 +1487,68 @@ class ApplicationController(QObject):
             waveform_progress=0.0,
         )
         self.window.session_strip.set_shared_track_snapshot(projection)
+
+    @property
+    def creator_profile(self):
+        """Return the immutable creator workflow active for this controller."""
+
+        return get_creator_profile_by_key_or_default(
+            getattr(
+                self,
+                "_active_creator_profile_key",
+                getattr(
+                    getattr(self, "settings", None),
+                    "last_creator_profile_key",
+                    "music",
+                ),
+            )
+        )
+
+    def _apply_creator_profile_key(
+        self,
+        profile_key: object,
+        *,
+        host_owned: bool = False,
+    ) -> None:
+        """Apply one canonical profile; authenticated host state wins for guests."""
+
+        canonical = canonical_creator_profile_key(profile_key)
+        if canonical is None:
+            return
+        owner_changed = bool(host_owned) != bool(
+            getattr(self, "_creator_profile_host_owned", False)
+        )
+        active_key = (
+            canonical_creator_profile_key(
+                getattr(
+                    self,
+                    "_active_creator_profile_key",
+                    getattr(
+                        getattr(self, "settings", None),
+                        "last_creator_profile_key",
+                        "music",
+                    ),
+                )
+            )
+            or "music"
+        )
+        if canonical == active_key and not owner_changed:
+            return
+        self._active_creator_profile_key = canonical
+        self._creator_profile_host_owned = bool(host_owned)
+        if not host_owned:
+            self.settings.last_creator_profile_key = canonical
+        persistence = getattr(self, "_persistence", None)
+        switch_profile_key = getattr(persistence, "switch_profile_key", None)
+        if callable(switch_profile_key):
+            switch_profile_key(canonical)
+        else:
+            set_profile_key = getattr(persistence, "set_profile_key", None)
+            if callable(set_profile_key):
+                set_profile_key(canonical)
+        setter = getattr(self.window, "set_creator_profile", None)
+        if callable(setter):
+            setter(self.creator_profile, locked=self._creator_profile_host_owned)
 
     def _guest_media_state(self) -> tuple[GuestMediaState, EvidenceState]:
         """Map the guest transfer owner's finite facts without exposing errors."""
@@ -1433,6 +1639,10 @@ class ApplicationController(QObject):
             return False
         if self.host_peer.active:
             self._host_peer_warning = ""
+            self._apply_creator_profile_key(
+                self._active_creator_profile_key,
+                host_owned=True,
+            )
             return True
         try:
             self.host_peer.start(
@@ -1445,8 +1655,17 @@ class ApplicationController(QObject):
                     self.settings.config_file
                 ),
                 display_name=self.settings.musician_name,
+                creator_profile_key=getattr(
+                    self.settings,
+                    "last_creator_profile_key",
+                    "music",
+                ),
             )
             self._host_peer_warning = ""
+            self._apply_creator_profile_key(
+                self._active_creator_profile_key,
+                host_owned=True,
+            )
             return True
         except Exception:  # noqa: BLE001
             LOGGER.exception("Could not start private recording service")
@@ -1542,10 +1761,8 @@ class ApplicationController(QObject):
         if (
             len(topology_epochs) != 1
             or result.get(proof.own_ordinal) != host_id
-            or host_claim.process_generation
-            != proof.identity.process_generation
-            or host_claim.rpc_connection_generation
-            != proof.rpc_connection_generation
+            or host_claim.process_generation != proof.identity.process_generation
+            or host_claim.rpc_connection_generation != proof.rpc_connection_generation
             or host_claim.audio_connection_generation
             != proof.audio_connection_generation
         ):
@@ -1605,11 +1822,15 @@ class ApplicationController(QObject):
         )
         if cleanup_retry_required:
             hosting = bool(getattr(self.settings, "host_server_enabled", False))
+            profile = _creator_profile_for_controller(self)
+            leave_action = (
+                "Try Leave Jam" if profile.key == "music" else "Try Leave Session"
+            )
             QMessageBox.information(
                 self.window,
                 "Finish session cleanup first",
                 "Choose "
-                + ("Try End Session" if hosting else "Try Leave Jam")
+                + ("Try End Session" if hosting else leave_action)
                 + " before quitting. WebJam is keeping the remaining "
                 "connection owner available so it can stop safely.",
             )
@@ -1618,11 +1839,17 @@ class ApplicationController(QObject):
             getattr(getattr(self, "audio", None), "stopping", False)
             or getattr(self, "_invite_switch_in_flight", False)
         ):
+            profile = _creator_profile_for_controller(self)
+            current_session = (
+                "current jam"
+                if profile.key == "music"
+                else f"current {profile.vocabulary.session_noun}"
+            )
             QMessageBox.information(
                 self.window,
                 "Session cleanup is still running",
                 "Wait for WebJam to finish ending, leaving, or switching the "
-                "current jam before quitting. This keeps one teardown owner "
+                f"{current_session} before quitting. This keeps one teardown owner "
                 "responsible for every recording and connection.",
             )
             return False
@@ -1644,15 +1871,32 @@ class ApplicationController(QObject):
             and getattr(self.bridge, "hosted_server_owned", lambda: False)()
         )
         if take_in_progress and hosting_owned:
+            profile = _creator_profile_for_controller(self)
+            if profile.key == "podcast_voice":
+                finish_title = "Finish the recording first"
+                preservation = (
+                    "This keeps every speaker's recorded track complete and verified."
+                )
+            elif profile.key == "review_rehearsal":
+                finish_title = "Finish the review recording first (Preview)"
+                preservation = (
+                    "This preserves every participant's captured source and "
+                    "verification evidence."
+                )
+            else:
+                finish_title = "Finish the take first"
+                preservation = (
+                    "This keeps every musician's track complete and verified."
+                )
             QMessageBox.information(
                 self.window,
-                "Finish the take first",
+                finish_title,
                 (
                     "Press Stop Rec, then wait for ‘Take saved’ before quitting WebJam. "
                     if recording_was_active
                     else "Wait for ‘Take saved’ before quitting WebJam. "
                 )
-                + "This keeps every musician's track complete and verified.",
+                + preservation,
             )
             return False
         if not self.recording.confirm_quit():
@@ -1664,12 +1908,7 @@ class ApplicationController(QObject):
         if not active:
             return ApplicationController._prepare_studio_close(self)
         hosting = bool(getattr(self.settings, "host_server_enabled", False))
-        title = "End jam and quit?" if hosting else "Leave jam and quit?"
-        body = (
-            "Quitting WebJam ends this jam for every connected musician."
-            if hosting
-            else "Quitting WebJam disconnects you; the band can keep playing."
-        )
+        title, body = _live_quit_copy(self, hosting=hosting)
         reply = QMessageBox.question(
             self.window,
             title,
@@ -1734,8 +1973,7 @@ class ApplicationController(QObject):
             self._ensure_jamulus_update_service()
         except Exception as exc:  # noqa: BLE001 - embedded fallback stays usable
             LOGGER.warning(
-                "Jamulus managed runtime could not initialize; "
-                "exception_type=%s",
+                "Jamulus managed runtime could not initialize; exception_type=%s",
                 type(exc).__name__,
             )
         QTimer.singleShot(0, self._start_webex_app_detection)
@@ -1764,9 +2002,7 @@ class ApplicationController(QObject):
         return service
 
     def _register_managed_jamulus_providers(self) -> None:
-        if bool(
-            getattr(self, "_managed_jamulus_providers_registered", False)
-        ):
+        if bool(getattr(self, "_managed_jamulus_providers_registered", False)):
             return
         bridge = getattr(self, "bridge", None)
         set_managed_components = getattr(
@@ -1824,8 +2060,7 @@ class ApplicationController(QObject):
             self._ensure_jamulus_update_service().start_automatic_check()
         except Exception as exc:  # noqa: BLE001 - optional check stays non-fatal
             LOGGER.warning(
-                "Jamulus automatic update check could not start; "
-                "exception_type=%s",
+                "Jamulus automatic update check could not start; exception_type=%s",
                 type(exc).__name__,
             )
 
@@ -1868,9 +2103,7 @@ class ApplicationController(QObject):
         if reference_track is not None:
             snapshot = reference_track.snapshot
             if bool(getattr(snapshot, "active", False)):
-                return ComponentBusyStatus(
-                    ComponentBusyReason.REFERENCE_TRACK_ACTIVE
-                )
+                return ComponentBusyStatus(ComponentBusyReason.REFERENCE_TRACK_ACTIVE)
 
         bridge = getattr(self, "bridge", None)
         if bool(getattr(bridge, "practice_mode", False)):
@@ -2069,10 +2302,7 @@ class ApplicationController(QObject):
         return True
 
     def _apply_webex_app_info(self, info, generation: int) -> None:
-        if (
-            self._shutdown
-            or generation != self._webex_detection_generation
-        ):
+        if self._shutdown or generation != self._webex_detection_generation:
             return
         self._webex_app_info = info
         self.window.webex_embed.set_app_status(
@@ -2194,12 +2424,10 @@ class ApplicationController(QObject):
                     "activation-exception",
                 )
             self._ui_invoker.invoke(
-                lambda value=result, token=generation: (
-                    self._finish_webex_activation(
-                        value,
-                        token,
-                        mute_guidance=mute_guidance,
-                    )
+                lambda value=result, token=generation: self._finish_webex_activation(
+                    value,
+                    token,
+                    mute_guidance=mute_guidance,
                 )
             )
 
@@ -2257,9 +2485,7 @@ class ApplicationController(QObject):
                 ms=8000,
             )
             return
-        launched_app = (
-            result.state is WebexActivationState.LAUNCHED_APP
-        )
+        launched_app = result.state is WebexActivationState.LAUNCHED_APP
         if mute_guidance:
             if launched_app:
                 self.window.flash_message(
@@ -2421,9 +2647,7 @@ class ApplicationController(QObject):
         events = getattr(self, "_webex_events", None)
         if isinstance(events, list) and events:
             result["events"] = [
-                dict(event)
-                for event in events[-12:]
-                if isinstance(event, dict)
+                dict(event) for event in events[-12:] if isinstance(event, dict)
             ]
         return result
 
@@ -2474,8 +2698,15 @@ class ApplicationController(QObject):
 
         conductor = getattr(self, "session_conductor", None)
         if not isinstance(conductor, SessionConductor):
-            initial = facts or SessionConductorFacts()
-            conductor = SessionConductor(SessionConductorFacts(role=initial.role))
+            initial = facts or SessionConductorFacts(
+                creator_profile_key=self.creator_profile.key
+            )
+            conductor = SessionConductor(
+                SessionConductorFacts(
+                    role=initial.role,
+                    creator_profile_key=initial.creator_profile_key,
+                )
+            )
             self.session_conductor = conductor
             self._session_conductor_token = conductor.token
         return conductor
@@ -3059,6 +3290,10 @@ class ApplicationController(QObject):
             )
             if (
                 not is_host
+                or (
+                    wants_start
+                    and not self.creator_profile.capabilities.session_recording
+                )
                 or not bool(getattr(self.settings, "host_server_enabled", False))
                 or not self._jamulus_connected
                 or not setup_complete
@@ -3106,7 +3341,11 @@ class ApplicationController(QObject):
                         current,
                         PocketCommandRejectionReason.INVALID_STATE,
                     )
-                self.recording.on_record_requested()
+                # Pocket Stage owns only authenticated command intent.  The
+                # desktop application boundary remains the sole authority for
+                # Shared Track planning, recorder start/stop, and route
+                # cleanup, exactly as it is for the visible Record action.
+                self._on_record_requested()
                 # Preflight can fail synchronously (for example storage or
                 # roster checks).  Surface that as a finite rejection rather
                 # than leaving a phone waiting forever.  Successful recorder
@@ -3146,9 +3385,7 @@ class ApplicationController(QObject):
         self.jamulus.chat_callback = None
         self.jamulus.recorder_state_callback = None
         self.jamulus.chat_callback_with_source = self._on_jamulus_chat
-        self.jamulus.recorder_state_callback_with_source = (
-            self._on_recorder_state
-        )
+        self.jamulus.recorder_state_callback_with_source = self._on_recorder_state
 
     # ------------------------------------------------------------------
     # Initial wiring
@@ -3186,15 +3423,9 @@ class ApplicationController(QObject):
         # Conversation navigation is side-effect free. Only the explicit
         # Join/Open action hands the configured meeting link to the OS.
         self.window.webex_embed.open_meeting_requested.connect(self._on_join_video)
-        self.window.webex_embed.copy_link_requested.connect(
-            self._on_copy_meeting_link
-        )
-        self.window.webex_embed.bring_forward_requested.connect(
-            self._show_webex_app
-        )
-        self.window.webex_embed.mute_in_webex_requested.connect(
-            self._focus_webex_mute
-        )
+        self.window.webex_embed.copy_link_requested.connect(self._on_copy_meeting_link)
+        self.window.webex_embed.bring_forward_requested.connect(self._show_webex_app)
+        self.window.webex_embed.mute_in_webex_requested.connect(self._focus_webex_mute)
         self.window.webex_embed.change_link_requested.connect(
             self._open_settings_wizard
         )
@@ -3370,8 +3601,7 @@ class ApplicationController(QObject):
         except Exception:  # noqa: BLE001 - identity evidence fails absent
             roster_proof = None
         self._ui_invoker.invoke(
-            lambda participants=detached_participants, identity=source_identity,
-            proof=roster_proof: (
+            lambda participants=detached_participants, identity=source_identity, proof=roster_proof: (
                 self._apply_jamulus_participants(
                     participants,
                     source_identity=identity,
@@ -3465,6 +3695,7 @@ class ApplicationController(QObject):
             settings_generation_provider=lambda: getattr(
                 self, "_settings_generation", 0
             ),
+            creator_profile_key=self.creator_profile.key,
         )
         dialog._settings_generation = getattr(self, "_settings_generation", 0)
         dialog.settings_requested.connect(self._bring_jamulus_forward)
@@ -3532,9 +3763,9 @@ class ApplicationController(QObject):
     def _new_startup_launch_authorization(self) -> tuple[int, object]:
         """Issue one memory-only token for the current explicit Start gesture."""
 
-        generation = int(
-            getattr(self, "_startup_launch_authorization_generation", 0)
-        ) + 1
+        generation = (
+            int(getattr(self, "_startup_launch_authorization_generation", 0)) + 1
+        )
         self._startup_launch_authorization_generation = generation
         token = (generation, object())
         self._pending_startup_launch_authorization = token
@@ -3563,10 +3794,7 @@ class ApplicationController(QObject):
         try:
             return bool(self.begin_startup_journey())
         finally:
-            if (
-                getattr(self, "_pending_startup_launch_authorization", None)
-                is token
-            ):
+            if getattr(self, "_pending_startup_launch_authorization", None) is token:
                 self._pending_startup_launch_authorization = None
 
     def _bind_remote_startup_continuation(
@@ -3719,10 +3947,7 @@ class ApplicationController(QObject):
             or getattr(self, "_primary_recovery_retire_inflight", False)
         ):
             return False
-        if (
-            getattr(self, "_reconnect_gave_up", False)
-            and authorization_generation <= 0
-        ):
+        if getattr(self, "_reconnect_gave_up", False) and authorization_generation <= 0:
             self._sync_reference_track_primary_gate()
             return False
         active = getattr(self, "_startup_attempt", None)
@@ -3780,9 +4005,7 @@ class ApplicationController(QObject):
             "human_confirmed": False,
             "fast_path": False,
             "webex_decision": None,
-            "explicit_launch_authorization_generation": (
-                authorization_generation
-            ),
+            "explicit_launch_authorization_generation": (authorization_generation),
         }
         if (
             recovery is not None
@@ -4107,9 +4330,7 @@ class ApplicationController(QObject):
                 try:
                     stopped = bool(
                         self.bridge.stop_jamulus(
-                            expected_launch_request_generation=(
-                                request_generation
-                            ),
+                            expected_launch_request_generation=(request_generation),
                         )
                     )
                 except Exception:  # noqa: BLE001 - cleanup truth stays bounded
@@ -4421,9 +4642,7 @@ class ApplicationController(QObject):
         self.window.webex_embed.set_meeting_configured(True)
         if value != previous_url:
             self.window.set_status_video(WebexLaunchState.NOT_OPENED.value)
-            self.window.webex_embed.set_launch_status(
-                WebexLaunchState.NOT_OPENED.value
-            )
+            self.window.webex_embed.set_launch_status(WebexLaunchState.NOT_OPENED.value)
         self.window.session_strip.set_video_configured(True)
         self.window.session_strip.set_video_state(
             _meeting_open_action_label(value),
@@ -4696,6 +4915,135 @@ class ApplicationController(QObject):
         except Exception:  # noqa: BLE001 - recovery persistence must not block music
             LOGGER.info("Could not persist startup recovery state", exc_info=True)
 
+    @staticmethod
+    def _startup_creator_copy(profile_key: object) -> dict[str, str]:
+        """Return bounded, truthful live-setup copy for one creator profile."""
+
+        canonical = canonical_creator_profile_key(profile_key) or "music"
+        if canonical == "podcast_voice":
+            return {
+                "starting_title": "Starting your private recording session",
+                "starting_detail": (
+                    "WebJam is starting the private audio server. Speaker audio "
+                    "setup comes next in Jamulus."
+                ),
+                "setup_title": "Set up your recording audio in Jamulus",
+                "verify_title": "Checking your recording connection",
+                "verify_detail": (
+                    "WebJam is confirming the Jamulus client, private server, "
+                    "and your place in the recording session."
+                ),
+                "confirm_title": "Listen for your microphone",
+                "confirm_detail": (
+                    "Can you hear your voice returning cleanly from the session?"
+                ),
+                "conversation_detail": (
+                    "A meeting service is an optional external handoff for "
+                    f"conversation or video. {RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+                ),
+                "host_ready_title": "Your recording session is ready",
+                "host_ready_detail": (
+                    "Invite your speakers when you are ready. "
+                    f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+                ),
+                "guest_ready_title": "Ready to record",
+                "guest_ready_detail": (
+                    "Your WebJam/Jamulus recording path is ready. Enter the "
+                    "session when you are ready."
+                ),
+                "closing_detail": (
+                    "WebJam is safely releasing the private recording session."
+                ),
+                "failure_title": "Recording setup needs attention",
+                "failure_detail": (
+                    "WebJam couldn't finish this recording setup. Try again."
+                ),
+                "safe_failure_detail": (
+                    "WebJam couldn't finish this recording setup safely. Quit "
+                    "and reopen WebJam before trying again."
+                ),
+            }
+        if canonical == "review_rehearsal":
+            return {
+                "starting_title": "Starting your review session (Preview)",
+                "starting_detail": (
+                    "WebJam is starting the private live-audio server. Review "
+                    "audio setup comes next in Jamulus."
+                ),
+                "setup_title": "Set up your review audio in Jamulus",
+                "verify_title": "Checking your review connection",
+                "verify_detail": (
+                    "WebJam is confirming the Jamulus client, private server, "
+                    "and your place in the Review Preview session."
+                ),
+                "confirm_title": "Check your audio source",
+                "confirm_detail": (
+                    "Can you hear your audio returning cleanly from the session?"
+                ),
+                "conversation_detail": (
+                    "A meeting service is an optional external handoff for "
+                    f"conversation or video. {RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+                ),
+                "host_ready_title": "Your review session is ready (Preview)",
+                "host_ready_detail": (
+                    "Invite collaborators when you are ready. Review Preview "
+                    "provides live audio and local notes only—no visual-media "
+                    "sync or media timecode."
+                ),
+                "guest_ready_title": "Ready to review (Preview)",
+                "guest_ready_detail": (
+                    "Your live-audio path is ready. Review notes stay local and "
+                    "are not media-timecode synchronized."
+                ),
+                "closing_detail": (
+                    "WebJam is safely releasing the private review session."
+                ),
+                "failure_title": "Review setup needs attention",
+                "failure_detail": (
+                    "WebJam couldn't finish this Review Preview setup. Try again."
+                ),
+                "safe_failure_detail": (
+                    "WebJam couldn't finish this Review Preview setup safely. "
+                    "Quit and reopen WebJam before trying again."
+                ),
+            }
+        return {
+            "starting_title": "Starting your private jam",
+            "starting_detail": (
+                "WebJam is starting the band server. Your sound setup comes "
+                "next in Jamulus."
+            ),
+            "setup_title": "Set up your sound in Jamulus",
+            "verify_title": "Checking your music connection",
+            "verify_detail": (
+                "WebJam is confirming the Jamulus client, private server, and "
+                "your place in the band."
+            ),
+            "confirm_title": "Listen for your instrument",
+            "confirm_detail": (
+                "Can you hear your instrument returning cleanly from the jam?"
+            ),
+            "conversation_detail": (
+                "Jamulus carries the music. A supported meeting service is "
+                "optional for talking or video."
+            ),
+            "host_ready_title": "Your jam is ready",
+            "host_ready_detail": (
+                "Invite your band when you are ready. Jamulus carries the music."
+            ),
+            "guest_ready_title": "Ready to play",
+            "guest_ready_detail": (
+                "Your Jamulus connection is ready. Enter the jam when you are ready."
+            ),
+            "closing_detail": ("WebJam is safely releasing the private music session."),
+            "failure_title": "Music setup needs attention",
+            "failure_detail": ("WebJam couldn't finish this music setup. Try again."),
+            "safe_failure_detail": (
+                "WebJam couldn't finish this music setup safely. Quit and "
+                "reopen WebJam before trying again."
+            ),
+        }
+
     def _render_startup_journey(self) -> None:
         """Project the one current setup step into the always-visible HUD."""
 
@@ -4716,6 +5064,7 @@ class ApplicationController(QObject):
         )
         role = str(attempt.get("role", "guest"))
         phase = str(attempt.get("phase", ""))
+        creator_copy = self._startup_creator_copy(self.creator_profile.key)
         end_label = "End Session" if role == "host" else "Leave Jam"
         self.window.session_strip.set_audio_state(
             end_label,
@@ -4723,8 +5072,8 @@ class ApplicationController(QObject):
         )
         if phase == "starting_server":
             self.window.session_hud.set_state(
-                "Starting your private jam",
-                "WebJam is starting the band server. Your sound setup comes next in Jamulus.",
+                creator_copy["starting_title"],
+                creator_copy["starting_detail"],
                 action_visible=False,
             )
         elif phase in {"launching_client", "native_sound_setup"}:
@@ -4736,7 +5085,7 @@ class ApplicationController(QObject):
                 "connection is ready."
             )
             self.window.session_hud.set_state(
-                "Set up your sound in Jamulus",
+                creator_copy["setup_title"],
                 "Choose your interface, input channels, headphones, and buffer "
                 "in Jamulus. WebJam uses a dedicated Jamulus profile for this "
                 "app and leaves your regular Jamulus settings untouched. " + setup_wait,
@@ -4746,8 +5095,8 @@ class ApplicationController(QObject):
             )
         elif phase == "verifying_music":
             self.window.session_hud.set_state(
-                "Checking your music connection",
-                "WebJam is confirming the Jamulus client, private server, and your place in the band.",
+                creator_copy["verify_title"],
+                creator_copy["verify_detail"],
                 action_visible=False,
                 secondary_action_text="Bring Jamulus Forward",
                 secondary_action_visible=True,
@@ -4755,8 +5104,8 @@ class ApplicationController(QObject):
             )
         elif phase == "confirm_sound":
             self.window.session_hud.set_state(
-                "Listen for your instrument",
-                "Can you hear your instrument returning cleanly from the jam?",
+                creator_copy["confirm_title"],
+                creator_copy["confirm_detail"],
                 action_text="Yes, It Sounds Right",
                 action_visible=True,
                 action_kind="sound_confirmed",
@@ -4767,8 +5116,7 @@ class ApplicationController(QObject):
         elif phase == "conversation":
             self.window.session_hud.set_state(
                 "Add conversation if you use it",
-                "Jamulus carries the music. A supported meeting service is "
-                "optional for talking or video.",
+                creator_copy["conversation_detail"],
                 action_text="Add Conversation",
                 action_visible=True,
                 action_kind="add_webex",
@@ -4800,8 +5148,8 @@ class ApplicationController(QObject):
         elif phase == "invite_ready":
             if role == "host":
                 self.window.session_hud.set_state(
-                    "Your jam is ready",
-                    "Invite your band when you are ready. Jamulus carries the music.",
+                    creator_copy["host_ready_title"],
+                    creator_copy["host_ready_detail"],
                     invite_available=True,
                     action_text="Copy Invite",
                     action_visible=True,
@@ -4813,8 +5161,8 @@ class ApplicationController(QObject):
                 )
             else:
                 self.window.session_hud.set_state(
-                    "Ready to play",
-                    "Your Jamulus connection is ready. Enter the jam when you are ready.",
+                    creator_copy["guest_ready_title"],
+                    creator_copy["guest_ready_detail"],
                     action_text="Enter Jam",
                     action_visible=True,
                     action_kind="enter_jam",
@@ -4823,7 +5171,7 @@ class ApplicationController(QObject):
         elif phase == "cancelling":
             self.window.session_hud.set_state(
                 "Closing this setup",
-                "WebJam is safely releasing the private music session.",
+                creator_copy["closing_detail"],
                 action_visible=False,
             )
         elif phase == "failed" and not bool(attempt.get("retryable", True)):
@@ -4832,8 +5180,7 @@ class ApplicationController(QObject):
                 str(
                     attempt.get(
                         "failure",
-                        "WebJam couldn't finish this music setup safely. Quit "
-                        "and reopen WebJam before trying again.",
+                        creator_copy["safe_failure_detail"],
                     )
                 ),
                 action_visible=False,
@@ -4843,11 +5190,11 @@ class ApplicationController(QObject):
             )
         else:
             self.window.session_hud.set_state(
-                "Music setup needs attention",
+                creator_copy["failure_title"],
                 str(
                     attempt.get(
                         "failure",
-                        "WebJam couldn't finish this music setup. Try again.",
+                        creator_copy["failure_detail"],
                     )
                 ),
                 action_text="Try Again",
@@ -4861,7 +5208,10 @@ class ApplicationController(QObject):
         self._persist_startup_attempt(attempt)
         if not isinstance(snapshot, SessionConductorSnapshot):
             return
-        override = self._startup_guidance_override(attempt)
+        override = self._startup_guidance_override(
+            attempt,
+            self.creator_profile.key,
+        )
         self._last_session_conductor_snapshot = snapshot
         self._last_session_conductor = snapshot.presentation
         self._last_guidance_display_override = override
@@ -4872,7 +5222,7 @@ class ApplicationController(QObject):
                 override.title,
                 override.message,
                 primary_text=override.action_label
-                or override.primary_action.label
+                or override.primary_action.label_for(self.creator_profile)
                 or "Continue",
                 primary_enabled=override.primary_action
                 not in {
@@ -4889,26 +5239,27 @@ class ApplicationController(QObject):
     @staticmethod
     def _startup_guidance_override(
         attempt: dict[str, object],
+        creator_profile_key: object = "music",
     ) -> GuidanceDisplayOverride:
         """Return fixed, path-free guidance for the active native setup step."""
 
         phase = str(attempt.get("phase", ""))
         role = str(attempt.get("role", "guest"))
+        creator_copy = ApplicationController._startup_creator_copy(creator_profile_key)
         if phase == "failed" and not bool(attempt.get("retryable", True)):
             return GuidanceDisplayOverride(
                 "Quit and reopen WebJam",
-                "WebJam couldn't finish this music setup safely. Close this "
-                "setup, quit and reopen WebJam, then try again.",
+                creator_copy["safe_failure_detail"],
                 SessionPrimaryAction.NONE,
             )
         values = {
             "starting_server": GuidanceDisplayOverride(
-                "Starting your private jam",
-                "WebJam is starting the band server. Your sound setup comes next in Jamulus.",
+                creator_copy["starting_title"],
+                creator_copy["starting_detail"],
                 SessionPrimaryAction.WAIT,
             ),
             "launching_client": GuidanceDisplayOverride(
-                "Set up your sound in Jamulus",
+                creator_copy["setup_title"],
                 "Choose your interface, input channels, headphones, and buffer "
                 "in Jamulus. WebJam uses a dedicated Jamulus profile for this "
                 "app and leaves your regular Jamulus settings untouched.",
@@ -4916,7 +5267,7 @@ class ApplicationController(QObject):
                 "Bring Jamulus Forward",
             ),
             "native_sound_setup": GuidanceDisplayOverride(
-                "Set up your sound in Jamulus",
+                creator_copy["setup_title"],
                 "Choose your interface, input channels, headphones, and buffer "
                 "in Jamulus. WebJam uses a dedicated Jamulus profile for this "
                 "app and leaves your regular Jamulus settings untouched."
@@ -4929,19 +5280,19 @@ class ApplicationController(QObject):
                 "Bring Jamulus Forward",
             ),
             "verifying_music": GuidanceDisplayOverride(
-                "Checking your music connection",
-                "WebJam is confirming the client, private server, and your place in the band.",
+                creator_copy["verify_title"],
+                creator_copy["verify_detail"],
                 SessionPrimaryAction.WAIT,
             ),
             "confirm_sound": GuidanceDisplayOverride(
-                "Listen for your instrument",
-                "Confirm only after you hear your instrument returning cleanly from the jam.",
+                creator_copy["confirm_title"],
+                creator_copy["confirm_detail"],
                 SessionPrimaryAction.CONFIRM_SOUND,
                 "Yes, It Sounds Right",
             ),
             "conversation": GuidanceDisplayOverride(
                 "Add conversation if you use it",
-                "Jamulus carries the music. Conversation or video is optional.",
+                creator_copy["conversation_detail"],
                 SessionPrimaryAction.ADD_CONVERSATION,
                 "Add Conversation",
             ),
@@ -4954,12 +5305,12 @@ class ApplicationController(QObject):
             ),
             "cancelling": GuidanceDisplayOverride(
                 "Closing this setup",
-                "WebJam is safely releasing the private music session.",
+                creator_copy["closing_detail"],
                 SessionPrimaryAction.WAIT,
             ),
             "failed": GuidanceDisplayOverride(
-                "Music setup needs attention",
-                "WebJam could not finish this music setup. Retry after the prior attempt stops safely.",
+                creator_copy["failure_title"],
+                creator_copy["failure_detail"],
                 SessionPrimaryAction.RETRY_SETUP,
                 "Try Again",
             ),
@@ -4967,13 +5318,13 @@ class ApplicationController(QObject):
         if phase == "invite_ready":
             if role == "host":
                 return GuidanceDisplayOverride(
-                    "Your jam is ready",
-                    "Invite your band when you are ready. Jamulus carries the music.",
+                    creator_copy["host_ready_title"],
+                    creator_copy["host_ready_detail"],
                     SessionPrimaryAction.COPY_INVITE,
                 )
             return GuidanceDisplayOverride(
-                "Ready to play",
-                "Your music connection is ready.",
+                creator_copy["guest_ready_title"],
+                creator_copy["guest_ready_detail"],
                 SessionPrimaryAction.ENTER_JAM,
             )
         return values.get(phase, values["failed"])
@@ -5121,8 +5472,7 @@ class ApplicationController(QObject):
         rpc_available = getattr(rpc, "available", False) is True
         recovery = self._primary_jamulus_recovery_snapshot()
         responsive = bool(
-            recovery is not None
-            and recovery.rpc_freshness is JamulusRpcFreshness.FRESH
+            recovery is not None and recovery.rpc_freshness is JamulusRpcFreshness.FRESH
         )
         meter_active = False
         meter_rms = 0.0
@@ -5203,8 +5553,7 @@ class ApplicationController(QObject):
         if not self.jamulus.send_chat(text):
             self.window.session_canvas.restore_unsent_chat(text)
             self.window.flash_message(
-                "Message not sent. Reconnect to your band, then press Enter "
-                "to try again.",
+                _chat_rejection_copy(self),
                 ms=6_000,
             )
             return
@@ -5331,12 +5680,8 @@ class ApplicationController(QObject):
                     host_roster_fingerprint=proof.host_roster_fingerprint,
                     ambiguous_ordinals=proof.ambiguous_ordinals,
                     process_generation=common["process_generation"],
-                    rpc_connection_generation=common[
-                        "rpc_connection_generation"
-                    ],
-                    audio_connection_generation=common[
-                        "audio_connection_generation"
-                    ],
+                    rpc_connection_generation=common["rpc_connection_generation"],
+                    audio_connection_generation=common["audio_connection_generation"],
                 )
                 if challenge is None:
                     raise RuntimeError("recording presence is unavailable")
@@ -5366,9 +5711,7 @@ class ApplicationController(QObject):
                         challenge=challenge.challenge,
                         challenge_epoch=challenge.challenge_epoch,
                         topology_epoch=challenge.topology_epoch,
-                        presence_generation=(
-                            self._host_recording_presence_generation
-                        ),
+                        presence_generation=(self._host_recording_presence_generation),
                         capture_enabled=bool(capture_enabled),
                     )
                     if bound is not None:
@@ -5489,9 +5832,7 @@ class ApplicationController(QObject):
                     self._publish_ordered_recording_presence(
                         person,
                         current_roster_proof,
-                        capture_enabled=bool(
-                            self.settings.local_capture_enabled
-                        ),
+                        capture_enabled=bool(self.settings.local_capture_enabled),
                     )
             if self.host_peer.active:
                 try:
@@ -5627,14 +5968,34 @@ class ApplicationController(QObject):
             self._update_session_hud()
 
     def _connected_audio_detail(self, count: int) -> str:
-        prefix = f"{count} musician{'s' if count != 1 else ''} connected"
+        profile = self.creator_profile
+        if profile.key == "music":
+            prefix = f"{count} musician{'s' if count != 1 else ''} connected"
+            remote_audio = "Band audio"
+            input_prompt = "play a note"
+        else:
+            participant = (
+                profile.vocabulary.participant_singular
+                if count == 1
+                else profile.vocabulary.participant_plural
+            )
+            prefix = f"{count} {participant} connected"
+            if profile.key == "podcast_voice":
+                remote_audio = "Speaker audio"
+                input_prompt = "speak"
+            else:
+                remote_audio = "Session audio"
+                input_prompt = "make some sound"
         if self._local_audio_seen and self._remote_audio_seen:
-            return f"{prefix} · Your input and band audio are detected."
+            return f"{prefix} · Your input and {remote_audio.lower()} are detected."
         if self._local_audio_seen:
             return f"{prefix} · Your input is detected."
         if self._remote_audio_seen:
-            return f"{prefix} · Band audio detected; play a note to check your input."
-        return f"{prefix} · Play a note to check your input."
+            return (
+                f"{prefix} · {remote_audio} detected; {input_prompt} to check "
+                "your input."
+            )
+        return f"{prefix} · {input_prompt.capitalize()} to check your input."
 
     # ------------------------------------------------------------------
     # Session strip handlers
@@ -5983,6 +6344,33 @@ class ApplicationController(QObject):
 
         if self._shutdown_cleanup_blocks_action():
             return
+        recorder_phase = str(
+            getattr(getattr(self.recording, "phase", None), "value", "idle") or "idle"
+        )
+        recording_authority_active = bool(
+            getattr(self, "_recorder_armed", False)
+            or getattr(self, "_server_recording", False)
+            or recorder_phase
+            in {
+                "preflight",
+                "starting",
+                "count_in",
+                "recording",
+                "stopping",
+                "validating",
+                "stop_failed",
+            }
+        )
+        if (
+            not recording_authority_active
+            and not self.creator_profile.capabilities.session_recording
+        ):
+            self.window.flash_message(
+                "Session recording is unavailable for this creator profile.",
+                ms=6000,
+            )
+            self._render_session_conductor()
+            return
         studio = getattr(getattr(self, "window", None), "recording_studio", None)
         if bool(getattr(studio, "export_in_progress", False)):
             self.window.flash_message(
@@ -6002,7 +6390,10 @@ class ApplicationController(QObject):
         if needs_choice:
             from webjam_qt.windows.recording_setup import LocalOriginalsChoiceDialog
 
-            choice_dialog = LocalOriginalsChoiceDialog(parent=self.window)
+            choice_dialog = LocalOriginalsChoiceDialog(
+                parent=self.window,
+                creator_profile=self.creator_profile,
+            )
             if choice_dialog.exec() != LocalOriginalsChoiceDialog.DialogCode.Accepted:
                 return
             choice = choice_dialog.choice
@@ -6028,10 +6419,6 @@ class ApplicationController(QObject):
             if choice == "local":
                 self._open_recording_setup()
                 return
-        recorder_phase = str(
-            getattr(getattr(self.recording, "phase", None), "value", "idle")
-            or "idle"
-        )
         starting = bool(
             not bool(getattr(self, "_recorder_armed", False))
             and not bool(getattr(self, "_server_recording", False))
@@ -6042,20 +6429,44 @@ class ApplicationController(QObject):
         shared_snapshot = getattr(shared_track, "snapshot", None)
         if starting:
             shared_state = str(
-                getattr(getattr(shared_snapshot, "state", None), "value", "")
-                or ""
+                getattr(getattr(shared_snapshot, "state", None), "value", "") or ""
             )
             planner = getattr(
                 self.recording,
                 "plan_shared_track_for_next_take",
                 None,
             )
+            loaded_shared_track = bool(getattr(shared_snapshot, "loaded", False))
+            if (
+                loaded_shared_track
+                and shared_state in {"ready", "paused"}
+                and not bool(getattr(shared_snapshot, "can_play", False))
+            ):
+                if callable(planner):
+                    planner(required=False)
+                self._shared_track_play_after_recording = ""
+                self._show_actionable_error(
+                    "Shared Track Needs Attention",
+                    what_failed=(
+                        "The loaded Shared Track has no available audio route. "
+                        "No recorder was started."
+                    ),
+                    likely_cause=(
+                        "The required playback device or audio backend is not "
+                        "available on this computer."
+                    ),
+                    next_action=(
+                        "Restore the Shared Track audio route, or remove the "
+                        "track before recording if this take should not "
+                        "include it."
+                    ),
+                )
+                return
             if callable(planner):
                 planner(
                     required=bool(
-                        getattr(shared_snapshot, "loaded", False)
-                        and shared_state
-                        in {"ready", "paused", "routing", "playing"}
+                        loaded_shared_track
+                        and shared_state in {"ready", "paused", "routing", "playing"}
                     )
                 )
             self._shared_track_play_after_recording = (
@@ -6121,8 +6532,11 @@ class ApplicationController(QObject):
             # The legacy invitation is intentionally still usable, but the
             # host must never miss why automatic originals are unavailable.
             self._update_session_hud()
+        participant = _creator_profile_for_controller(
+            self
+        ).vocabulary.participant_singular
         self.window.flash_message(
-            "Invite link copied — send it to your bandmate.",
+            f"Invite link copied — send it to another {participant}.",
             ms=7000,
         )
 
@@ -7034,10 +7448,7 @@ class ApplicationController(QObject):
                     int(startup_attempt.get("generation", 0) or 0)
                 )
                 return
-            if (
-                isinstance(recovery, JamulusRecoverySnapshot)
-                and recovery.pending
-            ):
+            if isinstance(recovery, JamulusRecoverySnapshot) and recovery.pending:
                 # A slow, still-unclassified profile preflight does not earn
                 # first-run grace. Cancel only this startup's monotonic Bridge
                 # request generation at the ordinary connection boundary.
@@ -7123,11 +7534,7 @@ class ApplicationController(QObject):
             or self._rpc_hang_banner_shown
             or (
                 recovery is not None
-                and (
-                    recovery.active
-                    or recovery.pending
-                    or recovery.inflight
-                )
+                and (recovery.active or recovery.pending or recovery.inflight)
             )
         ):
             # This timer bounds the initial connection only. Bridge owns its
@@ -7154,9 +7561,7 @@ class ApplicationController(QObject):
                 try:
                     if request_generation > 0:
                         self.bridge.stop_jamulus(
-                            expected_launch_request_generation=(
-                                request_generation
-                            ),
+                            expected_launch_request_generation=(request_generation),
                         )
                     elif process_generation > 0 and process_id > 0:
                         self.bridge.stop_jamulus(
@@ -7870,6 +8275,7 @@ class ApplicationController(QObject):
             export=getattr(self, "_conductor_export", ExportState.IDLE),
             cleanup=cleanup,
             failure=failure,
+            creator_profile_key=self.creator_profile.key,
         )
 
     @staticmethod
@@ -7955,7 +8361,9 @@ class ApplicationController(QObject):
                     display_override.message,
                     primary_text=(
                         display_override.action_label
-                        or display_override.primary_action.label
+                        or display_override.primary_action.label_for(
+                            self.creator_profile
+                        )
                         or "Continue"
                     ),
                     primary_enabled=display_override.primary_action
@@ -8012,7 +8420,7 @@ class ApplicationController(QObject):
             presentation.title,
             detail,
             invite_available=action is SessionPrimaryAction.COPY_INVITE,
-            action_text=action.label,
+            action_text=presentation.action_label,
             action_visible=action_visible,
             action_kind=self._conductor_action_kind(action),
             ready=presentation.phase is SessionConductorPhase.TAKE_READY
@@ -8030,7 +8438,7 @@ class ApplicationController(QObject):
                 self._conductor_stage_phase(presentation.phase),
                 presentation.title,
                 presentation.message,
-                primary_text=action.label or "Continue",
+                primary_text=presentation.action_label or "Continue",
                 primary_enabled=presentation.primary_enabled,
                 show_primary=False,
                 show_ready_check=False,
@@ -8127,6 +8535,20 @@ class ApplicationController(QObject):
         if self._shutdown_cleanup_blocks_action():
             return
         action = str(action_kind or "").strip().lower()
+        capabilities = self.creator_profile.capabilities
+        blocked_by_profile = (
+            (action == "record" and not capabilities.session_recording)
+            or (
+                action in {"review_take", "select_take"}
+                and not capabilities.take_review
+            )
+            or (action == "export_tracks" and not capabilities.track_export)
+        )
+        if blocked_by_profile:
+            # Ignore stale or synthetic commands at the controller boundary;
+            # hiding an action in presentation code is not an authority check.
+            self._render_session_conductor()
+            return
         if action == "native_setup_finished":
             self._finish_native_sound_setup()
         elif action == "sound_confirmed":
@@ -8207,9 +8629,7 @@ class ApplicationController(QObject):
             self._shared_track_play_after_recording = ""
             controller = getattr(self, "_reference_track", None)
             snapshot = getattr(controller, "snapshot", None)
-            state = str(
-                getattr(getattr(snapshot, "state", None), "value", "") or ""
-            )
+            state = str(getattr(getattr(snapshot, "state", None), "value", "") or "")
             if pending_shared_track == "restart" and state == "paused":
                 self._run_reference_track_fast(controller.restart)
             elif pending_shared_track == "play" and state == "ready":
@@ -9163,7 +9583,8 @@ class ApplicationController(QObject):
             )
             self.window.webex_embed.set_launch_status(
                 self.bridge.webex_state
-                if self.bridge.webex_state in {
+                if self.bridge.webex_state
+                in {
                     "Not opened",
                     "Opened externally",
                     "Open failed",
@@ -9417,10 +9838,17 @@ class ApplicationController(QObject):
         box.exec()
         clicked = box.clickedButton()
         if retry_btn is not None and clicked is retry_btn:
-            try:
-                retry_callback()
-            except Exception:  # noqa: BLE001
-                LOGGER.exception("Retry callback failed")
+
+            def invoke_retry() -> None:
+                try:
+                    retry_callback()
+                except Exception:  # noqa: BLE001
+                    LOGGER.exception("Retry callback failed")
+
+            # Re-enter only after the modal and the failing preflight stack
+            # have unwound. The caller may still need to retire a take-scoped
+            # plan/capture before a fresh Record Session can be allocated.
+            QTimer.singleShot(0, invoke_retry)
         elif settings_btn is not None and clicked is settings_btn:
             self._open_settings_wizard()
         elif copy_btn is not None and clicked is copy_btn:
@@ -9525,9 +9953,7 @@ class ApplicationController(QObject):
             enabled=False,
         )
         self.window.session_strip.set_tools_enabled(False)
-        self.window.participant_grid.set_session_state(
-            SessionUiState.reconnecting()
-        )
+        self.window.participant_grid.set_session_state(SessionUiState.reconnecting())
         self.window.session_hud.set_state(
             "Finishing band-audio recovery",
             "WebJam is safely retiring the interrupted music engine before a "
@@ -9556,8 +9982,7 @@ class ApplicationController(QObject):
                     primary_stopped = bool(self.bridge.stop_jamulus())
             except Exception as exc:  # noqa: BLE001 - ownership failure stays retryable
                 LOGGER.error(
-                    "Exhausted primary Jamulus cleanup could not be confirmed "
-                    "(%s).",
+                    "Exhausted primary Jamulus cleanup could not be confirmed (%s).",
                     type(exc).__name__,
                 )
 
@@ -9619,9 +10044,7 @@ class ApplicationController(QObject):
             try:
                 self._ui_invoker.invoke(deliver)
             except RuntimeError:
-                LOGGER.debug(
-                    "Primary recovery cleanup finished after Qt shutdown"
-                )
+                LOGGER.debug("Primary recovery cleanup finished after Qt shutdown")
 
         threading.Thread(
             target=worker,
@@ -9705,12 +10128,8 @@ class ApplicationController(QObject):
                 or getattr(self.bridge, "jamulus_process", None) is not None
             )
         )
-        rpc_fresh = (
-            recovery.rpc_freshness is JamulusRpcFreshness.FRESH
-        )
-        rpc_stale = (
-            recovery.rpc_freshness is JamulusRpcFreshness.STALE
-        )
+        rpc_fresh = recovery.rpc_freshness is JamulusRpcFreshness.FRESH
+        rpc_stale = recovery.rpc_freshness is JamulusRpcFreshness.STALE
         rpc_age = recovery.rpc_age_seconds
         reconnect_attempts = recovery.attempts_started
         local_roster_current = self._primary_local_roster_matches(recovery)
@@ -9755,9 +10174,7 @@ class ApplicationController(QObject):
                 or self._reconnect_banner_shown
             )
             recovery_authenticated = not recovery.active
-            if recovery.active and not (
-                recovery.pending or recovery.inflight
-            ):
+            if recovery.active and not (recovery.pending or recovery.inflight):
                 try:
                     recovery_authenticated = bool(
                         self.bridge.mark_jamulus_reconnect_authenticated(
@@ -9805,14 +10222,11 @@ class ApplicationController(QObject):
                 )
                 self._connection_timer.start()
             if recovery.exhausted:
-                self._retire_primary_after_recovery_exhaustion(
-                    unresponsive=False
-                )
+                self._retire_primary_after_recovery_exhaustion(unresponsive=False)
                 return
             if not self._reconnect_banner_shown:
                 self.window.flash_message(
-                    "Band audio disconnected — WebJam is reconnecting "
-                    "automatically…",
+                    "Band audio disconnected — WebJam is reconnecting automatically…",
                     ms=5000,
                 )
                 self._reconnect_banner_shown = True
@@ -9884,9 +10298,7 @@ class ApplicationController(QObject):
             and not getattr(self, "_reconnect_gave_up", False)
             and not rpc_hang_announced_now
         ):
-            self._retire_primary_after_recovery_exhaustion(
-                unresponsive=True
-            )
+            self._retire_primary_after_recovery_exhaustion(unresponsive=True)
             return
 
         # Publish the state transition in this same supervision tick.  In
@@ -10263,9 +10675,7 @@ class ApplicationController(QObject):
             # coalesced off-UI operation lane.
             reference_track.cancel_pending_start()
             self._request_reference_track_route_check(
-                audience_bridge_active=(
-                    self._webex_audio_mode() == "audience_bridge"
-                )
+                audience_bridge_active=(self._webex_audio_mode() == "audience_bridge")
             )
 
     def _open_settings_wizard(self) -> None:
@@ -10396,6 +10806,7 @@ class ApplicationController(QObject):
             parent=self.window,
             local_originals_available=local_originals_available,
             takes_folder_editable=takes_folder_editable,
+            creator_profile=self.creator_profile,
         )
         if dialog.exec() != RecordingSetupDialog.DialogCode.Accepted:
             return
@@ -10457,9 +10868,7 @@ class ApplicationController(QObject):
             proof = getattr(self, "_primary_ordered_roster_proof", None)
             if isinstance(proof, JamulusOrderedRosterProof):
                 try:
-                    current = self.jamulus.ordered_roster_proof_for(
-                        proof.identity
-                    )
+                    current = self.jamulus.ordered_roster_proof_for(proof.identity)
                 except Exception:  # noqa: BLE001 - authority fails absent
                     current = None
                 if (
@@ -10467,12 +10876,8 @@ class ApplicationController(QObject):
                     and current.authority_key == proof.authority_key
                 ):
                     self._primary_ordered_roster_proof = current
-                    self._primary_ordered_roster_refresh_identity = (
-                        current.identity
-                    )
-                    self._primary_ordered_roster_refresh_key = (
-                        current.authority_key
-                    )
+                    self._primary_ordered_roster_refresh_identity = current.identity
+                    self._primary_ordered_roster_refresh_key = current.authority_key
                     self._publish_ordered_recording_presence(
                         participant,
                         current,
@@ -10480,14 +10885,10 @@ class ApplicationController(QObject):
                     )
                 else:
                     try:
-                        self.jamulus.request_ordered_roster_refresh(
-                            proof.identity
-                        )
+                        self.jamulus.request_ordered_roster_refresh(proof.identity)
                     except Exception:  # noqa: BLE001 - remains fail closed
                         pass
-                    self._invalidate_ordered_recording_presence(
-                        refresh_proof=proof
-                    )
+                    self._invalidate_ordered_recording_presence(refresh_proof=proof)
             if self.guest_peer is not None:
                 self.guest_peer.observe_presence(
                     participant.channel_id, participant.name
@@ -10528,6 +10929,13 @@ class ApplicationController(QObject):
         self._reopen_invalidated_band_check(reopen_band_check, reopen_start_when_ready)
 
     def _on_rail_view_changed(self, key: str) -> None:
+        if key == "takes" and not self.creator_profile.capabilities.take_review:
+            self.window.flash_message(
+                "Completed-take review is unavailable for this creator profile.",
+                ms=6000,
+            )
+            self._render_session_conductor()
+            return
         splitter = self.window.center_splitter
         total = sum(splitter.sizes()) or self.window.DEFAULT_WIDTH
 
@@ -10772,9 +11180,7 @@ class ApplicationController(QObject):
                 state=peer_state,
                 loaded=loaded,
                 source_display_name=(
-                    str(getattr(snapshot, "source_name", "") or "")
-                    if loaded
-                    else ""
+                    str(getattr(snapshot, "source_name", "") or "") if loaded else ""
                 ),
                 position_s=(
                     float(getattr(snapshot, "position_s", 0.0) or 0.0)
@@ -10791,20 +11197,15 @@ class ApplicationController(QObject):
                     if loaded
                     else 0.0
                 ),
-                loop_end_s=(
-                    getattr(snapshot, "loop_end_s", None) if loaded else None
-                ),
+                loop_end_s=(getattr(snapshot, "loop_end_s", None) if loaded else None),
                 count_in_active=bool(
                     loaded
                     and peer_state in {"routing", "playing"}
                     and getattr(snapshot, "count_in_active", False)
                 ),
-                cleanup_pending=bool(
-                    getattr(snapshot, "cleanup_pending", False)
-                ),
+                cleanup_pending=bool(getattr(snapshot, "cleanup_pending", False)),
                 needs_attention=bool(
-                    peer_state == "failed"
-                    or getattr(snapshot, "error", "")
+                    peer_state == "failed" or getattr(snapshot, "error", "")
                 ),
             )
         except Exception:  # noqa: BLE001 - peer boundary remains UI-optional
@@ -10874,9 +11275,7 @@ class ApplicationController(QObject):
                     lambda safe=message: self._show_reference_track_error(safe)
                 )
             finally:
-                self._ui_invoker.invoke(
-                    self._finish_reference_track_operation
-                )
+                self._ui_invoker.invoke(self._finish_reference_track_operation)
 
         threading.Thread(
             target=_worker,
@@ -10960,10 +11359,7 @@ class ApplicationController(QObject):
         operation = None
         thread_name = ""
         with self._reference_track_worker_state_lock:
-            if (
-                self._reference_track_operation_inflight
-                or self._shutdown
-            ):
+            if self._reference_track_operation_inflight or self._shutdown:
                 return
             controller = getattr(self, "_reference_track", None)
             if controller is None:
@@ -10986,10 +11382,9 @@ class ApplicationController(QObject):
                 thread_name = "webjam-reference-track-load"
                 self._reference_track_operation_kind = "load"
             elif self._reference_track_route_check_pending is not None:
-                _generation, audience_active = (
-                    self._reference_track_route_check_pending
-                )
+                _generation, audience_active = self._reference_track_route_check_pending
                 self._reference_track_route_check_pending = None
+
                 def _refresh_route() -> None:
                     controller.refresh_capability(audience_active)
 
@@ -11020,10 +11415,7 @@ class ApplicationController(QObject):
             return
         from webjam_qt.windows.reference_track import ReferenceTrackPrimaryGate
 
-        if (
-            self._reference_track_primary_gate()
-            is not ReferenceTrackPrimaryGate.READY
-        ):
+        if self._reference_track_primary_gate() is not ReferenceTrackPrimaryGate.READY:
             self._sync_reference_track_primary_gate()
             return
         if not self._reference_track_operation_lock.acquire(blocking=False):
@@ -11117,9 +11509,7 @@ class ApplicationController(QObject):
         rpc = getattr(self.jamulus, "rpc_client", None)
         if getattr(rpc, "available", False) is not True:
             age = None
-        elif age is not None and (
-            not math.isfinite(age) or age < 0.0
-        ):
+        elif age is not None and (not math.isfinite(age) or age < 0.0):
             age = None
         return snapshot.rpc_freshness is JamulusRpcFreshness.FRESH, age
 
@@ -11136,11 +11526,7 @@ class ApplicationController(QObject):
                 type(exc).__name__,
             )
             return None
-        return (
-            snapshot
-            if isinstance(snapshot, JamulusRecoverySnapshot)
-            else None
-        )
+        return snapshot if isinstance(snapshot, JamulusRecoverySnapshot) else None
 
     def _record_primary_local_roster_proof(
         self,
@@ -11164,9 +11550,7 @@ class ApplicationController(QObject):
         """Retire recorder authority without disturbing mixer presentation."""
 
         if isinstance(refresh_proof, JamulusOrderedRosterProof):
-            self._primary_ordered_roster_refresh_identity = (
-                refresh_proof.identity
-            )
+            self._primary_ordered_roster_refresh_identity = refresh_proof.identity
             self._primary_ordered_roster_refresh_key = refresh_proof.authority_key
         else:
             self._primary_ordered_roster_refresh_identity = None
@@ -11210,18 +11594,15 @@ class ApplicationController(QObject):
                 "_primary_ordered_roster_refresh_key",
                 None,
             )
-        if (
-            not isinstance(refresh_identity, JamulusRpcMonitorIdentity)
-            or not isinstance(expected_authority_key, tuple)
-        ):
+        if not isinstance(
+            refresh_identity, JamulusRpcMonitorIdentity
+        ) or not isinstance(expected_authority_key, tuple):
             return
         try:
             # Send the exact epoch-bound refresh even when the cached proof is
             # about to age out. Its asynchronous callback is the recovery path
             # after authority is invalidated below.
-            refresh_sent = self.jamulus.request_ordered_roster_refresh(
-                refresh_identity
-            )
+            refresh_sent = self.jamulus.request_ordered_roster_refresh(refresh_identity)
             if refresh_sent is not True:
                 self._invalidate_ordered_recording_presence(
                     refresh_proof=proof
@@ -11229,12 +11610,8 @@ class ApplicationController(QObject):
                     else None
                 )
                 if not isinstance(proof, JamulusOrderedRosterProof):
-                    self._primary_ordered_roster_refresh_identity = (
-                        refresh_identity
-                    )
-                    self._primary_ordered_roster_refresh_key = (
-                        expected_authority_key
-                    )
+                    self._primary_ordered_roster_refresh_identity = refresh_identity
+                    self._primary_ordered_roster_refresh_key = expected_authority_key
                 return
             current = self.jamulus.ordered_roster_proof_for(refresh_identity)
             if (
@@ -11247,12 +11624,8 @@ class ApplicationController(QObject):
                     else None
                 )
                 if not isinstance(proof, JamulusOrderedRosterProof):
-                    self._primary_ordered_roster_refresh_identity = (
-                        refresh_identity
-                    )
-                    self._primary_ordered_roster_refresh_key = (
-                        expected_authority_key
-                    )
+                    self._primary_ordered_roster_refresh_identity = refresh_identity
+                    self._primary_ordered_roster_refresh_key = expected_authority_key
                 return
             proof = current
             self._primary_ordered_roster_proof = current
@@ -11304,10 +11677,8 @@ class ApplicationController(QObject):
             snapshot.process_alive
             and snapshot.generation > 0
             and snapshot.process_id > 0
-            and snapshot.generation
-            == self._jamulus_local_roster_generation
-            and snapshot.process_id
-            == self._jamulus_local_roster_process_id
+            and snapshot.generation == self._jamulus_local_roster_generation
+            and snapshot.process_id == self._jamulus_local_roster_process_id
         )
 
     def _reference_track_primary_gate(
@@ -11554,8 +11925,7 @@ class ApplicationController(QObject):
                 already_retired = bool(
                     not bool(getattr(snapshot, "active", False))
                     and not bool(getattr(snapshot, "cleanup_pending", False))
-                    and state
-                    in {"ready", "unavailable", "idle", "closed"}
+                    and state in {"ready", "unavailable", "idle", "closed"}
                 )
                 if not already_retired:
                     snapshot = controller.handle_session_end()
@@ -11563,10 +11933,12 @@ class ApplicationController(QObject):
             LOGGER.error("Shared Track session cleanup could not be confirmed")
             return False
         state = getattr(getattr(snapshot, "state", None), "value", "")
-        return (
-            not bool(getattr(snapshot, "cleanup_pending", False))
-            and state in {"ready", "unavailable", "idle", "closed"}
-        )
+        return not bool(getattr(snapshot, "cleanup_pending", False)) and state in {
+            "ready",
+            "unavailable",
+            "idle",
+            "closed",
+        }
 
     def _refresh_reference_track_health(self) -> None:
         controller = getattr(self, "_reference_track", None)
@@ -11969,6 +12341,11 @@ class ApplicationController(QObject):
         try:
             pulse = build_session_pulse(
                 mode_key=self.window.session_strip.current_mode_key(),
+                creator_profile_key=getattr(
+                    self,
+                    "_active_creator_profile_key",
+                    "music",
+                ),
                 title=self.window.session_strip.current_title(),
                 notes=self.window.session_canvas.current_notes(),
                 participants=self._session_pulse_participants(),

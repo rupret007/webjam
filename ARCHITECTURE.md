@@ -1,10 +1,10 @@
-# WebJam architecture — v0.24.0 private test release
+# WebJam architecture — v0.25.0 source candidate
 
-> This document describes the immutable v0.24.0 GitHub **Latest** private test
-> release. Its exact tagged packages are published from commit
-> `9edada8613b5aca6fec6a4110e2322611ad6658e`; a later documentation commit is
-> not package evidence. All v0.24.0 physical, credentialed, signing, and
-> platform-trust gates stay **NOT RUN**.
+> This document describes the unpublished v0.25.0 source candidate. GitHub
+> **Latest** remains immutable v0.24.0, published from exact tag commit
+> `9edada8613b5aca6fec6a4110e2322611ad6658e`. Source text is not package
+> evidence. All v0.25.0 physical, credentialed, signing, and platform-trust
+> gates stay **NOT RUN**.
 
 ## Product boundary
 
@@ -14,6 +14,7 @@ meeting services reached through hardened external links. The boundary is delibe
 | Layer | Responsibility |
 | --- | --- |
 | `webjam_qt` | Host/Join launch, Session HUD, live Shared Track deck/transport, Record Session and session-Studio UI, standalone Reference Studio, recovery messages |
+| `core/creative_modes.py` | Canonical Music and Podcast & Voice GA profiles, Review & Rehearsal Preview profile, safe defaults, legacy aliases, and cross-surface presentation vocabulary |
 | `core/song_*`, `core/project_*`, schema-3 Studio | Portable Reference Studio project/media ownership, local playback/recording, non-destructive arrangement/mix, and bounce |
 | `services/bridge_service.py` | Direct owned-process launch/stop, hosted-server supervision, authenticated Jamulus RPC, and verified managed/embedded/explicit/system component resolution |
 | `core/jamulus_profile.py` | Dedicated Jamulus profile launch contract and private, allowlisted restart records |
@@ -26,6 +27,16 @@ meeting services reached through hardened external links. The boundary is delibe
 | `core/jamulus_roster_identity.py`, `core/session_transfer*.py` | Process-bound ordered-roster observations, cooperative Presence v2 correlation, Local Original obligations, and resumable verified delivery |
 | Jamulus | Live devices, channels, buffer, jitter, quality, mix, and actual music connection |
 | Meeting service | Conversation/video meeting state and device controls |
+
+Creator profiles select presentation and safe workflow defaults; they do not
+create a second recorder or weaken evidence. Profile keys persist in new
+session metadata, takes, and standalone projects. A missing legacy key migrates
+to Music. Review & Rehearsal is always visibly Preview: it allows live
+WebJam-audio Host/Join, session recording, and playback/read-only completed-take
+review, while refusing standalone project create/open, take editing/comp/mix
+mutation, track export, shared notes, visual sync, and media-timecode behavior.
+No profile directly or automatically taps a meeting app, browser, or system
+output.
 
 Standalone Reference Studio has its own project and local-audio lifecycle. It
 does not start, join, stop, configure, or feed Jamulus. Its persistence,
@@ -65,7 +76,7 @@ redirect-policy, and failure-category values—never a CA path, URL, proxy,
 credential, or raw exception.
 
 Download and activation are separate. Downloading may occur during a session,
-but install, activation, or rollback requires proof that no musician client,
+but install, activation, or rollback requires proof that no participant client,
 host/practice server, Reference Track, recording, reconnect, or launch owns the
 Jamulus boundary. A cross-process lock closes the second-instance race. Each
 use revalidates the managed result; failure falls back to embedded 3.12.2
@@ -109,6 +120,14 @@ a Webex-specific diagnostic convenience; an explicit install action opens
 only an approved Cisco HTTPS URL and does not download or execute a package
 itself.
 
+Neither link handoff nor Webex-native focus creates a capture source, and
+WebJam never directly or automatically taps a meeting app, browser, or system
+output. WebJam's take evidence can include only Jamulus server stems, Shared
+Track recorder identity, and explicitly planned Local Originals from input
+devices the user selects. Input capture cannot classify externally routed
+content, so users must not route meeting or system-output audio into those
+inputs. Meeting-service recording remains owned by that service.
+
 The direct Live **Conversation** action and **More → Conversation** are
 navigation only. They reveal the Conversation panel without opening the link.
 On macOS, **Show Webex App** dynamically finds the exact Cisco process when
@@ -139,7 +158,7 @@ needed. An unknown provider's URL and hostname are fully redacted from logs,
 mappings, diagnostics, and Support Bundles; generic acceptance never promotes
 it to natively verified status.
 
-The v0.24.0 UI carries forward one canonical **Shared Track** workflow; existing
+The v0.25.0 source carries forward one canonical **Shared Track** workflow; existing
 `ReferenceTrack*` types, paths, tests, and the ADR remain compatibility names
 for the established route engine, not a second live feature. Shared Track
 separates source and route authority. A host can load, decode the first bounded
@@ -175,7 +194,7 @@ memory-only rather than repeatedly persisted. Legacy peers may fall back to
 bounded dedicated-channel presence, but roster presence alone is never
 promoted to transport, synchronization, isolation, or audibility truth.
 Machine-derived route authority is not physical audibility, direct-monitor,
-independent-mix, or rehearsal proof; those acceptance gates remain **NOT
+independent-mix, or long-session proof; those acceptance gates remain **NOT
 RUN**.
 
 A future Webex Embedded App is described in
@@ -185,7 +204,7 @@ It may expose focused status and approved controls through a secure
 synchronization boundary, while the desktop remains the authoritative
 audio/session engine.
 
-## Unified musician guidance
+## Unified creator guidance
 
 `core/musician_guidance.py` is a pure projection, not another lifecycle or
 state machine. It accepts one already generation/revision-guarded
@@ -216,6 +235,12 @@ decisions, actions, blockers, questions, references, and checkpoints, but are
 excluded from `to_public_dict()` and cannot change connection, audibility,
 recording, take, transfer, Studio, export, or cleanup facts.
 
+`SessionPersistence` keeps that scratchpad profile-scoped on the local
+computer. Profile switches atomically save/load fixed mode-0600 files. Reads
+use regular-file, no-follow descriptors with a 1 MiB ceiling. Notes remain
+strictly local-only: they are never shared, session-synchronized, or
+media-timecoded.
+
 Refreshes are semantic and idempotent. Recorder phases, accepted connection or
 lifecycle transitions, Studio selection/dirty/save/export changes, and a
 debounced note edit can produce a new snapshot. Meter, waveform, playhead,
@@ -228,10 +253,10 @@ non-negative generation/revision numbers, fixed output keys/states, and up to
 five reason-free ISO-timestamped lifecycle transitions. Diagnostics re-sanitize
 that allowlist. The optional localhost Companion API additionally anonymizes
 participants into session-local slots. Neither surface receives notes, titles,
-musician names, channel IDs, invitations, addresses, device names, paths,
+participant names, channel IDs, invitations, addresses, device names, paths,
 tokens, credentials, or raw exceptions.
 
-No model SDK or cloud assistant is part of v0.24.0. A future model-assisted
+No model SDK or cloud assistant is part of v0.25.0. A future model-assisted
 creative feature may be considered only as explicit opt-in, off the real-time
 path, read-only, privacy-gated, unable to issue session commands or create
 operational facts, and visibly labeled as a suggestion. The deterministic
@@ -330,8 +355,9 @@ shared guidance contract and into `SessionHud`, the stage, Canvas, and Studio:
 
 Jamulus setup is not a WebJam approval gate: WebJam watches for fresh,
 authenticated connection proof and moves into the session automatically. It
-does not call that proof audibility; musicians play a note and verify each
-other, with Band Check available if help is needed. The direct
+does not call that proof audibility; participants make sound and verify that
+they can hear one another, with the profile's Check action available if help
+is needed. The direct
 **Conversation** action and its **More → Conversation** alias reveal the same optional
 Conversation panel without opening a meeting, and no meeting service delays
 the session or invite. Direct **Shared Track** and **Studio** actions likewise
@@ -347,18 +373,35 @@ exact profile match and new live proof.
 
 `RecordingCoordinator` owns host recorder state, storage readiness, take
 validation, recovery journals, and Local Originals handoff. Its work begins at
-**Record Session** time, not at music startup. The musician-facing projection
+**Record Session** time, not at live-audio startup. The creator-facing projection
 separates Preparing, Count-in, Recording, Stopping, Finalizing, Ready, Needs
 attention, and cleanup pending. One accepted generation owns the request;
 duplicate Record/Stop commands and late callbacks cannot authorize a new or
 older generation.
+
+One durable `SessionRecordingPlan` is authoritative for each accepted take. It
+binds the exact roster and server stem IDs, Shared Track source fingerprint and
+playback generation, host logical input topology, take-scoped guest Local
+Original count/map obligations and presence generations, count-in/pre-roll,
+storage verdict, and expected source count. The invariant is exact: expected
+sources equal server stems plus enabled host logical tracks plus every planned
+guest logical track. Finalization rechecks the plan and rejects changed maps,
+reconnect substitution, under/over-delivery, or a different Shared Track
+generation.
+
+Host and guest Local Originals use logical mono/stereo tracks. One mono mapping
+produces one PCM-24 mono WAV. One stereo mapping owns adjacent input channels
+and produces one PCM-24 two-channel WAV; recovery, take topology, declared
+gaps, Studio rendering, and export preserve both channels as one source. An
+all-opted-out map means no capture. Only a genuinely empty legacy map receives
+the compatible two-mono-track default.
 
 When a loaded Shared Track is route-ready, confirmed recorder start triggers
 its count-in/play transition. One Stop Recording request asks both the recorder
 and Shared Track owners to retire, but completion remains conjunctive: a clean
 recorder cannot hide pending route cleanup, and clean route teardown cannot
 hide missing or unverified recording media. Shared Track playback remains on
-the separate `WebJam Track` participant and never enters the musician output
+the separate `WebJam Track` participant and never enters the participant output
 through an unproved direct-monitor path.
 
 Jamulus client channel IDs are local mixer coordinates: every client may see
@@ -378,7 +421,7 @@ The authoritative recorder source for `WebJam Track` is classified as
 `LIVE_REFERENCE` internally and presented as **Shared Track** in Studio. Its
 stable source identity derives from the session/source contract rather than a
 take-local filename, so repeated takes do not masquerade as different
-musicians. Local Originals retain their explicit source class and are never
+participants. Local Originals retain their explicit source class and are never
 used as substitutes for missing server stems. Ambiguous filenames, roster
 collisions, missing timing references, transfer gaps, and incomplete
 publication remain typed failure/waiting states; the recorder does not copy a
@@ -424,9 +467,9 @@ composition.
 The live Recording Studio shell and offline arrangement controller are views
 of the same immutable take/project boundary. A finalized take is eligible for
 Studio only after its required manifest/media checks settle. Studio track
-headers distinguish musician, Shared Track, and Local Original sources while
+headers distinguish participant, Shared Track, and Local Original sources while
 retaining the existing arrangement, comping, mixer, autosave, recovery, and
-export systems; v0.24.0 does not introduce another editor or duplicate audio
+export systems; v0.25.0 does not introduce another editor or duplicate audio
 engine.
 
 The guest projection is host-state continuity, not distributed local playback,
@@ -442,5 +485,5 @@ outstanding guest Local Original transfer.
 Jamulus RPC supplies process/authentication/roster/connection facts, never an
 invented audio-device or meeting-state claim. A human confirmation supplies audibility.
 End/Leave stops only WebJam-owned processes and hosts finalize recording before
-server shutdown. Band Check is an optional live observer; it does not restart
-or configure the music engine.
+server shutdown. The profile-specific Band, Sound, or Session Check is an
+optional live observer; it does not restart or configure the live audio engine.

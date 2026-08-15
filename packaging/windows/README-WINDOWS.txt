@@ -1,9 +1,9 @@
-WebJam v0.24.0 private test candidate for Windows x64
+WebJam v0.25.0 private test candidate for Windows x64
 ======================================================
 
 PRIVATE TEST CANDIDATE: use this package only when its exact filename appears
-in the v0.24.0 GitHub release and its SHA-256 matches that release's manifest.
-Do not use the immutable v0.23.0 checksum manifest for this build.
+in the v0.25.0 GitHub release and its SHA-256 matches that release's manifest.
+Do not use the immutable v0.24.0 checksum manifest for this build.
 Physical audio, hardware, SmartScreen, publisher-signing, and managed-device
 gates remain NOT RUN unless the release evidence names this exact file and
 SHA-256.
@@ -24,9 +24,18 @@ optional desktop shortcut during setup. WebJam does not start automatically
 when setup finishes.
 
 WebJam's Windows build can join a jam hosted by the macOS build. Hosting a jam
-is not supported by this Windows release. Standalone Reference Studio remains
-available for local songwriting, recording, arranging, mixing, and WAV/FLAC
-bounce without joining Jamulus.
+is not supported by this Windows release. Music and Podcast & Voice retain
+standalone Reference Studio for local songwriting, recording, arranging,
+mixing, and WAV/FLAC bounce without joining Jamulus.
+
+Music and Podcast & Voice are GA creator profiles. Review & Rehearsal is
+Preview: live WebJam-audio Join, participation in a host-controlled Record
+Session, and playback/read-only completed-take review are available, while
+standalone projects, take edit/comp/mix mutation, track export, shared notes,
+visual sync, and media timecode are blocked. No profile directly or
+automatically taps a meeting app, browser, or system output. Local scratchpad
+notes remain profile-scoped on this computer only; they are never shared or
+media-timecoded.
 
 Jamulus is required for live music. WebJam automatically checks its signed,
 version-specific component catalog; it never follows an upstream "latest"
@@ -36,8 +45,8 @@ explicit approval and may display UAC or SmartScreen. WebJam verifies the
 installed version after setup. It never hides elevation or installs while a
 jam, recording, Shared Track, reconnect, or Jamulus launch is active.
 
-The sealed v0.22.5 catalog does not authorize v0.24.0 and is rejected. Until a
-new signed v0.24 catalog exists, this candidate uses the embedded Jamulus
+The sealed v0.22.5 catalog does not authorize v0.25.0 and is rejected. Until a
+new signed v0.25 catalog exists, this candidate uses the embedded Jamulus
 3.12.2 fallback rather than offering a managed 3.12.3 download.
 
 If an update is unavailable or you are offline, WebJam offers the exact
@@ -57,7 +66,10 @@ unavailable. Join / Open Meeting is the only saved-link handoff. If the native
 Webex app is missing, Get Webex opens Cisco's official Windows x64 installer
 after you confirm. Cisco owns that download, license, installation, sign-in,
 and updates. Jamulus remains the music path; keep the selected meeting service
-muted while playing to avoid delayed duplicate audio.
+muted while playing to avoid delayed duplicate audio. WebJam never directly or
+automatically taps a meeting app, browser, or system output. Local Originals
+record explicitly selected input devices, so do not route meeting or
+system-output audio into those inputs.
 
 This candidate has no trusted WebJam publisher signature. A future signed
 release must show the expected publisher, but even a valid signature would not

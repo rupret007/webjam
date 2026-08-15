@@ -24,6 +24,12 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from enum import Enum
 
+from core.creative_modes import (
+    CreatorProfile,
+    get_creator_profile_by_key_or_default,
+)
+from core.meeting_link import RECORD_SESSION_MEETING_CAPTURE_NOTICE
+
 
 class SessionRole(str, Enum):
     """The musician's role for one session attempt."""
@@ -121,6 +127,31 @@ class SessionPrimaryAction(str, Enum):
             SessionPrimaryAction.OPEN_DETAILS: "Open Details",
             SessionPrimaryAction.CHECK_SESSION: "Check session",
         }[self]
+
+    def label_for(self, profile: CreatorProfile | str) -> str:
+        """Return profile-aware copy without changing the action contract.
+
+        Action values remain stable for controllers, shortcuts, and protocol
+        projections.  Only the user-facing label changes for creator profiles
+        whose vocabulary is not music-specific.
+        """
+
+        resolved = (
+            profile
+            if isinstance(profile, CreatorProfile)
+            else get_creator_profile_by_key_or_default(profile)
+        )
+        if resolved.key == "podcast_voice":
+            return {
+                SessionPrimaryAction.RUN_BAND_CHECK: "Run Sound Check",
+                SessionPrimaryAction.ENTER_JAM: "Enter Session",
+            }.get(self, self.label)
+        if resolved.key == "review_rehearsal":
+            return {
+                SessionPrimaryAction.RUN_BAND_CHECK: "Run Session Check",
+                SessionPrimaryAction.ENTER_JAM: "Enter Review",
+            }.get(self, self.label)
+        return self.label
 
 
 class EvidenceState(str, Enum):
@@ -296,6 +327,7 @@ class SessionFacts:
     export: ExportState = ExportState.IDLE
     cleanup: CleanupState = CleanupState.NOT_REQUESTED
     failure: FailureDisposition = FailureDisposition.NONE
+    creator_profile_key: str = "music"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "role", _coerce_role(self.role))
@@ -376,6 +408,17 @@ class SessionFacts:
         object.__setattr__(self, "export", ExportState(self.export))
         object.__setattr__(self, "cleanup", CleanupState(self.cleanup))
         object.__setattr__(self, "failure", FailureDisposition(self.failure))
+        object.__setattr__(
+            self,
+            "creator_profile_key",
+            get_creator_profile_by_key_or_default(self.creator_profile_key).key,
+        )
+
+    @property
+    def creator_profile(self) -> CreatorProfile:
+        """Return the canonical presentation contract for these facts."""
+
+        return get_creator_profile_by_key_or_default(self.creator_profile_key)
 
     @property
     def music_path_authenticated(self) -> bool:
@@ -489,6 +532,8 @@ class SessionConductorPresentation:
     evidence_limit: str
     preservation: str = ""
     retry_safe: bool = False
+    creator_profile_key: str = "music"
+    primary_label: str = ""
 
     @property
     def lifecycle_phase(self) -> SessionConductorPhase:
@@ -517,6 +562,14 @@ class SessionConductorPresentation:
             SessionPrimaryAction.WAIT,
         }
 
+    @property
+    def action_label(self) -> str:
+        """Profile-aware primary label for every renderer."""
+
+        return self.primary_label or self.primary_action.label_for(
+            self.creator_profile_key
+        )
+
 
 _TERMINAL_PHASES = frozenset(
     {
@@ -543,156 +596,271 @@ def _presentation(
     phase: SessionConductorPhase,
     facts: SessionFacts,
 ) -> SessionConductorPresentation:
-    """Render one presentation for an already-derived phase."""
+    """Render one profile-aware presentation for an already-derived phase."""
 
     role = facts.role
+    profile = facts.creator_profile
+    vocabulary = profile.vocabulary
     preservation = _preservation_line(facts.media_preservation)
     host = role is SessionRole.HOST
 
-    if phase is SessionConductorPhase.IDLE:
+    if profile.key == "music":
+        check_name = "Band Check"
+        session_short = "jam"
+        counterpart = "bandmate"
+        waiting_counterpart = "your bandmate"
+        group = "the band"
+        live_path = "live music path"
+        reachable_path = "music path"
+        authenticated_path = "music path"
+    elif profile.key == "podcast_voice":
+        check_name = "Sound Check"
+        session_short = vocabulary.session_noun
+        counterpart = "speaker"
+        waiting_counterpart = "your other speaker"
+        group = "the speakers"
+        live_path = "audio path"
+        reachable_path = live_path
+        authenticated_path = "WebJam audio path"
+    else:
+        check_name = "Session Check"
+        session_short = vocabulary.session_noun
+        counterpart = "participant"
+        waiting_counterpart = "another participant"
+        group = "the participants"
+        live_path = "audio path"
+        reachable_path = live_path
+        authenticated_path = "WebJam audio path"
+
+    def present(
+        primary_action: SessionPrimaryAction,
+        title: str,
+        message: str,
+        evidence_limit: str,
+        preservation_text: str = "",
+        *,
+        retry_safe: bool = False,
+    ) -> SessionConductorPresentation:
+        if profile.is_preview:
+            title = f"{title} · Preview"
+            policy_limit = (
+                f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE} Notes stay local and "
+                "are not shared; visual media and timecode are not synchronized. "
+                "Completed takes are playback-only: arrangement editing and track "
+                "export are unavailable."
+            )
+            evidence_limit = f"{evidence_limit} {policy_limit}".strip()
+        elif profile.key == "podcast_voice":
+            evidence_limit = (
+                f"{evidence_limit} {RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+            ).strip()
         return SessionConductorPresentation(
-            phase,
-            role,
+            phase=phase,
+            role=role,
+            primary_action=primary_action,
+            title=title,
+            message=message,
+            evidence_limit=evidence_limit,
+            preservation=preservation_text,
+            retry_safe=retry_safe,
+            creator_profile_key=profile.key,
+            primary_label=primary_action.label_for(profile),
+        )
+
+    if phase is SessionConductorPhase.IDLE:
+        message = (
+            "Choose Host or Join to begin a rehearsal."
+            if profile.key == "music"
+            else f"Choose Host or Join to begin a {vocabulary.session_noun}."
+        )
+        evidence = (
+            "WebJam has not checked a live music path or another musician yet."
+            if profile.key == "music"
+            else f"WebJam has not checked its audio path or another {counterpart} yet."
+        )
+        return present(
             SessionPrimaryAction.START_SESSION,
             "Ready when you are",
-            "Choose Host or Join to begin a rehearsal.",
-            "WebJam has not checked a live music path or another musician yet.",
+            message,
+            evidence,
         )
     if phase is SessionConductorPhase.CONFIRMING_IDENTITY_AND_SOUND:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        return present(
             SessionPrimaryAction.CONFIRM_SOUND,
             "Confirm your sound",
             "Check your name and the sound you will send before continuing.",
-            "WebJam cannot yet confirm that the band can hear you.",
+            f"WebJam cannot yet confirm that {group} can hear you.",
         )
     if phase is SessionConductorPhase.BAND_CHECK_REQUIRED:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        return present(
             SessionPrimaryAction.RUN_BAND_CHECK,
-            "Complete Band Check",
-            "Band Check needs to verify this setup before the jam starts.",
+            f"Complete {check_name}",
+            f"{check_name} needs to verify this setup before the {session_short} starts.",
             "A saved setup is not proof that this route still works today.",
         )
     if phase is SessionConductorPhase.BAND_CHECK_IN_PROGRESS:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        return present(
             SessionPrimaryAction.WAIT,
             "Checking your setup",
-            "Band Check is gathering evidence for this exact setup.",
-            "WebJam will not claim live audibility until musicians confirm it.",
+            f"{check_name} is gathering evidence for this exact setup.",
+            (
+                "WebJam will not claim live audibility until "
+                f"{vocabulary.participant_plural} confirm it."
+            ),
         )
     if phase is SessionConductorPhase.READY_TO_START:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        message = (
+            "Your setup is ready. Start the session when your band is ready."
+            if profile.key == "music"
+            else "Your setup is ready. Start when everyone is ready."
+        )
+        evidence = (
+            "This confirms this Mac's setup, not a live band connection."
+            if profile.key == "music"
+            else (
+                "This confirms this Mac's setup, not a live connection to the "
+                f"{vocabulary.session_noun}."
+            )
+        )
+        return present(
             SessionPrimaryAction.START_SESSION,
             "Ready to start",
-            "Your setup is ready. Start the session when your band is ready.",
-            "This confirms this Mac's setup, not a live band connection.",
+            message,
+            evidence,
         )
     if phase is SessionConductorPhase.STARTING_HOST:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        message = (
+            "WebJam is starting the private band session."
+            if profile.key == "music"
+            else f"WebJam is starting the private {vocabulary.session_noun}."
+        )
+        return present(
             SessionPrimaryAction.WAIT,
-            "Starting your jam",
-            "WebJam is starting the private band session.",
+            f"Starting your {session_short}",
+            message,
             "A launched server is not yet proof that the session is reachable.",
         )
     if phase is SessionConductorPhase.WAITING_FOR_HOST_READINESS:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        return present(
             SessionPrimaryAction.WAIT,
             "Preparing the invite",
             "WebJam is verifying the host session before it can be shared.",
-            "WebJam has not yet confirmed an authenticated, reachable music path.",
+            f"WebJam has not yet confirmed an authenticated, reachable {reachable_path}.",
         )
     if phase is SessionConductorPhase.INVITE_READY:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        invite_message = (
+            "Share the invite when your bandmate is ready to join."
+            if profile.key == "music"
+            else f"Share the invite when {waiting_counterpart} is ready to join."
+        )
+        invite_evidence = (
+            "WebJam is ready to invite; it cannot confirm a bandmate is connected yet."
+            if profile.key == "music"
+            else (
+                "WebJam is ready to invite; it cannot confirm that "
+                f"{waiting_counterpart} is connected yet."
+            )
+        )
+        return present(
             SessionPrimaryAction.COPY_INVITE,
             "Invite ready",
-            "Share the invite when your bandmate is ready to join.",
-            "WebJam is ready to invite; it cannot confirm a bandmate is connected yet.",
+            invite_message,
+            invite_evidence,
         )
     if phase is SessionConductorPhase.JOINING:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        return present(
             SessionPrimaryAction.WAIT,
-            "Joining the jam",
-            "WebJam is verifying your private connection to the band.",
-            "Opening an invite is not proof that the music path is authenticated.",
+            f"Joining the {session_short}",
+            f"WebJam is verifying your private connection to {group}.",
+            f"Opening an invite is not proof that the {authenticated_path} is authenticated.",
         )
     if phase is SessionConductorPhase.CONNECTED:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        return present(
             SessionPrimaryAction.NONE,
-            "Connected to the jam",
-            "Your music path is authenticated. Waiting for your bandmate to appear.",
-            "A connection alone does not prove that either musician heard the other.",
+            f"Connected to the {session_short}",
+            (
+                f"Your {authenticated_path} is authenticated. Waiting for "
+                f"{waiting_counterpart} to appear."
+            ),
+            (
+                "A connection alone does not prove that either "
+                f"{vocabulary.participant_singular} heard the other."
+            ),
         )
     if phase is SessionConductorPhase.RECONNECTING:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        return present(
             SessionPrimaryAction.TRY_RECONNECT,
             "Reconnecting",
-            "WebJam lost the live music path and is checking it again.",
+            f"WebJam lost the {live_path} and is checking it again.",
             "WebJam cannot confirm the current connection until authentication returns.",
             preservation,
             retry_safe=True,
         )
     if phase is SessionConductorPhase.LIVE:
-        return SessionConductorPresentation(
-            phase,
-            role,
-            SessionPrimaryAction.RECORD if host else SessionPrimaryAction.NONE,
-            "Band connected",
-            (
+        if profile.key == "music":
+            title = "Band connected"
+            message = (
                 "Your band is connected. Play a note, then make sure you can hear "
                 "each other before recording. Use Band Check (F2) if you need help."
-            ),
-            "Only musicians can confirm two-way audibility; meters do not prove it.",
+            )
+            evidence = (
+                "Only musicians can confirm two-way audibility; meters do not prove it."
+            )
+        elif profile.key == "podcast_voice":
+            title = "Speakers connected"
+            message = (
+                "Your speakers are connected through WebJam. Speak briefly, then "
+                "make sure you can hear each other before recording. Use Sound "
+                "Check (F2) if you need help."
+            )
+            evidence = (
+                "Only speakers can confirm two-way audibility; meters do not prove it."
+            )
+        else:
+            title = "Participants connected"
+            message = (
+                "Participants are connected through WebJam. Confirm everyone can "
+                "hear the WebJam audio before the review begins. Use Session Check "
+                "(F2) if you need help."
+            )
+            evidence = "Only participants can confirm two-way audibility; meters do not prove it."
+        return present(
+            SessionPrimaryAction.RECORD
+            if host and profile.capabilities.session_recording
+            else SessionPrimaryAction.NONE,
+            title,
+            message,
+            evidence,
         )
     if phase is SessionConductorPhase.RECORDING_STARTING:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        return present(
             SessionPrimaryAction.WAIT,
             "Starting recording",
             "WebJam is waiting for the recorder to confirm this take.",
             "A Record request is not proof that a take is safely being saved.",
         )
     if phase is SessionConductorPhase.RECORDING:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        evidence = (
+            "WebJam cannot call the take saved until recording stops and "
+            "validation finishes."
+        )
+        return present(
             SessionPrimaryAction.STOP_RECORDING if host else SessionPrimaryAction.NONE,
             "Recording take",
-            "This take is actively being recorded.",
-            "WebJam cannot call the take saved until recording stops and validation finishes.",
+            "This WebJam-audio take is actively being recorded."
+            if profile.is_preview
+            else "This take is actively being recorded.",
+            evidence,
         )
     if phase is SessionConductorPhase.RECORDING_STOPPING:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        return present(
             SessionPrimaryAction.WAIT,
             "Saving take",
             "WebJam is waiting for recording to stop safely.",
             "Media is not complete until validation confirms its sources and manifest.",
         )
     if phase is SessionConductorPhase.TAKE_VALIDATING:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        return present(
             SessionPrimaryAction.WAIT,
             "Validating take",
             "WebJam is checking the recorded sources before review.",
@@ -700,40 +868,122 @@ def _presentation(
             preservation,
         )
     if phase is SessionConductorPhase.GUEST_MEDIA_TRANSFERRING:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        transfer_message = (
+            "WebJam is verifying the guest’s original recording for this take."
+            if profile.key == "music"
+            else (
+                f"WebJam is verifying the {vocabulary.participant_singular}’s "
+                "original recording for this take."
+            )
+        )
+        return present(
             SessionPrimaryAction.WAIT,
             "Waiting for the original",
-            "WebJam is verifying the guest’s original recording for this take.",
+            transfer_message,
             "The original is not complete until its transfer, hash, and PCM checks pass.",
             preservation,
         )
     if phase is SessionConductorPhase.TAKE_READY:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        if not profile.capabilities.take_review:
+            return present(
+                SessionPrimaryAction.NONE,
+                "Audio take preserved",
+                "The required WebJam-audio sources passed validation.",
+                "This profile does not provide completed-take review.",
+                preservation,
+            )
+        return present(
             SessionPrimaryAction.REVIEW_TAKE,
             "Take ready to review",
-            "The take’s required sources and validation evidence are ready for Studio.",
-            "This does not confirm how the take will sound in another editor.",
+            (
+                "The take’s required WebJam-audio sources are ready for "
+                "playback and source review."
+                if not profile.capabilities.take_editing
+                else "The take’s required sources and validation evidence are ready for Studio."
+            ),
+            (
+                "Review is read-only; arrangement editing and track export are unavailable."
+                if not profile.capabilities.take_editing
+                else "This does not confirm how the take will sound in another editor."
+            ),
             preservation,
         )
     if phase is SessionConductorPhase.TAKE_NEEDS_ATTENTION:
-        return SessionConductorPresentation(
-            phase,
-            role,
-            SessionPrimaryAction.REVIEW_TAKE,
+        attention_message = (
+            "WebJam preserved what it could. Open the source and recovery details."
+            if not profile.capabilities.take_review
+            else (
+                "WebJam preserved what it could. Review the source and recovery details."
+                if not profile.capabilities.track_export
+                else (
+                    "WebJam preserved what it could. Review the source and recovery "
+                    "details before export."
+                )
+            )
+        )
+        attention_limit = (
+            "WebJam is not calling this take complete. This profile does not "
+            "provide completed-take review."
+            if not profile.capabilities.take_review
+            else (
+                "WebJam is not calling this take complete. Review remains "
+                "playback-only and cannot export tracks."
+                if not profile.capabilities.track_export
+                else "WebJam is not calling this take complete or ready for another editor."
+            )
+        )
+        return present(
+            SessionPrimaryAction.OPEN_DETAILS
+            if not profile.capabilities.take_review
+            else SessionPrimaryAction.REVIEW_TAKE,
             "Take needs attention",
-            "WebJam preserved what it could. Review the source and recovery details before export.",
-            "WebJam is not calling this take complete or ready for another editor.",
+            attention_message,
+            attention_limit,
             preservation or "WebJam could not confirm whether all media was preserved.",
         )
     if phase is SessionConductorPhase.REVIEWING:
+        if not profile.capabilities.take_review:
+            return present(
+                SessionPrimaryAction.NONE,
+                "Review workspace",
+                "Capture feedback in local notes and decide the next rehearsal action.",
+                "This profile does not provide completed-take review.",
+                preservation,
+            )
+        if not profile.capabilities.take_editing:
+            if facts.studio_take is EvidenceState.NOT_STARTED:
+                return present(
+                    SessionPrimaryAction.NONE,
+                    "No takes yet",
+                    "Record WebJam audio in the live session, then return here to review it.",
+                    "Opening review does not create or validate a recording.",
+                    preservation,
+                )
+            if facts.studio_take is EvidenceState.UNKNOWN:
+                return present(
+                    SessionPrimaryAction.SELECT_TAKE,
+                    "Choose a take to review",
+                    "Select a completed take for playback and source inspection.",
+                    "Review is read-only; arrangement editing and track export are unavailable.",
+                    preservation,
+                )
+            if facts.studio_take in {EvidenceState.FAILED, EvidenceState.BLOCKED}:
+                return present(
+                    SessionPrimaryAction.OPEN_DETAILS,
+                    "Review this take",
+                    "The selected take has source or validation details that need attention.",
+                    "Playback review cannot repair, edit, or export the take.",
+                    preservation,
+                )
+            return present(
+                SessionPrimaryAction.REVIEW_TAKE,
+                "Take open for review",
+                "Use playback and source details to review the completed WebJam-audio take.",
+                "Review is read-only; arrangement editing and track export are unavailable.",
+                preservation,
+            )
         if facts.studio_edits in {EvidenceState.FAILED, EvidenceState.BLOCKED}:
-            return SessionConductorPresentation(
-                phase,
-                role,
+            return present(
                 SessionPrimaryAction.OPEN_DETAILS,
                 "Studio choices need attention",
                 "WebJam couldn't confirm that the latest non-destructive choices were saved.",
@@ -741,9 +991,7 @@ def _presentation(
                 preservation,
             )
         if facts.studio_take is EvidenceState.NOT_STARTED:
-            return SessionConductorPresentation(
-                phase,
-                role,
+            return present(
                 SessionPrimaryAction.NONE,
                 "No takes yet",
                 "Record a take in the live session, then return to Studio to review it.",
@@ -751,9 +999,7 @@ def _presentation(
                 preservation,
             )
         if facts.studio_take is EvidenceState.UNKNOWN:
-            return SessionConductorPresentation(
-                phase,
-                role,
+            return present(
                 SessionPrimaryAction.SELECT_TAKE,
                 "Choose a take to review",
                 "Select a take in Studio to check its sources, arrangement, and export readiness.",
@@ -761,9 +1007,7 @@ def _presentation(
                 preservation,
             )
         if facts.studio_take in {EvidenceState.FAILED, EvidenceState.BLOCKED}:
-            return SessionConductorPresentation(
-                phase,
-                role,
+            return present(
                 SessionPrimaryAction.OPEN_DETAILS,
                 "Review this take",
                 "The selected take has source or validation details that need attention.",
@@ -771,9 +1015,7 @@ def _presentation(
                 preservation,
             )
         if facts.studio_edits is EvidenceState.IN_PROGRESS:
-            return SessionConductorPresentation(
-                phase,
-                role,
+            return present(
                 SessionPrimaryAction.WAIT,
                 "Saving Studio choices",
                 "WebJam is saving the latest non-destructive arrangement choices.",
@@ -781,18 +1023,14 @@ def _presentation(
                 preservation,
             )
         if not facts.studio_export_available:
-            return SessionConductorPresentation(
-                phase,
-                role,
+            return present(
                 SessionPrimaryAction.REVIEW_TAKE,
                 "Review this take",
                 "Check the selected take and its source details before export.",
                 "The selected take is open, but Studio has not enabled a safe export yet.",
                 preservation,
             )
-        return SessionConductorPresentation(
-            phase,
-            role,
+        return present(
             SessionPrimaryAction.EXPORT_TRACKS,
             "Ready to export",
             "The selected take is verified and its current Studio choices are saved.",
@@ -800,9 +1038,15 @@ def _presentation(
             preservation,
         )
     if phase is SessionConductorPhase.EXPORTING:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        if not profile.capabilities.track_export:
+            return present(
+                SessionPrimaryAction.WAIT,
+                "Checking existing export activity",
+                "WebJam is waiting for the current operation to reach a safe boundary.",
+                "This Preview does not offer local multitrack Studio or track export.",
+                preservation,
+            )
+        return present(
             SessionPrimaryAction.WAIT,
             "Exporting tracks",
             "WebJam is publishing and checking the track package.",
@@ -810,9 +1054,7 @@ def _presentation(
             preservation,
         )
     if phase is SessionConductorPhase.ENDING:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        return present(
             SessionPrimaryAction.WAIT,
             "Ending session",
             "WebJam is finishing owned work and cleaning up the session.",
@@ -820,9 +1062,7 @@ def _presentation(
             preservation,
         )
     if phase is SessionConductorPhase.ENDED:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        return present(
             SessionPrimaryAction.START_SESSION,
             "Safe to end session",
             "The session has finished its confirmed cleanup.",
@@ -830,9 +1070,7 @@ def _presentation(
             preservation,
         )
     if phase is SessionConductorPhase.BLOCKED:
-        return SessionConductorPresentation(
-            phase,
-            role,
+        return present(
             SessionPrimaryAction.OPEN_DETAILS,
             "Action needed",
             "WebJam found a required condition that needs attention before it can continue.",
@@ -841,9 +1079,7 @@ def _presentation(
         )
     if phase is SessionConductorPhase.FAILED:
         retry_safe = facts.failure is FailureDisposition.RETRYABLE
-        return SessionConductorPresentation(
-            phase,
-            role,
+        return present(
             SessionPrimaryAction.TRY_RECONNECT
             if retry_safe
             else SessionPrimaryAction.OPEN_DETAILS,
@@ -858,9 +1094,7 @@ def _presentation(
             retry_safe=retry_safe,
         )
     # INDETERMINATE is the safe fallback for unknown provider outcomes.
-    return SessionConductorPresentation(
-        SessionConductorPhase.INDETERMINATE,
-        role,
+    return present(
         SessionPrimaryAction.CHECK_SESSION,
         "Session status needs checking",
         "WebJam cannot confirm the current state after an interruption or incomplete provider result.",
@@ -1210,7 +1444,11 @@ class SessionConductor:
         generation = self._token.generation + 1
         self._token = SessionConductorToken(generation, requested_role)
         self._revision = 0
-        self._facts = SessionFacts(role=requested_role, setup_requested=True)
+        self._facts = SessionFacts(
+            role=requested_role,
+            setup_requested=True,
+            creator_profile_key=self._facts.creator_profile_key,
+        )
         self._needs_fresh_observation = False
         return self._token
 
@@ -1226,7 +1464,11 @@ class SessionConductor:
             self._token.role,
         )
         self._revision = 0
-        self._facts = SessionFacts(role=self._token.role, setup_requested=True)
+        self._facts = SessionFacts(
+            role=self._token.role,
+            setup_requested=True,
+            creator_profile_key=self._facts.creator_profile_key,
+        )
         self._needs_fresh_observation = False
         return self._token
 
@@ -1248,7 +1490,10 @@ class SessionConductor:
             reset_role,
         )
         self._revision = 0
-        self._facts = SessionFacts(role=reset_role)
+        self._facts = SessionFacts(
+            role=reset_role,
+            creator_profile_key=self._facts.creator_profile_key,
+        )
         self._needs_fresh_observation = False
         return self._token
 

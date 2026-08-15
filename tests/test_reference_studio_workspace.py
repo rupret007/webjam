@@ -159,6 +159,76 @@ def test_presentation_is_path_free_truth_and_controls_capabilities() -> None:
     )
 
 
+def test_podcast_profile_uses_episode_recording_vocabulary() -> None:
+    workspace = ReferenceStudioWorkspace()
+    workspace.set_creator_profile("podcast_voice")
+    workspace.set_presentation(
+        ReferenceStudioPresentation(
+            can_save=True,
+            can_play=True,
+            can_record=True,
+            can_bounce=True,
+        )
+    )
+
+    assert workspace.creator_profile_key == "podcast_voice"
+    assert workspace.project_title.text() == "Untitled Episode"
+    assert workspace.backing_name.text() == "No reference audio"
+    assert workspace.import_backing_button.text() == "Import Reference…"
+    assert workspace.add_track_button.text() == "＋ Voice Track"
+    assert workspace.actions["add_section"].text().replace("&", "") == ("Add Chapter")
+    assert workspace.actions["new_audio_track"].text().replace("&", "") == (
+        "New Voice Track"
+    )
+    assert workspace.record_button.accessibleName() == "Record armed voice tracks"
+    assert workspace.audio_truth.text() == (
+        "Explicit input devices only · no direct meeting/system tap"
+    )
+    assert "never directly or automatically taps a meeting app" in (
+        workspace.audio_truth.accessibleDescription()
+    )
+    assert "Do not route meeting or system audio into those inputs" in (
+        workspace.audio_truth.accessibleDescription()
+    )
+    visible_copy = " ".join(
+        (
+            workspace.accessibleDescription(),
+            workspace.import_backing_button.text(),
+            workspace.backing_label.text(),
+            workspace.backing_name.text(),
+            workspace.actions["import_backing"].text(),
+            workspace.actions["relink_media"].text(),
+            workspace.actions["add_section"].text(),
+        )
+    ).casefold()
+    for music_only_term in ("play along", "backing", "song section", "songwriting"):
+        assert music_only_term not in visible_copy
+
+
+def test_review_preview_cannot_reenable_local_multitrack_controls() -> None:
+    workspace = ReferenceStudioWorkspace()
+    workspace.set_creator_profile("review_rehearsal")
+    workspace.set_presentation(
+        ReferenceStudioPresentation(
+            can_save=True,
+            can_play=True,
+            can_record=True,
+            can_bounce=True,
+        )
+    )
+
+    assert "unavailable" in workspace.project_title.text().casefold()
+    assert not workspace.import_backing_button.isEnabled()
+    assert not workspace.add_track_button.isEnabled()
+    assert not workspace.save_button.isEnabled()
+    assert not workspace.play_button.isEnabled()
+    assert not workspace.record_button.isEnabled()
+    assert not workspace.bounce_button.isEnabled()
+    for command in ("new_project", "open_project", "import_backing", "record"):
+        assert not workspace.actions[command].isEnabled()
+    assert workspace.actions["open_guide"].isEnabled()
+
+
 def test_recording_presentation_exposes_a_truthful_stop_action() -> None:
     workspace = ReferenceStudioWorkspace()
     workspace.set_presentation(

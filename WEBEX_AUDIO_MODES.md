@@ -1,7 +1,8 @@
-# Conversation companion guidance — v0.24.0 private test release
+# Meeting-platform companion guidance — v0.25.0 source candidate
 
-> GitHub **Latest** is immutable v0.24.0. Every external meeting-app behavior
-> remains a separate physical gate.
+> This document describes unpublished v0.25.0 source. GitHub **Latest** remains
+> immutable v0.24.0. Every external meeting-app behavior remains a separate
+> physical gate.
 
 Any meeting service is optional for talking or video. Jamulus carries the
 music.
@@ -21,10 +22,16 @@ bring-forward, and publisher verification remain explicitly Webex-only;
 other services open through the default browser or their installed link
 handler.
 
+WebJam never directly or automatically taps a meeting app, browser, or system
+output. Record Session captures the authoritative Jamulus server stems and only
+explicitly planned Local Originals from input devices the user selects. Do not
+route meeting or system-output audio into those inputs; use the meeting
+service's own recorder if that audio is needed.
+
 Use the direct **Conversation** action or **More → Conversation** only if the
-band wants meeting controls. Both reveal the Conversation panel
+group wants meeting controls. Both reveal the Conversation panel
 without opening or rejoining a meeting. In **Settings → Conversation**, each
-musician can enter their own **Meeting link**. WebJam names a recognized
+participant can enter their own **Meeting link**. WebJam names a recognized
 service or uses neutral wording for another accepted provider, and offers
 **Open Meeting Link** to test the draft link. It saves only the link and opens
 it externally only after an explicit user action.
@@ -49,7 +56,7 @@ remain unavailable there. **Join / Open Meeting** remains the supported
 external handoff.
 
 The selected meeting service handles sign-in, participant identity, camera,
-microphone, speakers, and meeting controls. A WebJam musician name does not
+microphone, speakers, and meeting controls. A WebJam display name does not
 change the user's meeting identity. “Opened externally—finish joining in
 Zoom,” for example, reports only a successful handoff to the operating system;
 WebJam never claims to have joined, muted, or verified the participant list.
@@ -75,14 +82,14 @@ logs, mappings, diagnostics, and Support Bundles.
 ## Safe rehearsal habit
 
 1. Get music working in Jamulus first.
-2. Add or open a meeting service only if the band uses it.
+2. Add or open a meeting service only if the group uses it.
 3. Keep the meeting service muted while playing to avoid duplicate music and
    feedback.
 4. If the meeting service fails, keep the Jamulus rehearsal running; it is not
    a music prerequisite.
 
 Legacy audience-bridge preferences remain loadable for compatibility, but the
-musician flow does not route system audio automatically or configure meeting
+creator flow does not route system audio automatically or configure meeting
 devices. WebJam Settings persists only the optional conversation link; live
 behavior and device choices stay with their native apps.
 

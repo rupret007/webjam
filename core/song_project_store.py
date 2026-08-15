@@ -1,6 +1,6 @@
 """Crash-safe portable bundle storage for :mod:`core.song_project`.
 
-A schema-1 bundle has a deliberately small contract::
+A schema-2 bundle has a deliberately small contract::
 
     My Song.webjam/
       webjam-project.json
@@ -37,6 +37,7 @@ from typing import Iterator, Mapping, Sequence
 
 from core.file_io import atomic_write_bytes
 from core.song_project import (
+    DEFAULT_CREATOR_PROFILE_KEY,
     DEFAULT_PROJECT_SAMPLE_RATE,
     MAX_MEDIA_FILE_BYTES,
     MediaImportMethod,
@@ -839,6 +840,7 @@ def create_project_bundle(
     tempo_bpm: float = 120.0,
     time_signature: TimeSignature | None = None,
     project_id: str | None = None,
+    creator_profile_key: str = DEFAULT_CREATOR_PROFILE_KEY,
 ) -> ProjectSaveResult:
     """Create a new independent project in an absent or empty directory."""
 
@@ -854,6 +856,7 @@ def create_project_bundle(
         tempo_bpm=tempo_bpm,
         time_signature=time_signature,
         project_id=project_id,
+        creator_profile_key=creator_profile_key,
     )
     return save_project_bundle(folder, project, expected_token=None)
 

@@ -5,9 +5,10 @@ matching its native package. These locks preserve the Python dependency graph
 that is reviewed and tested before signing; `requirements.txt` remains the
 human-maintained application dependency declaration.
 
-The immutable v0.24.0 private test release uses the exact dependency locks
-reviewed for immutable v0.23.0. They became v0.24.0 release evidence only when
-bound to its exact tag CI artifacts and checksum manifest. They target CPython
+The v0.25.0 source candidate retains the exact dependency locks reviewed for
+immutable v0.24.0. They become v0.25.0 release evidence only when bound to its
+exact tag CI artifacts and checksum manifest; until then they are source
+metadata, not a published package claim. They target CPython
 3.11.9 on Windows and both macOS targets, CPython
 3.11.15 on Linux, pip 26.1.2, setuptools 81.0.0 on macOS, and setuptools 83.0.0
 elsewhere. PyInstaller 6.21's macOS `pkg_resources`

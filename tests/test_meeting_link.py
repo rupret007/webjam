@@ -1,5 +1,14 @@
+import re
+from pathlib import Path
+
 from core.meeting_link import (
+    COMPACT_MEETING_CAPTURE_NOTICE,
     GENERIC_MEETING_SERVICE_KEY,
+    MEETING_DIRECT_CAPTURE_BOUNDARY,
+    RECORD_SESSION_CAPTURE_SCOPE,
+    RECORD_SESSION_MEETING_CAPTURE_NOTICE,
+    SELECTED_INPUT_ROUTING_WARNING,
+    STUDIO_MEETING_CAPTURE_NOTICE,
     SUPPORTED_MEETING_SERVICES_TEXT,
     identify_meeting_service,
     is_allowed_meeting_link,
@@ -8,6 +17,44 @@ from core.meeting_link import (
     meeting_link_hostname,
     meeting_service_label,
 )
+
+
+def test_capture_notices_state_the_enforceable_input_boundary():
+    assert MEETING_DIRECT_CAPTURE_BOUNDARY == (
+        "WebJam never directly or automatically taps a meeting app, browser, "
+        "or system output."
+    )
+    assert RECORD_SESSION_CAPTURE_SCOPE in RECORD_SESSION_MEETING_CAPTURE_NOTICE
+    assert "Jamulus server stems" in RECORD_SESSION_MEETING_CAPTURE_NOTICE
+    assert "explicitly selected Local Original input devices" in (
+        RECORD_SESSION_MEETING_CAPTURE_NOTICE
+    )
+    assert SELECTED_INPUT_ROUTING_WARNING in RECORD_SESSION_MEETING_CAPTURE_NOTICE
+    assert SELECTED_INPUT_ROUTING_WARNING in STUDIO_MEETING_CAPTURE_NOTICE
+    assert "does not directly tap meeting apps, browsers, or system output" in (
+        COMPACT_MEETING_CAPTURE_NOTICE
+    )
+    assert "do not route meeting/system audio into selected inputs" in (
+        COMPACT_MEETING_CAPTURE_NOTICE
+    )
+
+
+def test_production_python_copy_has_no_unenforceable_meeting_capture_claims():
+    root = Path(__file__).resolve().parents[1]
+    production_source = "\n".join(
+        path.read_text(encoding="utf-8")
+        for package in ("core", "webjam_qt")
+        for path in sorted((root / package).rglob("*.py"))
+    ).casefold()
+    forbidden_claims = (
+        r"(?:external )?meeting(?:-platform)? audio is "
+        r"(?:never )?(?:not )?(?:captured|recorded)",
+        r"not meeting-platform audio",
+        r"does not[^.\n]{0,80}capture meeting-platform audio",
+        r"(?:episode|studio) audio is separate from meeting audio",
+    )
+    for claim in forbidden_claims:
+        assert re.search(claim, production_source) is None, claim
 
 
 def test_all_known_services_validate_and_identify():

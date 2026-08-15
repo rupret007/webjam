@@ -1,41 +1,46 @@
-# WebJam quick help — v0.24.0 private test release
+# WebJam quick help — v0.25.0 source candidate
 
-> GitHub **Latest** is immutable v0.24.0. These recording-first labels target
-> the exact checksum-verified private test release; physical results remain
-> **NOT RUN** until observed against those packages.
+> GitHub **Latest** remains immutable v0.24.0. These creator-profile and
+> multitrack labels describe unpublished v0.25.0 source; physical results remain
+> **NOT RUN** until observed against exact future packages.
 
 | Need | Use |
 | --- | --- |
-| Start a rehearsal | Launch WebJam → **Host a Jam** |
-| Join a rehearsal | Launch WebJam → **Join a Jam** → paste one invite |
-| Write or rehearse with a local song | Launch WebJam → **Reference Studio** |
+| Choose a creator workflow | Launch → **What are you creating?** → Music (GA), Podcast & Voice (GA), or Review & Rehearsal (Preview) |
+| Start a live session | Choose a profile → **Host**, **Host Remote Recording**, or **Host Review** |
+| Join a live session | Choose a profile → **Join**, **Join Recording**, or **Join Review** → paste one invite |
+| Start a supported local project | Music → **New Music Project** or Podcast & Voice → **New Local Recording** |
 | Change live sound | **More → Audio Settings in Jamulus** |
-| Invite a bandmate | Host setup → **Copy Invite** |
+| Invite a collaborator | Host setup → **Copy Invite** |
 | Show conversation controls | Direct **Conversation** or **More → Conversation**; this does not open a meeting |
 | Show Webex on Mac | Conversation → **Show Webex App**; this activates or launches the verified app itself without a meeting link, while Webex chooses its own screen |
 | Open a saved meeting from any platform | Conversation → **Join / Open Meeting**; the link must be public HTTPS with a DNS hostname |
+| Record meeting-app audio | Use the meeting service's own recorder. WebJam never directly or automatically taps a meeting app, browser, or system output. Local Originals record explicitly selected input devices, so do not route meeting or system-output audio into them. |
 | Copy or change the meeting link | Conversation → **Copy Link** or **Change Link** |
 | Update Jamulus | **More → Jamulus Updates…** |
 | Add a host Shared Track | Live session → **Add Shared Track** or drop one supported local file; loading validates and decodes a first bounded block but does not start or unlock playback |
 | Replace or remove a Shared Track | Stop playback first → **Shared Track** → **Replace…** or **Remove** |
-| Record the band | Host → **Record Session** |
+| Record the live session | Host → **Record Session** |
 | Configure local interface stems | **Recording Setup → Edit Input Tracks…**; add named mono/stereo tracks totaling up to 32 enabled input channels |
+| Keep a stereo source together | Add one stereo row; it becomes one two-channel PCM-24 Local Original through Studio/export |
 | Keep local interface stems | First host **Record Session** → **Also Keep This Mac’s Inputs** |
 | Finish a take | **Stop Recording** once → wait through **Finalizing** → require **Ready** |
 | Review a take | Direct **Studio** action |
-| Select a review speaker/output | Open a take in Studio |
-| Arrange a take | Studio → drag/trim a region; use Undo/Redo if needed |
-| Comp another recording | Studio → select track → **＋ Add Take** → Option/Alt-drag |
-| Export for another editor | Studio → **Track Export** |
+| Select a review source/output | Open a take in Studio |
+| Arrange a take | Music or Podcast & Voice Studio → drag/trim a region; use Undo/Redo if needed |
+| Comp another recording | Music or Podcast & Voice Studio → select track → **＋ Add Take** → Option/Alt-drag |
+| Export for another editor | Music or Podcast & Voice Studio → **Track Export** |
 | Pair the owner-device iPhone preview | **More → Use iPhone as Pocket Stage…** |
-| Verify a live session | **More → Band Check / Verify Sound** |
-| End safely | **End Session** or **Leave Jam** |
+| Verify a live session | Music **Band Check**, Podcast **Sound Check**, or Review **Session Check** |
+| End safely | Use the profile's **End** or **Leave** session action |
 
-Jamulus carries music. Any meeting platform with an accepted public HTTPS link
-is optional conversation/video. Known Webex, Zoom, Teams, Meet, and FaceTime
-destinations receive friendly labels; other providers stay neutral. Studio is a
-Logic-like arrangement and review experience, not Logic integration. Studio
-edits never rewrite the take manifest or source recordings. On Windows and
+Jamulus carries WebJam's live music, voice, or review-audio path. Any meeting
+platform with an accepted public HTTPS link is optional conversation/video.
+Known Webex, Zoom, Teams, Meet, and FaceTime destinations receive friendly
+labels; other providers stay neutral. Music and Podcast & Voice Studio provide
+a Logic-like arrangement and review experience, not Logic integration; Review
+Preview is playback-only. Studio edits never rewrite the take manifest or
+source recordings. On Windows and
 Linux, current WebJam packages cannot verify the installed Webex publisher, so
 native focus actions stay unavailable and **Join / Open Meeting** is the
 supported handoff.

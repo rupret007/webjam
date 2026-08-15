@@ -1,8 +1,9 @@
-# WebJam v0.24.0 UX acceptance checklist
+# WebJam v0.25.0 UX acceptance checklist
 
-> Immutable v0.24.0 is GitHub **Latest** for private testing.
+> This checklist describes unpublished v0.25.0 source. Immutable v0.24.0
+> remains GitHub **Latest** for private testing.
 > Every physical and platform-trust gate stays **NOT RUN** until recorded
-> against an exact v0.24.0 asset.
+> against an exact future v0.25.0 asset.
 
 ## Unified guidance
 
@@ -25,9 +26,15 @@
 
 ## Launch: understandable in five seconds
 
-- [ ] First screen shows only **Host a Jam** and **Join a Jam**.
-- [ ] Join shows exactly one invite field after the musician asks to join.
-- [ ] Host/Join shows no Band input, Band output, recording input, Studio
+- [ ] First screen asks **What are you creating?** and offers Music (GA),
+      Podcast & Voice (GA), and Review & Rehearsal (Preview).
+- [ ] Profile selection changes the primary actions to **Host** / **Join**,
+      **Host Remote Recording** / **Join Recording**, or **Host Review** /
+      **Join Review** before startup begins.
+- [ ] Music uses **Band Check**, Podcast & Voice uses **Sound Check**, and
+      Review & Rehearsal uses **Session Check (Preview)**.
+- [ ] Join shows exactly one invite field after the creator asks to join.
+- [ ] Host/Join shows no Jamulus input, Jamulus output, recording input, Studio
       output, server, port, sample-rate, or Webex form.
 - [ ] No extra Start Session decision follows Host/Join.
 - [ ] Host server starts before Jamulus client launch.
@@ -87,11 +94,25 @@
 - [ ] Credentials, custom ports, local/special-use names, IP literals,
       percent-encoded hosts, and known-brand lookalikes fail closed; unknown
       provider URLs and hostnames never enter logs or Support Bundles.
-- [ ] UI says Jamulus carries music and reminds musicians to mute the selected
+- [ ] UI says Jamulus carries WebJam audio and reminds creators to mute the selected
       meeting service while playing.
+- [ ] No meeting-link handoff or native-app focus creates a recording source,
+      and WebJam never directly or automatically taps a meeting app, browser,
+      or system output.
+- [ ] Local Originals record only explicitly selected input devices; the UI
+      warns users not to route meeting or system-output audio into those
+      inputs.
 - [ ] Recording starts only when **Record Session** is pressed.
 - [ ] First host **Record Session** offers shared-only or Local Originals.
 - [ ] Local Originals selection is clearly separate from Jamulus setup.
+- [ ] One mono input-map row creates one mono PCM-24 file; one stereo row binds
+      adjacent device channels into one true two-channel PCM-24 file, and
+      recovery, gaps, Studio, and export preserve that topology.
+- [ ] Recording preflight freezes the exact roster/server stems, Shared Track
+      fingerprint/playback generation, host logical topology, guest Local
+      Original obligations, storage verdict, and expected source count.
+- [ ] Reconnect/topology drift, source substitution, and missing or extra
+      planned delivery fail closed before Ready.
 - [ ] Record Session plainly distinguishes Preparing, Count-in, Recording,
       Stopping, Finalizing, Ready, Needs attention, and cleanup pending; Stop is
       never presented as immediate completion.
@@ -126,7 +147,10 @@
       trefoil/trinity mark, and never changes a Jamulus session or settings.
 - [ ] Studio feels like a compact multitrack workspace and does not claim
       Logic integration.
-- [ ] Every authoritative musician appears once, the recorded Shared Track is
+- [ ] Arrange/edit/comp/mix mutation, Studio sidecars, and export are available
+      only in Music or Podcast & Voice. Review & Rehearsal exposes playback,
+      scrubbing, and source inspection only.
+- [ ] Every authoritative participant appears once, the recorded Shared Track is
       distinctly named and typed, and Local Originals appear only after
       explicit opt-in and real-media evidence; no stereo mix is duplicated to
       imitate multitrack recording.
@@ -147,10 +171,16 @@
       recorded take as safe; a conflict never silently overwrites another edit.
 - [ ] Export reports one complete evidence-rich package or a safe failure—never
       a partial folder presented as success.
+- [ ] Review & Rehearsal Preview allows live WebJam-audio Host/Join, Record
+      Session, local-only scratchpad notes, and playback/read-only review of a
+      completed session take.
+- [ ] Review & Rehearsal Preview blocks standalone projects, take
+      editing/comp/mix mutation, track export, shared notes, visual sync, and
+      media timecode.
 
 ## Permission and error states
 
-- [ ] Jamulus permission or sound setup problems point the musician back to
+- [ ] Jamulus permission or sound setup problems point the creator back to
       Jamulus instead of duplicating a WebJam device picker.
 - [ ] A missing music component, failed server, invalid invitation, or failed
       optional meeting-link save states one plain next action without exposing private
@@ -194,8 +224,8 @@
       extraction.
 - [ ] Physical two-Mac and hardware evidence is listed separately as PASS,
       FAIL, or NOT RUN.
-- [ ] No v0.24.0 physical or production-trust claim is made until the dedicated
-      [physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
+- [ ] No v0.25.0 physical or production-trust claim is made until the dedicated
+      [physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
       records exact-asset results. Two-machine music, Shared Track, recording,
       Studio, external-editor, accessibility, signing, installation, and
       platform-trust gates all currently remain **NOT RUN**.

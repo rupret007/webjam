@@ -8,6 +8,7 @@ work off the callback thread, and never mutates Jamulus configuration.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 import math
@@ -36,6 +37,8 @@ from core.project_audio import (
     PROJECT_AUDIO_MAX_OUTPUT_FRAMES,
     PROJECT_AUDIO_SAMPLE_RATE,
 )
+from core.creative_modes import get_creator_profile_by_key_or_default
+from core.meeting_link import STUDIO_MEETING_CAPTURE_NOTICE
 from core.project_recording import (
     ArmedProjectTrack,
     ProjectMultitrackRecorder,
@@ -184,6 +187,8 @@ class ReferenceStudioApplicationController(QObject):
         shell: ReferenceStudioShell,
         *,
         config_file: str | Path | None = None,
+        creator_profile_key: str = "music",
+        profile_applied: Callable[[str], None] | None = None,
         output_backend=None,
         input_backend_factory=None,
         executor=None,
@@ -193,9 +198,17 @@ class ReferenceStudioApplicationController(QObject):
             raise TypeError("shell must be a ReferenceStudioShell.")
         if input_backend_factory is not None and not callable(input_backend_factory):
             raise TypeError("input_backend_factory must be callable.")
+        if profile_applied is not None and not callable(profile_applied):
+            raise TypeError("profile_applied must be callable.")
         super().__init__(parent or shell)
         self.shell = shell
         self.workspace = shell.workspace
+        self._creator_profile = get_creator_profile_by_key_or_default(
+            creator_profile_key
+        )
+        self._studio_preset = self._creator_profile.default_studio_preset
+        self._profile_applied = profile_applied
+        self.shell.set_creator_profile(self._creator_profile)
         config = Path(config_file or (Path.home() / ".webjam_config.json")).expanduser()
         recent_index = config.parent / ".webjam-reference-studio-recents.json"
         self.project_controller = SongProjectController(
@@ -259,9 +272,17 @@ class ReferenceStudioApplicationController(QObject):
         self._recording_auto_stop.timeout.connect(self._stop_recording_async)
         self._latency_compensation_frames = 0
         self._closed = False
-        self._status = "Choose Play Along / Record, New Project, or Open Project."
-        self._metronome = False
-        self._count_in = True
+        self._status = self._profile_text(
+            "Choose Play Along / Record, New Project, or Open Project.",
+            "Choose New Recording, New Episode Project, or Open Project.",
+            "Review & Rehearsal Preview supports take review; local multitrack projects are unavailable.",
+        )
+        self._metronome = bool(
+            self._studio_preset is not None and self._studio_preset.metronome_enabled
+        )
+        self._count_in = bool(
+            self._studio_preset is not None and self._studio_preset.count_in_enabled
+        )
         self._overdub = False
         self._clipboard_regions: tuple[StudioRegion, ...] = ()
         self._last_waveform_error_generation = -1
@@ -285,6 +306,7 @@ class ReferenceStudioApplicationController(QObject):
         self._connect_signals()
         self._refresh_recents()
         self._refresh()
+        self._notify_profile_applied()
 
     # ------------------------------------------------------------------
     # Public lifecycle used by the containing application and tests
@@ -292,6 +314,39 @@ class ReferenceStudioApplicationController(QObject):
     @property
     def project_open(self) -> bool:
         return self.project_controller.snapshot.is_open
+
+    @property
+    def creator_profile_key(self) -> str:
+        return self._creator_profile.key
+
+    def _profile_text(
+        self,
+        music: str,
+        podcast_voice: str,
+        review_rehearsal: str | None = None,
+    ) -> str:
+        if self._creator_profile.key == "podcast_voice":
+            return podcast_voice
+        if (
+            self._creator_profile.key == "review_rehearsal"
+            and review_rehearsal is not None
+        ):
+            return review_rehearsal
+        return music
+
+    def _notify_profile_applied(self) -> None:
+        callback = self._profile_applied
+        if callback is not None:
+            callback(self._creator_profile.key)
+
+    def _require_local_multitrack(self, action: str) -> None:
+        if self._creator_profile.capabilities.local_multitrack:
+            return
+        raise ReferenceStudioApplicationError(
+            f"{self._creator_profile.label} Preview cannot {action} local "
+            "multitrack projects. Use its live review and completed-take "
+            "workflow instead."
+        )
 
     @property
     def _is_recording(self) -> bool:
@@ -331,6 +386,29 @@ class ReferenceStudioApplicationController(QObject):
             self.shell.show_home()
             self._refresh_recents()
 
+    def _apply_project_creator_profile(self, project: SongProject) -> None:
+        """Restore persisted workflow defaults without inferring from media."""
+
+        profile = get_creator_profile_by_key_or_default(project.creator_profile_key)
+        if not profile.capabilities.local_multitrack:
+            raise ReferenceStudioApplicationError(
+                f"{profile.label} Preview does not support local multitrack "
+                "Reference Studio projects."
+            )
+        self._creator_profile = profile
+        self._studio_preset = profile.default_studio_preset
+        self.shell.set_creator_profile(profile)
+        preset = self._studio_preset
+        self._metronome = bool(preset and preset.metronome_enabled)
+        self._count_in = bool(preset and preset.count_in_enabled)
+        if preset is not None:
+            self.workspace.arrange.set_ruler_mode(
+                preset.ruler_mode,
+                tempo_bpm=project.tempo_bpm,
+                beats_per_bar=project.time_signature.numerator,
+                beat_denominator=project.time_signature.denominator,
+            )
+
     def create_project(
         self,
         bundle_path: str | Path,
@@ -343,23 +421,39 @@ class ReferenceStudioApplicationController(QObject):
             raise ReferenceStudioApplicationError(
                 "Close the current project before creating another."
             )
+        self._require_local_multitrack("create")
         destination = self._bundle_destination(bundle_path)
         try:
-            snapshot = self.project_controller.create_project(destination, name)
+            preset = self._studio_preset
+            snapshot = self.project_controller.create_project(
+                destination,
+                name,
+                project_sample_rate=(
+                    preset.sample_rate_hz if preset is not None else 48_000
+                ),
+                creator_profile_key=self._creator_profile.key,
+            )
             if add_default_track:
-                snapshot = self.project_controller.add_track("Audio 1")
+                track_names = preset.track_names if preset is not None else ("Audio 1",)
+                for track_name in track_names:
+                    snapshot = self.project_controller.add_track(track_name)
                 self.project_controller.save_project()
                 snapshot = self.project_controller.snapshot
             assert snapshot.project is not None and snapshot.bundle_path is not None
             self.studio_controller.load(snapshot.bundle_path, snapshot.project)
+            self._apply_project_creator_profile(snapshot.project)
         except (SongProjectControllerError, SongStudioControllerError) as exc:
             self._reset_failed_open()
             raise ReferenceStudioApplicationError(str(exc)) from None
         self.shell.show_project()
-        self._status = "Project ready. Import a backing track or arm an input."
+        self._status = self._profile_text(
+            "Project ready. Import a backing track or arm an input.",
+            "Episode project ready. Import reference audio or arm a voice input.",
+        )
         self._prepare_media_async()
         self._refresh_recents()
         self._refresh()
+        self._notify_profile_applied()
         return snapshot.project
 
     def open_project(
@@ -375,6 +469,7 @@ class ReferenceStudioApplicationController(QObject):
             raise ReferenceStudioApplicationError(
                 "Close the current project before opening another."
             )
+        self._require_local_multitrack("open")
         try:
             snapshot = self.project_controller.open_project(bundle_path)
             if snapshot.recovery is not None:
@@ -387,6 +482,7 @@ class ReferenceStudioApplicationController(QObject):
                         "Project recovery requires an explicit Recover or Discard choice."
                     )
             assert snapshot.project is not None and snapshot.bundle_path is not None
+            self._apply_project_creator_profile(snapshot.project)
             document = self.studio_controller.load(
                 snapshot.bundle_path,
                 snapshot.project,
@@ -418,6 +514,7 @@ class ReferenceStudioApplicationController(QObject):
                     )
                 snapshot = self.project_controller.open_project(bundle_path)
                 assert snapshot.project is not None and snapshot.bundle_path is not None
+                self._apply_project_creator_profile(snapshot.project)
                 document = self.studio_controller.load(
                     snapshot.bundle_path,
                     snapshot.project,
@@ -440,30 +537,38 @@ class ReferenceStudioApplicationController(QObject):
         self._refresh_recents()
         self._refresh()
         assert snapshot.project is not None
+        self._notify_profile_applied()
         return snapshot.project
 
     def import_backing(self, source_path: str | Path) -> None:
         if self._reject_recording_change("importing audio"):
             raise ReferenceStudioApplicationError(self._status)
         project, _bundle = self._open_identity()
+        reference_audio = self._creator_profile.vocabulary.reference_audio_noun
         try:
             result = self.project_controller.import_backing_media(source_path)
             if not result.applied or result.stale or result.media is None:
                 raise SongProjectControllerError(
-                    "The backing-track import was superseded."
+                    self._profile_text(
+                        "The backing-track import was superseded.",
+                        "The reference audio import was superseded.",
+                    )
                 )
             saved = self.project_controller.save_project()
             project = saved.snapshot.project
             assert project is not None
             self._apply_studio_edit(
-                "Import backing track",
+                f"Import {reference_audio}",
                 lambda document: reconcile_song_studio_document(project, document),
                 rebuild=False,
             )
             if not self.studio_controller.save():
                 raise SongStudioControllerError(
                     self.studio_controller.last_error
-                    or "WebJam couldn't save the backing arrangement."
+                    or self._profile_text(
+                        "WebJam couldn't save the backing arrangement.",
+                        "WebJam couldn't save the reference audio arrangement.",
+                    )
                 )
         except (
             SongProjectControllerError,
@@ -473,7 +578,7 @@ class ReferenceStudioApplicationController(QObject):
             self._status = str(exc)
             self._refresh()
             raise ReferenceStudioApplicationError(str(exc)) from None
-        self._status = f"Imported backing track “{result.media.original_basename}”."
+        self._status = f"Imported {reference_audio} “{result.media.original_basename}”."
         self._prepare_media_async()
         self._refresh()
 
@@ -651,20 +756,32 @@ class ReferenceStudioApplicationController(QObject):
         arrange.redo_requested.connect(self._redo)
 
     def _new_project_dialog(self) -> None:
+        if not self._creator_profile.capabilities.local_multitrack:
+            self._status = (
+                "Local multitrack projects are unavailable in Review & "
+                "Rehearsal Preview."
+            )
+            self._refresh()
+            return
         if not self._close_from_ui():
             return
+        is_voice = self._creator_profile.key == "podcast_voice"
         name, accepted = QInputDialog.getText(
             self.shell,
-            "New Reference Studio Project",
-            "Project name:",
-            text="Untitled Song",
+            "New Episode Project" if is_voice else "New Reference Studio Project",
+            "Episode name:" if is_voice else "Project name:",
+            text="Untitled Episode" if is_voice else "Untitled Song",
         )
         if not accepted or not " ".join(name.split()):
             return
         path, _selected = QFileDialog.getSaveFileName(
             self.shell,
-            "Create Reference Studio Project",
-            str(Path.home() / "Music" / f"{' '.join(name.split())}.webjam"),
+            "Create Episode Project" if is_voice else "Create Reference Studio Project",
+            str(
+                Path.home()
+                / ("Documents" if is_voice else "Music")
+                / f"{' '.join(name.split())}.webjam"
+            ),
             "WebJam Project (*.webjam)",
         )
         if not path:
@@ -672,17 +789,37 @@ class ReferenceStudioApplicationController(QObject):
         self._run_ui_action(lambda: self.create_project(path, name))
 
     def _open_project_dialog(self) -> None:
+        if not self._creator_profile.capabilities.local_multitrack:
+            self._status = (
+                "Opening local multitrack projects is unavailable in Review & "
+                "Rehearsal Preview."
+            )
+            self._refresh()
+            return
         if not self._close_from_ui():
             return
+        is_voice = self._creator_profile.key == "podcast_voice"
         path = QFileDialog.getExistingDirectory(
             self.shell,
-            "Open Reference Studio Project",
-            str(Path.home() / "Music"),
+            "Open Podcast or Voice Project"
+            if is_voice
+            else "Open Reference Studio Project",
+            str(Path.home() / ("Documents" if is_voice else "Music")),
         )
         if path:
             self._open_with_recovery_ui(path)
 
     def _play_along_dialog(self) -> None:
+        if self._creator_profile.key == "podcast_voice":
+            self._new_project_dialog()
+            return
+        if not self._creator_profile.capabilities.local_multitrack:
+            self._status = (
+                "Local recording projects are unavailable in Review & Rehearsal "
+                "Preview."
+            )
+            self._refresh()
+            return
         if not self._close_from_ui():
             return
         audio, _selected = QFileDialog.getOpenFileName(
@@ -937,7 +1074,10 @@ class ReferenceStudioApplicationController(QObject):
         self._status = (
             "Ready to play."
             if renderer.timeline_end_frame > 0
-            else "Project ready. Import a backing track or recording."
+            else self._profile_text(
+                "Project ready. Import a backing track or recording.",
+                "Episode ready. Import reference audio or record a voice track.",
+            )
         )
         self._refresh()
 
@@ -1019,7 +1159,10 @@ class ReferenceStudioApplicationController(QObject):
         if self._reject_recording_change("changing playback"):
             return
         if self._renderer is None or self._renderer.timeline_end_frame <= 0:
-            self._status = "Import a backing track or recording before playback."
+            self._status = self._profile_text(
+                "Import a backing track or recording before playback.",
+                "Import reference audio or record a voice track before playback.",
+            )
             self._refresh()
             return
         try:
@@ -1612,8 +1755,9 @@ class ReferenceStudioApplicationController(QObject):
     def _move_section(self, marker_id: str, target: object) -> None:
         if isinstance(target, bool) or not isinstance(target, int):
             return
+        section = self._creator_profile.vocabulary.section_noun
         self._apply_studio_edit(
-            "Moved song section across every track",
+            f"Moved {section} across every track",
             lambda document: reorder_section(document, marker_id, target),
         )
 
@@ -1955,8 +2099,12 @@ class ReferenceStudioApplicationController(QObject):
         self._refresh()
 
     def _analyze_tempo(self) -> None:
+        reference_audio = self._creator_profile.vocabulary.reference_audio_noun
         if self._tempo_future is not None and not self._tempo_future.done():
-            self._status = "Backing-track tempo analysis is already running."
+            self._status = self._profile_text(
+                "Backing-track tempo analysis is already running.",
+                "Reference audio tempo analysis is already running.",
+            )
             self._refresh()
             return
         project, bundle = self._open_identity()
@@ -1966,7 +2114,7 @@ class ReferenceStudioApplicationController(QObject):
             media_id = selected.source_media_id if selected is not None else None
         if media_id is None:
             self._status = (
-                "Import a backing track or select a collected-audio region "
+                f"Import {reference_audio} or select a collected-audio region "
                 "before analyzing tempo."
             )
             self._refresh()
@@ -1978,15 +2126,28 @@ class ReferenceStudioApplicationController(QObject):
         self._tempo_token = token
 
         progress = QProgressDialog(
-            "Analyzing a bounded set of backing-track windows…",
+            self._profile_text(
+                "Analyzing a bounded set of backing-track windows…",
+                "Analyzing a bounded set of reference audio windows…",
+            ),
             "Cancel Analysis",
             0,
             0,
             self.shell,
         )
         progress.setObjectName("ReferenceStudioTempoProgress")
-        progress.setWindowTitle("Analyzing Backing Tempo")
-        progress.setAccessibleName("Backing-track tempo analysis progress")
+        progress.setWindowTitle(
+            self._profile_text(
+                "Analyzing Backing Tempo",
+                "Analyzing Reference Audio Tempo",
+            )
+        )
+        progress.setAccessibleName(
+            self._profile_text(
+                "Backing-track tempo analysis progress",
+                "Reference audio tempo analysis progress",
+            )
+        )
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(0)
         progress.setAutoClose(False)
@@ -1994,7 +2155,10 @@ class ReferenceStudioApplicationController(QObject):
         progress.canceled.connect(self._cancel_tempo_analysis)
         self._tempo_progress = progress
         progress.show()
-        self._status = "Analyzing backing-track tempo…"
+        self._status = self._profile_text(
+            "Analyzing backing-track tempo…",
+            "Analyzing reference audio tempo…",
+        )
         self._refresh()
 
         def worker():
@@ -2081,7 +2245,10 @@ class ReferenceStudioApplicationController(QObject):
             self._status = error or "Tempo analysis did not return a usable result."
             QMessageBox.warning(
                 self.shell,
-                "Backing Tempo Analysis",
+                self._profile_text(
+                    "Backing Tempo Analysis",
+                    "Reference Audio Tempo Analysis",
+                ),
                 self._status,
             )
             self._refresh()
@@ -2163,7 +2330,10 @@ class ReferenceStudioApplicationController(QObject):
         backing = (
             project.media_by_id(project.backing_media_id).original_basename
             if project.backing_media_id is not None
-            else "No backing track"
+            else self._profile_text(
+                "No backing track",
+                "No reference audio",
+            )
         )
         dirty = snapshot.dirty or self.studio_controller.dirty
         playing = playback.state is ProjectPlaybackState.PLAYING
@@ -3157,8 +3327,18 @@ class ReferenceStudioApplicationController(QObject):
     def _import_backing_dialog(self) -> None:
         path, _selected = QFileDialog.getOpenFileName(
             self.shell,
-            "Import Reference / Backing Track",
-            str(Path.home() / "Music"),
+            self._profile_text(
+                "Import Reference / Backing Track",
+                "Import Reference Audio",
+            ),
+            str(
+                Path.home()
+                / (
+                    "Documents"
+                    if self._creator_profile.key == "podcast_voice"
+                    else "Music"
+                )
+            ),
             _AUDIO_FILTER,
         )
         if path:
@@ -3667,9 +3847,7 @@ class ReferenceStudioApplicationController(QObject):
 
         def paste(document: StudioDocument) -> StudioDocument:
             track_ids = {item.track_id for item in document.tracks}
-            missing = tuple(
-                item for item in copied if item.track_id not in track_ids
-            )
+            missing = tuple(item for item in copied if item.track_id not in track_ids)
             if missing:
                 raise StudioProjectError(
                     "The copied region's destination track no longer exists."
@@ -3699,9 +3877,7 @@ class ReferenceStudioApplicationController(QObject):
             )
 
         self._apply_studio_edit(
-            "Pasted region"
-            if len(copied) == 1
-            else f"Pasted {len(copied)} regions",
+            "Pasted region" if len(copied) == 1 else f"Pasted {len(copied)} regions",
             paste,
         )
 
@@ -3753,10 +3929,15 @@ class ReferenceStudioApplicationController(QObject):
         )
 
     def _add_marker(self, kind: MarkerKind) -> None:
-        default = "Verse" if kind is MarkerKind.SECTION else "Marker"
+        section = self._creator_profile.vocabulary.section_noun
+        default = (
+            ("Chapter" if self._creator_profile.key == "podcast_voice" else "Verse")
+            if kind is MarkerKind.SECTION
+            else "Marker"
+        )
         label, accepted = QInputDialog.getText(
             self.shell,
-            "Add Song Section" if kind is MarkerKind.SECTION else "Add Marker",
+            f"Add {section.title()}" if kind is MarkerKind.SECTION else "Add Marker",
             "Name:",
             text=default,
         )
@@ -3776,7 +3957,7 @@ class ReferenceStudioApplicationController(QObject):
             kind=kind,
         )
         self._apply_studio_edit(
-            "Added song section" if kind is MarkerKind.SECTION else "Added marker",
+            f"Added {section}" if kind is MarkerKind.SECTION else "Added marker",
             lambda document: document.upsert_marker(marker),
             rebuild=False,
         )
@@ -3824,15 +4005,36 @@ class ReferenceStudioApplicationController(QObject):
         QMessageBox.information(self.shell, "Project Media", body)
 
     def _show_guide(self) -> None:
+        if self._creator_profile.key == "podcast_voice":
+            title = "Podcast & Voice Studio Guide"
+            body = (
+                "1. Create an episode and optionally import reference audio you own or may use.\n"
+                "2. Add voice tracks, map interface channels, and arm them.\n"
+                "3. Record isolated voices; use Play, Cycle, markers, and chapters.\n"
+                "4. Drag regions to edit; split, duplicate, comp, and undo changes.\n"
+                "5. Save the episode project, then Bounce when the edit is ready.\n\n"
+                f"{STUDIO_MEETING_CAPTURE_NOTICE}"
+            )
+        elif self._creator_profile.key == "review_rehearsal":
+            title = "Review & Rehearsal Preview Guide"
+            body = (
+                "This Preview supports live review and completed session takes. "
+                "Creating or opening local multitrack projects is not available."
+            )
+        else:
+            title = "Reference Studio Guide"
+            body = (
+                "1. Import a backing track you own or may use.\n"
+                "2. Add audio tracks, map interface channels, and arm them.\n"
+                "3. Use Play, Click, Count-in, Cycle, markers, and sections.\n"
+                "4. Drag regions to arrange; split, duplicate, comp, and undo edits.\n"
+                "5. Save the project, then Bounce when your mix is ready.\n\n"
+                "Reference Studio audio is separate from Jamulus live settings."
+            )
         QMessageBox.information(
             self.shell,
-            "Reference Studio Guide",
-            "1. Import a backing track you own or may use.\n"
-            "2. Add audio tracks, map interface channels, and arm them.\n"
-            "3. Use Play, Click, Count-in, Cycle, markers, and sections.\n"
-            "4. Drag regions to arrange; split, duplicate, comp, and undo edits.\n"
-            "5. Save the project, then Bounce when your mix is ready.\n\n"
-            "Reference Studio audio is separate from Jamulus live settings.",
+            title,
+            body,
         )
 
     def _show_collect_truth(self) -> None:
@@ -4036,20 +4238,36 @@ class ReferenceStudioApplicationController(QObject):
     def _relink_backing_dialog(self) -> None:
         project, _bundle = self._open_identity()
         if project.backing_media_id is None:
-            self._status = "This project has no backing track to relink."
+            self._status = self._profile_text(
+                "This project has no backing track to relink.",
+                "This episode has no reference audio to relink.",
+            )
             self._refresh()
             return
         path, _selected = QFileDialog.getOpenFileName(
             self.shell,
-            "Relink Missing Backing Track",
-            str(Path.home() / "Music"),
+            self._profile_text(
+                "Relink Missing Backing Track",
+                "Relink Missing Reference Audio",
+            ),
+            str(
+                Path.home()
+                / (
+                    "Documents"
+                    if self._creator_profile.key == "podcast_voice"
+                    else "Music"
+                )
+            ),
             _AUDIO_FILTER,
         )
         if not path:
             return
         try:
             self.project_controller.relink_backing_media(path)
-            self._status = "Backing track relinked and verified."
+            self._status = self._profile_text(
+                "Backing track relinked and verified.",
+                "Reference audio relinked and verified.",
+            )
             self._prepare_media_async()
         except SongProjectControllerError as exc:
             self._status = str(exc)

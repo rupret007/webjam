@@ -1,9 +1,9 @@
-"""The simple startup experience: Host a Jam or Join a Jam.
+"""The focused startup experience for WebJam's three creator profiles.
 
-This dialog is intentionally just the role decision (and one pasted invite
-when joining).  It does not ask WebJam to choose an audio device: Jamulus owns
-the live music route and the main window guides its native setup after this
-dialog closes.
+This dialog is intentionally just the creator/role decision (and one pasted
+invite when joining). It does not ask WebJam to choose an audio device:
+Jamulus owns the live audio route and the main window guides its native setup
+after this dialog closes.
 """
 
 from __future__ import annotations
@@ -14,12 +14,14 @@ import os
 import subprocess
 import sys
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QAccessible, QAccessibleEvent
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -30,12 +32,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.creative_modes import (
+    CREATOR_PROFILES,
+    CreatorProfile,
+    get_creator_profile_by_key_or_default,
+)
 from core.jamulus_endpoint import DEFAULT_JAMULUS_PORT
 from core.jamulus_name import (
     DEFAULT_JAMULUS_NAME,
     JamulusNameError,
     validate_jamulus_name,
 )
+from core.meeting_link import MEETING_DIRECT_CAPTURE_BOUNDARY
 from core.network_invite import BandInvite
 from core.remote_invitation import RemoteInvitation
 from core.settings import (
@@ -59,6 +67,84 @@ from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
 LOGGER = logging.getLogger("webjam.qt.launch_dialog")
 
 
+@dataclass(frozen=True)
+class _CreatorLaunchCopy:
+    host: str
+    join: str
+    local: str
+    host_description: str
+    join_description: str
+    local_description: str
+    helper: str
+    join_title: str
+    join_subtitle: str
+
+
+_CREATOR_LAUNCH_COPY = {
+    "music": _CreatorLaunchCopy(
+        host="Host",
+        join="Join",
+        local="New Music Project",
+        host_description=(
+            "Start a live music session on this Mac and create an invitation link."
+        ),
+        join_description=(
+            "Join a live music session using one WebJam invitation link."
+        ),
+        local_description=(
+            "Create a local multitrack music project without starting or joining "
+            "a live session."
+        ),
+        helper="Play live together or build a multitrack music project locally.",
+        join_title="Join Music.",
+        join_subtitle="Paste the WebJam invitation your host sent you.",
+    ),
+    "podcast_voice": _CreatorLaunchCopy(
+        host="Host Remote Recording",
+        join="Join Recording",
+        local="New Local Recording",
+        host_description=(
+            "Start a remote voice recording session on this Mac and create an "
+            "invitation link."
+        ),
+        join_description=(
+            "Join a remote voice recording using one WebJam invitation link."
+        ),
+        local_description=(
+            "Create a local multitrack voice recording without starting or joining "
+            "a remote session."
+        ),
+        helper="Record remote voices or start a local multitrack recording.",
+        join_title="Join Recording.",
+        join_subtitle="Paste the WebJam recording invitation your host sent you.",
+    ),
+    "review_rehearsal": _CreatorLaunchCopy(
+        host="Host Review",
+        join="Join Review",
+        local="Standalone Review Unavailable",
+        host_description=(
+            "Start a live review session and create an invitation link. This Preview "
+            "does not synchronize visual media, shared notes, or media timecode. "
+            f"{MEETING_DIRECT_CAPTURE_BOUNDARY}"
+        ),
+        join_description=(
+            "Join a live review using one WebJam invitation link. This Preview does "
+            "not synchronize visual media, shared notes, or media timecode. "
+            f"{MEETING_DIRECT_CAPTURE_BOUNDARY}"
+        ),
+        local_description=(
+            "Standalone visual review projects are not available in this Preview."
+        ),
+        helper=(
+            "Preview: host or join a review. Standalone visual projects are not "
+            "available yet."
+        ),
+        join_title="Join Review.",
+        join_subtitle="Paste the WebJam review invitation your host sent you.",
+    ),
+}
+
+
 def default_musician_name(settings: AppSettings) -> str:
     """Return a useful identity without turning launch into a form."""
 
@@ -73,9 +159,7 @@ def default_musician_name(settings: AppSettings) -> str:
         configured_is_saved = Path(settings.config_file).expanduser().is_file()
     except OSError:
         configured_is_saved = False
-    if configured and (
-        configured != DEFAULT_JAMULUS_NAME or configured_is_saved
-    ):
+    if configured and (configured != DEFAULT_JAMULUS_NAME or configured_is_saved):
         accepted = _accepted(configured)
         if accepted:
             return accepted
@@ -171,7 +255,7 @@ def apply_remote_join_defaults(settings: AppSettings) -> None:
 
 
 class LaunchDialog(QDialog):
-    """Three musician choices; one pasted link after choosing Join.
+    """Three creator profiles and one pasted link after choosing Join.
 
     Host/Join is persisted once before the main window opens.  Reference
     Studio is an offline workspace choice and does not rewrite live-session
@@ -207,7 +291,7 @@ class LaunchDialog(QDialog):
         self.resize(620, 520)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(Space.XXL, Space.XL, Space.XXL, Space.XL)
+        root.setContentsMargins(Space.XXL, Space.MD, Space.XXL, Space.MD)
         root.setSpacing(Space.MD)
 
         brand_row = QHBoxLayout()
@@ -259,6 +343,11 @@ class LaunchDialog(QDialog):
         self._pages.addWidget(self._choice_page)
         self._pages.addWidget(self._join_page)
         root.addWidget(self._pages, 1)
+        self.setTabOrder(self._name_input, self._creator_profile_selector)
+        self.setTabOrder(self._creator_profile_selector, self._host_button)
+        self.setTabOrder(self._host_button, self._join_button)
+        self.setTabOrder(self._join_button, self._studio_button)
+        self.setTabOrder(self._studio_button, self._install_jamulus_button)
 
         if initial_invitation is not None and initial_invite_url:
             raise ValueError("provide one initial invitation")
@@ -289,42 +378,58 @@ class LaunchDialog(QDialog):
         # the optional Windows installer without squeezing role buttons.
         layout.setSpacing(Space.XS)
 
-        title = QLabel("Make music.")
+        title = QLabel("Create together.")
         title.setObjectName("LaunchTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        subtitle = QLabel("Play together live, or build and rehearse a song offline.")
+        subtitle = QLabel("Choose a workflow, then start with one clear action.")
         subtitle.setObjectName("LaunchSubtitle")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         subtitle.setWordWrap(True)
         layout.addWidget(title)
         layout.addWidget(subtitle)
+
+        creator_row = QHBoxLayout()
+        creator_row.setContentsMargins(0, 0, 0, 0)
+        creator_row.setSpacing(Space.SM)
+        self._creator_profile_label = QLabel("What are you creating?")
+        self._creator_profile_label.setObjectName("LaunchCreatorProfileLabel")
+        self._creator_profile_selector = QComboBox()
+        self._creator_profile_selector.setObjectName("LaunchCreatorProfileSelector")
+        self._creator_profile_selector.setAccessibleName("What are you creating?")
+        self._creator_profile_selector.setAccessibleDescription(
+            "Choose Music, Podcast and Voice, or Review and Rehearsal. Each option "
+            "states whether it is Ready or Preview."
+        )
+        self._creator_profile_label.setBuddy(self._creator_profile_selector)
+        for profile in CREATOR_PROFILES:
+            status = "Preview" if profile.is_preview else "Ready"
+            self._creator_profile_selector.addItem(
+                f"{profile.label} ({status})", profile.key
+            )
+        saved_profile = get_creator_profile_by_key_or_default(
+            getattr(self._settings, "last_creator_profile_key", "music")
+        )
+        saved_index = self._creator_profile_selector.findData(saved_profile.key)
+        if saved_index >= 0:
+            self._creator_profile_selector.setCurrentIndex(saved_index)
+        self._creator_profile_selector.currentIndexChanged.connect(
+            self._apply_creator_profile_presentation
+        )
+        creator_row.addWidget(self._creator_profile_label)
+        creator_row.addWidget(self._creator_profile_selector, 1)
+        layout.addLayout(creator_row)
         layout.addStretch(1)
 
-        self._host_button = QPushButton("Host a Jam")
+        self._host_button = QPushButton()
         self._host_button.setObjectName("LaunchPrimary")
         self._host_button.setMinimumHeight(52)
         self._host_button.setDefault(True)
-        self._join_button = QPushButton("Join a Jam")
+        self._join_button = QPushButton()
         self._join_button.setObjectName("LaunchSecondary")
         self._join_button.setMinimumHeight(52)
-        self._studio_button = QPushButton("Play Along / Record")
+        self._studio_button = QPushButton()
         self._studio_button.setObjectName("LaunchSecondary")
         self._studio_button.setMinimumHeight(52)
-        self._host_button.setAccessibleName("Host a Jam")
-        self._host_button.setAccessibleDescription(
-            "Start a band session on this Mac and create an invitation link."
-        )
-        self._join_button.setAccessibleName("Join a Jam")
-        self._join_button.setAccessibleDescription(
-            "Join a band session using one WebJam invitation link."
-        )
-        self._studio_button.setAccessibleName("Play Along / Record")
-        self._studio_button.setAccessibleDescription(
-            "Open Reference Studio for an offline song project without "
-            "starting Jamulus or joining a live session."
-        )
-        if not self._host_available:
-            self._host_button.setEnabled(False)
         self._host_button.clicked.connect(self._host)
         self._join_button.clicked.connect(self.show_join)
         self._studio_button.clicked.connect(self._studio)
@@ -342,16 +447,10 @@ class LaunchDialog(QDialog):
         self._install_jamulus_button.setVisible(bool(self._jamulus_installer))
         layout.addWidget(self._install_jamulus_button)
 
-        helper_text = (
-            "Jam live, or work offline in Reference Studio."
-            if self._host_available
-            else (
-                "Join live or work offline here. Hosting is available in the macOS app."
-            )
-        )
-        self._choice_helper = QLabel(helper_text)
+        self._choice_helper = QLabel()
         self._choice_helper.setObjectName("LaunchHelper")
         self._choice_helper.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._choice_helper.setWordWrap(True)
         layout.addWidget(self._choice_helper)
 
         self._choice_error = QLabel("")
@@ -359,8 +458,10 @@ class LaunchDialog(QDialog):
         self._choice_error.setAccessibleName("Launch error")
         self._choice_error.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._choice_error.setWordWrap(True)
+        self._choice_error.setVisible(False)
         layout.addWidget(self._choice_error)
         layout.addStretch(1)
+        self._apply_creator_profile_presentation()
         return page
 
     def _install_jamulus(self) -> None:
@@ -377,6 +478,7 @@ class LaunchDialog(QDialog):
                 "The included Jamulus installer failed its integrity check. "
                 "Re-extract an official WebJam download and try again."
             )
+            self._choice_error.setVisible(True)
             self._announce_error(self._choice_error)
             return
         try:
@@ -385,6 +487,7 @@ class LaunchDialog(QDialog):
             self._choice_error.setText(
                 "Jamulus couldn’t open. Re-extract WebJam and try Install Jamulus again."
             )
+            self._choice_error.setVisible(True)
             self._announce_error(self._choice_error)
             return
         self._install_jamulus_button.setEnabled(False)
@@ -398,15 +501,15 @@ class LaunchDialog(QDialog):
         layout.setContentsMargins(Space.MD, Space.XL, Space.MD, 0)
         layout.setSpacing(Space.MD)
 
-        title = QLabel("Join your band.")
-        title.setObjectName("LaunchTitle")
-        title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        subtitle = QLabel("Paste the link your host sent you.")
-        subtitle.setObjectName("LaunchSubtitle")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        subtitle.setWordWrap(True)
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
+        self._join_title = QLabel()
+        self._join_title.setObjectName("LaunchTitle")
+        self._join_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._join_subtitle = QLabel()
+        self._join_subtitle.setObjectName("LaunchSubtitle")
+        self._join_subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._join_subtitle.setWordWrap(True)
+        layout.addWidget(self._join_title)
+        layout.addWidget(self._join_subtitle)
         layout.addStretch(1)
 
         self._invite_input = QLineEdit()
@@ -432,7 +535,7 @@ class LaunchDialog(QDialog):
         self._join_error.setWordWrap(True)
         layout.addWidget(self._join_error)
 
-        self._join_button_primary = QPushButton("Join Jam")
+        self._join_button_primary = QPushButton()
         self._join_button_primary.setObjectName("LaunchPrimary")
         self._join_button_primary.setMinimumHeight(48)
         self._join_button_primary.setDefault(True)
@@ -444,17 +547,67 @@ class LaunchDialog(QDialog):
         back.setObjectName("GhostButton")
         back.clicked.connect(self.show_choices)
         layout.addWidget(back, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._apply_creator_profile_presentation()
         return page
 
     @property
     def showing_choices(self) -> bool:
         return self._pages.currentWidget() is self._choice_page
 
+    @property
+    def selected_creator_profile_key(self) -> str:
+        """Return the canonical creator-profile key selected at launch."""
+
+        key = self._creator_profile_selector.currentData()
+        return get_creator_profile_by_key_or_default(key).key
+
+    @property
+    def _selected_creator_profile(self) -> CreatorProfile:
+        return get_creator_profile_by_key_or_default(
+            self._creator_profile_selector.currentData()
+        )
+
+    def _apply_creator_profile_presentation(self, *_args: object) -> None:
+        """Keep every visible action honest for the selected creator profile."""
+
+        profile = self._selected_creator_profile
+        copy = _CREATOR_LAUNCH_COPY[profile.key]
+        self._host_button.setText(copy.host)
+        self._host_button.setAccessibleName(copy.host)
+        host_description = copy.host_description
+        if not self._host_available:
+            host_description += " Hosting is available in the macOS app."
+        self._host_button.setAccessibleDescription(host_description)
+        self._host_button.setEnabled(self._host_available and not self._submitting)
+
+        self._join_button.setText(copy.join)
+        self._join_button.setAccessibleName(copy.join)
+        self._join_button.setAccessibleDescription(copy.join_description)
+        self._join_button.setEnabled(not self._submitting)
+
+        local_available = profile.capabilities.local_multitrack
+        self._studio_button.setText(copy.local)
+        self._studio_button.setAccessibleName(copy.local)
+        self._studio_button.setAccessibleDescription(copy.local_description)
+        self._studio_button.setEnabled(local_available and not self._submitting)
+        self._studio_button.setHidden(not local_available)
+
+        helper = copy.helper
+        if not self._host_available:
+            helper += " Hosting is available in the macOS app."
+        self._choice_helper.setText(helper)
+        if hasattr(self, "_join_title"):
+            self._join_title.setText(copy.join_title)
+            self._join_subtitle.setText(copy.join_subtitle)
+            self._join_button_primary.setText(copy.join)
+            self._join_button_primary.setAccessibleName(copy.join)
+            self._join_button_primary.setAccessibleDescription(copy.join_description)
+
     def show_choices(self) -> None:
         self._restore_submission()
         self._invite_input.clear()
         self._pages.setCurrentWidget(self._choice_page)
-        self._host_button.setFocus()
+        self._creator_profile_selector.setFocus()
 
     def show_join(self) -> None:
         if not self._submitting:
@@ -465,12 +618,14 @@ class LaunchDialog(QDialog):
     def _persist_role_choice(self, candidate: AppSettings) -> bool:
         """Commit the non-audio role intent before starting the main journey."""
 
+        candidate.last_creator_profile_key = self.selected_creator_profile_key
         try:
             save_settings(candidate)
         except OSError:
             self._choice_error.setText(
                 "WebJam couldn’t save this choice. Check available disk space and try again."
             )
+            self._choice_error.setVisible(True)
             self._announce_error(self._choice_error)
             return False
         self._settings = candidate
@@ -497,8 +652,17 @@ class LaunchDialog(QDialog):
     def _studio(self) -> None:
         if not self._begin_submission(self._studio_button, "Opening…"):
             return
+        candidate = deepcopy(self._settings)
+        if not self._persist_role_choice(candidate):
+            self._restore_submission()
+            return
         self.selected_role = "studio"
-        self.session_name = "Reference Studio"
+        preset = self._selected_creator_profile.default_studio_preset
+        self.session_name = (
+            "Reference Studio"
+            if self.selected_creator_profile_key == "music"
+            else preset.label if preset is not None else "Local Recording"
+        )
         self.band_invite = None
         self.remote_invitation = None
         self.accept()
@@ -568,6 +732,7 @@ class LaunchDialog(QDialog):
             # Join error before restoring the retry action.
             message = self._choice_error.text()
             self._choice_error.clear()
+            self._choice_error.setVisible(False)
             self._pages.setCurrentWidget(self._join_page)
             self._invite_input.clear()
             self._restore_submission()
@@ -620,6 +785,7 @@ class LaunchDialog(QDialog):
         self._join_button.setEnabled(False)
         self._studio_button.setEnabled(False)
         self._join_button_primary.setEnabled(False)
+        self._creator_profile_selector.setEnabled(False)
         self._name_input.setEnabled(False)
         button.setText(label)
         button.setAccessibleName(label)
@@ -627,19 +793,10 @@ class LaunchDialog(QDialog):
 
     def _restore_submission(self) -> None:
         self._submitting = False
-        self._host_button.setText("Host a Jam")
-        self._host_button.setAccessibleName("Host a Jam")
-        self._host_button.setEnabled(self._host_available)
-        self._join_button.setText("Join a Jam")
-        self._join_button.setAccessibleName("Join a Jam")
-        self._join_button.setEnabled(True)
-        self._studio_button.setText("Play Along / Record")
-        self._studio_button.setAccessibleName("Play Along / Record")
-        self._studio_button.setEnabled(True)
+        self._creator_profile_selector.setEnabled(True)
+        self._apply_creator_profile_presentation()
         self._name_input.setEnabled(True)
         if hasattr(self, "_join_button_primary"):
-            self._join_button_primary.setText("Join Jam")
-            self._join_button_primary.setAccessibleName("Join Jam")
             self._join_button_primary.setEnabled(True)
 
     def _validated_musician_name(self) -> str | None:

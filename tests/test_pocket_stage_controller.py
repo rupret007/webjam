@@ -4,6 +4,7 @@ import os
 import tempfile
 import unicodedata
 import uuid
+from types import SimpleNamespace
 from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -21,6 +22,7 @@ from core.pocket_stage import (
 from core.settings import AppSettings
 from core.session_conductor import SessionRole
 from webjam_qt.controllers.application_controller import ApplicationController
+from webjam_qt.controllers.recording_coordinator import RecorderPhase
 from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.windows.conductor_window import ConductorWindow
 
@@ -51,7 +53,9 @@ def controller():
         temporary.cleanup()
 
 
-def _request(controller, command: PocketCommand, arguments: dict) -> PocketCommandRequest:
+def _request(
+    controller, command: PocketCommand, arguments: dict
+) -> PocketCommandRequest:
     projection = controller._get_pocket_projection()
     return PocketCommandRequest(
         command_id=str(uuid.uuid4()),
@@ -62,11 +66,14 @@ def _request(controller, command: PocketCommand, arguments: dict) -> PocketComma
     )
 
 
-def test_gateway_is_constructed_but_listener_and_projection_timer_are_opt_in(controller) -> None:
+def test_gateway_is_constructed_but_listener_and_projection_timer_are_opt_in(
+    controller,
+) -> None:
     assert controller.pocket_stage_gateway.running is False
     assert controller._pocket_projection_timer.isActive() is False
     labels = [
-        action.text() for action in controller.window.session_strip._tools_button.menu().actions()
+        action.text()
+        for action in controller.window.session_strip._tools_button.menu().actions()
     ]
     assert "Use iPhone as Pocket Stage…" in labels
 
@@ -145,9 +152,7 @@ def test_projection_is_paired_private_and_scales_jamulus_gain(controller) -> Non
 
 def test_projection_normalizes_and_bounds_ui_owned_text(controller) -> None:
     raw_name = "Cafe\u0301\n" + ("🎸" * 40)
-    controller.participants = {
-        4: ParticipantPresentation(channel_id=4, name=raw_name)
-    }
+    controller.participants = {4: ParticipantPresentation(channel_id=4, name=raw_name)}
 
     controller._refresh_pocket_projection()
     projection = controller._get_pocket_projection()
@@ -161,7 +166,9 @@ def test_projection_normalizes_and_bounds_ui_owned_text(controller) -> None:
     assert projection.to_dict()["participants"][0]["label"] == label
 
 
-def test_mix_command_revalidates_revision_and_uses_existing_jamulus_owner(controller) -> None:
+def test_mix_command_revalidates_revision_and_uses_existing_jamulus_owner(
+    controller,
+) -> None:
     controller._jamulus_connected = True
     controller.participants = {
         9: ParticipantPresentation(channel_id=9, name="Guitar", fader_level=100)
@@ -189,9 +196,7 @@ def test_mix_command_revalidates_revision_and_uses_existing_jamulus_owner(contro
 
 def test_pan_is_rejected_until_jamulus_has_a_proven_provider_path(controller) -> None:
     controller._jamulus_connected = True
-    controller.participants = {
-        9: ParticipantPresentation(channel_id=9, name="Guitar")
-    }
+    controller.participants = {9: ParticipantPresentation(channel_id=9, name="Guitar")}
     controller._refresh_pocket_projection()
     request = _request(
         controller,
@@ -486,6 +491,97 @@ def test_record_request_rejects_missing_secret_or_active_export(
     assert receipt.status is PocketCommandStatus.REJECTED
     assert receipt.reason is PocketCommandRejectionReason.INVALID_STATE
     record.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("shared_state", "can_play", "expected_play_action"),
+    [
+        ("ready", True, "play"),
+        ("playing", False, ""),
+    ],
+)
+def test_pocket_record_start_uses_authoritative_shared_track_boundary(
+    controller,
+    shared_state: str,
+    can_play: bool,
+    expected_play_action: str,
+) -> None:
+    controller.session_conductor.reset_to_idle(SessionRole.HOST)
+    controller.settings.host_server_enabled = True
+    controller.settings.local_capture_choice_made = True
+    controller.settings.server_rpc_secret_file = "/private/runtime/secret"
+    controller._jamulus_connected = True
+    shared_track = SimpleNamespace(
+        snapshot=SimpleNamespace(
+            loaded=True,
+            state=SimpleNamespace(value=shared_state),
+            can_play=can_play,
+            active=shared_state == "playing",
+        )
+    )
+
+    with (
+        mock.patch.object(controller, "_reference_track", shared_track),
+        mock.patch.object(
+            controller.recording,
+            "plan_shared_track_for_next_take",
+        ) as plan_shared_track,
+        mock.patch.object(controller.recording, "on_record_requested") as record,
+    ):
+        controller._shared_track_play_after_recording = ""
+        controller._refresh_pocket_projection()
+        request = _request(controller, PocketCommand.START_RECORDING, {})
+
+        receipt = controller._apply_pocket_command(
+            request,
+            (PairingScope.RECORD,),
+        )
+
+    assert receipt.status is PocketCommandStatus.PENDING
+    plan_shared_track.assert_called_once_with(required=True)
+    record.assert_called_once_with()
+    assert controller._shared_track_play_after_recording == expected_play_action
+
+
+def test_pocket_record_stop_uses_authoritative_shared_track_cleanup(
+    controller,
+) -> None:
+    controller.session_conductor.reset_to_idle(SessionRole.HOST)
+    controller.settings.host_server_enabled = True
+    controller.settings.local_capture_choice_made = True
+    controller.settings.server_rpc_secret_file = "/private/runtime/secret"
+    controller._jamulus_connected = True
+    shared_track = SimpleNamespace(snapshot=SimpleNamespace(active=True))
+
+    with (
+        mock.patch.object(controller, "_recorder_armed", True),
+        mock.patch.object(controller, "_server_recording", True),
+        mock.patch.object(controller, "_reference_track", shared_track),
+        mock.patch.object(controller.recording, "phase", RecorderPhase.RECORDING),
+        mock.patch.object(
+            controller.recording,
+            "note_shared_track_cleanup_requested",
+        ) as note_cleanup,
+        mock.patch.object(controller.recording, "on_record_requested") as record,
+        mock.patch.object(
+            controller,
+            "_request_reference_track_teardown",
+        ) as teardown,
+    ):
+        controller._shared_track_play_after_recording = "play"
+        controller._refresh_pocket_projection()
+        request = _request(controller, PocketCommand.STOP_RECORDING, {})
+
+        receipt = controller._apply_pocket_command(
+            request,
+            (PairingScope.RECORD,),
+        )
+
+    assert receipt.status is PocketCommandStatus.PENDING
+    note_cleanup.assert_called_once_with()
+    teardown.assert_called_once_with()
+    record.assert_called_once_with()
+    assert controller._shared_track_play_after_recording == ""
 
 
 def test_shutdown_always_stops_mobile_gateway(controller) -> None:

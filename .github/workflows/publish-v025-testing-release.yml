@@ -1,0 +1,45 @@
+name: Prepare Verified WebJam v0.25 Testing Release (Disabled)
+
+# PRE-PROMOTION PLACEHOLDER ONLY.
+# This workflow must remain non-executable until the exact annotated tag,
+# successful tag CI, draft release, release body, and eight-asset inventory are
+# observed and pinned after the tag build. See docs/DESKTOP_RELEASE_RUNBOOK.md.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: publish-webjam-release
+  cancel-in-progress: false
+
+env:
+  EXPECTED_TAG: v0.25.0
+  EXPECTED_VERSION: 0.25.0
+  POST_TAG_TAG_OBJECT: UNSET_POST_TAG_TAG_OBJECT
+  POST_TAG_TAG_COMMIT: UNSET_POST_TAG_TAG_COMMIT
+  POST_TAG_TAG_CI_RUN_ID: UNSET_POST_TAG_TAG_CI_RUN_ID
+  POST_TAG_RELEASE_ID: UNSET_POST_TAG_RELEASE_ID
+  POST_TAG_BODY_SHA256: UNSET_POST_TAG_BODY_SHA256
+  POST_TAG_INVENTORY_SHA256: UNSET_POST_TAG_INVENTORY_SHA256
+  SEALED_COMPONENT_TAG: jamulus-components-v3
+  SEALED_COMPONENT_SEQUENCE: 6
+
+jobs:
+  release-not-ready:
+    name: Post-tag release pins are not recorded
+    # Required fail-closed guard. A dispatch produces a skipped job and cannot
+    # checkout, validate, mutate, publish, or make any release Latest.
+    if: ${{ false }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Refuse unpinned v0.25 promotion
+        shell: bash
+        run: |
+          echo "v0.25.0 promotion is disabled until exact post-tag pins exist." >&2
+          exit 1

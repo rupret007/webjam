@@ -32,6 +32,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.creative_modes import (
+    CreatorProfile,
+    get_creator_profile_by_key,
+    get_creator_profile_by_key_or_default,
+)
+from core.meeting_link import STUDIO_MEETING_CAPTURE_NOTICE
 from core.studio_project import StudioDocument
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.studio_arrange import StudioArrange
@@ -151,6 +157,7 @@ class ReferenceStudioWorkspace(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._creator_profile = get_creator_profile_by_key_or_default("music")
         self.setObjectName("ReferenceStudioWorkspace")
         self.setAccessibleName("Reference Studio project workspace")
         self.setAccessibleDescription(
@@ -185,9 +192,7 @@ class ReferenceStudioWorkspace(QWidget):
         self.home_button.setAccessibleName("Return to Reference Studio home")
         self.home_button.setToolTip("Reference Studio Home")
         self.home_button.setIcon(BrandMarkIcon.icon())
-        self.home_button.clicked.connect(
-            lambda: self._emit_command("close_project")
-        )
+        self.home_button.clicked.connect(lambda: self._emit_command("close_project"))
         header_layout.addWidget(self.home_button)
         titles = QVBoxLayout()
         titles.setSpacing(0)
@@ -235,7 +240,9 @@ class ReferenceStudioWorkspace(QWidget):
         )
         self.stop_button = self._transport_button("■", "Stop", "stop")
         self.play_button = self._transport_button("▶", "Play or pause", "play_pause")
-        self.record_button = self._transport_button("●", "Record armed tracks", "record")
+        self.record_button = self._transport_button(
+            "●", "Record armed tracks", "record"
+        )
         self.record_button.setObjectName("ReferenceStudioRecordButton")
         for button in (
             self.return_button,
@@ -272,9 +279,9 @@ class ReferenceStudioWorkspace(QWidget):
         transport_layout.addWidget(self.position)
         transport_layout.addWidget(self.elapsed)
         transport_layout.addStretch(1)
-        tempo_label = QLabel("BPM")
-        tempo_label.setObjectName("ReferenceStudioTransportLabel")
-        transport_layout.addWidget(tempo_label)
+        self.tempo_label = QLabel("BPM")
+        self.tempo_label.setObjectName("ReferenceStudioTransportLabel")
+        transport_layout.addWidget(self.tempo_label)
         self.tempo = QDoubleSpinBox()
         self.tempo.setObjectName("ReferenceStudioTempo")
         self.tempo.setAccessibleName("Project tempo in beats per minute")
@@ -317,19 +324,21 @@ class ReferenceStudioWorkspace(QWidget):
         library.setObjectName("ReferenceStudioTrackLibrary")
         library_layout = QVBoxLayout(library)
         library_layout.setContentsMargins(Space.SM, Space.SM, Space.SM, Space.SM)
-        library_title = QLabel("TRACKS")
-        library_title.setObjectName("ReferenceStudioSectionTitle")
-        library_layout.addWidget(library_title)
+        self.library_title = QLabel("TRACKS")
+        self.library_title.setObjectName("ReferenceStudioSectionTitle")
+        library_layout.addWidget(self.library_title)
         self.track_list = QListWidget()
         self.track_list.setObjectName("ReferenceStudioTrackList")
         self.track_list.setAccessibleName("Project tracks")
         self.track_list.currentRowChanged.connect(self.track_selected.emit)
         library_layout.addWidget(self.track_list, 1)
-        add_track = QPushButton("＋ Audio Track")
-        add_track.setObjectName("ReferenceStudioAddTrack")
-        add_track.setAccessibleName("Add audio track")
-        add_track.clicked.connect(lambda: self._emit_command("new_audio_track"))
-        library_layout.addWidget(add_track)
+        self.add_track_button = QPushButton("＋ Audio Track")
+        self.add_track_button.setObjectName("ReferenceStudioAddTrack")
+        self.add_track_button.setAccessibleName("Add audio track")
+        self.add_track_button.clicked.connect(
+            lambda: self._emit_command("new_audio_track")
+        )
+        library_layout.addWidget(self.add_track_button)
         self.splitter.addWidget(library)
 
         editor = QFrame()
@@ -338,12 +347,12 @@ class ReferenceStudioWorkspace(QWidget):
         editor_layout.setContentsMargins(Space.SM, Space.SM, Space.SM, Space.SM)
         editor_layout.setSpacing(Space.XS)
         backing_row = QHBoxLayout()
-        backing_label = QLabel("REFERENCE / BACKING")
-        backing_label.setObjectName("ReferenceStudioSectionTitle")
+        self.backing_label = QLabel("REFERENCE / BACKING")
+        self.backing_label.setObjectName("ReferenceStudioSectionTitle")
         self.backing_name = QLabel("No backing track")
         self.backing_name.setObjectName("ReferenceStudioBackingName")
         self.backing_name.setAccessibleName("Backing track")
-        backing_row.addWidget(backing_label)
+        backing_row.addWidget(self.backing_label)
         backing_row.addWidget(self.backing_name, 1)
         editor_layout.addLayout(backing_row)
         self.arrange = StudioArrange()
@@ -359,9 +368,9 @@ class ReferenceStudioWorkspace(QWidget):
         inspector_layout = QVBoxLayout(inspector)
         inspector_layout.setContentsMargins(Space.SM, Space.SM, Space.SM, Space.SM)
         inspector_layout.setSpacing(Space.SM)
-        inspector_title = QLabel("INSPECTOR / MIX")
-        inspector_title.setObjectName("ReferenceStudioSectionTitle")
-        inspector_layout.addWidget(inspector_title)
+        self.inspector_title = QLabel("INSPECTOR / MIX")
+        self.inspector_title.setObjectName("ReferenceStudioSectionTitle")
+        inspector_layout.addWidget(self.inspector_title)
         self.inspector_summary = QLabel(
             "Select a track or region to edit gain, pan, fades, takes, and automation."
         )
@@ -421,6 +430,142 @@ class ReferenceStudioWorkspace(QWidget):
         QWidget.setTabOrder(self.time_signature, self.snap)
         QWidget.setTabOrder(self.snap, self.track_list)
         self.set_presentation(self._presentation)
+        self.set_creator_profile(self._creator_profile)
+
+    @property
+    def creator_profile_key(self) -> str:
+        return self._creator_profile.key
+
+    def set_creator_profile(self, value: CreatorProfile | str) -> None:
+        """Apply canonical profile vocabulary and local-Studio capability."""
+
+        key = value.key if isinstance(value, CreatorProfile) else value
+        profile = get_creator_profile_by_key(key)
+        if profile is None:
+            raise ValueError("creator profile is unsupported.")
+        self._creator_profile = profile
+        local_multitrack = profile.capabilities.local_multitrack
+
+        if profile.key == "music":
+            self.setAccessibleName("Reference Studio project workspace")
+            self.setAccessibleDescription(
+                "Arrange a backing track and recordings, control transport, mix, and bounce."
+            )
+            self.project_title.setAccessibleName("Project name")
+            self.import_backing_button.setText("Import Backing…")
+            self.import_backing_button.setAccessibleName("Import a local backing track")
+            self.save_button.setAccessibleName("Save project")
+            self.bounce_button.setText("Bounce…")
+            self.bounce_button.setAccessibleName("Bounce project audio")
+            self.library_title.setText("TRACKS")
+            self.track_list.setAccessibleName("Project tracks")
+            self.add_track_button.setText("＋ Audio Track")
+            self.add_track_button.setAccessibleName("Add audio track")
+            self.backing_label.setText("REFERENCE / BACKING")
+            self.backing_name.setAccessibleName("Backing track")
+            self.inspector_title.setText("INSPECTOR / MIX")
+            self.audio_truth.setText("Studio audio is separate from Jamulus")
+            self.audio_truth.setAccessibleDescription(
+                "Reference Studio records explicitly armed input devices."
+            )
+            self._actions["new_project"].setText("&New Project")
+            self._actions["open_project"].setText("&Open Project…")
+            self._actions["save_project"].setText("&Save")
+            self._actions["import_backing"].setText("Import &Backing Track…")
+            self._actions["relink_media"].setText("&Relink Backing Track…")
+            self._actions["bounce"].setText("&Bounce…")
+            self._actions["new_audio_track"].setText("New &Audio Track")
+            self._actions["add_section"].setText("Add Song &Section")
+            self._actions["analyze_tempo"].setText("Analyze Backing &Tempo…")
+            self._actions["project_settings"].setText("Project &Settings…")
+            self._actions["open_guide"].setText("Reference Studio &Guide")
+            self.project_menu.setTitle("&Project")
+        elif profile.key == "podcast_voice":
+            self.setAccessibleName("Podcast and Voice Studio episode workspace")
+            self.setAccessibleDescription(
+                "Arrange reference audio and voice recordings, add chapters, control transport, mix, and bounce an episode."
+            )
+            self.project_title.setAccessibleName("Episode project name")
+            self.import_backing_button.setText("Import Reference…")
+            self.import_backing_button.setAccessibleName("Import local reference audio")
+            self.save_button.setAccessibleName("Save episode project")
+            self.bounce_button.setText("Bounce Episode…")
+            self.bounce_button.setAccessibleName("Bounce episode audio")
+            self.library_title.setText("VOICE TRACKS")
+            self.track_list.setAccessibleName("Episode voice tracks")
+            self.add_track_button.setText("＋ Voice Track")
+            self.add_track_button.setAccessibleName("Add voice track")
+            self.backing_label.setText("REFERENCE AUDIO")
+            self.backing_name.setAccessibleName("Reference audio")
+            self.inspector_title.setText("VOICE / MIX")
+            self.audio_truth.setText(
+                "Explicit input devices only · no direct meeting/system tap"
+            )
+            self.audio_truth.setAccessibleDescription(
+                STUDIO_MEETING_CAPTURE_NOTICE
+            )
+            self._actions["new_project"].setText("&New Episode Project")
+            self._actions["open_project"].setText("&Open Project…")
+            self._actions["save_project"].setText("&Save Episode")
+            self._actions["import_backing"].setText("Import &Reference Audio…")
+            self._actions["relink_media"].setText("&Relink Reference Audio…")
+            self._actions["bounce"].setText("&Bounce Episode…")
+            self._actions["new_audio_track"].setText("New &Voice Track")
+            self._actions["add_section"].setText("Add &Chapter")
+            self._actions["analyze_tempo"].setText("Analyze Reference Audio &Tempo…")
+            self._actions["project_settings"].setText("Episode &Settings…")
+            self._actions["open_guide"].setText("Podcast && Voice Studio &Guide")
+            self.project_menu.setTitle("&Episode")
+        else:
+            self.setAccessibleName("Review and Rehearsal Preview Studio")
+            self.setAccessibleDescription(
+                "Local multitrack projects are unavailable in Review and Rehearsal Preview."
+            )
+            self.project_title.setAccessibleName("Preview project status")
+            self.import_backing_button.setText("Import Unavailable")
+            self.import_backing_button.setAccessibleName(
+                "Reference audio import unavailable in local Studio Preview"
+            )
+            self.save_button.setAccessibleName("Local project save unavailable")
+            self.bounce_button.setText("Bounce Unavailable")
+            self.bounce_button.setAccessibleName("Local project bounce unavailable")
+            self.library_title.setText("LOCAL TRACKS UNAVAILABLE")
+            self.track_list.setAccessibleName("Local multitrack unavailable")
+            self.add_track_button.setText("＋ Track Unavailable")
+            self.add_track_button.setAccessibleName("Local track creation unavailable")
+            self.backing_label.setText("REFERENCE AUDIO — LIVE REVIEW ONLY")
+            self.backing_name.setAccessibleName("Local reference audio unavailable")
+            self.inspector_title.setText("PREVIEW LIMITS")
+            self.audio_truth.setText(
+                "Local multitrack Studio is unavailable in this Preview"
+            )
+            self.audio_truth.setAccessibleDescription(
+                "Review and Rehearsal Preview has no local multitrack Studio."
+            )
+            self._actions["new_project"].setText("New Project — &Unavailable")
+            self._actions["open_project"].setText("Open Project — &Unavailable")
+            self._actions["save_project"].setText("Save — &Unavailable")
+            self._actions["import_backing"].setText(
+                "Import Reference Audio — &Unavailable"
+            )
+            self._actions["relink_media"].setText("Relink — &Unavailable")
+            self._actions["bounce"].setText("Bounce — &Unavailable")
+            self._actions["new_audio_track"].setText("New Track — &Unavailable")
+            self._actions["add_section"].setText("Add Cue — &Unavailable")
+            self._actions["analyze_tempo"].setText("Analyze — &Unavailable")
+            self._actions["project_settings"].setText("Settings — &Unavailable")
+            self._actions["open_guide"].setText("Review Preview &Guide")
+            self.project_menu.setTitle("&Preview")
+
+        self.import_backing_button.setEnabled(local_multitrack)
+        self.add_track_button.setEnabled(local_multitrack)
+        self.splitter.setEnabled(local_multitrack)
+        for command, action in self._actions.items():
+            if local_multitrack:
+                action.setEnabled(True)
+            elif command not in {"close_project", "open_guide"}:
+                action.setEnabled(False)
+        self.set_presentation(self._presentation)
 
     def _action(
         self,
@@ -445,8 +590,7 @@ class ReferenceStudioWorkspace(QWidget):
             # scoped to the live workspace and cannot compete here.
             if command == "show_mixer" and sys.platform == "darwin":
                 sequence = QKeySequence(
-                    Qt.KeyboardModifier.MetaModifier.value
-                    | Qt.Key.Key_M.value
+                    Qt.KeyboardModifier.MetaModifier.value | Qt.Key.Key_M.value
                 )
             action.setShortcut(sequence)
             action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -459,8 +603,13 @@ class ReferenceStudioWorkspace(QWidget):
 
     def _build_menus(self) -> None:
         file_menu = self.menu_bar.addMenu("&File")
-        self._action(file_menu, "new_project", "&New Project", QKeySequence.StandardKey.New)
-        self._action(file_menu, "open_project", "&Open Project…", QKeySequence.StandardKey.Open)
+        self.file_menu = file_menu
+        self._action(
+            file_menu, "new_project", "&New Project", QKeySequence.StandardKey.New
+        )
+        self._action(
+            file_menu, "open_project", "&Open Project…", QKeySequence.StandardKey.Open
+        )
         file_menu.addSeparator()
         self._action(file_menu, "save_project", "&Save", QKeySequence.StandardKey.Save)
         self._action(
@@ -480,7 +629,9 @@ class ReferenceStudioWorkspace(QWidget):
         self._action(file_menu, "relink_media", "&Relink Backing Track…")
         file_menu.addSeparator()
         self._action(file_menu, "bounce", "&Bounce…", "Ctrl+B")
-        self._action(file_menu, "close_project", "&Close Project", QKeySequence.StandardKey.Close)
+        self._action(
+            file_menu, "close_project", "&Close Project", QKeySequence.StandardKey.Close
+        )
 
         edit_menu = self.menu_bar.addMenu("&Edit")
         self._action(edit_menu, "undo", "&Undo", QKeySequence.StandardKey.Undo)
@@ -512,6 +663,7 @@ class ReferenceStudioWorkspace(QWidget):
         self._action(track_menu, "latency_calibration", "&Latency Calibration…")
 
         region_menu = self.menu_bar.addMenu("&Region")
+        self.region_menu = region_menu
         self._action(region_menu, "split_region", "&Split at Playhead", "Ctrl+T")
         self._action(region_menu, "join_regions", "&Join Selected Regions")
         self._action(region_menu, "loop_region", "&Loop Selected Region")
@@ -532,9 +684,7 @@ class ReferenceStudioWorkspace(QWidget):
         self._action(transport_menu, "record", "&Record", "Ctrl+R")
         self._action(transport_menu, "return_to_start", "Return to &Start", "Home")
         transport_menu.addSeparator()
-        self._action(
-            transport_menu, "toggle_cycle", "&Cycle", "C", checkable=True
-        )
+        self._action(transport_menu, "toggle_cycle", "&Cycle", "C", checkable=True)
         self._action(
             transport_menu,
             "toggle_metronome",
@@ -561,6 +711,7 @@ class ReferenceStudioWorkspace(QWidget):
         self._action(view_menu, "toggle_ruler", "Toggle Time / &Bars and Beats")
 
         project_menu = self.menu_bar.addMenu("&Project")
+        self.project_menu = project_menu
         self._action(project_menu, "analyze_tempo", "Analyze Backing &Tempo…")
         project_menu.addSeparator()
         self._action(project_menu, "project_settings", "Project &Settings…")
@@ -620,37 +771,57 @@ class ReferenceStudioWorkspace(QWidget):
         if not isinstance(value, ReferenceStudioPresentation):
             raise TypeError("value must be a ReferenceStudioPresentation.")
         self._presentation = value
-        title = value.project_name + (" •" if value.dirty else "")
+        project_name = value.project_name
+        backing_track = value.backing_track
+        if self._creator_profile.key == "podcast_voice":
+            if project_name == "Untitled Song":
+                project_name = "Untitled Episode"
+            if backing_track == "No backing track":
+                backing_track = "No reference audio"
+        elif self._creator_profile.key == "review_rehearsal":
+            if project_name == "Untitled Song":
+                project_name = "Local Studio Unavailable"
+            if backing_track == "No backing track":
+                backing_track = "Live review reference only"
+        title = project_name + (" •" if value.dirty else "")
         self.project_title.setText(title)
         self.project_state.setText(value.save_state)
         self.status.setText(value.status)
-        self.backing_name.setText(value.backing_track)
+        self.backing_name.setText(backing_track)
         self.position.setText(value.position_text)
         self.elapsed.setText(value.duration_text)
         self.play_button.setText("❚❚" if value.playing else "▶")
         self.play_button.setAccessibleName("Pause" if value.playing else "Play")
         self.record_button.setText("■" if value.recording else "●")
+        record_target = (
+            "voice tracks" if self._creator_profile.key == "podcast_voice" else "tracks"
+        )
         self.record_button.setAccessibleName(
-            "Stop recording" if value.recording else "Record armed tracks"
+            "Stop recording" if value.recording else f"Record armed {record_target}"
         )
         self.record_button.setAccessibleDescription(
             "Stop and safely commit the current Studio recording."
             if value.recording
-            else "Record every armed track using its mapped input."
+            else f"Record every armed {record_target[:-1]} using its mapped input."
         )
         self.record_button.setProperty("recording", value.recording)
         self.record_button.style().unpolish(self.record_button)
         self.record_button.style().polish(self.record_button)
-        self.save_button.setEnabled(value.can_save)
-        self.bounce_button.setEnabled(value.can_bounce)
-        self.play_button.setEnabled(value.can_play)
-        self.stop_button.setEnabled(value.can_play or value.recording)
-        self.record_button.setEnabled(value.can_record)
-        self._actions["save_project"].setEnabled(value.can_save)
-        self._actions["bounce"].setEnabled(value.can_bounce)
+        local_multitrack = self._creator_profile.capabilities.local_multitrack
+        self.save_button.setEnabled(local_multitrack and value.can_save)
+        self.bounce_button.setEnabled(local_multitrack and value.can_bounce)
+        self.play_button.setEnabled(local_multitrack and value.can_play)
+        self.stop_button.setEnabled(
+            local_multitrack and (value.can_play or value.recording)
+        )
+        self.record_button.setEnabled(local_multitrack and value.can_record)
+        self._actions["save_project"].setEnabled(local_multitrack and value.can_save)
+        self._actions["bounce"].setEnabled(local_multitrack and value.can_bounce)
         for command in ("play_pause", "stop", "return_to_start"):
-            self._actions[command].setEnabled(value.can_play or value.recording)
-        self._actions["record"].setEnabled(value.can_record)
+            self._actions[command].setEnabled(
+                local_multitrack and (value.can_play or value.recording)
+            )
+        self._actions["record"].setEnabled(local_multitrack and value.can_record)
         existing_names = tuple(
             str(self.track_list.item(index).data(Qt.ItemDataRole.UserRole + 1) or "")
             for index in range(self.track_list.count())

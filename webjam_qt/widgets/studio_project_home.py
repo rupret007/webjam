@@ -24,6 +24,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.creative_modes import (
+    CreatorProfile,
+    get_creator_profile_by_key,
+    get_creator_profile_by_key_or_default,
+)
 from webjam_qt.theme.brand import BrandMark
 from webjam_qt.theme.tokens import Space
 
@@ -40,11 +45,7 @@ class RecentStudioProject:
         path = str(self.path or "").strip()
         title = " ".join(str(self.title or "").split())
         detail = " ".join(str(self.detail or "").split())
-        if (
-            not path
-            or "\x00" in path
-            or len(path.encode("utf-8")) > 4_096
-        ):
+        if not path or "\x00" in path or len(path.encode("utf-8")) > 4_096:
             raise ValueError("Recent project path is invalid.")
         if not title or len(title.encode("utf-8")) > 512:
             raise ValueError("Recent project title is invalid.")
@@ -65,6 +66,7 @@ class StudioProjectHome(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._creator_profile = get_creator_profile_by_key_or_default("music")
         self.setObjectName("StudioProjectHome")
         self.setAccessibleName("Reference Studio home")
         self.setAccessibleDescription(
@@ -88,19 +90,19 @@ class StudioProjectHome(QWidget):
         brand_row.addStretch(1)
         outer.addLayout(brand_row)
 
-        title = QLabel("Reference Studio")
-        title.setObjectName("StudioHomeTitle")
-        title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        title.setAccessibleName("Reference Studio")
-        outer.addWidget(title)
+        self.title = QLabel("Reference Studio")
+        self.title.setObjectName("StudioHomeTitle")
+        self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self.title.setAccessibleName("Reference Studio")
+        outer.addWidget(self.title)
 
-        subtitle = QLabel(
+        self.subtitle = QLabel(
             "Play with a backing track, capture ideas, arrange takes, and bounce a demo."
         )
-        subtitle.setObjectName("StudioHomeSubtitle")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        subtitle.setWordWrap(True)
-        outer.addWidget(subtitle)
+        self.subtitle.setObjectName("StudioHomeSubtitle")
+        self.subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self.subtitle.setWordWrap(True)
+        outer.addWidget(self.subtitle)
 
         actions = QFrame()
         actions.setObjectName("StudioHomeActions")
@@ -159,6 +161,102 @@ class StudioProjectHome(QWidget):
         QWidget.setTabOrder(self.new_button, self.open_button)
         QWidget.setTabOrder(self.open_button, self.recent_list)
         self.set_recent_projects(())
+        self.set_creator_profile(self._creator_profile)
+
+    @property
+    def creator_profile_key(self) -> str:
+        return self._creator_profile.key
+
+    def set_creator_profile(self, value: CreatorProfile | str) -> None:
+        """Render only vocabulary and capabilities from the fixed registry."""
+
+        key = value.key if isinstance(value, CreatorProfile) else value
+        profile = get_creator_profile_by_key(key)
+        if profile is None:
+            raise ValueError("creator profile is unsupported.")
+        self._creator_profile = profile
+        available = profile.capabilities.local_multitrack
+        self.play_along_button.setEnabled(available)
+        self.new_button.setEnabled(available)
+        self.open_button.setEnabled(available)
+        self.recent_list.setEnabled(available)
+
+        if profile.key == "music":
+            self.setAccessibleDescription(
+                "Create or open a songwriting project, or start Play Along and Record."
+            )
+            self.title.setText("Reference Studio")
+            self.title.setAccessibleName("Reference Studio")
+            self.subtitle.setText(
+                "Play with a backing track, capture ideas, arrange takes, and bounce a demo."
+            )
+            self.play_along_button.setText("Play Along / Record")
+            self.play_along_button.setAccessibleName("Play Along or Record")
+            self.play_along_button.setAccessibleDescription(
+                "Create a song project and choose a local backing track you own or may use."
+            )
+            self.new_button.setText("New Project")
+            self.new_button.setAccessibleName("Create a new Reference Studio project")
+            self.open_button.setText("Open Project…")
+            self.open_button.setAccessibleName("Open a Reference Studio project")
+            self.recent_label.setText("Recent Projects")
+            self.recent_list.setAccessibleName("Recent Reference Studio projects")
+            self.empty_recent.setText(
+                "No recent projects yet. Play Along / Record is the quickest way to begin."
+            )
+            return
+
+        if profile.key == "podcast_voice":
+            self.setAccessibleDescription(
+                "Create or open a podcast or voice project, or start a new recording."
+            )
+            self.title.setText("Podcast & Voice Studio")
+            self.title.setAccessibleName("Podcast and Voice Studio")
+            self.subtitle.setText(
+                "Record isolated voices, edit an episode, add chapters, and bounce a review copy."
+            )
+            self.play_along_button.setText("New Recording")
+            self.play_along_button.setAccessibleName(
+                "Create a podcast or voice recording"
+            )
+            self.play_along_button.setAccessibleDescription(
+                "Create an episode project and optionally choose local reference audio you own or may use."
+            )
+            self.new_button.setText("New Episode Project")
+            self.new_button.setAccessibleName("Create a new episode project")
+            self.open_button.setText("Open Project…")
+            self.open_button.setAccessibleName("Open a podcast or voice project")
+            self.recent_label.setText("Recent Episodes")
+            self.recent_list.setAccessibleName("Recent podcast and voice projects")
+            self.empty_recent.setText(
+                "No recent episodes yet. New Recording is the quickest way to begin."
+            )
+            return
+
+        self.setAccessibleDescription(
+            "Review and Rehearsal Preview does not yet provide local multitrack projects."
+        )
+        self.title.setText("Review & Rehearsal Preview")
+        self.title.setAccessibleName("Review and Rehearsal Preview")
+        self.subtitle.setText(
+            "Use the live review workflow and completed session takes. Local multitrack projects are not available in this Preview."
+        )
+        self.play_along_button.setText("Local Studio Unavailable")
+        self.play_along_button.setAccessibleName(
+            "Local Studio unavailable in Review and Rehearsal Preview"
+        )
+        self.play_along_button.setAccessibleDescription(
+            "This Preview does not support creating a local multitrack project."
+        )
+        self.new_button.setText("New Project Unavailable")
+        self.new_button.setAccessibleName("New local project unavailable")
+        self.open_button.setText("Open Project Unavailable")
+        self.open_button.setAccessibleName("Open local project unavailable")
+        self.recent_label.setText("Local Projects Unavailable")
+        self.recent_list.setAccessibleName("Local projects unavailable in Preview")
+        self.empty_recent.setText(
+            "Review completed session takes below, or return to the live review workspace."
+        )
 
     def set_recent_projects(
         self,

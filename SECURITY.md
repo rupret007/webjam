@@ -30,8 +30,9 @@ support bundles, or unredacted local paths.
 Jamulus, meeting services, Python dependencies, Qt, and operating-system trust systems
 have their own upstream security channels. WebJam-specific orchestration,
 privacy projection, package verification, updater, transport, and lifecycle
-issues belong here. Immutable v0.24.0 is the current GitHub **Latest** private
-test download. It, historical v0.23.0, and their immutable predecessors share
+issues belong here. Immutable v0.24.0 remains GitHub **Latest** private test
+download; v0.25.0 is currently source-only and unpublished. The release and
+its immutable predecessors share
 this test-only trust boundary: Windows is unsigned and macOS is ad-hoc signed
 and unnotarized.
 
@@ -44,6 +45,17 @@ no DNS lookup or network fetch. Known allowlisted services
 may retain an origin-only redaction in bounded diagnostics; an unknown
 provider's URL and hostname are fully redacted. Native publisher proof,
 installation guidance, bring-forward, and mute guidance remain Webex-only.
+Neither a meeting-link handoff nor native Webex focus creates a recording
+source. WebJam never directly or automatically taps a meeting app, browser, or
+system output. Local Originals read explicitly selected input devices; because
+external routing can feed content into an input, users must not route meeting
+or system-output audio into those inputs. Meeting-service recording remains
+externally owned. Review & Rehearsal Preview cannot enable shared notes, visual
+synchronization, or media timecode.
+Local scratchpads are profile-scoped, atomically written with mode `0600`, and
+read only from fixed regular no-follow files up to 1 MiB. They are never shared
+and never enter a session synchronization, meeting handoff, public projection,
+or media-timecode stream.
 
 ## Disclosure
 

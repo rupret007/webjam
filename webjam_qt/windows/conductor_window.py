@@ -44,6 +44,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.creative_modes import CreatorProfile, get_creator_profile_by_key_or_default
+from core.meeting_link import (
+    RECORD_SESSION_MEETING_CAPTURE_NOTICE,
+    STUDIO_MEETING_CAPTURE_NOTICE,
+)
 from webjam_qt.theme import Color
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets import (
@@ -83,6 +88,7 @@ class ConductorWindow(QMainWindow):
         super().__init__(parent)
         from webjam_qt import __version__
 
+        self._creator_profile = get_creator_profile_by_key_or_default("music")
         self.setWindowTitle(f"WebJam — Band Session (v{__version__})")
         self.setAcceptDrops(True)
         self.resize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
@@ -458,7 +464,32 @@ class ConductorWindow(QMainWindow):
             navigation_shortcuts = "Ctrl+1 / Ctrl+2 / Ctrl+3"
             mix_shortcuts = "Ctrl+S / Ctrl+O"
             reset_shortcut = "Ctrl+Shift+R"
-        if self._reference_studio_only:
+        profile = self._creator_profile
+        if self._reference_studio_only and profile.key == "podcast_voice":
+            body = (
+                f"<b>WebJam v{__version__} — Podcast & Voice Studio</b><br>"
+                "<i>Record and edit an episode or voice project offline.</i><br><br>"
+                "<b>1.</b> Choose <b>Record Voice</b>, <b>New Local Recording</b>, "
+                "or <b>Open Project</b>.<br>"
+                "<b>2.</b> Import reference audio you own or may use.<br>"
+                "<b>3.</b> Add voice tracks, map microphone inputs, and arrange "
+                "chapters.<br>"
+                "<b>4.</b> Save the project, then use <b>Bounce</b> to export "
+                "the episode or recording.<br><br>"
+                "Podcast & Voice Studio is independent of Jamulus live-audio "
+                f"settings. {STUDIO_MEETING_CAPTURE_NOTICE}<br><br>"
+                "F11 / Esc — Enter / leave full screen"
+            )
+        elif self._reference_studio_only and profile.key == "review_rehearsal":
+            body = (
+                f"<b>WebJam v{__version__} — Review & Rehearsal Preview</b><br>"
+                "<i>Standalone projects are unavailable in this Preview.</i><br><br>"
+                "Use Host Review or Join Review for live WebJam audio, local notes, "
+                "and playback-only review of completed session takes. Notes stay "
+                "local; visual media and media timecode are not synchronized. "
+                f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+            )
+        elif self._reference_studio_only:
             body = (
                 f"<b>WebJam v{__version__} — Reference Studio</b><br>"
                 "<i>Build and rehearse a song offline.</i><br><br>"
@@ -470,6 +501,51 @@ class ConductorWindow(QMainWindow):
                 "your demo.<br><br>"
                 "Reference Studio audio is separate from Jamulus live audio "
                 "and settings.<br><br>"
+                "F11 / Esc — Enter / leave full screen"
+            )
+        elif profile.key == "podcast_voice":
+            body = (
+                f"<b>WebJam v{__version__} — Podcast & Voice</b><br>"
+                "<i>Host. Invite. Record. Review.</i><br><br>"
+                "<b>1.</b> Choose <b>Host Remote Recording</b> or "
+                "<b>Join Recording</b>.<br>"
+                "<b>2.</b> The host presses <b>Copy Invite</b> and sends the link.<br>"
+                "<b>3.</b> Speak. Each speaker tile shows real connection and level truth.<br>"
+                "<b>4.</b> The host presses <b>Record Session</b> for synchronized "
+                f"WebJam tracks. {RECORD_SESSION_MEETING_CAPTURE_NOTICE}<br>"
+                "<b>5.</b> Choose <b>Studio</b> to review, edit, and export the episode.<br>"
+                "<b>6.</b> Choose <b>Conversation</b> for an optional external "
+                "meeting handoff. Native verification and app focus remain "
+                "Webex-only.<br>"
+                "<b>7.</b> Use <b>Shared Track</b> for reference audio after its "
+                "isolated Jamulus route is proven.<br>"
+                "<b>8.</b> Press <b>End Session</b> when recording is finished.<br><br>"
+                "<b>Useful shortcuts</b><br>"
+                "F2 — Sound Check<br>"
+                f"{navigation_shortcuts} — Live / Notes / Studio<br>"
+                f"{mix_shortcuts} — Save / load your monitor mix while Live is open<br>"
+                f"{reset_shortcut} — Reset every fader to 0 dB<br>"
+                "F11 / Esc — Enter / leave full screen"
+            )
+        elif profile.key == "review_rehearsal":
+            body = (
+                f"<b>WebJam v{__version__} — Review & Rehearsal Preview</b><br>"
+                "<i>Talk. Record WebJam audio. Capture local decisions.</i><br><br>"
+                "<b>1.</b> Choose <b>Host Review</b> or <b>Join Review</b>.<br>"
+                "<b>2.</b> The host presses <b>Copy Invite</b> and sends the link.<br>"
+                "<b>3.</b> Each participant tile shows real WebJam-audio truth.<br>"
+                "<b>4.</b> The host may press <b>Record Session</b>. "
+                f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE}<br>"
+                "<b>5.</b> Choose <b>Studio</b> for playback-only take review. "
+                "Editing and track export are unavailable in this Preview.<br>"
+                "<b>6.</b> <b>Notes</b> stay private to this computer; they are "
+                "not shared or media-timecode synchronized.<br>"
+                "<b>7.</b> <b>Conversation</b> hands an optional public HTTPS "
+                "meeting link to its service without claiming join or mute.<br>"
+                "<b>8.</b> Press <b>End Session</b> when the review is over.<br><br>"
+                "<b>Useful shortcuts</b><br>"
+                "F2 — Session Check (Preview)<br>"
+                f"{navigation_shortcuts} — Live / Notes / Studio<br>"
                 "F11 / Esc — Enter / leave full screen"
             )
         else:
@@ -537,7 +613,7 @@ class ConductorWindow(QMainWindow):
             )
         body = (
             f"<b>WebJam v{__version__}</b><br>"
-            "Unified creative collaboration for musicians.<br><br>"
+            "Live audio and multitrack collaboration for creators.<br><br>"
             f"<b>Build:</b> {short_build}<br>"
             f"<b>Target:</b> {target}<br>"
             "<b>Trust:</b> Private test candidate<br><br>"
@@ -641,6 +717,49 @@ class ConductorWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Public helpers for ApplicationController
     # ------------------------------------------------------------------
+    def set_creator_profile(
+        self,
+        profile: CreatorProfile,
+        *,
+        locked: bool = False,
+    ) -> None:
+        """Apply one truthful creator presentation across the shared shell."""
+
+        if not isinstance(profile, CreatorProfile):
+            raise TypeError("profile must be a CreatorProfile")
+        from webjam_qt import __version__
+
+        self._creator_profile = profile
+        suffix = " · Preview" if profile.is_preview else ""
+        self.setWindowTitle(f"WebJam — {profile.label}{suffix} (v{__version__})")
+        self.setAccessibleName(f"WebJam {profile.label} workspace{suffix}")
+        self.session_strip.set_creator_profile(profile, locked=locked)
+        self.participant_grid.set_creator_profile(profile)
+        self.recording_studio.set_creator_profile(profile)
+        self.session_canvas.set_creator_profile(profile)
+        self.session_canvas.setAccessibleDescription(
+            "Local notes and separate live chat. Notes are not shared or "
+            "media timecode synchronized."
+        )
+        if profile.key == "podcast_voice":
+            recording_tip = (
+                "The Jamulus server is recording this session — every speaker "
+                "gets a synchronized WebJam track. "
+                f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+            )
+        elif profile.key == "review_rehearsal":
+            recording_tip = (
+                "The Jamulus server is recording WebJam audio — every participant "
+                f"gets a synchronized track. {RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+            )
+        else:
+            recording_tip = (
+                "The Jamulus server is recording this session — every musician "
+                "gets their own track."
+            )
+        self._status_recording.setToolTip(recording_tip)
+        self._status_recording.setAccessibleDescription(recording_tip)
+
     def set_status_recording(self, active: bool) -> None:
         """Show/hide the red ● REC chip in the status bar."""
         self._status_recording.setVisible(bool(active))

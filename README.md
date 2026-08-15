@@ -1,12 +1,12 @@
 # WebJam
 
-## Unified creative collaboration for live music
+## Native creator collaboration and multitrack recording
 
-WebJam is a musician-first desktop conductor for low-latency rehearsal,
-recording, arrangement, and creative review. It brings the session lifecycle,
-Jamulus, provider-neutral meeting conversation, Reference Studio, and an
-owner-controlled iPhone companion into one understandable workflow—without pretending to own
-the systems that should remain independent.
+WebJam is a creator-first desktop conductor for low-latency collaboration,
+authoritative multitrack recording, arrangement, and review. It brings the
+session lifecycle, Jamulus, provider-neutral meeting handoff, Studio, and an
+owner-controlled iPhone companion into one understandable workflow—without
+pretending to own systems that remain independent.
 
 [![WebJam CI](https://github.com/rupret007/webjam/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/rupret007/webjam/actions/workflows/ci.yml)
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -19,18 +19,16 @@ the systems that should remain independent.
 > eight-asset inventory, checksums, fallback proof, and protected promotion
 > passed. Windows is unsigned; macOS is ad-hoc signed and unnotarized.
 
-> **Source boundary:** the exact v0.24.0 tag, checksums, and protected promotion
-> are the downloadable-release evidence. Do not substitute an untagged checkout,
-> branch artifact, or later documentation commit for the immutable published
-> package.
+> **v0.25.0 source candidate:** the current tree has the creator-profile and
+> authoritative multitrack work described below, but it is not yet a GitHub
+> release. No v0.25.0 tag, package, checksum manifest, release ID, or physical
+> PASS evidence exists until the exact release process records it.
 
-> **Current private test release:** v0.24.0 advances the native **Shared Track**,
-> **Record Session**, multitrack Studio, configurable Local Originals, and
-> provider-neutral conversation handoff. Use a v0.24.0 package only when its
-> exact filename and SHA-256 appear on the immutable
+> **Download boundary:** use a v0.24.0 package only when its exact filename and
+> SHA-256 appear on the immutable
 > [v0.24.0 GitHub release](https://github.com/rupret007/webjam/releases/tag/v0.24.0).
-> Every physical v0.24.0 gate remains **NOT RUN** until musicians test those
-> exact packages.
+> Every physical v0.24.0 gate remains **NOT RUN** until testers exercise those
+> exact packages. Do not substitute this source checkout or a branch artifact.
 
 New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 [First Jam](FIRST_JAM.md); this README is the complete technical story.
@@ -39,74 +37,96 @@ New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 
 | Area | Current state |
 | --- | --- |
-| Product | Musician-facing desktop conductor around Jamulus, optional meeting-service conversation, Studio, and Pocket Stage |
+| Product | Creator-facing desktop conductor around Jamulus, optional external meeting conversation, Studio, and Pocket Stage |
 | Published line | Immutable v0.24.0 GitHub Latest private test candidate; verify its checksum manifest |
-| Current development | v0.24.0 recording-first line; later documentation commits do not replace tagged packages |
+| Current development | Unpublished v0.25.0 source candidate; Music and Podcast & Voice are GA profiles, Review & Rehearsal is Preview |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
 
-WebJam has two deliberately separate musician workflows:
+WebJam has two deliberately separate creator workflows:
 
-- **Host a Jam** and **Join a Jam** keep private live rehearsal simple: set up
-  sound in Jamulus, then play.
-- **Reference Studio** is a standalone songwriting and rehearsal workspace for
-  playing with a backing track, recording ideas, arranging takes, mixing, and
-  bouncing a demo. It does not require or alter a Jamulus session.
+- Profile-specific **Host** and **Join** actions keep private live audio simple:
+  set up sound in Jamulus, then collaborate.
+- **Reference Studio** is a standalone creation workspace for playing with
+  reference audio, recording ideas, arranging takes, mixing, and bouncing a
+  demo. Music and Podcast & Voice projects do not require or alter a Jamulus
+  session; Review & Rehearsal does not claim a standalone project in Preview.
 
-WebJam is a conductor, not a replacement for the tools musicians already trust.
+WebJam is a conductor, not a replacement for the tools creators already trust.
 
 ## Five-minute demo
 
-1. Open WebJam and choose **Host a Jam** or **Join a Jam**.
-2. Configure interface, channels, headphones, and buffer in Jamulus.
-3. Confirm the authenticated music connection, then use **Band Check / Verify
-   Sound** if needed.
+1. Open WebJam and choose **Music**, **Podcast & Voice**, or **Review &
+   Rehearsal (Preview)**.
+2. Use its profile-specific action: **Host** / **Join**, **Host Remote
+   Recording** / **Join Recording**, or **Host Review** / **Join Review**.
+3. Configure interface, channels, headphones, and buffer in Jamulus. Confirm
+   the authenticated audio connection, then use the profile-specific
+   **Band Check**, **Sound Check**, or **Session Check** if needed.
 4. Open **Conversation** only when conversation or video is wanted; use
    **Join / Open Meeting** for an explicit meeting-link handoff.
-5. As host, choose **Add Shared Track** or drop a supported song on the live
+5. As host, choose **Add Shared Track** or drop supported reference audio on the live
    surface; loading does not start playback, and Play remains fail-closed until
    the isolated Jamulus route is proven.
-6. Choose **Record Session** to capture the rehearsal, then wait through
+6. Choose **Record Session** to capture the session, then wait through
    **Finalizing** before opening the ready take in **Studio**.
-7. Open **Reference Studio** for separate local songwriting and arrangement. It
-   includes DAW-style multi-region editing and loop Overdub (since v0.22.4);
-   read the release notes before the first take.
+7. For Music or Podcast & Voice, open the profile's local-project action for a
+   separate creation and arrangement workspace. Review & Rehearsal correctly
+   keeps standalone projects unavailable in Preview.
+
+## Creator profiles
+
+The v0.25.0 source candidate applies one saved creator profile across launch,
+Host/Join, readiness, the live surface, recording, Studio, session records, and
+new standalone projects:
+
+| Profile | Status | Implemented boundary |
+| --- | --- | --- |
+| Music | GA | Jam/rehearsal language, Shared Track, authoritative session recording, completed-take Studio, and music-focused Reference Studio defaults |
+| Podcast & Voice | GA | Session/speaker/microphone language, episode/reference-audio vocabulary, voice-focused input defaults, authoritative recording, and local project workflow |
+| Review & Rehearsal | Preview | Live WebJam-audio Host/Join and Record Session plus playback/read-only completed-take review; no standalone project, take edit/comp/mix mutation, track export, shared notes, visual sync, or media timecode |
+
+Profiles change presentation and safe defaults, not evidence rules. A legacy
+project, take, or session with no profile metadata migrates to Music. Review &
+Rehearsal always remains visibly marked Preview and fails closed where its
+standalone workflow is not implemented.
 
 ## System ownership
 
 | Product | Owns |
 | --- | --- |
 | WebJam | Private-session lifecycle, invitations, session truth, recording, Studio, export, recovery |
-| Jamulus | Live interface, input/output channels, buffer, jitter, musician mix, and music connection |
-| Meeting service | Optional talking/video meeting and its own microphone, camera, speaker, and participant state |
+| Jamulus | Live interface, input/output channels, buffer, jitter, participant mix, and WebJam audio connection |
+| Meeting service | Optional talking/video meeting and its own microphone, camera, speaker, participant state, and recording; WebJam never directly or automatically taps the meeting app, browser, or system output |
 
-## Live rehearsal flow
+## Live collaboration flow
 
-1. Open WebJam and choose **Host a Jam** or **Join a Jam**.
-2. WebJam starts the private session or consumes the invitation.
+1. Open WebJam, choose a creator profile, then choose its Host or Join action.
+2. WebJam starts the private session or consumes the invitation using the
+   profile-specific vocabulary.
 3. On a fresh Mac setup, Jamulus opens its dedicated WebJam profile and may
    need you to choose the interface, input channels, headphones, and buffer
    once. WebJam does not open the regular Jamulus profile or request access to
    data from other apps.
 4. Jamulus opens normally. Choose the interface, channels, headphones, and
    buffer in **Jamulus → Settings → Audio/Network Settings**.
-5. When WebJam sees the authenticated music connection, it opens the session
+5. When WebJam sees the authenticated audio connection, it opens the session
    automatically; the host then copies the invitation.
-6. Play a note and make sure you can hear each other. Use **More → Band Check
-   / Verify Sound** if you need help.
-7. Choose the direct **Conversation** action if your band wants conversation
+6. Make sound and verify you can hear each other. Use **Band Check**, **Sound
+   Check**, or **Session Check** for the selected profile if you need help.
+7. Choose the direct **Conversation** action if participants want conversation
    or video. It shows WebJam's Conversation controls without opening a meeting;
-   music remains in Jamulus.
+   WebJam's live audio remains in Jamulus.
 8. The host can add a **Shared Track** from the live surface. Its proven route
    enters Jamulus through the separately owned `WebJam Track` participant;
-   every musician still verifies the result by listening.
-9. Choose **Record Session** when the band is ready. One Stop action moves the
+   every listener still verifies the result by listening.
+9. Choose **Record Session** when the session is ready. One Stop action moves the
    take through **Stopping** and **Finalizing**; only **Ready** is a completed
    take that can open in Studio.
 
-There is no WebJam input/output picker, server field, port field, or Band
-Check gate in Host/Join.
+There is no WebJam input/output picker, server field, port field, or
+profile-specific Check gate in Host/Join.
 
 ## Bounded Jamulus recovery
 
@@ -114,13 +134,13 @@ Since v0.22.4, the source treats a running Jamulus process as necessary but not
 sufficient recovery evidence. Each replacement is bound to the exact recovery
 generation, process generation, and process ID that WebJam launched. WebJam
 returns to Connected only after that same process has fresh authenticated RPC
-activity and its local musician row is proved in the roster. Delayed evidence
+activity and its local participant row is proved in the roster. Delayed evidence
 from an earlier process cannot authenticate its replacement.
 
 Automatic recovery is bounded to five starts. While one is pending or in
 flight, WebJam reports Recovery in progress instead of starting competing
 clients. If the bounded attempt set is exhausted, automatic recovery stops and
-the musician gets an explicit fresh Host/Join restart path; a timer cannot
+the creator gets an explicit fresh Host/Join restart path; a timer cannot
 silently create a sixth attempt or call an unauthenticated process Connected.
 The Support Bundle records only the immutable generations, attempt state,
 process ID/liveness, finite RPC freshness category, and finite RPC age. It
@@ -145,7 +165,7 @@ replace that trust root. The v0.22.2 package-only release probe verified this
 exact boundary against the live signed catalog before GitHub Latest
 publication.
 
-An approved update can download without interrupting rehearsal, but it cannot
+An approved update can download without interrupting an active session, but it cannot
 install, activate, or roll back while a client, server, Reference Track,
 recording, practice session, reconnect, or launch is active. **More → Jamulus
 Updates** shows the active, available, previous, deferred, fallback, or failed
@@ -164,7 +184,7 @@ chooses to open it. Linux opens the approved package through the desktop
 package handler. WebJam never uses hidden elevation, `sudo`, a command shell,
 Gatekeeper bypasses, or an update that mutates `WebJam.app`.
 
-Jamulus itself displays musician labels on two lines after eight grapheme
+Jamulus itself displays participant labels on two lines after eight grapheme
 clusters and accepts at most 16 UTF-16 units. WebJam now enforces that one
 contract at every entry point and previews the actual 8+8 layout instead of
 allowing Jamulus to silently shorten an identity.
@@ -181,6 +201,12 @@ normalized link can be copied. WebJam never claims that a handoff joined,
 muted, found participants, or verified an unknown provider. FaceTime links are
 Mac-only. Native detection, publisher proof, installation, mute guidance, and
 bring-forward remain explicitly Webex-only.
+
+WebJam never directly or automatically taps a meeting app, browser, or system
+output. Record Session captures the authoritative Jamulus server stems plus
+only the explicitly planned Local Originals from input devices the user
+selects. Do not route meeting or system-output audio into those inputs; use the
+meeting service's own recorder if that audio is needed.
 
 The direct **Conversation** action and **More → Conversation** reveal the
 Conversation panel and never launch or rejoin a meeting. On macOS, **Show Webex App** works
@@ -205,7 +231,7 @@ operating system or default browser.
 Webex owns sign-in, camera, microphone, speakers, participants, mute, and
 meeting state. Because the external native app does not expose verifiable mute
 control to this integration, **Open Webex to Mute** shows the verified Webex app so
-the musician can use its own Mute control and explicitly does not claim it
+the creator can use its own Mute control and explicitly does not claim it
 changed Webex or Jamulus.
 WebJam detects the native Webex app and, when it is missing or invalid, offers
 the architecture-correct official Cisco installer in the browser after
@@ -253,15 +279,15 @@ Reference Studio provides:
 
 Project recording and playback use Reference Studio's local audio backend only.
 They do not join Jamulus, change Jamulus devices, or send project audio to a
-live rehearsal. Automated tests establish state, rendering, file-integrity, and
+live session. Automated tests establish state, rendering, file-integrity, and
 package behavior; physical interface audibility, real latency calibration, and
 long hardware recording remain **NOT RUN** until recorded against an exact
 candidate package.
 
-See the [Reference Studio musician guide](docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md)
+See the [Reference Studio guide](docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md)
 and [project architecture and migration decision](docs/adr/0006-standalone-reference-studio-projects.md).
 
-## One musician guide
+## One creator guidance source
 
 The Session HUD, stage, Session Canvas, recorder, Studio, sanitized diagnostics,
 and optional Companion API now render one deterministic guidance snapshot. It
@@ -272,10 +298,15 @@ it passes through the same typed projection so the surfaces cannot disagree.
 
 Session Canvas keeps operational truth separate from the local **Creative
 Pulse** extracted from intentional notes. A note can suggest an arrangement or
-next rehearsal action; it cannot claim a connection, recording, validated take,
+next creative action; it cannot claim a connection, recording, validated take,
 transfer, export, or human audibility. Guidance is local, deterministic,
 inspectable, offline, and event-driven. It performs no work on meter, waveform,
 playhead, animation, audio, capture, or playback callbacks.
+
+The scratchpad is profile-scoped on this computer only. Switching profiles
+atomically saves the current profile's private mode-0600 file and loads the
+other profile's fixed file. Reads are regular-file-only, no-follow, and bounded
+to 1 MiB. Notes are never shared, session-synchronized, or media-timecoded.
 
 ## Pocket Stage iPhone owner-device preview
 
@@ -304,7 +335,7 @@ Pan remains in the versioned snapshot/protocol vocabulary for forward
 compatibility, but this preview does not present or accept it as a live control:
 the pinned Jamulus client has no proven pan command.
 
-This preview has no phone audio, chat, reactions, solo command, rehearsal plan,
+This preview has no phone audio, chat, reactions, solo command, session plan,
 section/Studio transport, editing, or media transfer. The checked-in XcodeGen
 spec reproducibly generates and CI-compiles the native SwiftUI app; an owner
 still selects their Apple Personal Team in Xcode to install it on their own
@@ -313,7 +344,7 @@ Setup** folder with the generated, CI-compiled Xcode project and a clickable
 opener, so release users do not need to clone the repository or install
 XcodeGen. A paid Apple Developer Program membership is not required for this
 owner-device path, although free Personal Team provisioning expires and must be
-renewed periodically. No pre-signed iOS app or physical iPhone/rehearsal result
+renewed periodically. No pre-signed iOS app or physical iPhone/session result
 is claimed; all physical tests remain **NOT RUN**. The existing loopback Local
 API and Jamulus audio path are unchanged. See the
 [Pocket Stage developer-preview plan](docs/plans/webjam-pocket-stage-v1.md)
@@ -325,7 +356,7 @@ v0.23.0 presents the existing macOS-first route engine as one canonical
 **Shared Track** experience. During a hosted session the compact live deck,
 its **Shared Track** action, and **More → Shared Track…** all lead to the same
 transport. The older `ReferenceTrack` implementation and evidence vocabulary
-remain internal compatibility names, not a competing musician workflow.
+remain internal compatibility names, not a competing creator workflow.
 
 Loading is deliberately separate from routing: a host can load and inspect
 WAV/WAVE, AIFF, or FLAC even while playback is locked, using **Add Track…** or
@@ -381,10 +412,10 @@ This is implementation and isolation evidence, not proof of physical
 audibility, independent mixes, or freedom from direct monitoring.
 
 This is **Jamulus-routed**, not latency eliminated. The track receives normal
-Jamulus buffering, jitter handling, and network latency like another musician.
+Jamulus buffering, jitter handling, and network latency like another participant.
 The source path is memory-only and excluded from settings and logs. Windows and
 Linux backends, plus physical macOS audibility, independent-mix, recording,
-route-removal, direct-monitor, device-switch, and long-rehearsal evidence
+route-removal, direct-monitor, device-switch, and long-session evidence
 remain **NOT RUN**. See the
 [architecture decision](docs/adr/0005-reference-track-jamulus-participant.md)
 and [physical pilot runbook](docs/plans/webjam-reference-track-macos-pilot.md).
@@ -395,9 +426,12 @@ Recording is optional and starts only when the host presses **Record Session**.
 On a host's first recording, WebJam asks whether to record the shared Jamulus
 take only or also retain this Mac's configured Local Originals. Recording
 Setup can define named mono/stereo tracks totaling up to 32 enabled Local
-Original input channels; tracks map sequentially to device channels, while an
-empty configuration preserves the compatible two-input default. The input-map
-editor never changes Jamulus music settings.
+Original input channels. One mono row creates one mono 24-bit WAV; one stereo
+row binds adjacent device channels into one true two-channel 24-bit WAV. Tracks
+map sequentially to device channels, while a genuinely empty configuration
+preserves the compatible two-mono-input default. Disabling or opting out of
+every configured row records no host Local Original. The input-map editor never
+changes Jamulus music settings.
 
 The live action names the real lifecycle: **Preparing**, **Count-in**,
 **Recording**, **Stopping**, **Finalizing**, **Ready**, **Needs attention**, or
@@ -407,15 +441,27 @@ recorder and Shared Track stops together, but each owner must still prove its
 own cleanup before the take can be called Ready. Guests can see bounded
 recording state; only the host controls the shared recording.
 
-The completed take keeps every authoritative Jamulus musician stem distinct,
-presents the Shared Track as its own stable source, and includes only Local
-Originals that were explicitly enabled. Ambiguous identities, missing media,
-unverified guest alignment, gaps, or incomplete publication stay visible and
-fail closed instead of becoming a false multitrack success.
+Before capture starts, one immutable recording plan binds the exact take,
+roster/server stems, Shared Track fingerprint and playback generation, host
+mono/stereo input topology, guest Local Original count/map obligations,
+count-in, storage verdict, and expected source count. Finalization rechecks
+those exact identities and refuses substitution, under/over-delivery, a changed
+guest topology, or a different Shared Track generation.
+
+The completed take keeps every authoritative Jamulus participant stem distinct,
+presents the Shared Track as its own stable source, preserves true stereo Local
+Originals as stereo through Studio and export, and includes only Local
+Originals that were explicitly enabled and planned. Ambiguous identities,
+missing media, unverified guest alignment, gaps, or incomplete publication stay
+visible and fail closed instead of becoming a false multitrack success.
 
 Studio is a professional DAW-style multitrack review workspace, not a Logic
 integration and not a copy of Apple artwork or trade dress.
-It opens recorded takes, lets the musician choose a playback output only while
+Editing, comping, mix mutation, sidecar saving, and export apply only to Music
+and Podcast & Voice. Review & Rehearsal Preview provides completed-take
+playback, scrubbing, and source inspection only, with no local project, edit,
+comp, mix mutation, Studio sidecar, or export.
+It opens recorded takes, lets the creator choose a playback output only while
 reviewing, and provides a frame-accurate Arrange timeline. Regions can be moved,
 trimmed, split, duplicated, faded, disabled, or removed; markers, sections,
 cycle/loop playback, snap state, track mix controls, and master delivery choices
@@ -448,7 +494,7 @@ source manifests, provenance, and SHA-256 checksums. Cross-take comp sources are
 bound by full take/track/segment identity and export fails closed if source,
 manifest, or saved-state truth changes. A transferred guest Local Original is
 preserved first, then becomes eligible for aligned export only when WebJam
-verifies it against that musician's intact Jamulus server reference; uncertain
+verifies it against that participant's intact Jamulus server reference; uncertain
 originals remain reviewable but cannot be represented as verified alignment.
 
 The edited evidence-rich package is available on macOS/Linux runtimes with the
@@ -482,7 +528,7 @@ Track must not produce an Other Application Data prompt. A separate microphone
 prompt can still appear when an audio input is used.
 
 WebJam never writes device, channel, buffer, jitter, quality, or mix values to
-the musician's native profile, and it never reads or overwrites the regular
+the user's native profile, and it never reads or overwrites the regular
 `Jamulus.ini`. WebJam's private restart records contain only allowlisted
 profile identity and phase hashes—never invitation URLs, meeting URLs or
 provider hostnames, credentials, device identifiers, raw paths, or notes.
@@ -495,9 +541,11 @@ successful protected promotion behind GitHub
 [Latest](https://github.com/rupret007/webjam/releases/latest) are downloadable
 evidence. Do not use an untagged checkout or ordinary branch build as a release.
 
-The current source tree reports **v0.24.0**. The exact
+The current source tree reports **v0.25.0** and is an unpublished source
+candidate. v0.25.0 is a new creator-multitrack source identity and never
+replaces v0.24.0 bytes. The exact
 [v0.24.0 release](https://github.com/rupret007/webjam/releases/tag/v0.24.0)
-is immutable GitHub Latest with the expected eight assets and checksum
+remains immutable GitHub Latest with the expected eight assets and checksum
 manifest. Source CI `31540572960`, successful tag CI `31542495182` attempt 2,
 and protected publisher run `31546157181` are its package evidence; release ID
 `368897541` was published at `2026-08-11T23:23:12Z`. The exact
@@ -507,13 +555,15 @@ promotion. The immutable
 [v0.22.5 release](https://github.com/rupret007/webjam/releases/tag/v0.22.5)
 retains its original assets and evidence as a historical candidate.
 
-v0.24.0 is a new recording-first identity and never replaces v0.23.0 bytes.
+Immutable v0.24.0 GitHub Latest private test candidate remains the downloadable
+boundary. v0.24.0 is a recording-first identity and never replaces v0.23.0
+bytes.
 Its fallback-only testing lane proved that sealed v3 remains valid for
 historical v0.22.5 and is rejected for v0.24.0, then published the exact frozen
 packages with the reviewed embedded Jamulus 3.12.2. The baked compatibility policy
 recognizes the already audited 3.12.2 and 3.12.3 identities through exact
 v0.24.0 only; managed 3.12.3 download remains unavailable until a new signed
-version-specific channel exists. Physical musician results remain **NOT RUN**
+version-specific channel exists. Physical participant results remain **NOT RUN**
 until separately recorded.
 
 Published tags and assets remain immutable historical evidence. In particular,
@@ -598,8 +648,8 @@ macOS path. Recent macOS versions may block downloaded `.command` files from
 Finder, so those helpers are documented for explicit Terminal use instead.
 
 The source continues to isolate Authenticode and Developer ID credentials in
-separate `windows-release` and `macos-release` environment-bound manual
-rehearsal jobs. Those environments still need protection rules and credentials
+separate `windows-release` and `macos-release` environment-bound manual trust
+jobs. Those environments still need protection rules and credentials
 before they can serve as production-trust gates. The optional jobs preserve the
 future production-trust path without blocking private test candidates. Native
 packaging installs the reviewed Python graph from target-specific, hash-locked
@@ -614,14 +664,15 @@ The repository has `windows-release`, `macos-release`, and `release-latest`
 GitHub Environments. `release-latest` requires a maintainer review and accepts
 deployments from `master` only; it contains no signing secret. The two native
 trust environments still need protection rules and credentials, and no
-credentialed rehearsal has completed. Configure independent reviewers,
+credentialed trust run has completed. Configure independent reviewers,
 deployment restrictions, and credential isolation before using those paths as
 production-trust controls. A managed Windows PC may still require IT approval
 even after valid publisher signing; candidate packages must never be described
 as production-trusted installers.
 
 Automated source and package checks are evidence for code and archive
-integrity—not a substitute for musicians hearing one another. For v0.24.0,
+integrity—not a substitute for creators hearing one another. For v0.25.0,
+v0.24.0,
 immutable v0.23.0,
 historical v0.22.5, and immutable earlier lines,
 real two-Mac audio, physical interface disconnect/reconnect, sleep/wake,
@@ -636,14 +687,15 @@ promote a package or claim audibility.
 
 - [Documentation index](docs/README.md)
 - [Project brief for technical stakeholders](docs/PROJECT_BRIEF.md)
-- [v0.24.0 release notes and history](CHANGELOG.md)
+- [v0.25.0 source-candidate notes and release history](CHANGELOG.md)
+- [v0.25.0 creator-multitrack physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.24.0 recording-first physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
 - [Historical v0.23.0 Shared Track checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.18 unified-guidance pilot checklist](V018_UNIFIED_GUIDANCE_PILOT.md)
 - [First jam](FIRST_JAM.md)
-- [Musician guide](USER_GUIDE.md)
+- [Creator guide](USER_GUIDE.md)
 - [Simple language guide](README_SIMPLE.md)
-- [Reference Studio musician guide](docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md)
+- [Reference Studio guide](docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md)
 - [Reference Studio architecture and migration](docs/adr/0006-standalone-reference-studio-projects.md)
 - [Recording and Studio](RECORDING_AND_STUDIO.md)
 - [Presence v2 recorder-correlation architecture](docs/adr/0009-presence-v2-recorder-correlation.md)

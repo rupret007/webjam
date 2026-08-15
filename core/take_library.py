@@ -29,6 +29,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Mapping, Optional
 
+from core.creative_modes import canonical_creator_profile_key
+
 if TYPE_CHECKING:
     from core.take_project import SessionEvidence
 
@@ -53,6 +55,10 @@ _INTERRUPTED_PUBLICATION_ERROR = (
 _REQUIRED_REFERENCE_TRACK_ERROR = (
     "The Shared Track was part of this Record Session, but its exact "
     "band-server stem could not be verified. The take was preserved for review."
+)
+_UNSUPPORTED_CREATOR_PROFILE_ERROR = (
+    "The take's creator profile is unsupported. Studio is using generic "
+    "review labels."
 )
 
 EVIDENCE_ONLY_EXPORT_BLOCK_REASON = (
@@ -159,6 +165,28 @@ class TrackInfo:
     def end_s(self) -> float:
         return self.offset_s + self.duration_s
 
+    @property
+    def channel_count(self) -> int:
+        """Return one truthful logical-track width, or zero when it changes.
+
+        A schema-v2 reconnect may retain multiple immutable media segments.
+        Studio and export can only treat those segments as one logical source
+        when every segment has the same supported mono/stereo topology.  Zero
+        deliberately exposes an ambiguous/unsupported layout instead of
+        silently borrowing the primary segment's channel count.
+        """
+
+        channels = {int(segment.channels) for segment in self.segments}
+        if len(channels) == 1 and channels.issubset({1, 2}):
+            return channels.pop()
+        return 0
+
+    @property
+    def has_supported_channel_topology(self) -> bool:
+        """Whether every retained segment is consistently mono or stereo."""
+
+        return self.channel_count in {1, 2}
+
 
 @dataclass
 class TakeInfo:
@@ -186,6 +214,10 @@ class TakeInfo:
     # placeholder WAV or offering audio actions that cannot be truthful.
     review_only: bool = False
     export_block_reason: str = ""
+    # Appended for positional compatibility. Missing historical evidence is
+    # Music; an empty value means an explicit manifest value was unsupported
+    # and callers must use generic, fail-closed presentation.
+    creator_profile_key: str = "music"
 
     @property
     def track_count(self) -> int:
@@ -362,6 +394,7 @@ class RecorderClientReceipt:
     channels: int
     source_kind: str = "musician"
     source_fingerprint_sha256: str = ""
+    playback_generation: int = 0
 
     def __post_init__(self) -> None:
         observation = RecorderClientObservation(
@@ -388,6 +421,17 @@ class RecorderClientReceipt:
             raise ValueError(
                 "source_fingerprint_sha256 is only valid for a reference track"
             )
+        playback_generation = self.playback_generation
+        if (
+            isinstance(playback_generation, bool)
+            or not isinstance(playback_generation, int)
+            or not 0 <= playback_generation <= (1 << 63) - 1
+        ):
+            raise ValueError("playback_generation is outside the supported range")
+        if playback_generation and source_kind != "reference_track":
+            raise ValueError(
+                "playback_generation is only valid for a reference track"
+            )
         object.__setattr__(self, "server_channel_id", observation.server_channel_id)
         object.__setattr__(self, "display_name", observation.display_name)
         object.__setattr__(self, "channels", observation.channels)
@@ -401,6 +445,7 @@ class RecorderClientReceipt:
             "source_fingerprint_sha256",
             source_fingerprint,
         )
+        object.__setattr__(self, "playback_generation", playback_generation)
 
 
 class RecorderRosterError(ValueError):
@@ -1174,6 +1219,11 @@ def validate_take(take_dir: str | Path, *, expected_tracks: int = 0,
             f"{len(local_tracks)}."
         )
     for track in take.tracks:
+        if track.segments and not track.has_supported_channel_topology:
+            errors.append(
+                f"{track.name} does not have one consistent mono/stereo "
+                "channel layout across its segments."
+            )
         # Loading already records the exact reason a missing/damaged manifest
         # segment is blocked. Do not follow or probe that path again here: an
         # unsafe take-local symlink must remain inert through validation.
@@ -1209,6 +1259,84 @@ _ENVELOPE_BLOCK = 480  # 10 ms at 48 kHz → a true 100 Hz amplitude envelope
 # value.
 ALIGNMENT_CONFIDENCE_MIN = 0.15
 ALIGNMENT_METHOD = "envelope+refine-v2"
+
+
+@dataclass(frozen=True, slots=True)
+class _LocalCaptureTopology:
+    """Path-free logical input identity supplied by LocalCaptureResult."""
+
+    ordinal: int
+    stem: str
+    source_channels: tuple[int, ...]
+
+    @property
+    def channel_count(self) -> int:
+        return len(self.source_channels)
+
+    @property
+    def display_name(self) -> str:
+        if self.stem in _LOCAL_STEM_PREFIXES:
+            return ""
+        stem = self.stem[6:] if self.stem.casefold().startswith("local-") else self.stem
+        return _prettify(stem)
+
+
+def _validated_local_capture_topology(
+    value: object,
+) -> tuple[_LocalCaptureTopology, ...] | None:
+    """Reduce typed capture tracks to one exact, bounded manifest binding.
+
+    ``None`` means an older caller supplied no topology evidence. An explicit
+    empty tuple instead means the capture contract expected no local files.
+    """
+
+    if value is None:
+        return None
+    try:
+        from core.local_capture import LocalCaptureTrack
+
+        entries = tuple(value)
+    except (ImportError, TypeError) as exc:
+        raise TypeError(
+            "local_capture_tracks must be LocalCaptureTrack values."
+        ) from exc
+    if len(entries) > 32 or any(
+        not isinstance(item, LocalCaptureTrack) for item in entries
+    ):
+        raise TypeError(
+            "local_capture_tracks must contain at most 32 LocalCaptureTrack values."
+        )
+    stems: set[str] = set()
+    source_channels: set[int] = set()
+    topology: list[_LocalCaptureTopology] = []
+    for ordinal, item in enumerate(entries):
+        stem_key = item.stem.casefold()
+        item_channels = tuple(item.source_channels)
+        if stem_key in stems or source_channels.intersection(item_channels):
+            raise ValueError(
+                "local_capture_tracks contains duplicate track or channel identity."
+            )
+        stems.add(stem_key)
+        source_channels.update(item_channels)
+        topology.append(
+            _LocalCaptureTopology(ordinal, item.stem, item_channels)
+        )
+    if len(source_channels) > 32:
+        raise ValueError("local_capture_tracks exceeds the 32-channel limit.")
+    return tuple(topology)
+
+
+def _local_filename_matches_topology(name: str, stem: str) -> bool:
+    """Match normal, collision-safe, and recovered names for one exact stem."""
+
+    lowered = name.casefold()
+    escaped = re.escape(stem.casefold())
+    return bool(
+        re.fullmatch(
+            rf"{escaped}(?:\.recovered-partial|-local(?:-[0-9]+)?)?\.wav",
+            lowered,
+        )
+    )
 
 
 def is_local_stem_name(name: str) -> bool:
@@ -1357,6 +1485,7 @@ def write_take_manifest(
     participant_ids: Optional[dict[int, str]] = None,
     local_participant_id: str = "", local_participant_name: str = "Host",
     capture_device=None, capture_gaps: tuple[object, ...] = (),
+    local_capture_tracks: object = None,
     local_total_frames: int = 0,
     local_durable_frames: int | None = None,
     session_evidence: "SessionEvidence | None" = None,
@@ -1386,6 +1515,7 @@ def write_take_manifest(
         SourceQuality,
         SourceType,
         TakeProject,
+        TakeProjectError,
         new_project_id,
         take_project_manifest_lock,
         write_take_project,
@@ -1436,6 +1566,7 @@ def write_take_manifest(
             existing_result,
             required=required_reference_track,
         )
+    local_topology = _validated_local_capture_topology(local_capture_tracks)
     offset_s = 0.0
     confidence = 0.0
     # The old channel-keyed maps remain accepted for source compatibility but
@@ -1471,6 +1602,7 @@ def write_take_manifest(
             or existing.source_kind != receipt.source_kind
             or existing.source_fingerprint_sha256
             != receipt.source_fingerprint_sha256
+            or existing.playback_generation != receipt.playback_generation
             for existing in same_digest
         ):
             conflicted_keys.add(digest)
@@ -1987,21 +2119,87 @@ def write_take_manifest(
     participants_by_id: dict[str, Participant] = {}
     project_sample_rate = 48_000
     grouped_tracks: dict[str, dict[str, object]] = {}
-    # Stable per-take local ordering: enumerate local stems by sorted
-    # filename (the legacy pair keeps 0=host-guitar, 1=host-vocal).
+    local_tracks = tuple(
+        track
+        for track in take.tracks
+        if track.source in {"local_ssl", "local_isolated"}
+    )
+    local_topology_by_name: dict[str, _LocalCaptureTopology] = {}
+    if local_topology is not None:
+        if required_local_stems != len(local_topology):
+            errors.append(
+                "The required local-original count did not match the bound "
+                "logical capture topology."
+            )
+        if capture_device is not None:
+            planned_source_channels = tuple(
+                channel
+                for item in local_topology
+                for channel in item.source_channels
+            )
+            observed_source_channels = tuple(
+                getattr(capture_device, "channel_indices", ()) or ()
+            )
+            if observed_source_channels != planned_source_channels:
+                errors.append(
+                    "The capture device channel map did not match the bound "
+                    "logical local-original topology."
+                )
+        claimed_names: set[str] = set()
+        for item in local_topology:
+            candidates = tuple(
+                track
+                for track in local_tracks
+                if track.path.name.casefold() not in claimed_names
+                and _local_filename_matches_topology(track.path.name, item.stem)
+            )
+            if len(candidates) != 1:
+                errors.append(
+                    "A bound logical local-original track could not be matched "
+                    "to exactly one captured WAV."
+                )
+                continue
+            name_key = candidates[0].path.name.casefold()
+            claimed_names.add(name_key)
+            local_topology_by_name[name_key] = item
+        if len(claimed_names) != len(local_tracks):
+            errors.append(
+                "The captured local-original WAV inventory did not exactly "
+                "match its bound logical track map."
+            )
+        for gap in capture_gaps:
+            try:
+                gap_channels = tuple(getattr(gap, "channels", ()) or ())
+                if any(
+                    isinstance(channel, bool)
+                    or not isinstance(channel, int)
+                    or not 0 <= channel < len(local_topology)
+                    for channel in gap_channels
+                ):
+                    errors.append(
+                        "Local capture gap evidence referenced an unavailable "
+                        "logical track."
+                    )
+            except TypeError:
+                errors.append("Local capture gap evidence was unreadable.")
+
+    # Older callers have no typed topology evidence. Preserve their stable
+    # alphabetical mapping (including 0=host-guitar, 1=host-vocal) while new
+    # captures use the exact LocalCaptureResult order above.
     local_channel_by_name = {
         name: index
         for index, name in enumerate(
             sorted(
-                track.path.name.lower()
-                for track in take.tracks
-                if track.source in {"local_ssl", "local_isolated"}
+                track.path.name.casefold()
+                for track in local_tracks
             )
         )
     }
     for order, track in enumerate(take.tracks):
         local = track.source in {"local_ssl", "local_isolated"}
+        topology_item: _LocalCaptureTopology | None = None
         source_fingerprint = ""
+        playback_generation = 0
         if local:
             participant_id: str | None = stable_local_participant_id
             participant_name = (
@@ -2009,10 +2207,17 @@ def write_take_manifest(
             )
             source_type = SourceType.LOCAL_ISOLATED
             quality = SourceQuality.UNVERIFIED
-            local_channel = local_channel_by_name.get(
-                track.path.name.lower(), 0
+            topology_item = local_topology_by_name.get(track.path.name.casefold())
+            local_channel = (
+                topology_item.ordinal
+                if topology_item is not None
+                else local_channel_by_name.get(track.path.name.casefold(), 0)
             )
-            group_key = f"local:{order}"
+            group_key = (
+                f"local:{topology_item.ordinal}:{topology_item.stem.casefold()}"
+                if topology_item is not None
+                else f"local:{order}"
+            )
             project_start_frame = 0
         else:
             parsed = recording_filename_facts.get(track.path.name)
@@ -2039,6 +2244,11 @@ def write_take_manifest(
                     if receipt.source_kind == "reference_track"
                     else ""
                 )
+                playback_generation = (
+                    receipt.playback_generation
+                    if receipt.source_kind == "reference_track"
+                    else 0
+                )
                 source_type = (
                     SourceType.LIVE_REFERENCE
                     if receipt.source_kind == "reference_track"
@@ -2047,6 +2257,8 @@ def write_take_manifest(
                 group_key = f"proved:{receipt.source_kind}:{receipt.participant_id}"
                 if source_fingerprint:
                     group_key = f"{group_key}:{source_fingerprint}"
+                if playback_generation:
+                    group_key = f"{group_key}:{playback_generation}"
             quality = (
                 SourceQuality.REFERENCE
                 if source_type is SourceType.LIVE_REFERENCE
@@ -2078,10 +2290,25 @@ def write_take_manifest(
 
         evidence = _audio_file_evidence(track.path)
         frame_count = int(evidence["frame_count"])
+        observed_channel_count = int(evidence["channels"] or 0)
+        if observed_channel_count not in {1, 2}:
+            errors.append(
+                f"{track.name} does not contain a supported mono/stereo "
+                "channel layout."
+            )
+        if (
+            local
+            and topology_item is not None
+            and observed_channel_count != topology_item.channel_count
+        ):
+            errors.append(
+                "A captured local-original WAV did not match its bound mono/stereo "
+                "track layout."
+            )
         if (
             not local
             and parsed is not None
-            and int(evidence["channels"] or 0) != parsed.channels
+            and observed_channel_count != parsed.channels
         ):
             errors.append(
                 "A Jamulus recording's channel metadata did not match its audio. "
@@ -2095,10 +2322,10 @@ def write_take_manifest(
         gaps: list[GapInterval] = []
         if local:
             for item in capture_gaps:
-                channels = tuple(getattr(item, "channels", ()) or ())
-                if channels and local_channel not in channels:
-                    continue
                 try:
+                    channels = tuple(getattr(item, "channels", ()) or ())
+                    if channels and local_channel not in channels:
+                        continue
                     gap_start = int(getattr(item, "start_frame"))
                     gap_frames = int(getattr(item, "frame_count"))
                     if (
@@ -2114,7 +2341,10 @@ def write_take_manifest(
                         start_frame=gap_start,
                         frame_count=gap_frames,
                         reason=str(getattr(item, "reason")),
-                        channels=(0,),
+                        # Capture gaps select logical WAVs. Once selected, the
+                        # unavailable interval covers every channel in that
+                        # mono/stereo logical track.
+                        channels=tuple(range(max(1, observed_channel_count))),
                     ))
                 except (TypeError, ValueError):
                     errors.append(f"{track.name} has unreadable local gap metadata.")
@@ -2125,7 +2355,7 @@ def write_take_manifest(
                         start_frame=durable_for_track,
                         frame_count=frame_count - durable_for_track,
                         reason="unverified_after_crash_checkpoint",
-                        channels=(0,),
+                        channels=tuple(range(max(1, observed_channel_count))),
                     ))
                     errors.append(
                         f"{track.name} contains {frame_count} frames, but only the "
@@ -2167,7 +2397,12 @@ def write_take_manifest(
                 "first_order": order,
                 "participant_id": participant_id,
                 "name": (
-                    f"{participant_name} Input {local_channel + 1}"
+                    (
+                        f"{participant_name} — {topology_item.display_name}"
+                        if topology_item is not None
+                        and topology_item.display_name
+                        else f"{participant_name} Input {local_channel + 1}"
+                    )
                     if local
                     else participant_name
                 ),
@@ -2180,6 +2415,7 @@ def write_take_manifest(
                     confidence=confidence if local else 1.0,
                     method=ALIGNMENT_METHOD if local else "jamulus-lof-v1",
                     reference_fingerprint_sha256=source_fingerprint,
+                    reference_playback_generation=playback_generation,
                 ),
             }
         else:
@@ -2213,6 +2449,15 @@ def write_take_manifest(
             segments=segments,
             alignment=group["alignment"],
         ))
+
+    for project_track in project_tracks:
+        try:
+            project_track.channel_count
+        except TakeProjectError:
+            errors.append(
+                f"{project_track.name} changes or exceeds the supported "
+                "mono/stereo channel layout across reconnect segments."
+            )
 
     grouped_server_tracks = sum(
         track.source_type is not SourceType.LOCAL_ISOLATED
@@ -2514,6 +2759,30 @@ def _safe_finite_float(value: object, default: float = 0.0) -> float:
     return result if math.isfinite(result) else default
 
 
+def _manifest_creator_profile_key(
+    manifest: Mapping[str, object],
+) -> tuple[str, str]:
+    """Return historical creator truth plus a safe reconciliation finding.
+
+    Schema-v1 takes and early schema-v2 takes have no creator-profile field;
+    they migrate to Music. An explicitly unsupported value must not silently
+    acquire Music terminology, so it yields an empty key for generic review
+    presentation and a validation error that keeps export fail-closed.
+    """
+
+    if "session" not in manifest or manifest.get("session") in (None, ""):
+        return "music", ""
+    session = manifest.get("session")
+    if not isinstance(session, Mapping):
+        return "", _UNSUPPORTED_CREATOR_PROFILE_ERROR
+    if "creator_profile_key" not in session:
+        return "music", ""
+    canonical = canonical_creator_profile_key(session.get("creator_profile_key"))
+    if canonical is None:
+        return "", _UNSUPPORTED_CREATOR_PROFILE_ERROR
+    return canonical, ""
+
+
 def load_take(take_dir: Path) -> Optional[TakeInfo]:
     """Build a TakeInfo from a single take folder.
 
@@ -2556,6 +2825,11 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
     declared_segment_paths: set[str] = set()
     invalid_schema_v2_tracks: set[str] = set()
     reconciliation_errors: list[str] = []
+    creator_profile_key, creator_profile_error = _manifest_creator_profile_key(
+        manifest
+    )
+    if creator_profile_error:
+        reconciliation_errors.append(creator_profile_error)
     if (take_dir / _RECORDING_STAGING_NAME).exists():
         reconciliation_errors.append(_INTERRUPTED_PUBLICATION_ERROR)
     raw_tracks = manifest.get("tracks", [])
@@ -2977,6 +3251,7 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
         export_block_reason=(
             EVIDENCE_ONLY_EXPORT_BLOCK_REASON if evidence_only else ""
         ),
+        creator_profile_key=creator_profile_key,
     )
 
 

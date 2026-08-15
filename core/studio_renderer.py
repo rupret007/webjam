@@ -66,6 +66,7 @@ from core.take_project import (
     ProjectStatus,
     ProjectTrack,
     TakeProject,
+    TakeProjectError,
 )
 
 
@@ -1122,6 +1123,13 @@ class StudioRenderer:
                     expected_root_identity = catalog_source.take_root_identity
                 except StudioSourceCatalogError as exc:
                     raise StudioRenderError(str(exc)) from exc
+            try:
+                source_track.channel_count
+            except TakeProjectError as exc:
+                raise StudioRenderError(
+                    "Studio cannot render a source whose reconnect segments "
+                    "change or exceed a mono/stereo channel layout."
+                ) from exc
             if region.source_end_frame > segment.frame_count:
                 raise StudioRenderError(
                     "Studio region extends beyond its cataloged source segment."

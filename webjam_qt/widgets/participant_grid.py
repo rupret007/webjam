@@ -21,6 +21,11 @@ from PySide6.QtWidgets import (
     QWidgetItem,
 )
 
+from core.creative_modes import (
+    CreatorProfile,
+    get_creator_profile_by_key_or_default,
+)
+from core.meeting_link import RECORD_SESSION_MEETING_CAPTURE_NOTICE
 from webjam_qt.theme.tokens import Space
 from webjam_qt.session_state import SessionUiState
 from webjam_qt.widgets.participant_card import ParticipantCard, ParticipantPresentation
@@ -87,7 +92,9 @@ class _FlowLayout(QLayout):
         for item in self._items:
             size = size.expandedTo(item.minimumSize())
         margins = self.contentsMargins()
-        size += QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+        size += QSize(
+            margins.left() + margins.right(), margins.top() + margins.bottom()
+        )
         return size
 
     def _do_layout(self, rect: QRect, *, test_only: bool) -> int:
@@ -130,8 +137,7 @@ class _FlowLayout(QLayout):
         minimum_tile_width = ParticipantCard.CARD_MIN_WIDTH
         columns_that_fit = max(
             1,
-            (available_width + self._h_space)
-            // (minimum_tile_width + self._h_space),
+            (available_width + self._h_space) // (minimum_tile_width + self._h_space),
         )
         columns = min(target_columns, columns_that_fit)
         rows = math.ceil(count / columns)
@@ -188,9 +194,9 @@ class ParticipantGrid(QScrollArea):
     """
 
     # Re-emitted from child ParticipantCards so the controller wires up once
-    fader_changed = Signal(int, int)    # channel_id, level
-    mute_toggled  = Signal(int, bool)   # channel_id, muted
-    solo_toggled  = Signal(int, bool)   # channel_id, solo
+    fader_changed = Signal(int, int)  # channel_id, level
+    mute_toggled = Signal(int, bool)  # channel_id, muted
+    solo_toggled = Signal(int, bool)  # channel_id, solo
     ready_check_requested = Signal()
     start_audio_requested = Signal()
     practice_requested = Signal()
@@ -199,6 +205,8 @@ class ParticipantGrid(QScrollArea):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        self._creator_profile = get_creator_profile_by_key_or_default("music")
+        self._last_session_state: SessionUiState | None = None
         self.setWidgetResizable(True)
         self.setFrameShape(QScrollArea.Shape.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -212,7 +220,9 @@ class ParticipantGrid(QScrollArea):
             v_spacing=Space.LG,
         )
         container.setLayout(self._flow)
-        container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        container.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
 
         self.setWidget(container)
 
@@ -220,6 +230,7 @@ class ParticipantGrid(QScrollArea):
         # The hero lobby card floats centered over the (empty) stage rather
         # than sitting in the flow layout, which packs children top-left.
         self._empty_state = self._build_empty_state(self.viewport())
+        self._sync_creator_controls()
         self.set_session_state(SessionUiState.idle())
 
     def _build_empty_state(self, parent: QWidget) -> QFrame:
@@ -278,6 +289,160 @@ class ParticipantGrid(QScrollArea):
         layout.addLayout(actions)
         layout.addWidget(self._empty_hint)
         return state
+
+    @property
+    def creator_profile(self) -> CreatorProfile:
+        """Return the canonical profile currently rendered by the grid."""
+
+        return self._creator_profile
+
+    def set_creator_profile(self, profile: CreatorProfile) -> None:
+        """Apply creator vocabulary without changing participant identities."""
+
+        if not isinstance(profile, CreatorProfile):
+            raise TypeError("profile must be a CreatorProfile")
+        self._creator_profile = profile
+        self._sync_creator_controls()
+        self._sync_participant_accessibility()
+        if self._last_session_state is not None:
+            self.set_session_state(self._last_session_state)
+        else:
+            self._center_empty_state()
+
+    def _sync_creator_controls(self) -> None:
+        profile = self._creator_profile
+        vocabulary = profile.vocabulary
+        self.setAccessibleName(f"{profile.label} participant mixer grid")
+        self._empty_primary.setAccessibleName(f"Start the {vocabulary.session_noun}")
+        if profile.key == "music":
+            practice_text = "Practice Solo"
+            practice_accessible = "Start a private practice session"
+            check_text = "Run Band Check"
+        elif profile.key == "podcast_voice":
+            practice_text = "Solo Voice"
+            practice_accessible = "Start a private solo voice session"
+            check_text = "Run Sound Check"
+        else:
+            practice_text = "Private Review"
+            practice_accessible = "Start a private review session"
+            check_text = "Run Session Check"
+        self._empty_practice.setText(practice_text)
+        self._empty_practice.setAccessibleName(practice_accessible)
+        self._empty_ready.setText(check_text)
+        self._empty_ready.setAccessibleName(check_text)
+
+    def _sync_participant_accessibility(self) -> None:
+        count = len(self._cards)
+        vocabulary = self._creator_profile.vocabulary
+        participant_label = (
+            vocabulary.participant_singular
+            if count == 1
+            else vocabulary.participant_plural
+        )
+        self.setAccessibleDescription(f"{count} {participant_label} connected.")
+
+    def _profile_text(self, value: str) -> str:
+        """Translate legacy music copy at the final widget boundary."""
+
+        text = str(value or "")
+        profile = self._creator_profile
+        if profile.key == "music":
+            return text
+        if profile.key == "podcast_voice":
+            replacements = (
+                (
+                    "Start the session and invite your band.",
+                    "Start the recording session and invite speakers.",
+                ),
+                (
+                    "Start the session to join your band.",
+                    "Start the session to join the recording.",
+                ),
+                ("Connecting to your band…", "Connecting to the speakers…"),
+                (
+                    "This local session is private and does not connect to your band.",
+                    "This local session is private and does not connect to other speakers.",
+                ),
+                (
+                    "Your band needs to hear your instrument. macOS will ask for access next.",
+                    "Other speakers need to hear your microphone. macOS will ask "
+                    "for access next.",
+                ),
+                ("Try Leave Jam", "Try Leave Session"),
+                ("Leave Jam", "Leave Session"),
+                ("Enter Jam", "Enter Session"),
+                ("Band Check", "Sound Check"),
+                ("band audio", "WebJam audio"),
+                ("Band audio", "WebJam audio"),
+                ("private band session", "private recording session"),
+                ("Private band session", "Private recording session"),
+                ("your band", "your speakers"),
+                ("Your band", "Your speakers"),
+                ("the band", "the speakers"),
+                ("The band", "The speakers"),
+                ("bandmate", "speaker"),
+                ("Bandmate", "Speaker"),
+                ("musicians", "speakers"),
+                ("Musicians", "Speakers"),
+                ("musician", "speaker"),
+                ("Musician", "Speaker"),
+                ("the jam", "the recording session"),
+                ("The jam", "The recording session"),
+                ("this jam", "this recording session"),
+                ("This jam", "This recording session"),
+                ("private practice", "private solo voice"),
+                ("Private practice", "Private solo voice"),
+                ("PRIVATE PRACTICE", "SOLO VOICE"),
+            )
+        else:
+            replacements = (
+                (
+                    "Start the session and invite your band.",
+                    "Start the review session and invite participants.",
+                ),
+                (
+                    "Start the session to join your band.",
+                    "Start the session to join the review.",
+                ),
+                ("Connecting to your band…", "Connecting to the participants…"),
+                (
+                    "This local session is private and does not connect to your band.",
+                    "This local session is private and does not connect to other participants.",
+                ),
+                (
+                    "Your band needs to hear your instrument. macOS will ask for access next.",
+                    "Participants need to hear your WebJam audio. macOS will ask "
+                    "for microphone access next.",
+                ),
+                ("Try Leave Jam", "Try Leave Session"),
+                ("Leave Jam", "Leave Session"),
+                ("Enter Jam", "Enter Review"),
+                ("Band Check", "Session Check"),
+                ("band audio", "WebJam audio"),
+                ("Band audio", "WebJam audio"),
+                ("private band session", "private review session"),
+                ("Private band session", "Private review session"),
+                ("your band", "the participants"),
+                ("Your band", "The participants"),
+                ("the band", "the participants"),
+                ("The band", "The participants"),
+                ("bandmate", "participant"),
+                ("Bandmate", "Participant"),
+                ("musicians", "participants"),
+                ("Musicians", "Participants"),
+                ("musician", "participant"),
+                ("Musician", "Participant"),
+                ("the jam", "the review session"),
+                ("The jam", "The review session"),
+                ("this jam", "this review session"),
+                ("This jam", "This review session"),
+                ("private practice", "private review"),
+                ("Private practice", "Private review"),
+                ("PRIVATE PRACTICE", "PRIVATE REVIEW"),
+            )
+        for source, replacement in replacements:
+            text = text.replace(source, replacement)
+        return text
 
     def _center_empty_state(self) -> None:
         """Keep the hero card optically centered over the stage viewport."""
@@ -347,19 +512,23 @@ class ParticipantGrid(QScrollArea):
                 self._add_card(presentation)
         self._empty_state.setVisible(not bool(incoming))
         self._center_empty_state()
-        self.setAccessibleDescription(
-            f"{len(incoming)} musician{'s' if len(incoming) != 1 else ''} connected."
-        )
+        vocabulary = self._creator_profile.vocabulary
+        self._sync_participant_accessibility()
         joined = [
-            item.name for channel_id, item in incoming.items()
+            item.name
+            for channel_id, item in incoming.items()
             if channel_id not in previous_names
         ]
         left = [
-            name for channel_id, name in previous_names.items()
+            name
+            for channel_id, name in previous_names.items()
             if channel_id not in incoming
         ]
-        messages = [f"{name} joined the jam." for name in joined]
-        messages.extend(f"{name} left the jam." for name in left)
+        session_label = (
+            "jam" if self._creator_profile.key == "music" else vocabulary.session_noun
+        )
+        messages = [f"{name} joined the {session_label}." for name in joined]
+        messages.extend(f"{name} left the {session_label}." for name in left)
         if messages and self.isVisible():
             self._announce(" ".join(messages))
         self.participants_changed.emit()
@@ -379,6 +548,20 @@ class ParticipantGrid(QScrollArea):
         primary_action: str = "start",
     ) -> None:
         """Show persistent session truth when no real participants exist."""
+        title = self._profile_text(title)
+        message = self._profile_text(message)
+        primary_text = self._profile_text(primary_text)
+        hint = self._profile_text(hint)
+        if self._creator_profile.is_preview and (
+            not hint
+            or "separate tracks" in hint.casefold()
+            or "multitrack" in hint.casefold()
+        ):
+            hint = (
+                f"Preview: {RECORD_SESSION_MEETING_CAPTURE_NOTICE} Notes stay "
+                "local and are not shared. Visual media and media timecode are "
+                "not synchronized."
+            )
         self._empty_state.setProperty("sessionState", state)
         phase_labels = {
             "not_connected": "READY",
@@ -389,9 +572,12 @@ class ParticipantGrid(QScrollArea):
             "ending": "ENDING",
             "ended": "ENDED",
         }
-        self._empty_eyebrow.setText(
+        eyebrow = self._profile_text(
             phase_labels.get(state, state.replace("_", " ").upper())
         )
+        if self._creator_profile.is_preview:
+            eyebrow = f"PREVIEW · {eyebrow}"
+        self._empty_eyebrow.setText(eyebrow)
         self._empty_title.setText(title)
         self._empty_message.setText(message)
         # Escape "&": QPushButton treats it as a mnemonic marker.
@@ -403,7 +589,14 @@ class ParticipantGrid(QScrollArea):
         self._empty_practice.setVisible(show_practice)
         self._empty_hint.setText(hint)
         self._empty_hint.setVisible(bool(hint))
-        self._empty_state.setAccessibleDescription(f"{title}. {message}")
+        accessible_parts = [title, message]
+        if self._creator_profile.is_preview:
+            accessible_parts.insert(0, f"{self._creator_profile.label} Preview")
+            if hint:
+                accessible_parts.append(hint)
+        self._empty_state.setAccessibleDescription(
+            ". ".join(part.rstrip(".") for part in accessible_parts) + "."
+        )
         self._empty_state.setVisible(not bool(self._cards))
         style = self._empty_state.style()
         style.unpolish(self._empty_state)
@@ -412,6 +605,7 @@ class ParticipantGrid(QScrollArea):
 
     def set_session_state(self, state: SessionUiState) -> None:
         """Render a centralized Live-workspace state snapshot."""
+        self._last_session_state = state
         self.set_empty_state(
             state.phase.value,
             state.title,

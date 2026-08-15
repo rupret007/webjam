@@ -12,6 +12,8 @@ import pytest
 
 import core.song_project_store as store_module
 from core.song_project import (
+    LEGACY_SONG_PROJECT_SCHEMA_VERSION,
+    SONG_PROJECT_SCHEMA_VERSION,
     InputMapping,
     MediaImportMethod,
     MediaProvenance,
@@ -73,12 +75,18 @@ def _write_wav(
     return path.read_bytes()
 
 
-def _create(tmp_path: Path, label: str = "Song With Spaces"):
+def _create(
+    tmp_path: Path,
+    label: str = "Song With Spaces",
+    *,
+    creator_profile_key: str = "music",
+):
     bundle = tmp_path / f"{label}.webjam"
     saved = create_project_bundle(
         bundle,
         label,
         project_id=_id(f"project:{label}"),
+        creator_profile_key=creator_profile_key,
     )
     return bundle, saved
 
@@ -110,6 +118,100 @@ def test_create_and_load_project_with_spaces_is_read_only_and_take_independent(
     assert "take_id" not in manifest
     assert "session_id" not in manifest
     assert (bundle / "Media").is_dir()
+
+
+def test_creator_profile_survives_primary_backup_autosave_recovery_and_save_as(
+    tmp_path: Path,
+) -> None:
+    bundle, created = _create(
+        tmp_path,
+        "Podcast Session",
+        creator_profile_key="podcast_voice",
+    )
+    primary = json.loads(created.manifest_path.read_bytes())
+    assert primary["schema_version"] == SONG_PROJECT_SCHEMA_VERSION
+    assert primary["creator_profile_key"] == "podcast_voice"
+
+    edited = created.project.add_track(
+        "Host Mic",
+        track_id=_id("podcast:host-mic"),
+    )
+    candidate = write_project_autosave(
+        bundle,
+        edited,
+        base_primary_token=created.token,
+    )
+    autosave = json.loads(candidate.path.read_bytes())
+    assert autosave["project"]["creator_profile_key"] == "podcast_voice"
+    offered = load_project_bundle(bundle).recovery_candidate
+    assert offered is not None
+    assert offered.project.creator_profile_key == "podcast_voice"
+
+    recovered = recover_project_autosave(bundle, expected_token=created.token)
+    assert recovered.project.creator_profile_key == "podcast_voice"
+    assert json.loads(recovered.manifest_path.read_bytes())[
+        "creator_profile_key"
+    ] == "podcast_voice"
+    assert recovered.backup_path is not None
+    assert json.loads(recovered.backup_path.read_bytes())[
+        "creator_profile_key"
+    ] == "podcast_voice"
+
+    destination = tmp_path / "Podcast Copy.webjam"
+    cloned = save_project_as(
+        bundle,
+        destination,
+        recovered.project,
+        expected_token=recovered.token,
+        new_project_id=_id("podcast:save-as"),
+    )
+    assert cloned.project.creator_profile_key == "podcast_voice"
+    assert json.loads(cloned.manifest_path.read_bytes())[
+        "creator_profile_key"
+    ] == "podcast_voice"
+
+
+def test_schema_one_bundle_migrates_to_music_only_on_explicit_save(
+    tmp_path: Path,
+) -> None:
+    bundle, created = _create(tmp_path, "Legacy Song")
+    legacy = json.loads(created.manifest_path.read_bytes())
+    legacy["schema_version"] = LEGACY_SONG_PROJECT_SCHEMA_VERSION
+    legacy.pop("creator_profile_key")
+    legacy_bytes = (json.dumps(legacy, indent=2) + "\n").encode("utf-8")
+    created.manifest_path.write_bytes(legacy_bytes)
+
+    loaded = load_project_bundle(bundle)
+
+    assert loaded.project.schema_version == SONG_PROJECT_SCHEMA_VERSION
+    assert loaded.project.creator_profile_key == "music"
+    assert created.manifest_path.read_bytes() == legacy_bytes
+
+    saved = save_project_bundle(
+        bundle,
+        loaded.project.rename("Migrated Song"),
+        expected_token=loaded.token,
+    )
+    current = json.loads(saved.manifest_path.read_bytes())
+    assert current["schema_version"] == SONG_PROJECT_SCHEMA_VERSION
+    assert current["creator_profile_key"] == "music"
+    assert saved.backup_path is not None
+    assert saved.backup_path.read_bytes() == legacy_bytes
+
+
+def test_unknown_creator_profile_in_manifest_fails_closed_without_rewrite(
+    tmp_path: Path,
+) -> None:
+    _bundle, created = _create(tmp_path, "Tampered Project")
+    value = json.loads(created.manifest_path.read_bytes())
+    value["creator_profile_key"] = "not_a_supported_profile"
+    tampered = (json.dumps(value) + "\n").encode("utf-8")
+    created.manifest_path.write_bytes(tampered)
+
+    with pytest.raises(SongProjectStoreError, match="creator_profile_key"):
+        load_project_bundle(created.bundle_path)
+
+    assert created.manifest_path.read_bytes() == tampered
 
 
 def test_new_bundle_rejects_nonempty_directory_and_file(tmp_path: Path) -> None:

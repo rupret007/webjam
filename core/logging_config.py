@@ -4,17 +4,46 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from core.redaction import redact_mapping, redact_text
+from core.redaction import redact_log_text, redact_log_value, redact_telemetry_mapping
 from core.settings import AppSettings
 
 
 class _RedactionFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         try:
-            record.msg = redact_text(record.getMessage())
+            # Sanitize typed arguments before interpolation.  Flattening first
+            # loses the distinction between a harmless diagnostic string and a
+            # private ``Path`` or an OS exception that embeds one.
+            if isinstance(record.args, dict):
+                record.args = {
+                    str(field): redact_log_value(value)
+                    for field, value in record.args.items()
+                }
+            elif isinstance(record.args, tuple):
+                record.args = tuple(redact_log_value(value) for value in record.args)
+            else:
+                record.args = redact_log_value(record.args)
+            message = redact_log_text(record.getMessage())
+            if record.exc_info:
+                exception_type = record.exc_info[0]
+                category = getattr(exception_type, "__name__", "Exception")
+                message = f"{message} [exception_type={category}]"
+            record.msg = message
             record.args = ()
+            # A standard traceback contains absolute source paths, and raw
+            # exception text frequently contains musician-selected media paths.
+            # Keep the category above; never serialize either path-bearing body.
+            record.exc_info = None
+            record.exc_text = None
+            record.stack_info = None
         except Exception:
-            pass
+            # Redaction must fail closed even if a hostile object's formatter or
+            # ``__str__`` raises.  Retain only a bounded diagnostic category.
+            record.msg = "[redacted-log-record]"
+            record.args = ()
+            record.exc_info = None
+            record.exc_text = None
+            record.stack_info = None
         return True
 
 
@@ -29,7 +58,11 @@ def configure_logging(settings: AppSettings) -> logging.Logger:
     )
     redaction_filter = _RedactionFilter()
 
-    if not any(isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler) for handler in logger.handlers):
+    if not any(
+        isinstance(handler, logging.StreamHandler)
+        and not isinstance(handler, logging.FileHandler)
+        for handler in logger.handlers
+    ):
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(formatter)
         stream_handler.addFilter(redaction_filter)
@@ -67,12 +100,12 @@ def configure_sentry(settings: AppSettings) -> None:
         # bundles immediately before the SDK serializes the event.
         if not isinstance(event, dict):
             return None
-        return redact_mapping(event)
+        return redact_telemetry_mapping(event)
 
     def before_breadcrumb(crumb, _hint):
         if not isinstance(crumb, dict):
             return None
-        return redact_mapping(crumb)
+        return redact_telemetry_mapping(crumb)
 
     sentry_sdk.init(
         dsn=settings.sentry_dsn,

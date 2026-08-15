@@ -32,11 +32,116 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.creative_modes import CreatorProfile, get_creator_profile_by_key
 from webjam_qt.theme.tokens import Space
 
 _MAX_ROWS = 32
 _MAX_CAPTURE_CHANNELS = 32
 _MAX_NAME_CHARS = 128
+
+
+def _resolve_creator_profile(
+    creator_profile: CreatorProfile | str | None,
+) -> CreatorProfile:
+    if creator_profile is None:
+        profile = get_creator_profile_by_key("music")
+    elif isinstance(creator_profile, CreatorProfile):
+        profile = get_creator_profile_by_key(creator_profile.key)
+    elif isinstance(creator_profile, str):
+        profile = get_creator_profile_by_key(creator_profile)
+    else:
+        raise TypeError("creator_profile must be a CreatorProfile or profile key.")
+    if profile is None:
+        raise ValueError("creator profile is unsupported.")
+    return profile
+
+
+def _profile_copy(profile: CreatorProfile) -> dict[str, str]:
+    if profile.key == "podcast_voice":
+        return {
+            "title": "Voice Input Tracks",
+            "subtitle": (
+                "Name the local voice inputs Record Session captures as isolated "
+                "Local Originals. Voice tracks record on your interface's inputs "
+                "in this order; a stereo voice track uses two inputs. Up to 32 "
+                "enabled Local Original input channels are supported. Leave this "
+                "empty to keep the legacy two-input Local Original fallback "
+                "(inputs 1–2)."
+            ),
+            "placeholder": "Voice track name (e.g. Host Mic)",
+            "name_accessible": "Voice input track name",
+            "enable_accessible": "Enable this voice input track",
+            "local_accessible": (
+                "Keep this voice track as an isolated Local Original"
+            ),
+            "remove_accessible": "Remove this voice input track",
+            "scroll_accessible": "Configured voice input tracks",
+            "add_text": "Add Voice Track",
+            "add_accessible": "Add a voice input track",
+            "save_text": "Save Voice Tracks",
+            "row_limit": "Up to 32 voice input tracks are supported.",
+            "item_title": "Voice track",
+            "item_plural": "voice tracks",
+            "channel_limit": (
+                "Enabled Local Originals use more than 32 input channels. "
+                "Disable a voice track or change a stereo voice track to mono."
+            ),
+        }
+    if profile.key == "review_rehearsal":
+        return {
+            "title": "Input Sources",
+            "subtitle": (
+                "Name the local audio sources Record Session captures as isolated "
+                "Local Originals. Sources record on your interface's inputs in "
+                "this order; a stereo source uses two inputs. Up to 32 enabled "
+                "Local Original input channels are supported. Leave this empty "
+                "to keep the legacy two-input Local Original fallback "
+                "(inputs 1–2)."
+            ),
+            "placeholder": "Source name (e.g. Room Mic)",
+            "name_accessible": "Input source name",
+            "enable_accessible": "Enable this input source",
+            "local_accessible": "Keep this source as an isolated Local Original",
+            "remove_accessible": "Remove this input source",
+            "scroll_accessible": "Configured input sources",
+            "add_text": "Add Source",
+            "add_accessible": "Add an input source",
+            "save_text": "Save Sources",
+            "row_limit": "Up to 32 input sources are supported.",
+            "item_title": "Source",
+            "item_plural": "sources",
+            "channel_limit": (
+                "Enabled Local Originals use more than 32 input channels. "
+                "Disable a source or change a stereo source to mono."
+            ),
+        }
+    # Preserve the shipped Music wording exactly.
+    return {
+        "title": "Input Tracks",
+        "subtitle": (
+            "Name the local inputs Record Session captures as isolated Local "
+            "Originals. Tracks record on your interface's inputs in this "
+            "order; a stereo track uses two inputs. Up to 32 enabled Local "
+            "Original input channels are supported. Leave this empty to keep "
+            "the default two isolated stems."
+        ),
+        "placeholder": "Track name (e.g. Guitar DI)",
+        "name_accessible": "Input track name",
+        "enable_accessible": "Enable this input track",
+        "local_accessible": "Keep this track as an isolated Local Original",
+        "remove_accessible": "Remove this input track",
+        "scroll_accessible": "Configured input tracks",
+        "add_text": "Add Track",
+        "add_accessible": "Add an input track",
+        "save_text": "Save Input Tracks",
+        "row_limit": "Up to 32 input tracks are supported.",
+        "item_title": "Track",
+        "item_plural": "tracks",
+        "channel_limit": (
+            "Enabled Local Originals use more than 32 input channels. Disable "
+            "a track or change a stereo track to mono."
+        ),
+    }
 
 
 class _InputMapRow(QWidget):
@@ -46,8 +151,12 @@ class _InputMapRow(QWidget):
         self,
         entry: Optional[dict] = None,
         parent: Optional[QWidget] = None,
+        *,
+        creator_profile: CreatorProfile | str | None = None,
     ) -> None:
         super().__init__(parent)
+        profile = _resolve_creator_profile(creator_profile)
+        profile_copy = _profile_copy(profile)
         entry = entry or {}
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -55,8 +164,8 @@ class _InputMapRow(QWidget):
 
         self._name = QLineEdit(str(entry.get("name", "") or ""))
         self._name.setMaxLength(_MAX_NAME_CHARS)
-        self._name.setPlaceholderText("Track name (e.g. Guitar DI)")
-        self._name.setAccessibleName("Input track name")
+        self._name.setPlaceholderText(profile_copy["placeholder"])
+        self._name.setAccessibleName(profile_copy["name_accessible"])
 
         self._channels = QComboBox()
         self._channels.addItem("Mono", 1)
@@ -68,19 +177,17 @@ class _InputMapRow(QWidget):
 
         self._enabled = QCheckBox("On")
         self._enabled.setChecked(bool(entry.get("enabled", True)))
-        self._enabled.setAccessibleName("Enable this input track")
+        self._enabled.setAccessibleName(profile_copy["enable_accessible"])
 
         self._local_original = QCheckBox("Local Original")
         self._local_original.setChecked(
             bool(entry.get("local_original_enabled", True))
         )
-        self._local_original.setAccessibleName(
-            "Keep this track as an isolated Local Original"
-        )
+        self._local_original.setAccessibleName(profile_copy["local_accessible"])
 
         self._remove = QPushButton("Remove")
         self._remove.setObjectName("GhostButton")
-        self._remove.setAccessibleName("Remove this input track")
+        self._remove.setAccessibleName(profile_copy["remove_accessible"])
 
         layout.addWidget(self._name, stretch=1)
         layout.addWidget(self._channels)
@@ -104,9 +211,15 @@ class InputMapEditorDialog(QDialog):
         self,
         input_maps: Optional[list] = None,
         parent: Optional[QWidget] = None,
+        *,
+        creator_profile: CreatorProfile | str | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Input Tracks")
+        self._creator_profile = _resolve_creator_profile(creator_profile)
+        self._profile_copy = _profile_copy(self._creator_profile)
+        self.setWindowTitle(self._profile_copy["title"])
+        self.setAccessibleName(self._profile_copy["title"])
+        self.setAccessibleDescription(self._profile_copy["subtitle"])
         self.setModal(True)
         self._rows: list[_InputMapRow] = []
         self._result_maps: list[dict] = []
@@ -115,15 +228,9 @@ class InputMapEditorDialog(QDialog):
         root.setContentsMargins(Space.LG, Space.LG, Space.LG, Space.LG)
         root.setSpacing(Space.SM)
 
-        title = QLabel("Input Tracks")
+        title = QLabel(self._profile_copy["title"])
         title.setObjectName("SimpleSettingsTitle")
-        subtitle = QLabel(
-            "Name the local inputs Record Session captures as isolated Local "
-            "Originals. Tracks record on your interface's inputs in this "
-            "order; a stereo track uses two inputs. Up to 32 enabled Local "
-            "Original input channels are supported. Leave this empty to keep "
-            "the default two isolated stems."
-        )
+        subtitle = QLabel(self._profile_copy["subtitle"])
         subtitle.setObjectName("SimpleSettingsSubtitle")
         subtitle.setWordWrap(True)
         root.addWidget(title)
@@ -135,7 +242,9 @@ class InputMapEditorDialog(QDialog):
         self._rows_container.setSpacing(Space.XS)
         self._rows_scroll = QScrollArea()
         self._rows_scroll.setObjectName("InputTrackScroll")
-        self._rows_scroll.setAccessibleName("Configured input tracks")
+        self._rows_scroll.setAccessibleName(
+            self._profile_copy["scroll_accessible"]
+        )
         self._rows_scroll.setWidgetResizable(True)
         self._rows_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._rows_scroll.setHorizontalScrollBarPolicy(
@@ -149,9 +258,9 @@ class InputMapEditorDialog(QDialog):
             if isinstance(entry, dict):
                 self._add_row(entry)
 
-        self._add_btn = QPushButton("Add Track")
+        self._add_btn = QPushButton(self._profile_copy["add_text"])
         self._add_btn.setObjectName("GhostButton")
-        self._add_btn.setAccessibleName("Add an input track")
+        self._add_btn.setAccessibleName(self._profile_copy["add_accessible"])
         self._add_btn.clicked.connect(lambda: self._add_row())
         root.addWidget(self._add_btn)
         self._sync_add_enabled()
@@ -168,7 +277,7 @@ class InputMapEditorDialog(QDialog):
         cancel = QPushButton("Cancel")
         cancel.setObjectName("GhostButton")
         cancel.clicked.connect(self.reject)
-        save = QPushButton("Save Input Tracks")
+        save = QPushButton(self._profile_copy["save_text"])
         save.setObjectName("PrimaryButton")
         save.setDefault(True)
         save.clicked.connect(self._save)
@@ -179,9 +288,9 @@ class InputMapEditorDialog(QDialog):
 
     def _add_row(self, entry: Optional[dict] = None) -> None:
         if len(self._rows) >= _MAX_ROWS:
-            self._show_error("Up to 32 input tracks are supported.")
+            self._show_error(self._profile_copy["row_limit"])
             return
-        row = _InputMapRow(entry)
+        row = _InputMapRow(entry, creator_profile=self._creator_profile)
         row._remove.clicked.connect(lambda: self._remove_row(row))
         self._rows.append(row)
         self._rows_container.addWidget(row)
@@ -215,18 +324,20 @@ class InputMapEditorDialog(QDialog):
         for index, row in enumerate(self._rows):
             entry = row.to_entry()
             name = entry["name"]
+            item_title = self._profile_copy["item_title"]
             if not name:
-                return False, f"Track {index + 1} needs a name.", []
+                return False, f"{item_title} {index + 1} needs a name.", []
             if len(name) > _MAX_NAME_CHARS:
-                return False, f"Track {index + 1}'s name is too long.", []
+                return False, f"{item_title} {index + 1}'s name is too long.", []
             if any(ord(char) < 0x20 or ord(char) == 0x7F for char in name):
                 return (
                     False,
-                    f"Track {index + 1}'s name has invalid characters.",
+                    f"{item_title} {index + 1}'s name has invalid characters.",
                     [],
                 )
             if name.casefold() in seen:
-                return False, f"Two tracks are both named '{name}'.", []
+                item_plural = self._profile_copy["item_plural"]
+                return False, f"Two {item_plural} are both named '{name}'.", []
             seen.add(name.casefold())
             maps.append(entry)
             if entry["enabled"] and entry["local_original_enabled"]:
@@ -234,9 +345,7 @@ class InputMapEditorDialog(QDialog):
                 if selected_channels > _MAX_CAPTURE_CHANNELS:
                     return (
                         False,
-                        "Enabled Local Originals use more than 32 input "
-                        "channels. Disable a track or change a stereo track "
-                        "to mono.",
+                        self._profile_copy["channel_limit"],
                         [],
                     )
         return True, "", maps

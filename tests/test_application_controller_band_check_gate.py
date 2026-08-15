@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest import mock
 
@@ -9,6 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
 from core.band_check import BandCheckMode  # noqa: E402
+from core.creative_modes import get_creator_profile_by_key_or_default  # noqa: E402
 from core.jamulus_profile import (  # noqa: E402
     StartupAttemptRecord,
     StartupClientPhase,
@@ -189,6 +191,7 @@ def test_host_server_alone_does_not_turn_retry_gate_into_live_observe() -> None:
 
     assert captured["mode"] is BandCheckMode.PRE_SESSION
     assert captured["start_session_when_ready"] is True
+    assert captured["creator_profile_key"] == "music"
 
 
 def test_stale_inflight_verification_never_launches_new_settings() -> None:
@@ -652,6 +655,60 @@ def test_saved_local_original_preference_never_interrupts_later_host_take(
     controller.recording.on_record_requested.assert_called_once_with()
 
 
+def test_review_preview_direct_record_request_reaches_session_recorder(
+    tmp_path,
+) -> None:
+    controller = _bare_controller()
+    controller.settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        local_capture_choice_made=True,
+        last_creator_profile_key="review_rehearsal",
+    )
+    controller.window = SimpleNamespace(flash_message=mock.Mock())
+    controller.recording = SimpleNamespace(on_record_requested=mock.Mock())
+
+    controller._on_record_requested()
+
+    controller.recording.on_record_requested.assert_called_once_with()
+
+
+def test_profile_change_cannot_remove_active_stop_authority(tmp_path) -> None:
+    controller = _bare_controller()
+    controller.settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        local_capture_choice_made=True,
+    )
+    controller.window = SimpleNamespace(flash_message=mock.Mock())
+    controller.recording = SimpleNamespace(
+        phase=SimpleNamespace(value="recording"),
+        on_record_requested=mock.Mock(),
+    )
+    controller._recorder_armed = True
+    controller._server_recording = True
+    controller._shared_track_play_after_recording = ""
+    controller._reference_track = None
+    profile = get_creator_profile_by_key_or_default("review_rehearsal")
+    no_new_recording = replace(
+        profile,
+        capabilities=replace(
+            profile.capabilities,
+            session_recording=False,
+        ),
+    )
+
+    with mock.patch.object(
+        ApplicationController,
+        "creator_profile",
+        new_callable=mock.PropertyMock,
+        return_value=no_new_recording,
+    ):
+        controller._on_record_requested()
+
+    controller.recording.on_record_requested.assert_called_once_with()
+
+
 def test_record_session_starts_ready_shared_track_after_recorder_confirmation(
     tmp_path,
 ) -> None:
@@ -696,6 +753,85 @@ def test_record_session_starts_ready_shared_track_after_recorder_confirmation(
     assert controller._shared_track_play_after_recording == ""
 
 
+def test_failed_prestart_retry_replans_the_ready_shared_track(tmp_path) -> None:
+    controller = _bare_controller()
+    controller.settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        local_capture_choice_made=True,
+    )
+    planner = mock.Mock()
+    controller.window = SimpleNamespace(
+        recording_studio=SimpleNamespace(export_in_progress=False),
+        flash_message=mock.Mock(),
+    )
+    controller.recording = SimpleNamespace(
+        phase=SimpleNamespace(value="error"),
+        on_record_requested=mock.Mock(),
+        plan_shared_track_for_next_take=planner,
+    )
+    controller._recorder_armed = False
+    controller._server_recording = False
+    controller._shared_track_play_after_recording = ""
+    controller._reference_track = SimpleNamespace(
+        snapshot=SimpleNamespace(
+            loaded=True,
+            state=SimpleNamespace(value="ready"),
+            can_play=True,
+            active=False,
+        )
+    )
+    controller._shutdown_cleanup_blocks_action = mock.Mock(return_value=False)
+
+    controller._on_record_requested()
+
+    planner.assert_called_once_with(required=True)
+    assert controller._shared_track_play_after_recording == "play"
+    controller.recording.on_record_requested.assert_called_once_with()
+
+
+def test_record_refuses_loaded_shared_track_without_an_audio_route(tmp_path) -> None:
+    controller = _bare_controller()
+    controller.settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        local_capture_choice_made=True,
+    )
+    planner = mock.Mock()
+    controller.window = SimpleNamespace(
+        recording_studio=SimpleNamespace(export_in_progress=False),
+        flash_message=mock.Mock(),
+    )
+    controller.recording = SimpleNamespace(
+        phase=SimpleNamespace(value="idle"),
+        on_record_requested=mock.Mock(),
+        plan_shared_track_for_next_take=planner,
+    )
+    controller._recorder_armed = False
+    controller._server_recording = False
+    controller._shared_track_play_after_recording = "play"
+    controller._reference_track = SimpleNamespace(
+        snapshot=SimpleNamespace(
+            loaded=True,
+            state=SimpleNamespace(value="ready"),
+            can_play=False,
+            active=False,
+        )
+    )
+    controller._shutdown_cleanup_blocks_action = mock.Mock(return_value=False)
+    controller._show_actionable_error = mock.Mock()
+
+    controller._on_record_requested()
+
+    planner.assert_called_once_with(required=False)
+    controller.recording.on_record_requested.assert_not_called()
+    assert controller._shared_track_play_after_recording == ""
+    guidance = controller._show_actionable_error.call_args.kwargs
+    assert "No recorder was started" in guidance["what_failed"]
+    assert "remove the track" in guidance["next_action"]
+    assert "retry_callback" not in guidance
+
+
 def test_stop_recording_also_requests_independent_shared_track_teardown(
     tmp_path,
 ) -> None:
@@ -716,9 +852,7 @@ def test_stop_recording_also_requests_independent_shared_track_teardown(
     controller._recorder_armed = True
     controller._server_recording = True
     controller._shared_track_play_after_recording = "play"
-    controller._reference_track = SimpleNamespace(
-        snapshot=SimpleNamespace(active=True)
-    )
+    controller._reference_track = SimpleNamespace(snapshot=SimpleNamespace(active=True))
     controller._request_reference_track_teardown = mock.Mock()
     controller._shutdown_cleanup_blocks_action = mock.Mock(return_value=False)
 
@@ -1014,3 +1148,37 @@ def test_actionable_error_never_renders_paths_or_secrets() -> None:
     assert "do-not-show" not in rendered
     assert "/Users/alice" not in rendered
     assert "Save Support Bundle" in rendered
+
+
+def test_actionable_retry_runs_after_the_failing_stack_unwinds() -> None:
+    controller = _bare_controller()
+    controller.window = mock.Mock()
+    retry = mock.Mock()
+    retry_button = object()
+    close_button = object()
+
+    with (
+        mock.patch(
+            "webjam_qt.controllers.application_controller.QMessageBox"
+        ) as box_type,
+        mock.patch(
+            "webjam_qt.controllers.application_controller.QTimer.singleShot"
+        ) as single_shot,
+    ):
+        box = box_type.return_value
+        box.addButton.side_effect = (retry_button, close_button)
+        box.clickedButton.return_value = retry_button
+        controller._show_actionable_error(
+            "Retry test",
+            what_failed="The preflight failed.",
+            likely_cause="The session changed.",
+            next_action="Try again.",
+            retry_callback=retry,
+        )
+
+    retry.assert_not_called()
+    single_shot.assert_called_once()
+    delay, callback = single_shot.call_args.args
+    assert delay == 0
+    callback()
+    retry.assert_called_once_with()

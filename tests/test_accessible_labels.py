@@ -36,7 +36,7 @@ def test_helper_announces_exactly_what_it_displays(qt_app) -> None:
 def test_helper_keeps_an_escaped_ampersand_out_of_the_announcement(
     qt_app,
 ) -> None:
-    """"Bass && Drums" reads as one band name, not a keyboard mnemonic."""
+    """ "Bass && Drums" reads as one band name, not a keyboard mnemonic."""
 
     button = QPushButton()
 
@@ -72,6 +72,123 @@ def test_studio_transport_announces_its_current_action(qt_app) -> None:
         studio.deleteLater()
 
 
+def test_studio_edit_actions_announce_add_and_remove_states(qt_app) -> None:
+    """Compact labels may shorten, but must never reverse, the spoken action."""
+
+    from uuid import uuid4
+
+    from core.studio_project import (
+        StudioCrossfade,
+        StudioCycleRange,
+        StudioDocument,
+        StudioRegion,
+        StudioTrack,
+    )
+    from webjam_qt.widgets.studio_editing import (
+        StudioEditingContext,
+        StudioEditingToolbar,
+    )
+
+    take_id = str(uuid4())
+    track_id = str(uuid4())
+    first = StudioRegion(
+        region_id=str(uuid4()),
+        track_id=track_id,
+        source_take_id=take_id,
+        source_track_id=track_id,
+        source_segment_id=str(uuid4()),
+        source_frame_count=100,
+        timeline_frame_count=100,
+        fade_in_frames=5,
+        fade_out_frames=5,
+    )
+    second = StudioRegion(
+        region_id=str(uuid4()),
+        track_id=track_id,
+        source_take_id=take_id,
+        source_track_id=track_id,
+        source_segment_id=str(uuid4()),
+        source_frame_count=100,
+        timeline_start_frame=50,
+        timeline_frame_count=100,
+    )
+    crossfade = StudioCrossfade(
+        crossfade_id=str(uuid4()),
+        left_region_id=first.region_id,
+        right_region_id=second.region_id,
+        start_frame=50,
+        frame_count=50,
+    )
+    current = {
+        "document": StudioDocument(
+            session_id=str(uuid4()),
+            take_id=take_id,
+            tracks=(StudioTrack(track_id),),
+            regions=(first, second),
+            crossfades=(crossfade,),
+            cycle_range=StudioCycleRange(0, 100),
+        )
+    }
+    toolbar = StudioEditingToolbar(
+        context_provider=lambda: StudioEditingContext(
+            document=current["document"],
+            selected_region_id=first.region_id,
+            playhead_frame=0,
+            studio_visible=True,
+        ),
+        apply_edit=lambda _label, _edit, *, reload_audio: bool(reload_audio),
+    )
+    try:
+        toolbar.set_compact(True)
+        toolbar.refresh()
+
+        assert toolbar.cycle_region_button.text() == "Clear"
+        assert toolbar.cycle_region_button.accessibleName() == (
+            "Clear cycle range for selected region"
+        )
+        assert "clear" in toolbar.cycle_region_button.accessibleDescription().lower()
+        assert toolbar.region_fades_button.text() == "No Fades"
+        assert toolbar.region_fades_button.accessibleName() == (
+            "Remove fades from selected region"
+        )
+        assert "remove" in toolbar.region_fades_button.accessibleDescription().lower()
+        assert toolbar.crossfade_button.text() == "No Xfade"
+        assert toolbar.crossfade_button.accessibleName() == (
+            "Remove crossfade from selected overlapping regions"
+        )
+        assert "remove" in toolbar.crossfade_button.accessibleDescription().lower()
+
+        current["document"] = (
+            current["document"]
+            .set_cycle_range(None)
+            .set_region_fades(
+                first.region_id,
+                fade_in_frames=0,
+                fade_out_frames=0,
+            )
+            .remove_crossfade(crossfade.crossfade_id)
+        )
+        toolbar.refresh()
+
+        assert toolbar.cycle_region_button.text() == "Cycle"
+        assert toolbar.cycle_region_button.accessibleName() == (
+            "Set cycle range to selected region"
+        )
+        assert "loop" in toolbar.cycle_region_button.accessibleDescription().lower()
+        assert toolbar.region_fades_button.text() == "Fades"
+        assert toolbar.region_fades_button.accessibleName() == (
+            "Add fades to selected region"
+        )
+        assert "add" in toolbar.region_fades_button.accessibleDescription().lower()
+        assert toolbar.crossfade_button.text() == "Xfade"
+        assert toolbar.crossfade_button.accessibleName() == (
+            "Add crossfade to selected overlapping regions"
+        )
+        assert "add" in toolbar.crossfade_button.accessibleDescription().lower()
+    finally:
+        toolbar.deleteLater()
+
+
 def test_every_relabelled_control_uses_the_helper() -> None:
     """Guard the pattern, not just the three widgets fixed today.
 
@@ -86,6 +203,8 @@ def test_every_relabelled_control_uses_the_helper() -> None:
     tracked = {
         ("webjam_qt/windows/ready_check.py", "_primary"),
         ("webjam_qt/widgets/recording_studio.py", "_play_btn"),
+        ("webjam_qt/widgets/recording_studio.py", "_record_btn"),
+        ("webjam_qt/widgets/recording_studio.py", "_export_btn"),
         ("webjam_qt/widgets/recording_studio.py", "_reveal_btn"),
     }
     offenders = []

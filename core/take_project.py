@@ -375,6 +375,7 @@ class AlignmentState:
     # them as a fail-closed gate.
     reference_track_id: str = ""
     reference_fingerprint_sha256: str = ""
+    reference_playback_generation: int = 0
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -419,6 +420,20 @@ class AlignmentState:
             "reference_fingerprint_sha256",
             reference_fingerprint,
         )
+        reference_playback_generation = self.reference_playback_generation
+        if (
+            isinstance(reference_playback_generation, bool)
+            or not isinstance(reference_playback_generation, int)
+            or not 0 <= reference_playback_generation <= (1 << 63) - 1
+        ):
+            raise TakeProjectError(
+                "alignment.reference_playback_generation is outside the supported range."
+            )
+        object.__setattr__(
+            self,
+            "reference_playback_generation",
+            reference_playback_generation,
+        )
 
     @property
     def effective_offset_s(self) -> float:
@@ -450,6 +465,10 @@ class AlignmentState:
             payload["reference_fingerprint_sha256"] = (
                 self.reference_fingerprint_sha256
             )
+        if self.reference_playback_generation:
+            payload["reference_playback_generation"] = (
+                self.reference_playback_generation
+            )
         return payload
 
     @classmethod
@@ -471,6 +490,9 @@ class AlignmentState:
             reference_track_id=value.get("reference_track_id", ""),
             reference_fingerprint_sha256=value.get(
                 "reference_fingerprint_sha256", ""
+            ),
+            reference_playback_generation=value.get(
+                "reference_playback_generation", 0
             ),
         )
 
@@ -691,6 +713,26 @@ class ProjectTrack:
     @property
     def primary_segment(self) -> MediaSegment:
         return self.segments[0]
+
+    @property
+    def channel_count(self) -> int:
+        """Return the one supported channel width shared by all segments.
+
+        Reconnect media remains one logical source only when its topology is
+        stable. Callers that render or export must use this gate instead of
+        silently borrowing the first segment's width.
+        """
+
+        channels = {item.channels for item in self.segments}
+        if not channels.issubset({1, 2}):
+            raise TakeProjectError(
+                f"{self.name} contains an unsupported channel layout."
+            )
+        if len(channels) != 1:
+            raise TakeProjectError(
+                f"{self.name} changes channel layout between segments."
+            )
+        return channels.pop()
 
     @property
     def duration_s(self) -> float:
@@ -944,6 +986,9 @@ class SessionEvidence:
     # plan was constructed (older takes, or a binding failure that is
     # reported separately). Additive and optional for backward compat.
     recording_plan_fingerprint: str = ""
+    # Canonical creator workflow captured at record start. Older manifests
+    # migrate to Music; explicit legacy keys are normalized by the registry.
+    creator_profile_key: str = "music"
 
     def __post_init__(self) -> None:
         protocol_version = _safe_session_text(self.protocol_version, 80)
@@ -980,6 +1025,22 @@ class SessionEvidence:
                 timeline.append(SessionTimelineEvent.from_dict(item))
             else:
                 raise TakeProjectError("session.timeline entries must be events.")
+        recording_plan_fingerprint = str(
+            self.recording_plan_fingerprint or ""
+        ).strip().lower()
+        if recording_plan_fingerprint and not _SHA256_RE.fullmatch(
+            recording_plan_fingerprint
+        ):
+            raise TakeProjectError(
+                "session.recording_plan_fingerprint must be a SHA-256 digest."
+            )
+        from core.creative_modes import canonical_creator_profile_key
+
+        creator_profile_key = canonical_creator_profile_key(
+            self.creator_profile_key
+        )
+        if creator_profile_key is None:
+            raise TakeProjectError("session.creator_profile_key is unsupported.")
         object.__setattr__(self, "protocol_version", protocol_version)
         object.__setattr__(self, "started_utc", started_utc)
         object.__setattr__(self, "ended_utc", ended_utc)
@@ -987,6 +1048,12 @@ class SessionEvidence:
         object.__setattr__(self, "recovery_status", status)
         object.__setattr__(self, "recovery_notes", tuple(dict.fromkeys(notes)))
         object.__setattr__(self, "timeline", tuple(timeline))
+        object.__setattr__(
+            self,
+            "recording_plan_fingerprint",
+            recording_plan_fingerprint,
+        )
+        object.__setattr__(self, "creator_profile_key", creator_profile_key)
 
     @property
     def is_empty(self) -> bool:
@@ -998,6 +1065,8 @@ class SessionEvidence:
             and self.recovery_status is RecoveryStatus.NOT_NEEDED
             and not self.recovery_notes
             and not self.timeline
+            and not self.recording_plan_fingerprint
+            and self.creator_profile_key == "music"
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -1020,6 +1089,7 @@ class SessionEvidence:
             payload["recording_plan_fingerprint"] = (
                 self.recording_plan_fingerprint
             )
+        payload["creator_profile_key"] = self.creator_profile_key
         return payload
 
     @classmethod
@@ -1047,6 +1117,7 @@ class SessionEvidence:
             recording_plan_fingerprint=str(
                 value.get("recording_plan_fingerprint", "") or ""
             ),
+            creator_profile_key=value.get("creator_profile_key", "music"),
         )
 
 

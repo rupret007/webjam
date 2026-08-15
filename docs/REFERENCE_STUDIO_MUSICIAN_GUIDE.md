@@ -1,19 +1,25 @@
-# Reference Studio musician guide
+# Reference Studio creator guide
 
 Reference Studio is WebJam's standalone space for writing and rehearsing with
 a backing track. It can open without a WebJam session, Webex, or Jamulus. Its
 local playback and recording choices do not change the device, buffer, mix, or
 connection owned by Jamulus.
 
-> **Private test release guide:** this document describes Reference Studio in
-> immutable GitHub **Latest** v0.24.0. Always verify the exact downloaded asset
-> against the attached checksum manifest before use.
+> **v0.25.0 source candidate guide:** this document describes unpublished
+> source. Immutable GitHub **Latest** remains v0.24.0. Always verify an exact
+> downloaded asset against its attached checksum manifest before use.
 
 Windows packages are unsigned. Mac packages are ad-hoc signed and unnotarized.
 Automated checks do not prove that a particular interface, driver, speaker, or
 headphone path is
 audible; the physical hardware gates remain **NOT RUN** until recorded against
 the exact downloaded package hash.
+
+Music and Podcast & Voice are the GA standalone-project profiles. Podcast &
+Voice starts with its Host + Guest or Solo Voice mic preset, 48 kHz, time
+ruler, and count-in/metronome off. Review & Rehearsal is Preview and refuses
+standalone project create/open; its completed session takes can be played for
+read-only review, but not edited, comped, mix-mutated, or exported.
 
 ## Start a project
 
@@ -152,7 +158,7 @@ clipped-sample count, and deterministic RMS dBFS. RMS is not an integrated-LUFS
 mastering measurement. Treat clipping as a reason to lower track, effect, send,
 or master gain and bounce again.
 
-MP3 bounce is intentionally absent from the v0.24.0 private test release. It appears only
+MP3 bounce is intentionally absent from the v0.25.0 source candidate. It appears only
 if a separate encoder adapter has passed the product's identity,
 output-decoding,
 and license-policy self-tests. Use WAV or FLAC for a lossless handoff.

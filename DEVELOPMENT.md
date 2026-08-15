@@ -1,14 +1,13 @@
-# Developing WebJam v0.24.0
+# Developing WebJam v0.25.0
 
-> **Current release line:** this guide describes v0.24.0 recording-first,
-> configurable Local Original, Studio, and provider-neutral conversation
-> development. The exact v0.24.0 tag is the immutable GitHub **Latest** private
-> test release.
+> **Current source line:** this guide describes the unpublished v0.25.0
+> creator-profile and authoritative multitrack candidate. The exact v0.24.0
+> tag remains the immutable GitHub **Latest** private test release.
 
 > **Release boundary:** only the exact tagged v0.24.0 assets and attached
-> checksum manifest are authoritative for the current download. An untagged
-> checkout, branch artifact, or later documentation commit is not a release;
-> no v0.24.0 physical result exists yet.
+> checksum manifest are authoritative for the current download. No v0.25.0
+> tag, asset, checksum, or release identity exists yet; every v0.25 physical
+> result is **NOT RUN**.
 
 ## Local setup
 
@@ -25,7 +24,7 @@ Use the repository virtual environment:
 For Studio arrangement changes, run the focused model, persistence, history,
 controller, renderer, comping, waveform, export, and Qt integration modules in
 addition to the full suite. The physical-output and external-editor gates in
-`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.24.0.
+`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.25.0.
 
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
@@ -111,10 +110,10 @@ Linux/JACK real-Jamulus companion and its evidence boundary are documented in
 
 ## Integration rules
 
-- Launch Jamulus directly and visibly; do not use `--nogui` for the musician
+- Launch Jamulus directly and visibly; do not use `--nogui` for the participant
   client.
 - Use the supported dedicated `--inifile WebJam-native-v0.16.ini` contract.
-- Never write that profile’s content or the musician’s normal `Jamulus.ini`.
+- Never write that profile’s content or the user's normal `Jamulus.ini`.
 - Do not automate Jamulus through screen coordinates, pixel inspection, or
   window-text scraping.
 - JSON-RPC is for process, authentication, roster, connection, chat, and
@@ -124,13 +123,32 @@ Linux/JACK real-Jamulus companion and its evidence boundary are documented in
   joined/muted or provider-verification claim. Keep native publisher,
   installer, mute-guidance, and bring-forward work Webex-specific. Fully
   redact unknown-provider URLs and hostnames from logs and support mappings.
+- Do not add a direct or automatic meeting-app, browser, or system-output
+  capture path. Local Originals remain explicitly selected input devices; the
+  UI and docs must warn users not to route meeting or system-output audio into
+  those inputs. Meeting-service recording stays externally owned.
+- Treat `CreatorProfile.capabilities` as an enforced controller boundary, not
+  decorative copy. Music and Podcast & Voice are GA. Review & Rehearsal is
+  Preview: live session recording and read-only completed-take playback are
+  allowed; standalone projects, take editing/comp/mix mutation, track export,
+  shared notes, visual sync, and media timecode are blocked.
+- Keep local scratchpads profile-scoped and local-only. Fixed mode-0600 files,
+  regular-file/no-follow reads, and the 1 MiB ceiling must survive refactors;
+  no session synchronization or media-timecode semantics may be inferred.
 - Keep Local Originals behind explicit Recording Setup and Studio output in
   Studio.
+- Preserve logical mono/stereo identity from capture through recovery, take
+  loading, Studio, and export. One stereo map row is one two-channel PCM-24
+  file, not two named mono stems.
 - Keep Shared Track on the existing separately owned `WebJam Track` Jamulus
   participant. Do not add distributed local playback or a second transport.
-- Treat **Record Session** as one musician action but keep recorder, Shared
+- Treat **Record Session** as one creator action but keep recorder, Shared
   Track route, Local Original, transfer, validation, and publication ownership
   independently proved.
+- Freeze and recheck the exact take plan: roster/server stem IDs, Shared Track
+  fingerprint/playback generation, host topology, guest count/map obligations,
+  storage verdict, and expected source count. Never accept substitution,
+  under/over-delivery, or reconnect topology drift.
 - Never derive guest transport or audibility from a roster row. A bounded
   channel-presence observation is not playing, synchronized, isolated, or
   healthy evidence.
@@ -149,7 +167,7 @@ Linux/JACK real-Jamulus companion and its evidence boundary are documented in
 - UI surfaces render the shared snapshot and route semantic actions back to an
   owner. They must not start work while rendering.
 - Creative Pulse content stays local and cannot mutate conductor facts. No
-  cloud model, agent, or SDK belongs in the v0.24 release line.
+  cloud model, agent, or SDK belongs in the v0.25 release line.
 - Public consumers get only `to_public_dict()` followed by their own strict
   allowlist. Never add free-form copy, notes, names, channel IDs, addresses,
   devices, paths, invitations, credentials, tokens, or raw exceptions.
@@ -174,13 +192,17 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree's package identity is `0.24.0`. Its exact annotated tag,
-eight-asset inventory, checksums, exact-target component/fallback proof, tag CI,
-and protected promotion passed before it became the immutable GitHub
-**Latest** private test download. Windows remains unsigned and macOS remains
-ad-hoc signed and unnotarized. The v0.23.0 tag, asset inventory, checksums, tag
-CI, and protected promotion remain immutable historical release evidence and
-must not be reused.
+The source tree's package identity is `0.25.0`; it is not yet a release. Create
+no publisher with guessed tag objects, commits, CI runs, release IDs, body
+digests, inventory digests, asset IDs, sizes, or hashes. GitHub **Latest**
+remains immutable v0.24.0. After the exact annotated v0.25.0 tag builds all
+four targets and produces the reviewed eight-asset draft, record every live pin
+in the disabled v0.25 publisher, rerun its static tests, and only then use the
+protected promotion. Windows remains unsigned and macOS remains ad-hoc signed
+and unnotarized.
+
+The v0.24.0 tag, asset inventory, checksums, tag CI, and protected promotion
+remain immutable historical release evidence and must not be reused.
 Published v0.20.0, v0.21.0, v0.22.0, v0.22.1, v0.22.2, v0.22.3, v0.22.4,
 and v0.22.5 tags and assets remain immutable historical evidence and must never
 be overwritten or served under a moved tag.

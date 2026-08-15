@@ -97,7 +97,7 @@ class TestReadyCheckShortcut(unittest.TestCase):
     def test_visible_ready_check_button_exists_and_emits(self):
         strip = self.window.session_strip
         self.assertEqual(
-            strip._test_button.accessibleName(), "Band Check and solo practice"
+            strip._test_button.accessibleName(), "Band Check and Practice Solo"
         )
         self.assertEqual(strip._ready_action.text(), "Band Check\tF2")
         received = []

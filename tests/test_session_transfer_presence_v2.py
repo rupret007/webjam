@@ -12,6 +12,7 @@ from core.network_invite import BandInvite
 from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
 from core.session_transfer import (
     EnrollmentRegistry,
+    LocalOriginalObligation,
     PresenceBinding,
     PresenceV2Challenge,
     PresenceV2Proof,
@@ -83,6 +84,8 @@ def _bind(
     process_generation: int = 21,
     rpc_connection_generation: int = 22,
     audio_connection_generation: int = 23,
+    local_original_track_count: int | None = None,
+    local_original_map_fingerprint: str = "",
 ) -> PresenceV2Proof:
     return registry.bind_presence_v2(
         participant_id,
@@ -98,6 +101,8 @@ def _bind(
         topology_epoch=challenge.topology_epoch,
         presence_generation=presence_generation,
         capture_enabled=capture_enabled,
+        local_original_track_count=local_original_track_count,
+        local_original_map_fingerprint=local_original_map_fingerprint,
     )
 
 
@@ -114,9 +119,7 @@ def peer(tmp_path: Path):
         transfers=TransferStore(root, credentials.session_id),
     )
     server.start()
-    client = SessionPeerClient(
-        "127.0.0.1", server.address[1], credentials=credentials
-    )
+    client = SessionPeerClient("127.0.0.1", server.address[1], credentials=credentials)
     try:
         yield credentials, registry, server, client
     finally:
@@ -155,9 +158,7 @@ def frozen_peer(tmp_path: Path):
         transfers=TransferStore(root, credentials.session_id),
     )
     server.start()
-    client = SessionPeerClient(
-        "127.0.0.1", server.address[1], credentials=credentials
-    )
+    client = SessionPeerClient("127.0.0.1", server.address[1], credentials=credentials)
     try:
         yield credentials, registry, server, client
     finally:
@@ -209,9 +210,7 @@ def test_duplicate_or_changed_ordinal_claims_fail_closed(tmp_path: Path) -> None
     first = registry.enroll(_id(), "First", invite_token=credentials.invite_token)
     second = registry.enroll(_id(), "Second", invite_token=credentials.invite_token)
     challenge = _install(registry, _digest(), 2)
-    _bind(
-        registry, first.participant_id, challenge, ordinal=0, presence_generation=1
-    )
+    _bind(registry, first.participant_id, challenge, ordinal=0, presence_generation=1)
 
     # A first claimant cannot retain the ordinal after a second enrolled peer
     # collides with it. Neither cooperative claim can be distinguished, so the
@@ -258,9 +257,7 @@ def test_one_participant_changing_ordinal_poisoned_until_topology_change(
 ) -> None:
     credentials = SessionCredentials.create()
     registry = EnrollmentRegistry(tmp_path, credentials)
-    musician = registry.enroll(
-        _id(), "Musician", invite_token=credentials.invite_token
-    )
+    musician = registry.enroll(_id(), "Musician", invite_token=credentials.invite_token)
     challenge = _install(registry, _digest(), 2)
     _bind(
         registry,
@@ -286,9 +283,7 @@ def test_challenge_rotation_replay_and_generation_staleness_fail_closed(
 ) -> None:
     credentials = SessionCredentials.create()
     registry = EnrollmentRegistry(tmp_path, credentials)
-    musician = registry.enroll(
-        _id(), "Musician", invite_token=credentials.invite_token
-    )
+    musician = registry.enroll(_id(), "Musician", invite_token=credentials.invite_token)
     first_challenge = _install(registry, _digest(), 1)
     _bind(
         registry,
@@ -310,9 +305,7 @@ def test_challenge_rotation_replay_and_generation_staleness_fail_closed(
     # An identical proven roster is idempotent; a connection-generation change
     # rotates the challenge and immediately invalidates prior claims.
     assert _install(registry, _digest(), 1) == first_challenge
-    second_challenge = _install(
-        registry, _digest(), 1, audio_connection_generation=14
-    )
+    second_challenge = _install(registry, _digest(), 1, audio_connection_generation=14)
     assert second_challenge.challenge_epoch == first_challenge.challenge_epoch + 1
     assert second_challenge.challenge != first_challenge.challenge
     assert registry.recording_presence_snapshot() == ()
@@ -361,9 +354,7 @@ def test_expired_challenge_clears_claims_and_cannot_be_replayed(
         presence_clock=lambda: now[0],
         presence_v2_lease_s=2.0,
     )
-    musician = registry.enroll(
-        _id(), "Musician", invite_token=credentials.invite_token
-    )
+    musician = registry.enroll(_id(), "Musician", invite_token=credentials.invite_token)
     first = _install(registry, _digest(), 1)
     _bind(
         registry,
@@ -401,9 +392,7 @@ def test_fresh_challenge_never_reports_more_than_granted_lease(
 
     now = [_ULP_ARTIFACT_NOW]
     credentials = SessionCredentials.create()
-    registry = EnrollmentRegistry(
-        tmp_path, credentials, presence_clock=lambda: now[0]
-    )
+    registry = EnrollmentRegistry(tmp_path, credentials, presence_clock=lambda: now[0])
     created = _install(registry, _digest(), 1)
     assert created.lease_ms == 15_000
 
@@ -424,9 +413,7 @@ def test_private_host_roster_fingerprint_rotates_identical_public_roster(
     credentials = SessionCredentials.create()
     # The byte-identical-refresh assertion below compares whole challenges,
     # including the remaining lease; a frozen clock keeps that deterministic.
-    registry = EnrollmentRegistry(
-        tmp_path, credentials, presence_clock=lambda: 100.0
-    )
+    registry = EnrollmentRegistry(tmp_path, credentials, presence_clock=lambda: 100.0)
     musician = registry.enroll(
         _id(), "Same Name", invite_token=credentials.invite_token
     )
@@ -463,12 +450,15 @@ def test_private_host_roster_fingerprint_rotates_identical_public_roster(
         )
     # Byte-identical refresh is idempotent; an ordinary callback is not a
     # topology change and does not churn the authorization tuple.
-    assert _install(
-        registry,
-        second.ordered_roster_digest,
-        2,
-        host_roster_fingerprint=_digest("ordered-local-ids-b"),
-    ) == second
+    assert (
+        _install(
+            registry,
+            second.ordered_roster_digest,
+            2,
+            host_roster_fingerprint=_digest("ordered-local-ids-b"),
+        )
+        == second
+    )
 
 
 def test_unchanged_roster_rolls_leases_without_partial_snapshot_gap(
@@ -604,9 +594,7 @@ def test_unchanged_roster_rolls_leases_without_partial_snapshot_gap(
         ("protocol_version", 2.0),
     ),
 )
-def test_malformed_v2_proof_fields_are_rejected(
-    field: str, value: object
-) -> None:
+def test_malformed_v2_proof_fields_are_rejected(field: str, value: object) -> None:
     values = {
         "participant_id": _id(),
         "display_name": "Alex",
@@ -638,9 +626,7 @@ def test_malformed_v2_proof_fields_are_rejected(
         ("protocol_version", 2.0),
     ),
 )
-def test_malformed_v2_challenge_types_are_rejected(
-    field: str, value: object
-) -> None:
+def test_malformed_v2_challenge_types_are_rejected(field: str, value: object) -> None:
     values = {
         "ordered_roster_digest": _digest(),
         "roster_count": 1,
@@ -677,9 +663,12 @@ def test_presence_v2_reuses_canonical_256_row_roster_limit(tmp_path: Path) -> No
 
     credentials = SessionCredentials.create()
     registry = EnrollmentRegistry(tmp_path, credentials)
-    assert _install(
-        registry, _digest("maximum-roster"), MAX_JAMULUS_ROSTER_ROWS
-    ).roster_count == MAX_JAMULUS_ROSTER_ROWS
+    assert (
+        _install(
+            registry, _digest("maximum-roster"), MAX_JAMULUS_ROSTER_ROWS
+        ).roster_count
+        == MAX_JAMULUS_ROSTER_ROWS
+    )
     with pytest.raises(ValueError, match="supported limit"):
         _install(
             registry,
@@ -874,6 +863,8 @@ def test_guest_runtime_publishes_v2_only_from_explicit_ordered_observation(
     (first_proof,) = registry.recording_presence_snapshot()
     assert first_proof.challenge == first_challenge.challenge
     assert first_proof.capture_enabled is True
+    assert first_proof.local_original_track_count == 2
+    assert len(first_proof.local_original_map_fingerprint) == 64
     guest.observe_presence_v2(
         "Alex",
         ordered_roster_digest=digest,
@@ -888,9 +879,7 @@ def test_guest_runtime_publishes_v2_only_from_explicit_ordered_observation(
 
     # A new host audio connection is a new topology epoch. Cached local proof
     # is retired and cannot be re-signed until another exact RPC observation.
-    second_challenge = _install(
-        registry, digest, 1, audio_connection_generation=14
-    )
+    second_challenge = _install(registry, digest, 1, audio_connection_generation=14)
     guest.poll_once()
     assert registry.recording_presence_snapshot() == ()
     assert "fresh local" in guest.last_presence_v2_error
@@ -1100,9 +1089,8 @@ def test_identical_public_profiles_reject_guest_ordinal_and_mark_readiness(
     take_id = _id()
     host.begin_take(take_id, started_utc="2026-08-03T12:00:00Z")
     assert host._expected_by_take[take_id] == (guest_enrollment.participant_id,)
-    assert "readiness was incomplete" in host._presence_readiness_issue_by_take[
-        take_id
-    ]
+
+    assert "readiness was incomplete" in host._presence_readiness_issue_by_take[take_id]
 
 
 def test_take_expects_two_capture_guests_despite_both_legacy_local_zero(
@@ -1116,12 +1104,8 @@ def test_take_expects_two_capture_guests_despite_both_legacy_local_zero(
     host_enrollment = registry.enroll(
         _id(), "Host", invite_token=credentials.invite_token
     )
-    first_guest = registry.enroll(
-        _id(), "Alex", invite_token=credentials.invite_token
-    )
-    second_guest = registry.enroll(
-        _id(), "Alex", invite_token=credentials.invite_token
-    )
+    first_guest = registry.enroll(_id(), "Alex", invite_token=credentials.invite_token)
+    second_guest = registry.enroll(_id(), "Alex", invite_token=credentials.invite_token)
     # Both guests truthfully see local channel 0. Legacy UI/local-transfer
     # compatibility retains only the last claimant. The modelled full public
     # profiles differ even though the names match, so v2 can retain both
@@ -1229,9 +1213,7 @@ def test_take_expects_two_capture_guests_despite_both_legacy_local_zero(
     manifest = json.loads((take_dir / "webjam-take.json").read_text(encoding="utf-8"))
     transfer_rows = manifest["peer_transfers"]["participants"]
     assert {
-        row["participant_id"]
-        for row in transfer_rows
-        if row["status"] == "missing"
+        row["participant_id"] for row in transfer_rows if row["status"] == "missing"
     } == {first_guest.participant_id, second_guest.participant_id}
 
 
@@ -1376,3 +1358,310 @@ def test_take_begin_includes_capture_opt_in_from_incomplete_pending_lease(
     )
     host.finish_take(take_id, stopped_utc="2026-08-03T12:01:00Z")
     assert host._expected_by_take[take_id] == (guest_enrollment.participant_id,)
+
+
+@pytest.mark.parametrize(
+    ("count", "fingerprint", "capture_enabled"),
+    (
+        (True, _digest("map"), True),
+        (-1, _digest("map"), True),
+        (33, _digest("map"), True),
+        (1, "", True),
+        (0, _digest("map"), True),
+        (1, _digest("map"), False),
+    ),
+)
+def test_local_original_presence_contract_rejects_malformed_or_inconsistent_fields(
+    count: object,
+    fingerprint: str,
+    capture_enabled: bool,
+) -> None:
+    values = {
+        "participant_id": _id(),
+        "display_name": "Alex",
+        "ordered_roster_digest": _digest(),
+        "roster_count": 1,
+        "self_ordinal": 0,
+        "process_generation": 1,
+        "rpc_connection_generation": 2,
+        "audio_connection_generation": 3,
+        "challenge": "c" * 43,
+        "challenge_epoch": 1,
+        "topology_epoch": 1,
+        "presence_generation": 1,
+        "capture_enabled": capture_enabled,
+        "local_original_track_count": count,
+        "local_original_map_fingerprint": fingerprint,
+    }
+    with pytest.raises(ValueError):
+        PresenceV2Proof(**values)
+
+
+def test_exact_local_original_obligations_cover_zero_one_many_and_reconnect(
+    tmp_path: Path,
+) -> None:
+    credentials = SessionCredentials.create()
+    registry = EnrollmentRegistry(tmp_path, credentials)
+    host = registry.enroll(_id(), "Host", invite_token=credentials.invite_token)
+    guests = tuple(
+        registry.enroll(_id(), f"Guest {index}", invite_token=credentials.invite_token)
+        for index in range(3)
+    )
+    challenge = _install(registry, _digest("obligation-roster"), 4)
+    _bind(
+        registry,
+        host.participant_id,
+        challenge,
+        ordinal=0,
+        presence_generation=1,
+        display_name="Host",
+        capture_enabled=False,
+    )
+    specifications = (
+        (0, False, _digest("zero-map")),
+        (1, True, _digest("one-map")),
+        (32, True, _digest("many-map")),
+    )
+    for ordinal, (count, enabled, fingerprint) in enumerate(specifications, start=1):
+        _bind(
+            registry,
+            guests[ordinal - 1].participant_id,
+            challenge,
+            ordinal=ordinal,
+            presence_generation=ordinal,
+            capture_enabled=enabled,
+            local_original_track_count=count,
+            local_original_map_fingerprint=fingerprint,
+        )
+
+    obligations = registry.current_local_original_obligations()
+    by_id = {item.participant_id: item for item in obligations}
+    assert tuple(by_id[item.participant_id].track_count for item in guests) == (
+        0,
+        1,
+        32,
+    )
+    assert all(
+        item.exact
+        for item in by_id.values()
+        if item.participant_id != host.participant_id
+    )
+
+    replacement_fingerprint = _digest("reconnected-one-map")
+    _bind(
+        registry,
+        guests[1].participant_id,
+        challenge,
+        ordinal=2,
+        presence_generation=99,
+        capture_enabled=True,
+        local_original_track_count=2,
+        local_original_map_fingerprint=replacement_fingerprint,
+    )
+    reconnected = {
+        item.participant_id: item
+        for item in registry.current_local_original_obligations()
+    }[guests[1].participant_id]
+    assert reconnected.track_count == 2
+    assert reconnected.map_fingerprint == replacement_fingerprint
+    assert reconnected.presence_generation == 99
+
+
+def test_legacy_local_original_presence_is_readable_but_not_exact() -> None:
+    proof = PresenceV2Proof(
+        participant_id=_id(),
+        display_name="Legacy Guest",
+        ordered_roster_digest=_digest(),
+        roster_count=1,
+        self_ordinal=0,
+        process_generation=1,
+        rpc_connection_generation=2,
+        audio_connection_generation=3,
+        challenge="c" * 43,
+        challenge_epoch=1,
+        topology_epoch=1,
+        presence_generation=4,
+        capture_enabled=True,
+    )
+    obligation = LocalOriginalObligation.from_presence_proof(proof)
+    assert obligation.track_count is None
+    assert not obligation.exact
+    assert obligation.capture_requested
+
+
+def test_host_preflight_exposes_exact_zero_and_rejects_live_legacy_guest(
+    tmp_path: Path,
+) -> None:
+    credentials = SessionCredentials.create()
+    registry = EnrollmentRegistry(tmp_path, credentials)
+    host_enrollment = registry.enroll(
+        _id(), "Host", invite_token=credentials.invite_token
+    )
+    guest_enrollment = registry.enroll(
+        _id(), "Guest", invite_token=credentials.invite_token
+    )
+    registry.bind_presence(
+        guest_enrollment.participant_id,
+        0,
+        "Guest",
+        generation=1,
+        capture_enabled=False,
+    )
+    host = HostPeerSession()
+    host.registry = registry
+    host.host_enrollment = host_enrollment
+    assert host.recording_local_original_obligations() == ()
+    assert any(
+        "exact Local Original inventory" in issue
+        for issue in host.recording_local_original_obligation_issues()
+    )
+    _legacy_plan, legacy_issues = host.prepare_local_original_obligations(_id())
+    assert legacy_issues
+
+    challenge = _install(registry, _digest("exact-zero-roster"), 2)
+    _bind(
+        registry,
+        host_enrollment.participant_id,
+        challenge,
+        ordinal=0,
+        presence_generation=1,
+        display_name="Host",
+        capture_enabled=True,
+    )
+    zero_fingerprint = _digest("exact-zero-map")
+    _bind(
+        registry,
+        guest_enrollment.participant_id,
+        challenge,
+        ordinal=1,
+        presence_generation=2,
+        display_name="Guest",
+        capture_enabled=False,
+        local_original_track_count=0,
+        local_original_map_fingerprint=zero_fingerprint,
+    )
+    obligations = host.recording_local_original_obligations()
+    assert obligations == (
+        LocalOriginalObligation(
+            guest_enrollment.participant_id,
+            0,
+            zero_fingerprint,
+            presence_generation=2,
+            capture_requested=False,
+        ),
+    )
+    assert host.recording_local_original_obligation_issues() == ()
+    take_id = _id()
+    prepared, issues = host.prepare_local_original_obligations(take_id)
+    assert prepared == obligations
+    assert issues == ()
+    assert host.local_original_obligations_for_take(take_id) == obligations
+
+
+def test_departed_durable_enrollment_does_not_block_a_host_only_take(
+    tmp_path: Path,
+) -> None:
+    credentials = SessionCredentials.create()
+    registry = EnrollmentRegistry(tmp_path, credentials)
+    host_enrollment = registry.enroll(
+        _id(), "Host", invite_token=credentials.invite_token
+    )
+    departed = registry.enroll(
+        _id(), "Departed Guest", invite_token=credentials.invite_token
+    )
+    registry.bind_presence(
+        departed.participant_id,
+        7,
+        "Departed Guest",
+        generation=1,
+        capture_enabled=True,
+    )
+    assert registry.reconcile_presence_channels((0,)) == 1
+
+    challenge = _install(registry, _digest("host-only-after-departure"), 1)
+    _bind(
+        registry,
+        host_enrollment.participant_id,
+        challenge,
+        ordinal=0,
+        presence_generation=1,
+        display_name="Host",
+        capture_enabled=False,
+    )
+    host = HostPeerSession()
+    host.registry = registry
+    host.host_enrollment = host_enrollment
+
+    assert host.recording_local_original_obligations() == ()
+    assert host.recording_local_original_obligation_issues() == ()
+    obligations, issues = host.prepare_local_original_obligations(_id())
+    assert obligations == ()
+    assert issues == ()
+
+
+def test_discard_prepared_obligations_is_idempotent_and_never_removes_active_take(
+    tmp_path: Path,
+) -> None:
+    credentials = SessionCredentials.create()
+    registry = EnrollmentRegistry(tmp_path, credentials)
+    host_enrollment = registry.enroll(
+        _id(), "Host", invite_token=credentials.invite_token
+    )
+    host = HostPeerSession()
+    host.registry = registry
+    host.host_enrollment = host_enrollment
+    host.control = SessionControlState(tmp_path, credentials.session_id)
+
+    abandoned_take = _id()
+    obligations, issues = host.prepare_local_original_obligations(abandoned_take)
+    assert obligations == ()
+    assert issues == ()
+    assert abandoned_take in host._local_original_obligations_by_take
+    assert host.discard_prepared_local_original_obligations(abandoned_take)
+    assert not host.discard_prepared_local_original_obligations(abandoned_take)
+    assert abandoned_take not in host._local_original_obligations_by_take
+    assert not host.discard_prepared_local_original_obligations("not-a-take-id")
+
+    active_take = _id()
+    host.prepare_local_original_obligations(active_take)
+    host.control.begin(active_take, started_utc="2026-08-15T12:00:00Z")
+    assert not host.discard_prepared_local_original_obligations(active_take)
+    assert host.local_original_obligations_for_take(active_take) == ()
+    assert active_take in host._local_original_obligations_by_take
+
+
+def test_http_v2_exact_local_original_contract_is_authenticated_and_private(
+    frozen_peer,
+) -> None:
+    _credentials, registry, _server, client = frozen_peer
+    enrollment = client.enroll(_id(), "Private Artist")
+    challenge = _install(registry, _digest("exact-contract"), 1)
+    map_fingerprint = _digest("name-free-logical-map")
+    proof = client.bind_presence_v2(
+        enrollment,
+        display_name="Private Artist",
+        ordered_roster_digest=challenge.ordered_roster_digest,
+        roster_count=challenge.roster_count,
+        self_ordinal=0,
+        process_generation=4,
+        rpc_connection_generation=5,
+        audio_connection_generation=6,
+        challenge=challenge.challenge,
+        challenge_epoch=challenge.challenge_epoch,
+        topology_epoch=challenge.topology_epoch,
+        presence_generation=7,
+        capture_enabled=True,
+        local_original_track_count=1,
+        local_original_map_fingerprint=map_fingerprint,
+    )
+    wire = asdict(proof)
+    assert wire["local_original_track_count"] == 1
+    assert wire["local_original_map_fingerprint"] == map_fingerprint
+    encoded = json.dumps(wire)
+    for private_value in (
+        "/Users/alex/Music",
+        "Scarlett 2i2",
+        "Private Vocal",
+    ):
+        assert private_value not in encoded
+    assert map_fingerprint not in registry.path.read_text(encoding="utf-8")

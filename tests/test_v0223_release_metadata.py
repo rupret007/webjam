@@ -1,4 +1,4 @@
-"""v0.24.0 source identity and immutable prior-release contracts."""
+"""v0.25.0 source identity and immutable prior-release contracts."""
 
 from __future__ import annotations
 
@@ -17,37 +17,33 @@ VERSION_SOURCE = (ROOT / "webjam_qt" / "__init__.py").read_text(encoding="utf-8"
 SPEC = (ROOT / "webjam.spec").read_text(encoding="utf-8")
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 CHANGELOG = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-CI_WORKFLOW = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+CI_WORKFLOW = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+COMPONENT_RUNBOOK = (ROOT / "docs" / "JAMULUS_COMPONENT_RELEASE_RUNBOOK.md").read_text(
     encoding="utf-8"
 )
-COMPONENT_RUNBOOK = (
-    ROOT / "docs" / "JAMULUS_COMPONENT_RELEASE_RUNBOOK.md"
-).read_text(encoding="utf-8")
 SBOM = json.loads(
-    (ROOT / "packaging" / "WebJam-runtime-sbom.cdx.json").read_text(
-        encoding="utf-8"
-    )
+    (ROOT / "packaging" / "WebJam-runtime-sbom.cdx.json").read_text(encoding="utf-8")
 )
 COMPONENT_SBOM = json.loads(
-    (ROOT / "packaging" / "Jamulus-component-sbom.cdx.json").read_text(
-        encoding="utf-8"
-    )
+    (ROOT / "packaging" / "Jamulus-component-sbom.cdx.json").read_text(encoding="utf-8")
 )
-COMPONENT_UPDATE_SOURCE = (
-    ROOT / "services" / "jamulus_component_update.py"
-).read_text(encoding="utf-8")
+COMPONENT_UPDATE_SOURCE = (ROOT / "services" / "jamulus_component_update.py").read_text(
+    encoding="utf-8"
+)
 
 
-def test_v0240_is_the_published_source_identity() -> None:
+def test_v0250_is_the_unpublished_source_candidate_identity() -> None:
     match = re.search(
         r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$',
         VERSION_SOURCE,
         re.MULTILINE,
     )
     assert match is not None
-    assert match.group(1) == "0.24.0"
-    assert application_version() == "0.24.0"
-    assert README.startswith("# WebJam\n\n## Unified creative collaboration for live music")
+    assert match.group(1) == "0.25.0"
+    assert application_version() == "0.25.0"
+    assert README.startswith(
+        "# WebJam\n\n## Native creator collaboration and multitrack recording"
+    )
     assert "## [0.22.3]" in CHANGELOG
     assert "## [0.22.2]" in CHANGELOG
     assert "## [0.22.1]" in CHANGELOG
@@ -60,11 +56,13 @@ def test_v0240_is_the_published_source_identity() -> None:
     assert "v0.22.4 is likewise a new source and package identity" in normalized
     assert "v0.22.5 is a new source and package identity" in normalized
     assert "Only the exact tag, release assets, checksum manifest" in normalized
-    assert "v0.24.0 is a new recording-first identity" in normalized
-    assert "v0.23.0 bytes" in normalized
+    assert "v0.25.0 is a new creator-multitrack source identity" in normalized
+    assert "v0.24.0 bytes" in normalized
     assert "Immutable v0.24.0 GitHub Latest private test candidate" in normalized
     assert "release ID `368897541`" in normalized
-    assert "published the exact frozen packages with the reviewed embedded" in normalized
+    assert (
+        "published the exact frozen packages with the reviewed embedded" in normalized
+    )
     assert (
         "real-world MP3, Reference Track, and first-demo reliability closeout"
         in normalized
@@ -74,27 +72,27 @@ def test_v0240_is_the_published_source_identity() -> None:
 def test_runtime_sbom_names_the_exact_desktop_version() -> None:
     component = SBOM["metadata"]["component"]
     assert component == {
-        "bom-ref": "pkg:generic/webjam@0.24.0",
+        "bom-ref": "pkg:generic/webjam@0.25.0",
         "name": "WebJam",
-        "purl": "pkg:generic/webjam@0.24.0",
+        "purl": "pkg:generic/webjam@0.25.0",
         "type": "application",
-        "version": "0.24.0",
+        "version": "0.25.0",
     }
 
 
 def test_component_sbom_names_the_exact_desktop_version() -> None:
     component = COMPONENT_SBOM["metadata"]["component"]
     assert component == {
-        "bom-ref": "pkg:github/rupret007/webjam@0.24.0",
+        "bom-ref": "pkg:github/rupret007/webjam@0.25.0",
         "group": "rupret007",
         "name": "WebJam",
-        "purl": "pkg:github/rupret007/webjam@0.24.0",
+        "purl": "pkg:github/rupret007/webjam@0.25.0",
         "type": "application",
-        "version": "0.24.0",
+        "version": "0.25.0",
     }
 
 
-def test_candidate_catalog_payload_tracks_v0240_without_rewriting_v0225() -> None:
+def test_candidate_catalog_payload_tracks_v0250_without_rewriting_v0225() -> None:
     # Exercise deterministic source metadata with an unpublished, synthetic
     # next sequence. Sequence 6 remains the sealed v0.22.5 public catalog and
     # is never reused for this in-memory payload.
@@ -105,7 +103,7 @@ def test_candidate_catalog_payload_tracks_v0240_without_rewriting_v0225() -> Non
         validity_days=30,
     )
     components = payload["components"]
-    assert payload["webjam_version"] == "0.24.0"
+    assert payload["webjam_version"] == "0.25.0"
     assert payload["sequence"] == synthetic_sequence
     assert isinstance(components, list)
     expected = {
@@ -121,39 +119,36 @@ def test_candidate_catalog_payload_tracks_v0240_without_rewriting_v0225() -> Non
     assert all(component["version"] == "3.12.3" for component in components)
     assert all(component["variant"] == "official" for component in components)
     assert all(
-        component["webjam_range"]["maximum"] == "0.24.0"
-        for component in components
+        component["webjam_range"]["maximum"] == "0.25.0" for component in components
     )
 
 
-def test_current_guides_separate_v0240_release_from_v0230_history() -> None:
+def test_current_guides_separate_v0250_source_from_v0240_release_history() -> None:
     expected = {
-        "ARCHITECTURE.md": "# WebJam architecture — v0.24.0 private test release",
+        "ARCHITECTURE.md": "# WebJam architecture — v0.25.0 source candidate",
         "CLOSED_PILOT_PLAYBOOK.md": "v0.22.5 private test candidate",
-        "DEVELOPMENT.md": "# Developing WebJam v0.24.0",
-        "FIRST_JAM.md": "# First Jam — WebJam v0.24.0 private test release",
+        "DEVELOPMENT.md": "# Developing WebJam v0.25.0",
+        "FIRST_JAM.md": "# First Session — WebJam v0.25.0 source candidate",
         "README_SIMPLE.md": "use the exact release tag and attached checksum manifest",
-        "SECURITY.md": "Immutable v0.24.0 is the current GitHub **Latest**",
-        "TEST_PROCEDURE.md": "# WebJam v0.24.0 release and physical test procedure",
-        "USER_GUIDE.md": "# WebJam musician guide — v0.24.0 private test release",
-        "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.24.0 UX acceptance checklist",
+        "SECURITY.md": "Immutable v0.24.0 remains GitHub **Latest**",
+        "TEST_PROCEDURE.md": "# WebJam v0.25.0 source-candidate test procedure",
+        "USER_GUIDE.md": "# WebJam creator guide — v0.25.0 source candidate",
+        "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.25.0 UX acceptance checklist",
         "RECORDING_AND_STUDIO.md": (
-            "# Recording and Studio — v0.24.0 private test release"
+            "# Recording and Studio — v0.25.0 source candidate"
         ),
         "WEBEX_AUDIO_MODES.md": (
-            "# Conversation companion guidance — v0.24.0 private test release"
+            "# Meeting-platform companion guidance — v0.25.0 source candidate"
         ),
-        "ios/README.md": "exact v0.24.0 Mac test assets",
+        "ios/README.md": "exact future v0.25.0 Mac test assets",
         "requirements-lock/README.md": (
-            "The immutable v0.24.0 private test release uses the exact dependency locks"
+            "The v0.25.0 source candidate retains the exact dependency locks"
         ),
         "WEBJAM_V0225_DEMO_READINESS.md": "# WebJam v0.22.5 two-musician demo readiness",
         "V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md": (
             "Immutable historical release `367773776`, tag `v0.23.0`"
         ),
-        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": (
-            "immutable GitHub **Latest** v0.24.0"
-        ),
+        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": ("v0.25.0 source candidate"),
     }
     for relative_path, marker in expected.items():
         assert marker in (ROOT / relative_path).read_text(encoding="utf-8")
@@ -184,9 +179,14 @@ def test_reference_track_play_story_is_route_gated_not_locked() -> None:
         assert "playback remains locked" not in normalized, relative_path
 
 
-def test_changelog_marks_v024_candidate_and_keeps_prior_history() -> None:
+def test_changelog_marks_v025_source_candidate_and_keeps_prior_history() -> None:
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "## [Unreleased]" in changelog
+    assert (
+        "## [0.25.0] — Creator profiles and authoritative multitrack source candidate"
+        in changelog
+    )
+    assert "not yet a GitHub release" in changelog
     assert "## [0.24.0] — Recording-first workstation" in changelog
     assert "Published on 2026-08-11 as the immutable GitHub **Latest**" in changelog
     assert "## [0.23.0] — Shared Track and native multitrack" in changelog
@@ -202,7 +202,8 @@ def test_v0240_physical_checklist_is_linked_and_every_result_is_not_run() -> Non
     assert checklist_name in README
     assert "v0.24.0" in checklist
     result_rows = [
-        line for line in checklist.splitlines()
+        line
+        for line in checklist.splitlines()
         if re.match(r"^\| [A-Z][0-9]{2} \|", line)
     ]
     assert len(result_rows) >= 10
@@ -224,10 +225,88 @@ def test_v0240_physical_checklist_is_linked_and_every_result_is_not_run() -> Non
     assert "Release recommendation: **NOT RUN" in decision_section
 
 
-def test_v0240_publication_evidence_is_exact_and_current_guides_are_post_release() -> None:
-    runbook = (ROOT / "docs" / "DESKTOP_RELEASE_RUNBOOK.md").read_text(
-        encoding="utf-8"
+def test_v0250_physical_checklist_is_linked_and_every_result_is_not_run() -> None:
+    checklist_name = "V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md"
+    checklist = (ROOT / checklist_name).read_text(encoding="utf-8")
+    assert checklist_name in README
+    assert "v0.25.0" in checklist
+    result_rows = [
+        line
+        for line in checklist.splitlines()
+        if re.match(r"^\| [A-Z][0-9]{2} \|", line)
+    ]
+    assert len(result_rows) >= 20
+    assert all(line.endswith("| **NOT RUN** |") for line in result_rows)
+    assert (
+        "No v0.25.0 release ID, tag object, tag commit, CI run, asset ID" in checklist
     )
+    assert "Release recommendation: **NOT RUN**" in checklist
+
+
+def test_v0250_guides_hold_the_creator_profile_and_recording_boundaries() -> None:
+    profile_documents = (
+        "README.md",
+        "USER_GUIDE.md",
+        "RECORDING_AND_STUDIO.md",
+        "CREATIVE_MODES_MVP_SPEC.md",
+        "docs/PROJECT_BRIEF.md",
+    )
+    for relative_path in profile_documents:
+        normalized = " ".join(
+            (ROOT / relative_path).read_text(encoding="utf-8").split()
+        )
+        folded = normalized.casefold()
+        assert "Music" in normalized, relative_path
+        assert "Podcast & Voice" in normalized, relative_path
+        assert "Review & Rehearsal" in normalized, relative_path
+        assert "playback/read-only" in folded, relative_path
+        for blocked in (
+            "standalone project",
+            "track export",
+            "shared notes",
+            "media timecode",
+        ):
+            assert blocked in folded, (relative_path, blocked)
+        assert "directly or automatically taps" in folded, relative_path
+        assert "meeting or system" in folded, relative_path
+        assert "do not route" in folded or "must not route" in folded, relative_path
+        assert "visual sync" in folded or "visual synchronization" in folded, (
+            relative_path
+        )
+
+    readme = " ".join(README.split())
+    recording = " ".join(
+        (ROOT / "RECORDING_AND_STUDIO.md").read_text(encoding="utf-8").split()
+    )
+    for text in (readme, recording):
+        assert "true two-channel" in text
+        assert "Shared Track" in text and "fingerprint" in text
+        assert "guest Local Original" in text
+        assert "directly or automatically taps" in text.casefold()
+        assert "local originals" in text.casefold()
+        assert "input devices" in text.casefold()
+
+
+def test_v0250_local_notes_are_profile_scoped_bounded_and_local_only() -> None:
+    for relative_path in (
+        "README.md",
+        "ARCHITECTURE.md",
+        "SECURITY.md",
+        "CREATIVE_MODES_MVP_SPEC.md",
+    ):
+        normalized = " ".join(
+            (ROOT / relative_path).read_text(encoding="utf-8").split()
+        )
+        assert "profile-scoped" in normalized, relative_path
+        assert "1 MiB" in normalized, relative_path
+        assert "no-follow" in normalized, relative_path
+        assert "never shared" in normalized, relative_path
+
+
+def test_v0240_publication_evidence_is_exact_and_current_guides_are_post_release() -> (
+    None
+):
+    runbook = (ROOT / "docs" / "DESKTOP_RELEASE_RUNBOOK.md").read_text(encoding="utf-8")
     section = runbook.split(
         "### v0.24.0 recording-first candidate — published Latest record\n", 1
     )[1]
@@ -348,27 +427,25 @@ def test_v0240_publication_evidence_is_exact_and_current_guides_are_post_release
 
 
 def test_candidate_package_copy_is_explicit_about_platform_trust() -> None:
-    windows_readme = (
-        ROOT / "packaging" / "windows" / "README-WINDOWS.txt"
-    ).read_text(encoding="utf-8")
-    macos_readme = (
-        ROOT / "packaging" / "macos" / "READ ME FIRST.txt"
-    ).read_text(encoding="utf-8")
-    runbook = (ROOT / "docs" / "DESKTOP_RELEASE_RUNBOOK.md").read_text(
+    windows_readme = (ROOT / "packaging" / "windows" / "README-WINDOWS.txt").read_text(
         encoding="utf-8"
     )
+    macos_readme = (ROOT / "packaging" / "macos" / "READ ME FIRST.txt").read_text(
+        encoding="utf-8"
+    )
+    runbook = (ROOT / "docs" / "DESKTOP_RELEASE_RUNBOOK.md").read_text(encoding="utf-8")
     assert "unsigned private test candidate" in windows_readme
     assert "ad-hoc signed and is NOT notarized" in macos_readme
     for package_copy in (windows_readme, macos_readme):
         normalized = " ".join(package_copy.split())
         assert "PRIVATE TEST CANDIDATE" in normalized
         assert "exact filename appears" in normalized
-        assert "Do not use the immutable v0.23.0 checksum manifest" in normalized
+        assert "Do not use the immutable v0.24.0 checksum manifest" in normalized
         assert "sealed v0.22.5" in normalized
         assert "embedded Jamulus 3.12.2 fallback" in normalized
-    inventory = runbook.split(
-        "The exact v0.22.4 published inventory is:\n", 1
-    )[1].split("\nThe separate `jamulus-components-v2`", 1)[0]
+    inventory = runbook.split("The exact v0.22.4 published inventory is:\n", 1)[
+        1
+    ].split("\nThe separate `jamulus-components-v2`", 1)[0]
     assert re.findall(r"(?m)^- `([^`]+)`$", inventory) == [
         "WebJam-v0.22.4-windows-x64-UNSIGNED-TEST-ONLY-setup.exe",
         "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip",
@@ -399,12 +476,10 @@ def test_component_catalog_current_public_state_is_sealed() -> None:
 
 
 def test_v0225_publication_evidence_is_exact() -> None:
-    runbook = (ROOT / "docs" / "DESKTOP_RELEASE_RUNBOOK.md").read_text(
-        encoding="utf-8"
-    )
-    inventory = runbook.split(
-        "The exact published release inventory is:\n", 1
-    )[1].split("\nThe original promotion contract", 1)[0]
+    runbook = (ROOT / "docs" / "DESKTOP_RELEASE_RUNBOOK.md").read_text(encoding="utf-8")
+    inventory = runbook.split("The exact published release inventory is:\n", 1)[
+        1
+    ].split("\nThe original promotion contract", 1)[0]
     assert re.findall(r"(?m)^- `([^`]+)`$", inventory) == [
         "WebJam-v0.22.5-windows-x64-UNSIGNED-TEST-ONLY-setup.exe",
         "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip",

@@ -1,8 +1,8 @@
 """
-SessionCanvas — right-side notes + artifacts panel.
+SessionCanvas — right-side local notes and authenticated Jamulus chat.
 
-This is the "session memory" — notes, timestamps, shared artifacts.
-Phase 1 lands a simple notes field; artifacts/timeline arrive later.
+Notes are local to this computer. ``+ Time`` inserts wall-clock time; it is
+not media timecode. Chat is the separate live shared-text path.
 """
 
 from __future__ import annotations
@@ -26,9 +26,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from webjam_qt.theme.tokens import Space
+from core.creative_modes import CreatorProfile
 from core.musician_guidance import GuidanceState, MusicianGuidanceSnapshot
 from core.session_intelligence import SessionPulse
+from webjam_qt.theme.tokens import Space
 
 
 class SessionCanvas(QFrame):
@@ -54,13 +55,16 @@ class SessionCanvas(QFrame):
         self._current_guidance: MusicianGuidanceSnapshot | None = None
         self._compact_guidance = False
 
-        header = QLabel("Session Canvas")
-        header.setObjectName("CanvasHeader")
+        self._header = QLabel("Session Canvas")
+        self._header.setObjectName("CanvasHeader")
 
         # Action buttons in a compact row
         ts_btn = QPushButton("+ Time")
         ts_btn.setObjectName("GhostButton")
-        ts_btn.setToolTip("Insert current timestamp as a heading (Ctrl+T)")
+        ts_btn.setToolTip(
+            "Insert the computer's current wall-clock time (Ctrl+T); this is "
+            "not media timecode"
+        )
         ts_btn.clicked.connect(self.insert_timestamp)
 
         # A single menu keeps the supported 280 px canvas width usable while
@@ -165,7 +169,9 @@ class SessionCanvas(QFrame):
         self._notes.setObjectName("CanvasNotes")
         self._notes.setAccessibleName("Session notes")
         self._notes.setAccessibleDescription(
-            "Editable session notes shared in this WebJam session record."
+            "Editable notes in the local session record, saved on this computer. "
+            "They are not shared with session participants and are not "
+            "media-timecode synchronized."
         )
         self._notes.setPlaceholderText(
             "Capture what matters:\n"
@@ -176,7 +182,7 @@ class SessionCanvas(QFrame):
         )
         self._notes.textChanged.connect(self._on_text_changed)
 
-        # Chat box — send a message to the whole band (Jamulus chat).
+        # Chat box — the separate live shared-text path (Jamulus chat).
         self._chat_input = QLineEdit()
         self._chat_input.setObjectName("CanvasChatInput")
         self._chat_input.setAccessibleName("Band chat message")
@@ -186,7 +192,7 @@ class SessionCanvas(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, Space.MD)
         layout.setSpacing(Space.SM)
-        layout.addWidget(header)
+        layout.addWidget(self._header)
         layout.addLayout(btn_row)
         layout.addWidget(self._guidance)
         layout.addWidget(self._pulse)
@@ -199,6 +205,52 @@ class SessionCanvas(QFrame):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+    def set_creator_profile(self, profile: CreatorProfile) -> None:
+        """Apply profile vocabulary while keeping local-note limits explicit."""
+
+        if not isinstance(profile, CreatorProfile):
+            raise TypeError("profile must be a CreatorProfile")
+        preview = " · Preview" if profile.is_preview else ""
+        self._header.setText(f"{profile.label} Notes{preview}")
+        self.setAccessibleName(f"{profile.label} local notes")
+        self.setAccessibleDescription(
+            "These notes are part of the local session record and stay on this "
+            "computer. Live chat is separate. There is no shared-note "
+            "synchronization or media timecode."
+        )
+        if profile.key == "podcast_voice":
+            placeholder = (
+                "Local production notes:\n"
+                "  · pickups and edits\n"
+                "  · chapter ideas\n"
+                "  · speaker follow-ups\n"
+                "  · next recording action"
+            )
+        elif profile.key == "review_rehearsal":
+            placeholder = (
+                "Local review notes (Preview):\n"
+                "  · feedback and decisions\n"
+                "  · wall-clock cues only\n"
+                "  · owners and next pass\n"
+                "  · no visual-media sync"
+            )
+        else:
+            placeholder = (
+                "Local session notes:\n"
+                "  · decisions made\n"
+                "  · chord progressions / lyrics\n"
+                "  · links and references\n"
+                "  · next session's starting point"
+            )
+        self._notes.setPlaceholderText(placeholder)
+        participants = profile.vocabulary.participant_plural
+        self._chat_input.setAccessibleName(
+            f"Shared chat message for session {participants}"
+        )
+        self._chat_input.setPlaceholderText(
+            f"Message {participants} in Jamulus chat… (Enter to send)"
+        )
+
     def set_notes(self, text: str) -> None:
         if self._notes.toPlainText() == text:
             return
@@ -301,9 +353,7 @@ class SessionCanvas(QFrame):
         self._chat_input.setFocus()
 
     def append_line(self, text: str) -> None:
-        """Append a line to the end of the notes (e.g. incoming band chat),
-        so it becomes part of the shared session record.  Inserted as plain
-        text (the editor is a QTextEdit) so chat content isn't HTML-parsed."""
+        """Append plain text to this computer's local notes surface."""
         if not text:
             return
         from PySide6.QtGui import QTextCursor
@@ -314,7 +364,7 @@ class SessionCanvas(QFrame):
         self._notes.moveCursor(QTextCursor.MoveOperation.End)
 
     def insert_timestamp(self) -> None:
-        """Insert the current time as a Markdown heading at the cursor."""
+        """Insert wall-clock time, never a media-timecode claim."""
         ts = datetime.now().strftime("## %H:%M:%S")
         cursor = self._notes.textCursor()
         # If not at start of a line, prepend a newline

@@ -1,6 +1,6 @@
 # Support and troubleshooting
 
-Start with the [musician guide](USER_GUIDE.md), [quick help map](QUICK_HELP_MAP.md),
+Start with the [creator guide](USER_GUIDE.md), [quick help map](QUICK_HELP_MAP.md),
 and [test procedure](TEST_PROCEDURE.md). WebJam deliberately leaves live audio
 configuration to Jamulus and meeting state to the selected meeting service.
 Conversation can hand off any public HTTPS DNS-host meeting link that passes

@@ -11,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from core.local_capture import LocalCaptureTrack
 from core.take_project import (
     CaptureDevice,
     HostIdentity,
@@ -61,6 +62,7 @@ def _receipt(
     source_kind: str = "musician",
     channels: int = 1,
     source_fingerprint_sha256: str = "",
+    playback_generation: int = 0,
 ) -> RecorderClientReceipt:
     observation = recorder_client_observations({
         "connections": 1,
@@ -79,6 +81,7 @@ def _receipt(
         channels=channels,
         source_kind=source_kind,
         source_fingerprint_sha256=source_fingerprint_sha256,
+        playback_generation=playback_generation,
     )
 
 
@@ -141,6 +144,48 @@ class TestLofParsing(unittest.TestCase):
 
 
 class TestLoadTake(unittest.TestCase):
+    def test_creator_profile_loads_from_session_and_legacy_missing_is_music(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            podcast = root / "podcast"
+            _write_complete_server_take(podcast)
+            manifest_path = podcast / "webjam-take.json"
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            payload["session"] = {"creator_profile_key": "podcast_voice"}
+            manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            legacy = root / "legacy"
+            legacy.mkdir()
+            _write_wav(legacy / "voice.wav", seconds=0.1)
+
+            podcast_info = load_take(podcast)
+            legacy_info = load_take(legacy)
+
+        self.assertIsNotNone(podcast_info)
+        self.assertEqual(podcast_info.creator_profile_key, "podcast_voice")
+        self.assertIsNotNone(legacy_info)
+        self.assertEqual(legacy_info.creator_profile_key, "music")
+
+    def test_explicit_unsupported_creator_profile_uses_generic_fail_closed_state(self):
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            _write_complete_server_take(take)
+            manifest_path = take / "webjam-take.json"
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            payload["session"] = {
+                "creator_profile_key": "future_private_profile"
+            }
+            manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            info = load_take(take)
+
+        self.assertIsNotNone(info)
+        self.assertEqual(info.creator_profile_key, "")
+        self.assertEqual(info.validation_status, "needs_attention")
+        finding = " ".join(info.manifest_errors)
+        self.assertIn("generic review labels", finding)
+        self.assertNotIn("future_private_profile", finding)
+
     def test_staging_identity_rejects_non_regular_markers_without_opening(self):
         import os
 
@@ -1196,9 +1241,14 @@ class TestTakeValidation(unittest.TestCase):
             )
             payload = json.loads((take / "webjam-take.json").read_text())
 
-            self.assertTrue(result.ok, result.errors)
+            self.assertFalse(result.ok)
             self.assertEqual(len(payload["tracks"]), 1)
             self.assertEqual(len(payload["tracks"][0]["segments"]), 2)
+            self.assertEqual(payload["status"], "needs_attention")
+            self.assertTrue(
+                any("channel layout" in error for error in result.errors),
+                result.errors,
+            )
 
     def test_reconnect_segments_do_not_satisfy_two_expected_participants(self):
         with tempfile.TemporaryDirectory() as d:
@@ -1306,6 +1356,7 @@ class TestTakeValidation(unittest.TestCase):
                         channel_id=1,
                         source_kind="reference_track",
                         source_fingerprint_sha256=source_fingerprint,
+                        playback_generation=7,
                     ),
                 ),
             )
@@ -1321,6 +1372,12 @@ class TestTakeValidation(unittest.TestCase):
                 "reference_fingerprint_sha256"
             ],
             source_fingerprint,
+        )
+        self.assertEqual(
+            by_name["WebJam Track"]["alignment"][
+                "reference_playback_generation"
+            ],
+            7,
         )
         self.assertIsNotNone(result.take)
         self.assertTrue(result.ok, result.errors)
@@ -1494,6 +1551,57 @@ class TestTakeValidation(unittest.TestCase):
         )
         self.assertTrue(any("durably checkpointed" in error for error in result.errors))
 
+    def test_recovery_manifest_retains_stereo_track_and_gap_identity(self):
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "Recovered-local"
+            take.mkdir()
+            _write_wav(
+                take / "local-Rehearsal.recovered-partial.wav",
+                seconds=0.01,
+                channels=2,
+            )
+            track = LocalCaptureTrack("local-Rehearsal", (0, 1))
+            gap = SimpleNamespace(
+                start_frame=100,
+                frame_count=25,
+                channels=(0,),
+                reason="queue_overflow",
+            )
+
+            result = write_take_manifest(
+                take,
+                expected_tracks=0,
+                required_local_stems=1,
+                capture_gaps=(gap,),
+                local_capture_tracks=(track,),
+                local_total_frames=480,
+                local_durable_frames=240,
+            )
+            payload = json.loads((take / "webjam-take.json").read_text())
+
+        self.assertFalse(result.ok)
+        self.assertEqual(len(payload["tracks"]), 1)
+        segment = payload["tracks"][0]["segments"][0]
+        self.assertEqual(segment["channels"], 2)
+        self.assertIn(
+            {
+                "start_frame": 100,
+                "frame_count": 25,
+                "reason": "queue_overflow",
+                "channels": [0, 1],
+            },
+            segment["gaps"],
+        )
+        self.assertIn(
+            {
+                "start_frame": 240,
+                "frame_count": 240,
+                "reason": "unverified_after_crash_checkpoint",
+                "channels": [0, 1],
+            },
+            segment["gaps"],
+        )
+
     def test_final_manifest_v2_has_stable_ids_exact_media_hash_and_capture_gap(self):
         import hashlib
         import uuid
@@ -1578,6 +1686,96 @@ class TestTakeValidation(unittest.TestCase):
             }],
         )
         self.assertEqual(vocal["segments"][0]["gaps"], [])
+
+    def test_stereo_local_original_keeps_one_track_and_exact_gap_topology(self):
+        """Typed input order, not filename order, owns logical gap identity."""
+
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            _write_wav(take / "local-Zeta Bus.wav", seconds=0.1, channels=2)
+            _write_wav(take / "local-Alpha Vocal.wav", seconds=0.1, channels=1)
+            tracks = (
+                LocalCaptureTrack("local-Zeta Bus", (0, 1)),
+                LocalCaptureTrack("local-Alpha Vocal", (2,)),
+            )
+            gap = SimpleNamespace(
+                start_frame=1200,
+                frame_count=240,
+                channels=(0,),
+                reason="queue_overflow",
+            )
+            device = CaptureDevice(
+                device_id="coreaudio:stereo-test",
+                display_name="Stereo Test",
+                backend="Core Audio",
+                sample_rate=48000,
+                channel_indices=(0, 1, 2),
+                channel_labels=("Bus L", "Bus R", "Voice"),
+            )
+
+            result = write_take_manifest(
+                take,
+                expected_tracks=0,
+                required_local_stems=2,
+                local_participant_name="Jeff",
+                capture_device=device,
+                capture_gaps=(gap,),
+                local_capture_tracks=tracks,
+                local_total_frames=4800,
+            )
+            payload = json.loads((take / "webjam-take.json").read_text())
+            loaded = load_take(take)
+
+        zeta = next(item for item in payload["tracks"] if "Zeta Bus" in item["name"])
+        alpha = next(
+            item for item in payload["tracks"] if "Alpha Vocal" in item["name"]
+        )
+        self.assertEqual(len(payload["tracks"]), 2)
+        self.assertEqual(len(zeta["segments"]), 1)
+        self.assertEqual(zeta["segments"][0]["channels"], 2)
+        self.assertEqual(
+            zeta["segments"][0]["gaps"],
+            [{
+                "start_frame": 1200,
+                "frame_count": 240,
+                "reason": "queue_overflow",
+                "channels": [0, 1],
+            }],
+        )
+        self.assertEqual(alpha["segments"][0]["channels"], 1)
+        self.assertEqual(alpha["segments"][0]["gaps"], [])
+        loaded_zeta = next(item for item in loaded.tracks if "Zeta Bus" in item.name)
+        self.assertEqual(loaded_zeta.channel_count, 2)
+        self.assertTrue(loaded_zeta.has_supported_channel_topology)
+        # No server reference was present, so alignment still truthfully needs
+        # attention; that must not erase or split the stereo source evidence.
+        self.assertFalse(result.ok)
+
+    def test_local_original_channel_mismatch_is_preserved_but_fails_closed(self):
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            _write_wav(take / "local-Synth.wav", seconds=0.1, channels=1)
+
+            result = write_take_manifest(
+                take,
+                expected_tracks=0,
+                required_local_stems=1,
+                local_capture_tracks=(
+                    LocalCaptureTrack("local-Synth", (0, 1)),
+                ),
+                local_total_frames=4800,
+            )
+            payload = json.loads((take / "webjam-take.json").read_text())
+
+        self.assertFalse(result.ok)
+        self.assertEqual(payload["status"], "needs_attention")
+        self.assertEqual(payload["tracks"][0]["segments"][0]["channels"], 1)
+        self.assertTrue(
+            any("bound mono/stereo" in error for error in result.errors),
+            result.errors,
+        )
 
     def test_manifest_preserves_session_evidence_adds_host_and_indexes_media_gap(self):
         import uuid

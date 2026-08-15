@@ -12,6 +12,7 @@ from PySide6.QtCore import QEvent, QTimer, Signal
 from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+from core.creative_modes import get_creator_profile_by_key_or_default
 from core.logging_config import configure_logging
 from core.network_invite import BandInvite
 from core.settings import load_settings
@@ -347,14 +348,19 @@ def _run_app() -> int:
     reference_studio_launch = bool(
         launch is not None and launch.selected_role == "studio"
     )
+    creator_profile = get_creator_profile_by_key_or_default(
+        getattr(settings, "last_creator_profile_key", "music")
+    )
+    initial_title = creator_profile.default_template
+    if reference_studio_launch and launch is not None:
+        initial_title = launch.session_name
     window = ConductorWindow(
         mode_entries=ApplicationController.mode_entries(),
         initial_mode_key="music_jam",
-        initial_title=(
-            "Reference Studio" if reference_studio_launch else "Band Rehearsal"
-        ),
+        initial_title=initial_title,
         operator_mode=operator_mode,
     )
+    window.set_creator_profile(creator_profile, locked=False)
     remote_invitation = (
         launch.take_remote_invitation()
         if launch is not None

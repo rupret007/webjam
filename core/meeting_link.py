@@ -46,6 +46,41 @@ SUPPORTED_MEETING_SERVICES_TEXT = (
 GENERIC_MEETING_SERVICE_KEY = "generic"
 GENERIC_MEETING_SERVICE_LABEL = "Meeting service"
 
+# Capture-boundary copy is centralized so every desktop surface makes the
+# same narrow, enforceable promise.  A user can deliberately route a meeting
+# or system mix into a selected hardware/virtual input, so WebJam must never
+# claim that meeting audio cannot appear in a recording.
+MEETING_DIRECT_CAPTURE_BOUNDARY = (
+    "WebJam never directly or automatically taps a meeting app, browser, or "
+    "system output."
+)
+RECORD_SESSION_CAPTURE_SCOPE = (
+    "Record Session captures Jamulus server stems plus explicitly selected "
+    "Local Original input devices."
+)
+STUDIO_CAPTURE_SCOPE = "Studio records explicitly armed input devices."
+SELECTED_INPUT_ROUTING_WARNING = (
+    "Do not route meeting or system audio into those inputs."
+)
+COMPACT_MEETING_CAPTURE_NOTICE = (
+    "WebJam does not directly tap meeting apps, browsers, or system output; "
+    "do not route meeting/system audio into selected inputs."
+)
+RECORD_SESSION_MEETING_CAPTURE_NOTICE = " ".join(
+    (
+        MEETING_DIRECT_CAPTURE_BOUNDARY,
+        RECORD_SESSION_CAPTURE_SCOPE,
+        SELECTED_INPUT_ROUTING_WARNING,
+    )
+)
+STUDIO_MEETING_CAPTURE_NOTICE = " ".join(
+    (
+        MEETING_DIRECT_CAPTURE_BOUNDARY,
+        STUDIO_CAPTURE_SCOPE,
+        SELECTED_INPUT_ROUTING_WARNING,
+    )
+)
+
 _DNS_LABEL_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\Z")
 _SPECIAL_USE_DNS_SUFFIXES = (
     "localhost",

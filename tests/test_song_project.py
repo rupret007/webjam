@@ -8,9 +8,13 @@ from dataclasses import replace
 
 import pytest
 
+from core.creative_modes import LEGACY_MODE_KEY_ALIASES
 from core.song_project import (
+    DEFAULT_CREATOR_PROFILE_KEY,
+    LEGACY_SONG_PROJECT_SCHEMA_VERSION,
     MAX_MEDIA_FILE_BYTES,
     MAX_PROJECT_TRACKS,
+    SONG_PROJECT_SCHEMA_VERSION,
     InputMapping,
     MediaImportMethod,
     MediaProvenance,
@@ -79,6 +83,13 @@ def _project() -> SongProject:
     )
 
 
+def _schema_one_value(project: SongProject | None = None) -> dict[str, object]:
+    value = copy.deepcopy((project or _project()).to_dict())
+    value["schema_version"] = LEGACY_SONG_PROJECT_SCHEMA_VERSION
+    value.pop("creator_profile_key")
+    return value
+
+
 def test_new_project_is_take_independent_and_defaults_to_48k() -> None:
     project = SongProject.new("  New   Idea  ", project_id=_id("new"))
 
@@ -90,11 +101,12 @@ def test_new_project_is_take_independent_and_defaults_to_48k() -> None:
     assert project.tracks == ()
     assert project.media == ()
     assert project.backing_media_id is None
+    assert project.creator_profile_key == DEFAULT_CREATOR_PROFILE_KEY
     assert "take_id" not in project.to_dict()
     assert "session_id" not in project.to_dict()
 
 
-def test_schema_one_round_trip_is_exact_and_contains_no_absolute_media_path() -> None:
+def test_schema_two_round_trip_is_exact_and_contains_no_absolute_media_path() -> None:
     project = _project()
 
     value = project.to_dict()
@@ -102,12 +114,112 @@ def test_schema_one_round_trip_is_exact_and_contains_no_absolute_media_path() ->
 
     assert restored == project
     assert restored.to_dict() == value
+    assert value["schema_version"] == SONG_PROJECT_SCHEMA_VERSION
+    assert value["creator_profile_key"] == "music"
     serialized = str(value)
     assert "/Users/" not in serialized
     assert "C:\\" not in serialized
     assert value["media"][0]["path"].startswith("Media/")
     assert value["media"][0]["original_basename"] == "backing source.wav"
     assert value["media"][0]["original_read_only"] is True
+
+
+def test_schema_one_migrates_in_memory_to_schema_two_music_without_mutating_input(
+) -> None:
+    legacy = _schema_one_value()
+    before = copy.deepcopy(legacy)
+
+    migrated = song_project_from_dict(legacy)
+
+    assert legacy == before
+    assert migrated.schema_version == SONG_PROJECT_SCHEMA_VERSION
+    assert migrated.creator_profile_key == "music"
+    assert migrated.to_dict()["creator_profile_key"] == "music"
+
+
+@pytest.mark.parametrize("profile_key", ["music", "podcast_voice", "review_rehearsal"])
+def test_supported_creator_profiles_round_trip_canonically(profile_key: str) -> None:
+    project = SongProject.new(
+        "Creator Project",
+        project_id=_id(f"creator:{profile_key}"),
+        creator_profile_key=profile_key,
+    )
+
+    assert project.creator_profile_key == profile_key
+    assert project.to_dict()["creator_profile_key"] == profile_key
+    assert SongProject.from_dict(project.to_dict()) == project
+
+
+@pytest.mark.parametrize(
+    ("legacy_key", "canonical_key"),
+    tuple(LEGACY_MODE_KEY_ALIASES.items()),
+)
+def test_explicit_legacy_creator_profile_aliases_canonicalize(
+    legacy_key: str,
+    canonical_key: str,
+) -> None:
+    project = SongProject.new(
+        "Migrated Creator Project",
+        project_id=_id(f"legacy-creator:{legacy_key}"),
+        creator_profile_key=legacy_key,
+    )
+
+    assert project.creator_profile_key == canonical_key
+    assert project.to_dict()["creator_profile_key"] == canonical_key
+    persisted_alias = _project().to_dict()
+    persisted_alias["creator_profile_key"] = legacy_key
+    restored = SongProject.from_dict(persisted_alias)
+    assert restored.creator_profile_key == canonical_key
+    assert restored.to_dict()["creator_profile_key"] == canonical_key
+
+
+@pytest.mark.parametrize(
+    "invalid_key",
+    ["unknown_profile", "", None, 42, True, {"profile": "music"}],
+)
+def test_schema_two_rejects_unknown_or_malformed_creator_profile_keys(
+    invalid_key: object,
+) -> None:
+    value = _project().to_dict()
+    value["creator_profile_key"] = invalid_key
+
+    with pytest.raises(SongProjectError, match="creator_profile_key"):
+        SongProject.from_dict(value)
+
+
+def test_creator_profile_schema_evolution_keeps_both_shapes_strict() -> None:
+    legacy_with_hidden_profile = _schema_one_value()
+    legacy_with_hidden_profile["creator_profile_key"] = "podcast_voice"
+    with pytest.raises(SongProjectError, match="unsupported fields"):
+        SongProject.from_dict(legacy_with_hidden_profile)
+
+    current_without_profile = _project().to_dict()
+    del current_without_profile["creator_profile_key"]
+    with pytest.raises(SongProjectError, match="missing required"):
+        SongProject.from_dict(current_without_profile)
+
+    for unsupported in (True, 3, "2"):
+        value = _project().to_dict()
+        value["schema_version"] = unsupported
+        with pytest.raises(SongProjectError, match="Unsupported song project schema"):
+            SongProject.from_dict(value)
+
+
+def test_creator_profile_field_is_appended_after_existing_positional_api() -> None:
+    project = SongProject(
+        _id("positional-project"),
+        "Positional Project",
+        48_000,
+        120.0,
+        TimeSignature(),
+        (),
+        (),
+        None,
+        0,
+        SONG_PROJECT_SCHEMA_VERSION,
+    )
+
+    assert project.creator_profile_key == "music"
 
 
 @pytest.mark.parametrize(
