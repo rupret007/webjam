@@ -1,11 +1,13 @@
-name: Prepare Verified WebJam v0.25 Testing Release (Disabled)
+name: Publish Verified WebJam v0.25 Testing Release
 
-# PRE-PROMOTION PLACEHOLDER ONLY.
-# This workflow must remain non-executable until the exact annotated tag,
-# successful tag CI, draft release, release body, and eight-asset inventory are
-# observed and pinned after the tag build. See docs/DESKTOP_RELEASE_RUNBOOK.md.
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Exact v0.25.0 annotated candidate tag"
+        required: true
+        default: v0.25.0
+        type: string
 
 permissions:
   contents: read
@@ -18,28 +20,386 @@ concurrency:
 env:
   EXPECTED_TAG: v0.25.0
   EXPECTED_VERSION: 0.25.0
-  POST_TAG_TAG_OBJECT: UNSET_POST_TAG_TAG_OBJECT
-  POST_TAG_TAG_COMMIT: UNSET_POST_TAG_TAG_COMMIT
-  POST_TAG_TAG_CI_RUN_ID: UNSET_POST_TAG_TAG_CI_RUN_ID
-  POST_TAG_RELEASE_ID: UNSET_POST_TAG_RELEASE_ID
-  POST_TAG_BODY_SHA256: UNSET_POST_TAG_BODY_SHA256
-  POST_TAG_INVENTORY_SHA256: UNSET_POST_TAG_INVENTORY_SHA256
+  PINNED_TAG_OBJECT: 004549d59af9020da886df29b26ed71f646d09b8
+  PINNED_TAG_COMMIT: 251aa4ce8e936e021eeba50e28a297fbe5a8a765
+  PINNED_TAG_CI_RUN_ID: 31879936789
+  PINNED_RELEASE_ID: 371028390
+  PINNED_INVENTORY_SHA256: 4afae8ce6f9df58e7ce153756cabfafdaa7258ca0680f741315500d69962e917
+  PINNED_BODY_SHA256: f4d83872e4ea482dcb4c0bc330675b8e14de70304bfe8086e1bfd9c5d42dd5bd
+  V0225_TAG_OBJECT: 88d48b518c582fdc219efa8d62bf996b625372df
+  V0225_TAG_COMMIT: d7d0039759e8334407fe2e6ed9e42edf0d7ef639
   SEALED_COMPONENT_TAG: jamulus-components-v3
   SEALED_COMPONENT_SEQUENCE: 6
+  SEALED_COMPONENT_URL: https://github.com/rupret007/webjam/releases/download/jamulus-components-v3/WebJam-Jamulus-components-v1.json
 
 jobs:
-  release-not-ready:
-    name: Post-tag release pins are not recorded
-    # Required fail-closed guard. A dispatch produces a skipped job and cannot
-    # checkout, validate, mutate, publish, or make any release Latest.
-    if: ${{ false }}
+  prove-candidate:
+    name: Prove exact fallback-only v0.25 candidate
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     permissions:
       contents: read
       actions: read
+    outputs:
+      tag_object: ${{ steps.source.outputs.tag_object }}
+      tag_commit: ${{ steps.source.outputs.tag_commit }}
+      master_commit: ${{ steps.source.outputs.master_commit }}
+      tag_ci_run_id: ${{ steps.candidate.outputs.tag_ci_run_id }}
     steps:
-      - name: Refuse unpinned v0.25 promotion
+      - name: Checkout release-control source without persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact immutable v0.25 source identity
+        id: source
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$REQUESTED_TAG" == "$EXPECTED_TAG" ]]
+          [[ "$GITHUB_REF" == "refs/heads/master" ]]
+          git fetch --no-tags origin \
+            "+refs/heads/master:refs/remotes/origin/master"
+          master_commit="$(git rev-parse refs/remotes/origin/master)"
+          [[ "$(git rev-parse HEAD)" == "$master_commit" ]]
+          tag_ref="refs/webjam-release-tags/$EXPECTED_TAG"
+          git fetch --no-tags origin "refs/tags/$EXPECTED_TAG:$tag_ref"
+          [[ "$(git cat-file -t "$tag_ref")" == "tag" ]]
+          tag_object="$(git rev-parse "$tag_ref")"
+          tag_commit="$(git rev-parse "${tag_ref}^{commit}")"
+          [[ "$tag_object" == "$PINNED_TAG_OBJECT" ]]
+          [[ "$tag_commit" == "$PINNED_TAG_COMMIT" ]]
+          git merge-base --is-ancestor "$tag_commit" "$master_commit"
+          [[ "$(git ls-remote --refs origin "refs/tags/$EXPECTED_TAG" \
+            | awk 'NR == 1 {print $1}')" == "$tag_object" ]]
+          historical_ref="refs/webjam-historical-tags/v0.22.5"
+          git fetch --no-tags origin "refs/tags/v0.22.5:$historical_ref"
+          [[ "$(git cat-file -t "$historical_ref")" == "tag" ]]
+          [[ "$(git rev-parse "$historical_ref")" == "$V0225_TAG_OBJECT" ]]
+          [[ "$(git rev-parse "${historical_ref}^{commit}")" == \
+            "$V0225_TAG_COMMIT" ]]
+          [[ "$(git ls-remote --refs origin refs/tags/v0.22.5 \
+            | awk 'NR == 1 {print $1}')" == "$V0225_TAG_OBJECT" ]]
+          packaged_version="$(sed -n \
+            's/^__version__ = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' \
+            webjam_qt/__init__.py)"
+          [[ "$packaged_version" == "$EXPECTED_VERSION" ]]
+          grep -Fq 'EMBEDDED_FALLBACK_VERSION = "3.12.2"' \
+            services/jamulus_component_update.py
+          grep -Fq 'jamulus-components-v3/WebJam-Jamulus-components-v1.json' \
+            services/jamulus_component_update.py
+          echo "tag_object=$tag_object" >> "$GITHUB_OUTPUT"
+          echo "tag_commit=$tag_commit" >> "$GITHUB_OUTPUT"
+          echo "master_commit=$master_commit" >> "$GITHUB_OUTPUT"
+
+      - name: Prove sealed v0.22.5 catalog cannot authorize v0.25.0
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Verify exact catalog rejection and baked fallback policy
         shell: bash
         run: |
-          echo "v0.25.0 promotion is disabled until exact post-tag pins exist." >&2
-          exit 1
+          set -euo pipefail
+          python -m pip install \
+            --disable-pip-version-check \
+            --require-hashes \
+            --only-binary=:all: \
+            --no-deps \
+            --requirement \
+            requirements-lock/component-catalog-verifier-linux-x64.txt
+          python -m pip check
+          catalog="$RUNNER_TEMP/sealed-v3-catalog.json"
+          curl -fsSL --proto '=https' --tlsv1.2 \
+            -o "$catalog" "$SEALED_COMPONENT_URL"
+          historical_source="$RUNNER_TEMP/v0225-source"
+          mkdir "$historical_source"
+          git archive "$V0225_TAG_COMMIT" \
+            | tar -x -C "$historical_source"
+          (
+            cd "$historical_source"
+            python -m tools.verify_jamulus_component_catalog \
+              --webjam-version 0.22.5 \
+              --minimum-sequence "$SEALED_COMPONENT_SEQUENCE" \
+              "$catalog" > "$RUNNER_TEMP/v0225-catalog-proof.json"
+          )
+          jq -e '
+            .sequence == 6
+            and .webjam_version == "0.22.5"
+            and .component_count == 8
+          ' "$RUNNER_TEMP/v0225-catalog-proof.json" >/dev/null
+          if python -m tools.verify_jamulus_component_catalog \
+            --webjam-version "$EXPECTED_VERSION" \
+            --minimum-sequence "$SEALED_COMPONENT_SEQUENCE" \
+            "$catalog" >/dev/null 2>&1; then
+            echo "Sealed v0.22.5 catalog unexpectedly authorized v0.25.0." >&2
+            exit 1
+          fi
+          python - <<'PY'
+          from core.jamulus_compatibility import (
+              ComponentTarget,
+              JamulusRole,
+              official_jamulus_compatibility_registry,
+          )
+
+          registry = official_jamulus_compatibility_registry()
+          required = {
+              (target, role)
+              for target in ComponentTarget
+              for role in (JamulusRole.CLIENT, JamulusRole.SERVER)
+          }
+          required.add((ComponentTarget.LINUX_X64, JamulusRole.HEADLESS))
+          for target, role in required:
+              entries = registry.compatible(
+                  role=role,
+                  target=target,
+                  webjam_version="0.25.0",
+              )
+              versions = {entry.version for entry in entries}
+              assert {"3.12.2", "3.12.3"}.issubset(versions)
+          PY
+
+      - name: Bind the unique successful tag CI
+        id: candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_COMMIT: ${{ steps.source.outputs.tag_commit }}
+        run: |
+          set -euo pipefail
+          gh api \
+            --paginate \
+            --slurp \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=$EXPECTED_TAG&event=push&status=success&per_page=100" \
+            > "$RUNNER_TEMP/tag-ci-pages.json"
+          jq -e \
+            --arg tag "$EXPECTED_TAG" \
+            --arg commit "$TAG_COMMIT" \
+            --argjson run_id "$PINNED_TAG_CI_RUN_ID" \
+            '
+              [
+                .[].workflow_runs[]
+                | select(
+                    .path == ".github/workflows/ci.yml"
+                    and .event == "push"
+                    and .head_branch == $tag
+                    and .head_sha == $commit
+                    and .status == "completed"
+                    and .conclusion == "success"
+                  )
+              ] as $matches
+              | if ($matches | length) != 1 then
+                  error("expected one unique successful v0.25.0 tag CI run")
+                elif $matches[0].id != $run_id then
+                  error("successful v0.25.0 tag CI run ID changed")
+                else
+                  $matches[0]
+                end
+            ' "$RUNNER_TEMP/tag-ci-pages.json" \
+            > "$RUNNER_TEMP/tag-ci.json"
+          tag_ci_run_id="$(jq -r '.id' "$RUNNER_TEMP/tag-ci.json")"
+          [[ "$tag_ci_run_id" =~ ^[1-9][0-9]*$ ]]
+          [[ "$tag_ci_run_id" == "$PINNED_TAG_CI_RUN_ID" ]]
+          echo "tag_ci_run_id=$tag_ci_run_id" >> "$GITHUB_OUTPUT"
+
+  publish-latest:
+    name: Publish exact v0.25.0 draft as Latest
+    needs: prove-candidate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    environment:
+      name: release-latest
+    steps:
+      - name: Checkout release-control source without persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Revalidate source, draft, inventory, and checksums
+        id: revalidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+          EXPECTED_TAG_OBJECT: ${{ needs['prove-candidate'].outputs.tag_object }}
+          EXPECTED_TAG_COMMIT: ${{ needs['prove-candidate'].outputs.tag_commit }}
+          EXPECTED_MASTER_COMMIT: ${{ needs['prove-candidate'].outputs.master_commit }}
+        run: |
+          set -euo pipefail
+          [[ "$REQUESTED_TAG" == "$EXPECTED_TAG" ]]
+          [[ "$GITHUB_REF" == "refs/heads/master" ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_MASTER_COMMIT" ]]
+          git fetch --no-tags origin \
+            "+refs/heads/master:refs/remotes/origin/master"
+          tag_ref="refs/webjam-release-tags/$EXPECTED_TAG"
+          git fetch --no-tags origin "refs/tags/$EXPECTED_TAG:$tag_ref"
+          [[ "$(git cat-file -t "$tag_ref")" == "tag" ]]
+          [[ "$(git rev-parse "$tag_ref")" == "$EXPECTED_TAG_OBJECT" ]]
+          [[ "$(git rev-parse "${tag_ref}^{commit}")" == "$EXPECTED_TAG_COMMIT" ]]
+          [[ "$(git rev-parse refs/remotes/origin/master)" == "$EXPECTED_MASTER_COMMIT" ]]
+          [[ "$EXPECTED_TAG_OBJECT" == "$PINNED_TAG_OBJECT" ]]
+          [[ "$EXPECTED_TAG_COMMIT" == "$PINNED_TAG_COMMIT" ]]
+          git merge-base --is-ancestor \
+            "$EXPECTED_TAG_COMMIT" "$EXPECTED_MASTER_COMMIT"
+          gh api \
+            --paginate \
+            --slurp \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            > "$RUNNER_TEMP/release-pages.json"
+          expected_assets="$(jq -cn --arg version "$EXPECTED_VERSION" '[
+            "WebJam-linux-x64.zip",
+            "WebJam-macos-arm64-ADHOC-TEST-ONLY.zip",
+            "WebJam-macos-x64-ADHOC-TEST-ONLY.zip",
+            ("WebJam-v" + $version + "-macos-arm64-ADHOC-TEST-ONLY.dmg"),
+            ("WebJam-v" + $version + "-macos-x64-ADHOC-TEST-ONLY.dmg"),
+            ("WebJam-v" + $version + "-windows-x64-UNSIGNED-TEST-ONLY-setup.exe"),
+            "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip",
+            ("WebJam-v" + $version + "-SHA256SUMS.txt")
+          ] | sort')"
+          jq -e \
+            --arg tag "$EXPECTED_TAG" \
+            --argjson release_id "$PINNED_RELEASE_ID" \
+            --argjson expected_assets "$expected_assets" \
+            --arg expected_name \
+              "WebJam v${EXPECTED_VERSION} — unsigned private test candidate." \
+            '
+              [ .[][] | select(.tag_name == $tag) ] as $matches
+              | if ($matches | length) != 1 then
+                  error("v0.25.0 draft identity changed")
+                elif (
+                  $matches[0].id != $release_id
+                  or $matches[0].draft != true
+                  or $matches[0].prerelease != false
+                  or $matches[0].name != $expected_name
+                  or ($matches[0].body | contains("unsigned private test candidate") | not)
+                  or ($matches[0].body | contains("keeps the reviewed embedded Jamulus 3.12.2") | not)
+                  or ($matches[0].body | contains("fallback.") | not)
+                  or ([ $matches[0].assets[].name ] | sort) != $expected_assets
+                  or ([ $matches[0].assets[].id ] | unique | length) != 8
+                  or any(
+                    $matches[0].assets[];
+                    .id <= 0
+                    or .size <= 0
+                    or (.digest | test("^sha256:[0-9a-f]{64}$") | not)
+                  )
+                ) then
+                  error("v0.25.0 draft or asset inventory changed")
+                else
+                  $matches[0]
+                end
+            ' "$RUNNER_TEMP/release-pages.json" \
+            > "$RUNNER_TEMP/draft.json"
+          body_sha256="$(jq -j '.body' "$RUNNER_TEMP/draft.json" \
+            | sha256sum | awk '{print $1}')"
+          [[ "$body_sha256" == "$PINNED_BODY_SHA256" ]]
+          inventory_sha256="$(jq -c \
+            '[.assets[] | {id,name,size,digest}] | sort_by(.name)' \
+            "$RUNNER_TEMP/draft.json" | sha256sum | awk '{print $1}')"
+          [[ "$inventory_sha256" == "$PINNED_INVENTORY_SHA256" ]]
+          mkdir "$RUNNER_TEMP/release-assets"
+          jq -r '.assets[] | [.id, .name, .digest] | @tsv' \
+            "$RUNNER_TEMP/draft.json" \
+            | while IFS=$'\t' read -r asset_id name digest; do
+                target="$RUNNER_TEMP/release-assets/$name"
+                gh api \
+                  -H "Accept: application/octet-stream" \
+                  -H "X-GitHub-Api-Version: 2022-11-28" \
+                  "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
+                  > "$target"
+                [[ -s "$target" && ! -L "$target" ]]
+                [[ "sha256:$(sha256sum -- "$target" | awk '{print $1}')" == "$digest" ]]
+              done
+          cd "$RUNNER_TEMP/release-assets"
+          checksum="WebJam-v${EXPECTED_VERSION}-SHA256SUMS.txt"
+          [[ "$(wc -l < "$checksum")" -eq 7 ]]
+          sha256sum --check --strict "$checksum"
+
+      - name: Publish immutable v0.25.0 private test candidate as Latest
+        id: publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api \
+            --method PATCH \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases/$PINNED_RELEASE_ID" \
+            -F draft=false \
+            -F prerelease=false \
+            -f make_latest=true \
+            > "$RUNNER_TEMP/published.json"
+          body_sha256="$(jq -j '.body' "$RUNNER_TEMP/published.json" \
+            | sha256sum | awk '{print $1}')"
+          [[ "$body_sha256" == "$PINNED_BODY_SHA256" ]]
+          jq -e \
+            --arg tag "$EXPECTED_TAG" \
+            --argjson release_id "$PINNED_RELEASE_ID" \
+            --arg expected_name \
+              "WebJam v${EXPECTED_VERSION} — unsigned private test candidate." \
+            '
+              .id == $release_id
+              and .tag_name == $tag
+              and .name == $expected_name
+              and .draft == false
+              and .prerelease == false
+              and .immutable == true
+              and (.assets | length) == 8
+            ' "$RUNNER_TEMP/published.json" >/dev/null
+
+      - name: Redownload and verify GitHub Latest identity and bytes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases/latest" \
+            > "$RUNNER_TEMP/latest.json"
+          body_sha256="$(jq -j '.body' "$RUNNER_TEMP/latest.json" \
+            | sha256sum | awk '{print $1}')"
+          [[ "$body_sha256" == "$PINNED_BODY_SHA256" ]]
+          jq -e \
+            --arg tag "$EXPECTED_TAG" \
+            --argjson release_id "$PINNED_RELEASE_ID" \
+            --arg expected_name \
+              "WebJam v${EXPECTED_VERSION} — unsigned private test candidate." \
+            '
+              .id == $release_id
+              and .tag_name == $tag
+              and .name == $expected_name
+              and .draft == false
+              and .prerelease == false
+              and .immutable == true
+              and (.assets | length) == 8
+            ' "$RUNNER_TEMP/latest.json" >/dev/null
+          inventory_sha256="$(jq -c \
+            '[.assets[] | {id,name,size,digest}] | sort_by(.name)' \
+            "$RUNNER_TEMP/latest.json" | sha256sum | awk '{print $1}')"
+          [[ "$inventory_sha256" == "$PINNED_INVENTORY_SHA256" ]]
+          mkdir "$RUNNER_TEMP/latest-assets"
+          jq -r '.assets[] | [.id, .name, .digest] | @tsv' \
+            "$RUNNER_TEMP/latest.json" \
+            | while IFS=$'\t' read -r asset_id name digest; do
+                target="$RUNNER_TEMP/latest-assets/$name"
+                gh api \
+                  -H "Accept: application/octet-stream" \
+                  -H "X-GitHub-Api-Version: 2022-11-28" \
+                  "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
+                  > "$target"
+                [[ -s "$target" && ! -L "$target" ]]
+                [[ "sha256:$(sha256sum -- "$target" | awk '{print $1}')" == "$digest" ]]
+              done
+          cd "$RUNNER_TEMP/latest-assets"
+          checksum="WebJam-v${EXPECTED_VERSION}-SHA256SUMS.txt"
+          [[ "$(wc -l < "$checksum")" -eq 7 ]]
+          sha256sum --check --strict "$checksum"

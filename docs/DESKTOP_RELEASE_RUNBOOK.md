@@ -19,12 +19,12 @@
 > sealed-v3 rejection proof, and pinned protected promotion passed. Never
 > rebuild or replace v0.24.0 or v0.23.0 assets with later source.
 
-> **v0.25.0 source-candidate boundary:** the current tree reports v0.25.0 but
-> no annotated tag, tag object/commit, successful tag CI run, draft release,
-> body digest, inventory digest, asset IDs/sizes/digests, checksum manifest, or
-> promotion result exists yet. GitHub Latest remains v0.24.0. The v0.25
-> publisher is deliberately non-executable until those post-tag facts are
-> recorded and independently reviewed.
+> **v0.25.0 pinned pre-publication boundary:** the exact annotated tag and its
+> unique successful four-target tag CI produced an eight-asset draft with a
+> seven-package checksum manifest. Those observed identities and hashes are
+> pinned in the enabled publisher. The candidate is still an unpublished draft;
+> GitHub Latest remains v0.24.0 until protected promotion succeeds. Every v0.25
+> physical and hardware gate remains **NOT RUN**.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version
@@ -54,36 +54,41 @@ rejects 0.25.1; that baked policy is not a signed managed-update catalog. The
 candidate therefore remains fallback-only unless a new immutable signed
 version-specific component channel is separately completed.
 
-## v0.25.0 pre-promotion procedure
+## v0.25.0 pinned promotion status
 
-The checked-in `.github/workflows/publish-v025-testing-release.yml` is a
-read-only placeholder with its only job forced false. It cannot publish or make
-a release Latest. Do not remove that guard before all of the following exist:
+The post-tag facts below were independently observed from the still-unpublished
+draft and are pinned by `.github/workflows/publish-v025-testing-release.yml`:
 
-1. Merge the fully reviewed source, docs, tests, version, SBOM, package copy,
-   and checklist to `master`; freeze release-related pushes.
-2. Create and push one annotated `v0.25.0` tag at the exact reviewed master
-   commit. Record the tag-object SHA and peeled tag-commit SHA.
-3. Let the tag run `.github/workflows/ci.yml` once successfully across all four
-   native targets and create the expected eight-asset draft. Record the unique
-   successful tag CI run ID and exact draft release ID.
-4. Query the draft through the GitHub API. Independently download every asset,
-   verify each GitHub SHA-256 digest, require the seven package entries in
-   `WebJam-v0.25.0-SHA256SUMS.txt`, then calculate the canonical release-body
-   and sorted `{id,name,size,digest}` inventory SHA-256 values.
-5. Replace every explicit `UNSET_POST_TAG_*` placeholder with those observed
-   values and replace the forced-false guard only in a separately reviewed
-   commit. The enabled workflow must preserve the v0.24 lane's exact tag,
-   descendant-master, unique tag-CI, immutable draft, eight-asset, checksum,
-   sealed-catalog-rejection, embedded-fallback, protected-environment, and
-   post-publication redownload checks, changed only for v0.25 pins.
-6. Rerun the workflow static tests from the release-control commit. Dispatch
-   only from exact `master` through `release-latest`, then independently verify
-   GitHub Latest and record the real evidence below the immutable v0.24 record.
+| Evidence | Exact value |
+| --- | --- |
+| Annotated tag | `v0.25.0` |
+| Annotated tag object | `004549d59af9020da886df29b26ed71f646d09b8` |
+| Peeled tag/source commit | `251aa4ce8e936e021eeba50e28a297fbe5a8a765` |
+| Unique successful tag CI | `31879936789`, attempt 1 |
+| Draft GitHub release | ID `371028390` |
+| Exact draft-body SHA-256 | `f4d83872e4ea482dcb4c0bc330675b8e14de70304bfe8086e1bfd9c5d42dd5bd` |
+| Canonical draft asset-inventory SHA-256 | `4afae8ce6f9df58e7ce153756cabfafdaa7258ca0680f741315500d69962e917` |
 
-No value in this pre-promotion section is release evidence. Run the
+The inventory digest is over the compact JSON array of
+`{id,name,size,digest}` objects sorted by asset name. It binds the eight exact
+draft assets, whose IDs are `515615810` through `515615817`; the checksum asset
+is `WebJam-v0.25.0-SHA256SUMS.txt` and its seven package entries remain subject
+to strict redownload verification inside the publisher.
+
+The enabled publisher preserves the v0.24 lane's exact annotated-tag,
+descendant-master, unique tag-CI, draft identity, eight-asset, checksum,
+sealed-catalog-rejection, embedded-fallback, protected-environment, immutable
+publication, and post-publication redownload checks. Dispatch it only from the
+exact reviewed `master` release-control commit after its CI succeeds and only
+through `release-latest`. Do not edit the draft, tag, release body, or assets.
+
+After protected promotion succeeds, independently verify GitHub Latest and
+record the real publisher run/job IDs, publication timestamp, full immutable
+asset inventory, and checksum contents below the v0.24 record. Until that
+verification completes, GitHub Latest remains v0.24.0 and the v0.25 candidate
+must not be described as published. Run the
 [v0.25 physical checklist](../V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-only against the exact published asset hashes; all rows begin **NOT RUN**.
+only against the exact published asset hashes; all rows remain **NOT RUN**.
 
 ## Supported targets
 
