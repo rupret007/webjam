@@ -1,7 +1,7 @@
-# Recording and Studio — v0.25.0 source candidate
+# Recording and Studio — v0.25.0
 
-> This document describes unpublished v0.25.0 source. GitHub **Latest** remains
-> the immutable v0.24.0 private test release.
+> This document describes the immutable v0.25.0 GitHub **Latest** private test
+> release. Verify an exact asset against its attached checksum manifest.
 > Physical recording, Shared Track audibility/isolation, playback, recovery,
 > long-session, and external-editor gates remain **NOT RUN** until exact
 > v0.25.0 package evidence is recorded.
@@ -325,7 +325,7 @@ notarization remain **NOT RUN**. Record them with the
 against an exact asset, build ID, SHA-256, environment, and evidence location.
 
 The [v0.24 checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md) remains
-immutable historical evidence for the current GitHub Latest release.
+immutable historical evidence for the prior release.
 
 ## Historical v0.22.4 evidence boundary
 

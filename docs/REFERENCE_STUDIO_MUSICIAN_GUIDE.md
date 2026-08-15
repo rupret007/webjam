@@ -5,9 +5,9 @@ a backing track. It can open without a WebJam session, Webex, or Jamulus. Its
 local playback and recording choices do not change the device, buffer, mix, or
 connection owned by Jamulus.
 
-> **v0.25.0 source candidate guide:** this document describes unpublished
-> source. Immutable GitHub **Latest** remains v0.24.0. Always verify an exact
-> downloaded asset against its attached checksum manifest before use.
+> **v0.25.0 private test release guide:** immutable v0.25.0 is GitHub
+> **Latest**. Always verify an exact downloaded asset against its attached
+> checksum manifest before use.
 
 Windows packages are unsigned. Mac packages are ad-hoc signed and unnotarized.
 Automated checks do not prove that a particular interface, driver, speaker, or
@@ -158,7 +158,7 @@ clipped-sample count, and deterministic RMS dBFS. RMS is not an integrated-LUFS
 mastering measurement. Treat clipping as a reason to lower track, effect, send,
 or master gain and bounce again.
 
-MP3 bounce is intentionally absent from the v0.25.0 source candidate. It appears only
+MP3 bounce is intentionally absent from v0.25.0. It appears only
 if a separate encoder adapter has passed the product's identity,
 output-decoding,
 and license-policy self-tests. Use WAV or FLAC for a lossless handoff.

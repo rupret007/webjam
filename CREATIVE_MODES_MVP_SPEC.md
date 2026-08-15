@@ -1,8 +1,10 @@
 # Creator profiles — v0.25.0 implemented contract
 
-> Status: unpublished v0.25.0 source candidate. GitHub **Latest** remains
-> immutable v0.24.0. This document supersedes the earlier speculative
-> cross-discipline MVP; it describes only the bounded behavior in current code.
+> Status: implemented in the immutable v0.25.0 GitHub **Latest** private test
+> release. This document supersedes the earlier speculative cross-discipline
+> MVP; it describes only the bounded behavior in v0.25.0 code. Physical and
+> platform-trust results remain **NOT RUN** until separately observed against an
+> exact checksum-verified release asset.
 
 ## Product decision
 

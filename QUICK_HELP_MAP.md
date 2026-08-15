@@ -1,8 +1,8 @@
-# WebJam quick help — v0.25.0 source candidate
+# WebJam quick help — v0.25.0
 
-> GitHub **Latest** remains immutable v0.24.0. These creator-profile and
-> multitrack labels describe unpublished v0.25.0 source; physical results remain
-> **NOT RUN** until observed against exact future packages.
+> GitHub **Latest** is the immutable v0.25.0 private test release. These
+> creator-profile and multitrack labels describe that exact release; physical
+> results remain **NOT RUN** until observed against checksum-verified packages.
 
 | Need | Use |
 | --- | --- |

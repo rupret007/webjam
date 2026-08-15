@@ -20,21 +20,23 @@
 > 3.12.3 identities through exact WebJam 0.23.0 only, allowing a known fallback;
 > that baked compatibility is not a signed v0.23 managed-update catalog.
 
-> **v0.24.0 published fallback-only desktop state:** the protected publisher
+> **v0.24.0 historical fallback-only desktop state:** the protected publisher
 > proved that sealed v3 cannot authorize v0.24.0 and did not move it. The exact
 > v0.24.0 source extends the unchanged,
 > CI-exercised 3.12.2/3.12.3 baked identities through exact WebJam 0.24.0 only
-> and rejects 0.24.1. The immutable GitHub Latest private test release packages
+> and rejects 0.24.1. Its immutable historical private test release packages
 > embedded 3.12.2 after that catalog-rejection proof; managed download still
 > requires a new fixed channel, monotonic sequence, offline signature, exact
 > inventory, independent redownload, and frozen-package verification. Every
 > component publication step for such a new channel remains **NOT RUN**.
 
-> **v0.25.0 source-candidate fallback-only state:** sealed v3 still authorizes
-> exact WebJam 0.22.5 only and cannot authorize 0.25.0. The source registry
+> **v0.25.0 published fallback-only desktop state:** the protected publisher
+> proved that sealed v3 still authorizes exact WebJam 0.22.5 only and rejects
+> 0.25.0 without moving the component channel. The v0.25.0 source registry
 > extends the unchanged audited 3.12.2/3.12.3 identities through exact WebJam
 > 0.25.0 and rejects 0.25.1 so the embedded fallback remains known, but that is
-> not a signed managed-update authorization. No v0.25 component tag, release,
+> not a signed managed-update authorization. Immutable v0.25.0 is GitHub
+> **Latest** desktop release `371028390`. No v0.25 component tag, release,
 > sequence, asset, signature, or PASS evidence exists. A future managed update
 > requires a new fixed channel and the complete procedure below.
 

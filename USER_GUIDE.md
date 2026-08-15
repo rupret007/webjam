@@ -1,9 +1,9 @@
-# WebJam creator guide — v0.25.0 source candidate
+# WebJam creator guide — v0.25.0
 
-> This guide describes unpublished v0.25.0 source. GitHub **Latest** remains the
-> exact immutable v0.24.0 private test release. No v0.25.0 package or physical
-> PASS result exists until exact tagged assets are built, verified, and
-> protected-published.
+> This guide describes the exact immutable v0.25.0 GitHub **Latest** private
+> test release. Use only a tagged asset verified against its attached checksum
+> manifest. Publication is not physical PASS evidence; every physical result
+> remains **NOT RUN** until separately observed.
 
 ## Follow the current guide
 

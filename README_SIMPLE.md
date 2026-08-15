@@ -2,12 +2,12 @@
 
 > **Private test release:** GitHub
 > [Latest](https://github.com/rupret007/webjam/releases/latest) is the immutable,
-> checksum-verified v0.24.0 package set. Windows is unsigned; macOS is ad-hoc
+> checksum-verified v0.25.0 package set. Windows is unsigned; macOS is ad-hoc
 > signed and unnotarized.
 
 > **Source note:** use the exact release tag and attached checksum manifest as
-> download evidence; an untagged checkout is not a substitute. The current
-> v0.25.0 source candidate has not been published as a release.
+> download evidence; an untagged checkout is not a substitute. The exact
+> v0.25.0 release is the current downloadable boundary.
 
 WebJam helps creators start a live audio session and keep its separate tracks
 organized. Jamulus handles low-latency audio. Any meeting platform can be
@@ -17,7 +17,7 @@ the meeting app, browser, or system output. Local Originals record only the
 input devices you explicitly select, so do not route meeting or system audio
 into those inputs.
 
-The v0.25.0 source candidate offers Music and Podcast & Voice as GA creator
+The v0.25.0 release offers Music and Podcast & Voice as GA creator
 profiles. Review & Rehearsal is visibly Preview: it supports live WebJam-audio
 Host/Join, Record Session, local notes, and playback/read-only review of a
 completed session take. It blocks standalone projects, take editing/comp/mix
@@ -25,8 +25,8 @@ mutation, track export, shared notes, visual sync, and media timecode. No
 profile directly or automatically taps a meeting app, browser, or system
 output.
 
-Current private test release: **v0.24.0**. Use only the exact assets attached to
-the immutable v0.24.0 GitHub release and verify them with its checksum manifest.
+Current private test release: **v0.25.0**. Use only the exact assets attached to
+the immutable v0.25.0 GitHub release and verify them with its checksum manifest.
 The four-platform release covers
 Windows, Ubuntu 22.04, Intel Mac, and
 Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc
@@ -153,4 +153,4 @@ convert them to PASS. Use the
 [v0.25 physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 for the exact multi-machine evidence to collect. The
 [v0.24 checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md) remains
-immutable historical evidence for the current GitHub Latest package.
+immutable historical evidence for the prior package.

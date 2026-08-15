@@ -6,17 +6,17 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-> Work after the v0.25.0 source candidate belongs here. Every published tag,
+> Work after the immutable v0.25.0 release belongs here. Every published tag,
 > release, and asset remains immutable historical evidence.
 
-## [0.25.0] — Creator profiles and authoritative multitrack source candidate
+## [0.25.0] — Creator profiles and authoritative multitrack private test candidate (2026-08-15)
 
-> This source identity is not yet a GitHub release. GitHub **Latest** remains
-> immutable v0.24.0 until an exact annotated v0.25.0 tag, successful four-target
-> tag build, eight-asset draft, checksums, fallback proof, post-tag pins, and
-> protected promotion all complete. Windows remains unsigned; macOS remains
-> ad-hoc signed and unnotarized. Every v0.25 physical and hardware result is
-> **NOT RUN**.
+> Published on 2026-08-15 as the immutable GitHub **Latest** private test
+> candidate and a new identity after immutable v0.24.0. Exact annotated tag,
+> four-platform tag CI, eight-asset release, checksums, fallback proof, post-tag
+> pins, protected promotion, and public redownload verification passed. Windows
+> remains unsigned; macOS remains ad-hoc signed and unnotarized. Every v0.25
+> physical and hardware result remains **NOT RUN**.
 
 ### Creator profiles
 
@@ -64,10 +64,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Native application verification, installation guidance, activation, and
   focus-based mute guidance remain Webex-only. A successful link handoff never
   claims meeting join, mute, participants, or recording.
-- Added a v0.25 physical checklist and a deliberately non-executable publisher
-  placeholder. Exact post-tag object/commit, tag CI, draft release, body, and
-  asset-inventory pins must be recorded before protected publication can be
-  enabled.
+- Added a v0.25 physical checklist and a publisher that began as a deliberately
+  non-executable placeholder. It was enabled only after the exact post-tag
+  object/commit, tag CI, draft release, body, and asset-inventory pins were
+  recorded, then passed protected publication and public redownload checks.
 
 ## [0.24.0] — Recording-first workstation private test candidate (2026-08-11)
 

@@ -30,9 +30,9 @@ support bundles, or unredacted local paths.
 Jamulus, meeting services, Python dependencies, Qt, and operating-system trust systems
 have their own upstream security channels. WebJam-specific orchestration,
 privacy projection, package verification, updater, transport, and lifecycle
-issues belong here. Immutable v0.24.0 remains GitHub **Latest** private test
-download; v0.25.0 is currently source-only and unpublished. The release and
-its immutable predecessors share
+issues belong here. Immutable v0.25.0 is the GitHub **Latest** private test
+download; use only an exact checksum-verified release asset. It and its
+immutable predecessors share
 this test-only trust boundary: Windows is unsigned and macOS is ad-hoc signed
 and unnotarized.
 

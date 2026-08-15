@@ -1,14 +1,13 @@
 # WebJam v0.25.0 creator-multitrack physical test checklist
 
-> Status: **NOT RUN**. v0.25.0 is an unpublished source candidate. GitHub
-> **Latest** remains immutable v0.24.0. This ledger may be filled only with
-> observations from exact future v0.25.0 release assets whose SHA-256 values
-> match their published checksum manifest.
+> Physical-test status: **NOT RUN**. Immutable v0.25.0 is the GitHub **Latest**
+> private test release. This ledger may be filled only with observations from
+> exact v0.25.0 release assets whose SHA-256 values match their published
+> checksum manifest.
 
-No v0.25.0 release ID, tag object, tag commit, CI run, asset ID, asset size,
-asset hash, checksum-manifest hash, body hash, inventory hash, or physical PASS
-evidence exists yet. Do not copy v0.24.0 evidence, use a branch artifact, or
-infer a hardware result from automated tests.
+The automated release identity below is verified; no physical PASS evidence
+exists yet. Do not copy v0.24.0 evidence, use a branch artifact, or infer a
+hardware result from automated tests or publication.
 
 Use `PASS`, `FAIL`, or `NOT RUN` only after recording the exact machine,
 interface, headphones, operating system, package filename, SHA-256, app version,
@@ -19,16 +18,16 @@ device UIDs, private paths, participant names, or raw exceptions.
 
 | Evidence | Result |
 | --- | --- |
-| Annotated `v0.25.0` tag object and peeled commit | **NOT RUN — unpublished** |
-| Unique successful tag CI run | **NOT RUN — unpublished** |
-| Draft and published release ID | **NOT RUN — unpublished** |
-| Release body and sorted inventory SHA-256 | **NOT RUN — unpublished** |
-| Windows Setup/ZIP names, sizes, IDs, and SHA-256 | **NOT RUN — unpublished** |
-| Intel Mac DMG/ZIP names, sizes, IDs, and SHA-256 | **NOT RUN — unpublished** |
-| Apple-silicon Mac DMG/ZIP names, sizes, IDs, and SHA-256 | **NOT RUN — unpublished** |
-| Ubuntu 22.04 x64 ZIP name, size, ID, and SHA-256 | **NOT RUN — unpublished** |
-| `WebJam-v0.25.0-SHA256SUMS.txt` identity and seven verified entries | **NOT RUN — unpublished** |
-| Physical client/server Jamulus identity and package build IDs | **NOT RUN — unpublished** |
+| Annotated `v0.25.0` tag object and peeled commit | **VERIFIED — automated release evidence:** tag object `004549d59af9020da886df29b26ed71f646d09b8`; commit `251aa4ce8e936e021eeba50e28a297fbe5a8a765` |
+| Unique successful tag CI run | **VERIFIED — automated release evidence:** source/master CI `31878786472`; tag CI `31879936789`, attempt 1; release job `95003611103` |
+| Draft and published release ID | **VERIFIED — automated release evidence:** ID `371028390`; release-control commit `5db6a45d8b019671759a84027da92889ac7a4a0e`; release-control CI `31881581088`; publisher run `31882801893`, proof job `95007614475`, publish job `95007634063`; published `2026-08-15T11:45:43Z`; `https://github.com/rupret007/webjam/releases/tag/v0.25.0` |
+| Release body and sorted inventory SHA-256 | **VERIFIED — automated release evidence:** body `f4d83872e4ea482dcb4c0bc330675b8e14de70304bfe8086e1bfd9c5d42dd5bd`; inventory `4afae8ce6f9df58e7ce153756cabfafdaa7258ca0680f741315500d69962e917` |
+| Windows Setup/ZIP names, sizes, IDs, and SHA-256 | **VERIFIED — automated release evidence:** Setup ID `515615810`, `WebJam-v0.25.0-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`, `144764425`, `f60b5743997488041294b3c7008d40534400d9664b3fad47de878dbe3d921b08`; ZIP ID `515615817`, `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip`, `165469225`, `10079dc6f0fab3f32c10c2a5d69a6305e16394158c1a81a1d678b58234bcaa62` |
+| Intel Mac DMG/ZIP names, sizes, IDs, and SHA-256 | **VERIFIED — automated release evidence:** DMG ID `515615812`, `WebJam-v0.25.0-macos-x64-ADHOC-TEST-ONLY.dmg`, `223463879`, `3235110843ef70cb4ea3872792ccb1a8be161de6efefed5d9db94d1443501795`; ZIP ID `515615811`, `WebJam-macos-x64-ADHOC-TEST-ONLY.zip`, `222449885`, `5eb202b326bf4a2f1ce991c2b962fc192853a56b847b33fd84aa4e8c0304e9ac` |
+| Apple-silicon Mac DMG/ZIP names, sizes, IDs, and SHA-256 | **VERIFIED — automated release evidence:** DMG ID `515615815`, `WebJam-v0.25.0-macos-arm64-ADHOC-TEST-ONLY.dmg`, `217200096`, `90b4e765b3b45437b16c99cbf3423e6df29ba8ccf6f1c536befa3f74d977880a`; ZIP ID `515615813`, `WebJam-macos-arm64-ADHOC-TEST-ONLY.zip`, `216137815`, `1da9615811f3669d09f344545077ac0c0d323091785377b8c7d9f16fb4355498` |
+| Ubuntu 22.04 x64 ZIP name, size, ID, and SHA-256 | **VERIFIED — automated release evidence:** ID `515615814`, `WebJam-linux-x64.zip`, `168124665`, `5e70a319af7e59a929fb197485b2403dd39d8d101c79a7eb04dbb1c88d82dc60` |
+| `WebJam-v0.25.0-SHA256SUMS.txt` identity and seven verified entries | **VERIFIED — automated release evidence:** ID `515615816`, size `749`, SHA-256 `de6f12ffb2eb9df43f2fb636dbc9854d583d10767765c1f12676f44ba2efa9d0`; all seven entries match the immutable inventory in the release runbook |
+| Physical client/server Jamulus identity and package build IDs | **NOT RUN — no physical package run recorded** |
 
 ## A. Package and clean-start boundary
 
@@ -119,7 +118,7 @@ device UIDs, private paths, participant names, or raw exceptions.
 
 | Gate family | Result | Blocking evidence |
 | --- | --- | --- |
-| Exact release identity | **NOT RUN** | Unpublished |
+| Exact release identity | **NOT RUN** | No physical package selected |
 | Windows package/install | **NOT RUN** | None recorded |
 | macOS package/install | **NOT RUN** | None recorded |
 | Linux package/run | **NOT RUN** | None recorded |
@@ -135,5 +134,5 @@ device UIDs, private paths, participant names, or raw exceptions.
 | Accessibility/layout | **NOT RUN** | None recorded |
 | Signing/notarization/platform trust | **NOT RUN** | None recorded |
 
-Release recommendation: **NOT RUN**. Do not promote or describe v0.25.0 as
-physically validated from this blank ledger.
+Release recommendation: **NOT RUN**. Do not describe v0.25.0 as physically
+validated from automated publication evidence.

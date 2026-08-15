@@ -1,8 +1,8 @@
-# WebJam v0.25.0 source-candidate test procedure
+# WebJam v0.25.0 private-test release procedure
 
-> v0.25.0 is unpublished source. GitHub **Latest** remains immutable v0.24.0.
-> No v0.25.0 physical result exists; every v0.25.0 physical, credentialed,
-> signing, and platform-trust gate is **NOT RUN**.
+> Immutable v0.25.0 is the GitHub **Latest** private test release. Its exact
+> package and publication identity is verified, but every v0.25.0 physical,
+> credentialed, signing, and platform-trust gate remains **NOT RUN**.
 
 ## Scope
 

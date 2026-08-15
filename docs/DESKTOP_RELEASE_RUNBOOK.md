@@ -13,17 +13,17 @@
 > and published release `367773776`. Every physical/credentialed gate remains
 > **NOT RUN** until separately observed against exact checksums.
 
-> **v0.24.0 published testing boundary:** this recording-first line is the
-> immutable GitHub Latest private test release. Its exact annotated tag,
+> **v0.24.0 historical testing boundary:** this recording-first line is an
+> immutable historical private test release. Its exact annotated tag,
 > successful four-target tag CI, eight-asset draft and checksum manifest,
 > sealed-v3 rejection proof, and pinned protected promotion passed. Never
 > rebuild or replace v0.24.0 or v0.23.0 assets with later source.
 
-> **v0.25.0 pinned pre-publication boundary:** the exact annotated tag and its
+> **v0.25.0 published testing boundary:** the exact annotated tag and its
 > unique successful four-target tag CI produced an eight-asset draft with a
 > seven-package checksum manifest. Those observed identities and hashes are
-> pinned in the enabled publisher. The candidate is still an unpublished draft;
-> GitHub Latest remains v0.24.0 until protected promotion succeeds. Every v0.25
+> pinned in the enabled publisher. Protected promotion and public redownload
+> verification passed, making immutable v0.25.0 GitHub Latest. Every v0.25
 > physical and hardware gate remains **NOT RUN**.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
@@ -47,17 +47,22 @@ managed 3.12.3 downloads can be advertised. Run the
 [v0.24 physical checklist](../V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
 against exact assets; automation cannot convert its **NOT RUN** rows to PASS.
 
-For v0.25.0, the sealed v3 catalog must likewise be proved valid for historical
-v0.22.5 and rejected for exact v0.25.0. The source registry narrowly recognizes
-the unchanged audited Jamulus 3.12.2/3.12.3 identities through 0.25.0 and
-rejects 0.25.1; that baked policy is not a signed managed-update catalog. The
-candidate therefore remains fallback-only unless a new immutable signed
-version-specific component channel is separately completed.
+For v0.25.0, the protected publisher proved the sealed v3 catalog valid for
+historical v0.22.5 and rejected for exact v0.25.0. The source registry narrowly
+recognizes the unchanged audited Jamulus 3.12.2/3.12.3 identities through
+0.25.0 and rejects 0.25.1; that baked policy is not a signed managed-update
+catalog. The candidate therefore remains fallback-only unless a new immutable
+signed version-specific component channel is separately completed.
 
-## v0.25.0 pinned promotion status
+## v0.25.0 pinned promotion status — completed
 
-The post-tag facts below were independently observed from the still-unpublished
-draft and are pinned by `.github/workflows/publish-v025-testing-release.yml`:
+The post-tag facts below were independently observed from the draft and pinned
+by `.github/workflows/publish-v025-testing-release.yml` before publication:
+
+The pinned prepublication checkpoint explicitly required the facts “GitHub
+Latest remains v0.24.0” and “v0.25.0 is still an unpublished draft.” Those are
+retained here only as historical inputs to protected dispatch; the verified
+publication record below supersedes them.
 
 | Evidence | Exact value |
 | --- | --- |
@@ -65,28 +70,23 @@ draft and are pinned by `.github/workflows/publish-v025-testing-release.yml`:
 | Annotated tag object | `004549d59af9020da886df29b26ed71f646d09b8` |
 | Peeled tag/source commit | `251aa4ce8e936e021eeba50e28a297fbe5a8a765` |
 | Unique successful tag CI | `31879936789`, attempt 1 |
-| Draft GitHub release | ID `371028390` |
-| Exact draft-body SHA-256 | `f4d83872e4ea482dcb4c0bc330675b8e14de70304bfe8086e1bfd9c5d42dd5bd` |
-| Canonical draft asset-inventory SHA-256 | `4afae8ce6f9df58e7ce153756cabfafdaa7258ca0680f741315500d69962e917` |
+| Draft and published GitHub release | ID `371028390`; published `2026-08-15T11:45:43Z` |
+| Exact release-body SHA-256 | `f4d83872e4ea482dcb4c0bc330675b8e14de70304bfe8086e1bfd9c5d42dd5bd` |
+| Canonical asset-inventory SHA-256 | `4afae8ce6f9df58e7ce153756cabfafdaa7258ca0680f741315500d69962e917` |
 
 The inventory digest is over the compact JSON array of
 `{id,name,size,digest}` objects sorted by asset name. It binds the eight exact
-draft assets, whose IDs are `515615810` through `515615817`; the checksum asset
-is `WebJam-v0.25.0-SHA256SUMS.txt` and its seven package entries remain subject
-to strict redownload verification inside the publisher.
+release assets, whose IDs are `515615810` through `515615817`; the checksum
+asset is `WebJam-v0.25.0-SHA256SUMS.txt` and its seven package entries passed
+strict redownload verification inside the publisher.
 
 The enabled publisher preserves the v0.24 lane's exact annotated-tag,
 descendant-master, unique tag-CI, draft identity, eight-asset, checksum,
 sealed-catalog-rejection, embedded-fallback, protected-environment, immutable
-publication, and post-publication redownload checks. Dispatch it only from the
-exact reviewed `master` release-control commit after its CI succeeds and only
-through `release-latest`. Do not edit the draft, tag, release body, or assets.
-
-After protected promotion succeeds, independently verify GitHub Latest and
-record the real publisher run/job IDs, publication timestamp, full immutable
-asset inventory, and checksum contents below the v0.24 record. Until that
-verification completes, GitHub Latest remains v0.24.0 and the v0.25 candidate
-must not be described as published. Run the
+publication, and post-publication redownload checks. Release-control commit
+`5db6a45d8b019671759a84027da92889ac7a4a0e` passed CI `31881581088` before
+protected publisher run `31882801893` passed proof job `95007614475` and publish
+job `95007634063`. Do not edit the tag, release body, or assets. Run the
 [v0.25 physical checklist](../V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 only against the exact published asset hashes; all rows remain **NOT RUN**.
 
@@ -904,4 +904,73 @@ unnotarized. Publication and automation do not prove physical audibility,
 recording, Studio, meeting-platform handoff, SmartScreen, Gatekeeper, signing,
 or notarization. Every such v0.24.0 result remains **NOT RUN** in the
 [recording-first physical checklist](../V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
+until dated evidence names one exact asset and checksum.
+
+### v0.25.0 creator-multitrack candidate — published Latest record
+
+v0.25.0 is an immutable private test release and a new package identity after
+v0.24.0. It was published as GitHub **Latest** at
+https://github.com/rupret007/webjam/releases/tag/v0.25.0. Never move its
+annotated tag, rebuild or replace an asset, edit the immutable release, or
+substitute a later `master` commit or branch artifact for its tagged bytes.
+
+The complete publication chain is pinned below:
+
+| Evidence | Exact value |
+| --- | --- |
+| Annotated tag | `v0.25.0` |
+| Annotated tag object | `004549d59af9020da886df29b26ed71f646d09b8` |
+| Peeled tag/source commit | `251aa4ce8e936e021eeba50e28a297fbe5a8a765` |
+| Source/master CI | `31878786472` |
+| Successful tag CI | `31879936789`, attempt 1 |
+| Tag draft-release job | `95003611103` |
+| Release-control commit | `5db6a45d8b019671759a84027da92889ac7a4a0e` |
+| Release-control CI | `31881581088` |
+| Protected publisher | run `31882801893`; proof job `95007614475`; publish job `95007634063` |
+| GitHub release | ID `371028390`; published `2026-08-15T11:45:43Z` |
+| Exact release-body SHA-256 | `f4d83872e4ea482dcb4c0bc330675b8e14de70304bfe8086e1bfd9c5d42dd5bd` |
+| Canonical asset-inventory SHA-256 | `4afae8ce6f9df58e7ce153756cabfafdaa7258ca0680f741315500d69962e917` |
+
+The inventory digest above is over the compact JSON array of
+`{id,name,size,digest}` objects sorted by asset name. The exact immutable asset
+inventory is:
+
+| Asset ID | Filename | Size (bytes) | GitHub digest |
+| ---: | --- | ---: | --- |
+| `515615814` | `WebJam-linux-x64.zip` | `168124665` | `sha256:5e70a319af7e59a929fb197485b2403dd39d8d101c79a7eb04dbb1c88d82dc60` |
+| `515615813` | `WebJam-macos-arm64-ADHOC-TEST-ONLY.zip` | `216137815` | `sha256:1da9615811f3669d09f344545077ac0c0d323091785377b8c7d9f16fb4355498` |
+| `515615811` | `WebJam-macos-x64-ADHOC-TEST-ONLY.zip` | `222449885` | `sha256:5eb202b326bf4a2f1ce991c2b962fc192853a56b847b33fd84aa4e8c0304e9ac` |
+| `515615816` | `WebJam-v0.25.0-SHA256SUMS.txt` | `749` | `sha256:de6f12ffb2eb9df43f2fb636dbc9854d583d10767765c1f12676f44ba2efa9d0` |
+| `515615815` | `WebJam-v0.25.0-macos-arm64-ADHOC-TEST-ONLY.dmg` | `217200096` | `sha256:90b4e765b3b45437b16c99cbf3423e6df29ba8ccf6f1c536befa3f74d977880a` |
+| `515615812` | `WebJam-v0.25.0-macos-x64-ADHOC-TEST-ONLY.dmg` | `223463879` | `sha256:3235110843ef70cb4ea3872792ccb1a8be161de6efefed5d9db94d1443501795` |
+| `515615810` | `WebJam-v0.25.0-windows-x64-UNSIGNED-TEST-ONLY-setup.exe` | `144764425` | `sha256:f60b5743997488041294b3c7008d40534400d9664b3fad47de878dbe3d921b08` |
+| `515615817` | `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip` | `165469225` | `sha256:10079dc6f0fab3f32c10c2a5d69a6305e16394158c1a81a1d678b58234bcaa62` |
+
+The checksum manifest's own GitHub digest is
+`sha256:de6f12ffb2eb9df43f2fb636dbc9854d583d10767765c1f12676f44ba2efa9d0`.
+Its seven package entries are exactly:
+
+```text
+5e70a319af7e59a929fb197485b2403dd39d8d101c79a7eb04dbb1c88d82dc60  WebJam-linux-x64.zip
+1da9615811f3669d09f344545077ac0c0d323091785377b8c7d9f16fb4355498  WebJam-macos-arm64-ADHOC-TEST-ONLY.zip
+5eb202b326bf4a2f1ce991c2b962fc192853a56b847b33fd84aa4e8c0304e9ac  WebJam-macos-x64-ADHOC-TEST-ONLY.zip
+90b4e765b3b45437b16c99cbf3423e6df29ba8ccf6f1c536befa3f74d977880a  WebJam-v0.25.0-macos-arm64-ADHOC-TEST-ONLY.dmg
+3235110843ef70cb4ea3872792ccb1a8be161de6efefed5d9db94d1443501795  WebJam-v0.25.0-macos-x64-ADHOC-TEST-ONLY.dmg
+f60b5743997488041294b3c7008d40534400d9664b3fad47de878dbe3d921b08  WebJam-v0.25.0-windows-x64-UNSIGNED-TEST-ONLY-setup.exe
+10079dc6f0fab3f32c10c2a5d69a6305e16394158c1a81a1d678b58234bcaa62  WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip
+```
+
+Source CI, successful tag CI, its draft-release job, release-control CI,
+protected proof, protected publish job, and the post-publication Latest
+redownload all passed. The protected publisher proved that immutable v3
+sequence 6 remains valid only for exact WebJam 0.22.5 and rejects v0.25.0; no
+component tag, release, or asset moved. The v0.25.0 packages therefore retain
+the reviewed embedded Jamulus 3.12.2 fallback. Managed 3.12.3 download remains
+unavailable until a new immutable signed version-specific channel exists.
+
+Windows remains unsigned. Both Mac architectures remain ad-hoc signed and
+unnotarized. Publication and automation do not prove physical audibility,
+recording, Studio, meeting-platform handoff, SmartScreen, Gatekeeper, signing,
+or notarization. Every such v0.25.0 result remains **NOT RUN** in the
+[creator-multitrack physical checklist](../V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 until dated evidence names one exact asset and checksum.

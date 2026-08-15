@@ -1,4 +1,4 @@
-"""v0.25.0 source identity and immutable prior-release contracts."""
+"""v0.25.0 release identity and immutable prior-release contracts."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ COMPONENT_UPDATE_SOURCE = (ROOT / "services" / "jamulus_component_update.py").re
 )
 
 
-def test_v0250_is_the_unpublished_source_candidate_identity() -> None:
+def test_v0250_is_the_published_private_test_release_identity() -> None:
     match = re.search(
         r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$',
         VERSION_SOURCE,
@@ -56,10 +56,14 @@ def test_v0250_is_the_unpublished_source_candidate_identity() -> None:
     assert "v0.22.4 is likewise a new source and package identity" in normalized
     assert "v0.22.5 is a new source and package identity" in normalized
     assert "Only the exact tag, release assets, checksum manifest" in normalized
-    assert "v0.25.0 is a new creator-multitrack source identity" in normalized
+    assert (
+        "v0.25.0 is a new creator-multitrack source and package identity"
+        in normalized
+    )
     assert "v0.24.0 bytes" in normalized
-    assert "Immutable v0.24.0 GitHub Latest private test candidate" in normalized
-    assert "release ID `368897541`" in normalized
+    assert "Immutable v0.25.0 GitHub Latest private test candidate" in normalized
+    assert "release ID `371028390`" in normalized
+    assert "v0.24.0 release" in normalized
     assert (
         "published the exact frozen packages with the reviewed embedded" in normalized
     )
@@ -123,32 +127,55 @@ def test_candidate_catalog_payload_tracks_v0250_without_rewriting_v0225() -> Non
     )
 
 
-def test_current_guides_separate_v0250_source_from_v0240_release_history() -> None:
+def test_current_guides_name_v0250_latest_and_keep_prior_history() -> None:
     expected = {
-        "ARCHITECTURE.md": "# WebJam architecture — v0.25.0 source candidate",
+        "ARCHITECTURE.md": "# WebJam architecture — v0.25.0",
+        "CHANGELOG.md": (
+            "## [0.25.0] — Creator profiles and authoritative multitrack "
+            "private test candidate"
+        ),
         "CLOSED_PILOT_PLAYBOOK.md": "v0.22.5 private test candidate",
+        "CREATIVE_MODES_MVP_SPEC.md": (
+            "implemented in the immutable v0.25.0 GitHub **Latest**"
+        ),
         "DEVELOPMENT.md": "# Developing WebJam v0.25.0",
-        "FIRST_JAM.md": "# First Session — WebJam v0.25.0 source candidate",
+        "FIRST_JAM.md": "# First Session — WebJam v0.25.0",
+        "HELP_ROUTING_MAP.md": "# WebJam help routing — v0.25.0",
+        "QUICK_HELP_MAP.md": "# WebJam quick help — v0.25.0",
+        "README.md": "Immutable v0.25.0 GitHub Latest private test candidate",
         "README_SIMPLE.md": "use the exact release tag and attached checksum manifest",
-        "SECURITY.md": "Immutable v0.24.0 remains GitHub **Latest**",
-        "TEST_PROCEDURE.md": "# WebJam v0.25.0 source-candidate test procedure",
-        "USER_GUIDE.md": "# WebJam creator guide — v0.25.0 source candidate",
+        "RECORDING_AND_STUDIO.md": "# Recording and Studio — v0.25.0",
+        "SECURITY.md": "Immutable v0.25.0 is the GitHub **Latest**",
+        "TEST_PROCEDURE.md": "# WebJam v0.25.0 private-test release procedure",
+        "USER_GUIDE.md": "# WebJam creator guide — v0.25.0",
         "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.25.0 UX acceptance checklist",
-        "RECORDING_AND_STUDIO.md": (
-            "# Recording and Studio — v0.25.0 source candidate"
+        "V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md": (
+            "Immutable v0.25.0 is the GitHub **Latest**"
         ),
-        "WEBEX_AUDIO_MODES.md": (
-            "# Meeting-platform companion guidance — v0.25.0 source candidate"
+        "WEBEX_AUDIO_MODES.md": "# Meeting-platform companion guidance — v0.25.0",
+        "docs/DESKTOP_RELEASE_RUNBOOK.md": (
+            "v0.25.0 creator-multitrack candidate — published Latest record"
         ),
-        "ios/README.md": "exact future v0.25.0 Mac test assets",
+        "docs/JAMULUS_COMPONENT_RELEASE_RUNBOOK.md": (
+            "v0.25.0 published fallback-only desktop state"
+        ),
+        "docs/PROJECT_BRIEF.md": (
+            "v0.25.0 is the immutable GitHub Latest creator-multitrack"
+        ),
+        "docs/README.md": (
+            "Current testing release:** immutable GitHub **Latest** is v0.25.0"
+        ),
+        "ios/README.md": "v0.25.0 private test release",
         "requirements-lock/README.md": (
-            "The v0.25.0 source candidate retains the exact dependency locks"
+            "The immutable v0.25.0 private test release retains"
         ),
         "WEBJAM_V0225_DEMO_READINESS.md": "# WebJam v0.22.5 two-musician demo readiness",
         "V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md": (
             "Immutable historical release `367773776`, tag `v0.23.0`"
         ),
-        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": ("v0.25.0 source candidate"),
+        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": (
+            "v0.25.0 private test release guide"
+        ),
     }
     for relative_path, marker in expected.items():
         assert marker in (ROOT / relative_path).read_text(encoding="utf-8")
@@ -179,14 +206,16 @@ def test_reference_track_play_story_is_route_gated_not_locked() -> None:
         assert "playback remains locked" not in normalized, relative_path
 
 
-def test_changelog_marks_v025_source_candidate_and_keeps_prior_history() -> None:
+def test_changelog_marks_v025_published_and_keeps_prior_history() -> None:
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "## [Unreleased]" in changelog
     assert (
-        "## [0.25.0] — Creator profiles and authoritative multitrack source candidate"
+        "## [0.25.0] — Creator profiles and authoritative multitrack "
+        "private test candidate (2026-08-15)"
         in changelog
     )
-    assert "not yet a GitHub release" in changelog
+    assert "Published on 2026-08-15 as the immutable GitHub **Latest**" in changelog
+    assert "public redownload verification passed" in changelog
     assert "## [0.24.0] — Recording-first workstation" in changelog
     assert "Published on 2026-08-11 as the immutable GitHub **Latest**" in changelog
     assert "## [0.23.0] — Shared Track and native multitrack" in changelog
@@ -237,9 +266,42 @@ def test_v0250_physical_checklist_is_linked_and_every_result_is_not_run() -> Non
     ]
     assert len(result_rows) >= 20
     assert all(line.endswith("| **NOT RUN** |") for line in result_rows)
+    identity_section = checklist.split("## Exact candidate identity\n", 1)[1].split(
+        "\n## A. Package and clean-start boundary", 1
+    )[0]
+    assert identity_section.count("**VERIFIED — automated release evidence:**") == 9
     assert (
-        "No v0.25.0 release ID, tag object, tag commit, CI run, asset ID" in checklist
-    )
+        "| Physical client/server Jamulus identity and package build IDs | "
+        "**NOT RUN — no physical package run recorded** |"
+    ) in identity_section
+    for marker in (
+        "004549d59af9020da886df29b26ed71f646d09b8",
+        "251aa4ce8e936e021eeba50e28a297fbe5a8a765",
+        "31878786472",
+        "31879936789",
+        "95003611103",
+        "5db6a45d8b019671759a84027da92889ac7a4a0e",
+        "31881581088",
+        "31882801893",
+        "95007614475",
+        "95007634063",
+        "371028390",
+        "2026-08-15T11:45:43Z",
+        "f4d83872e4ea482dcb4c0bc330675b8e14de70304bfe8086e1bfd9c5d42dd5bd",
+        "4afae8ce6f9df58e7ce153756cabfafdaa7258ca0680f741315500d69962e917",
+        "515615810",
+        "515615817",
+        "de6f12ffb2eb9df43f2fb636dbc9854d583d10767765c1f12676f44ba2efa9d0",
+    ):
+        assert marker in identity_section
+    decision_section = checklist.split("## Release decision summary\n", 1)[1]
+    decision_rows = [
+        line
+        for line in decision_section.splitlines()
+        if line.startswith("| ") and "Gate family" not in line and "---" not in line
+    ]
+    assert len(decision_rows) == 15
+    assert all("| **NOT RUN** |" in line for line in decision_rows)
     assert "Release recommendation: **NOT RUN**" in checklist
 
 
@@ -303,13 +365,108 @@ def test_v0250_local_notes_are_profile_scoped_bounded_and_local_only() -> None:
         assert "never shared" in normalized, relative_path
 
 
+def test_v0250_publication_evidence_is_exact() -> None:
+    runbook = (ROOT / "docs" / "DESKTOP_RELEASE_RUNBOOK.md").read_text(encoding="utf-8")
+    section = runbook.split(
+        "### v0.25.0 creator-multitrack candidate — published Latest record\n", 1
+    )[1]
+    for marker in (
+        "004549d59af9020da886df29b26ed71f646d09b8",
+        "251aa4ce8e936e021eeba50e28a297fbe5a8a765",
+        "31878786472",
+        "31879936789`, attempt 1",
+        "95003611103",
+        "5db6a45d8b019671759a84027da92889ac7a4a0e",
+        "31881581088",
+        "31882801893",
+        "95007614475",
+        "95007634063",
+        "371028390",
+        "2026-08-15T11:45:43Z",
+        "f4d83872e4ea482dcb4c0bc330675b8e14de70304bfe8086e1bfd9c5d42dd5bd",
+        "4afae8ce6f9df58e7ce153756cabfafdaa7258ca0680f741315500d69962e917",
+        "https://github.com/rupret007/webjam/releases/tag/v0.25.0",
+    ):
+        assert marker in section
+
+    expected_assets = (
+        (
+            "515615814",
+            "WebJam-linux-x64.zip",
+            "168124665",
+            "sha256:5e70a319af7e59a929fb197485b2403dd39d8d101c79a7eb04dbb1c88d82dc60",
+        ),
+        (
+            "515615813",
+            "WebJam-macos-arm64-ADHOC-TEST-ONLY.zip",
+            "216137815",
+            "sha256:1da9615811f3669d09f344545077ac0c0d323091785377b8c7d9f16fb4355498",
+        ),
+        (
+            "515615811",
+            "WebJam-macos-x64-ADHOC-TEST-ONLY.zip",
+            "222449885",
+            "sha256:5eb202b326bf4a2f1ce991c2b962fc192853a56b847b33fd84aa4e8c0304e9ac",
+        ),
+        (
+            "515615816",
+            "WebJam-v0.25.0-SHA256SUMS.txt",
+            "749",
+            "sha256:de6f12ffb2eb9df43f2fb636dbc9854d583d10767765c1f12676f44ba2efa9d0",
+        ),
+        (
+            "515615815",
+            "WebJam-v0.25.0-macos-arm64-ADHOC-TEST-ONLY.dmg",
+            "217200096",
+            "sha256:90b4e765b3b45437b16c99cbf3423e6df29ba8ccf6f1c536befa3f74d977880a",
+        ),
+        (
+            "515615812",
+            "WebJam-v0.25.0-macos-x64-ADHOC-TEST-ONLY.dmg",
+            "223463879",
+            "sha256:3235110843ef70cb4ea3872792ccb1a8be161de6efefed5d9db94d1443501795",
+        ),
+        (
+            "515615810",
+            "WebJam-v0.25.0-windows-x64-UNSIGNED-TEST-ONLY-setup.exe",
+            "144764425",
+            "sha256:f60b5743997488041294b3c7008d40534400d9664b3fad47de878dbe3d921b08",
+        ),
+        (
+            "515615817",
+            "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip",
+            "165469225",
+            "sha256:10079dc6f0fab3f32c10c2a5d69a6305e16394158c1a81a1d678b58234bcaa62",
+        ),
+    )
+    asset_rows = re.findall(
+        r"(?m)^\| `(\d+)` \| `([^`]+)` \| `(\d+)` \| `(sha256:[0-9a-f]{64})` \|$",
+        section,
+    )
+    assert asset_rows == list(expected_assets)
+
+    checksum_block = section.split(
+        "Its seven package entries are exactly:\n\n```text\n", 1
+    )[1].split("\n```", 1)[0]
+    expected_checksums = [
+        (digest.removeprefix("sha256:"), name)
+        for _asset_id, name, _size, digest in expected_assets
+        if name != "WebJam-v0.25.0-SHA256SUMS.txt"
+    ]
+    assert [tuple(line.split("  ", 1)) for line in checksum_block.splitlines()] == (
+        expected_checksums
+    )
+
+
 def test_v0240_publication_evidence_is_exact_and_current_guides_are_post_release() -> (
     None
 ):
     runbook = (ROOT / "docs" / "DESKTOP_RELEASE_RUNBOOK.md").read_text(encoding="utf-8")
     section = runbook.split(
         "### v0.24.0 recording-first candidate — published Latest record\n", 1
-    )[1]
+    )[1].split(
+        "\n### v0.25.0 creator-multitrack candidate — published Latest record", 1
+    )[0]
     for marker in (
         "99cb3798a925a39b70159e3a1a56166e98b5c316",
         "9edada8613b5aca6fec6a4110e2322611ad6658e",
@@ -399,20 +556,28 @@ def test_v0240_publication_evidence_is_exact_and_current_guides_are_post_release
 
     current_documents = (
         "README.md",
+        "README_SIMPLE.md",
+        "CHANGELOG.md",
         "ARCHITECTURE.md",
+        "CREATIVE_MODES_MVP_SPEC.md",
         "DEVELOPMENT.md",
         "FIRST_JAM.md",
         "HELP_ROUTING_MAP.md",
         "QUICK_HELP_MAP.md",
-        "README_SIMPLE.md",
-        "SECURITY.md",
         "RECORDING_AND_STUDIO.md",
+        "SECURITY.md",
         "TEST_PROCEDURE.md",
         "USER_GUIDE.md",
         "UX_ACCEPTANCE_CHECKLIST.md",
+        "V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md",
         "WEBEX_AUDIO_MODES.md",
+        "docs/DESKTOP_RELEASE_RUNBOOK.md",
+        "docs/JAMULUS_COMPONENT_RELEASE_RUNBOOK.md",
         "docs/PROJECT_BRIEF.md",
+        "docs/README.md",
         "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md",
+        "ios/README.md",
+        "requirements-lock/README.md",
     )
     forbidden = (
         "GitHub **Latest** remains immutable v0.23.0",
@@ -420,6 +585,13 @@ def test_v0240_publication_evidence_is_exact_and_current_guides_are_post_release
         "until protected v0.24 promotion",
         "until v0.24.0's protected promotion",
         "If no v0.24.0 release exists yet",
+        "GitHub **Latest** remains immutable v0.24.0",
+        "Immutable v0.24.0 remains GitHub **Latest**",
+        "Current private test release: **v0.24.0**",
+        "v0.25.0 is an unpublished",
+        "unpublished v0.25.0 source",
+        "No v0.25.0 release ID",
+        "no v0.25.0 kit is published yet",
     )
     for relative_path in current_documents:
         content = (ROOT / relative_path).read_text(encoding="utf-8")

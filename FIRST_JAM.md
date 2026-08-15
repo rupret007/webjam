@@ -1,10 +1,9 @@
-# First Session — WebJam v0.25.0 source candidate
+# First Session — WebJam v0.25.0
 
-> This guide describes the unpublished v0.25.0 source candidate. GitHub
-> **Latest** remains the immutable, checksum-verified v0.24.0 private test
-> release. Do not treat a checkout or branch artifact as a v0.25 package, and
-> record every v0.25 physical gate as **NOT RUN** until it is observed against
-> exact future release bytes.
+> This guide describes the immutable, checksum-verified v0.25.0 GitHub
+> **Latest** private test release. Do not treat a checkout or branch artifact as
+> a package, and record every v0.25 physical gate as **NOT RUN** until it is
+> observed against exact published release bytes.
 
 Before Host or Join, choose what you are creating: **Music** (GA), **Podcast &
 Voice** (GA), or **Review & Rehearsal** (Preview). The chosen profile changes
@@ -86,7 +85,7 @@ Use the
 to capture creator-profile, machine, interface, route, exact stem, recovery,
 and Studio evidence. The
 [v0.24 checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md) remains
-immutable history for the current GitHub Latest release.
+immutable historical evidence for the prior release.
 
 If Jamulus needs another change, choose **Bring Jamulus Forward** in the setup
 surface or **More → Audio Settings in Jamulus** after entering the session.

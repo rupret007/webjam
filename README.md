@@ -14,20 +14,20 @@ pretending to own systems that remain independent.
 
 > **Testing download:** GitHub [**Latest**](https://github.com/rupret007/webjam/releases/latest)
 > is the only current downloadable-test pointer. It resolves to immutable
-> v0.24.0, published from exact tag commit
-> `9edada8613b5aca6fec6a4110e2322611ad6658e` after four-platform CI,
+> v0.25.0, published from exact tag commit
+> `251aa4ce8e936e021eeba50e28a297fbe5a8a765` after four-platform CI,
 > eight-asset inventory, checksums, fallback proof, and protected promotion
 > passed. Windows is unsigned; macOS is ad-hoc signed and unnotarized.
 
-> **v0.25.0 source candidate:** the current tree has the creator-profile and
-> authoritative multitrack work described below, but it is not yet a GitHub
-> release. No v0.25.0 tag, package, checksum manifest, release ID, or physical
-> PASS evidence exists until the exact release process records it.
+> **v0.25.0 private test candidate:** the exact annotated tag, tag CI, package
+> inventory, checksum manifest, fallback proof, and protected publication are
+> recorded release evidence. Publication does not create physical PASS
+> evidence; those gates remain **NOT RUN** until separately observed.
 
-> **Download boundary:** use a v0.24.0 package only when its exact filename and
+> **Download boundary:** use a v0.25.0 package only when its exact filename and
 > SHA-256 appear on the immutable
-> [v0.24.0 GitHub release](https://github.com/rupret007/webjam/releases/tag/v0.24.0).
-> Every physical v0.24.0 gate remains **NOT RUN** until testers exercise those
+> [v0.25.0 GitHub release](https://github.com/rupret007/webjam/releases/tag/v0.25.0).
+> Every physical v0.25.0 gate remains **NOT RUN** until testers exercise those
 > exact packages. Do not substitute this source checkout or a branch artifact.
 
 New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
@@ -38,8 +38,8 @@ New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 | Area | Current state |
 | --- | --- |
 | Product | Creator-facing desktop conductor around Jamulus, optional external meeting conversation, Studio, and Pocket Stage |
-| Published line | Immutable v0.24.0 GitHub Latest private test candidate; verify its checksum manifest |
-| Current development | Unpublished v0.25.0 source candidate; Music and Podcast & Voice are GA profiles, Review & Rehearsal is Preview |
+| Published line | Immutable v0.25.0 GitHub Latest private test candidate; verify its checksum manifest |
+| Current product line | v0.25.0; Music and Podcast & Voice are GA profiles, Review & Rehearsal is Preview |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -77,7 +77,7 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
 
 ## Creator profiles
 
-The v0.25.0 source candidate applies one saved creator profile across launch,
+The v0.25.0 release applies one saved creator profile across launch,
 Host/Join, readiness, the live surface, recording, Studio, session records, and
 new standalone projects:
 
@@ -541,30 +541,32 @@ successful protected promotion behind GitHub
 [Latest](https://github.com/rupret007/webjam/releases/latest) are downloadable
 evidence. Do not use an untagged checkout or ordinary branch build as a release.
 
-The current source tree reports **v0.25.0** and is an unpublished source
-candidate. v0.25.0 is a new creator-multitrack source identity and never
-replaces v0.24.0 bytes. The exact
+The current source tree reports **v0.25.0**. v0.25.0 is a new
+creator-multitrack source and package identity and never replaces v0.24.0
+bytes. The exact
+[v0.25.0 release](https://github.com/rupret007/webjam/releases/tag/v0.25.0)
+is immutable GitHub Latest with the expected eight assets and checksum
+manifest. Source CI `31878786472`, successful tag CI `31879936789`, and
+protected publisher run `31882801893` are its package evidence; release ID
+`371028390` was published at `2026-08-15T11:45:43Z`. The exact
 [v0.24.0 release](https://github.com/rupret007/webjam/releases/tag/v0.24.0)
-remains immutable GitHub Latest with the expected eight assets and checksum
-manifest. Source CI `31540572960`, successful tag CI `31542495182` attempt 2,
-and protected publisher run `31546157181` are its package evidence; release ID
-`368897541` was published at `2026-08-11T23:23:12Z`. The exact
+remains immutable historical evidence with its original tag CI and protected
+promotion. The exact
 [v0.23.0 release](https://github.com/rupret007/webjam/releases/tag/v0.23.0)
 remains immutable historical evidence with its original tag CI and protected
 promotion. The immutable
 [v0.22.5 release](https://github.com/rupret007/webjam/releases/tag/v0.22.5)
 retains its original assets and evidence as a historical candidate.
 
-Immutable v0.24.0 GitHub Latest private test candidate remains the downloadable
-boundary. v0.24.0 is a recording-first identity and never replaces v0.23.0
-bytes.
-Its fallback-only testing lane proved that sealed v3 remains valid for
-historical v0.22.5 and is rejected for v0.24.0, then published the exact frozen
-packages with the reviewed embedded Jamulus 3.12.2. The baked compatibility policy
-recognizes the already audited 3.12.2 and 3.12.3 identities through exact
-v0.24.0 only; managed 3.12.3 download remains unavailable until a new signed
-version-specific channel exists. Physical participant results remain **NOT RUN**
-until separately recorded.
+Immutable v0.25.0 GitHub Latest private test candidate is the downloadable
+boundary. v0.25.0 is a creator-multitrack identity and never replaces v0.24.0
+bytes. Its fallback-only testing lane proved that sealed v3 remains valid for
+historical v0.22.5 and is rejected for v0.25.0, then published the exact frozen
+packages with the reviewed embedded Jamulus 3.12.2. The baked compatibility
+policy recognizes the already audited 3.12.2 and 3.12.3 identities through
+exact v0.25.0 only; managed 3.12.3 download remains unavailable until a new
+signed version-specific channel exists. Physical participant results remain
+**NOT RUN** until separately recorded.
 
 Published tags and assets remain immutable historical evidence. In particular,
 v0.20.0 history must not be moved. The v0.21.0 history must not be moved or
@@ -687,7 +689,7 @@ promote a package or claim audibility.
 
 - [Documentation index](docs/README.md)
 - [Project brief for technical stakeholders](docs/PROJECT_BRIEF.md)
-- [v0.25.0 source-candidate notes and release history](CHANGELOG.md)
+- [v0.25.0 release notes and release history](CHANGELOG.md)
 - [v0.25.0 creator-multitrack physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.24.0 recording-first physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
 - [Historical v0.23.0 Shared Track checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)

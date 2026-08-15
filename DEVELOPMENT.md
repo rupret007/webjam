@@ -1,13 +1,13 @@
 # Developing WebJam v0.25.0
 
-> **Current source line:** this guide describes the unpublished v0.25.0
-> creator-profile and authoritative multitrack candidate. The exact v0.24.0
-> tag remains the immutable GitHub **Latest** private test release.
+> **Current source line:** this guide describes the v0.25.0 creator-profile and
+> authoritative multitrack line. The exact v0.25.0 tag is the immutable GitHub
+> **Latest** private test release.
 
-> **Release boundary:** only the exact tagged v0.24.0 assets and attached
-> checksum manifest are authoritative for the current download. No v0.25.0
-> tag, asset, checksum, or release identity exists yet; every v0.25 physical
-> result is **NOT RUN**.
+> **Release boundary:** only the exact tagged v0.25.0 assets and attached
+> `WebJam-v0.25.0-SHA256SUMS.txt` manifest are authoritative for the current
+> download. A checkout or branch artifact is not a release; every v0.25
+> physical result remains **NOT RUN**.
 
 ## Local setup
 
@@ -192,14 +192,13 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree's package identity is `0.25.0`; it is not yet a release. Create
-no publisher with guessed tag objects, commits, CI runs, release IDs, body
-digests, inventory digests, asset IDs, sizes, or hashes. GitHub **Latest**
-remains immutable v0.24.0. After the exact annotated v0.25.0 tag builds all
-four targets and produces the reviewed eight-asset draft, record every live pin
-in the disabled v0.25 publisher, rerun its static tests, and only then use the
-protected promotion. Windows remains unsigned and macOS remains ad-hoc signed
-and unnotarized.
+The source tree's package identity is `0.25.0`. Its exact annotated tag built
+all four targets and produced the reviewed eight-asset release; the separately
+pinned publisher then passed the protected promotion and post-publication
+redownload checks. Do not change its tag, release, or assets, and never create a
+publisher with guessed tag objects, commits, CI runs, release IDs, body digests,
+inventory digests, asset IDs, sizes, or hashes. Windows remains unsigned and
+macOS remains ad-hoc signed and unnotarized.
 
 The v0.24.0 tag, asset inventory, checksums, tag CI, and protected promotion
 remain immutable historical release evidence and must not be reused.

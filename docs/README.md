@@ -4,14 +4,14 @@ This index is the front door for WebJam's documentation. Start with the
 audience that matches what you are trying to do; the root [README](../README.md)
 keeps the product story and five-minute demo intentionally short.
 
-> **Current testing release:** immutable GitHub **Latest** is v0.24.0. Use only
-> an exact release asset verified by `WebJam-v0.24.0-SHA256SUMS.txt`. Windows is
+> **Current testing release:** immutable GitHub **Latest** is v0.25.0. Use only
+> an exact release asset verified by `WebJam-v0.25.0-SHA256SUMS.txt`. Windows is
 > unsigned; macOS is ad-hoc signed and unnotarized; every physical test remains
 > **NOT RUN** until recorded against those packages.
 
-> **Current source:** v0.25.0 is an unpublished creator-profile and
-> authoritative multitrack candidate. Do not use a checkout or branch artifact
-> as a release. All v0.25.0 physical/hardware rows remain **NOT RUN**.
+> **Current source:** v0.25.0 is the creator-profile and authoritative
+> multitrack release line. Do not use a checkout or branch artifact as a
+> release. All v0.25.0 physical/hardware rows remain **NOT RUN**.
 
 ## Start here
 

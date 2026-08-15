@@ -1,10 +1,11 @@
-# WebJam architecture — v0.25.0 source candidate
+# WebJam architecture — v0.25.0
 
-> This document describes the unpublished v0.25.0 source candidate. GitHub
-> **Latest** remains immutable v0.24.0, published from exact tag commit
-> `9edada8613b5aca6fec6a4110e2322611ad6658e`. Source text is not package
-> evidence. All v0.25.0 physical, credentialed, signing, and platform-trust
-> gates stay **NOT RUN**.
+> This document describes the source behind the immutable v0.25.0 GitHub
+> **Latest** private test release, published from exact tag commit
+> `251aa4ce8e936e021eeba50e28a297fbe5a8a765`. Source text is not package
+> evidence; verify an exact release asset against
+> `WebJam-v0.25.0-SHA256SUMS.txt`. All v0.25.0 physical, credentialed, signing,
+> and platform-trust gates stay **NOT RUN**.
 
 ## Product boundary
 
