@@ -1,6 +1,6 @@
 module github.com/rupret007/webjam/transport
 
-go 1.25.12
+go 1.25.13
 
 require (
 	github.com/pion/ice/v4 v4.3.0

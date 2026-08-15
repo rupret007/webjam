@@ -118,7 +118,7 @@ def test_review_choice_is_local_optional_and_playback_only() -> None:
 
 
 @pytest.mark.parametrize("profile_key", ("podcast_voice", "review_rehearsal"))
-def test_creator_choice_truth_fits_the_fixed_compact_dialog(profile_key: str) -> None:
+def test_creator_choice_truth_fits_the_compact_dialog_floor(profile_key: str) -> None:
     dialog = LocalOriginalsChoiceDialog(creator_profile=profile_key)
     dialog.setStyleSheet(load_stylesheet())
     dialog.resize(600, 310)
@@ -133,7 +133,10 @@ def test_creator_choice_truth_fits_the_fixed_compact_dialog(profile_key: str) ->
             detail.text(),
         )
         assert dialog.size().width() == 600
-        assert dialog.size().height() == 310
+        # 600x310 is the requested compact floor. Qt may expand the dialog a
+        # few pixels when a platform font wraps to an additional line; that
+        # is the correct accessible behavior and must never become clipping.
+        assert 310 <= dialog.size().height() <= 360
         assert required.height() <= detail.contentsRect().height()
         buttons = [
             button

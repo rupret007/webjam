@@ -82,7 +82,7 @@ the packaged manifest provide its integrity boundary.
 An unsigned Windows artifact likewise fails the v3 native-signature gate by
 design; legacy v1/v2 behavior remains available.
 
-Build and verify with Go 1.25.12:
+Build and verify with Go 1.25.13:
 
 ```sh
 make check

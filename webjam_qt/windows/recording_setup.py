@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QLayout,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -124,8 +125,8 @@ class LocalOriginalsChoiceDialog(QDialog):
         self.resize(600, 310)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(Space.XL, Space.XL, Space.XL, Space.LG)
-        root.setSpacing(Space.MD)
+        root.setContentsMargins(Space.XL, Space.LG, Space.XL, Space.LG)
+        root.setSpacing(Space.SM)
 
         title = QLabel(title_text)
         title.setObjectName("SimpleSettingsTitle")
@@ -134,6 +135,10 @@ class LocalOriginalsChoiceDialog(QDialog):
         detail = QLabel(detail_text)
         detail.setObjectName("SimpleSettingsSubtitle")
         detail.setWordWrap(True)
+        detail.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Minimum,
+        )
         root.addWidget(detail)
         root.addStretch(1)
 

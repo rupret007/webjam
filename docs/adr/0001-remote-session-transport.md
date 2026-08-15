@@ -203,7 +203,7 @@ packaging/audit surface.
 
 ### Go ICE/QUIC sidecar
 
-Pinned Go 1.25.12, Pion ICE v4.3.0, Pion TURN v5.0.12, Pion transport v4.0.2,
+Pinned Go 1.25.13, Pion ICE v4.3.0, Pion TURN v5.0.12, Pion transport v4.0.2,
 and quic-go v0.60.0 compiled with `CGO_ENABLED=0`, `-trimpath`, and stripped
 symbols. A fixed-peer `net.PacketConn` adapter over Pion ICE successfully
 carried QUIC TLS 1.3, QUIC DATAGRAM, and a concurrent reliable stream.

@@ -192,7 +192,7 @@ result remains **NOT RUN**.
 - The exact local build environment and resolved Python package inventory are
   preserved beside the ZIP as `WebJam-v0.11.0-build-environment.txt` and
   `WebJam-v0.11.0-build-dependencies.txt` (Python 3.12.13, PyInstaller 6.21.0,
-  PySide6 6.11.1, Go 1.25.12).
+  PySide6 6.11.1, Go 1.25.13).
 - Installed candidate: `/Applications/WebJam.app`, version `0.11.0`, arm64.
 - Rollback app:
   `/Applications/WebJam-v0.10.0-before-v0.11.0-TEST-NIGHT.app`.

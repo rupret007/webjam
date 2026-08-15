@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+TRANSPORT_GO_MOD = (ROOT / "transport" / "go.mod").read_text(encoding="utf-8")
 _APPDATA_SCRIPT = (
     ROOT / ".github" / "scripts" / "assert-no-appdata-usage.sh"
 ).read_text(encoding="utf-8")
@@ -625,6 +626,12 @@ def test_every_external_action_is_pinned_to_an_immutable_commit() -> None:
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
         "softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228",
     }
+
+
+def test_transport_uses_the_reviewed_patched_go_toolchain_everywhere() -> None:
+    assert WORKFLOW.count('go-version: "1.25.13"') == 2
+    assert "1.25.12" not in WORKFLOW
+    assert re.search(r"(?m)^go 1\.25\.13$", TRANSPORT_GO_MOD)
 
 
 def test_release_generates_and_verifies_checksum_manifest_for_exact_assets() -> None:
