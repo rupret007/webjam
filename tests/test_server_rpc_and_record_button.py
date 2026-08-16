@@ -300,6 +300,10 @@ class TestRecordButtonWiring(unittest.TestCase):
         c.recording._local_capture = None
         c.recording._take_id = ""
         c.recording._reset_session_evidence()
+        with c.recording._evidence_lock:
+            c.recording._recording_plan = None
+            c.recording._recording_plan_take_id = ""
+            c.recording._recording_plan_fingerprint = ""
         c.settings.local_capture_enabled = False
         c.settings.musician_name = "Test Musician"
         c.settings.takes_directory = ""
@@ -310,6 +314,121 @@ class TestRecordButtonWiring(unittest.TestCase):
         # configured it would open a MODAL error dialog and hang the suite —
         # mock it (tests that assert on it use this mock).
         c._show_actionable_error = MagicMock()
+        # Start-path tests exercise coordinator authority, not the modal UI.
+        # The dialog/model have dedicated fail-closed tests; accept the exact
+        # immutable snapshot here so recorder worker assertions stay focused.
+        c._confirm_recording_readiness = MagicMock(return_value=True)
+
+    def _install_bound_capture_plan(self, input_maps):
+        from core.recording_readiness import (
+            RecordingStorageCheck,
+            RecordingStorageStatus,
+        )
+        from core.session_recording_plan import SessionRecordingPlan
+        from core.take_project import new_project_id
+
+        c = self.controller
+        take_id = new_project_id()
+        session_id = new_project_id()
+        participant_id = new_project_id()
+        plan = SessionRecordingPlan(
+            session_id=session_id,
+            take_id=take_id,
+            plan_generation=1,
+            roster=((participant_id, "Host"),),
+            expected_server_stems=(participant_id,),
+            count_in_frames=0,
+            pre_roll_frames=0,
+            storage=RecordingStorageCheck(
+                status=RecordingStorageStatus.READY,
+                detail="Recording storage is ready.",
+                free_bytes=10_000_000,
+                required_bytes=1_000_000,
+            ),
+            expected_source_count=(
+                1
+                + sum(
+                    bool(item.enabled and item.local_original_enabled)
+                    for item in input_maps
+                )
+            ),
+            created_at_utc="2026-08-16T12:00:00Z",
+            input_maps=tuple(input_maps),
+            server_channel_counts=(1,),
+        )
+        c.recording._session_id = session_id
+        c.recording._take_id = take_id
+        with c.recording._evidence_lock:
+            c.recording._recording_plan = plan
+            c.recording._recording_plan_take_id = take_id
+            c.recording._recording_plan_fingerprint = plan.plan_fingerprint()
+        return plan
+
+    def _install_guest_arm_plan(self, *, guest_track_count=1):
+        from core.recording_readiness import (
+            RecordingStorageCheck,
+            RecordingStorageStatus,
+        )
+        from core.session_recording_plan import (
+            GuestLocalOriginalBinding,
+            SessionRecordingPlan,
+        )
+        from core.take_project import new_project_id
+
+        c = self.controller
+        take_id = new_project_id()
+        session_id = new_project_id()
+        host_id = new_project_id()
+        guest_id = new_project_id()
+        source_ids = tuple(new_project_id() for _ in range(guest_track_count))
+        widths = tuple(1 for _ in range(guest_track_count))
+        plan = SessionRecordingPlan(
+            session_id=session_id,
+            take_id=take_id,
+            plan_generation=1,
+            roster=((host_id, "Host"), (guest_id, "Guest")),
+            expected_server_stems=(host_id, guest_id),
+            count_in_frames=0,
+            pre_roll_frames=0,
+            storage=RecordingStorageCheck(
+                status=RecordingStorageStatus.READY,
+                detail="Recording storage is ready.",
+                free_bytes=10_000_000,
+                required_bytes=1_000_000,
+            ),
+            expected_source_count=2 + guest_track_count,
+            created_at_utc="2026-08-16T12:00:00Z",
+            guest_local_originals=(
+                GuestLocalOriginalBinding(
+                    participant_id=guest_id,
+                    track_count=guest_track_count,
+                    map_fingerprint_sha256="ab" * 32,
+                    presence_generation=3,
+                    channel_counts=widths,
+                    logical_source_ids=source_ids,
+                ),
+            ),
+            server_channel_counts=(1, 1),
+        )
+        peer = SimpleNamespace(
+            active=True,
+            publish_capture_arm=MagicMock(
+                return_value=SimpleNamespace(arm_generation=7)
+            ),
+            wait_for_capture_arm_acknowledgements=MagicMock(return_value=True),
+            capture_arm_ready=MagicMock(return_value=True),
+            cancel_capture_arm=MagicMock(return_value=True),
+            discard_prepared_local_original_obligations=MagicMock(return_value=True),
+        )
+        c.host_peer = peer
+        c.recording._session_id = session_id
+        c.recording._take_id = take_id
+        c.recording.phase = c.recording.phase.__class__.PREFLIGHT
+        with c.recording._evidence_lock:
+            c.recording._recording_plan = plan
+            c.recording._recording_plan_take_id = take_id
+            c.recording._recording_plan_fingerprint = plan.plan_fingerprint()
+        return plan, peer
 
     def test_strip_button_emits_signal(self):
         received = []
@@ -457,6 +576,53 @@ class TestRecordButtonWiring(unittest.TestCase):
             c._reference_track = prior_reference_track
             c.recording._retire_active_take(take_id)
             c.recording.plan_shared_track_for_next_take(required=False)
+
+    def test_shared_track_count_in_is_an_authoritative_recorder_phase(self):
+        from core.take_project import new_project_id
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        take_id = new_project_id()
+        prior_reference_track = c._reference_track
+        prior_phase = c.recording.phase
+        try:
+            c.recording._take_id = take_id
+            c.recording._reset_session_evidence()
+            c.recording.plan_shared_track_for_next_take(required=True)
+            c.recording._begin_shared_track_transaction(take_id)
+            c.recording._set_phase(RecorderPhase.RECORDING)
+            c._reference_track = SimpleNamespace(
+                snapshot=SimpleNamespace(underrun_frames=0)
+            )
+            c.recording._confirmed_recording_started()
+
+            c.recording.observe_shared_track_snapshot(
+                SimpleNamespace(
+                    state=SimpleNamespace(value="playing"),
+                    active=True,
+                    cleanup_pending=False,
+                    count_in_active=True,
+                    underrun_frames=0,
+                )
+            )
+            self.assertIs(c.recording.phase, RecorderPhase.COUNT_IN)
+            self.assertEqual(c.recording.snapshot.phase.value, "count_in")
+
+            c.recording.observe_shared_track_snapshot(
+                SimpleNamespace(
+                    state=SimpleNamespace(value="playing"),
+                    active=True,
+                    cleanup_pending=False,
+                    count_in_active=False,
+                    underrun_frames=0,
+                )
+            )
+            self.assertIs(c.recording.phase, RecorderPhase.RECORDING)
+        finally:
+            c._reference_track = prior_reference_track
+            c.recording._retire_active_take(take_id)
+            c.recording.plan_shared_track_for_next_take(required=False)
+            c.recording.phase = prior_phase
 
     def test_shared_track_underruns_are_scoped_to_each_recording_window(self):
         from core.take_project import RecoveryStatus, new_project_id
@@ -651,6 +817,67 @@ class TestRecordButtonWiring(unittest.TestCase):
         finally:
             c.recording.phase = prior_phase
 
+    def test_unproven_participant_identity_refuses_before_take_allocation(self):
+        from core.recording_readiness import (
+            RecordingStorageCheck,
+            RecordingStorageStatus,
+        )
+
+        c = self.controller
+        prior_port = c.settings.server_rpc_port
+        prior_secret = c.settings.server_rpc_secret_file
+        prior_ids = dict(c.recording._participant_id_by_channel)
+        prior_phase = c.recording.phase
+        participant = SimpleNamespace(
+            channel_id=17,
+            name="Unproven guest",
+            role="Guest",
+            participant_id="",
+        )
+        storage = RecordingStorageCheck(
+            status=RecordingStorageStatus.READY,
+            detail="Recording storage is ready.",
+            free_bytes=10_000_000,
+            required_bytes=1_000_000,
+        )
+        try:
+            c.settings.server_rpc_port = 22124
+            c.settings.server_rpc_secret_file = "/private/recording.secret"
+            c.recording._participant_id_by_channel = {}
+            c.recording.phase = c.recording.phase.__class__.PREFLIGHT
+            c._show_actionable_error.reset_mock()
+            with (
+                patch(
+                    "webjam_qt.controllers.recording_coordinator."
+                    "_private_secret_file_identity",
+                    return_value=(1, 2, 3, 4),
+                ),
+                patch(
+                    "webjam_qt.controllers.recording_coordinator."
+                    "check_recording_storage",
+                    return_value=storage,
+                ),
+                patch.object(c, "peer_participant_id_for_channel", return_value=""),
+            ):
+                c.recording._begin_recording_start(
+                    [participant],
+                    "/private/recording.secret",
+                    hosted_readiness=None,
+                )
+
+            self.assertEqual(c.recording.phase.value, "error")
+            self.assertEqual(c.recording._take_id, "")
+            self.assertIsNone(c.recording._recording_plan)
+            guidance = c._show_actionable_error.call_args.kwargs
+            self.assertIn("durable recording identity", guidance["what_failed"])
+            self.assertIn("No recorder was started", guidance["what_failed"])
+            self.assertEqual(guidance["retry_callback"], c._on_record_requested)
+        finally:
+            c.settings.server_rpc_port = prior_port
+            c.settings.server_rpc_secret_file = prior_secret
+            c.recording._participant_id_by_channel = prior_ids
+            c.recording.phase = prior_phase
+
     def test_recording_plan_gate_requires_exact_sources_and_shared_generation(self):
         from core.recording_readiness import (
             RecordingStorageCheck,
@@ -688,6 +915,7 @@ class TestRecordButtonWiring(unittest.TestCase):
             shared_track=SharedTrackBinding(source_fingerprint, 8),
             shared_track_planned=True,
             input_maps=(InputMapBinding("Host Mic", 1, True, True),),
+            server_channel_counts=(1, 2),
         )
         musician = RecorderClientReceipt(1, "Alice", musician_id, "11" * 32, 1)
         reference = RecorderClientReceipt(
@@ -776,16 +1004,14 @@ class TestRecordButtonWiring(unittest.TestCase):
                 InputMapBinding("Room Pair", 2, True, True),
             ),
             creator_profile_key="podcast_voice",
+            server_channel_counts=(1,),
         )
         with c.recording._evidence_lock:
             c.recording._recording_plan = plan
             c.recording._recording_plan_take_id = take_id
             c.recording._recording_plan_fingerprint = plan.plan_fingerprint()
         try:
-            observed = (
-                LocalCaptureTrack("local-Host Mic", (0,)),
-                LocalCaptureTrack("local-Room Pair", (1, 2)),
-            )
+            observed = plan.resolved_capture_tracks()
             self.assertEqual(
                 c.recording._local_capture_plan_validation_errors(
                     take_id,
@@ -795,8 +1021,16 @@ class TestRecordButtonWiring(unittest.TestCase):
                 (),
             )
             wrong = (
-                LocalCaptureTrack("local-Host Mic", (0,)),
-                LocalCaptureTrack("local-Room Pair", (2, 3)),
+                LocalCaptureTrack(
+                    "local-Host Mic",
+                    (0,),
+                    logical_source_id=observed[0].logical_source_id,
+                ),
+                LocalCaptureTrack(
+                    "local-Room Pair",
+                    (2, 3),
+                    logical_source_id=observed[1].logical_source_id,
+                ),
             )
             self.assertTrue(
                 c.recording._local_capture_plan_validation_errors(
@@ -833,11 +1067,15 @@ class TestRecordButtonWiring(unittest.TestCase):
         host_id = new_project_id()
         guest_id = new_project_id()
         fingerprint = "ab" * 32
+        guest_logical_ids = (new_project_id(), new_project_id())
         obligation = SimpleNamespace(
             participant_id=guest_id,
             track_count=2,
             map_fingerprint=fingerprint,
             presence_generation=9,
+            channel_counts=(1, 2),
+            logical_source_ids=guest_logical_ids,
+            exact_topology=True,
         )
         peer = SimpleNamespace(
             active=True,
@@ -877,6 +1115,7 @@ class TestRecordButtonWiring(unittest.TestCase):
                 input_maps=(InputMapBinding("Host Mic", 1, True, True),),
                 guest_local_originals=bindings,
                 creator_profile_key="podcast_voice",
+                server_channel_counts=(1, 1),
             )
             receipts = (
                 RecorderClientReceipt(1, "Host", host_id, "11" * 32, 1),
@@ -900,6 +1139,9 @@ class TestRecordButtonWiring(unittest.TestCase):
                 track_count=1,
                 map_fingerprint="cd" * 32,
                 presence_generation=10,
+                channel_counts=(1,),
+                logical_source_ids=(guest_logical_ids[0],),
+                exact_topology=True,
             )
             peer.local_original_obligations_for_take = lambda _take_id: (changed,)
             self.assertTrue(
@@ -915,6 +1157,352 @@ class TestRecordButtonWiring(unittest.TestCase):
         finally:
             c.recording._retire_active_take(take_id)
             c.host_peer = prior_host_peer
+
+    def test_guest_capture_arm_acknowledges_before_server_start_path(self):
+        c = self.controller
+        prior_host_peer = c.host_peer
+        plan, peer = self._install_guest_arm_plan()
+        hosted_readiness = SimpleNamespace()
+        try:
+            with (
+                patch.object(
+                    c._ui_invoker,
+                    "invoke",
+                    side_effect=lambda callback: callback(),
+                ),
+                patch.object(
+                    c.recording,
+                    "_readiness_authority_still_matches",
+                    return_value=True,
+                ) as authority,
+                patch.object(
+                    c.recording, "_continue_recording_start"
+                ) as continue_start,
+                patch(
+                    "webjam_qt.controllers.recording_coordinator.threading.Thread"
+                ) as worker,
+            ):
+                self.assertTrue(
+                    c.recording._arm_guest_capture_before_server_start(
+                        plan,
+                        hosted_readiness,
+                    )
+                )
+                continue_start.assert_not_called()
+                self.assertEqual(worker.call_count, 1)
+                arm_thread = worker.call_args
+                self.assertEqual(arm_thread.kwargs["name"], "guest-capture-arm")
+                arm_thread.kwargs["target"](*arm_thread.kwargs["args"])
+
+            peer.publish_capture_arm.assert_called_once_with(
+                plan.take_id,
+                recording_plan_fingerprint=plan.plan_fingerprint(),
+            )
+            peer.wait_for_capture_arm_acknowledgements.assert_called_once_with(
+                plan.take_id,
+                arm_generation=7,
+                timeout_s=8.0,
+            )
+            peer.capture_arm_ready.assert_called_once_with(
+                plan.take_id,
+                arm_generation=7,
+            )
+            authority.assert_called_once_with(
+                plan,
+                hosted_readiness=hosted_readiness,
+                planned_shared_track=False,
+            )
+            continue_start.assert_called_once_with(plan)
+        finally:
+            c.recording._retire_active_take(plan.take_id)
+            c.host_peer = prior_host_peer
+
+    def test_guest_capture_arm_timeout_retires_take_without_server_start(self):
+        c = self.controller
+        prior_host_peer = c.host_peer
+        plan, peer = self._install_guest_arm_plan()
+        peer.wait_for_capture_arm_acknowledgements.return_value = False
+        try:
+            with (
+                patch.object(
+                    c._ui_invoker,
+                    "invoke",
+                    side_effect=lambda callback: callback(),
+                ),
+                patch.object(
+                    c.recording, "_continue_recording_start"
+                ) as continue_start,
+                patch(
+                    "webjam_qt.controllers.recording_coordinator.threading.Thread",
+                    side_effect=lambda *args, **kwargs: _Immediate(*args, **kwargs),
+                ),
+            ):
+                self.assertTrue(
+                    c.recording._arm_guest_capture_before_server_start(
+                        plan,
+                        SimpleNamespace(),
+                    )
+                )
+
+            continue_start.assert_not_called()
+            self.assertEqual(c.recording.phase.value, "error")
+            self.assertEqual(c.recording._take_id, "")
+            self.assertEqual(c.recording._guest_capture_arm_take_id, "")
+            self.assertEqual(c.recording._guest_capture_arm_generation, 0)
+            self.assertTrue(
+                any(
+                    call.args == (plan.take_id,)
+                    and call.kwargs.get("arm_generation") == 7
+                    for call in peer.cancel_capture_arm.call_args_list
+                )
+            )
+            self.assertEqual(
+                c._show_actionable_error.call_args.args[0],
+                "Guest Inputs Did Not Arm",
+            )
+        finally:
+            c.host_peer = prior_host_peer
+
+    def test_guest_capture_arm_rechecks_authority_after_ack(self):
+        c = self.controller
+        prior_host_peer = c.host_peer
+        plan, peer = self._install_guest_arm_plan()
+        try:
+            with (
+                patch.object(
+                    c._ui_invoker,
+                    "invoke",
+                    side_effect=lambda callback: callback(),
+                ),
+                patch.object(
+                    c.recording,
+                    "_readiness_authority_still_matches",
+                    return_value=False,
+                ) as authority,
+                patch.object(
+                    c.recording, "_continue_recording_start"
+                ) as continue_start,
+                patch(
+                    "webjam_qt.controllers.recording_coordinator.threading.Thread",
+                    side_effect=lambda *args, **kwargs: _Immediate(*args, **kwargs),
+                ),
+            ):
+                self.assertTrue(
+                    c.recording._arm_guest_capture_before_server_start(
+                        plan,
+                        SimpleNamespace(),
+                    )
+                )
+
+            authority.assert_called_once()
+            continue_start.assert_not_called()
+            self.assertEqual(c.recording.phase.value, "error")
+            self.assertEqual(c.recording._take_id, "")
+            self.assertEqual(
+                c._show_actionable_error.call_args.args[0],
+                "Recording Readiness Changed",
+            )
+        finally:
+            c.host_peer = prior_host_peer
+
+    def test_stale_guest_capture_arm_callback_cannot_resurrect_new_take(self):
+        from core.take_project import new_project_id
+
+        c = self.controller
+        prior_host_peer = c.host_peer
+        plan, peer = self._install_guest_arm_plan()
+        try:
+            with (
+                patch.object(
+                    c._ui_invoker,
+                    "invoke",
+                    side_effect=lambda callback: callback(),
+                ),
+                patch.object(
+                    c.recording, "_continue_recording_start"
+                ) as continue_start,
+                patch(
+                    "webjam_qt.controllers.recording_coordinator.threading.Thread"
+                ) as worker,
+            ):
+                self.assertTrue(
+                    c.recording._arm_guest_capture_before_server_start(
+                        plan,
+                        SimpleNamespace(),
+                    )
+                )
+                newer_take_id = new_project_id()
+                c.recording._take_id = newer_take_id
+                arm_thread = worker.call_args
+                arm_thread.kwargs["target"](*arm_thread.kwargs["args"])
+
+            continue_start.assert_not_called()
+            self.assertEqual(c.recording._take_id, newer_take_id)
+            peer.cancel_capture_arm.assert_any_call(
+                plan.take_id,
+                arm_generation=7,
+            )
+        finally:
+            c.recording._take_id = plan.take_id
+            c.recording._retire_active_take(plan.take_id)
+            c.host_peer = prior_host_peer
+
+    def test_live_source_projection_uses_one_exact_plan_for_every_route(self):
+        from core.recording_readiness import (
+            RecordingStorageCheck,
+            RecordingStorageStatus,
+        )
+        from core.recording_sources import (
+            RecordingSourceKind,
+            RecordingSourceState,
+        )
+        from core.session_recording_plan import (
+            GuestLocalOriginalBinding,
+            InputMapBinding,
+            SessionRecordingPlan,
+            SharedTrackBinding,
+        )
+        from core.take_library import RecorderClientReceipt
+        from core.take_project import new_project_id
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        take_id = new_project_id()
+        host_id = new_project_id()
+        guest_id = new_project_id()
+        reference_id = c.recording._reference_participant_id
+        guest_source_ids = (new_project_id(), new_project_id())
+        source_fingerprint = "ab" * 32
+        plan = SessionRecordingPlan(
+            session_id=c.recording._session_id,
+            take_id=take_id,
+            plan_generation=7,
+            roster=((host_id, "Host"), (guest_id, "Guest")),
+            expected_server_stems=(host_id, guest_id, reference_id),
+            count_in_frames=48_000,
+            pre_roll_frames=48_000,
+            storage=RecordingStorageCheck(
+                status=RecordingStorageStatus.READY,
+                detail="Recording storage is ready.",
+                free_bytes=10_000_000,
+                required_bytes=1_000_000,
+            ),
+            expected_source_count=6,
+            created_at_utc="2026-08-16T12:00:00Z",
+            shared_track=SharedTrackBinding(source_fingerprint, 4),
+            shared_track_planned=True,
+            input_maps=(InputMapBinding("Host Mic", 2, True, True),),
+            guest_local_originals=(
+                GuestLocalOriginalBinding(
+                    participant_id=guest_id,
+                    track_count=2,
+                    map_fingerprint_sha256="cd" * 32,
+                    presence_generation=9,
+                    channel_counts=(1, 2),
+                    logical_source_ids=guest_source_ids,
+                ),
+            ),
+            creator_profile_key="podcast_voice",
+            server_channel_counts=(1, 2, 2),
+        )
+        receipts = (
+            RecorderClientReceipt(10, "Host", host_id, "11" * 32, 1),
+            RecorderClientReceipt(11, "Guest", guest_id, "22" * 32, 2),
+            RecorderClientReceipt(
+                12,
+                "Shared Track",
+                reference_id,
+                "33" * 32,
+                2,
+                "reference_track",
+                source_fingerprint,
+                4,
+            ),
+        )
+        c.recording._take_id = take_id
+        c.recording._local_participant_id = host_id
+        c.recording._participant_ids = {10: host_id, 11: guest_id}
+        c.recording._track_names = {10: "Host", 11: "Guest"}
+        c.recording.phase = RecorderPhase.COUNT_IN
+        with c.recording._evidence_lock:
+            c.recording._recording_plan = plan
+            c.recording._recording_plan_take_id = take_id
+            c.recording._recording_plan_fingerprint = plan.plan_fingerprint()
+        with c.recording._receipt_lock:
+            c.recording._recording_receipts = {
+                (receipt.recorder_key_sha256, index): receipt
+                for index, receipt in enumerate(receipts)
+            }
+            c.recording._recording_conflicted_keys = set()
+            c.recording._recording_receipts_frozen_take_id = ""
+        try:
+            rows = c.recording.recording_source_presentations()
+            self.assertEqual(len(rows), 6)
+            self.assertEqual(
+                tuple(row.source_kind for row in rows),
+                (
+                    RecordingSourceKind.JAMULUS_SERVER,
+                    RecordingSourceKind.JAMULUS_SERVER,
+                    RecordingSourceKind.SHARED_TRACK,
+                    RecordingSourceKind.LOCAL_ORIGINAL,
+                    RecordingSourceKind.LOCAL_ORIGINAL,
+                    RecordingSourceKind.LOCAL_ORIGINAL,
+                ),
+            )
+            self.assertEqual(tuple(row.channels for row in rows), (1, 2, 2, 2, 1, 2))
+            self.assertEqual(
+                tuple(row.state for row in rows), (RecordingSourceState.RECORDING,) * 6
+            )
+            self.assertEqual(
+                tuple(row.channel_id for row in rows), (10, 11, -1, -1, -1, -1)
+            )
+            self.assertEqual(
+                tuple(row.logical_source_id for row in rows),
+                (
+                    *plan.server_logical_source_ids,
+                    plan.resolved_capture_tracks()[0].logical_source_id,
+                    *guest_source_ids,
+                ),
+            )
+        finally:
+            c.recording._retire_active_take(take_id)
+
+    def test_application_publishes_or_clears_exact_studio_source_snapshot(self):
+        from core.recording_sources import (
+            RecordingSourceKind,
+            RecordingSourcePresentation,
+            RecordingSourceState,
+        )
+        from core.take_project import new_project_id
+
+        c = self.controller
+        participant_id = new_project_id()
+        row = RecordingSourcePresentation(
+            participant_id=participant_id,
+            display_name="Host",
+            kind="musician",
+            state=RecordingSourceState.RECORDING,
+            channels=1,
+            logical_source_id=new_project_id(),
+            source_kind=RecordingSourceKind.JAMULUS_SERVER,
+            channel_id=7,
+        )
+        studio = c.window.recording_studio
+        with (
+            patch.object(
+                c.recording,
+                "recording_source_presentations",
+                side_effect=((row,), ()),
+            ),
+            patch.object(studio, "set_recording_sources") as publish,
+            patch.object(studio, "clear_recording_sources") as clear,
+        ):
+            c._apply_recording_states_to_participants()
+            publish.assert_called_once_with((row,))
+            clear.assert_not_called()
+
+            c._apply_recording_states_to_participants()
+            clear.assert_called_once_with()
 
     def test_plan_binding_checkpoints_exact_private_plan_before_recording(self):
         from core.recording_manifest_journal import RecordingManifestJournal
@@ -958,6 +1546,7 @@ class TestRecordButtonWiring(unittest.TestCase):
                     c.recording._bind_session_recording_plan(
                         storage,
                         planned_shared_track=True,
+                        server_channel_counts=(1, 2),
                     )
                 )
                 plan = c.recording._recording_plan
@@ -1001,6 +1590,42 @@ class TestRecordButtonWiring(unittest.TestCase):
 
         begin_finalization.assert_called_once_with(
             take_id,
+            stopped_utc="2026-08-03T12:00:00Z",
+            message="The host is finalizing the take.",
+        )
+
+    def test_confirmed_stop_finalizes_the_exact_acknowledged_ambiguous_arm(self):
+        from core.take_project import new_project_id
+
+        c = self.controller
+        take_id = new_project_id()
+        begin_finalization = MagicMock(side_effect=RuntimeError("not recording"))
+        begin_armed_finalization = MagicMock(return_value=object())
+        prior_host_peer = c.host_peer
+        c.host_peer = SimpleNamespace(
+            active=True,
+            begin_take_finalization=begin_finalization,
+            begin_armed_take_finalization=begin_armed_finalization,
+        )
+        with c.recording._evidence_lock:
+            c.recording._guest_capture_arm_take_id = take_id
+            c.recording._guest_capture_arm_generation = 11
+        try:
+            c.recording._signal_peer_recording_finalizing(
+                take_id,
+                stopped_utc="2026-08-03T12:00:00Z",
+                message="  The host is finalizing the take.  ",
+            )
+        finally:
+            with c.recording._evidence_lock:
+                c.recording._guest_capture_arm_take_id = ""
+                c.recording._guest_capture_arm_generation = 0
+            c.host_peer = prior_host_peer
+
+        begin_finalization.assert_called_once()
+        begin_armed_finalization.assert_called_once_with(
+            take_id,
+            arm_generation=11,
             stopped_utc="2026-08-03T12:00:00Z",
             message="The host is finalizing the take.",
         )
@@ -2301,35 +2926,163 @@ class TestRecordButtonWiring(unittest.TestCase):
             c.participants = {}
 
     def test_configured_spawns_worker_toward_armed(self):
+        from core.jamulus_roster_identity import JamulusCommonProfile
+        from core.recording_readiness import (
+            RecordingStorageCheck,
+            RecordingStorageStatus,
+        )
+
         c = self.controller
+        fixture = _hosted_readiness_fixture(
+            (JamulusCommonProfile("Host", 3, "Chicago", 2),)
+        )
+        old_host = c.host_peer
+        old_proof = c._primary_ordered_roster_proof
         with TemporaryDirectory() as directory:
             secret_path = Path(directory) / "jsonrpc.secret"
             secret_path.write_text("s3cret\n", encoding="utf-8")
             c.settings.server_rpc_secret_file = str(secret_path)
             c._jamulus_connected = True
-            c.participants = {1: SimpleNamespace(role="Guitar")}
-            with (
-                patch(
-                    "webjam_qt.controllers.recording_coordinator.check_recording_storage"
-                ) as storage,
-                patch.object(c, "_record_toggle_worker") as worker,
-                patch.object(
-                    c.recording, "_create_evidence_journal", return_value=True
-                ) as journal,
-                patch(
-                    "webjam_qt.controllers.application_controller.threading.Thread",
-                    side_effect=lambda *a, **kw: _Immediate(*a, **kw),
-                ),
-            ):
-                storage.return_value = SimpleNamespace(
-                    can_start=True,
-                    status="ready",
-                )
-                c._on_record_requested()
-            journal.assert_called_once()
-            worker.assert_called_once_with(True, str(secret_path))
-        c._jamulus_connected = False
-        c.participants = {}
+            c.host_peer = fixture.host_peer
+            c._primary_ordered_roster_proof = fixture.proof
+            c.participants = fixture.participants
+            ready_storage = RecordingStorageCheck(
+                RecordingStorageStatus.READY,
+                "Recording storage is ready.",
+                10_000_000,
+                1_000_000,
+            )
+            try:
+                with (
+                    patch.object(
+                        c.jamulus,
+                        "ordered_roster_proof_for",
+                        return_value=fixture.proof,
+                    ),
+                    patch(
+                        "webjam_qt.controllers.recording_coordinator."
+                        "_private_secret_file_identity",
+                        return_value=(1, 2, 3, 4),
+                    ),
+                    patch(
+                        "webjam_qt.controllers.recording_coordinator."
+                        "check_recording_storage",
+                        return_value=ready_storage,
+                    ),
+                    patch.object(c, "_record_toggle_worker") as worker,
+                    patch.object(
+                        c.recording, "request_authenticated_roster_observation"
+                    ),
+                    patch.object(
+                        c.recording,
+                        "_revalidate_hosted_recording_readiness",
+                        return_value=True,
+                    ),
+                    patch.object(
+                        c.recording, "_create_evidence_journal", return_value=True
+                    ) as journal,
+                    patch(
+                        "webjam_qt.controllers.recording_coordinator.threading.Thread",
+                        side_effect=lambda *a, **kw: _Immediate(*a, **kw),
+                    ),
+                ):
+                    context = c.recording._hosted_recording_readiness_context(
+                        list(fixture.participants.values())
+                    )
+                    self.assertIsNotNone(context)
+                    readiness = c.recording._evaluate_hosted_recording_readiness(
+                        fixture.payload,
+                        context,
+                        reference_before=None,
+                        reference_after=None,
+                    )
+                    self.assertIsNotNone(readiness)
+                    c.recording.phase = c.recording.phase.__class__.PREFLIGHT
+                    c.recording._begin_recording_start(
+                        list(fixture.participants.values()),
+                        str(secret_path),
+                        hosted_readiness=readiness,
+                    )
+                journal.assert_called_once()
+                worker.assert_called_once_with(True, str(secret_path))
+                self.assertEqual(fixture.capture_arm_calls, [])
+            finally:
+                c.host_peer = old_host
+                c._primary_ordered_roster_proof = old_proof
+                c._jamulus_connected = False
+                c.participants = {}
+
+    def test_readiness_acceptance_requeries_exact_server_topology(self):
+        from copy import deepcopy
+
+        from core.jamulus_roster_identity import JamulusCommonProfile
+
+        c = self.controller
+        fixture = _hosted_readiness_fixture(
+            (JamulusCommonProfile("Host", 3, "Chicago", 2),)
+        )
+        old_host = c.host_peer
+        old_proof = c._primary_ordered_roster_proof
+        old_participants = c.participants
+        old_secret = c.settings.server_rpc_secret_file
+        with TemporaryDirectory() as directory:
+            secret_path = Path(directory) / "jsonrpc.secret"
+            secret_path.write_text("s3cret\n", encoding="utf-8")
+            c.host_peer = fixture.host_peer
+            c._primary_ordered_roster_proof = fixture.proof
+            c.participants = fixture.participants
+            c.settings.server_rpc_secret_file = str(secret_path)
+            fake_rpc = MagicMock()
+            fake_rpc.__enter__ = MagicMock(return_value=fake_rpc)
+            fake_rpc.__exit__ = MagicMock(return_value=None)
+            fake_rpc.get_clients.return_value = fixture.payload
+            try:
+                with (
+                    patch.object(
+                        c.jamulus,
+                        "ordered_roster_proof_for",
+                        return_value=fixture.proof,
+                    ),
+                    patch(
+                        "webjam_qt.controllers.recording_coordinator."
+                        "_private_secret_file_identity",
+                        return_value=(1, 2, 3, 4),
+                    ),
+                    patch(
+                        "core.jamulus_server_rpc.JamulusServerRpc",
+                        return_value=fake_rpc,
+                    ),
+                    patch(
+                        "core.jamulus_server_rpc.read_secret_file",
+                        return_value="s3cret",
+                    ),
+                ):
+                    context = c.recording._hosted_recording_readiness_context(
+                        list(fixture.participants.values())
+                    )
+                    self.assertIsNotNone(context)
+                    expected = c.recording._evaluate_hosted_recording_readiness(
+                        fixture.payload,
+                        context,
+                        reference_before=None,
+                        reference_after=None,
+                    )
+                    self.assertIsNotNone(expected)
+                    self.assertTrue(
+                        c.recording._revalidate_hosted_recording_readiness(expected)
+                    )
+
+                    changed = deepcopy(fixture.payload)
+                    changed["clients"][0]["channels"] = 2
+                    fake_rpc.get_clients.return_value = changed
+                    self.assertFalse(
+                        c.recording._revalidate_hosted_recording_readiness(expected)
+                    )
+            finally:
+                c.host_peer = old_host
+                c._primary_ordered_roster_proof = old_proof
+                c.participants = old_participants
+                c.settings.server_rpc_secret_file = old_secret
 
     def test_hosted_preflight_waits_for_join_then_accepts_complete_retry(self):
         from core.local_capture import LocalCaptureTrack
@@ -2423,12 +3176,22 @@ class TestRecordButtonWiring(unittest.TestCase):
             self.assertNotIn(fixture.participant_ids[0], rendered)
             c._show_actionable_error.assert_not_called()
 
-            ready_storage = SimpleNamespace(can_start=True, status="ready")
+            ready_storage = SimpleNamespace(
+                can_start=True,
+                status="ready",
+                required_bytes=0,
+                detail="Recording storage is ready.",
+            )
             capture_tracks = (
                 LocalCaptureTrack("host-room", (0, 1)),
                 LocalCaptureTrack("host-mic", (2,)),
             )
             with (
+                patch.object(
+                    c.jamulus,
+                    "ordered_roster_proof_for",
+                    return_value=fixture.proof,
+                ),
                 patch(
                     "webjam_qt.controllers.recording_coordinator."
                     "check_recording_storage",
@@ -2441,12 +3204,22 @@ class TestRecordButtonWiring(unittest.TestCase):
                 ),
                 patch(
                     "webjam_qt.controllers.recording_coordinator."
+                    "check_local_capture_preflight",
+                    return_value=SimpleNamespace(ready=True),
+                ),
+                patch(
+                    "webjam_qt.controllers.recording_coordinator."
                     "snapshot_take_directories",
                     return_value={},
                 ),
                 patch.object(
                     c.recording,
                     "request_authenticated_roster_observation",
+                ),
+                patch.object(
+                    c.recording,
+                    "_revalidate_hosted_recording_readiness",
+                    return_value=True,
                 ),
                 patch.object(
                     c.recording,
@@ -2458,6 +3231,11 @@ class TestRecordButtonWiring(unittest.TestCase):
                     "_create_evidence_journal",
                     return_value=True,
                 ),
+                patch.object(
+                    c._ui_invoker,
+                    "invoke",
+                    side_effect=lambda callback: callback(),
+                ),
                 patch(
                     "webjam_qt.controllers.recording_coordinator.threading.Thread"
                 ) as toggle_thread,
@@ -2467,18 +3245,27 @@ class TestRecordButtonWiring(unittest.TestCase):
                     str(secret_path),
                     hosted_readiness=readiness,
                 )
+                self.assertEqual(toggle_thread.call_count, 1)
+                arm_thread = toggle_thread.call_args_list[0]
+                self.assertEqual(arm_thread.kwargs["name"], "guest-capture-arm")
+                arm_thread.kwargs["target"](*arm_thread.kwargs["args"])
             self.assertEqual(
                 c.recording._participant_ids,
                 dict(enumerate(fixture.participant_ids)),
             )
             self.assertTrue(c.recording._take_id)
-            toggle_thread.assert_called_once()
+            self.assertEqual(toggle_thread.call_count, 2)
+            self.assertEqual(
+                toggle_thread.call_args_list[1].kwargs["name"],
+                "record-toggle",
+            )
+            self.assertEqual(len(fixture.capture_arm_calls), 1)
             self.assertEqual(
                 [
                     call.kwargs["local_original_tracks"]
                     for call in storage_check.call_args_list
                 ],
-                [3, 5],
+                [3, 4, 4, 4],
             )
         finally:
             c.host_peer = old_host
@@ -2947,38 +3734,90 @@ class TestRecordButtonWiring(unittest.TestCase):
             self.assertIsNone(journal.load(c.recording._take_id))
 
     def test_evidence_journal_setup_failure_blocks_server_recording(self):
+        from core.jamulus_roster_identity import JamulusCommonProfile
+        from core.recording_readiness import (
+            RecordingStorageCheck,
+            RecordingStorageStatus,
+        )
+
         c = self.controller
+        fixture = _hosted_readiness_fixture(
+            (JamulusCommonProfile("Host", 3, "Chicago", 2),)
+        )
+        old_host = c.host_peer
+        old_proof = c._primary_ordered_roster_proof
         c.settings.server_rpc_secret_file = "/tmp/secret"
         c._jamulus_connected = True
-        c.participants = {1: SimpleNamespace(role="Guitar")}
-        ready = SimpleNamespace(can_start=True, status="ready")
-        with (
-            patch(
-                "webjam_qt.controllers.recording_coordinator.check_recording_storage",
-                return_value=ready,
-            ),
-            patch(
-                "webjam_qt.controllers.recording_coordinator._private_secret_file_identity",
-                return_value=(1, 2, 3, 4),
-            ),
-            patch.object(c.recording, "_create_evidence_journal", return_value=False),
-            patch.object(c, "_record_toggle_worker") as worker,
-        ):
-            c._on_record_requested()
+        c.host_peer = fixture.host_peer
+        c._primary_ordered_roster_proof = fixture.proof
+        c.participants = fixture.participants
+        ready = RecordingStorageCheck(
+            RecordingStorageStatus.READY,
+            "Recording storage is ready.",
+            10_000_000,
+            1_000_000,
+        )
+        try:
+            with (
+                patch.object(
+                    c.jamulus,
+                    "ordered_roster_proof_for",
+                    return_value=fixture.proof,
+                ),
+                patch(
+                    "webjam_qt.controllers.recording_coordinator."
+                    "check_recording_storage",
+                    return_value=ready,
+                ),
+                patch(
+                    "webjam_qt.controllers.recording_coordinator."
+                    "_private_secret_file_identity",
+                    return_value=(1, 2, 3, 4),
+                ),
+                patch.object(
+                    c.recording, "_create_evidence_journal", return_value=False
+                ),
+                patch.object(
+                    c.recording,
+                    "_revalidate_hosted_recording_readiness",
+                    return_value=True,
+                ),
+                patch.object(c, "_record_toggle_worker") as worker,
+            ):
+                context = c.recording._hosted_recording_readiness_context(
+                    list(fixture.participants.values())
+                )
+                self.assertIsNotNone(context)
+                readiness = c.recording._evaluate_hosted_recording_readiness(
+                    fixture.payload,
+                    context,
+                    reference_before=None,
+                    reference_after=None,
+                )
+                self.assertIsNotNone(readiness)
+                c.recording.phase = c.recording.phase.__class__.PREFLIGHT
+                c.recording._begin_recording_start(
+                    list(fixture.participants.values()),
+                    "/tmp/secret",
+                    hosted_readiness=readiness,
+                )
 
-        worker.assert_not_called()
-        self.assertEqual(c.recording.phase.value, "error")
-        self.assertEqual(c.recording._take_id, "")
-        self.assertEqual(
-            c._show_actionable_error.call_args.args[0],
-            "Recording Recovery Setup Failed",
-        )
-        self.assertIn(
-            "No server recording was started",
-            c._show_actionable_error.call_args.kwargs["next_action"],
-        )
-        c._jamulus_connected = False
-        c.participants = {}
+            worker.assert_not_called()
+            self.assertEqual(c.recording.phase.value, "error")
+            self.assertEqual(c.recording._take_id, "")
+            self.assertEqual(
+                c._show_actionable_error.call_args.args[0],
+                "Recording Recovery Setup Failed",
+            )
+            self.assertIn(
+                "No server recording was started",
+                c._show_actionable_error.call_args.kwargs["next_action"],
+            )
+        finally:
+            c.host_peer = old_host
+            c._primary_ordered_roster_proof = old_proof
+            c._jamulus_connected = False
+            c.participants = {}
 
     def test_pending_evidence_journal_is_surfaced_without_private_identifier(self):
         from core.recording_manifest_journal import RecordingManifestJournal
@@ -3737,14 +4576,16 @@ class TestRecordButtonWiring(unittest.TestCase):
 
     def test_missing_server_take_forwards_durable_boundary_to_recovery_manifest(self):
         """The no-server recovery path keeps the same export-blocking boundary."""
-        from core.take_project import new_project_id
+        from core.session_recording_plan import InputMapBinding
 
         c = self.controller
         with TemporaryDirectory() as directory:
             c.settings.takes_directory = directory
-            take_id = new_project_id()
-            c.recording._take_id = take_id
             c.recording._reset_session_evidence()
+            plan = self._install_bound_capture_plan(
+                (InputMapBinding("Host Mic", 1, True, True),)
+            )
+            take_id = plan.take_id
             capture = MagicMock()
 
             def stop_into(destination):
@@ -3758,6 +4599,9 @@ class TestRecordButtonWiring(unittest.TestCase):
                     durable_frames=240,
                     capture_device=None,
                     recovery_dir=None,
+                    # A broken writer supplied no finalized topology. The
+                    # manifest must see this absence, not the intended plan.
+                    tracks=(),
                 )
 
             capture.stop_into.side_effect = stop_into
@@ -3777,6 +4621,8 @@ class TestRecordButtonWiring(unittest.TestCase):
                 c.recording._build_take_validation(take_id=take_id)
 
         self.assertEqual(write_manifest.call_args.kwargs["local_durable_frames"], 240)
+        self.assertEqual(write_manifest.call_args.kwargs["local_capture_tracks"], ())
+        self.assertIs(write_manifest.call_args.kwargs["recording_plan"], plan)
 
     def test_salvage_reports_the_capture_recovery_folder_not_a_guess(self):
         c = self.controller
@@ -3882,19 +4728,34 @@ class TestRecordButtonWiring(unittest.TestCase):
         c._show_actionable_error.assert_called_once()
 
     def test_local_capture_starts_independently_of_talkback_mode(self):
+        from core.session_recording_plan import InputMapBinding
+
         c = self.controller
         c.settings.webex_audio_mode = "talkback"
         c.settings.local_capture_enabled = True
         c.settings.takes_directory = "/tmp/takes"
+        plan = self._install_bound_capture_plan(
+            (
+                InputMapBinding("host-guitar", 1, True, True),
+                InputMapBinding("host-vocal", 1, True, True),
+            )
+        )
         fake_capture = MagicMock()
-        with patch("core.local_capture.LocalInputCapture", return_value=fake_capture):
+        with patch(
+            "core.local_capture.LocalInputCapture", return_value=fake_capture
+        ) as capture_cls:
             self.assertTrue(c.recording._start_local_capture())
         fake_capture.start.assert_called_once()
+        self.assertEqual(
+            capture_cls.call_args.kwargs["tracks"], plan.resolved_capture_tracks()
+        )
         self.assertIs(c.recording._local_capture, fake_capture)
         c.recording._local_capture = None
         c.settings.local_capture_enabled = False
 
     def test_opted_out_input_map_never_starts_legacy_capture(self):
+        from core.session_recording_plan import InputMapBinding
+
         c = self.controller
         c.settings.local_capture_enabled = True
         c.settings.takes_directory = "/tmp/takes"
@@ -3906,6 +4767,7 @@ class TestRecordButtonWiring(unittest.TestCase):
                 "local_original_enabled": False,
             }
         ]
+        self._install_bound_capture_plan((InputMapBinding("Guide", 2, True, False),))
 
         with patch("core.local_capture.LocalInputCapture") as capture_cls:
             self.assertTrue(c.recording._start_local_capture())
@@ -3917,10 +4779,18 @@ class TestRecordButtonWiring(unittest.TestCase):
         c.settings.local_capture_enabled = False
 
     def test_local_capture_failure_blocks_server_start(self):
+        from core.session_recording_plan import InputMapBinding
+
         c = self.controller
         c.settings.webex_audio_mode = "video_only"
         c.settings.local_capture_enabled = True
         c.settings.takes_directory = "/tmp/takes"
+        self._install_bound_capture_plan(
+            (
+                InputMapBinding("host-guitar", 1, True, True),
+                InputMapBinding("host-vocal", 1, True, True),
+            )
+        )
         private_error = "device busy at /Users/musician/Secret Interface"
         with (
             patch(
@@ -5264,7 +6134,7 @@ class TestRecordButtonWiring(unittest.TestCase):
         fake_capture.stop_into.assert_not_called()
         fake_capture.abort.assert_not_called()
         self.assertIs(c.recording._local_capture, fake_capture)
-        self.assertEqual(c.recording.phase.value, "validating")
+        self.assertEqual(c.recording.phase.value, "finalizing")
 
     def test_stop_audio_clears_stale_take_verified_chip(self):
         from PySide6.QtWidgets import QMessageBox
@@ -5446,7 +6316,7 @@ class TestRecordButtonWiring(unittest.TestCase):
         original = strip.set_recording_phase
 
         def spy(phase, detail=""):
-            if phase == "validating" and detail:
+            if phase in {"finalizing", "validating"} and detail:
                 details.append(detail)
             original(phase, detail)
 
@@ -5529,6 +6399,7 @@ def _hosted_readiness_fixture(profiles):
         JamulusOrderedRosterRow,
         JamulusRpcMonitorIdentity,
     )
+    from core.logical_sources import derive_logical_source_id
     from core.take_project import new_project_id
 
     identity = JamulusRpcMonitorIdentity(31, 41, 5432)
@@ -5577,16 +6448,31 @@ def _hosted_readiness_fixture(profiles):
         for index, profile in enumerate(profiles)
     ]
     claims_holder = [tuple(claims)]
+    session_id = new_project_id()
     guest_obligations = tuple(
         SimpleNamespace(
             participant_id=participant_ids[index],
             track_count=1,
             map_fingerprint=(f"{index + 1:02x}" * 32),
             presence_generation=index + 1,
+            channel_counts=(1,),
+            logical_source_ids=(
+                derive_logical_source_id(
+                    session_id,
+                    participant_ids[index],
+                    "local_original",
+                    0,
+                ),
+            ),
+            exact_topology=True,
         )
         for index in range(1, len(participant_ids))
     )
     prepared_obligations = {}
+    capture_arms = {}
+    capture_arm_calls = []
+    capture_arm_cancellations = []
+    capture_arm_generation = [0]
 
     def _prepare_obligations(take_id):
         prepared_obligations[take_id] = guest_obligations
@@ -5595,9 +6481,45 @@ def _hosted_readiness_fixture(profiles):
     def _discard_obligations(take_id):
         return prepared_obligations.pop(take_id, None) is not None
 
+    def _publish_capture_arm(take_id, *, recording_plan_fingerprint):
+        capture_arm_generation[0] += 1
+        arm = SimpleNamespace(
+            take_id=take_id,
+            arm_generation=capture_arm_generation[0],
+            recording_plan_fingerprint=recording_plan_fingerprint,
+        )
+        capture_arms[take_id] = arm
+        capture_arm_calls.append(arm)
+        return arm
+
+    def _capture_arm_ready(take_id, *, arm_generation):
+        current = capture_arms.get(take_id)
+        return bool(
+            current is not None and current.arm_generation == int(arm_generation)
+        )
+
+    def _wait_for_capture_arm_acknowledgements(
+        take_id,
+        *,
+        arm_generation,
+        timeout_s,
+    ):
+        del timeout_s
+        return _capture_arm_ready(take_id, arm_generation=arm_generation)
+
+    def _cancel_capture_arm(take_id, *, arm_generation=None):
+        current = capture_arms.get(take_id)
+        if current is None or (
+            arm_generation is not None and current.arm_generation != int(arm_generation)
+        ):
+            return False
+        capture_arm_cancellations.append((take_id, arm_generation))
+        capture_arms.pop(take_id, None)
+        return True
+
     host_peer = SimpleNamespace(
         active=True,
-        session_id=new_project_id(),
+        session_id=session_id,
         host_enrollment=SimpleNamespace(participant_id=participant_ids[0]),
         recording_presence_snapshot=lambda **_kwargs: claims_holder[0],
         prepare_local_original_obligations=_prepare_obligations,
@@ -5605,6 +6527,10 @@ def _hosted_readiness_fixture(profiles):
             take_id, ()
         ),
         discard_prepared_local_original_obligations=_discard_obligations,
+        publish_capture_arm=_publish_capture_arm,
+        capture_arm_ready=_capture_arm_ready,
+        wait_for_capture_arm_acknowledgements=(_wait_for_capture_arm_acknowledgements),
+        cancel_capture_arm=_cancel_capture_arm,
     )
     participants = {
         local_id: SimpleNamespace(
@@ -5639,6 +6565,9 @@ def _hosted_readiness_fixture(profiles):
         host_peer=host_peer,
         participants=participants,
         payload=payload,
+        capture_arms=capture_arms,
+        capture_arm_calls=capture_arm_calls,
+        capture_arm_cancellations=capture_arm_cancellations,
     )
 
 

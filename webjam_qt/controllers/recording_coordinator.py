@@ -56,12 +56,27 @@ from core.recording_readiness import (
     RecordingStorageStatus,
     check_recording_storage,
 )
+from core.recording_readiness_presentation import (
+    RecordingChannelTopology,
+    RecordingReadinessPresentation,
+    RecordingReadinessSource,
+    RecordingSourceKind,
+    RecordingSourceReadiness,
+    RecordingStoragePresentation,
+    RecordingStorageReadiness,
+    SharedTrackPresentation,
+    SharedTrackReadiness,
+)
 from core.recording_sources import (
+    RecordingSourceKind as LiveRecordingSourceKind,
     RecordingSourcePresentation,
+    RecordingSourceState,
     project_recording_sources,
+    validate_exact_recording_sources,
 )
 from core.local_capture import (
-    LocalCaptureTrack,
+    LocalCapturePreflight,
+    check_local_capture_preflight,
     local_capture_track_map_fingerprint,
 )
 from core.session_recording_plan import (
@@ -87,7 +102,9 @@ LOGGER = logging.getLogger("webjam.qt.recording")
 _FINAL_RECEIPT_DRAIN_TIMEOUT_S = 5.0
 _SHARED_TRACK_FINALIZE_TIMEOUT_S = 5.0
 _PEER_INVENTORY_FINALIZE_TIMEOUT_S = 30.0
+_GUEST_CAPTURE_ARM_TIMEOUT_S = 8.0
 _SHARED_TRACK_PARTICIPANT_LABEL = "participant:shared-track"
+_SHARED_TRACK_RECORDER_CHANNELS = 2
 _RECORDING_DIAGNOSTIC_MAX_COUNT = 1_000_000
 _RECORDING_FAILURE_PRIORITIES = {
     "none": 0,
@@ -133,10 +150,15 @@ class RecorderPhase(str, Enum):
     IDLE = "idle"
     PREFLIGHT = "preflight"
     STARTING = "starting"
+    COUNT_IN = "count_in"
     RECORDING = "recording"
     STOPPING = "stopping"
-    VALIDATING = "validating"
+    FINALIZING = "finalizing"
+    # Compatibility alias for older tests/callers. New lifecycle evidence and
+    # UI projection use the truthful public name ``finalizing``.
+    VALIDATING = "finalizing"
     COMPLETE = "complete"
+    READY = "complete"
     NEEDS_ATTENTION = "needs_attention"
     STOP_FAILED = "stop_failed"
     ERROR = "error"
@@ -211,6 +233,18 @@ class _HostedRecordingReadiness:
     context: _HostedRecordingReadinessContext
     musician_ids_by_channel: tuple[tuple[int, str], ...]
     reference_channels: tuple[int, ...]
+    channel_counts_by_channel: tuple[tuple[int, int], ...]
+
+
+@dataclass(frozen=True, repr=False)
+class _GuestCaptureArmAttempt:
+    """One immutable guest-input arm request awaiting exact start ACKs."""
+
+    take_id: str
+    plan_fingerprint: str
+    arm_generation: int
+    hosted_readiness: _HostedRecordingReadiness
+    host_peer: object
 
 
 def _presence_authority_snapshot(
@@ -416,12 +450,14 @@ class RecordingCoordinator:
         # take. Workers use this immutable binding instead of mutable Settings.
         self._recording_rpc_take_id = ""
         self._recording_rpc_port = 0
-        # One immutable SessionRecordingPlan bound per take at record start;
-        # best-effort in this step (recorded, not yet enforced) and cleared
-        # with the take. Guarded by the evidence lock with its fingerprint.
+        # One authoritative SessionRecordingPlan is bound before any recorder
+        # starts and cleared with the take. Guarded by the evidence lock with
+        # its fingerprint.
         self._recording_plan: SessionRecordingPlan | None = None
         self._recording_plan_take_id = ""
         self._recording_plan_fingerprint = ""
+        self._guest_capture_arm_take_id = ""
+        self._guest_capture_arm_generation = 0
         self._recording_creator_profile_key = "music"
         self._recording_rpc_secret_file = ""
         self._recording_rpc_secret_identity: tuple[int, int, int, int] | None = None
@@ -526,7 +562,7 @@ class RecordingCoordinator:
                     in {
                         RecorderPhase.STOPPING,
                         RecorderPhase.STOP_FAILED,
-                        RecorderPhase.VALIDATING,
+                        RecorderPhase.FINALIZING,
                     }
                 )
             )
@@ -630,6 +666,7 @@ class RecordingCoordinator:
     def observe_shared_track_snapshot(self, snapshot: object) -> None:
         """Reduce a local Shared Track snapshot to take-scoped lifecycle truth."""
 
+        next_phase: RecorderPhase | None = None
         with self._shared_track_condition:
             if not (
                 self._shared_track_required
@@ -642,6 +679,15 @@ class RecordingCoordinator:
             ).lower()
             if self._shared_track_recorder_active and state == "playing":
                 self._shared_track_playback_proven = True
+            if self._shared_track_recorder_active and self.phase in {
+                RecorderPhase.RECORDING,
+                RecorderPhase.COUNT_IN,
+            }:
+                next_phase = (
+                    RecorderPhase.COUNT_IN
+                    if bool(getattr(snapshot, "count_in_active", False))
+                    else RecorderPhase.RECORDING
+                )
             if self._shared_track_recorder_active:
                 self._shared_track_underrun_peak = max(
                     self._shared_track_underrun_peak,
@@ -657,6 +703,27 @@ class RecordingCoordinator:
                 ):
                     self._shared_track_cleanup_confirmed = True
             self._shared_track_condition.notify_all()
+        if (
+            next_phase is not None
+            and self.phase in {RecorderPhase.RECORDING, RecorderPhase.COUNT_IN}
+            and self.phase is not next_phase
+        ):
+            self._set_phase(next_phase)
+
+    def _confirmed_active_recording_phase(self) -> RecorderPhase:
+        """Return the exact active phase visible after recorder confirmation."""
+
+        controller = getattr(self._c, "_reference_track", None)
+        snapshot = getattr(controller, "snapshot", None)
+        with self._shared_track_condition:
+            shared_required = bool(
+                self._shared_track_required
+                and self._shared_track_take_id
+                and self._shared_track_take_id == self._take_id
+            )
+        if shared_required and bool(getattr(snapshot, "count_in_active", False)):
+            return RecorderPhase.COUNT_IN
+        return RecorderPhase.RECORDING
 
     def note_shared_track_cleanup_requested(self) -> None:
         """Join the host route's Stop acknowledgement to the active take."""
@@ -751,15 +818,22 @@ class RecordingCoordinator:
         if not take_id or self._validation_take_id == take_id:
             return False
         self._validation_take_id = take_id
-        self._set_phase(RecorderPhase.VALIDATING)
+        self._set_phase(RecorderPhase.FINALIZING)
         self._begin_take_validation(take_id)
         return True
 
     def _retire_active_take(self, take_id: str) -> None:
         """Forget active ownership after a terminal validation/recovery path."""
 
+        host_peer = getattr(self._c, "host_peer", None)
+        cancel_guest_arm = getattr(host_peer, "cancel_capture_arm", None)
+        if take_id and callable(cancel_guest_arm):
+            try:
+                cancel_guest_arm(take_id)
+            except Exception:  # noqa: BLE001 - retirement stays idempotent
+                LOGGER.warning("Could not cancel a pending guest capture arm.")
         discard_guest_plan = getattr(
-            getattr(self._c, "host_peer", None),
+            host_peer,
             "discard_prepared_local_original_obligations",
             None,
         )
@@ -794,6 +868,9 @@ class RecordingCoordinator:
                 self._recording_plan = None
                 self._recording_plan_take_id = ""
                 self._recording_plan_fingerprint = ""
+            if take_id and self._guest_capture_arm_take_id == take_id:
+                self._guest_capture_arm_take_id = ""
+                self._guest_capture_arm_generation = 0
         with self._shared_track_condition:
             if take_id and self._shared_track_take_id == take_id:
                 self._shared_track_take_id = ""
@@ -1384,10 +1461,12 @@ class RecordingCoordinator:
             channel_by_ordinal[row.ordinal] = channel_id
         musician_ids: list[tuple[int, str]] = []
         reference_channels: list[int] = []
+        channel_counts: list[tuple[int, int]] = []
         for ordinal, observation in enumerate(observations):
             channel_id = channel_by_ordinal.get(ordinal)
             if channel_id is None:
                 return None
+            channel_counts.append((channel_id, observation.channels))
             if observation.matches_owned_reference and stable_reference is not None:
                 reference_channels.append(channel_id)
                 continue
@@ -1408,6 +1487,7 @@ class RecordingCoordinator:
             context=context,
             musician_ids_by_channel=tuple(sorted(musician_ids)),
             reference_channels=tuple(sorted(reference_channels)),
+            channel_counts_by_channel=tuple(sorted(channel_counts)),
         )
 
     def retry_pending_authenticated_roster_observation(self) -> None:
@@ -2053,12 +2133,28 @@ class RecordingCoordinator:
     def recording_source_presentations(
         self,
     ) -> tuple[RecordingSourcePresentation, ...]:
-        """One bounded per-source truth row per musician for the workspace.
+        """One complete, exact, plan-bound source snapshot for the workspace.
 
-        Snapshots every input under the receipt lock and projects through
-        the pure, conservative rules in core.recording_sources; safe to
-        call from the UI thread.
+        Receipt evidence continues to own Jamulus source state. The immutable
+        recording plan supplies stable logical IDs, exact mono/stereo widths,
+        and the Local Original inventory. If either side is absent or the
+        combined snapshot is ambiguous, return no rows rather than falling
+        back to roster order, filenames, or guessed topology.
         """
+
+        with self._evidence_lock:
+            take_id = str(self._take_id or "")
+            session_id = str(self._session_id or "")
+            plan = (
+                self._recording_plan
+                if self._recording_plan is not None
+                and self._recording_plan_take_id == take_id
+                and self._recording_plan.take_id == take_id
+                and self._recording_plan.session_id == session_id
+                else None
+            )
+        if plan is None or not plan.server_topology_exact:
+            return ()
 
         with self._receipt_lock:
             receipts = (
@@ -2078,16 +2174,140 @@ class RecordingCoordinator:
                 )
                 for channel_id in sorted(self._participant_ids)
             )
-        with self._shared_track_condition:
-            shared_track_planned = bool(self._shared_track_required)
-        return project_recording_sources(
+            channel_by_participant = {
+                participant_id: channel_id
+                for channel_id, participant_id in self._participant_ids.items()
+                if participant_id
+            }
+        projected = project_recording_sources(
             phase=getattr(self.phase, "value", str(self.phase or "")),
             roster=roster,
             receipts=receipts,
             conflicted_keys=conflicted,
             receipts_frozen=frozen,
-            shared_track_planned=shared_track_planned,
+            shared_track_planned=plan.shared_track_planned,
         )
+        if not projected:
+            return ()
+
+        phase = str(getattr(self.phase, "value", self.phase) or "").lower()
+        if phase in {"preflight", "starting"}:
+            local_state = RecordingSourceState.ARMED
+        elif phase in {"count_in", "recording"}:
+            local_state = RecordingSourceState.RECORDING
+        elif phase == "stopping":
+            local_state = RecordingSourceState.STOPPING
+        elif phase == "complete":
+            local_state = RecordingSourceState.FINALIZED
+        elif phase in {"finalizing", "validating", "needs_attention"}:
+            # Until the manifest and guest reconciliation have committed, the
+            # UI must not call an intended Local Original finalized or missing.
+            local_state = RecordingSourceState.WAITING
+        else:
+            return ()
+
+        roster_names = dict(plan.roster)
+        server_states = {
+            row.participant_id: row.state
+            for row in projected
+            if row.kind == "musician" and row.participant_id
+        }
+        shared_state = next(
+            (row.state for row in projected if row.kind == "shared_track"),
+            local_state,
+        )
+        exact: list[RecordingSourcePresentation] = []
+        for participant_id, channels, logical_source_id in zip(
+            plan.expected_server_stems,
+            plan.server_channel_counts,
+            plan.server_logical_source_ids,
+            strict=True,
+        ):
+            if participant_id == self._reference_participant_id:
+                exact.append(
+                    RecordingSourcePresentation(
+                        participant_id="",
+                        display_name="Shared Track",
+                        kind="shared_track",
+                        state=shared_state,
+                        channels=channels,
+                        logical_source_id=logical_source_id,
+                        source_kind=LiveRecordingSourceKind.SHARED_TRACK,
+                        channel_id=-1,
+                    )
+                )
+                continue
+            channel_id = channel_by_participant.get(participant_id)
+            if channel_id is None:
+                return ()
+            exact.append(
+                RecordingSourcePresentation(
+                    participant_id=participant_id,
+                    display_name=roster_names.get(participant_id, "Participant"),
+                    kind="musician",
+                    state=server_states.get(participant_id, local_state),
+                    channels=channels,
+                    logical_source_id=logical_source_id,
+                    source_kind=LiveRecordingSourceKind.JAMULUS_SERVER,
+                    channel_id=channel_id,
+                )
+            )
+
+        local_participant_id = str(self._local_participant_id or "")
+        active_local_names = {
+            logical_source_id: binding.track_name
+            for binding, logical_source_id in zip(
+                plan.input_maps,
+                plan.input_map_logical_source_ids,
+                strict=True,
+            )
+            if binding.enabled and binding.local_original_enabled
+        }
+        for track in plan.resolved_capture_tracks():
+            if not local_participant_id:
+                return ()
+            exact.append(
+                RecordingSourcePresentation(
+                    participant_id=local_participant_id,
+                    display_name=active_local_names.get(
+                        track.logical_source_id, track.stem
+                    ),
+                    kind="local_original",
+                    state=local_state,
+                    channels=track.channel_count,
+                    logical_source_id=track.logical_source_id,
+                    source_kind=LiveRecordingSourceKind.LOCAL_ORIGINAL,
+                    channel_id=-1,
+                )
+            )
+
+        for guest in plan.guest_local_originals:
+            guest_name = roster_names.get(guest.participant_id, "Participant")
+            for ordinal, (channels, logical_source_id) in enumerate(
+                zip(
+                    guest.channel_counts,
+                    guest.logical_source_ids,
+                    strict=True,
+                ),
+                start=1,
+            ):
+                exact.append(
+                    RecordingSourcePresentation(
+                        participant_id=guest.participant_id,
+                        display_name=f"{guest_name} · Local Original {ordinal}",
+                        kind="local_original",
+                        state=local_state,
+                        channels=channels,
+                        logical_source_id=logical_source_id,
+                        source_kind=LiveRecordingSourceKind.LOCAL_ORIGINAL,
+                        channel_id=-1,
+                    )
+                )
+        try:
+            return validate_exact_recording_sources(exact)
+        except Exception:  # noqa: BLE001 - presentation fails absent
+            LOGGER.warning("Exact recording source presentation was unavailable")
+            return ()
 
     def _final_recording_receipt_snapshot(
         self,
@@ -2232,6 +2452,15 @@ class RecordingCoordinator:
                 "The finalized band-server sources did not exactly match the "
                 "immutable recording plan. The take was preserved for review."
             )
+        if not plan.server_topology_exact or any(
+            plan.channel_count_for_server(receipt.participant_id) != receipt.channels
+            for receipt in receipts
+        ):
+            errors.append(
+                "The finalized band-server mono/stereo layout did not exactly "
+                "match the immutable recording plan. The take was preserved "
+                "for review."
+            )
 
         expected_local_count = sum(
             1
@@ -2262,6 +2491,8 @@ class RecordingCoordinator:
                         item.track_count,
                         item.map_fingerprint_sha256,
                         item.presence_generation,
+                        item.channel_counts,
+                        item.logical_source_ids,
                     )
                     for item in plan.guest_local_originals
                 )
@@ -2273,6 +2504,8 @@ class RecordingCoordinator:
                         item.track_count,
                         item.map_fingerprint,
                         item.presence_generation,
+                        tuple(item.channel_counts),
+                        tuple(item.logical_source_ids),
                     )
                     for item in frozen_guest_obligations
                 )
@@ -2332,16 +2565,7 @@ class RecordingCoordinator:
             )
         if plan is None:
             return ()  # The primary plan gate already reports this condition.
-        expected: list[LocalCaptureTrack] = []
-        source_channel = 0
-        for ordinal, binding in enumerate(plan.input_maps):
-            if not binding.enabled or not binding.local_original_enabled:
-                continue
-            channels = tuple(
-                range(source_channel, source_channel + binding.channel_count)
-            )
-            expected.append(LocalCaptureTrack(f"planned-{ordinal + 1}", channels))
-            source_channel += binding.channel_count
+        expected = plan.resolved_capture_tracks()
         try:
             observed = tuple(observed_tracks)
         except TypeError:
@@ -3169,13 +3393,40 @@ class RecordingCoordinator:
         if not take_id or not self._c.host_peer.active:
             return
         try:
-            self._c.host_peer.begin_take_finalization(
+            snapshot = self._c.host_peer.begin_take_finalization(
                 take_id,
                 stopped_utc=stopped_utc,
                 message=" ".join(str(message).split())[:240],
             )
+            if snapshot is None:
+                raise RuntimeError("peer finalization service is unavailable")
+            return
         except Exception:  # noqa: BLE001 - peer failures may contain private detail
-            LOGGER.error("Could not publish recording finalization state")
+            pass
+        with self._evidence_lock:
+            arm_generation = (
+                self._guest_capture_arm_generation
+                if self._guest_capture_arm_take_id == take_id
+                else 0
+            )
+        fallback = getattr(
+            self._c.host_peer,
+            "begin_armed_take_finalization",
+            None,
+        )
+        if arm_generation > 0 and callable(fallback):
+            try:
+                snapshot = fallback(
+                    take_id,
+                    arm_generation=arm_generation,
+                    stopped_utc=stopped_utc,
+                    message=" ".join(str(message).split())[:240],
+                )
+                if snapshot is not None:
+                    return
+            except Exception:  # noqa: BLE001 - peer facts stay private
+                pass
+        LOGGER.error("Could not publish recording finalization state")
 
     def _signal_peer_validation_outcome(
         self,
@@ -3321,6 +3572,7 @@ class RecordingCoordinator:
             or self.phase
             in (
                 RecorderPhase.STARTING,
+                RecorderPhase.COUNT_IN,
                 RecorderPhase.RECORDING,
                 RecorderPhase.STOP_FAILED,
             )
@@ -3331,7 +3583,7 @@ class RecordingCoordinator:
         """True until a requested take has either finished validation or failed."""
         return self.is_recording_active or self.phase in (
             RecorderPhase.STOPPING,
-            RecorderPhase.VALIDATING,
+            RecorderPhase.FINALIZING,
         )
 
     def _hosting_server(self) -> bool:
@@ -3559,7 +3811,7 @@ class RecordingCoordinator:
         self._c.window.set_status_recording(False)
         try:
             if self._validation_take_id == take_id:
-                self._set_phase(RecorderPhase.VALIDATING)
+                self._set_phase(RecorderPhase.FINALIZING)
                 return
             self._start_take_validation_once()
         finally:
@@ -3574,7 +3826,7 @@ class RecordingCoordinator:
         preserves the local isolated tracks and resets the recording UI so no
         stale REC clock or take chip survives the disconnect.
         """
-        if self.phase is RecorderPhase.VALIDATING:
+        if self.phase is RecorderPhase.FINALIZING:
             # The validation worker owns the capture and will finish the take.
             return
         prior_phase = self.phase
@@ -3758,6 +4010,7 @@ class RecordingCoordinator:
         storage: object,
         *,
         planned_shared_track: bool,
+        server_channel_counts: tuple[int, ...],
         guest_local_originals: tuple[GuestLocalOriginalBinding, ...] = (),
     ) -> bool:
         """Bind the immutable take plan before any recorder starts.
@@ -3886,7 +4139,12 @@ class RecordingCoordinator:
                 input_maps=input_maps,
                 creator_profile_key=self._recording_creator_profile_key,
                 guest_local_originals=guest_local_originals,
+                server_channel_counts=server_channel_counts,
             )
+            if not plan.server_topology_exact or any(
+                not item.exact_topology for item in plan.guest_local_originals
+            ):
+                raise ValueError("The recording source topology is not exact.")
         except Exception:  # noqa: BLE001 - private plan details stay redacted
             LOGGER.error("Session recording plan could not be bound safely.")
             with self._evidence_lock:
@@ -3899,6 +4157,387 @@ class RecordingCoordinator:
             self._recording_plan_take_id = self._take_id
             self._recording_plan_fingerprint = plan.plan_fingerprint()
         return True
+
+    @staticmethod
+    def _readiness_topology(channel_count: int) -> RecordingChannelTopology:
+        if channel_count == 1:
+            return RecordingChannelTopology.MONO
+        if channel_count == 2:
+            return RecordingChannelTopology.STEREO
+        raise ValueError("A readiness source must be mono or stereo.")
+
+    @staticmethod
+    def _bounded_meter_percent(value: object) -> int | None:
+        try:
+            level = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not 0.0 <= level <= 1.0:
+            return None
+        return max(0, min(100, round(level * 100.0)))
+
+    def _build_recording_readiness_presentation(
+        self,
+        plan: SessionRecordingPlan,
+        *,
+        local_preflight: LocalCapturePreflight | None,
+    ) -> RecordingReadinessPresentation:
+        """Project one exact private plan into bounded, path-free UI facts."""
+
+        roster_names = dict(plan.roster)
+        participants_by_channel: dict[int, object] = {}
+        for participant in self._c.participants.values():
+            try:
+                participants_by_channel[int(participant.channel_id)] = participant
+            except (AttributeError, TypeError, ValueError):
+                continue
+        meter_by_participant: dict[str, int | None] = {}
+        for channel_id, participant_id in self._participant_ids.items():
+            participant = participants_by_channel.get(channel_id)
+            meter_by_participant[participant_id] = self._bounded_meter_percent(
+                getattr(participant, "audio_level", None)
+            )
+
+        sources: list[RecordingReadinessSource] = []
+        for participant_id, channel_count, logical_source_id in zip(
+            plan.expected_server_stems,
+            plan.server_channel_counts,
+            plan.server_logical_source_ids,
+            strict=True,
+        ):
+            shared = participant_id == self._reference_participant_id
+            sources.append(
+                RecordingReadinessSource(
+                    source_id=logical_source_id,
+                    participant_label=(
+                        "Shared Track"
+                        if shared
+                        else roster_names.get(participant_id, "Participant")
+                    ),
+                    source_label=("Shared Track" if shared else "WebJam server track"),
+                    kind=(
+                        RecordingSourceKind.SHARED_TRACK
+                        if shared
+                        else RecordingSourceKind.SERVER
+                    ),
+                    topology=self._readiness_topology(channel_count),
+                    required=True,
+                    readiness=RecordingSourceReadiness.READY,
+                    detail=(
+                        "Exact source, route, and playback generation are bound."
+                        if shared
+                        else "Authenticated participant identity and recorder width are bound."
+                    ),
+                    meter_percent=meter_by_participant.get(participant_id),
+                )
+            )
+
+        local_tracks = plan.resolved_capture_tracks()
+        active_local_by_id = {track.logical_source_id: track for track in local_tracks}
+        local_ready = local_preflight is None or local_preflight.ready
+        local_error_detail = (
+            "Selected input device and exact 48 kHz mono/stereo map are ready."
+            if local_ready
+            else (
+                "Check the selected input device, mapped channels, and 48 kHz "
+                "format before recording."
+            )
+        )
+        for binding, logical_source_id in zip(
+            plan.input_maps,
+            plan.input_map_logical_source_ids,
+            strict=True,
+        ):
+            required = bool(binding.enabled and binding.local_original_enabled)
+            sources.append(
+                RecordingReadinessSource(
+                    source_id=logical_source_id,
+                    participant_label=(
+                        str(self._c.settings.musician_name or "This Mac")
+                    ),
+                    source_label=binding.track_name,
+                    kind=RecordingSourceKind.LOCAL_ORIGINAL,
+                    topology=self._readiness_topology(binding.channel_count),
+                    required=required,
+                    readiness=(
+                        RecordingSourceReadiness.READY
+                        if (not required or logical_source_id in active_local_by_id)
+                        and (not required or local_ready)
+                        else RecordingSourceReadiness.ACTION_NEEDED
+                    ),
+                    detail=(
+                        local_error_detail
+                        if required
+                        else "Optional input is not armed for this take."
+                    ),
+                    meter_percent=None,
+                )
+            )
+
+        for guest in plan.guest_local_originals:
+            guest_label = roster_names.get(guest.participant_id, "Guest")
+            for ordinal, (channel_count, logical_source_id) in enumerate(
+                zip(
+                    guest.channel_counts,
+                    guest.logical_source_ids,
+                    strict=True,
+                )
+            ):
+                sources.append(
+                    RecordingReadinessSource(
+                        source_id=logical_source_id,
+                        participant_label=guest_label,
+                        source_label=f"Local Original {ordinal + 1}",
+                        kind=RecordingSourceKind.LOCAL_ORIGINAL,
+                        topology=self._readiness_topology(channel_count),
+                        required=True,
+                        readiness=RecordingSourceReadiness.READY,
+                        detail=(
+                            "Authenticated guest inventory and exact logical "
+                            "track topology are bound."
+                        ),
+                        meter_percent=None,
+                    )
+                )
+
+        storage_readiness = {
+            RecordingStorageStatus.READY: RecordingStorageReadiness.READY,
+            RecordingStorageStatus.WARNING: RecordingStorageReadiness.WARNING,
+            RecordingStorageStatus.ACTION_NEEDED: (
+                RecordingStorageReadiness.ACTION_NEEDED
+            ),
+        }[plan.storage.status]
+        storage = RecordingStoragePresentation(
+            readiness=storage_readiness,
+            summary=(
+                "Storage reserved"
+                if plan.storage.status is RecordingStorageStatus.READY
+                else "Storage is low"
+                if plan.storage.status is RecordingStorageStatus.WARNING
+                else "Storage needs attention"
+            ),
+            detail=plan.storage.detail,
+        )
+        if plan.shared_track_planned:
+            shared_track = SharedTrackPresentation(
+                readiness=SharedTrackReadiness.READY,
+                required=True,
+                summary="Included in this take",
+                detail="Exact content checksum and playback generation are bound.",
+            )
+        else:
+            shared_track = SharedTrackPresentation(
+                readiness=SharedTrackReadiness.NOT_INCLUDED,
+                required=False,
+                summary="Not included",
+                detail="This take will not include a Shared Track.",
+            )
+        profile = get_creator_profile_by_key_or_default(plan.creator_profile_key)
+        return RecordingReadinessPresentation(
+            profile_label=profile.label,
+            sources=tuple(sources),
+            storage=storage,
+            shared_track=shared_track,
+        )
+
+    def _readiness_authority_still_matches(
+        self,
+        plan: SessionRecordingPlan,
+        *,
+        hosted_readiness: _HostedRecordingReadiness,
+        planned_shared_track: bool,
+    ) -> bool:
+        """Revalidate mutable authority after the user accepts the snapshot."""
+
+        with self._evidence_lock:
+            if (
+                self.phase is not RecorderPhase.PREFLIGHT
+                or self._take_id != plan.take_id
+                or self._recording_plan_take_id != plan.take_id
+                or self._recording_plan is not plan
+                or self._recording_plan_fingerprint != plan.plan_fingerprint()
+            ):
+                return False
+        current_context = self._hosted_recording_readiness_context(
+            [
+                participant
+                for participant in self._c.participants.values()
+                if not str(getattr(participant, "role", "")).startswith("Preview")
+            ]
+        )
+        expected_context = hosted_readiness.context
+        if (
+            current_context is None
+            or current_context.host_peer_identity != expected_context.host_peer_identity
+            or current_context.ordered_roster_proof.authority_key
+            != expected_context.ordered_roster_proof.authority_key
+            or current_context.presence_authority != expected_context.presence_authority
+            or current_context.participant_cards != expected_context.participant_cards
+            or current_context.server_rpc_port != expected_context.server_rpc_port
+            or current_context.server_rpc_secret_file
+            != expected_context.server_rpc_secret_file
+            or current_context.server_rpc_secret_identity
+            != expected_context.server_rpc_secret_identity
+        ):
+            return False
+        if not self._revalidate_hosted_recording_readiness(hosted_readiness):
+            return False
+        current_tracks = resolve_capture_tracks(self._c.settings)
+        configured_maps = (
+            configured_input_map_bindings(self._c.settings)
+            if bool(getattr(self._c.settings, "local_capture_enabled", False))
+            else ()
+        )
+        if configured_maps:
+            current_input_maps = configured_maps
+        elif current_tracks:
+            current_input_maps = tuple(
+                InputMapBinding(
+                    track_name=track.stem,
+                    channel_count=track.channel_count,
+                    local_original_enabled=True,
+                )
+                for track in current_tracks
+            )
+        else:
+            current_input_maps = ()
+        planned_tracks = plan.resolved_capture_tracks()
+        if current_input_maps != plan.input_maps:
+            return False
+        if planned_tracks:
+            current_local = check_local_capture_preflight(
+                tracks=planned_tracks,
+                device=self._c.settings.audio_input_device_index,
+                samplerate=self._c.settings.audio_samplerate,
+                blocksize=self._c.settings.audio_blocksize,
+            )
+            if not current_local.ready:
+                return False
+        current_storage = check_recording_storage(
+            self._c.settings.takes_directory,
+            expected_server_tracks=len(plan.expected_server_stems),
+            local_originals_enabled=bool(
+                planned_tracks
+                or any(item.track_count for item in plan.guest_local_originals)
+            ),
+            local_original_tracks=(
+                sum(track.channel_count for track in planned_tracks)
+                + sum(sum(item.channel_counts) for item in plan.guest_local_originals)
+            ),
+        )
+        if (
+            not current_storage.can_start
+            or current_storage.required_bytes != plan.storage.required_bytes
+        ):
+            return False
+        frozen_reader = getattr(
+            getattr(self._c, "host_peer", None),
+            "local_original_obligations_for_take",
+            None,
+        )
+        try:
+            frozen = tuple(frozen_reader(plan.take_id))
+            frozen_key = tuple(
+                (
+                    item.participant_id,
+                    item.track_count,
+                    item.map_fingerprint,
+                    item.presence_generation,
+                    tuple(item.channel_counts),
+                    tuple(item.logical_source_ids),
+                )
+                for item in frozen
+            )
+            plan_key = tuple(
+                (
+                    item.participant_id,
+                    item.track_count,
+                    item.map_fingerprint_sha256,
+                    item.presence_generation,
+                    item.channel_counts,
+                    item.logical_source_ids,
+                )
+                for item in plan.guest_local_originals
+            )
+        except Exception:  # noqa: BLE001 - private guest facts stay redacted
+            return False
+        if frozen_key != plan_key:
+            return False
+        reference_controller = getattr(self._c, "_reference_track", None)
+        snapshot = getattr(reference_controller, "snapshot", None)
+        if bool(planned_shared_track) != bool(plan.shared_track_planned):
+            return False
+        if plan.shared_track_planned:
+            fingerprint_reader = getattr(
+                reference_controller,
+                "recording_source_fingerprint",
+                None,
+            )
+            if snapshot is None or not callable(fingerprint_reader):
+                return False
+            state = str(
+                getattr(getattr(snapshot, "state", None), "value", "") or ""
+            ).lower()
+            current_generation = int(getattr(snapshot, "playback_generation", 0) or 0)
+            expected_generation = (
+                current_generation + 1
+                if state in {"ready", "paused"}
+                else current_generation
+            )
+            if (
+                not getattr(snapshot, "loaded", False)
+                or state not in {"ready", "paused", "routing", "playing"}
+                or (
+                    state in {"ready", "paused"}
+                    and not bool(getattr(snapshot, "can_play", False))
+                )
+                or plan.shared_track is None
+                or str(fingerprint_reader() or "")
+                != plan.shared_track.source_fingerprint_sha256
+                or expected_generation != plan.shared_track.playback_generation
+            ):
+                return False
+        return True
+
+    def _revalidate_hosted_recording_readiness(
+        self,
+        expected: _HostedRecordingReadiness,
+    ) -> bool:
+        """Repeat the authenticated server observation after user consent.
+
+        Participant cards and Presence-v2 leases can remain momentarily stale
+        while Jamulus has already added, removed, or reconfigured a recorder
+        row. The first observation is therefore insufficient after a modal
+        readiness sheet has been open. Re-read the exact captured RPC secret,
+        query the same server, and require byte-for-byte equivalent correlated
+        facts before either recorder is armed.
+        """
+
+        context = expected.context
+        try:
+            from core.jamulus_server_rpc import JamulusServerRpc
+
+            reference_before = self._reference_recording_claim()
+            secret = _read_exact_secret_file(
+                context.server_rpc_secret_file,
+                context.server_rpc_secret_identity,
+            )
+            with JamulusServerRpc(
+                port=context.server_rpc_port,
+                secret=secret,
+            ) as rpc:
+                payload = rpc.get_clients()
+            reference_after = self._reference_recording_claim()
+            refreshed = self._evaluate_hosted_recording_readiness(
+                payload,
+                context,
+                reference_before=reference_before,
+                reference_after=reference_after,
+            )
+        except Exception:  # noqa: BLE001 - private server facts stay redacted
+            LOGGER.debug("Final recording readiness recheck was unavailable")
+            return False
+        return refreshed == expected
 
     def _prepare_guest_local_original_bindings(
         self,
@@ -3924,12 +4563,306 @@ class RecordingCoordinator:
                     track_count=obligation.track_count,
                     map_fingerprint_sha256=obligation.map_fingerprint,
                     presence_generation=obligation.presence_generation,
+                    channel_counts=tuple(obligation.channel_counts),
+                    logical_source_ids=tuple(obligation.logical_source_ids),
                 )
                 for obligation in obligations
             )
+            if any(not item.exact_topology for item in bindings):
+                return (), (
+                    "A guest did not publish an exact Local Original topology.",
+                )
         except Exception:  # noqa: BLE001 - guest facts stay private
             return (), ("A guest Local Original inventory could not be bound safely.",)
         return bindings, ()
+
+    def _fail_guest_capture_arm(
+        self,
+        attempt: _GuestCaptureArmAttempt,
+        *,
+        readiness_changed: bool,
+    ) -> None:
+        """Cancel one uncommitted guest arm and fail before server recording."""
+
+        cancel = getattr(attempt.host_peer, "cancel_capture_arm", None)
+        if callable(cancel):
+            try:
+                cancel(
+                    attempt.take_id,
+                    arm_generation=attempt.arm_generation,
+                )
+            except Exception:  # noqa: BLE001 - arm facts stay private
+                LOGGER.warning("Could not cancel a failed guest capture arm.")
+        if attempt.take_id != self._take_id:
+            return
+        self._set_phase(RecorderPhase.ERROR)
+        self._retire_active_take(attempt.take_id)
+        if readiness_changed:
+            self._c._show_actionable_error(
+                "Recording Readiness Changed",
+                what_failed=(
+                    "A participant, input, storage, or Shared Track fact changed "
+                    "while guest inputs were opening. No recorder was started."
+                ),
+                likely_cause=(
+                    "A guest may have disconnected, changed an input map, or lost "
+                    "its audio device after the readiness sheet was accepted."
+                ),
+                next_action=(
+                    "Reconnect the affected input, wait for every participant and "
+                    "source to become Ready, then try Record Session again."
+                ),
+                retry_callback=self._c._on_record_requested,
+            )
+            return
+        self._c._show_actionable_error(
+            "Guest Inputs Did Not Arm",
+            what_failed=(
+                "WebJam could not confirm that every required guest Local Original "
+                "stream was open. No server recorder was started."
+            ),
+            likely_cause=(
+                "A guest input device may have disconnected, become busy, or failed "
+                "to open before the bounded readiness timeout."
+            ),
+            next_action=(
+                "Ask each affected guest to reconnect their input and keep WebJam "
+                "open, then retry Record Session."
+            ),
+            retry_callback=self._c._on_record_requested,
+        )
+
+    def _wait_for_guest_capture_arm(
+        self,
+        attempt: _GuestCaptureArmAttempt,
+    ) -> None:
+        """Wait off the UI thread, then return only bounded truth to the UI."""
+
+        ready = False
+        wait = getattr(
+            attempt.host_peer,
+            "wait_for_capture_arm_acknowledgements",
+            None,
+        )
+        try:
+            if callable(wait):
+                ready = bool(
+                    wait(
+                        attempt.take_id,
+                        arm_generation=attempt.arm_generation,
+                        timeout_s=_GUEST_CAPTURE_ARM_TIMEOUT_S,
+                    )
+                )
+        except Exception:  # noqa: BLE001 - guest/device details stay private
+            LOGGER.debug("Guest capture arm acknowledgement wait failed")
+        try:
+            self._c._ui_invoker.invoke(
+                lambda: self._apply_guest_capture_arm_result(attempt, ready)
+            )
+        except Exception:  # noqa: BLE001 - shutdown can remove the UI invoker
+            cancel = getattr(attempt.host_peer, "cancel_capture_arm", None)
+            if callable(cancel):
+                try:
+                    cancel(
+                        attempt.take_id,
+                        arm_generation=attempt.arm_generation,
+                    )
+                except Exception:  # noqa: BLE001 - best-effort shutdown cleanup
+                    pass
+            LOGGER.error("Could not queue the guest capture-arm result.")
+
+    def _apply_guest_capture_arm_result(
+        self,
+        attempt: _GuestCaptureArmAttempt,
+        ready: bool,
+    ) -> None:
+        """Commit an exact arm only after a second authority revalidation."""
+
+        with self._evidence_lock:
+            plan = (
+                self._recording_plan
+                if (
+                    self.phase is RecorderPhase.PREFLIGHT
+                    and self._take_id == attempt.take_id
+                    and self._recording_plan_take_id == attempt.take_id
+                    and self._recording_plan_fingerprint == attempt.plan_fingerprint
+                )
+                else None
+            )
+        if plan is None or plan.plan_fingerprint() != attempt.plan_fingerprint:
+            cancel = getattr(attempt.host_peer, "cancel_capture_arm", None)
+            if callable(cancel):
+                try:
+                    cancel(
+                        attempt.take_id,
+                        arm_generation=attempt.arm_generation,
+                    )
+                except Exception:  # noqa: BLE001 - stale callbacks stay harmless
+                    pass
+            return
+        if ready:
+            arm_ready = getattr(attempt.host_peer, "capture_arm_ready", None)
+            try:
+                ready = bool(
+                    callable(arm_ready)
+                    and arm_ready(
+                        attempt.take_id,
+                        arm_generation=attempt.arm_generation,
+                    )
+                )
+            except Exception:  # noqa: BLE001 - guest/device details stay private
+                ready = False
+        if not ready:
+            self._fail_guest_capture_arm(attempt, readiness_changed=False)
+            return
+        if not self._readiness_authority_still_matches(
+            plan,
+            hosted_readiness=attempt.hosted_readiness,
+            planned_shared_track=plan.shared_track_planned,
+        ):
+            self._fail_guest_capture_arm(attempt, readiness_changed=True)
+            return
+        self._continue_recording_start(plan)
+
+    def _arm_guest_capture_before_server_start(
+        self,
+        plan: SessionRecordingPlan,
+        hosted_readiness: _HostedRecordingReadiness,
+    ) -> bool:
+        """Publish a take-scoped arm and wait for every opted-in guest ACK."""
+
+        host_peer = getattr(self._c, "host_peer", None)
+        publish = getattr(host_peer, "publish_capture_arm", None)
+        wait = getattr(host_peer, "wait_for_capture_arm_acknowledgements", None)
+        if not callable(publish) or not callable(wait):
+            attempt = _GuestCaptureArmAttempt(
+                plan.take_id,
+                plan.plan_fingerprint(),
+                0,
+                hosted_readiness,
+                host_peer,
+            )
+            self._fail_guest_capture_arm(attempt, readiness_changed=False)
+            return False
+        try:
+            arm = publish(
+                plan.take_id,
+                recording_plan_fingerprint=plan.plan_fingerprint(),
+            )
+            arm_generation = int(arm.arm_generation)
+            if arm_generation <= 0:
+                raise ValueError("capture arm generation is unavailable")
+            with self._evidence_lock:
+                if (
+                    self.phase is not RecorderPhase.PREFLIGHT
+                    or self._take_id != plan.take_id
+                    or self._recording_plan is not plan
+                    or self._recording_plan_fingerprint != plan.plan_fingerprint()
+                ):
+                    raise ValueError("the recording plan changed during capture arm")
+                self._guest_capture_arm_take_id = plan.take_id
+                self._guest_capture_arm_generation = arm_generation
+        except Exception:  # noqa: BLE001 - guest/device details stay private
+            attempt = _GuestCaptureArmAttempt(
+                plan.take_id,
+                plan.plan_fingerprint(),
+                0,
+                hosted_readiness,
+                host_peer,
+            )
+            self._fail_guest_capture_arm(attempt, readiness_changed=False)
+            return False
+        attempt = _GuestCaptureArmAttempt(
+            plan.take_id,
+            plan.plan_fingerprint(),
+            arm_generation,
+            hosted_readiness,
+            host_peer,
+        )
+        self._c.window.flash_message(
+            "Opening each required guest Local Original before the server recorder starts…",
+            ms=9000,
+        )
+        threading.Thread(
+            target=self._wait_for_guest_capture_arm,
+            args=(attempt,),
+            daemon=True,
+            name="guest-capture-arm",
+        ).start()
+        return True
+
+    def _continue_recording_start(self, plan: SessionRecordingPlan) -> None:
+        """Open host recovery state, then start the take-bound server recorder."""
+
+        with self._evidence_lock:
+            if (
+                self.phase is not RecorderPhase.PREFLIGHT
+                or self._take_id != plan.take_id
+                or self._recording_plan_take_id != plan.take_id
+                or self._recording_plan is not plan
+                or self._recording_plan_fingerprint != plan.plan_fingerprint()
+            ):
+                return
+        rpc_binding = self._recording_rpc_binding_for_take(plan.take_id)
+        if rpc_binding is None:
+            self._set_phase(RecorderPhase.ERROR)
+            self._retire_active_take(plan.take_id)
+            self._c._show_actionable_error(
+                "Recording Connection Needs Attention",
+                what_failed=(
+                    "The take-bound recorder connection changed before recording. "
+                    "No recorder was started."
+                ),
+                likely_cause=(
+                    "The host recorder configuration or private secret changed "
+                    "during preflight."
+                ),
+                next_action=(
+                    "Verify the host recording setup, then retry Record Session."
+                ),
+                retry_callback=self._c._on_record_requested,
+            )
+            return
+        self.request_authenticated_roster_observation()
+        if not self._start_local_capture():
+            return
+        if not self._create_evidence_journal():
+            failed_take_id = self._take_id
+            recovered, errors = self._salvage_capture()
+            self._set_phase(RecorderPhase.ERROR)
+            self._retire_active_take(failed_take_id)
+            self._c._show_actionable_error(
+                "Recording Recovery Setup Failed",
+                what_failed=(
+                    "WebJam couldn't prepare the private recovery record for this take."
+                ),
+                likely_cause=(
+                    "The selected Takes folder is no longer writable or could "
+                    "not safely store recording recovery evidence."
+                ),
+                next_action=(
+                    "Choose a writable Takes folder in Recording Setup, then "
+                    "try Record Take again. No server recording was started."
+                ),
+                retry_callback=self._c._on_record_requested,
+            )
+            if recovered is not None:
+                self._notify_recovered(recovered, errors)
+            return
+        self._set_phase(RecorderPhase.STARTING)
+        attempt = _ToggleAttempt(
+            take_id=plan.take_id,
+            target_armed=True,
+            server_rpc_port=rpc_binding[0],
+            server_rpc_secret_file=rpc_binding[1],
+            server_rpc_secret_identity=rpc_binding[2],
+        )
+        threading.Thread(
+            target=self._run_toggle_attempt,
+            args=(attempt,),
+            daemon=True,
+            name="record-toggle",
+        ).start()
 
     def _begin_recording_start(
         self,
@@ -4078,6 +5011,11 @@ class RecordingCoordinator:
             if hosted_readiness is not None
             else set()
         )
+        hosted_channel_counts = (
+            dict(hosted_readiness.channel_counts_by_channel)
+            if hosted_readiness is not None
+            else {}
+        )
         participant_channels: list[int] = []
         for index, participant in enumerate(real_participants):
             try:
@@ -4088,8 +5026,70 @@ class RecordingCoordinator:
         if hosted_readiness is not None and (
             set(participant_channels) != set(hosted_musicians) | hosted_references
             or any(not participant_id for participant_id in hosted_musicians.values())
+            or set(participant_channels) != set(hosted_channel_counts)
+            or any(width not in {1, 2} for width in hosted_channel_counts.values())
         ):
             self._fail_hosted_recording_readiness(hosted_readiness.context)
+            return
+
+        # Resolve every durable server-source identity before allocating a
+        # take.  A generated UUID would make the start look exact while
+        # guaranteeing that recorder receipts, repeat-take lanes, and guest
+        # evidence can never prove the same logical source.  Hosted readiness
+        # already supplies authenticated identities; non-hosted sessions must
+        # have learned the same durable mapping from their participant state.
+        durable_ids_by_channel: dict[int, str] = {}
+        for index, participant in enumerate(real_participants):
+            channel_id = participant_channels[index]
+            if hosted_readiness is not None:
+                durable = hosted_musicians.get(channel_id, "")
+                if channel_id in hosted_references:
+                    durable = self._reference_participant_id
+            else:
+                durable = str(getattr(participant, "participant_id", "") or "")
+                if not durable:
+                    durable = self._c.peer_participant_id_for_channel(channel_id)
+                if not durable:
+                    durable = self._participant_id_by_channel.get(channel_id, "")
+            if not durable:
+                self._set_phase(RecorderPhase.ERROR)
+                self._c._show_actionable_error(
+                    "Recording Identity Needs Attention",
+                    what_failed=(
+                        "WebJam couldn't prove one connected participant's "
+                        "durable recording identity. No recorder was started."
+                    ),
+                    likely_cause=(
+                        "The participant may still be joining, or the latest "
+                        "authenticated roster observation has not arrived yet."
+                    ),
+                    next_action=(
+                        "Wait for the participant list to settle, then try "
+                        "Record Session again."
+                    ),
+                    retry_callback=self._c._on_record_requested,
+                )
+                return
+            durable_ids_by_channel[channel_id] = durable
+
+        if hosted_readiness is None:
+            self._set_phase(RecorderPhase.ERROR)
+            self._c._show_actionable_error(
+                "Recording Topology Needs Attention",
+                what_failed=(
+                    "WebJam couldn't prove the exact mono/stereo layout of every "
+                    "band-server source before recording. No recorder was started."
+                ),
+                likely_cause=(
+                    "This recording host is not attached to the authenticated "
+                    "hosted-session roster needed by the v0.26 recording plan."
+                ),
+                next_action=(
+                    "Start or rejoin the hosted WebJam session, wait for every "
+                    "source to appear, then try Record Session again."
+                ),
+                retry_callback=self._c._on_record_requested,
+            )
             return
 
         # Every operation below this line owns take-scoped state. Hosted mode
@@ -4126,22 +5126,40 @@ class RecordingCoordinator:
                 or getattr(participant, "role", None)
                 or f"Musician {index + 1}"
             )
-            if hosted_readiness is not None:
-                durable = hosted_musicians.get(channel_id, "")
-                if channel_id in hosted_references:
-                    durable = self._reference_participant_id
-            else:
-                durable = str(getattr(participant, "participant_id", "") or "")
-                if not durable:
-                    durable = self._c.peer_participant_id_for_channel(channel_id)
-                if not durable:
-                    durable = self._participant_id_by_channel.get(channel_id, "")
-                if not durable:
-                    durable = new_project_id()
-            # Hosted production never reaches this assignment with a missing
-            # durable identity; its complete channel set was checked above.
+            durable = durable_ids_by_channel[channel_id]
             self._participant_id_by_channel[channel_id] = durable
             self._participant_ids[channel_id] = durable
+
+        server_width_by_participant = {
+            durable_ids_by_channel[channel_id]: hosted_channel_counts[channel_id]
+            for channel_id in participant_channels
+        }
+        planned_server_ids = list(
+            dict.fromkeys(
+                durable
+                for _channel, durable in sorted(self._participant_ids.items())
+                if durable
+            )
+        )
+        if (
+            planned_shared_track
+            and self._reference_participant_id not in planned_server_ids
+        ):
+            planned_server_ids.append(self._reference_participant_id)
+            # The owned Shared Track companion is pinned to a stereo Jamulus
+            # route. Its source file may be mono, but the recorder-facing
+            # client contract is always the verified two-channel route.
+            server_width_by_participant[self._reference_participant_id] = (
+                _SHARED_TRACK_RECORDER_CHANNELS
+            )
+        try:
+            server_channel_counts = tuple(
+                server_width_by_participant[participant_id]
+                for participant_id in planned_server_ids
+            )
+        except KeyError:
+            self._fail_hosted_recording_readiness(hosted_readiness.context)
+            return
 
         guest_local_originals, guest_plan_issues = (
             self._prepare_guest_local_original_bindings(self._take_id)
@@ -4171,11 +5189,8 @@ class RecordingCoordinator:
         exact_local_track_count = len(resolved_capture_tracks) + sum(
             item.track_count for item in guest_local_originals
         )
-        # Guest obligations intentionally expose only a logical-track count and
-        # a private topology fingerprint. Reserve their worst-case supported
-        # channel width so stereo Local Originals can never be under-budgeted.
         exact_local_channel_count = host_local_channel_count + sum(
-            min(32, 2 * item.track_count) for item in guest_local_originals
+            sum(item.channel_counts) for item in guest_local_originals
         )
         exact_storage = check_recording_storage(
             self._c.settings.takes_directory,
@@ -4207,6 +5222,7 @@ class RecordingCoordinator:
         if not self._bind_session_recording_plan(
             storage,
             planned_shared_track=planned_shared_track,
+            server_channel_counts=server_channel_counts,
             guest_local_originals=guest_local_originals,
         ):
             failed_take_id = self._take_id
@@ -4230,46 +5246,78 @@ class RecordingCoordinator:
             )
             self._retire_active_take(failed_take_id)
             return
-        self.request_authenticated_roster_observation()
-        if not self._start_local_capture():
-            return
-        if not self._create_evidence_journal():
+        with self._evidence_lock:
+            plan = (
+                self._recording_plan
+                if self._recording_plan_take_id == self._take_id
+                else None
+            )
+        if plan is None:
             failed_take_id = self._take_id
-            recovered, errors = self._salvage_capture()
+            self._set_phase(RecorderPhase.ERROR)
+            self._retire_active_take(failed_take_id)
+            return
+        plan_capture_tracks = plan.resolved_capture_tracks()
+        local_preflight = (
+            check_local_capture_preflight(
+                tracks=plan_capture_tracks,
+                device=self._c.settings.audio_input_device_index,
+                samplerate=self._c.settings.audio_samplerate,
+                blocksize=self._c.settings.audio_blocksize,
+            )
+            if plan_capture_tracks
+            else None
+        )
+        try:
+            presentation = self._build_recording_readiness_presentation(
+                plan,
+                local_preflight=local_preflight,
+            )
+        except Exception:  # noqa: BLE001 - presentation details stay private
+            presentation = None
+        confirm = getattr(self._c, "_confirm_recording_readiness", None)
+        accepted = bool(
+            presentation is not None and callable(confirm) and confirm(presentation)
+        )
+        if not accepted:
+            canceled_take_id = self._take_id
+            self._retire_active_take(canceled_take_id)
+            self._set_phase(RecorderPhase.IDLE)
+            self._c.window.flash_message(
+                "Recording was not started. Review the source readiness items, "
+                "then try again.",
+                ms=5000,
+            )
+            return
+        if not self._readiness_authority_still_matches(
+            plan,
+            hosted_readiness=hosted_readiness,
+            planned_shared_track=planned_shared_track,
+        ):
+            failed_take_id = self._take_id
             self._set_phase(RecorderPhase.ERROR)
             self._retire_active_take(failed_take_id)
             self._c._show_actionable_error(
-                "Recording Recovery Setup Failed",
+                "Recording Readiness Changed",
                 what_failed=(
-                    "WebJam couldn't prepare the private recovery record for this take."
+                    "A participant, input, storage, or Shared Track fact changed "
+                    "after the readiness check. No recorder was started."
                 ),
                 likely_cause=(
-                    "The selected Takes folder is no longer writable or could "
-                    "not safely store recording recovery evidence."
+                    "The session roster or recording setup changed while the "
+                    "source-readiness sheet was open."
                 ),
                 next_action=(
-                    "Choose a writable Takes folder in Recording Setup, then "
-                    "try Record Take again. No server recording was started."
+                    "Wait for the session to settle, review the refreshed source "
+                    "list, then try Record Session again."
                 ),
                 retry_callback=self._c._on_record_requested,
             )
-            if recovered is not None:
-                self._notify_recovered(recovered, errors)
             return
-        self._set_phase(RecorderPhase.STARTING)
-        attempt = _ToggleAttempt(
-            take_id=self._take_id,
-            target_armed=True,
-            server_rpc_port=recording_rpc_port,
-            server_rpc_secret_file=recording_rpc_secret_file,
-            server_rpc_secret_identity=recording_rpc_secret_identity,
-        )
-        threading.Thread(
-            target=self._run_toggle_attempt,
-            args=(attempt,),
-            daemon=True,
-            name="record-toggle",
-        ).start()
+        if any(item.track_count for item in plan.guest_local_originals):
+            self._arm_guest_capture_before_server_start(plan, hosted_readiness)
+            return
+        self._continue_recording_start(plan)
 
     def on_record_requested(self) -> None:
         studio = getattr(getattr(self._c, "window", None), "recording_studio", None)
@@ -4308,7 +5356,7 @@ class RecordingCoordinator:
             RecorderPhase.PREFLIGHT,
             RecorderPhase.STARTING,
             RecorderPhase.STOPPING,
-            RecorderPhase.VALIDATING,
+            RecorderPhase.FINALIZING,
         ):
             return
 
@@ -4401,7 +5449,15 @@ class RecordingCoordinator:
         try:
             from core.local_capture import LocalInputCapture
 
-            capture_tracks = resolve_capture_tracks(self._c.settings)
+            with self._evidence_lock:
+                plan = (
+                    self._recording_plan
+                    if self._recording_plan_take_id == self._take_id
+                    else None
+                )
+            if plan is None or plan.take_id != self._take_id:
+                raise ValueError("the immutable recording plan is unavailable")
+            capture_tracks = plan.resolved_capture_tracks()
             if not capture_tracks:
                 # A valid map may intentionally opt every row out. Do not
                 # translate that consent into LocalInputCapture's legacy pair.
@@ -4843,7 +5899,7 @@ class RecordingCoordinator:
         if armed:
             # Authenticated status polling confirmed the recorder is enabled;
             # do not leave the UI hanging if a notification is delayed/lost.
-            self._set_phase(RecorderPhase.RECORDING)
+            self._set_phase(self._confirmed_active_recording_phase())
             if self._take_id:
                 started_utc, newly_confirmed = self._confirmed_recording_started()
                 if newly_confirmed:
@@ -4932,7 +5988,7 @@ class RecordingCoordinator:
         self._c.window.set_status_recording(recording)
         if recording:
             self._c._recorder_armed = True
-            self._set_phase(RecorderPhase.RECORDING)
+            self._set_phase(self._confirmed_active_recording_phase())
             if self._take_id:
                 started_utc, newly_confirmed = self._confirmed_recording_started()
                 if newly_confirmed:
@@ -4973,11 +6029,12 @@ class RecordingCoordinator:
             self._c.session_health.mark_recorder(armed=False, recording=False)
             if self._take_id:
                 if self._validation_take_id == self._take_id:
-                    self._set_phase(RecorderPhase.VALIDATING)
+                    self._set_phase(RecorderPhase.FINALIZING)
                 else:
                     self._start_take_validation_once()
             elif self.phase in {
                 RecorderPhase.STARTING,
+                RecorderPhase.COUNT_IN,
                 RecorderPhase.RECORDING,
                 RecorderPhase.STOPPING,
                 RecorderPhase.STOP_FAILED,
@@ -5101,14 +6158,14 @@ class RecordingCoordinator:
         ).start()
 
     def _post_validation_stage(self, text: str) -> None:
-        """Update the validating chip from the worker thread."""
+        """Update the Finalizing chip from the worker thread."""
         self._c._ui_invoker.invoke(
             lambda: (
                 self._c.window.session_strip.set_recording_phase(
-                    "validating", detail=text
+                    "finalizing", detail=text
                 ),
                 self._c.window.recording_studio.set_recording_phase(
-                    "validating", detail=text
+                    "finalizing", detail=text
                 ),
             )
         )
@@ -5265,6 +6322,15 @@ class RecordingCoordinator:
         self, *, take_id: str | None = None
     ) -> TakeValidationResult:
         active_take_id = self._take_id if take_id is None else take_id
+        with self._evidence_lock:
+            recording_plan = (
+                self._recording_plan
+                if self._recording_plan_take_id == active_take_id
+                and self._recording_plan is not None
+                and self._recording_plan.take_id == active_take_id
+                and self._recording_plan.session_id == self._session_id
+                else None
+            )
         root = self._c.settings.takes_directory
         take_dir = None
         self._post_validation_stage("WAITING FOR SERVER FILES…")
@@ -5385,6 +6451,10 @@ class RecordingCoordinator:
                     local_participant_name=self._c.settings.musician_name,
                     capture_device=capture_device,
                     capture_gaps=capture_gaps,
+                    # Bind the manifest to what the capture writer actually
+                    # finalized. The immutable plan is supplied separately and
+                    # rejects a missing/substituted topology; never fill absent
+                    # result evidence with the topology we merely intended.
                     local_capture_tracks=local_capture_tracks,
                     local_total_frames=local_total_frames,
                     local_durable_frames=local_durable_frames,
@@ -5392,6 +6462,7 @@ class RecordingCoordinator:
                     recording_receipts=recording_receipts,
                     recording_identity_errors=recording_identity_errors,
                     required_reference_track=self.shared_track_required_for_active_take,
+                    recording_plan=recording_plan,
                 )
                 if result.take is not None:
                     self._retire_journal_for_exact_publication(active_take_id)
@@ -5468,6 +6539,9 @@ class RecordingCoordinator:
                 local_participant_name=self._c.settings.musician_name,
                 capture_device=capture_device,
                 capture_gaps=capture_gaps,
+                # Bind the manifest to what the capture writer actually
+                # finalized. The plan below remains the independent expected
+                # topology used by the fail-closed publication check.
                 local_capture_tracks=local_capture_tracks,
                 local_total_frames=local_total_frames,
                 local_durable_frames=local_durable_frames,
@@ -5475,6 +6549,7 @@ class RecordingCoordinator:
                 recording_receipts=recording_receipts,
                 recording_identity_errors=recording_identity_errors,
                 required_reference_track=self.shared_track_required_for_active_take,
+                recording_plan=recording_plan,
             )
             if result.take is not None:
                 self._retire_journal_for_exact_publication(active_take_id)
@@ -5646,7 +6721,7 @@ class RecordingCoordinator:
     def on_peer_take_reconciled(self, take_id: str, take_dir: Path) -> None:
         """Republish terminal truth when a late Local Original changes a take."""
 
-        if self.phase is RecorderPhase.VALIDATING:
+        if self.phase is RecorderPhase.FINALIZING:
             if self._take_id and self._take_id != take_id:
                 return
             with self._peer_reconcile_lock:

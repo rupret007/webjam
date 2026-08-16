@@ -24,6 +24,8 @@ from enum import Enum
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterator, Iterable, Mapping
 
+from core.logical_sources import canonical_logical_source_id
+
 from core.redaction import redact_text
 
 
@@ -148,7 +150,9 @@ def _canonical_uuid(value: object, field_name: str) -> str:
     return str(parsed)
 
 
-def _finite_float(value: object, field_name: str, *, minimum: float | None = None) -> float:
+def _finite_float(
+    value: object, field_name: str, *, minimum: float | None = None
+) -> float:
     try:
         result = float(value)
     except (TypeError, ValueError) as exc:
@@ -270,7 +274,9 @@ class CaptureDevice:
         if not device_id:
             raise TakeProjectError("device.device_id is required.")
         object.__setattr__(self, "device_id", device_id[:256])
-        object.__setattr__(self, "display_name", str(self.display_name or "").strip()[:160])
+        object.__setattr__(
+            self, "display_name", str(self.display_name or "").strip()[:160]
+        )
         object.__setattr__(self, "backend", str(self.backend or "").strip()[:80])
         sample_rate = _nonnegative_int(self.sample_rate, "device.sample_rate")
         if sample_rate <= 0:
@@ -281,7 +287,9 @@ class CaptureDevice:
             for item in self.channel_indices
         )
         if not indices:
-            raise TakeProjectError("device.channel_indices must identify a source channel.")
+            raise TakeProjectError(
+                "device.channel_indices must identify a source channel."
+            )
         object.__setattr__(self, "channel_indices", indices)
         labels = tuple(str(item).strip()[:80] for item in self.channel_labels)
         if labels and len(labels) != len(indices):
@@ -326,12 +334,16 @@ class AlignmentAnchor:
         object.__setattr__(
             self,
             "source_time_s",
-            _finite_float(self.source_time_s, "alignment.anchor.source_time_s", minimum=0),
+            _finite_float(
+                self.source_time_s, "alignment.anchor.source_time_s", minimum=0
+            ),
         )
         object.__setattr__(
             self,
             "project_time_s",
-            _finite_float(self.project_time_s, "alignment.anchor.project_time_s", minimum=0),
+            _finite_float(
+                self.project_time_s, "alignment.anchor.project_time_s", minimum=0
+            ),
         )
         object.__setattr__(
             self,
@@ -395,7 +407,9 @@ class AlignmentState:
         if confidence > 1.0:
             raise TakeProjectError("alignment.confidence cannot exceed 1.0.")
         object.__setattr__(self, "confidence", confidence)
-        object.__setattr__(self, "method", str(self.method or "unverified").strip()[:120])
+        object.__setattr__(
+            self, "method", str(self.method or "unverified").strip()[:120]
+        )
         object.__setattr__(
             self,
             "residual_ms",
@@ -408,9 +422,9 @@ class AlignmentState:
                 reference_track_id, "alignment.reference_track_id"
             )
         object.__setattr__(self, "reference_track_id", reference_track_id)
-        reference_fingerprint = str(
-            self.reference_fingerprint_sha256 or ""
-        ).strip().lower()
+        reference_fingerprint = (
+            str(self.reference_fingerprint_sha256 or "").strip().lower()
+        )
         if reference_fingerprint and not _SHA256_RE.fullmatch(reference_fingerprint):
             raise TakeProjectError(
                 "alignment.reference_fingerprint_sha256 must be a SHA-256 digest."
@@ -462,9 +476,7 @@ class AlignmentState:
         if self.reference_track_id:
             payload["reference_track_id"] = self.reference_track_id
         if self.reference_fingerprint_sha256:
-            payload["reference_fingerprint_sha256"] = (
-                self.reference_fingerprint_sha256
-            )
+            payload["reference_fingerprint_sha256"] = self.reference_fingerprint_sha256
         if self.reference_playback_generation:
             payload["reference_playback_generation"] = (
                 self.reference_playback_generation
@@ -474,13 +486,19 @@ class AlignmentState:
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "AlignmentState":
         raw_anchors = value.get("anchors", ())
-        anchors = tuple(
-            AlignmentAnchor.from_dict(item)
-            for item in raw_anchors
-            if isinstance(item, Mapping)
-        ) if isinstance(raw_anchors, (list, tuple)) else ()
+        anchors = (
+            tuple(
+                AlignmentAnchor.from_dict(item)
+                for item in raw_anchors
+                if isinstance(item, Mapping)
+            )
+            if isinstance(raw_anchors, (list, tuple))
+            else ()
+        )
         return cls(
-            automatic_offset_s=value.get("automatic_offset_s", value.get("offset_s", 0.0)),
+            automatic_offset_s=value.get(
+                "automatic_offset_s", value.get("offset_s", 0.0)
+            ),
             manual_nudge_s=value.get("manual_nudge_s", 0.0),
             drift_ppm=value.get("drift_ppm", 0.0),
             confidence=value.get("confidence", 0.0),
@@ -488,12 +506,8 @@ class AlignmentState:
             residual_ms=value.get("residual_ms", 0.0),
             anchors=anchors,
             reference_track_id=value.get("reference_track_id", ""),
-            reference_fingerprint_sha256=value.get(
-                "reference_fingerprint_sha256", ""
-            ),
-            reference_playback_generation=value.get(
-                "reference_playback_generation", 0
-            ),
+            reference_fingerprint_sha256=value.get("reference_fingerprint_sha256", ""),
+            reference_playback_generation=value.get("reference_playback_generation", 0),
         )
 
 
@@ -526,7 +540,9 @@ class MediaSegment:
             _nonnegative_int(self.project_start_frame, "segment.project_start_frame"),
         )
         object.__setattr__(
-            self, "frame_count", _nonnegative_int(self.frame_count, "segment.frame_count")
+            self,
+            "frame_count",
+            _nonnegative_int(self.frame_count, "segment.frame_count"),
         )
         sample_rate = _nonnegative_int(self.sample_rate, "segment.sample_rate")
         if sample_rate <= 0:
@@ -557,7 +573,9 @@ class MediaSegment:
         gaps = tuple(self.gaps)
         for gap in gaps:
             if gap.end_frame > self.frame_count:
-                raise TakeProjectError("segment gap extends beyond segment.frame_count.")
+                raise TakeProjectError(
+                    "segment gap extends beyond segment.frame_count."
+                )
             if any(channel >= channels for channel in gap.channels):
                 raise TakeProjectError("segment gap references an unavailable channel.")
         object.__setattr__(self, "gaps", gaps)
@@ -586,11 +604,15 @@ class MediaSegment:
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "MediaSegment":
         raw_gaps = value.get("gaps", ())
-        gaps = tuple(
-            GapInterval.from_dict(item)
-            for item in raw_gaps
-            if isinstance(item, Mapping)
-        ) if isinstance(raw_gaps, (list, tuple)) else ()
+        gaps = (
+            tuple(
+                GapInterval.from_dict(item)
+                for item in raw_gaps
+                if isinstance(item, Mapping)
+            )
+            if isinstance(raw_gaps, (list, tuple))
+            else ()
+        )
         return cls(
             segment_id=value.get("segment_id", ""),
             path=value.get("path", value.get("filename", "")),
@@ -667,12 +689,24 @@ class ProjectTrack:
     segments: tuple[MediaSegment, ...]
     alignment: AlignmentState = field(default_factory=AlignmentState)
     selected_for_export: bool = True
+    # Stable across repeated takes. Empty means a legacy/unproven identity and
+    # must never participate in automatic lane matching.
+    logical_source_id: str = ""
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "track_id", _canonical_uuid(self.track_id, "track.track_id"))
+        object.__setattr__(
+            self, "track_id", _canonical_uuid(self.track_id, "track.track_id")
+        )
         object.__setattr__(
             self, "source_id", _canonical_uuid(self.source_id, "track.source_id")
         )
+        try:
+            logical_source_id = canonical_logical_source_id(
+                self.logical_source_id, optional=True
+            )
+        except ValueError as exc:
+            raise TakeProjectError(str(exc)) from exc
+        object.__setattr__(self, "logical_source_id", logical_source_id)
         if self.participant_id:
             object.__setattr__(
                 self,
@@ -683,7 +717,9 @@ class ProjectTrack:
         if not name:
             raise TakeProjectError("track.name is required.")
         object.__setattr__(self, "name", name)
-        object.__setattr__(self, "instrument", " ".join(str(self.instrument or "").split())[:120])
+        object.__setattr__(
+            self, "instrument", " ".join(str(self.instrument or "").split())[:120]
+        )
         if not isinstance(self.source_type, SourceType):
             object.__setattr__(
                 self,
@@ -705,7 +741,9 @@ class ProjectTrack:
         object.__setattr__(self, "order", _nonnegative_int(self.order, "track.order"))
         segments = tuple(self.segments)
         if not segments:
-            raise TakeProjectError("track.segments must retain expected media inventory.")
+            raise TakeProjectError(
+                "track.segments must retain expected media inventory."
+            )
         if len({item.segment_id for item in segments}) != len(segments):
             raise TakeProjectError("track contains duplicate segment IDs.")
         object.__setattr__(self, "segments", segments)
@@ -763,6 +801,7 @@ class ProjectTrack:
         return {
             "track_id": self.track_id,
             "source_id": self.source_id,
+            "logical_source_id": self.logical_source_id,
             "participant_id": self.participant_id,
             "filename": primary.path,
             "name": self.name,
@@ -782,14 +821,20 @@ class ProjectTrack:
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "ProjectTrack":
         raw_segments = value.get("segments", ())
-        segments = tuple(
-            MediaSegment.from_dict(item)
-            for item in raw_segments
-            if isinstance(item, Mapping)
-        ) if isinstance(raw_segments, (list, tuple)) else ()
+        segments = (
+            tuple(
+                MediaSegment.from_dict(item)
+                for item in raw_segments
+                if isinstance(item, Mapping)
+            )
+            if isinstance(raw_segments, (list, tuple))
+            else ()
+        )
         if not segments and value.get("filename"):
             rate = _nonnegative_int(value.get("sample_rate", 0), "track.sample_rate")
-            duration = _finite_float(value.get("duration_s", 0), "track.duration_s", minimum=0)
+            duration = _finite_float(
+                value.get("duration_s", 0), "track.duration_s", minimum=0
+            )
             frames = int(round(duration * rate)) if rate else 0
             segments = (
                 MediaSegment(
@@ -821,6 +866,7 @@ class ProjectTrack:
         return cls(
             track_id=value.get("track_id", ""),
             source_id=value.get("source_id", ""),
+            logical_source_id=value.get("logical_source_id", ""),
             participant_id=value.get("participant_id") or None,
             name=value.get("name", ""),
             instrument=value.get("instrument", ""),
@@ -847,7 +893,9 @@ class ProjectMarker:
     label: str
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "marker_id", _canonical_uuid(self.marker_id, "marker.marker_id"))
+        object.__setattr__(
+            self, "marker_id", _canonical_uuid(self.marker_id, "marker.marker_id")
+        )
         object.__setattr__(
             self,
             "position_s",
@@ -884,7 +932,9 @@ class HostIdentity:
     def __post_init__(self) -> None:
         participant_id = str(self.participant_id or "").strip()
         if participant_id:
-            participant_id = _canonical_uuid(participant_id, "session.host.participant_id")
+            participant_id = _canonical_uuid(
+                participant_id, "session.host.participant_id"
+            )
         # Host identity is a musician-facing name, but it remains free text
         # supplied by a local setting. Apply the same invite/address/secret
         # boundary as every other session-evidence string before it reaches a
@@ -1025,9 +1075,9 @@ class SessionEvidence:
                 timeline.append(SessionTimelineEvent.from_dict(item))
             else:
                 raise TakeProjectError("session.timeline entries must be events.")
-        recording_plan_fingerprint = str(
-            self.recording_plan_fingerprint or ""
-        ).strip().lower()
+        recording_plan_fingerprint = (
+            str(self.recording_plan_fingerprint or "").strip().lower()
+        )
         if recording_plan_fingerprint and not _SHA256_RE.fullmatch(
             recording_plan_fingerprint
         ):
@@ -1036,9 +1086,7 @@ class SessionEvidence:
             )
         from core.creative_modes import canonical_creator_profile_key
 
-        creator_profile_key = canonical_creator_profile_key(
-            self.creator_profile_key
-        )
+        creator_profile_key = canonical_creator_profile_key(self.creator_profile_key)
         if creator_profile_key is None:
             raise TakeProjectError("session.creator_profile_key is unsupported.")
         object.__setattr__(self, "protocol_version", protocol_version)
@@ -1086,16 +1134,18 @@ class SessionEvidence:
         if self.timeline:
             payload["timeline"] = [item.to_dict() for item in self.timeline]
         if self.recording_plan_fingerprint:
-            payload["recording_plan_fingerprint"] = (
-                self.recording_plan_fingerprint
-            )
+            payload["recording_plan_fingerprint"] = self.recording_plan_fingerprint
         payload["creator_profile_key"] = self.creator_profile_key
         return payload
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "SessionEvidence":
         host_value = value.get("host", {})
-        host = HostIdentity.from_dict(host_value) if isinstance(host_value, Mapping) else HostIdentity()
+        host = (
+            HostIdentity.from_dict(host_value)
+            if isinstance(host_value, Mapping)
+            else HostIdentity()
+        )
         timeline_value = value.get("timeline", ())
         timeline = (
             tuple(
@@ -1111,7 +1161,9 @@ class SessionEvidence:
             started_utc=value.get("started_utc", ""),
             ended_utc=value.get("ended_utc", ""),
             host=host,
-            recovery_status=value.get("recovery_status", RecoveryStatus.NOT_NEEDED.value),
+            recovery_status=value.get(
+                "recovery_status", RecoveryStatus.NOT_NEEDED.value
+            ),
             recovery_notes=_string_tuple(value.get("recovery_notes")),
             timeline=timeline,
             recording_plan_fingerprint=str(
@@ -1150,7 +1202,9 @@ class TakeProject:
                 f"Unsupported project schema {self.schema_version}; expected "
                 f"{PROJECT_SCHEMA_VERSION}."
             )
-        object.__setattr__(self, "session_id", _canonical_uuid(self.session_id, "session_id"))
+        object.__setattr__(
+            self, "session_id", _canonical_uuid(self.session_id, "session_id")
+        )
         object.__setattr__(self, "take_id", _canonical_uuid(self.take_id, "take_id"))
         object.__setattr__(
             self, "session_title", " ".join(str(self.session_title or "").split())[:160]
@@ -1177,20 +1231,30 @@ class TakeProject:
             self.time_signature_denominator, "time_signature_denominator"
         )
         if numerator <= 0 or denominator <= 0 or denominator & (denominator - 1):
-            raise TakeProjectError("time signature must use a positive power-of-two denominator.")
+            raise TakeProjectError(
+                "time signature must use a positive power-of-two denominator."
+            )
         object.__setattr__(self, "time_signature_numerator", numerator)
         object.__setattr__(self, "time_signature_denominator", denominator)
-        object.__setattr__(self, "revision", _nonnegative_int(self.revision, "revision"))
+        object.__setattr__(
+            self, "revision", _nonnegative_int(self.revision, "revision")
+        )
         if self.revision <= 0:
             raise TakeProjectError("revision must be greater than zero.")
-        object.__setattr__(self, "app_version", str(self.app_version or "").strip()[:80])
-        object.__setattr__(self, "created_utc", str(self.created_utc or "").strip()[:40])
+        object.__setattr__(
+            self, "app_version", str(self.app_version or "").strip()[:80]
+        )
+        object.__setattr__(
+            self, "created_utc", str(self.created_utc or "").strip()[:40]
+        )
 
         participants = tuple(self.participants)
         tracks = tuple(self.tracks)
         devices = tuple(self.devices)
         markers = tuple(self.markers)
-        _require_unique((item.participant_id for item in participants), "participant IDs")
+        _require_unique(
+            (item.participant_id for item in participants), "participant IDs"
+        )
         _require_unique((item.track_id for item in tracks), "track IDs")
         _require_unique((item.source_id for item in tracks), "source IDs")
         _require_unique((item.device_id for item in devices), "device IDs")
@@ -1222,7 +1286,10 @@ class TakeProject:
             evidence = SessionEvidence.from_dict(evidence)
         if not isinstance(evidence, SessionEvidence):
             raise TakeProjectError("session_evidence must be session evidence.")
-        if evidence.host.participant_id and evidence.host.participant_id not in participant_ids:
+        if (
+            evidence.host.participant_id
+            and evidence.host.participant_id not in participant_ids
+        ):
             raise TakeProjectError("session host references an unknown participant.")
         for event in evidence.timeline:
             if event.participant_id and event.participant_id not in participant_ids:
@@ -1250,8 +1317,7 @@ class TakeProject:
         if (
             self.errors
             or self.has_blocking_media
-            or self.session_evidence.recovery_status
-            is RecoveryStatus.NEEDS_ATTENTION
+            or self.session_evidence.recovery_status is RecoveryStatus.NEEDS_ATTENTION
         ):
             return ProjectStatus.NEEDS_ATTENTION
         return self.status
@@ -1316,7 +1382,9 @@ class TakeProject:
             take_name=value.get("take_name", ""),
             status=_enum_value(ProjectStatus, value.get("status", ""), "status"),
             project_sample_rate=value.get("project_sample_rate", 0),
-            participants=_mapping_tuple(value.get("participants"), Participant.from_dict),
+            participants=_mapping_tuple(
+                value.get("participants"), Participant.from_dict
+            ),
             tracks=_mapping_tuple(value.get("tracks"), ProjectTrack.from_dict),
             app_version=value.get("app_version", ""),
             created_utc=value.get("created_utc", ""),
@@ -1376,7 +1444,8 @@ def migrate_v1_manifest(take_dir: str | Path, value: Mapping[str, Any]) -> TakeP
     session_seed = f"{title}|{path.name}|{started}"
     session_id = _legacy_id("session", session_seed)
     take_id = _legacy_id(
-        "take", f"{session_id}|{hashlib.sha256(canonical_inventory.encode()).hexdigest()}"
+        "take",
+        f"{session_id}|{hashlib.sha256(canonical_inventory.encode()).hexdigest()}",
     )
 
     participants: list[Participant] = []
@@ -1405,13 +1474,19 @@ def migrate_v1_manifest(take_dir: str | Path, value: Mapping[str, Any]) -> TakeP
         participant_id = _legacy_id("participant", identity_seed)
         name = str(raw.get("name") or Path(safe_filename).stem).strip() or "Musician"
         if participant_id not in participant_ids:
-            participants.append(Participant(participant_id, name, str(raw.get("instrument") or "")))
+            participants.append(
+                Participant(participant_id, name, str(raw.get("instrument") or ""))
+            )
             participant_ids.add(participant_id)
 
         media_path = path / safe_filename
-        media_status = MediaStatus.AVAILABLE if media_path.is_file() else MediaStatus.MISSING
+        media_status = (
+            MediaStatus.AVAILABLE if media_path.is_file() else MediaStatus.MISSING
+        )
         if media_status is MediaStatus.MISSING:
-            migration_errors.append(f"{name} is missing from this take ({safe_filename}).")
+            migration_errors.append(
+                f"{name} is missing from this take ({safe_filename})."
+            )
         rate_raw = raw.get("sample_rate", 48000)
         try:
             rate = int(rate_raw)
@@ -1419,7 +1494,9 @@ def migrate_v1_manifest(take_dir: str | Path, value: Mapping[str, Any]) -> TakeP
             rate = 48000
         if rate <= 0:
             rate = 48000
-        duration = _finite_float(raw.get("duration_s", 0.0), "track.duration_s", minimum=0)
+        duration = _finite_float(
+            raw.get("duration_s", 0.0), "track.duration_s", minimum=0
+        )
         frame_count = _nonnegative_int(
             raw.get("frame_count", int(round(duration * rate))), "segment.frame_count"
         )
@@ -1432,34 +1509,43 @@ def migrate_v1_manifest(take_dir: str | Path, value: Mapping[str, Any]) -> TakeP
             if source_type is SourceType.JAMULUS_SERVER
             else SourceQuality.UNVERIFIED
         )
-        tracks.append(ProjectTrack(
-            track_id=track_id,
-            source_id=source_id,
-            participant_id=participant_id,
-            name=name,
-            instrument=str(raw.get("instrument") or ""),
-            source_type=source_type,
-            quality=quality,
-            media_status=media_status,
-            order=order,
-            segments=(MediaSegment(
-                segment_id=segment_id,
-                path=safe_filename,
-                project_start_frame=0,
-                frame_count=frame_count,
-                sample_rate=rate,
-                channels=int(raw.get("channels", 1) or 1),
-                sample_format=str(raw.get("sample_format") or "PCM_24"),
+        tracks.append(
+            ProjectTrack(
+                track_id=track_id,
+                source_id=source_id,
+                participant_id=participant_id,
+                name=name,
+                instrument=str(raw.get("instrument") or ""),
+                source_type=source_type,
+                quality=quality,
                 media_status=media_status,
-                sha256=str(raw.get("sha256") or ""),
-            ),),
-            alignment=AlignmentState(
-                automatic_offset_s=offset,
-                confidence=float(local_capture.get("alignment_confidence", 0.0) or 0.0)
-                if source_type is SourceType.LOCAL_ISOLATED else 0.0,
-                method=str(local_capture.get("alignment_method") or "legacy-manifest"),
-            ),
-        ))
+                order=order,
+                segments=(
+                    MediaSegment(
+                        segment_id=segment_id,
+                        path=safe_filename,
+                        project_start_frame=0,
+                        frame_count=frame_count,
+                        sample_rate=rate,
+                        channels=int(raw.get("channels", 1) or 1),
+                        sample_format=str(raw.get("sample_format") or "PCM_24"),
+                        media_status=media_status,
+                        sha256=str(raw.get("sha256") or ""),
+                    ),
+                ),
+                alignment=AlignmentState(
+                    automatic_offset_s=offset,
+                    confidence=float(
+                        local_capture.get("alignment_confidence", 0.0) or 0.0
+                    )
+                    if source_type is SourceType.LOCAL_ISOLATED
+                    else 0.0,
+                    method=str(
+                        local_capture.get("alignment_method") or "legacy-manifest"
+                    ),
+                ),
+            )
+        )
 
     status_text = str(value.get("status") or ProjectStatus.NEEDS_ATTENTION.value)
     try:
@@ -1536,9 +1622,10 @@ def write_take_project(
         except (OSError, ValueError, TypeError):
             current_payload = None
             current_bytes = b""
-        if isinstance(current_payload, Mapping) and current_payload.get(
-            "schema_version"
-        ) == PROJECT_SCHEMA_VERSION:
+        if (
+            isinstance(current_payload, Mapping)
+            and current_payload.get("schema_version") == PROJECT_SCHEMA_VERSION
+        ):
             try:
                 current_revision = int(current_payload.get("revision", 0) or 0)
             except (TypeError, ValueError):

@@ -66,6 +66,18 @@ def _descriptor(
     )
 
 
+def test_transfer_descriptor_rejects_non_mono_stereo_local_original(
+    tmp_path: Path,
+) -> None:
+    credentials = SessionCredentials.create()
+    source = tmp_path / "mono.wav"
+    _wav(source)
+    descriptor = _descriptor(source, credentials, _id())
+
+    with pytest.raises(ValueError, match="channels"):
+        replace(descriptor, channels=3)
+
+
 def test_credentials_derive_stable_scoped_participant_tokens() -> None:
     credentials = SessionCredentials.create()
     participant = _id()

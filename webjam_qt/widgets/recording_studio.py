@@ -14,7 +14,7 @@ import logging
 import queue
 import threading
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Mapping, Optional
 
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
@@ -46,7 +46,14 @@ from core.musician_guidance import (
     MusicianGuidanceSnapshot,
     StudioGuidanceFacts,
 )
-from core.studio_controller import StudioProjectController
+from core.recording_sources import (
+    RecordingSourceKind,
+    RecordingSourcePresentation,
+    RecordingSourceState,
+    validate_exact_recording_sources,
+)
+from core.studio_comping import StudioCompingError, stack_automatic_take_lanes
+from core.studio_controller import StudioControllerError, StudioProjectController
 from core.studio_export import (
     StudioExportPublishedError,
     StudioExportResult,
@@ -69,7 +76,7 @@ from core.take_player import (
 )
 from core.take_project import TakeProject, TakeProjectError, load_take_project
 from core.studio_project import StudioDocument, default_studio_document
-from core.studio_source_catalog import StudioSourceCatalog
+from core.studio_source_catalog import StudioSourceCatalog, StudioSourceCatalogError
 from webjam_qt.widgets.studio_arrangement_workflow import (
     StudioArrangementWorkflowMixin,
     _selectable_track_export_track_ids,
@@ -263,6 +270,13 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._current: Optional[TakeInfo] = None
         self._live_participants: list = []
         self._live_signature: tuple = ()
+        self._recording_sources: tuple[RecordingSourcePresentation, ...] = ()
+        self._recording_sources_authoritative = False
+        self._recording_source_signature: tuple[object, ...] = ()
+        self._recording_source_lane_ids: dict[str, int] = {}
+        self._recording_source_by_lane: dict[int, RecordingSourcePresentation] = {}
+        self._recording_source_runtime_levels: dict[str, float] = {}
+        self._recording_source_error = ""
         self._lanes: dict[int, TrackLane] = {}
         self._track_info_by_channel: dict[int, object] = {}
         self._selected_channel_id: int | None = None
@@ -1226,10 +1240,378 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         changed = signature != self._live_signature
         self._live_participants = incoming
         self._live_signature = signature
-        if self._phase_name not in {"preflight", "starting", "stopping", "validating"}:
+        if self._phase_name not in {
+            "preflight",
+            "starting",
+            "stopping",
+            "finalizing",
+            "validating",
+        }:
             self._refresh_record_button_enabled()
+        if self._viewing_live and changed and not self._recording_sources_authoritative:
+            self._populate_live_lanes()
+
+    @staticmethod
+    def _recording_source_kind(
+        row: RecordingSourcePresentation,
+    ) -> RecordingSourceKind:
+        return RecordingSourceKind(getattr(row.source_kind, "value", row.source_kind))
+
+    def set_recording_sources(
+        self,
+        sources: Iterable[RecordingSourcePresentation],
+    ) -> bool:
+        """Publish one complete plan-bound live-source snapshot.
+
+        The entire snapshot is validated before one row is rendered. Invalid or
+        legacy rows clear the exact view instead of falling back to roster names,
+        channel order, or guessed mono/stereo topology. Call
+        :meth:`clear_recording_sources` when no take plan owns the live view.
+        """
+
+        try:
+            incoming = validate_exact_recording_sources(sources)
+        except Exception as exc:  # noqa: BLE001 - presentation boundary fails closed
+            LOGGER.warning(
+                "Rejected incomplete Studio source snapshot (%s)",
+                type(exc).__name__,
+            )
+            changed = bool(self._recording_sources) or not (
+                self._recording_sources_authoritative
+                and self._recording_source_error
+            )
+            self._recording_sources = ()
+            self._recording_sources_authoritative = True
+            self._recording_source_signature = ()
+            self._recording_source_lane_ids.clear()
+            self._recording_source_by_lane.clear()
+            self._recording_source_runtime_levels.clear()
+            self._recording_source_error = (
+                "Exact recording-source evidence is unavailable. Recording audio "
+                "is unchanged; review source readiness before continuing."
+            )
+            if self._viewing_live and changed:
+                self._populate_live_lanes()
+            return False
+
+        signature = tuple(
+            (
+                row.logical_source_id,
+                self._recording_source_kind(row).value,
+                row.participant_id,
+                row.display_name,
+                row.channels,
+                row.channel_id,
+            )
+            for row in incoming
+        )
+        changed = (
+            not self._recording_sources_authoritative
+            or signature != self._recording_source_signature
+            or bool(self._recording_source_error)
+        )
+        self._recording_sources = incoming
+        self._recording_sources_authoritative = True
+        self._recording_source_signature = signature
+        self._recording_source_error = ""
+        source_ids = {row.logical_source_id for row in incoming}
+        self._recording_source_runtime_levels = {
+            source_id: level
+            for source_id, level in self._recording_source_runtime_levels.items()
+            if source_id in source_ids
+        }
+        if changed:
+            self._allocate_recording_source_lane_ids()
+        else:
+            self._recording_source_by_lane = {
+                self._recording_source_lane_ids[row.logical_source_id]: row
+                for row in incoming
+            }
+        if self._viewing_live:
+            if changed:
+                self._populate_live_lanes()
+            else:
+                self._refresh_recording_source_lanes()
+        return True
+
+    def clear_recording_sources(self) -> None:
+        """Return the idle live view to roster-only compatibility rendering."""
+
+        changed = self._recording_sources_authoritative
+        self._recording_sources = ()
+        self._recording_sources_authoritative = False
+        self._recording_source_signature = ()
+        self._recording_source_lane_ids.clear()
+        self._recording_source_by_lane.clear()
+        self._recording_source_runtime_levels.clear()
+        self._recording_source_error = ""
         if self._viewing_live and changed:
             self._populate_live_lanes()
+
+    def _allocate_recording_source_lane_ids(self) -> None:
+        """Assign UI-only row keys without manufacturing source identity."""
+
+        previous = dict(self._recording_source_lane_ids)
+        lane_ids: dict[str, int] = {}
+        used: set[int] = set()
+        for row in self._recording_sources:
+            if (
+                self._recording_source_kind(row)
+                is RecordingSourceKind.JAMULUS_SERVER
+                and row.channel_id >= 0
+                and row.channel_id not in used
+            ):
+                lane_ids[row.logical_source_id] = row.channel_id
+                used.add(row.channel_id)
+        next_synthetic = -1
+        for row in self._recording_sources:
+            if row.logical_source_id in lane_ids:
+                continue
+            retained = previous.get(row.logical_source_id)
+            if retained is not None and retained < 0 and retained not in used:
+                lane_id = retained
+            else:
+                while next_synthetic in used:
+                    next_synthetic -= 1
+                lane_id = next_synthetic
+                next_synthetic -= 1
+            lane_ids[row.logical_source_id] = lane_id
+            used.add(lane_id)
+        self._recording_source_lane_ids = lane_ids
+        self._recording_source_by_lane = {
+            lane_ids[row.logical_source_id]: row for row in self._recording_sources
+        }
+
+    def set_recording_source_levels(self, levels: Mapping[str, float]) -> None:
+        """Update plan-bound source meters by stable logical identity only."""
+
+        if not self._recording_sources_authoritative or not isinstance(levels, Mapping):
+            return
+        allowed = {row.logical_source_id for row in self._recording_sources}
+        changed = False
+        for index, (source_id, value) in enumerate(levels.items()):
+            if index >= 512:
+                break
+            if source_id not in allowed or isinstance(value, bool):
+                continue
+            try:
+                level = float(value)
+            except (TypeError, ValueError):
+                continue
+            if not 0.0 <= level <= 1.0:
+                continue
+            if self._recording_source_runtime_levels.get(source_id) != level:
+                self._recording_source_runtime_levels[source_id] = level
+                changed = True
+        if changed and self._viewing_live:
+            self._refresh_recording_source_lanes()
+
+    def _recording_source_level(
+        self,
+        row: RecordingSourcePresentation,
+    ) -> float | None:
+        value = self._recording_source_runtime_levels.get(
+            row.logical_source_id,
+            row.meter_level,
+        )
+        return None if value is None else max(0.0, min(1.0, float(value)))
+
+    def _recording_source_visible_detail(
+        self,
+        row: RecordingSourcePresentation,
+    ) -> str:
+        state = {
+            RecordingSourceState.ARMED: "ARMED",
+            RecordingSourceState.WAITING: "WAITING",
+            RecordingSourceState.RECORDING: "REC",
+            RecordingSourceState.STOPPING: "STOPPING",
+            RecordingSourceState.CONFLICTED: "CONFLICT",
+            RecordingSourceState.MISSING: "MISSING",
+            RecordingSourceState.FINALIZED: "FINALIZED",
+        }[row.state]
+        parts = [state, "MONO" if row.channels == 1 else "STEREO"]
+        if self._phase_name in {
+            "count_in",
+            "recording",
+            "stopping",
+            "stop_failed",
+        }:
+            if self._recording_source_level(row) is None:
+                parts.append("METER ?")
+            if row.dropout_count is None or row.overloaded is None:
+                parts.append("HEALTH ?")
+            else:
+                if row.dropout_count:
+                    parts.append(f"DROP {row.dropout_count}")
+                if row.overloaded:
+                    parts.append("OVER")
+                if not row.dropout_count and not row.overloaded:
+                    parts.append("HEALTH OK")
+        return " · ".join(parts)
+
+    def _recording_source_accessible_detail(
+        self,
+        row: RecordingSourcePresentation,
+    ) -> str:
+        kind = self._recording_source_kind(row)
+        source = {
+            RecordingSourceKind.JAMULUS_SERVER: "Jamulus server stem",
+            RecordingSourceKind.LOCAL_ORIGINAL: "Local Original",
+            RecordingSourceKind.SHARED_TRACK: "Shared Track",
+        }[kind]
+        topology = "mono" if row.channels == 1 else "stereo"
+        level = self._recording_source_level(row)
+        meter = (
+            "meter unavailable"
+            if level is None
+            else f"aggregate peak {round(level * 100)} percent"
+        )
+        dropouts = (
+            "dropout telemetry unavailable"
+            if row.dropout_count is None
+            else f"{row.dropout_count} reported dropouts"
+        )
+        overload = (
+            "overload telemetry unavailable"
+            if row.overloaded is None
+            else "overload detected"
+            if row.overloaded
+            else "no overload reported"
+        )
+        phase = "count-in active, " if self._phase_name == "count_in" else ""
+        return (
+            f"{source}, {topology}, {phase}{row.state.value}, {meter}, "
+            f"{dropouts}, {overload}."
+        )
+
+    def _recording_source_summary(self) -> str:
+        counts = {
+            kind: sum(
+                self._recording_source_kind(row) is kind
+                for row in self._recording_sources
+            )
+            for kind in RecordingSourceKind
+        }
+        attention = sum(
+            row.state
+            in {
+                RecordingSourceState.WAITING,
+                RecordingSourceState.CONFLICTED,
+                RecordingSourceState.MISSING,
+            }
+            or (row.dropout_count or 0) > 0
+            or bool(row.overloaded)
+            for row in self._recording_sources
+        )
+        phase = (
+            "Count-in"
+            if self._phase_name == "count_in"
+            else "Recording"
+            if self._phase_name in {"recording", "stop_failed"}
+            else "Stopping"
+            if self._phase_name == "stopping"
+            else "Finalizing"
+            if self._phase_name in {"finalizing", "validating"}
+            else "Ready"
+            if self._phase_name == "complete"
+            else "Needs Attention"
+            if self._phase_name == "needs_attention"
+            else "Planned"
+        )
+        summary = (
+            f"{phase} {len(self._recording_sources)} exact source"
+            f"{'s' if len(self._recording_sources) != 1 else ''}: "
+            f"{counts[RecordingSourceKind.JAMULUS_SERVER]} server, "
+            f"{counts[RecordingSourceKind.LOCAL_ORIGINAL]} Local Original, "
+            f"{counts[RecordingSourceKind.SHARED_TRACK]} Shared Track."
+        )
+        if attention:
+            summary += f" {attention} source"
+            summary += " needs attention." if attention == 1 else "s need attention."
+        return summary
+
+    def _refresh_recording_source_lanes(self) -> None:
+        if not self._recording_sources_authoritative or not self._viewing_live:
+            return
+        for lane_id, row in self._recording_source_by_lane.items():
+            lane = self._lanes.get(lane_id)
+            if lane is None:
+                continue
+            visible_detail = self._recording_source_visible_detail(row)
+            accessible_detail = self._recording_source_accessible_detail(row)
+            lane._detail.setText(visible_detail)
+            lane._detail.setToolTip(accessible_detail)
+            lane.setAccessibleDescription(accessible_detail)
+            needs_attention = bool(
+                row.state
+                in {
+                    RecordingSourceState.WAITING,
+                    RecordingSourceState.CONFLICTED,
+                    RecordingSourceState.MISSING,
+                }
+                or (row.dropout_count or 0) > 0
+                or row.overloaded
+            )
+            lane.setProperty("recordingSourceState", row.state.value)
+            lane.setProperty("recordingSourceAttention", needs_attention)
+            lane.style().unpolish(lane)
+            lane.style().polish(lane)
+            level = self._recording_source_level(row) or 0.0
+            lane.set_stereo_levels(level, level, clipped=bool(row.overloaded))
+            lane._meter.setAccessibleName(
+                f"{'Mono' if row.channels == 1 else 'Stereo'} source peak meter"
+            )
+            lane._meter.setAccessibleDescription(accessible_detail)
+        if self._recording_sources:
+            self._hint.setText(self._recording_source_summary())
+        if self._selected_channel_id in self._recording_source_by_lane:
+            self._select_track(self._selected_channel_id, sync_controller=False)
+
+    def _select_track(
+        self,
+        channel_id: int,
+        *,
+        sync_controller: bool = True,
+    ) -> None:
+        """Extend the shared selector with exact live-source inspection facts."""
+
+        super()._select_track(channel_id, sync_controller=sync_controller)
+        source_row = self._recording_source_by_lane.get(int(channel_id))
+        if not self._viewing_live or source_row is None:
+            return
+        source_kind = self._recording_source_kind(source_row)
+        dropouts = source_row.dropout_count
+        self._set_inspector_values(
+            status=source_row.state.value.replace("_", " ").upper(),
+            source={
+                RecordingSourceKind.JAMULUS_SERVER: "Jamulus server stem",
+                RecordingSourceKind.LOCAL_ORIGINAL: "Local Original",
+                RecordingSourceKind.SHARED_TRACK: "Shared Track",
+            }[source_kind],
+            timeline=(
+                f"REC {_fmt_time(self._recording_elapsed)}"
+                if self._recording
+                else "Waiting for recording"
+            ),
+            alignment=(
+                "Plan-bound server timeline"
+                if source_kind
+                in {
+                    RecordingSourceKind.JAMULUS_SERVER,
+                    RecordingSourceKind.SHARED_TRACK,
+                }
+                else "Plan-bound local capture; verified after save"
+            ),
+            gaps=(
+                "Live dropout telemetry unavailable"
+                if dropouts is None
+                else "No live dropouts reported"
+                if dropouts == 0
+                else f"{dropouts} live dropout"
+                f"{'s' if dropouts != 1 else ''} reported"
+            ),
+            export="Available after this take is saved",
+        )
 
     def set_creator_profile(self, profile: CreatorProfile) -> None:
         """Set the live profile without relabeling a selected historical take."""
@@ -1343,7 +1725,9 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         )
         if self._phase_name == "recording":
             self._phase_label = (
-                f"● RECORDING · one track per {self._participant_singular}"
+                f"● RECORDING · {len(self._recording_sources)} exact sources"
+                if self._recording_sources_authoritative
+                else f"● RECORDING · one track per {self._participant_singular}"
             )
             self._render_studio_phase()
         self._refresh_export_button()
@@ -1351,10 +1735,20 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
     def set_live_levels(self, levels: dict[int, float]) -> None:
         if not self._viewing_live:
             return
+        exact_levels: dict[str, float] = {}
         for channel_id, value in levels.items():
             lane = self._lanes.get(int(channel_id))
             if lane is not None:
                 lane.set_level(value)
+            row = self._recording_source_by_lane.get(int(channel_id))
+            if (
+                row is not None
+                and self._recording_source_kind(row)
+                is RecordingSourceKind.JAMULUS_SERVER
+            ):
+                exact_levels[row.logical_source_id] = value
+        if exact_levels:
+            self.set_recording_source_levels(exact_levels)
 
     def set_recording_phase(self, phase: str, detail: str = "") -> None:
         phase = str(phase or "idle")
@@ -1374,9 +1768,12 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             "starting": "PREPARING TRACKS…",
             "count_in": "COUNT-IN · recording is already active",
             "recording": (
-                f"● RECORDING · one track per {self._participant_singular}"
+                f"● RECORDING · {len(self._recording_sources)} exact sources"
+                if self._recording_sources_authoritative
+                else f"● RECORDING · one track per {self._participant_singular}"
             ),
             "stopping": "STOPPING RECORDING…",
+            "finalizing": detail or "FINALIZING THE TAKE…",
             "validating": detail or "FINALIZING THE TAKE…",
             "complete": "READY · TAKE SAVED",
             "needs_attention": "TAKE SAVED · review recommended",
@@ -1400,7 +1797,13 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 else "■ Stop Recording"
             )
             self._refresh_record_button_enabled()
-        elif phase in {"preflight", "starting", "stopping", "validating"}:
+        elif phase in {
+            "preflight",
+            "starting",
+            "stopping",
+            "finalizing",
+            "validating",
+        }:
             set_labeled_action(self._record_btn, "Working…")
             self._record_btn.setEnabled(False)
         else:
@@ -1408,6 +1811,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             self._refresh_record_button_enabled()
         for lane in self._lanes.values():
             lane.waveform.set_recording(self._recording)
+        self._refresh_recording_source_lanes()
         self._refresh_export_button()
 
     def _refresh_record_button_enabled(self) -> None:
@@ -1417,6 +1821,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             "preflight",
             "starting",
             "stopping",
+            "finalizing",
             "validating",
         }
         self._record_btn.setEnabled(
@@ -1466,7 +1871,11 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                     self._take_list.setCurrentRow(row)
                     self._on_take_selected(row)
                     return
-        if not self._takes and not self._live_participants:
+        if (
+            not self._takes
+            and not self._live_participants
+            and not self._recording_sources
+        ):
             self._hint.setText(
                 f"Start Session to add {self._participant_plural}, then press "
                 "Record for synchronized tracks."
@@ -1475,12 +1884,87 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             self._export_btn.setEnabled(False)
             self._reveal_btn.setEnabled(False)
 
+    def _stack_exact_repeated_takes(self, completed_path: Path) -> int:
+        """Attach safe prior takes to the newly completed editable take."""
+
+        primary = self._studio_project
+        document = self._studio_state
+        take_path = self._studio_state_take_path
+        if (
+            not self._take_editing_allowed()
+            or primary is None
+            or document is None
+            or take_path is None
+        ):
+            return 0
+        try:
+            completed = completed_path.expanduser().resolve()
+        except (OSError, RuntimeError):
+            return 0
+        if completed != take_path:
+            return 0
+
+        before = document
+        updated = document
+        for index, take in enumerate(self._takes):
+            if index >= 512:
+                break
+            try:
+                source_path = take.path.expanduser().resolve()
+            except (OSError, RuntimeError):
+                continue
+            if source_path == completed:
+                continue
+            try:
+                source_project = load_take_project(source_path)
+                updated = stack_automatic_take_lanes(
+                    updated,
+                    primary,
+                    source_project,
+                )
+            except (StudioCompingError, TakeProjectError):
+                # A different session, legacy identity, bad topology, incomplete
+                # take, or unreadable project is simply not eligible for an
+                # automatic edit. Manual review remains available where safe.
+                continue
+        if updated is before:
+            return 0
+        before_count = sum(not lane.deleted for lane in before.take_lanes)
+        after_count = sum(not lane.deleted for lane in updated.take_lanes)
+        added = max(0, after_count - before_count)
+        if not added:
+            return 0
+        try:
+            catalog = self._source_catalog_for_document(updated, primary, take_path)
+            committed = self._studio_controller.perform(
+                "Stack exact repeated takes",
+                lambda current: updated if current == before else current,
+            )
+            if committed is before:
+                return 0
+        except (
+            StudioControllerError,
+            StudioSourceCatalogError,
+            TakeProjectError,
+            ValueError,
+        ) as exc:
+            LOGGER.warning("Could not stack exact repeated takes: %s", exc)
+            return 0
+        self._studio_source_catalog = catalog
+        self._sync_studio_controller_snapshot()
+        return added
+
     def on_take_completed(
         self,
         path: Optional[Path],
         validation: Optional[TakeValidationResult] = None,
     ) -> None:
         self.reload(select_path=path)
+        stacked_lanes = (
+            self._stack_exact_repeated_takes(Path(path))
+            if path is not None and not (validation and validation.errors)
+            else 0
+        )
         if validation is not None:
             if path is None:
                 if self._creator_profile_key == "podcast_voice":
@@ -1522,6 +2006,11 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                         has_warnings=bool(validation.warnings),
                     )
                 )
+        if stacked_lanes:
+            self._hint.setText(
+                f"{self._hint.text()} {stacked_lanes} exact repeated-take "
+                f"lane{'s' if stacked_lanes != 1 else ''} stacked automatically."
+            )
 
     @staticmethod
     def _studio_waveform_key(
@@ -1861,6 +2350,10 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             item = self._track_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                # ``deleteLater`` is intentionally asynchronous. Hide the old
+                # lane immediately so a same-channel exact-source refresh cannot
+                # paint stale roster text over its replacement for one UI turn.
+                widget.hide()
                 widget.deleteLater()
         self._setup_tab_order()
 
@@ -1924,6 +2417,56 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 and self.width() >= 1080
             )
 
+    def _populate_recording_source_lanes(self) -> None:
+        """Render only the already-validated exact plan source inventory."""
+
+        if not self._recording_sources:
+            self._hint.setText(
+                self._recording_source_error
+                or (
+                    "No exact recording sources are available for this take plan. "
+                    "Review source readiness before continuing."
+                )
+            )
+            self._sync_timeline_ruler_inset()
+            return
+
+        for track_number, row in enumerate(self._recording_sources, start=1):
+            source_kind = self._recording_source_kind(row)
+            lane_id = self._recording_source_lane_ids[row.logical_source_id]
+            source = {
+                RecordingSourceKind.JAMULUS_SERVER: "jamulus_server",
+                RecordingSourceKind.LOCAL_ORIGINAL: "local_isolated",
+                RecordingSourceKind.SHARED_TRACK: "live_reference",
+            }[source_kind]
+            source_badge = (
+                self._recorded_source_badge_label("jamulus_server")
+                if source_kind is RecordingSourceKind.JAMULUS_SERVER
+                else _safe_source_label(source)
+            )
+            lane = TrackLane(
+                lane_id,
+                row.display_name,
+                self._recording_source_visible_detail(row),
+                track_number=track_number,
+                source=source,
+                source_badge_label=source_badge,
+            )
+            lane.waveform.set_live(self._recording)
+            self._add_lane(lane, live=True)
+            if source_kind is not RecordingSourceKind.JAMULUS_SERVER:
+                # Local capture and Shared Track are visible recording sources,
+                # not Jamulus monitor channels. Hiding these controls prevents a
+                # presentation-only row key from becoming an audio-routing guess.
+                for control in (lane._mute, lane._solo, lane._gain):
+                    control.setVisible(False)
+
+        self._refresh_recording_source_lanes()
+        self._hint.setText(self._recording_source_summary())
+        self._sync_timeline_ruler_inset()
+        if self._lanes:
+            self._select_track(next(iter(self._lanes)))
+
     def _populate_live_lanes(self) -> None:
         self._clear_lanes()
         self._studio_arrange.setVisible(False)
@@ -1964,6 +2507,9 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             playhead=self._recording_elapsed if self._recording else 0.0,
             seek_enabled=False,
         )
+        if self._recording_sources_authoritative:
+            self._populate_recording_source_lanes()
+            return
         for track_number, participant in enumerate(self._live_participants, start=1):
             channel_id = int(getattr(participant, "channel_id", -1))
             if channel_id < 0:

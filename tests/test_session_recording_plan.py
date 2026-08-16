@@ -2,6 +2,7 @@ import copy
 import dataclasses
 import hashlib
 import json
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -10,7 +11,7 @@ from core.recording_readiness import (
     RecordingStorageCheck,
     RecordingStorageStatus,
 )
-from core.local_capture import LocalCaptureTrack
+from core.local_capture import LocalCaptureTrack, bind_local_capture_logical_sources
 from core.session_recording_plan import (
     GuestLocalOriginalBinding,
     InputMapBinding,
@@ -110,6 +111,77 @@ def test_guest_local_original_contract_is_exact_private_and_fingerprint_bound():
             guest_local_originals=(
                 GuestLocalOriginalBinding("not-planned", 0, "ef" * 32, 1),
             ),
+        )
+
+
+def test_plan_binds_stable_server_and_host_logical_sources_across_takes():
+    first = _plan(
+        server_channel_counts=(1, 2),
+    )
+    repeated = _plan(
+        take_id="take-2",
+        plan_generation=2,
+        server_channel_counts=(1, 2),
+    )
+    other_session = _plan(
+        session_id="session-2",
+        server_channel_counts=(1, 2),
+    )
+    renamed = _plan(
+        take_id="take-renamed",
+        plan_generation=3,
+        server_channel_counts=(1, 2),
+        input_maps=(
+            InputMapBinding(track_name="Renamed DI", channel_count=1),
+            InputMapBinding(
+                track_name="Renamed Voice",
+                channel_count=2,
+                local_original_enabled=True,
+            ),
+        ),
+    )
+
+    assert first.server_topology_exact
+    assert first.server_logical_source_ids == repeated.server_logical_source_ids
+    assert first.input_map_logical_source_ids == repeated.input_map_logical_source_ids
+    assert first.input_map_logical_source_ids == renamed.input_map_logical_source_ids
+    assert first.server_logical_source_ids != other_session.server_logical_source_ids
+    assert first.channel_count_for_server("p-guest") == 2
+    assert first.channel_count_for_server("not-planned") is None
+
+    tracks = first.resolved_capture_tracks()
+    assert len(tracks) == 1
+    assert tracks[0].channel_count == 2
+    assert tracks[0].logical_source_id == first.input_map_logical_source_ids[1]
+    assert SessionRecordingPlan.from_private_dict(
+        first.to_private_dict()
+    ).server_channel_counts == (1, 2)
+
+
+def test_guest_plan_binds_ordered_mono_stereo_source_slots():
+    source_ids = (str(uuid.uuid4()), str(uuid.uuid4()))
+    guest = GuestLocalOriginalBinding(
+        participant_id="p-guest",
+        track_count=2,
+        map_fingerprint_sha256="ab" * 32,
+        presence_generation=4,
+        channel_counts=(1, 2),
+        logical_source_ids=source_ids,
+    )
+    plan = _plan(guest_local_originals=(guest,), expected_source_count=5)
+
+    assert guest.exact_topology
+    assert SessionRecordingPlan.from_private_dict(
+        plan.to_private_dict()
+    ).guest_local_originals == (guest,)
+    with pytest.raises(ValueError, match="mono or stereo"):
+        GuestLocalOriginalBinding(
+            "p-guest",
+            1,
+            "ab" * 32,
+            1,
+            channel_counts=(3,),
+            logical_source_ids=(source_ids[0],),
         )
 
 
@@ -265,6 +337,8 @@ def test_private_plan_round_trip_rebuilds_every_typed_fact():
         "plan_generation",
         "roster",
         "expected_server_stems",
+        "server_logical_source_ids",
+        "server_channel_counts",
         "count_in_frames",
         "pre_roll_frames",
         "storage",
@@ -273,6 +347,7 @@ def test_private_plan_round_trip_rebuilds_every_typed_fact():
         "shared_track",
         "shared_track_planned",
         "input_maps",
+        "input_map_logical_source_ids",
         "guest_local_originals",
         "creator_profile_key",
         "plan_fingerprint_sha256",
@@ -343,7 +418,7 @@ def test_private_plan_deserialization_rejects_schema_and_external_binding_mismat
         SessionRecordingPlan.from_private_dict(missing)
 
     wrong_schema = plan.to_private_dict()
-    wrong_schema["schema_version"] = 2
+    wrong_schema["schema_version"] = 3
     with pytest.raises(ValueError, match="Unsupported"):
         SessionRecordingPlan.from_private_dict(wrong_schema)
 
@@ -401,15 +476,35 @@ def test_capture_resolver_preserves_logical_stereo_and_opt_out_truth():
     resolved = resolve_capture_tracks(settings)
 
     assert resolved == (
-        LocalCaptureTrack("local-Guitar DI", (0,)),
-        LocalCaptureTrack("local-Room Pair", (1, 2)),
+        LocalCaptureTrack("local-Guitar DI", (0,), logical_source_ordinal=0),
+        LocalCaptureTrack("local-Room Pair", (1, 2), logical_source_ordinal=2),
     )
     assert len(resolved) == 2
+    assert tuple(track.logical_source_ordinal for track in resolved) == (0, 2)
     assert sum(track.channel_count for track in resolved) == 3
     # Historical unpacking remains available but does not split the stereo WAV.
     assert tuple(tuple(track) for track in resolved) == (
         ("local-Guitar DI", 0),
         ("local-Room Pair", 1),
+    )
+
+    first_bound = bind_local_capture_logical_sources(
+        resolved,
+        session_id="session-stable-slots",
+        participant_id="guest-stable-slots",
+    )
+    room_source_id = first_bound[1].logical_source_id
+    settings.input_maps[0]["local_original_enabled"] = False
+    room_only = resolve_capture_tracks(settings)
+    assert len(room_only) == 1
+    assert room_only[0].logical_source_ordinal == 2
+    assert (
+        bind_local_capture_logical_sources(
+            room_only,
+            session_id="session-stable-slots",
+            participant_id="guest-stable-slots",
+        )[0].logical_source_id
+        == room_source_id
     )
 
     settings.input_maps = [
@@ -438,7 +533,9 @@ def test_capture_resolver_enforces_32_logical_tracks_and_32_source_channels():
     )
     resolved = resolve_capture_tracks(settings)
     assert len(resolved) == 32
-    assert resolved[-1] == LocalCaptureTrack("local-Track 32", (31,))
+    assert resolved[-1] == LocalCaptureTrack(
+        "local-Track 32", (31,), logical_source_ordinal=31
+    )
 
     settings.input_maps = [entry(index, 2) for index in range(17)]
     assert resolve_capture_tracks(settings) == ()
@@ -446,7 +543,9 @@ def test_capture_resolver_enforces_32_logical_tracks_and_32_source_channels():
     settings.input_maps = [entry(index) for index in range(30)] + [entry(30, 2)]
     resolved = resolve_capture_tracks(settings)
     assert len(resolved) == 31
-    assert resolved[-1] == LocalCaptureTrack("local-Track 31", (30, 31))
+    assert resolved[-1] == LocalCaptureTrack(
+        "local-Track 31", (30, 31), logical_source_ordinal=30
+    )
 
 
 def test_capture_resolver_retains_default_pair_only_for_empty_legacy_map():

@@ -47,6 +47,7 @@ from urllib.parse import parse_qs, quote, urlsplit
 
 from core.creative_modes import canonical_creator_profile_key
 from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
+from core.logical_sources import canonical_logical_source_id
 from core.redaction import redact_text
 
 
@@ -385,8 +386,10 @@ class PresenceV2Challenge:
             self.topology_epoch, "topology_epoch", positive=True
         )
         lease_ms = _presence_int(self.lease_ms, "lease_ms", positive=True)
-        if not PRESENCE_V2_MIN_REMAINING_LEASE_MS <= lease_ms <= int(
-            PRESENCE_V2_MAX_LEASE_S * 1000
+        if (
+            not PRESENCE_V2_MIN_REMAINING_LEASE_MS
+            <= lease_ms
+            <= int(PRESENCE_V2_MAX_LEASE_S * 1000)
         ):
             raise ValueError("lease_ms is outside the supported limits.")
         object.__setattr__(self, "ordered_roster_digest", digest)
@@ -429,6 +432,8 @@ class PresenceV2Proof:
     protocol_version: int = 2
     local_original_track_count: int | None = None
     local_original_map_fingerprint: str = ""
+    local_original_channel_counts: tuple[int, ...] = ()
+    local_original_source_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if type(self.protocol_version) is not int or self.protocol_version != 2:
@@ -477,9 +482,7 @@ class PresenceV2Proof:
                     "A Local Original map fingerprint requires an exact track count."
                 )
         else:
-            track_count = _presence_int(
-                track_count, "local_original_track_count"
-            )
+            track_count = _presence_int(track_count, "local_original_track_count")
             if track_count > _MAX_DECLARED_INPUTS:
                 raise ValueError(
                     "local_original_track_count is outside the supported range."
@@ -492,6 +495,27 @@ class PresenceV2Proof:
                 raise ValueError(
                     "capture_enabled must match the exact Local Original track count."
                 )
+        channel_counts = tuple(self.local_original_channel_counts)
+        source_ids = tuple(self.local_original_source_ids)
+        if bool(channel_counts) != bool(source_ids):
+            raise ValueError(
+                "Local Original channel widths and source IDs must be declared together."
+            )
+        if channel_counts:
+            if track_count is None or len(channel_counts) != track_count:
+                raise ValueError(
+                    "Local Original topology must describe every logical track."
+                )
+            if any(
+                isinstance(width, bool) or width not in (1, 2)
+                for width in channel_counts
+            ):
+                raise ValueError("Local Original tracks must be mono or stereo.")
+            source_ids = tuple(
+                canonical_logical_source_id(value) for value in source_ids
+            )
+            if len(set(source_ids)) != len(source_ids):
+                raise ValueError("Local Original source IDs must be unique.")
         object.__setattr__(self, "participant_id", participant_id)
         object.__setattr__(self, "display_name", _clean_name(self.display_name))
         object.__setattr__(self, "ordered_roster_digest", digest)
@@ -505,8 +529,16 @@ class PresenceV2Proof:
         object.__setattr__(self, "topology_epoch", topology_epoch)
         object.__setattr__(self, "presence_generation", presence_generation)
         object.__setattr__(self, "local_original_track_count", track_count)
-        object.__setattr__(
-            self, "local_original_map_fingerprint", map_fingerprint
+        object.__setattr__(self, "local_original_map_fingerprint", map_fingerprint)
+        object.__setattr__(self, "local_original_channel_counts", channel_counts)
+        object.__setattr__(self, "local_original_source_ids", source_ids)
+
+    @property
+    def local_original_topology_exact(self) -> bool:
+        return self.local_original_track_count == len(
+            self.local_original_channel_counts
+        ) and (
+            not self.local_original_track_count or bool(self.local_original_source_ids)
         )
 
     @property
@@ -531,17 +563,15 @@ class LocalOriginalObligation:
     map_fingerprint: str = ""
     presence_generation: int = 0
     capture_requested: bool = False
+    channel_counts: tuple[int, ...] = ()
+    logical_source_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         participant_id = _uuid_text(self.participant_id, "participant_id")
-        generation = _presence_int(
-            self.presence_generation, "presence_generation"
-        )
+        generation = _presence_int(self.presence_generation, "presence_generation")
         if type(self.capture_requested) is not bool:
             raise ValueError("capture_requested must be a boolean.")
-        fingerprint = _optional_sha256_text(
-            self.map_fingerprint, "map_fingerprint"
-        )
+        fingerprint = _optional_sha256_text(self.map_fingerprint, "map_fingerprint")
         count = self.track_count
         if count is None:
             if fingerprint:
@@ -560,14 +590,43 @@ class LocalOriginalObligation:
                 raise ValueError(
                     "capture_requested must match the exact Local Original track count."
                 )
+        channel_counts = tuple(self.channel_counts)
+        logical_source_ids = tuple(self.logical_source_ids)
+        if bool(channel_counts) != bool(logical_source_ids):
+            raise ValueError(
+                "Local Original channel widths and source IDs must be declared together."
+            )
+        if channel_counts:
+            if count is None or len(channel_counts) != count:
+                raise ValueError(
+                    "Local Original topology must describe every logical track."
+                )
+            if any(
+                isinstance(width, bool) or width not in (1, 2)
+                for width in channel_counts
+            ):
+                raise ValueError("Local Original tracks must be mono or stereo.")
+            logical_source_ids = tuple(
+                canonical_logical_source_id(value) for value in logical_source_ids
+            )
+            if len(set(logical_source_ids)) != len(logical_source_ids):
+                raise ValueError("Local Original source IDs must be unique.")
         object.__setattr__(self, "participant_id", participant_id)
         object.__setattr__(self, "track_count", count)
         object.__setattr__(self, "map_fingerprint", fingerprint)
         object.__setattr__(self, "presence_generation", generation)
+        object.__setattr__(self, "channel_counts", channel_counts)
+        object.__setattr__(self, "logical_source_ids", logical_source_ids)
 
     @property
     def exact(self) -> bool:
         return self.track_count is not None
+
+    @property
+    def exact_topology(self) -> bool:
+        return self.track_count == len(self.channel_counts) and (
+            not self.track_count or bool(self.logical_source_ids)
+        )
 
     @classmethod
     def from_presence_proof(cls, proof: PresenceV2Proof) -> "LocalOriginalObligation":
@@ -577,6 +636,8 @@ class LocalOriginalObligation:
             map_fingerprint=proof.local_original_map_fingerprint,
             presence_generation=proof.presence_generation,
             capture_requested=proof.capture_enabled,
+            channel_counts=proof.local_original_channel_counts,
+            logical_source_ids=proof.local_original_source_ids,
         )
 
     def __repr__(self) -> str:
@@ -951,9 +1012,7 @@ class EnrollmentRegistry:
         if active is None or pending is None:
             return False
         return all(
-            (
-                proof := pending.by_participant.get(participant_id)
-            ) is not None
+            (proof := pending.by_participant.get(participant_id)) is not None
             and proof.self_ordinal == ordinal
             for participant_id, ordinal in pending.required_ordinals.items()
         )
@@ -1086,9 +1145,7 @@ class EnrollmentRegistry:
             else:
                 self._presence_v2_pending = pending
 
-    def _presence_v2_challenge_snapshot_locked(
-        self, now: float
-    ) -> PresenceV2Challenge:
+    def _presence_v2_challenge_snapshot_locked(self, now: float) -> PresenceV2Challenge:
         self._advance_presence_v2_epochs_locked(now)
         epoch = self._presence_v2_pending or self._presence_v2_active
         if epoch is None:
@@ -1144,13 +1201,9 @@ class EnrollmentRegistry:
         count = _presence_int(roster_count, "roster_count", positive=True)
         if count > MAX_JAMULUS_ROSTER_ROWS:
             raise ValueError("roster_count exceeds the supported limit.")
-        ambiguous = _presence_ordinal_tuple(
-            ambiguous_ordinals, roster_count=count
-        )
+        ambiguous = _presence_ordinal_tuple(ambiguous_ordinals, roster_count=count)
         generations = (
-            _presence_int(
-                process_generation, "process_generation", positive=True
-            ),
+            _presence_int(process_generation, "process_generation", positive=True),
             _presence_int(
                 rpc_connection_generation,
                 "rpc_connection_generation",
@@ -1271,6 +1324,8 @@ class EnrollmentRegistry:
         capture_enabled: bool,
         local_original_track_count: int | None = None,
         local_original_map_fingerprint: str = "",
+        local_original_channel_counts: tuple[int, ...] = (),
+        local_original_source_ids: tuple[str, ...] = (),
         _allow_ambiguous_ordinal: bool = False,
     ) -> PresenceV2Proof:
         """Accept one fresh cooperative claim from an authenticated WebJam peer.
@@ -1299,6 +1354,8 @@ class EnrollmentRegistry:
             capture_enabled=capture_enabled,
             local_original_track_count=local_original_track_count,
             local_original_map_fingerprint=local_original_map_fingerprint,
+            local_original_channel_counts=local_original_channel_counts,
+            local_original_source_ids=local_original_source_ids,
         )
         with self._lock:
             record = next(
@@ -1330,9 +1387,7 @@ class EnrollmentRegistry:
                 None,
             )
             if target is None:
-                raise TransferConflictError(
-                    "The recorder-presence challenge is stale."
-                )
+                raise TransferConflictError("The recorder-presence challenge is stale.")
             if (
                 candidate.ordered_roster_digest != self._presence_v2_digest
                 or candidate.roster_count != self._presence_v2_roster_count
@@ -1354,8 +1409,7 @@ class EnrollmentRegistry:
                     "The recorder-presence roster ordinal is ambiguous."
                 )
             if (
-                candidate.participant_id
-                in self._presence_v2_conflicted_participants
+                candidate.participant_id in self._presence_v2_conflicted_participants
                 or candidate.self_ordinal in self._presence_v2_conflicted_ordinals
             ):
                 raise TransferConflictError(
@@ -1376,9 +1430,7 @@ class EnrollmentRegistry:
             participant_ordinals = {
                 proof.self_ordinal
                 for epoch in epochs
-                if (
-                    proof := epoch.by_participant.get(candidate.participant_id)
-                )
+                if (proof := epoch.by_participant.get(candidate.participant_id))
                 is not None
             }
             participant_ordinals.update(
@@ -1404,10 +1456,7 @@ class EnrollmentRegistry:
             ordinal_owners = {
                 proof.participant_id
                 for epoch in epochs
-                if (
-                    proof := epoch.by_ordinal.get(candidate.self_ordinal)
-                )
-                is not None
+                if (proof := epoch.by_ordinal.get(candidate.self_ordinal)) is not None
             }
             ordinal_owners.update(
                 participant_id
@@ -1472,20 +1521,14 @@ class EnrollmentRegistry:
             active = self._presence_v2_active
             if active is None or now >= active.expires_at:
                 return ()
-            if (
-                ordered_roster_digest is not None
-                and (
-                    type(ordered_roster_digest) is not str
-                    or ordered_roster_digest != self._presence_v2_digest
-                )
+            if ordered_roster_digest is not None and (
+                type(ordered_roster_digest) is not str
+                or ordered_roster_digest != self._presence_v2_digest
             ):
                 return ()
-            if (
-                roster_count is not None
-                and (
-                    type(roster_count) is not int
-                    or roster_count != self._presence_v2_roster_count
-                )
+            if roster_count is not None and (
+                type(roster_count) is not int
+                or roster_count != self._presence_v2_roster_count
             ):
                 return ()
             if challenge is not None:
@@ -1493,12 +1536,9 @@ class EnrollmentRegistry:
                     challenge, active.challenge
                 ):
                     return ()
-            if (
-                challenge_epoch is not None
-                and (
-                    type(challenge_epoch) is not int
-                    or challenge_epoch != active.challenge_epoch
-                )
+            if challenge_epoch is not None and (
+                type(challenge_epoch) is not int
+                or challenge_epoch != active.challenge_epoch
             ):
                 return ()
             return tuple(
@@ -1673,6 +1713,231 @@ class RecordingSignal(str, Enum):
     FINALIZING = "finalizing"
     COMPLETE = "complete"
     NEEDS_ATTENTION = "needs_attention"
+
+
+_CAPTURE_ARM_SCHEMA = 1
+
+
+@dataclass(frozen=True, slots=True)
+class CaptureArmSnapshot:
+    """Optional pre-start instruction for current v0.26 guests.
+
+    The ordinary recording signal deliberately remains ``IDLE`` while this
+    object is present.  Older peers ignore the additive ``capture_arm`` wire
+    member, while current peers may open their exact Local Original capture
+    and acknowledge it before the host starts the band-server recorder.
+    """
+
+    take_id: str
+    arm_generation: int
+    recording_plan_fingerprint: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "take_id", _uuid_text(self.take_id, "take_id"))
+        object.__setattr__(
+            self,
+            "arm_generation",
+            _presence_int(self.arm_generation, "arm_generation", positive=True),
+        )
+        fingerprint = _optional_sha256_text(
+            self.recording_plan_fingerprint,
+            "recording_plan_fingerprint",
+        )
+        if not fingerprint:
+            raise ValueError("recording_plan_fingerprint is required.")
+        object.__setattr__(self, "recording_plan_fingerprint", fingerprint)
+
+    @classmethod
+    def from_mapping(cls, value: object) -> "CaptureArmSnapshot":
+        if not isinstance(value, Mapping):
+            raise ValueError("capture_arm must be an object.")
+        if value.get("schema") != _CAPTURE_ARM_SCHEMA:
+            raise ValueError("capture_arm schema is not supported.")
+        return cls(
+            take_id=value["take_id"],
+            arm_generation=value["arm_generation"],
+            recording_plan_fingerprint=value["recording_plan_fingerprint"],
+        )
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "schema": _CAPTURE_ARM_SCHEMA,
+            "take_id": self.take_id,
+            "arm_generation": self.arm_generation,
+            "recording_plan_fingerprint": self.recording_plan_fingerprint,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CaptureArmCancellationSnapshot:
+    """Exact, non-sensitive proof that one pending capture arm was canceled."""
+
+    take_id: str
+    arm_generation: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "take_id", _uuid_text(self.take_id, "take_id"))
+        object.__setattr__(
+            self,
+            "arm_generation",
+            _presence_int(self.arm_generation, "arm_generation", positive=True),
+        )
+
+    @classmethod
+    def from_mapping(cls, value: object) -> "CaptureArmCancellationSnapshot":
+        if not isinstance(value, Mapping):
+            raise ValueError("capture_arm_cancellation must be an object.")
+        if value.get("schema") != _CAPTURE_ARM_SCHEMA:
+            raise ValueError("capture_arm_cancellation schema is not supported.")
+        return cls(
+            take_id=value["take_id"],
+            arm_generation=value["arm_generation"],
+        )
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "schema": _CAPTURE_ARM_SCHEMA,
+            "take_id": self.take_id,
+            "arm_generation": self.arm_generation,
+        }
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class CaptureArmAcknowledgement:
+    """Authenticated proof that one guest's exact capture stream opened."""
+
+    participant_id: str
+    take_id: str
+    arm_generation: int
+    recording_plan_fingerprint: str
+    presence_generation: int
+    local_original_map_fingerprint: str
+    local_original_channel_counts: tuple[int, ...]
+    local_original_source_ids: tuple[str, ...]
+    protocol_version: int = 2
+
+    def __post_init__(self) -> None:
+        if type(self.protocol_version) is not int or self.protocol_version != 2:
+            raise ValueError("protocol_version must be 2.")
+        participant_id = _uuid_text(self.participant_id, "participant_id")
+        take_id = _uuid_text(self.take_id, "take_id")
+        arm_generation = _presence_int(
+            self.arm_generation, "arm_generation", positive=True
+        )
+        plan_fingerprint = _optional_sha256_text(
+            self.recording_plan_fingerprint,
+            "recording_plan_fingerprint",
+        )
+        if not plan_fingerprint:
+            raise ValueError("recording_plan_fingerprint is required.")
+        presence_generation = _presence_int(
+            self.presence_generation,
+            "presence_generation",
+            positive=True,
+        )
+        map_fingerprint = _optional_sha256_text(
+            self.local_original_map_fingerprint,
+            "local_original_map_fingerprint",
+        )
+        if not map_fingerprint:
+            raise ValueError("local_original_map_fingerprint is required.")
+        channel_counts = tuple(self.local_original_channel_counts)
+        source_ids = tuple(
+            canonical_logical_source_id(value)
+            for value in self.local_original_source_ids
+        )
+        if not channel_counts or len(channel_counts) != len(source_ids):
+            raise ValueError(
+                "A capture-arm acknowledgement requires every logical track."
+            )
+        if len(channel_counts) > _MAX_DECLARED_INPUTS or any(
+            isinstance(width, bool) or width not in (1, 2)
+            for width in channel_counts
+        ):
+            raise ValueError("Local Original tracks must be mono or stereo.")
+        if len(set(source_ids)) != len(source_ids):
+            raise ValueError("Local Original source IDs must be unique.")
+        object.__setattr__(self, "participant_id", participant_id)
+        object.__setattr__(self, "take_id", take_id)
+        object.__setattr__(self, "arm_generation", arm_generation)
+        object.__setattr__(self, "recording_plan_fingerprint", plan_fingerprint)
+        object.__setattr__(self, "presence_generation", presence_generation)
+        object.__setattr__(self, "local_original_map_fingerprint", map_fingerprint)
+        object.__setattr__(self, "local_original_channel_counts", channel_counts)
+        object.__setattr__(self, "local_original_source_ids", source_ids)
+
+    @classmethod
+    def from_mapping(
+        cls,
+        value: Mapping[str, object],
+        *,
+        participant_id: str,
+    ) -> "CaptureArmAcknowledgement":
+        return cls(
+            participant_id=participant_id,
+            take_id=value["take_id"],
+            arm_generation=value["arm_generation"],
+            recording_plan_fingerprint=value["recording_plan_fingerprint"],
+            presence_generation=value["presence_generation"],
+            local_original_map_fingerprint=value[
+                "local_original_map_fingerprint"
+            ],
+            local_original_channel_counts=tuple(
+                value["local_original_channel_counts"]  # type: ignore[arg-type]
+            ),
+            local_original_source_ids=tuple(
+                value["local_original_source_ids"]  # type: ignore[arg-type]
+            ),
+            protocol_version=value["protocol_version"],
+        )
+
+    def to_mapping(self, *, include_participant_id: bool = True) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "protocol_version": self.protocol_version,
+            "take_id": self.take_id,
+            "arm_generation": self.arm_generation,
+            "recording_plan_fingerprint": self.recording_plan_fingerprint,
+            "presence_generation": self.presence_generation,
+            "local_original_map_fingerprint": self.local_original_map_fingerprint,
+            "local_original_channel_counts": list(
+                self.local_original_channel_counts
+            ),
+            "local_original_source_ids": list(self.local_original_source_ids),
+        }
+        if include_participant_id:
+            payload["participant_id"] = self.participant_id
+        return payload
+
+    def __repr__(self) -> str:
+        return "CaptureArmAcknowledgement(private=[redacted])"
+
+
+def _capture_arm_obligation_key(
+    obligation: LocalOriginalObligation,
+) -> tuple[object, ...]:
+    return (
+        obligation.participant_id,
+        obligation.track_count,
+        obligation.map_fingerprint,
+        obligation.presence_generation,
+        obligation.capture_requested,
+        obligation.channel_counts,
+        obligation.logical_source_ids,
+    )
+
+
+def _capture_arm_ack_key(
+    acknowledgement: CaptureArmAcknowledgement,
+) -> tuple[object, ...]:
+    return (
+        acknowledgement.participant_id,
+        len(acknowledgement.local_original_channel_counts),
+        acknowledgement.local_original_map_fingerprint,
+        acknowledgement.presence_generation,
+        True,
+        acknowledgement.local_original_channel_counts,
+        acknowledgement.local_original_source_ids,
+    )
 
 
 class SharedTrackPlaybackState(str, Enum):
@@ -1886,6 +2151,23 @@ class SessionStateSnapshot:
         default_factory=SharedTrackSessionSnapshot
     )
     creator_profile_key: str = "music"
+    capture_arm: CaptureArmSnapshot | None = None
+    capture_arm_cancellation: CaptureArmCancellationSnapshot | None = None
+    # Durable, non-sensitive marker that distinguishes a take governed by the
+    # v0.26 participant-scoped handshake from a legacy session-wide start.
+    # It is projected on the wire only through presence of ``capture_arm``.
+    arm_handshake_required: bool = False
+    arm_handshake_generation: int = 0
+    # Host-local durable identity for an unresolved, memory-only arm.  This is
+    # deliberately not projected on the wire; it permits only an exact
+    # generation-bound cancellation after a host restart.
+    arm_handshake_take_id: str | None = None
+    # Local parsing metadata, not another wire member.  A v0.26 host always
+    # includes the additive ``capture_arm`` key (possibly null) for a
+    # handshake-governed take, while a legacy/unarmed host does not.  Current
+    # guests use this bit to avoid treating session-wide RECORDING as
+    # participant capture authority.
+    capture_arm_supported: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -1901,9 +2183,55 @@ class SessionStateSnapshot:
         if not isinstance(shared_track, SharedTrackSessionSnapshot):
             raise ValueError("shared_track must be a SharedTrackSessionSnapshot.")
         object.__setattr__(self, "shared_track", shared_track)
-        creator_profile_key = canonical_creator_profile_key(
-            self.creator_profile_key
+        capture_arm = self.capture_arm
+        if isinstance(capture_arm, Mapping):
+            capture_arm = CaptureArmSnapshot.from_mapping(capture_arm)
+        if capture_arm is not None and not isinstance(
+            capture_arm, CaptureArmSnapshot
+        ):
+            raise ValueError("capture_arm must be a CaptureArmSnapshot.")
+        object.__setattr__(self, "capture_arm", capture_arm)
+        cancellation = self.capture_arm_cancellation
+        if isinstance(cancellation, Mapping):
+            cancellation = CaptureArmCancellationSnapshot.from_mapping(cancellation)
+        if cancellation is not None and not isinstance(
+            cancellation, CaptureArmCancellationSnapshot
+        ):
+            raise ValueError(
+                "capture_arm_cancellation must be a CaptureArmCancellationSnapshot."
+            )
+        object.__setattr__(self, "capture_arm_cancellation", cancellation)
+        object.__setattr__(
+            self,
+            "arm_handshake_required",
+            bool(self.arm_handshake_required),
         )
+        arm_handshake_generation = _presence_int(
+            self.arm_handshake_generation,
+            "arm_handshake_generation",
+        )
+        object.__setattr__(
+            self,
+            "arm_handshake_generation",
+            arm_handshake_generation,
+        )
+        arm_handshake_take_id = self.arm_handshake_take_id
+        if arm_handshake_take_id is not None:
+            arm_handshake_take_id = _uuid_text(
+                arm_handshake_take_id,
+                "arm_handshake_take_id",
+            )
+        object.__setattr__(
+            self,
+            "arm_handshake_take_id",
+            arm_handshake_take_id,
+        )
+        object.__setattr__(
+            self,
+            "capture_arm_supported",
+            bool(self.capture_arm_supported),
+        )
+        creator_profile_key = canonical_creator_profile_key(self.creator_profile_key)
         if creator_profile_key is None:
             raise ValueError("creator_profile_key is unsupported.")
         object.__setattr__(self, "creator_profile_key", creator_profile_key)
@@ -1913,6 +2241,7 @@ def _session_state_mapping(
     snapshot: SessionStateSnapshot,
     *,
     include_shared_track: bool,
+    include_capture_arm: bool = False,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "session_id": snapshot.session_id,
@@ -1926,6 +2255,20 @@ def _session_state_mapping(
     }
     if include_shared_track:
         payload["shared_track"] = snapshot.shared_track.to_mapping()
+    if include_capture_arm and (
+        snapshot.capture_arm is not None
+        or snapshot.arm_handshake_required
+        or snapshot.capture_arm_cancellation is not None
+    ):
+        payload["capture_arm"] = (
+            snapshot.capture_arm.to_mapping()
+            if snapshot.capture_arm is not None
+            else None
+        )
+        if snapshot.capture_arm_cancellation is not None:
+            payload["capture_arm_cancellation"] = (
+                snapshot.capture_arm_cancellation.to_mapping()
+            )
     return payload
 
 
@@ -1943,6 +2286,12 @@ class SessionControlState:
         self.path = self.root / "webjam-session-state.json"
         self.session_id = _uuid_text(session_id, "session_id")
         self._lock = threading.RLock()
+        self._capture_arm_condition = threading.Condition(self._lock)
+        self._capture_arm_generation = 0
+        self._capture_arm_requirements: dict[str, LocalOriginalObligation] = {}
+        self._capture_arm_acknowledgements: dict[
+            str, CaptureArmAcknowledgement
+        ] = {}
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(self.root, 0o700)
         self._snapshot = SessionStateSnapshot(
@@ -1960,6 +2309,9 @@ class SessionControlState:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
             if payload.get("schema") != 1:
                 raise ValueError("schema")
+            arm_generation_high_water = int(
+                payload.get("arm_generation_high_water", 0)
+            )
             snapshot = SessionStateSnapshot(
                 session_id=str(payload["session_id"]),
                 generation=int(payload["generation"]),
@@ -1969,6 +2321,20 @@ class SessionControlState:
                 stopped_utc=str(payload.get("stopped_utc", "")),
                 message=str(payload.get("message", ""))[:240],
                 creator_profile_key=payload.get("creator_profile_key", "music"),
+                arm_handshake_required=bool(
+                    payload.get("arm_handshake_required", False)
+                ),
+                arm_handshake_generation=int(
+                    payload.get("arm_handshake_generation", 0)
+                ),
+                arm_handshake_take_id=payload.get("arm_handshake_take_id"),
+                capture_arm_cancellation=(
+                    CaptureArmCancellationSnapshot.from_mapping(
+                        payload["capture_arm_cancellation"]
+                    )
+                    if payload.get("capture_arm_cancellation") is not None
+                    else None
+                ),
             )
         except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
             raise SessionTransferError(
@@ -1979,6 +2345,11 @@ class SessionControlState:
                 "The recording state belongs to another session."
             )
         self._snapshot = snapshot
+        self._capture_arm_generation = max(
+            self._capture_arm_generation,
+            snapshot.arm_handshake_generation,
+            arm_generation_high_water,
+        )
 
     def _publish(self, **changes: Any) -> SessionStateSnapshot:
         current = self._snapshot
@@ -1991,6 +2362,19 @@ class SessionControlState:
             {
                 "schema": 1,
                 **_session_state_mapping(snapshot, include_shared_track=False),
+                "arm_handshake_required": snapshot.arm_handshake_required,
+                "arm_handshake_generation": snapshot.arm_handshake_generation,
+                "arm_handshake_take_id": snapshot.arm_handshake_take_id,
+                "arm_generation_high_water": self._capture_arm_generation,
+                **(
+                    {
+                        "capture_arm_cancellation": (
+                            snapshot.capture_arm_cancellation.to_mapping()
+                        )
+                    }
+                    if snapshot.capture_arm_cancellation is not None
+                    else {}
+                ),
             },
         )
         self._snapshot = snapshot
@@ -1999,6 +2383,252 @@ class SessionControlState:
     def snapshot(self) -> SessionStateSnapshot:
         with self._lock:
             return self._snapshot
+
+    def snapshot_for_participant(self, participant_id: str) -> SessionStateSnapshot:
+        """Scope an arm instruction to one exact required participant.
+
+        Recording and Shared Track state remain session-wide.  The additive
+        pre-start instruction is capability-like, however: an enrolled peer
+        that is not in the frozen arm requirements must never open a device.
+        """
+
+        canonical_participant = _uuid_text(participant_id, "participant_id")
+        with self._lock:
+            snapshot = self._snapshot
+            if (
+                snapshot.capture_arm is not None
+                and canonical_participant not in self._capture_arm_requirements
+            ):
+                return replace(snapshot, capture_arm=None)
+            return snapshot
+
+    def publish_capture_arm(
+        self,
+        take_id: str,
+        *,
+        recording_plan_fingerprint: str,
+        requirements: Iterable[LocalOriginalObligation],
+    ) -> CaptureArmSnapshot:
+        """Publish one take-scoped guest-capture request without claiming Record."""
+
+        canonical_take = _uuid_text(take_id, "take_id")
+        fingerprint = _optional_sha256_text(
+            recording_plan_fingerprint,
+            "recording_plan_fingerprint",
+        )
+        if not fingerprint:
+            raise ValueError("recording_plan_fingerprint is required.")
+        required: dict[str, LocalOriginalObligation] = {}
+        for obligation in requirements:
+            if not isinstance(obligation, LocalOriginalObligation):
+                raise ValueError("capture-arm requirements must be exact obligations.")
+            if not obligation.capture_requested or not obligation.track_count:
+                # Exact zero-track opt-outs never participate in the handshake.
+                continue
+            if not obligation.exact_topology:
+                raise ValueError("capture-arm requirements need exact topology.")
+            if obligation.participant_id in required:
+                raise ValueError("capture-arm participants must be unique.")
+            required[obligation.participant_id] = obligation
+        with self._capture_arm_condition:
+            if (
+                self._snapshot.capture_arm is None
+                and self._snapshot.arm_handshake_required
+                and (
+                    self._snapshot.arm_handshake_take_id is not None
+                    or self._snapshot.signal is RecordingSignal.IDLE
+                )
+            ):
+                raise TransferConflictError(
+                    "The prior capture-arm outcome is unresolved after restart."
+                )
+            if self._snapshot.signal in {
+                RecordingSignal.RECORDING,
+                RecordingSignal.FINALIZING,
+            }:
+                raise TransferConflictError(
+                    "A recording must stop before another capture can be armed."
+                )
+            if (
+                self._snapshot.take_id == canonical_take
+                and self._snapshot.signal
+                in {RecordingSignal.COMPLETE, RecordingSignal.NEEDS_ATTENTION}
+            ):
+                raise TransferConflictError(
+                    "A finished take cannot be armed again."
+                )
+            current = self._snapshot.capture_arm
+            if current is not None:
+                same_arm = (
+                    current.take_id == canonical_take
+                    and current.recording_plan_fingerprint == fingerprint
+                )
+                same_requirements = tuple(
+                    _capture_arm_obligation_key(item)
+                    for item in self._capture_arm_requirements.values()
+                ) == tuple(
+                    _capture_arm_obligation_key(required[key])
+                    for key in sorted(required)
+                )
+                if same_arm and same_requirements:
+                    return current
+                raise TransferConflictError("Another capture arm is already active.")
+            self._capture_arm_generation += 1
+            arm = CaptureArmSnapshot(
+                take_id=canonical_take,
+                arm_generation=self._capture_arm_generation,
+                recording_plan_fingerprint=fingerprint,
+            )
+            self._capture_arm_requirements = {
+                key: required[key] for key in sorted(required)
+            }
+            self._capture_arm_acknowledgements.clear()
+            self._publish(
+                capture_arm=arm,
+                arm_handshake_required=True,
+                arm_handshake_generation=arm.arm_generation,
+                arm_handshake_take_id=canonical_take,
+            )
+            self._capture_arm_condition.notify_all()
+            return arm
+
+    def cancel_capture_arm(
+        self,
+        take_id: str,
+        *,
+        arm_generation: int | None = None,
+    ) -> bool:
+        """Cancel only the exact current arm; stale callers cannot cancel a newer one."""
+
+        canonical_take = _uuid_text(take_id, "take_id")
+        if arm_generation is not None:
+            arm_generation = _presence_int(
+                arm_generation, "arm_generation", positive=True
+            )
+        with self._capture_arm_condition:
+            current = self._snapshot.capture_arm
+            if current is None:
+                snapshot = self._snapshot
+                if (
+                    arm_generation is None
+                    or not snapshot.arm_handshake_required
+                    or snapshot.arm_handshake_take_id != canonical_take
+                    or snapshot.arm_handshake_generation != arm_generation
+                ):
+                    return False
+                cancelled_generation = arm_generation
+            else:
+                if current.take_id != canonical_take or (
+                    arm_generation is not None
+                    and current.arm_generation != arm_generation
+                ):
+                    return False
+                cancelled_generation = current.arm_generation
+            self._capture_arm_requirements.clear()
+            self._capture_arm_acknowledgements.clear()
+            self._publish(
+                capture_arm=None,
+                capture_arm_cancellation=CaptureArmCancellationSnapshot(
+                    take_id=canonical_take,
+                    arm_generation=cancelled_generation,
+                ),
+                arm_handshake_required=False,
+                arm_handshake_generation=cancelled_generation,
+                arm_handshake_take_id=None,
+            )
+            self._capture_arm_condition.notify_all()
+            return True
+
+    def acknowledge_capture_arm(
+        self,
+        acknowledgement: CaptureArmAcknowledgement,
+        *,
+        current_obligation: LocalOriginalObligation,
+    ) -> CaptureArmAcknowledgement:
+        """Accept one authenticated ACK only while every authority still matches."""
+
+        if not isinstance(acknowledgement, CaptureArmAcknowledgement):
+            raise ValueError("capture-arm acknowledgement is malformed.")
+        if not isinstance(current_obligation, LocalOriginalObligation):
+            raise ValueError("current Local Original obligation is malformed.")
+        with self._capture_arm_condition:
+            arm = self._snapshot.capture_arm
+            if arm is None:
+                raise TransferConflictError("No capture arm is active.")
+            if (
+                acknowledgement.take_id != arm.take_id
+                or acknowledgement.arm_generation != arm.arm_generation
+                or acknowledgement.recording_plan_fingerprint
+                != arm.recording_plan_fingerprint
+            ):
+                raise TransferConflictError("The capture-arm request is stale.")
+            expected = self._capture_arm_requirements.get(
+                acknowledgement.participant_id
+            )
+            if expected is None:
+                raise TransferConflictError(
+                    "This participant has no Local Original capture obligation."
+                )
+            expected_key = _capture_arm_obligation_key(expected)
+            if (
+                _capture_arm_ack_key(acknowledgement) != expected_key
+                or _capture_arm_obligation_key(current_obligation) != expected_key
+            ):
+                raise TransferConflictError(
+                    "The Local Original capture contract changed during arming."
+                )
+            prior = self._capture_arm_acknowledgements.get(
+                acknowledgement.participant_id
+            )
+            if prior is not None:
+                if prior == acknowledgement:
+                    return prior
+                raise TransferConflictError(
+                    "That participant already acknowledged a different capture arm."
+                )
+            self._capture_arm_acknowledgements[
+                acknowledgement.participant_id
+            ] = acknowledgement
+            self._capture_arm_condition.notify_all()
+            return acknowledgement
+
+    def capture_arm_state(
+        self,
+    ) -> tuple[
+        CaptureArmSnapshot | None,
+        tuple[LocalOriginalObligation, ...],
+        tuple[CaptureArmAcknowledgement, ...],
+    ]:
+        """Return one immutable in-memory arm/requirement/ACK snapshot."""
+
+        with self._lock:
+            return (
+                self._snapshot.capture_arm,
+                tuple(self._capture_arm_requirements.values()),
+                tuple(self._capture_arm_acknowledgements.values()),
+            )
+
+    def wait_for_capture_arm_change(
+        self,
+        *,
+        acknowledgement_count: int,
+        timeout_s: float,
+    ) -> None:
+        """Wait boundedly for an ACK/cancel while releasing the server-state lock."""
+
+        if isinstance(timeout_s, bool) or not math.isfinite(float(timeout_s)):
+            raise ValueError("timeout_s must be finite.")
+        timeout = max(0.0, float(timeout_s))
+        expected_count = _presence_int(
+            acknowledgement_count, "acknowledgement_count"
+        )
+        with self._capture_arm_condition:
+            if (
+                self._snapshot.capture_arm is not None
+                and len(self._capture_arm_acknowledgements) == expected_count
+                and timeout > 0.0
+            ):
+                self._capture_arm_condition.wait(timeout)
 
     def begin(self, take_id: str, *, started_utc: str) -> SessionStateSnapshot:
         take_id = _uuid_text(take_id, "take_id")
@@ -2015,13 +2645,45 @@ class SessionControlState:
             }:
                 # A delayed duplicate start can never resurrect a finished take.
                 return current
-            return self._publish(
+            if (
+                current.capture_arm is None
+                and current.arm_handshake_required
+                and (
+                    current.arm_handshake_take_id is not None
+                    or current.signal is RecordingSignal.IDLE
+                )
+            ):
+                raise TransferConflictError(
+                    "The prior capture-arm outcome is unresolved after restart."
+                )
+            arm = current.capture_arm
+            if arm is not None:
+                if arm.take_id != take_id:
+                    raise TransferConflictError(
+                        "A different take is still waiting for capture acknowledgement."
+                    )
+                if set(self._capture_arm_acknowledgements) != set(
+                    self._capture_arm_requirements
+                ):
+                    raise TransferConflictError(
+                        "Guest Local Original capture is not fully acknowledged."
+                    )
+            snapshot = self._publish(
                 signal=RecordingSignal.RECORDING,
                 take_id=take_id,
                 started_utc=str(started_utc)[:64],
                 stopped_utc="",
                 message="",
+                capture_arm=None,
+                capture_arm_cancellation=None,
+                arm_handshake_required=arm is not None,
+                arm_handshake_generation=(arm.arm_generation if arm is not None else 0),
+                arm_handshake_take_id=None,
             )
+            self._capture_arm_requirements.clear()
+            self._capture_arm_acknowledgements.clear()
+            self._capture_arm_condition.notify_all()
+            return snapshot
 
     def begin_finalizing(
         self,
@@ -2050,6 +2712,75 @@ class SessionControlState:
                 stopped_utc=str(stopped_utc)[:64],
                 message=" ".join(str(message).split())[:240],
             )
+
+    def begin_armed_finalizing(
+        self,
+        take_id: str,
+        *,
+        arm_generation: int,
+        stopped_utc: str,
+        message: str = "",
+    ) -> SessionStateSnapshot:
+        """Commit a fully ACKed arm directly to stop truth.
+
+        This is the recovery transition for a server start that may have
+        succeeded even though its acknowledgement/status confirmation was
+        lost.  It never claims a confirmed start time.  Exact arm identity and
+        every frozen guest ACK are required before recoverable guest media can
+        be moved out of the pre-start state.
+        """
+
+        take_id = _uuid_text(take_id, "take_id")
+        generation = _presence_int(
+            arm_generation,
+            "arm_generation",
+            positive=True,
+        )
+        with self._capture_arm_condition:
+            current = self._snapshot
+            if current.take_id == take_id and current.signal in {
+                RecordingSignal.FINALIZING,
+                RecordingSignal.COMPLETE,
+                RecordingSignal.NEEDS_ATTENTION,
+            }:
+                if current.arm_handshake_generation != generation:
+                    raise TransferConflictError(
+                        "That stop does not match the committed capture arm."
+                    )
+                return current
+            arm = current.capture_arm
+            if (
+                arm is None
+                or arm.take_id != take_id
+                or arm.arm_generation != generation
+            ):
+                raise TransferConflictError(
+                    "That stop does not match the active capture arm."
+                )
+            if set(self._capture_arm_acknowledgements) != set(
+                self._capture_arm_requirements
+            ):
+                raise TransferConflictError(
+                    "Guest Local Original capture is not fully acknowledged."
+                )
+            snapshot = self._publish(
+                signal=RecordingSignal.FINALIZING,
+                take_id=take_id,
+                # The server start was not confirmed, so do not synthesize a
+                # start timestamp from the prior durable session snapshot.
+                started_utc="",
+                stopped_utc=str(stopped_utc)[:64],
+                message=" ".join(str(message).split())[:240],
+                capture_arm=None,
+                capture_arm_cancellation=None,
+                arm_handshake_required=True,
+                arm_handshake_generation=arm.arm_generation,
+                arm_handshake_take_id=None,
+            )
+            self._capture_arm_requirements.clear()
+            self._capture_arm_acknowledgements.clear()
+            self._capture_arm_condition.notify_all()
+            return snapshot
 
     def publish_shared_track(
         self,
@@ -2276,6 +3007,7 @@ class TransferDescriptor:
     inventory_input_count: int = 0
     inventory_segment_count: int = 0
     inventory_map_fingerprint: str = ""
+    logical_source_id: str = ""
 
     def __post_init__(self) -> None:
         for field_name in ("session_id", "take_id", "participant_id", "segment_id"):
@@ -2290,7 +3022,7 @@ class TransferDescriptor:
             raise ValueError("size_bytes is outside the supported range.")
         if not 8_000 <= int(self.sample_rate) <= 384_000:
             raise ValueError("sample_rate is outside the supported range.")
-        if not 1 <= int(self.channels) <= 32:
+        if int(self.channels) not in {1, 2}:
             raise ValueError("channels is outside the supported range.")
         if int(self.frame_count) <= 0:
             raise ValueError("frame_count must be greater than zero.")
@@ -2311,6 +3043,9 @@ class TransferDescriptor:
         inventory_map_fingerprint = _optional_sha256_text(
             self.inventory_map_fingerprint,
             "inventory_map_fingerprint",
+        )
+        logical_source_id = canonical_logical_source_id(
+            self.logical_source_id, optional=True
         )
         gap_frames = int(self.gap_frames)
         if source_channel < 0:
@@ -2361,9 +3096,8 @@ class TransferDescriptor:
         object.__setattr__(self, "source_channel", source_channel)
         object.__setattr__(self, "inventory_input_count", inventory_input_count)
         object.__setattr__(self, "inventory_segment_count", inventory_segment_count)
-        object.__setattr__(
-            self, "inventory_map_fingerprint", inventory_map_fingerprint
-        )
+        object.__setattr__(self, "inventory_map_fingerprint", inventory_map_fingerprint)
+        object.__setattr__(self, "logical_source_id", logical_source_id)
         object.__setattr__(self, "gap_frames", gap_frames)
         object.__setattr__(self, "gaps", tuple(structured_gaps))
         object.__setattr__(
@@ -2397,6 +3131,7 @@ class TransferDescriptor:
             inventory_input_count=value.get("inventory_input_count", 0),
             inventory_segment_count=value.get("inventory_segment_count", 0),
             inventory_map_fingerprint=value.get("inventory_map_fingerprint", ""),
+            logical_source_id=value.get("logical_source_id", ""),
             gap_frames=int(value.get("gap_frames", 0)),
             capture_errors=tuple(value.get("capture_errors", ()))
             if isinstance(value.get("capture_errors", ()), (list, tuple))
@@ -2450,8 +3185,10 @@ class TransferStore:
         part, final, sidecar = self._paths(descriptor)
         with self._lock:
             final_size = final.stat().st_size if final.is_file() else 0
-            received = final_size if final.is_file() else (
-                part.stat().st_size if part.is_file() else 0
+            received = (
+                final_size
+                if final.is_file()
+                else (part.stat().st_size if part.is_file() else 0)
             )
             error = ""
             # The descriptor is immutable for the whole transfer lifetime,
@@ -2881,9 +3618,67 @@ class SessionPeerServer:
 
             def do_POST(self) -> None:  # noqa: N802
                 route = urlsplit(self.path).path
-                if route not in {"/v1/enroll", "/v1/presence", "/v2/presence"}:
+                if route not in {
+                    "/v1/enroll",
+                    "/v1/presence",
+                    "/v2/presence",
+                    "/v2/capture-arm-ack",
+                }:
                     self._error(
                         HTTPStatus.NOT_FOUND, "not_found", "Unknown WebJam route."
+                    )
+                    return
+                if route == "/v2/capture-arm-ack":
+                    try:
+                        participant_id = self._participant()
+                        payload = json.loads(self._body(maximum=MAX_JSON_BYTES))
+                        if not isinstance(payload, dict):
+                            raise ValueError(
+                                "Capture-arm acknowledgement must be a JSON object."
+                            )
+                        acknowledgement = CaptureArmAcknowledgement.from_mapping(
+                            payload,
+                            participant_id=participant_id,
+                        )
+                        current_obligation = next(
+                            (
+                                item
+                                for item in (
+                                    owner.registry.current_local_original_obligations()
+                                )
+                                if item.participant_id == participant_id
+                            ),
+                            None,
+                        )
+                        if current_obligation is None:
+                            raise TransferConflictError(
+                                "A fresh Local Original presence proof is required."
+                            )
+                        accepted = owner.control.acknowledge_capture_arm(
+                            acknowledgement,
+                            current_obligation=current_obligation,
+                        )
+                    except TransferAuthenticationError as exc:
+                        self._error(HTTPStatus.UNAUTHORIZED, "unauthorized", str(exc))
+                        return
+                    except TransferConflictError as exc:
+                        self._error(
+                            HTTPStatus.CONFLICT,
+                            "capture_arm_conflict",
+                            str(exc),
+                        )
+                        return
+                    except (
+                        KeyError,
+                        TypeError,
+                        ValueError,
+                        json.JSONDecodeError,
+                    ) as exc:
+                        self._error(HTTPStatus.BAD_REQUEST, "invalid_request", str(exc))
+                        return
+                    self._json(
+                        HTTPStatus.OK,
+                        accepted.to_mapping(include_participant_id=True),
                     )
                     return
                 if route == "/v2/presence":
@@ -2924,14 +3719,18 @@ class SessionPeerServer:
                             local_original_map_fingerprint=payload.get(
                                 "local_original_map_fingerprint", ""
                             ),
+                            local_original_channel_counts=tuple(
+                                payload.get("local_original_channel_counts", ())
+                            ),
+                            local_original_source_ids=tuple(
+                                payload.get("local_original_source_ids", ())
+                            ),
                         )
                     except TransferAuthenticationError as exc:
                         self._error(HTTPStatus.UNAUTHORIZED, "unauthorized", str(exc))
                         return
                     except TransferConflictError as exc:
-                        self._error(
-                            HTTPStatus.CONFLICT, "presence_conflict", str(exc)
-                        )
+                        self._error(HTTPStatus.CONFLICT, "presence_conflict", str(exc))
                         return
                     except (
                         KeyError,
@@ -3000,19 +3799,29 @@ class SessionPeerServer:
                     try:
                         challenge = owner.registry.current_presence_v2_challenge()
                     except TransferConflictError as exc:
-                        self._error(
-                            HTTPStatus.CONFLICT, "presence_conflict", str(exc)
-                        )
+                        self._error(HTTPStatus.CONFLICT, "presence_conflict", str(exc))
                         return
                     self._json(HTTPStatus.OK, asdict(challenge))
                     return
                 if parsed.path == "/v1/state":
-                    snapshot = owner.control.snapshot()
+                    snapshot = owner.control.snapshot_for_participant(participant_id)
+                    if (
+                        owner.registry.presence_v2_configured()
+                        and not snapshot.arm_handshake_required
+                    ):
+                        # An exact hosted roster means this server supports the
+                        # participant-scoped ARM/ACK contract even when the
+                        # authoritative plan has zero guest tracks.  Project a
+                        # null optional member so current guests never infer
+                        # capture permission from session-wide RECORDING;
+                        # legacy servers omit the member entirely.
+                        snapshot = replace(snapshot, arm_handshake_required=True)
                     self._json(
                         HTTPStatus.OK,
                         _session_state_mapping(
                             snapshot,
                             include_shared_track=True,
+                            include_capture_arm=True,
                         ),
                     )
                     return
@@ -3257,7 +4066,52 @@ class SessionPeerClient:
                 payload.get("shared_track")
             ),
             creator_profile_key=payload.get("creator_profile_key", "music"),
+            capture_arm=(
+                CaptureArmSnapshot.from_mapping(payload["capture_arm"])
+                if payload.get("capture_arm") is not None
+                else None
+            ),
+            capture_arm_cancellation=(
+                CaptureArmCancellationSnapshot.from_mapping(
+                    payload["capture_arm_cancellation"]
+                )
+                if payload.get("capture_arm_cancellation") is not None
+                else None
+            ),
+            capture_arm_supported=(
+                "capture_arm" in payload or "capture_arm_cancellation" in payload
+            ),
         )
+
+    def acknowledge_capture_arm(
+        self,
+        enrollment: ParticipantEnrollment,
+        acknowledgement: CaptureArmAcknowledgement,
+    ) -> CaptureArmAcknowledgement:
+        if acknowledgement.participant_id != enrollment.participant_id:
+            raise ValueError(
+                "The capture-arm acknowledgement belongs to another participant."
+            )
+        body = json.dumps(
+            acknowledgement.to_mapping(include_participant_id=False)
+        ).encode("utf-8")
+        payload = self._request(
+            "POST",
+            "/v2/capture-arm-ack",
+            token=enrollment.participant_token,
+            participant_id=enrollment.participant_id,
+            body=body,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            return CaptureArmAcknowledgement.from_mapping(
+                payload,
+                participant_id=enrollment.participant_id,
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SessionTransferError(
+                "The host returned an invalid capture-arm acknowledgement."
+            ) from exc
 
     def bind_presence(
         self,
@@ -3320,6 +4174,8 @@ class SessionPeerClient:
         capture_enabled: bool,
         local_original_track_count: int | None = None,
         local_original_map_fingerprint: str = "",
+        local_original_channel_counts: tuple[int, ...] = (),
+        local_original_source_ids: tuple[str, ...] = (),
     ) -> PresenceV2Proof:
         candidate = PresenceV2Proof(
             participant_id=enrollment.participant_id,
@@ -3337,6 +4193,8 @@ class SessionPeerClient:
             capture_enabled=capture_enabled,
             local_original_track_count=local_original_track_count,
             local_original_map_fingerprint=local_original_map_fingerprint,
+            local_original_channel_counts=local_original_channel_counts,
+            local_original_source_ids=local_original_source_ids,
         )
         payload = self._request(
             "POST",

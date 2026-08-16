@@ -1,8 +1,8 @@
-# WebJam help routing — v0.25.0
+# WebJam help routing — v0.26.0 source candidate
 
-> GitHub **Latest** is the immutable v0.25.0 private test release. These
-> creator-profile and multitrack labels describe that exact release; physical
-> results remain **NOT RUN** until observed against checksum-verified packages.
+> These labels describe the current unpublished v0.26.0 source candidate.
+> GitHub **Latest** remains immutable v0.25.0; no v0.26.0 package or physical
+> PASS is claimed, and every v0.26 physical row remains **NOT RUN**.
 
 | Creator says | Answer / action |
 | --- | --- |
@@ -19,10 +19,12 @@
 | “Can I replace the Shared Track while it plays?” | No. Stop it first. **Replace…** and **Remove** stay unavailable until the active route is safely stopped; cleanup pending remains visible and retryable. |
 | “Can guests control the Shared Track?” | No. The host owns the transport. Guests receive bounded, path-free host state and can adjust `WebJam Track` in their Jamulus mix; older peer state may show only channel presence. Neither is synchronization or audibility proof. |
 | “Do I need recording setup to play?” | No. Recording is optional and appears only at **Record Session** time. |
+| “What must I check before recording?” | The **Record Session Readiness** sheet lists every exact server, Local Original, and Shared Track source with mono/stereo format, required/optional status, readiness, meter when available, storage, and blockers. Start stays disabled until required facts are ready; WebJam rechecks the same private plan, requires every opted-in guest to open and ACK its exact take-scoped stream, then rechecks authority before Jamulus recording starts. |
 | “How is a stereo input stored?” | One stereo input-map row binds adjacent device channels and creates one true two-channel PCM-24 Local Original. It stays stereo through recovery, Studio, and export. |
 | “Why is the take still finalizing?” | Stop is not completion. Keep WebJam open while it verifies media and publishes the take. Open Studio only after **Ready**; use the shown recovery if it says **Needs attention** or cleanup pending. |
 | “Where do I choose a Studio speaker?” | Open a take in Studio. Playback output is a Studio choice. |
-| “How do I combine another take?” | In Music or Podcast & Voice Studio, select the participant's track, add a safely matched take lane, then Option/Alt-drag the range to comp. Review & Rehearsal Preview is playback-only. |
+| “How do I combine another take?” | A new Music or Podcast & Voice take automatically stacks only earlier lanes with the same session, stable logical-source ID, rate, source kind, mono/stereo topology, verified timing, and Shared Track fingerprint where relevant. For another safe match, select the track and use **＋ Add Take**, then Option/Alt-drag to comp. Review Preview is playback-only. |
+| “How do I finish a Podcast episode?” | In Podcast & Voice Reference Studio, keep the 48 kHz Host-mono + Guest-stereo map, record/overdub, add chapter markers, save/reopen, then choose **Bounce Episode** for verified stereo PCM-24 WAV. Review Preview has no local project or export. |
 | “Did Delete erase my recording?” | In Music or Podcast & Voice, no: Arrange edits change only the Studio sidecar; the take manifest and WAVs remain recording truth. Review & Rehearsal Preview does not expose Delete. |
 | “What comes with Track Export?” | In Music or Podcast & Voice, equal-length edited/original 24-bit stems, rough mix, markers, instructions, provenance, and checksums. Review & Rehearsal Preview has no Track Export. |
 | “How do I verify sound?” | Make sound and verify another participant hears you. Use Music's **Band Check**, Podcast's **Sound Check**, or Review's **Session Check** if you need help. |

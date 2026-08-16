@@ -1,9 +1,10 @@
-# First Session — WebJam v0.25.0
+# First Session — WebJam v0.26.0 source candidate
 
-> This guide describes the immutable, checksum-verified v0.25.0 GitHub
-> **Latest** private test release. Do not treat a checkout or branch artifact as
-> a package, and record every v0.25 physical gate as **NOT RUN** until it is
-> observed against exact published release bytes.
+> This guide describes the current v0.26.0 source candidate. It is not tagged,
+> packaged, physically certified, or published. Immutable, checksum-verified
+> v0.25.0 remains GitHub **Latest**; do not treat this checkout or a branch
+> artifact as a package. Every v0.26 physical gate remains **NOT RUN** until an
+> exact tagged candidate exists and the checklist authorizes execution.
 
 Before Host or Join, choose what you are creating: **Music** (GA), **Podcast &
 Voice** (GA), or **Review & Rehearsal** (Preview). The chosen profile changes
@@ -47,11 +48,19 @@ app, browser, or system output.
    surface. Loading does not start playback. Use **Shared Track** for the full
    waveform and transport; Play stays locked until its separate Jamulus route
    is proven. Guests never receive transport authority.
-10. Choose **Record Session** when the session is ready. A ready Shared Track uses
-    the same visible count-in/start transition. Press **Stop Recording** once,
-    wait through **Stopping** and **Finalizing**, then use **Studio** only after
-    the take reads **Ready**. Each planned mono Local Original is one mono file;
-    each planned stereo Local Original is one true two-channel file.
+10. Choose **Record Session** when the session is ready. Review every exact
+    planned server track, Local Original, and Shared Track in the readiness
+    sheet. Confirm its mono/stereo format, required/optional status, storage,
+    and blockers; **Start Recording** stays disabled until required facts are
+    ready. WebJam rechecks that exact plan privately before arming. Every
+    opted-in guest must open the frozen Local Original stream and acknowledge
+    that exact take before Jamulus recording can start; WebJam rechecks
+    authority again after all required ACKs. A ready
+    Shared Track uses the same visible count-in/start transition. Press **Stop
+    Recording** once, wait through **Stopping** and **Finalizing**, then use
+    **Studio** only after the take reads **Ready**. Each planned mono Local
+    Original is one mono file; each planned stereo Local Original is one true
+    two-channel file.
 
 ## Join
 
@@ -80,10 +89,12 @@ app, browser, or system output.
 - Do not use a moving meter as proof that the returned mix sounds right. The
   participants still need to listen and verify each other.
 
-Use the
+Use the all-**NOT RUN**
+[v0.26 physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
+only after it authorizes an exact tagged candidate; never record this checkout
+as physical package evidence. The immutable
 [v0.25 physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-to capture creator-profile, machine, interface, route, exact stem, recovery,
-and Studio evidence. The
+remains the ledger for GitHub Latest. The
 [v0.24 checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md) remains
 immutable historical evidence for the prior release.
 

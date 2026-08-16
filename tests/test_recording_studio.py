@@ -33,6 +33,11 @@ from PySide6.QtWidgets import (
 from core.creative_modes import get_creator_profile_by_key_or_default
 from core.settings import AppSettings
 from core.network_invite import local_band_address
+from core.recording_sources import (
+    RecordingSourceKind,
+    RecordingSourcePresentation,
+    RecordingSourceState,
+)
 from core.studio_project import (
     MarkerKind,
     StudioMarker,
@@ -225,6 +230,7 @@ def _schema2_studio_take(
     server_name: str = "Band Drums",
     creator_profile_key: str = "music",
     warnings: tuple[str, ...] = (),
+    server_logical_source_id: str = "",
 ) -> tuple[Path, tuple[str, str]]:
     """Create a small genuine v2 take so Studio exercises its sidecar boundary."""
     take_dir = tmp_path / "Studio Project Take"
@@ -280,6 +286,7 @@ def _schema2_studio_take(
                 order=0,
                 segments=(segment(server),),
                 alignment=AlignmentState(confidence=1.0, method="server-origin"),
+                logical_source_id=server_logical_source_id,
             ),
             ProjectTrack(
                 track_id=local_id,
@@ -351,7 +358,11 @@ def _schema2_repeated_take(
                 order=0,
                 segments=(segment,),
                 alignment=AlignmentState(confidence=1.0, method="server-origin"),
+                logical_source_id=primary.tracks[0].logical_source_id,
             ),
+        ),
+        session_evidence=SessionEvidence(
+            creator_profile_key=primary.session_evidence.creator_profile_key,
         ),
     )
     write_take_project(take_dir, project)
@@ -848,6 +859,163 @@ def test_live_roster_never_claims_tracks_before_recorder_proof():
         assert "awaiting recorder proof" in studio._lanes[2]._detail.text()
         assert "mapped automatically after recorder proof" in studio._subtitle.text()
         assert "armed" not in studio._hint.text().casefold()
+    finally:
+        studio.shutdown()
+
+
+def _exact_live_sources() -> tuple[RecordingSourcePresentation, ...]:
+    return (
+        RecordingSourcePresentation(
+            participant_id="host",
+            display_name="Host server stem",
+            kind="musician",
+            state=RecordingSourceState.RECORDING,
+            channels=1,
+            logical_source_id="00000000-0000-4000-8000-000000000301",
+            source_kind=RecordingSourceKind.JAMULUS_SERVER,
+            channel_id=4,
+            meter_level=0.35,
+            dropout_count=0,
+            overloaded=False,
+        ),
+        RecordingSourcePresentation(
+            participant_id="host",
+            display_name="Host Local Original",
+            kind="local_original",
+            state=RecordingSourceState.RECORDING,
+            channels=2,
+            logical_source_id="00000000-0000-4000-8000-000000000302",
+            source_kind=RecordingSourceKind.LOCAL_ORIGINAL,
+            meter_level=0.6,
+            dropout_count=2,
+            overloaded=True,
+        ),
+        RecordingSourcePresentation(
+            participant_id="",
+            display_name="Shared Track",
+            kind="shared_track",
+            state=RecordingSourceState.RECORDING,
+            channels=2,
+            logical_source_id="00000000-0000-4000-8000-000000000303",
+            source_kind=RecordingSourceKind.SHARED_TRACK,
+            meter_level=None,
+            dropout_count=None,
+            overloaded=None,
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("profile_key", "server_badge"),
+    (
+        ("music", "MUSICIAN"),
+        ("podcast_voice", "SPEAKER"),
+        ("review_rehearsal", "WEBJAM AUDIO"),
+    ),
+)
+def test_exact_live_sources_render_topology_health_and_profile_boundaries(
+    profile_key,
+    server_badge,
+) -> None:
+    studio = RecordingStudio(player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
+    try:
+        studio.resize(760, 600)
+        studio.show()
+        studio.set_creator_profile(get_creator_profile_by_key_or_default(profile_key))
+        studio.set_live_participants(
+            [SimpleNamespace(channel_id=4, name="Host", is_local=True)]
+        )
+        roster_lane = studio._lanes[4]
+        assert studio.set_recording_sources(_exact_live_sources())
+        assert roster_lane.isHidden()
+        studio.set_recording_phase("count_in")
+        APP.processEvents()
+
+        source_lanes = {
+            row.logical_source_id: studio._lanes[
+                studio._recording_source_lane_ids[row.logical_source_id]
+            ]
+            for row in _exact_live_sources()
+        }
+        server, local, shared = (
+            source_lanes[row.logical_source_id] for row in _exact_live_sources()
+        )
+        assert len(studio._lanes) == 3
+        assert server.channel_id == 4
+        assert local.channel_id < 0 and shared.channel_id < 0
+        assert server._source_badge.text() == server_badge
+        assert local._source_badge.text() == "LOCAL ORIGINAL"
+        assert shared._source_badge.text() == "SHARED TRACK"
+        assert server._detail.text() == "REC · MONO · HEALTH OK"
+        assert "STEREO" in local._detail.text()
+        assert "DROP 2" in local._detail.text()
+        assert "OVER" in local._detail.text()
+        assert "METER ?" in shared._detail.text()
+        assert local._meter._clipped is True
+        assert local._meter._level == pytest.approx(0.6)
+        assert "stereo" in local.accessibleDescription().lower()
+        assert "2 reported dropouts" in local.accessibleDescription()
+        assert not local._mute.isVisible()
+        assert not shared._gain.isVisible()
+        assert server._mute.isVisible()
+        assert studio._track_scroll.accessibleName() == "Recorded track lanes"
+        assert studio._track_scroll.height() >= 88
+
+        server_before = server
+        studio.set_recording_source_levels(
+            {_exact_live_sources()[0].logical_source_id: 0.82}
+        )
+        assert studio._lanes[4] is server_before
+        assert server_before._meter._level == pytest.approx(0.82)
+        assert "3 exact sources" in studio._hint.text()
+        assert "1 source needs attention" in studio._hint.text()
+    finally:
+        studio.shutdown()
+
+
+def test_incomplete_exact_source_snapshot_fails_closed_without_roster_fallback():
+    studio = RecordingStudio(player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
+    try:
+        studio.set_live_participants(
+            [SimpleNamespace(channel_id=4, name="Host", is_local=True)]
+        )
+        assert studio.set_recording_sources(_exact_live_sources())
+        invalid = (
+            replace(_exact_live_sources()[0], logical_source_id=""),
+            *_exact_live_sources()[1:],
+        )
+
+        assert studio.set_recording_sources(invalid) is False
+        assert studio._recording_sources_authoritative is True
+        assert studio._lanes == {}
+        assert "evidence is unavailable" in studio._hint.text()
+        assert "Host" not in tuple(
+            lane._name.text() for lane in studio._lanes.values()
+        )
+    finally:
+        studio.shutdown()
+
+
+def test_exact_source_rows_render_stopping_as_unconfirmed_not_planned():
+    studio = RecordingStudio(player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
+    try:
+        stopping = tuple(
+            replace(row, state=RecordingSourceState.STOPPING)
+            for row in _exact_live_sources()
+        )
+        assert studio.set_recording_sources(stopping)
+        studio.set_recording_phase("stopping")
+
+        assert studio._hint.text().startswith("Stopping 3 exact sources")
+        assert "Planned" not in studio._hint.text()
+        assert all(
+            lane._detail.text().startswith("STOPPING")
+            for lane in studio._lanes.values()
+        )
+        assert all(
+            "stopping" in lane.accessibleDescription()
+            for lane in studio._lanes.values()
+        )
     finally:
         studio.shutdown()
 
@@ -2285,6 +2453,67 @@ def test_add_take_popup_action_reaches_the_selected_source(tmp_path):
                 alternate_dir.resolve(),
                 alternate_track_id,
             )
+    finally:
+        studio.shutdown()
+
+
+def test_completed_take_automatically_stacks_only_exact_repeated_source(tmp_path):
+    logical_source_id = new_project_id()
+    primary_dir, _track_ids = _schema2_studio_take(
+        tmp_path,
+        server_logical_source_id=logical_source_id,
+    )
+    repeated_dir, _repeated_track_id = _schema2_repeated_take(
+        tmp_path,
+        primary_dir,
+    )
+    primary = load_take_project(primary_dir)
+    repeated = load_take_project(repeated_dir)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio.on_take_completed(repeated_dir)
+
+        assert studio._studio_project == repeated
+        lanes = tuple(
+            lane for lane in studio._studio_state.take_lanes if not lane.deleted
+        )
+        assert len(lanes) == 1
+        assert lanes[0].source_take_id == primary.take_id
+        assert "stacked automatically" in studio._hint.text()
+        assert studio._flush_studio_state()
+        assert (repeated_dir / ".webjam-studio-state.json").is_file()
+
+        studio.on_take_completed(repeated_dir)
+        assert len(
+            [lane for lane in studio._studio_state.take_lanes if not lane.deleted]
+        ) == 1
+    finally:
+        studio.shutdown()
+
+
+def test_review_preview_never_auto_creates_take_lane_sidecar(tmp_path):
+    primary_dir, _track_ids = _schema2_studio_take(
+        tmp_path,
+        creator_profile_key="review_rehearsal",
+        server_logical_source_id=new_project_id(),
+    )
+    repeated_dir, _repeated_track_id = _schema2_repeated_take(
+        tmp_path,
+        primary_dir,
+    )
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio.on_take_completed(repeated_dir)
+
+        assert studio._creator_profile_key == "review_rehearsal"
+        assert studio._studio_state is None
+        assert not (repeated_dir / ".webjam-studio-state.json").exists()
     finally:
         studio.shutdown()
 

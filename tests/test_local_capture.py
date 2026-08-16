@@ -25,6 +25,8 @@ from core.local_capture import (
     LocalCaptureError,
     LocalCaptureTrack,
     LocalInputCapture,
+    bind_local_capture_logical_sources,
+    check_local_capture_preflight,
     local_capture_track_map_fingerprint,
     recover_stale_local_captures,
 )
@@ -61,6 +63,65 @@ class _FakeStream:
 
 
 class TestLocalInputCapture(TestCase):
+    def test_preflight_proves_exact_stereo_map_without_opening_or_leaking_device(self):
+        opened: list[bool] = []
+        fake_sd = SimpleNamespace(
+            query_devices=lambda _device, _kind: {
+                "name": "/Users/private/Secret Interface",
+                "max_input_channels": 4,
+            },
+            check_input_settings=lambda **_kwargs: None,
+            InputStream=lambda **_kwargs: opened.append(True),
+        )
+        result = check_local_capture_preflight(
+            tracks=(
+                LocalCaptureTrack("Room", (0, 1)),
+                LocalCaptureTrack("Talkback", (2,)),
+            ),
+            device=7,
+            sounddevice_module=fake_sd,
+        )
+
+        self.assertTrue(result.ready)
+        self.assertEqual(result.channel_counts, (2, 1))
+        self.assertEqual(result.required_input_channels, 3)
+        self.assertFalse(opened)
+        self.assertNotIn("Secret Interface", repr(result))
+
+    def test_preflight_fails_redacted_for_insufficient_or_native_device_error(self):
+        private_detail = "/Users/private/Secret Interface"
+        too_many = check_local_capture_preflight(
+            tracks=tuple(
+                LocalCaptureTrack(f"Track {index + 1}", (index % 32,))
+                for index in range(33)
+            ),
+            sounddevice_module=SimpleNamespace(),
+        )
+        insufficient = check_local_capture_preflight(
+            tracks=(LocalCaptureTrack("Room", (2, 3)),),
+            sounddevice_module=SimpleNamespace(
+                query_devices=lambda *_args: {"max_input_channels": 2},
+                check_input_settings=lambda **_kwargs: None,
+            ),
+        )
+        native_failure = check_local_capture_preflight(
+            tracks=(LocalCaptureTrack("Room", (0, 1)),),
+            sounddevice_module=SimpleNamespace(
+                query_devices=lambda *_args: {
+                    "max_input_channels": 4,
+                    "name": private_detail,
+                },
+                check_input_settings=lambda **_kwargs: (_ for _ in ()).throw(
+                    RuntimeError(private_detail)
+                ),
+            ),
+        )
+
+        self.assertEqual(too_many.errors, ("invalid_track_map",))
+        self.assertEqual(insufficient.errors, ("insufficient_input_channels",))
+        self.assertEqual(native_failure.errors, ("input_device_or_format_unavailable",))
+        self.assertNotIn(private_detail, repr(native_failure))
+
     def test_writes_two_atomic_48k_mono_stems(self):
         fake_sd = SimpleNamespace(
             check_input_settings=lambda **_kwargs: None,
@@ -103,6 +164,25 @@ class TestLocalInputCapture(TestCase):
             with self.assertRaises(LocalCaptureError):
                 capture.start()
             self.assertFalse(list(root.glob(".webjam-capture-*")))
+
+    def test_silent_device_stall_preserves_wall_clock_tail_as_disclosed_silence(self):
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(sys.modules, {"sounddevice": _fake_sd()}),
+            patch("core.local_capture.time.monotonic", side_effect=(100.0, 102.0)),
+        ):
+            root = Path(d)
+            capture = LocalInputCapture(root, samplerate=48_000)
+            capture.start()
+            result = capture.stop_into(root / "take")
+            infos = tuple(sf.info(str(path)) for path in result.files)
+
+        self.assertEqual(result.total_frames, 96_000)
+        self.assertTrue(all(info.frames == 96_000 for info in infos))
+        self.assertIn("stopped delivering input", " ".join(result.errors))
+        self.assertEqual(result.gaps[-1].reason, "device_stall")
+        self.assertEqual(result.gaps[-1].start_frame, 4_800)
+        self.assertEqual(result.gaps[-1].frame_count, 91_200)
 
     def test_durable_checkpoint_binds_capture_to_take_and_session(self):
         """A live capture publishes only fsynced frames as crash-recoverable."""
@@ -1350,6 +1430,55 @@ class TestConfigurableCaptureTracks(TestCase):
                     LocalCaptureTrack("overlap", (1,)),
                 )
             )
+
+    def test_logical_source_slot_binding_rejects_invalid_or_duplicate_ordinals(self):
+        slot_zero = LocalCaptureTrack("local-Voice", (0,), logical_source_ordinal=0)
+        slot_one = LocalCaptureTrack("local-Voice", (0,), logical_source_ordinal=1)
+        self.assertNotEqual(slot_zero, slot_one)
+        self.assertNotEqual(slot_zero, ("local-Voice", 0))
+        self.assertEqual(LocalCaptureTrack("local-Voice", (0,)), ("local-Voice", 0))
+
+        for ordinal in (-1, 32, True, "1"):
+            with self.assertRaises(LocalCaptureError, msg=repr(ordinal)):
+                LocalCaptureTrack(
+                    "local-Voice",
+                    (0,),
+                    logical_source_ordinal=ordinal,
+                )
+
+        with self.assertRaises(LocalCaptureError, msg="duplicate configured slots"):
+            bind_local_capture_logical_sources(
+                (
+                    LocalCaptureTrack(
+                        "local-Host",
+                        (0,),
+                        logical_source_ordinal=4,
+                    ),
+                    LocalCaptureTrack(
+                        "local-Guest",
+                        (1,),
+                        logical_source_ordinal=4,
+                    ),
+                ),
+                session_id="session-stable-source-slots",
+                participant_id="participant-stable-source-slots",
+            )
+
+    def test_recovery_round_trip_preserves_bound_logical_source_slot(self):
+        source_id = str(uuid.uuid4())
+        track = LocalCaptureTrack(
+            "local-Room",
+            (4, 5),
+            logical_source_id=source_id,
+            logical_source_ordinal=7,
+        )
+
+        payload = local_capture._capture_tracks_payload((track,))
+        recovered = local_capture._recovered_capture_tracks({"tracks": payload})
+
+        self.assertEqual(recovered, (track,))
+        self.assertEqual(payload[0]["logical_source_ordinal"], 7)
+        self.assertEqual(payload[0]["logical_source_id"], source_id)
 
     def test_default_tracks_remain_the_fixed_host_pair(self):
         capture = LocalInputCapture(Path("."), samplerate=48000)

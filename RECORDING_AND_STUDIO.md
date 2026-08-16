@@ -1,10 +1,11 @@
-# Recording and Studio — v0.25.0
+# Recording and Studio — v0.26.0 source candidate
 
-> This document describes the immutable v0.25.0 GitHub **Latest** private test
-> release. Verify an exact asset against its attached checksum manifest.
-> Physical recording, Shared Track audibility/isolation, playback, recovery,
-> long-session, and external-editor gates remain **NOT RUN** until exact
-> v0.25.0 package evidence is recorded.
+> This document describes the current v0.26.0 source candidate. It has no tag,
+> native package, checksum manifest, physical PASS, or GitHub release yet.
+> Immutable v0.25.0 remains GitHub **Latest**. Physical recording, Shared Track
+> audibility/isolation, playback, recovery, long-session, and external-editor
+> gates remain **NOT RUN** until the v0.26 checklist authorizes testing against
+> exact tagged packages.
 
 Music and Podcast & Voice are GA creator profiles with live recording,
 completed-take editing/mixing/export, and standalone local projects. Review &
@@ -57,6 +58,40 @@ and presence generations, count-in/pre-roll, storage verdict, and expected
 source count. Finalization rechecks those exact facts. A reconnect, changed
 topology, missing/extra source, or substituted Shared Track cannot be accepted
 as the planned take.
+
+The v0.26.0 source candidate shows this frozen plan in one accessible,
+path-free **Record Session Readiness** sheet before any recorder, local input
+stream, or Shared Track playback is armed. Each exact server, Local Original,
+and Shared Track row identifies the participant/source, mono or stereo format,
+required/optional obligation, readiness, and a bounded meter when available.
+Separate cards report storage and Shared Track readiness; explicit blockers
+disable **Start Recording**. Accepting the sheet causes a second private check
+of the take/plan generation, roster, input maps, guest obligations, local device
+preflight, storage, and Shared Track identity. A changed fact fails closed;
+Cancel retires the provisional take without starting capture or creating
+media.
+
+An opted-in guest is not treated as armed merely because its recent presence
+proof was Ready. After acceptance, the host sends that required participant a
+private, take-scoped arm bound to the immutable plan fingerprint and exact
+mono/stereo source IDs. The guest opens the frozen input stream first and sends
+an authenticated acknowledgement only after the device succeeds. Jamulus
+recording cannot start until every required acknowledgement is current; guests
+with zero planned tracks do not block. Timeout, disconnect, stale generation,
+device failure, or any topology mismatch cancels the arm and starts no server
+recorder. After all acknowledgements, the host repeats the full authority
+check before opening its own capture and starting Jamulus recording.
+An acknowledged guest that cannot yet prove whether the host committed the
+take preserves its audio locally as recovery-only media. It is not uploaded on
+shutdown uncertainty; only the same authenticated take reaching Recording or a
+terminal state can promote it into the transfer queue.
+
+Every new source has one stable logical-source ID across the frozen plan,
+capture track, guest transfer receipt, take manifest, recovery catalog, and
+Studio. Server, host, and guest widths remain ordered and exact—one mono
+channel or one stereo pair. A missing or duplicate ID, absent width, changed
+map, or extra/missing delivery cannot fall back to a display name, track order,
+or invented identity.
 
 The live surface presents one authoritative progression:
 
@@ -128,6 +163,14 @@ icons, exact layouts, or trade dress, and it is not a Logic integration. Open a
 completed or explicitly recovered schema-v2 take to use its multitrack review
 and Arrange workspace. The track list distinguishes participant, Shared Track,
 and Local Original sources before mixing or editing begins.
+
+While an exact recording plan owns the live take, Studio can also show one
+plan-bound lane per Jamulus server source, Local Original, and Shared Track.
+Rows carry source state, current level when available, reported dropouts, and
+overload warning. Participant cards are derived only from real server sources;
+Local Originals and Shared Track never masquerade as people. Any malformed,
+legacy, or duplicate logical-source projection clears the complete live source
+set instead of displaying ambiguous recorder truth.
 
 The Arrange, comp, mix-mutation, sidecar, and export behavior below applies only
 to Music and Podcast & Voice. Review & Rehearsal Preview retains playback,
@@ -202,6 +245,34 @@ has recorded media without changing the saved comp. Option/Alt-drag a lane to
 select a comp range. A newer range cleanly splits prior overlapping selections
 and uses short equal-power boundaries. Removing a lane removes only its Studio
 inventory and comp choices; the repeated take remains unchanged in Takes.
+
+For a newly completed editable Music or Podcast & Voice take, v0.26.0 also
+stacks every provably safe earlier counterpart automatically. The gate requires
+the same session and project sample rate, a different complete or explicitly
+recovered take, one unique stable logical-source ID on each side, matching
+participant and source kind, identical mono/stereo topology, verified timing,
+and the same Shared Track fingerprint where applicable. Lane IDs are
+deterministic, so repeating the operation is idempotent. A legacy identity,
+duplicate ID, uncertain timing, topology mismatch, or ambiguous match produces
+no automatic edit; the conservative manual browser remains available where its
+own evidence gate permits. Review & Rehearsal Preview never runs automatic
+stacking or creates the arrangement sidecar it would require.
+
+### Podcast & Voice episode journey
+
+Podcast & Voice's standalone Reference Studio path defaults to 48 kHz with a
+mono Host track and a true-stereo Guest track. The v0.26 journey preserves
+those channel maps through an initial recording and a cycle/loop overdub,
+stores chapter markers as named section markers, and restores the same chapter,
+track topology, recording ledger, and arrangement after save/reopen. **Bounce
+Episode** publishes a verified two-channel PCM-24 WAV and reports its checksum.
+It does not flatten the Guest capture into a mono source or rewrite either
+recording pass.
+
+Review & Rehearsal remains a completed-session-take Preview, not a local
+episode editor. It refuses local project create/open and blocks arrangement
+edits, comping, mixer/automation mutation, save, bounce, and export at the
+controller boundary even if a caller bypasses disabled visible actions.
 
 ### Reference Studio song-project overdub loop recording
 
@@ -308,7 +379,7 @@ requested operation.
 
 Export never rewrites the original take.
 
-## v0.25.0 evidence boundary
+## v0.26.0 source-candidate evidence boundary
 
 Automated source tests can establish state-machine, identity, source
 validation, timing-model, persistence/recovery, rendering, waveform, export,
@@ -316,16 +387,21 @@ privacy, and headless UI behavior. They cannot establish acoustic audibility,
 latency, direct-monitor isolation, interface recovery, or how a packaged build
 feels to creators.
 
-For v0.25.0, two-machine audio, Shared Track audibility and independent mix,
+For v0.26.0, two-machine audio, Shared Track audibility and independent mix,
 count-in/record alignment, authoritative server stems, Local Original transfer,
 hardware interruption, long recording, Studio playback, external-editor
 import, packaged accessibility, SmartScreen, Gatekeeper, signing, and
-notarization remain **NOT RUN**. Record them with the
-[v0.25 physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-against an exact asset, build ID, SHA-256, environment, and evidence location.
+notarization remain **NOT RUN**. The
+[v0.26 physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
+must not be executed until it names an exact annotated tag and package set;
+this checkout is not physical evidence.
+
+Immutable v0.25.0 remains GitHub **Latest** and keeps its separate
+[v0.25 physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md).
+No v0.26 source-test result may be written into that historical ledger.
 
 The [v0.24 checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md) remains
-immutable historical evidence for the prior release.
+immutable historical evidence for that earlier release.
 
 ## Historical v0.22.4 evidence boundary
 

@@ -1,9 +1,9 @@
-WebJam v0.25.0 private test candidate for Windows x64
+WebJam v0.26.0 private test candidate for Windows x64
 ======================================================
 
 PRIVATE TEST CANDIDATE: use this package only when its exact filename appears
-in the v0.25.0 GitHub release and its SHA-256 matches that release's manifest.
-Do not use the immutable v0.24.0 checksum manifest for this build.
+in the v0.26.0 GitHub release and its SHA-256 matches that release's manifest.
+Do not use the immutable v0.25.0 checksum manifest for this build.
 Physical audio, hardware, SmartScreen, publisher-signing, and managed-device
 gates remain NOT RUN unless the release evidence names this exact file and
 SHA-256.
@@ -45,8 +45,8 @@ explicit approval and may display UAC or SmartScreen. WebJam verifies the
 installed version after setup. It never hides elevation or installs while a
 jam, recording, Shared Track, reconnect, or Jamulus launch is active.
 
-The sealed v0.22.5 catalog does not authorize v0.25.0 and is rejected. Until a
-new signed v0.25 catalog exists, this candidate uses the embedded Jamulus
+The sealed v0.22.5 catalog does not authorize v0.26.0 and is rejected. Until a
+new signed v0.26 catalog exists, this candidate uses the embedded Jamulus
 3.12.2 fallback rather than offering a managed 3.12.3 download.
 
 If an update is unavailable or you are offline, WebJam offers the exact

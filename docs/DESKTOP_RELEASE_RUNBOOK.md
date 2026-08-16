@@ -26,6 +26,13 @@
 > verification passed, making immutable v0.25.0 GitHub Latest. Every v0.25
 > physical and hardware gate remains **NOT RUN**.
 
+> **v0.26.0 source-candidate boundary:** current source identifies itself as
+> v0.26.0, but no annotated tag, native package, checksum manifest, draft,
+> physical PASS, or GitHub release is claimed. Immutable v0.25.0 remains GitHub
+> **Latest**. The v0.26 physical ledger is entirely **NOT RUN**, and its
+> publication workflow is deliberately read-only and guaranteed to fail until
+> exact post-tag facts are audited and pinned.
+
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version
 tags may promote its explicitly unsigned/ad-hoc outputs as a private test
@@ -89,6 +96,45 @@ protected publisher run `31882801893` passed proof job `95007614475` and publish
 job `95007634063`. Do not edit the tag, release body, or assets. Run the
 [v0.25 physical checklist](../V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 only against the exact published asset hashes; all rows remain **NOT RUN**.
+
+## v0.26.0 candidate status — unpublished and fail-closed
+
+The source version and package metadata are provisional v0.26.0 identity only.
+They do not authorize a release download or a physical observation. Before any
+v0.26 checklist row is run, create one exact annotated `v0.26.0` tag from the
+reviewed source, require the unique successful four-target tag CI, and verify
+the candidate's complete native package inventory and checksum manifest. Then
+record those identities in
+[`V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md`](../V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
+before executing its package/hardware rows. A branch artifact, locally frozen
+app, or source-test result must not be entered as physical package evidence.
+
+`.github/workflows/publish-v026-testing-release.yml` is intentionally an inert
+placeholder. It has read-only `contents` and `actions` permissions, no
+`release-latest` environment, unset tag object/commit/CI/release/inventory/body
+pins, and an unconditional terminal failure. Dispatching it cannot publish or
+move Latest. Do not grant it write permission or replace its refusal with an
+enabled publisher before all of these post-tag facts exist and have been
+independently audited:
+
+1. annotated tag object and peeled source commit;
+2. one unique successful native tag-CI run and attempt;
+3. draft release ID and exact warning-first release-body SHA-256;
+4. exact eight-asset `{id,name,size,digest}` inventory and its canonical digest;
+5. checksum-manifest digest and successful strict redownload verification;
+6. sealed historical component-channel rejection and embedded fallback proof;
+7. an honest v0.26 physical decision ledger, with unobserved rows left
+   **NOT RUN** rather than inferred from automation.
+
+Only after those facts are frozen should a separate reviewed change turn the
+placeholder into a pinned protected publisher. The enabled lane must retain
+the v0.25 publisher's annotated-tag, descendant-`master`, unique tag-CI,
+draft-identity, exact-inventory, checksum, immutable-release, protected
+`release-latest`, and post-publication redownload gates. It must verify that
+Latest is still immutable v0.25.0 immediately before promotion, publish only
+the pinned v0.26.0 draft, and then prove that the public Latest pointer and
+redownloaded bytes are exactly those pinned assets. Never edit or rebuild the
+v0.25.0 tag, body, or assets while preparing v0.26.0.
 
 ## Supported targets
 

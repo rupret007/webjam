@@ -30,6 +30,13 @@ pretending to own systems that remain independent.
 > Every physical v0.25.0 gate remains **NOT RUN** until testers exercise those
 > exact packages. Do not substitute this source checkout or a branch artifact.
 
+> **Current source candidate:** this checkout identifies itself as v0.26.0 and
+> contains the next Record Session readiness, exact-source, repeated-take, and
+> creator-journey work described below. It is not tagged, packaged, physically
+> certified, or published. Immutable v0.25.0 remains GitHub **Latest** until an
+> exact v0.26.0 tag passes all build, checksum, physical, and protected
+> publication gates.
+
 New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 [First Jam](FIRST_JAM.md); this README is the complete technical story.
 
@@ -39,7 +46,7 @@ New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 | --- | --- |
 | Product | Creator-facing desktop conductor around Jamulus, optional external meeting conversation, Studio, and Pocket Stage |
 | Published line | Immutable v0.25.0 GitHub Latest private test candidate; verify its checksum manifest |
-| Current product line | v0.25.0; Music and Podcast & Voice are GA profiles, Review & Rehearsal is Preview |
+| Current source line | Unpublished v0.26.0 candidate; Music and Podcast & Voice are GA profiles, Review & Rehearsal is Preview |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -69,15 +76,17 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
 5. As host, choose **Add Shared Track** or drop supported reference audio on the live
    surface; loading does not start playback, and Play remains fail-closed until
    the isolated Jamulus route is proven.
-6. Choose **Record Session** to capture the session, then wait through
-   **Finalizing** before opening the ready take in **Studio**.
+6. Choose **Record Session**, inspect every exact source in the readiness
+   sheet, and start only when its required sources, storage, and Shared Track
+   are ready. Then wait through **Finalizing** before opening the ready take in
+   **Studio**.
 7. For Music or Podcast & Voice, open the profile's local-project action for a
    separate creation and arrangement workspace. Review & Rehearsal correctly
    keeps standalone projects unavailable in Preview.
 
 ## Creator profiles
 
-The v0.25.0 release applies one saved creator profile across launch,
+The v0.26.0 source candidate applies one saved creator profile across launch,
 Host/Join, readiness, the live surface, recording, Studio, session records, and
 new standalone projects:
 
@@ -433,6 +442,29 @@ preserves the compatible two-mono-input default. Disabling or opting out of
 every configured row records no host Local Original. The input-map editor never
 changes Jamulus music settings.
 
+After that choice, the v0.26.0 source candidate opens one path-free **Record
+Session Readiness** sheet before it arms anything. The sheet lists every exact
+planned server track, Local Original, and Shared Track with its source label,
+mono/stereo format, required/optional status, current readiness, and a bounded
+meter where one is available. Separate cards show recording storage and Shared
+Track readiness. Explicit blockers disable **Start Recording**. Accepting the
+sheet triggers a second private authority check; if the roster, input map,
+guest obligation, storage, local device preflight, Shared Track identity, take,
+or plan generation changed, recording is refused instead of starting from a
+stale screen. Cancel starts no recorder, local stream, or Shared Track.
+For every opted-in guest Local Original, the host then publishes a private,
+take-scoped arm request visible only to that required participant. Each guest
+must open the exact frozen input stream and return an authenticated
+plan/topology acknowledgement before Jamulus recording can start. Zero-track
+guest opt-outs do not block. A timeout, disconnect, stale generation, device
+failure, or mismatched acknowledgement cancels the arm and retires the
+provisional take; after all acknowledgements, WebJam repeats the full authority
+check immediately before opening the host capture and calling the recorder.
+If a guest has acknowledged but cannot yet observe whether the host committed
+the take, shutdown preserves that audio as local recovery-only media and does
+not upload it until the same take reaches authenticated Recording or terminal
+truth.
+
 The live action names the real lifecycle: **Preparing**, **Count-in**,
 **Recording**, **Stopping**, **Finalizing**, **Ready**, **Needs attention**, or
 cleanup pending. If a Shared Track is loaded and ready, confirmed recorder
@@ -447,6 +479,13 @@ mono/stereo input topology, guest Local Original count/map obligations,
 count-in, storage verdict, and expected source count. Finalization rechecks
 those exact identities and refuses substitution, under/over-delivery, a changed
 guest topology, or a different Shared Track generation.
+
+Every new planned source also carries one stable logical-source ID through the
+server topology, Local Original capture, guest transfer receipt, take manifest,
+recovery, and Studio. Width is never inferred later: each source is exactly one
+mono channel or one true stereo pair. A missing or duplicate ID, absent width,
+topology drift, or extra/missing file fails closed rather than falling back to
+a display name or track order.
 
 The completed take keeps every authoritative Jamulus participant stem distinct,
 presents the Shared Track as its own stable source, preserves true stereo Local
@@ -471,10 +510,32 @@ Complete or explicitly recovered recordings from the same session can be added
 as take lanes, auditioned without changing the saved comp, and selected with
 Option/Alt-drag quick-swipe ranges.
 
+For new editable Music and Podcast & Voice takes, Studio also looks for exact
+earlier counterparts and stacks their lanes automatically. This automatic edit
+requires the same session and project rate, complete or explicitly recovered
+media, one unique matching logical-source ID, matching participant/source kind
+and mono/stereo topology, verified timing, and the same Shared Track fingerprint
+where relevant. It is deterministic and idempotent. Legacy, duplicate, or
+ambiguous candidates are skipped and remain available only through the safe
+manual workflow. Review & Rehearsal Preview never creates those lanes or a
+sidecar.
+
 The live cards show conservative host-side per-source recording truth without
 inventing guest evidence. Studio adds an undoable **Reset Mix** that preserves
 export inclusion, keeps overload indicators latched for the playback epoch,
 and automatically selects and opens a durably finalized take.
+
+The v0.26.0 live Studio source view distinguishes plan-bound Jamulus server,
+Local Original, and Shared Track lanes and can show their current state, level,
+reported dropouts, and overload warning. A malformed, legacy, or duplicate
+projection is cleared rather than presented as authoritative source truth.
+
+Podcast & Voice's standalone path uses the Host mono + Guest stereo 48 kHz
+preset, preserves that topology through recording and loop overdub, stores
+chapter markers, and reopens the same episode arrangement. **Bounce Episode**
+publishes a verified stereo PCM-24 WAV. Review & Rehearsal keeps the local
+project path and every edit, mix, save, bounce, and export primitive disabled
+at both the visible UI and lower-level controller boundary.
 
 Arrange also has a mouse-free path: Arrow keys select rows and regions,
 Alt+Left/Right nudges, bracket shortcuts trim to the playhead, and keyboard
@@ -541,8 +602,12 @@ successful protected promotion behind GitHub
 [Latest](https://github.com/rupret007/webjam/releases/latest) are downloadable
 evidence. Do not use an untagged checkout or ordinary branch build as a release.
 
-The current source tree reports **v0.25.0**. v0.25.0 is a new
-creator-multitrack source and package identity and never replaces v0.24.0
+The current source tree reports **v0.26.0**. It is an unpublished source
+candidate: no v0.26.0 tag, native package, checksum manifest, physical PASS, or
+GitHub release is claimed. Its dedicated physical checklist remains entirely
+**NOT RUN**, and its publication workflow remains deliberately inert until
+exact post-tag build and promotion facts can be pinned. The prior v0.25.0 is a
+new creator-multitrack source and package identity and never replaces v0.24.0
 bytes. The exact
 [v0.25.0 release](https://github.com/rupret007/webjam/releases/tag/v0.25.0)
 is immutable GitHub Latest with the expected eight assets and checksum
@@ -673,7 +738,8 @@ even after valid publisher signing; candidate packages must never be described
 as production-trusted installers.
 
 Automated source and package checks are evidence for code and archive
-integrity—not a substitute for creators hearing one another. For v0.25.0,
+integrity—not a substitute for creators hearing one another. For the v0.26.0
+source candidate, v0.25.0,
 v0.24.0,
 immutable v0.23.0,
 historical v0.22.5, and immutable earlier lines,
@@ -689,7 +755,8 @@ promote a package or claim audibility.
 
 - [Documentation index](docs/README.md)
 - [Project brief for technical stakeholders](docs/PROJECT_BRIEF.md)
-- [v0.25.0 release notes and release history](CHANGELOG.md)
+- [v0.26.0 source-candidate notes and release history](CHANGELOG.md)
+- [v0.26.0 creator-multitrack physical checklist — all NOT RUN](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.25.0 creator-multitrack physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.24.0 recording-first physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
 - [Historical v0.23.0 Shared Track checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)

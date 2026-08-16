@@ -1,4 +1,5 @@
 """Take library — discovery + .lof offset parsing."""
+
 from __future__ import annotations
 
 import struct
@@ -12,6 +13,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from core.local_capture import LocalCaptureTrack
+from core.recording_readiness import RecordingStorageCheck, RecordingStorageStatus
+from core.session_recording_plan import SessionRecordingPlan
 from core.take_project import (
     CaptureDevice,
     HostIdentity,
@@ -64,15 +67,19 @@ def _receipt(
     source_fingerprint_sha256: str = "",
     playback_generation: int = 0,
 ) -> RecorderClientReceipt:
-    observation = recorder_client_observations({
-        "connections": 1,
-        "clients": [{
-            "id": channel_id,
-            "name": name,
-            "address": f"127.0.0.1:{port}",
-            "channels": channels,
-        }],
-    })[0]
+    observation = recorder_client_observations(
+        {
+            "connections": 1,
+            "clients": [
+                {
+                    "id": channel_id,
+                    "name": name,
+                    "address": f"127.0.0.1:{port}",
+                    "channels": channels,
+                }
+            ],
+        }
+    )[0]
     return RecorderClientReceipt(
         server_channel_id=channel_id,
         display_name=name,
@@ -110,6 +117,33 @@ def _write_complete_server_take(take: Path) -> Path:
     return take / "server-media-001.wav"
 
 
+def _recording_plan(
+    session_id: str,
+    take_id: str,
+    participant_id: str,
+    *,
+    channels: int,
+) -> SessionRecordingPlan:
+    return SessionRecordingPlan(
+        session_id=session_id,
+        take_id=take_id,
+        plan_generation=1,
+        roster=((participant_id, "Alice"),),
+        expected_server_stems=(participant_id,),
+        server_channel_counts=(channels,),
+        count_in_frames=0,
+        pre_roll_frames=0,
+        storage=RecordingStorageCheck(
+            RecordingStorageStatus.READY,
+            "ok",
+            10_000_000,
+            1_000,
+        ),
+        expected_source_count=1,
+        created_at_utc="2026-08-16T12:00:00Z",
+    )
+
+
 class TestLofParsing(unittest.TestCase):
     def test_parses_files_and_offsets(self):
         with tempfile.TemporaryDirectory() as d:
@@ -130,7 +164,7 @@ class TestLofParsing(unittest.TestCase):
             lof = Path(d) / "take.lof"
             lof.write_text(
                 'file "/srv/recordings/x/drums.wav" offset 1.25\n'
-                'garbage line\n'
+                "garbage line\n"
                 'file "keys.wav" offset notanumber\n',
                 encoding="utf-8",
             )
@@ -172,9 +206,7 @@ class TestLoadTake(unittest.TestCase):
             _write_complete_server_take(take)
             manifest_path = take / "webjam-take.json"
             payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-            payload["session"] = {
-                "creator_profile_key": "future_private_profile"
-            }
+            payload["session"] = {"creator_profile_key": "future_private_profile"}
             manifest_path.write_text(json.dumps(payload), encoding="utf-8")
 
             info = load_take(take)
@@ -207,8 +239,7 @@ class TestLoadTake(unittest.TestCase):
             _write_wav(take / "guitar.wav", seconds=2.0)
             _write_wav(take / "bass_guitar.wav", seconds=1.0)
             (take / "take.lof").write_text(
-                'file "guitar.wav" offset 0\n'
-                'file "bass_guitar.wav" offset 1.5\n',
+                'file "guitar.wav" offset 0\nfile "bass_guitar.wav" offset 1.5\n',
                 encoding="utf-8",
             )
             (take / "take.rpp").write_text("<REAPER_PROJECT>\n", encoding="utf-8")
@@ -260,25 +291,30 @@ class TestLoadTake(unittest.TestCase):
             take = Path(d) / "take"
             take.mkdir()
             _write_wav(take / "host.wav", seconds=0.1)
-            (take / "webjam-take.json").write_text(json.dumps({
-                "schema_version": 1,
-                "status": "complete",
-                "tracks": [
+            (take / "webjam-take.json").write_text(
+                json.dumps(
                     {
-                        "filename": "host.wav",
-                        "name": "Host",
-                        "source": "jamulus_server",
-                    },
-                    {
-                        "filename": "guest.wav",
-                        "name": "Guest",
-                        "source": "jamulus_server",
-                        "duration_s": 2.0,
-                        "sample_rate": 48000,
-                        "offset_s": 0.5,
-                    },
-                ],
-            }), encoding="utf-8")
+                        "schema_version": 1,
+                        "status": "complete",
+                        "tracks": [
+                            {
+                                "filename": "host.wav",
+                                "name": "Host",
+                                "source": "jamulus_server",
+                            },
+                            {
+                                "filename": "guest.wav",
+                                "name": "Guest",
+                                "source": "jamulus_server",
+                                "duration_s": 2.0,
+                                "sample_rate": 48000,
+                                "offset_s": 0.5,
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
 
             info = load_take(take)
 
@@ -291,7 +327,9 @@ class TestLoadTake(unittest.TestCase):
         self.assertEqual(guest.samplerate, 48000)
         self.assertEqual(info.duration_s, 2.5)
         self.assertEqual(info.validation_status, "needs_attention")
-        self.assertTrue(any("Guest is missing" in error for error in info.manifest_errors))
+        self.assertTrue(
+            any("Guest is missing" in error for error in info.manifest_errors)
+        )
 
     def test_schema_v2_rejects_same_content_external_media_symlink(self):
         with tempfile.TemporaryDirectory() as d:
@@ -369,15 +407,14 @@ class TestLoadTake(unittest.TestCase):
                 self.assertEqual(info.tracks[0].media_status, "damaged")
                 self.assertEqual(info.tracks[0].segments, ())
                 self.assertFalse(validation.ok)
-                self.assertIn(
-                    "invalid media inventory", " ".join(info.manifest_errors)
-                )
+                self.assertIn("invalid media inventory", " ".join(info.manifest_errors))
 
 
 class TestDiscoverTakes(unittest.TestCase):
     def test_discovers_multiple_and_sorts_newest_first(self):
         import os
         import time
+
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             old = root / "old_take"
@@ -400,10 +437,13 @@ class TestDiscoverTakes(unittest.TestCase):
     def test_scan_failure_log_hides_private_root_and_exception(self):
         with tempfile.TemporaryDirectory() as d:
             private_error = f"permission denied while reading {d}/Secret Session"
-            with patch(
-                "core.take_library.load_take",
-                side_effect=OSError(private_error),
-            ), self.assertLogs("webjam.take_library", level="WARNING") as captured:
+            with (
+                patch(
+                    "core.take_library.load_take",
+                    side_effect=OSError(private_error),
+                ),
+                self.assertLogs("webjam.take_library", level="WARNING") as captured,
+            ):
                 self.assertEqual(discover_takes(d), [])
 
         rendered = "\n".join(captured.output)
@@ -473,9 +513,7 @@ class TestDiscoverTakes(unittest.TestCase):
 
 class TestTakeValidation(unittest.TestCase):
     def test_pinned_filename_parser_never_calls_start_frame_a_channel_id(self):
-        parsed = parse_jamulus_recording_filename(
-            "Alice-192_0_2_x_50000-96000-2_3.wav"
-        )
+        parsed = parse_jamulus_recording_filename("Alice-192_0_2_x_50000-96000-2_3.wav")
 
         self.assertIsNotNone(parsed)
         self.assertEqual(parsed.start_frame, 96_000)
@@ -484,16 +522,20 @@ class TestTakeValidation(unittest.TestCase):
         self.assertNotIn("192_0_2", repr(parsed))
         self.assertIsNone(parse_jamulus_recording_filename("unsafe/path.wav"))
 
-    def test_authenticated_roster_validation_erases_addresses_and_detects_collision(self):
+    def test_authenticated_roster_validation_erases_addresses_and_detects_collision(
+        self,
+    ):
         observations = recorder_client_observations(
             {
                 "connections": 1,
-                "clients": [{
-                    "id": 7,
-                    "name": "Alice",
-                    "address": "192.0.2.44:50000",
-                    "channels": 2,
-                }],
+                "clients": [
+                    {
+                        "id": 7,
+                        "name": "Alice",
+                        "address": "192.0.2.44:50000",
+                        "channels": 2,
+                    }
+                ],
             }
         )
         self.assertEqual(len(observations), 1)
@@ -505,23 +547,25 @@ class TestTakeValidation(unittest.TestCase):
         with self.assertRaises(RecorderRosterError):
             recorder_client_observations({"connections": 2, "clients": []})
         with self.assertRaises(RecorderRosterError) as collision:
-            recorder_client_observations({
-                "connections": 2,
-                "clients": [
-                    {
-                        "id": 1,
-                        "name": "Alice",
-                        "address": "192.0.2.44:50000",
-                        "channels": 1,
-                    },
-                    {
-                        "id": 2,
-                        "name": "Alice",
-                        "address": "192.0.2.99:50000",
-                        "channels": 1,
-                    },
-                ],
-            })
+            recorder_client_observations(
+                {
+                    "connections": 2,
+                    "clients": [
+                        {
+                            "id": 1,
+                            "name": "Alice",
+                            "address": "192.0.2.44:50000",
+                            "channels": 1,
+                        },
+                        {
+                            "id": 2,
+                            "name": "Alice",
+                            "address": "192.0.2.99:50000",
+                            "channels": 1,
+                        },
+                    ],
+                }
+            )
         self.assertEqual(len(collision.exception.conflicted_keys), 1)
         self.assertNotIn("192.0.2", str(collision.exception))
 
@@ -558,18 +602,20 @@ class TestTakeValidation(unittest.TestCase):
         )
 
     def test_empty_jamulus_name_is_valid_and_keeps_exact_recorder_digest(self):
-        observations = recorder_client_observations({
-            "connections": 1,
-            "clients": [{
-                "id": 9,
-                "name": "",
-                "address": "127.0.0.1:51002",
-                "channels": 1,
-            }],
-        })
-        parsed = parse_jamulus_recording_filename(
-            "____-127_0_0_1_51002-0-1.wav"
+        observations = recorder_client_observations(
+            {
+                "connections": 1,
+                "clients": [
+                    {
+                        "id": 9,
+                        "name": "",
+                        "address": "127.0.0.1:51002",
+                        "channels": 1,
+                    }
+                ],
+            }
         )
+        parsed = parse_jamulus_recording_filename("____-127_0_0_1_51002-0-1.wav")
 
         self.assertIsNotNone(parsed)
         self.assertEqual(observations[0].display_name, "Musician")
@@ -579,15 +625,19 @@ class TestTakeValidation(unittest.TestCase):
         )
 
     def test_ipv4_mapped_ipv6_uses_qt_dotted_recorder_key(self):
-        observations = recorder_client_observations({
-            "connections": 1,
-            "clients": [{
-                "id": 10,
-                "name": "Alice",
-                "address": "::ffff:192.0.2.44:50000",
-                "channels": 1,
-            }],
-        })
+        observations = recorder_client_observations(
+            {
+                "connections": 1,
+                "clients": [
+                    {
+                        "id": 10,
+                        "name": "Alice",
+                        "address": "::ffff:192.0.2.44:50000",
+                        "channels": 1,
+                    }
+                ],
+            }
+        )
         parsed = parse_jamulus_recording_filename(
             "Alice-__ffff_192_0_2_x_50000-0-1.wav"
         )
@@ -599,18 +649,20 @@ class TestTakeValidation(unittest.TestCase):
         )
 
     def test_astral_name_matches_qt_utf16_qchar_translation(self):
-        observation = recorder_client_observations({
-            "connections": 1,
-            "clients": [{
-                "id": 10,
-                "name": "A😀B",
-                "address": "127.0.0.1:50000",
-                "channels": 1,
-            }],
-        })[0]
-        parsed = parse_jamulus_recording_filename(
-            "A__B-127_0_0_1_50000-0-1.wav"
-        )
+        observation = recorder_client_observations(
+            {
+                "connections": 1,
+                "clients": [
+                    {
+                        "id": 10,
+                        "name": "A😀B",
+                        "address": "127.0.0.1:50000",
+                        "channels": 1,
+                    }
+                ],
+            }
+        )[0]
+        parsed = parse_jamulus_recording_filename("A__B-127_0_0_1_50000-0-1.wav")
 
         self.assertIsNotNone(parsed)
         self.assertEqual(observation.recorder_key_sha256, parsed.recorder_key_sha256)
@@ -626,24 +678,32 @@ class TestTakeValidation(unittest.TestCase):
             for channel_id in range(150)
         ]
         self.assertEqual(
-            len(recorder_client_observations({
-                "connections": 150,
-                "clients": clients,
-            })),
+            len(
+                recorder_client_observations(
+                    {
+                        "connections": 150,
+                        "clients": clients,
+                    }
+                )
+            ),
             150,
         )
         invalid = dict(clients[-1])
         invalid["id"] = 150
         with self.assertRaises(RecorderRosterError):
-            recorder_client_observations({
-                "connections": 1,
-                "clients": [invalid],
-            })
+            recorder_client_observations(
+                {
+                    "connections": 1,
+                    "clients": [invalid],
+                }
+            )
         with self.assertRaises(RecorderRosterError):
-            recorder_client_observations({
-                "connections": 151,
-                "clients": [*clients, invalid],
-            })
+            recorder_client_observations(
+                {
+                    "connections": 151,
+                    "clients": [*clients, invalid],
+                }
+            )
 
     def test_proven_reference_reconnects_group_as_lof_timed_opaque_segments(self):
         with tempfile.TemporaryDirectory() as d:
@@ -715,12 +775,8 @@ class TestTakeValidation(unittest.TestCase):
                 expected_tracks=1,
                 required_local_stems=0,
                 recording_receipts=(
-                    _receipt(
-                        "Alex", 52000, participant_id=participant_id
-                    ),
-                    _receipt(
-                        "Alex", 52001, participant_id=participant_id
-                    ),
+                    _receipt("Alex", 52000, participant_id=participant_id),
+                    _receipt("Alex", 52001, participant_id=participant_id),
                 ),
             )
             payload = json.loads((take / "webjam-take.json").read_text())
@@ -729,7 +785,10 @@ class TestTakeValidation(unittest.TestCase):
             self.assertEqual(len(payload["tracks"]), 1)
             self.assertEqual(payload["tracks"][0]["participant_id"], participant_id)
             self.assertEqual(
-                [segment["project_start_frame"] for segment in payload["tracks"][0]["segments"]],
+                [
+                    segment["project_start_frame"]
+                    for segment in payload["tracks"][0]["segments"]
+                ],
                 [0, 48_000],
             )
             self.assertEqual(
@@ -876,12 +935,15 @@ class TestTakeValidation(unittest.TestCase):
                     raise OSError("synthetic write failure")
                 return real_atomic_write_text(path, text, **kwargs)
 
-            with patch(
-                "core.file_io.atomic_write_text",
-                side_effect=fail_second_sidecar,
-            ), self.assertRaisesRegex(
-                OSError,
-                "Server recording privacy staging failed",
+            with (
+                patch(
+                    "core.file_io.atomic_write_text",
+                    side_effect=fail_second_sidecar,
+                ),
+                self.assertRaisesRegex(
+                    OSError,
+                    "Server recording privacy staging failed",
+                ),
             ):
                 write_take_manifest(
                     take,
@@ -912,9 +974,7 @@ class TestTakeValidation(unittest.TestCase):
                             "<REAPER_PROJECT>\n", encoding="utf-8"
                         )
 
-                with self.assertRaisesRegex(
-                    OSError, "project evidence was unsafe"
-                ):
+                with self.assertRaisesRegex(OSError, "project evidence was unsafe"):
                     write_take_manifest(
                         take,
                         expected_tracks=1,
@@ -924,9 +984,7 @@ class TestTakeValidation(unittest.TestCase):
 
                 self.assertTrue((take / filename).is_file())
                 self.assertFalse((take / "server-media-001.wav").exists())
-                self.assertFalse(
-                    (take / ".webjam-recording-staging.json").exists()
-                )
+                self.assertFalse((take / ".webjam-recording-staging.json").exists())
 
     def test_complete_manifest_retry_is_idempotent(self):
         with tempfile.TemporaryDirectory() as d:
@@ -953,12 +1011,8 @@ class TestTakeValidation(unittest.TestCase):
 
             self.assertTrue(first.ok, first.errors)
             self.assertTrue(second.ok, second.errors)
-            self.assertEqual(
-                (take / "webjam-take.json").read_bytes(), first_manifest
-            )
-            self.assertFalse(
-                (take / ".webjam-recording-staging.json").exists()
-            )
+            self.assertEqual((take / "webjam-take.json").read_bytes(), first_manifest)
+            self.assertFalse((take / ".webjam-recording-staging.json").exists())
 
     def test_complete_manifest_retry_detects_same_shape_media_tampering(self):
         import hashlib
@@ -1011,12 +1065,8 @@ class TestTakeValidation(unittest.TestCase):
             self.assertEqual(manifest_path.read_bytes(), original_manifest)
             self.assertIsNotNone(second.take)
             self.assertEqual(second.take.validation_status, "needs_attention")
-            self.assertEqual(
-                second.take.tracks[0].segments[0].media_status, "damaged"
-            )
-            self.assertIn(
-                "A recorded segment changed after validation.", second.errors
-            )
+            self.assertEqual(second.take.tracks[0].segments[0].media_status, "damaged")
+            self.assertIn("A recorded segment changed after validation.", second.errors)
 
     def test_address_free_staging_receipt_recovers_interrupted_publication(self):
         with tempfile.TemporaryDirectory() as d:
@@ -1027,10 +1077,13 @@ class TestTakeValidation(unittest.TestCase):
             _write_lof(take / "take.lof", (filename, 0.5))
             receipt = _receipt("Alice", 52000)
 
-            with patch(
-                "core.take_library.validate_take",
-                side_effect=RuntimeError("synthetic publication interruption"),
-            ), self.assertRaisesRegex(RuntimeError, "publication interruption"):
+            with (
+                patch(
+                    "core.take_library.validate_take",
+                    side_effect=RuntimeError("synthetic publication interruption"),
+                ),
+                self.assertRaisesRegex(RuntimeError, "publication interruption"),
+            ):
                 write_take_manifest(
                     take,
                     expected_tracks=1,
@@ -1053,7 +1106,9 @@ class TestTakeValidation(unittest.TestCase):
             payload = json.loads((take / "webjam-take.json").read_text())
 
             self.assertTrue(recovered.ok, recovered.errors)
-            self.assertEqual(payload["tracks"][0]["participant_id"], receipt.participant_id)
+            self.assertEqual(
+                payload["tracks"][0]["participant_id"], receipt.participant_id
+            )
             self.assertEqual(
                 payload["tracks"][0]["segments"][0]["project_start_frame"],
                 24_000,
@@ -1087,12 +1142,15 @@ class TestTakeValidation(unittest.TestCase):
                         raise SystemExit("synthetic process loss")
                 return real_replace(source, target)
 
-            with patch.object(
-                Path,
-                "replace",
-                autospec=True,
-                side_effect=interrupt_second_wav,
-            ), self.assertRaisesRegex(SystemExit, "process loss"):
+            with (
+                patch.object(
+                    Path,
+                    "replace",
+                    autospec=True,
+                    side_effect=interrupt_second_wav,
+                ),
+                self.assertRaisesRegex(SystemExit, "process loss"),
+            ):
                 write_take_manifest(
                     take,
                     expected_tracks=2,
@@ -1102,9 +1160,7 @@ class TestTakeValidation(unittest.TestCase):
 
             self.assertTrue((take / "server-media-001.wav").is_file())
             self.assertTrue((take / bob).is_file())
-            self.assertTrue(
-                (take / ".webjam-recording-staging.json").is_file()
-            )
+            self.assertTrue((take / ".webjam-recording-staging.json").is_file())
 
             recovered = write_take_manifest(
                 take,
@@ -1140,10 +1196,13 @@ class TestTakeValidation(unittest.TestCase):
             _write_lof(take / "take.lof", (filename, 0.0))
             receipt = _receipt("Alice", 52000)
 
-            with patch(
-                "core.take_library.validate_take",
-                side_effect=RuntimeError("synthetic process loss"),
-            ), self.assertRaises(RuntimeError):
+            with (
+                patch(
+                    "core.take_library.validate_take",
+                    side_effect=RuntimeError("synthetic process loss"),
+                ),
+                self.assertRaises(RuntimeError),
+            ):
                 write_take_manifest(
                     take,
                     expected_tracks=1,
@@ -1155,7 +1214,10 @@ class TestTakeValidation(unittest.TestCase):
             self.assertIsNotNone(interrupted)
             self.assertEqual(interrupted.validation_status, "needs_attention")
             self.assertTrue(
-                any("publication was interrupted" in item for item in interrupted.manifest_errors)
+                any(
+                    "publication was interrupted" in item
+                    for item in interrupted.manifest_errors
+                )
             )
 
             recovered = write_take_manifest(
@@ -1368,15 +1430,11 @@ class TestTakeValidation(unittest.TestCase):
         self.assertEqual(by_name["WebJam Track"]["source"], "live_reference")
         self.assertEqual(by_name["WebJam Track"]["quality"], "reference")
         self.assertEqual(
-            by_name["WebJam Track"]["alignment"][
-                "reference_fingerprint_sha256"
-            ],
+            by_name["WebJam Track"]["alignment"]["reference_fingerprint_sha256"],
             source_fingerprint,
         )
         self.assertEqual(
-            by_name["WebJam Track"]["alignment"][
-                "reference_playback_generation"
-            ],
+            by_name["WebJam Track"]["alignment"]["reference_playback_generation"],
             7,
         )
         self.assertIsNotNone(result.take)
@@ -1457,7 +1515,6 @@ class TestTakeValidation(unittest.TestCase):
         self.assertEqual(payload["tracks"][0]["source"], "jamulus_server")
         self.assertTrue(result.ok, result.errors)
 
-
     def test_reports_expected_track_shortfall_and_silence(self):
         with tempfile.TemporaryDirectory() as d:
             take = Path(d) / "take"
@@ -1495,7 +1552,9 @@ class TestTakeValidation(unittest.TestCase):
             _write_wav(take / "host-guitar.wav", seconds=0.1)
             _write_wav(take / "host-vocal.wav", seconds=0.1)
             result = write_take_manifest(
-                take, expected_tracks=1, required_local_stems=2,
+                take,
+                expected_tracks=1,
+                required_local_stems=2,
                 app_version="test",
             )
             manifest = json.loads((take / "webjam-take.json").read_text())
@@ -1504,10 +1563,7 @@ class TestTakeValidation(unittest.TestCase):
         self.assertEqual(manifest["status"], "needs_attention")
         self.assertTrue(any("aligned confidently" in e for e in result.errors))
         self.assertEqual(
-            len([
-                track for track in loaded.tracks
-                if track.source == "local_isolated"
-            ]),
+            len([track for track in loaded.tracks if track.source == "local_isolated"]),
             2,
         )
         self.assertEqual(loaded.validation_status, "needs_attention")
@@ -1661,11 +1717,19 @@ class TestTakeValidation(unittest.TestCase):
         self.assertEqual(data["schema_version"], 2)
         self.assertEqual(data["session_id"], session_id)
         self.assertEqual(data["take_id"], take_id)
-        self.assertEqual(len({item["participant_id"] for item in data["participants"]}), 2)
+        self.assertEqual(
+            len({item["participant_id"] for item in data["participants"]}), 2
+        )
         self.assertEqual(data["devices"][0]["device_id"], device.device_id)
-        server = next(item for item in data["tracks"] if item["source"] == "jamulus_server")
-        guitar = next(item for item in data["tracks"] if item["filename"] == "host-guitar.wav")
-        vocal = next(item for item in data["tracks"] if item["filename"] == "host-vocal.wav")
+        server = next(
+            item for item in data["tracks"] if item["source"] == "jamulus_server"
+        )
+        guitar = next(
+            item for item in data["tracks"] if item["filename"] == "host-guitar.wav"
+        )
+        vocal = next(
+            item for item in data["tracks"] if item["filename"] == "host-vocal.wav"
+        )
         self.assertEqual(server["participant_id"], participant_id)
         self.assertEqual(guitar["participant_id"], local_id)
         self.assertEqual(vocal["participant_id"], local_id)
@@ -1678,12 +1742,14 @@ class TestTakeValidation(unittest.TestCase):
         self.assertEqual(segment["sha256"], expected_guitar_hash)
         self.assertEqual(
             segment["gaps"],
-            [{
-                "start_frame": 1200,
-                "frame_count": 240,
-                "reason": "queue_overflow",
-                "channels": [0],
-            }],
+            [
+                {
+                    "start_frame": 1200,
+                    "frame_count": 240,
+                    "reason": "queue_overflow",
+                    "channels": [0],
+                }
+            ],
         )
         self.assertEqual(vocal["segments"][0]["gaps"], [])
 
@@ -1736,12 +1802,14 @@ class TestTakeValidation(unittest.TestCase):
         self.assertEqual(zeta["segments"][0]["channels"], 2)
         self.assertEqual(
             zeta["segments"][0]["gaps"],
-            [{
-                "start_frame": 1200,
-                "frame_count": 240,
-                "reason": "queue_overflow",
-                "channels": [0, 1],
-            }],
+            [
+                {
+                    "start_frame": 1200,
+                    "frame_count": 240,
+                    "reason": "queue_overflow",
+                    "channels": [0, 1],
+                }
+            ],
         )
         self.assertEqual(alpha["segments"][0]["channels"], 1)
         self.assertEqual(alpha["segments"][0]["gaps"], [])
@@ -1762,9 +1830,7 @@ class TestTakeValidation(unittest.TestCase):
                 take,
                 expected_tracks=0,
                 required_local_stems=1,
-                local_capture_tracks=(
-                    LocalCaptureTrack("local-Synth", (0, 1)),
-                ),
+                local_capture_tracks=(LocalCaptureTrack("local-Synth", (0, 1)),),
                 local_total_frames=4800,
             )
             payload = json.loads((take / "webjam-take.json").read_text())
@@ -1797,11 +1863,13 @@ class TestTakeValidation(unittest.TestCase):
                 host=HostIdentity(host_id, "Jeff Story"),
                 recovery_status=RecoveryStatus.RECOVERED,
                 recovery_notes=("Local capture resumed from a safe checkpoint.",),
-                timeline=(SessionTimelineEvent(
-                    "recording_started",
-                    occurred_utc="2026-07-14T02:00:00Z",
-                    participant_id=host_id,
-                ),),
+                timeline=(
+                    SessionTimelineEvent(
+                        "recording_started",
+                        occurred_utc="2026-07-14T02:00:00Z",
+                        participant_id=host_id,
+                    ),
+                ),
             )
             gap = SimpleNamespace(
                 start_frame=1200,
@@ -1837,10 +1905,13 @@ class TestTakeValidation(unittest.TestCase):
         self.assertEqual(session["protocol_version"], evidence.protocol_version)
         self.assertEqual(session["started_utc"], evidence.started_utc)
         self.assertEqual(session["ended_utc"], evidence.ended_utc)
-        self.assertEqual(session["host"], {
-            "participant_id": host_id,
-            "display_name": "Jeff Story",
-        })
+        self.assertEqual(
+            session["host"],
+            {
+                "participant_id": host_id,
+                "display_name": "Jeff Story",
+            },
+        )
         self.assertEqual(session["recovery_status"], "recovered")
         self.assertEqual(
             session["recovery_notes"],
@@ -1859,7 +1930,9 @@ class TestTakeValidation(unittest.TestCase):
         )
         self.assertEqual(media_gap["participant_id"], local_id)
         self.assertEqual(media_gap["at_s"], 0.025)
-        self.assertIn("240 source frames unavailable (queue_overflow)", media_gap["detail"])
+        self.assertIn(
+            "240 source frames unavailable (queue_overflow)", media_gap["detail"]
+        )
 
     def test_load_schema2_retains_nested_reconnect_segments_rates_and_gaps(self):
         import hashlib
@@ -1976,7 +2049,7 @@ class TestTakeValidation(unittest.TestCase):
             rate = 48000
             rng = np.random.default_rng(7)
             guitar = np.zeros(rate * 5, dtype="float32")
-            guitar[rate:rate * 3] = rng.normal(0, 0.1, rate * 2)
+            guitar[rate : rate * 3] = rng.normal(0, 0.1, rate * 2)
             vocal = np.zeros_like(guitar)
             server = np.concatenate((np.zeros(rate // 2, dtype="float32"), guitar))
             sf.write(take / "host-guitar.wav", guitar, rate)
@@ -1994,9 +2067,10 @@ class TestTakeValidation(unittest.TestCase):
                 (take / name).write_bytes(b"placeholder")
             private_error = f"decoder failed at {take / 'host-guitar.wav'}"
 
-            with patch(
-                "soundfile.read", side_effect=RuntimeError(private_error)
-            ), self.assertLogs("webjam.take_library", level="ERROR") as captured:
+            with (
+                patch("soundfile.read", side_effect=RuntimeError(private_error)),
+                self.assertLogs("webjam.take_library", level="ERROR") as captured,
+            ):
                 offset, confidence = estimate_local_alignment(take)
 
         rendered = "\n".join(captured.output)
@@ -2019,9 +2093,7 @@ class TestTakeValidation(unittest.TestCase):
             rng = np.random.default_rng(11)
             performance = rng.normal(0, 0.1, rate * 3).astype("float32")
             lead_in = int(rate * 0.75)
-            guitar = np.concatenate(
-                (np.zeros(lead_in, dtype="float32"), performance)
-            )
+            guitar = np.concatenate((np.zeros(lead_in, dtype="float32"), performance))
             vocal = np.zeros_like(guitar)
             sf.write(take / "host-guitar.wav", guitar, rate)
             sf.write(take / "host-vocal.wav", vocal, rate)
@@ -2042,7 +2114,7 @@ class TestTakeValidation(unittest.TestCase):
             rate = 48000
             rng = np.random.default_rng(3)
             guitar = np.zeros(rate * 5, dtype="float32")
-            guitar[rate:rate * 3] = rng.normal(0, 0.1, rate * 2)
+            guitar[rate : rate * 3] = rng.normal(0, 0.1, rate * 2)
             vocal = np.zeros_like(guitar)
             delay = 24_137  # ≈0.5028 s: deliberately off the 480-sample grid
             server = np.concatenate((np.zeros(delay, dtype="float32"), guitar))
@@ -2084,7 +2156,7 @@ class TestTakeValidation(unittest.TestCase):
             rate = 48000
             rng = np.random.default_rng(9)
             guitar = np.zeros(rate * 5, dtype="float32")
-            guitar[rate:rate * 3] = rng.normal(0, 0.1, rate * 2)
+            guitar[rate : rate * 3] = rng.normal(0, 0.1, rate * 2)
             vocal = np.zeros_like(guitar)
             delayed = np.concatenate((np.zeros(rate // 4, dtype="float32"), guitar))
             stereo = np.stack((delayed, delayed), axis=1)
@@ -2101,16 +2173,27 @@ class TestTakeValidation(unittest.TestCase):
             take.mkdir()
             _write_wav(take / "host-guitar.wav", seconds=0.1)
             _write_wav(take / "server-host.wav", seconds=0.1)
-            (take / "webjam-take.json").write_text(json.dumps({
-                "schema_version": 1,
-                "status": "complete",
-                "tracks": [
-                    {"filename": "host-guitar.wav", "source": "local_ssl",
-                     "offset_s": -1.25},
-                    {"filename": "server-host.wav",
-                     "source": "jamulus_server", "offset_s": None},
-                ],
-            }), encoding="utf-8")
+            (take / "webjam-take.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "status": "complete",
+                        "tracks": [
+                            {
+                                "filename": "host-guitar.wav",
+                                "source": "local_ssl",
+                                "offset_s": -1.25,
+                            },
+                            {
+                                "filename": "server-host.wav",
+                                "source": "jamulus_server",
+                                "offset_s": None,
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
             loaded = load_take(take)
         stem = next(t for t in loaded.tracks if t.source == "local_ssl")
         self.assertAlmostEqual(stem.offset_s, -1.25)
@@ -2123,6 +2206,52 @@ class TestTakeValidation(unittest.TestCase):
             new.mkdir()
             _write_wav(new / "track.wav", seconds=0.1)
             self.assertEqual(find_changed_take(root, before), new)
+
+    def test_manifest_binds_plan_source_id_and_rejects_server_width_substitution(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            session_id = new_project_id()
+            participant_id = new_project_id()
+
+            def write(channels: int, planned_channels: int):
+                take_id = new_project_id()
+                take = root / take_id
+                take.mkdir()
+                filename = "Alice-127_0_0_1_52000-0-2.wav"
+                _write_wav(take / filename, seconds=0.1, channels=channels)
+                _write_lof(take / "take.lof", (filename, 0.0))
+                receipt = _receipt(
+                    "Alice",
+                    52000,
+                    participant_id=participant_id,
+                    channels=channels,
+                )
+                plan = _recording_plan(
+                    session_id,
+                    take_id,
+                    participant_id,
+                    channels=planned_channels,
+                )
+                return write_take_manifest(
+                    take,
+                    expected_tracks=1,
+                    required_local_stems=0,
+                    session_id=session_id,
+                    take_id=take_id,
+                    recording_receipts=(receipt,),
+                    recording_plan=plan,
+                ), plan
+
+            exact, exact_plan = write(2, 2)
+            substituted, _wrong_plan = write(2, 1)
+
+        self.assertTrue(exact.ok, exact.errors)
+        self.assertEqual(
+            exact.take.tracks[0].logical_source_id,
+            exact_plan.logical_source_id_for_server(participant_id),
+        )
+        self.assertFalse(substituted.ok)
+        self.assertIn("planned mono/stereo", " ".join(substituted.errors))
 
     def test_snapshot_rejects_multiple_changed_take_directories(self):
         with tempfile.TemporaryDirectory() as d:

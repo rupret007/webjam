@@ -5,9 +5,10 @@ a backing track. It can open without a WebJam session, Webex, or Jamulus. Its
 local playback and recording choices do not change the device, buffer, mix, or
 connection owned by Jamulus.
 
-> **v0.25.0 private test release guide:** immutable v0.25.0 is GitHub
-> **Latest**. Always verify an exact downloaded asset against its attached
-> checksum manifest before use.
+> **v0.26.0 source-candidate guide:** the current source identity is unpublished
+> v0.26.0; it has no tag, package, checksum manifest, physical PASS, or GitHub
+> release. Immutable v0.25.0 remains GitHub **Latest**. Always verify an exact
+> downloaded v0.25.0 asset against its attached checksum manifest before use.
 
 Windows packages are unsigned. Mac packages are ad-hoc signed and unnotarized.
 Automated checks do not prove that a particular interface, driver, speaker, or
@@ -20,6 +21,15 @@ Voice starts with its Host + Guest or Solo Voice mic preset, 48 kHz, time
 ruler, and count-in/metronome off. Review & Rehearsal is Preview and refuses
 standalone project create/open; its completed session takes can be played for
 read-only review, but not edited, comped, mix-mutated, or exported.
+
+For the v0.26 Podcast & Voice journey, the Host + Guest preset means one mono
+Host track and one true-stereo Guest track. Record the first pass, add named
+chapter markers, set a cycle for loop overdub, and stop after the alternate
+pass. Save/reopen must preserve the chapter, 48 kHz project rate, exact channel
+topology, recording evidence, and take lanes. **Bounce Episode** publishes a
+verified stereo PCM-24 WAV with its checksum. Review Preview blocks the same
+local create/open, edit, mixer/automation, save, bounce, and export entry points
+even if a caller bypasses a disabled visible action.
 
 ## Start a project
 
@@ -158,7 +168,7 @@ clipped-sample count, and deterministic RMS dBFS. RMS is not an integrated-LUFS
 mastering measurement. Treat clipping as a reason to lower track, effect, send,
 or master gain and bounce again.
 
-MP3 bounce is intentionally absent from v0.25.0. It appears only
+MP3 bounce is intentionally absent from the v0.26.0 source candidate. It appears only
 if a separate encoder adapter has passed the product's identity,
 output-decoding,
 and license-policy self-tests. Use WAV or FLAC for a lossless handoff.
@@ -168,7 +178,7 @@ and license-policy self-tests. Use WAV or FLAC for a lossless handoff.
 | Workflow | Audio owner | Project/recording meaning |
 | --- | --- | --- |
 | Host/Join | Jamulus | Live low-latency rehearsal; WebJam observes and conducts the private session |
-| Session recording and Studio | WebJam recorder plus immutable completed-take evidence | Review, arrange, comp, and export a recorded rehearsal |
+| Session recording and Studio | WebJam recorder plus immutable completed-take evidence | Music and Podcast can review, arrange, comp, and export; Review Preview is limited to playback, scrubbing, and source inspection |
 | Standalone Reference Studio | Local Reference Studio playback/recording backend | Write, play along, record local ideas, arrange, mix, and bounce without joining |
 | Shared Track live route | Separate `WebJam Track` Jamulus participant | Capability-gated host source; packaged Play stays fail-closed until the Mac proves the isolated route, and physical audibility remains **NOT RUN** |
 

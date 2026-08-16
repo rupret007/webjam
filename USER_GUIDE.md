@@ -1,9 +1,11 @@
-# WebJam creator guide — v0.25.0
+# WebJam creator guide — v0.26.0 source candidate
 
-> This guide describes the exact immutable v0.25.0 GitHub **Latest** private
-> test release. Use only a tagged asset verified against its attached checksum
-> manifest. Publication is not physical PASS evidence; every physical result
-> remains **NOT RUN** until separately observed.
+> This guide describes the current v0.26.0 source candidate. It has no tag,
+> native package, checksum manifest, physical PASS, or GitHub release yet.
+> Immutable v0.25.0 remains GitHub **Latest**; use only its exact checksum-
+> verified assets when a downloadable package is required. Every v0.26
+> physical result remains **NOT RUN** until the candidate checklist authorizes
+> an exact tagged package run.
 
 ## Follow the current guide
 
@@ -335,6 +337,35 @@ source count. Finalization rechecks those facts and refuses source
 substitution, a changed map, or missing/extra delivery instead of calling the
 take Ready.
 
+The v0.26.0 source candidate presents that frozen plan in one accessible,
+path-free **Record Session Readiness** sheet. Every server track, Local
+Original, and Shared Track row shows its source label, exact mono/stereo format,
+required/optional status, readiness, and a bounded meter when available.
+Storage and Shared Track cards sit above explicit blockers. **Start Recording**
+is disabled while a required fact is unresolved. Accepting the sheet is not a
+bypass: WebJam rechecks the take/plan generation, roster, input maps, guest
+obligations, device preflight, storage, and Shared Track identity before it
+arms anything. Cancelling retires the provisional take without starting
+capture.
+
+For each opted-in guest Local Original, WebJam next sends a private,
+take-scoped arm only to that required guest. The guest opens the exact planned
+input stream and authenticates an acknowledgement bound to the take, plan,
+presence generation, map, ordered widths, and stable source IDs. The Jamulus
+recorder stays off until every required acknowledgement is current and the host
+rechecks all authority again. A zero-track opt-out does not block; timeout,
+disconnect, device-open failure, stale identity, or mismatched topology cancels
+the arm and starts no server recorder.
+If host commit truth is temporarily unknown after acknowledgement, the guest
+keeps that audio local and recovery-only. It is not uploaded until authenticated
+state for the same take reaches Recording or a terminal result.
+
+Every planned source has one stable logical-source ID from the server or input
+map through guest transfer, take manifest, recovery, and Studio. Each width is
+exactly one mono channel or one stereo pair. Missing or duplicate IDs, absent
+width, topology changes, and extra/missing delivered files fail closed instead
+of falling back to display names or row order.
+
 WebJam shows the take's actual progression: **Idle**, **Preparing**,
 **Count-in**, **Recording**, **Stopping**, **Finalizing**, **Ready**, **Needs
 attention**, or cleanup pending. If a Shared Track is ready, confirmed recorder
@@ -349,6 +380,12 @@ its own stable source identity, and only explicitly enabled Local Originals
 are added. Missing media, gaps, ambiguous identity, unverified timing, transfer
 work, or publication failure remains visible rather than becoming a duplicate
 or invented track.
+
+While a take owns the plan, Studio's live source view distinguishes Jamulus
+server, Local Original, and Shared Track lanes. It can show each source's
+current state, level when available, reported dropouts, and overload warning.
+If a projection is legacy, malformed, or duplicates a logical source, the view
+clears it instead of presenting uncertain rows as recorder truth.
 
 ## Studio and Track Export
 
@@ -378,6 +415,12 @@ arrangement or mix, create a Studio sidecar, or export tracks.
 - Select a track and choose **＋ Add Take** to use a safely matching repeated
   take from the same session. Double-click the lane name to audition it without
   changing the saved comp. Option/Alt-drag a lane to choose a comp range.
+- When a new Music or Podcast & Voice take completes, Studio automatically
+  stacks only earlier lanes with the same session, project rate, unique stable
+  logical-source ID, participant/source kind, mono/stereo topology, verified
+  timing, and Shared Track fingerprint where applicable. It skips legacy,
+  duplicate, incomplete, or ambiguous matches. Review Preview never performs
+  this automatic edit or creates a sidecar.
 - Waveforms arrive progressively for the visible timeline. Recorded gaps remain
   silence, and changing takes cancels stale waveform work.
 
@@ -386,7 +429,15 @@ and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
 manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
-v0.25.0 source tree.
+v0.26.0 source candidate.
+
+For a standalone Podcast & Voice episode, use the 48 kHz Host-mono +
+Guest-stereo preset, record the first pass, add a chapter marker, set a cycle
+for loop overdub, and stop when the alternate pass is complete. Save and reopen
+to verify the chapter and channel topology, then choose **Bounce Episode** for
+a verified stereo PCM-24 WAV. Review & Rehearsal Preview cannot create/open
+this local project and blocks edit, mix, save, bounce, and export operations at
+their lower-level controller entry points as well as in the visible UI.
 
 Edited Studio packages require the secure descriptor-relative export available
 on macOS/Linux. On Windows, Studio instead labels the action **Export Aligned
@@ -411,3 +462,10 @@ native setup problems. Use **End Session** or the profile's **Leave** action for
 safe cleanup;
 WebJam stops only processes it owns and finalizes a hosted take before ending
 the server.
+
+The [v0.26 physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
+is still entirely **NOT RUN** and must not be executed until it identifies an
+exact tagged package. The
+[v0.25 checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md) remains
+the immutable evidence ledger for the package currently shown by GitHub
+Latest.

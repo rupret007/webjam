@@ -5,6 +5,8 @@ from dataclasses import replace
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
@@ -349,7 +351,10 @@ def test_matching_saved_verification_never_bypasses_v3_host_or_guest_path() -> N
         controller._on_launch_audio.assert_called_once_with()
 
 
-def test_v2_guest_peer_waits_for_post_gate_audio_start(tmp_path) -> None:
+def test_v2_guest_peer_waits_for_post_gate_audio_start(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
     settings = AppSettings(
         config_file=str(tmp_path / "settings.json"),
         local_capture_enabled=True,
@@ -387,7 +392,26 @@ def test_v2_guest_peer_waits_for_post_gate_audio_start(tmp_path) -> None:
     try:
         peer_kwargs = guest_type.call_args.kwargs
         assert peer_kwargs["capture_enabled"]() is True
-        assert peer_kwargs["capture_tracks"]() == (("local-Guest Voice", 0),)
+        with mock.patch(
+            "webjam_qt.controllers.application_controller."
+            "check_local_capture_preflight",
+            return_value=SimpleNamespace(ready=True),
+        ) as preflight:
+            capture_tracks = peer_kwargs["capture_tracks"]()
+            assert tuple(tuple(track) for track in capture_tracks) == (
+                ("local-Guest Voice", 0),
+            )
+            assert capture_tracks[0].logical_source_ordinal == 0
+        preflight.assert_called_once()
+        with mock.patch(
+            "webjam_qt.controllers.application_controller."
+            "check_local_capture_preflight",
+            return_value=SimpleNamespace(ready=False),
+        ):
+            with pytest.raises(RuntimeError, match="preflight failed"):
+                peer_kwargs["capture_tracks"]()
+        # Device loss must not masquerade as an intentional zero-track opt-out.
+        assert peer_kwargs["capture_enabled"]() is True
         guest.start.assert_not_called()
         controller.audio.on_launch_toggle = mock.Mock(return_value=True)
         with mock.patch.object(

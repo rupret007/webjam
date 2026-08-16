@@ -27,6 +27,7 @@ from typing import Any, Mapping
 from core.creative_modes import canonical_creator_profile_key
 from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
 from core.local_capture import LocalCaptureTrack
+from core.logical_sources import canonical_logical_source_id, derive_logical_source_id
 from core.recording_readiness import RecordingStorageCheck, RecordingStorageStatus
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -39,12 +40,10 @@ _MAX_STORAGE_BYTES = (1 << 63) - 1
 _MAX_STORAGE_DETAIL_CHARS = 512
 _MAX_GENERATION = (1 << 63) - 1
 _MAX_EXPECTED_SOURCES = (
-    MAX_JAMULUS_ROSTER_ROWS * (_MAX_INPUT_TRACKS + 1)
-    + _MAX_INPUT_TRACKS
-    + 1
+    MAX_JAMULUS_ROSTER_ROWS * (_MAX_INPUT_TRACKS + 1) + _MAX_INPUT_TRACKS + 1
 )
 
-SESSION_RECORDING_PLAN_PRIVATE_SCHEMA_VERSION = 1
+SESSION_RECORDING_PLAN_PRIVATE_SCHEMA_VERSION = 2
 _PRIVATE_PLAN_KEYS = {
     "schema_version",
     "session_id",
@@ -52,6 +51,8 @@ _PRIVATE_PLAN_KEYS = {
     "plan_generation",
     "roster",
     "expected_server_stems",
+    "server_logical_source_ids",
+    "server_channel_counts",
     "count_in_frames",
     "pre_roll_frames",
     "storage",
@@ -60,6 +61,7 @@ _PRIVATE_PLAN_KEYS = {
     "shared_track",
     "shared_track_planned",
     "input_maps",
+    "input_map_logical_source_ids",
     "guest_local_originals",
     "creator_profile_key",
     "plan_fingerprint_sha256",
@@ -217,6 +219,8 @@ class GuestLocalOriginalBinding:
     track_count: int
     map_fingerprint_sha256: str
     presence_generation: int
+    channel_counts: tuple[int, ...] = ()
+    logical_source_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -240,6 +244,33 @@ class GuestLocalOriginalBinding:
             or not 0 <= self.presence_generation <= _MAX_GENERATION
         ):
             raise ValueError("guest presence_generation is outside the limit.")
+        channel_counts = tuple(self.channel_counts)
+        logical_source_ids = tuple(self.logical_source_ids)
+        if bool(channel_counts) != bool(logical_source_ids):
+            raise ValueError(
+                "guest topology widths and logical source IDs must be declared together."
+            )
+        if channel_counts:
+            if len(channel_counts) != self.track_count:
+                raise ValueError("guest topology must describe every logical track.")
+            if any(
+                isinstance(width, bool) or width not in (1, 2)
+                for width in channel_counts
+            ):
+                raise ValueError("guest logical tracks must be mono or stereo.")
+            logical_source_ids = tuple(
+                canonical_logical_source_id(value) for value in logical_source_ids
+            )
+            if len(set(logical_source_ids)) != len(logical_source_ids):
+                raise ValueError("guest logical source IDs must be unique.")
+        object.__setattr__(self, "channel_counts", channel_counts)
+        object.__setattr__(self, "logical_source_ids", logical_source_ids)
+
+    @property
+    def exact_topology(self) -> bool:
+        return len(self.channel_counts) == self.track_count and (
+            self.track_count == 0 or bool(self.logical_source_ids)
+        )
 
     def __repr__(self) -> str:
         return "GuestLocalOriginalBinding(private=[redacted])"
@@ -255,6 +286,8 @@ _CAPTURE_STEM_SAFE_RE = re.compile(r"[^A-Za-z0-9 _-]+")
 def _capture_stem(name: str, index: int) -> str:
     """Deterministically sanitize one configured name into a capture stem."""
 
+    if str(name or "") in {track.stem for track in LEGACY_CAPTURE_TRACKS}:
+        return str(name)
     cleaned = _CAPTURE_STEM_SAFE_RE.sub("-", str(name or ""))
     cleaned = " ".join(cleaned.split())[:58].strip(" -_")
     if not cleaned or not cleaned[0].isalnum():
@@ -307,6 +340,7 @@ def resolve_capture_tracks(settings: object) -> tuple[LocalCaptureTrack, ...]:
             LocalCaptureTrack(
                 stem=unique,
                 source_channels=tuple(range(channel, channel + binding.channel_count)),
+                logical_source_ordinal=index,
             )
         )
         channel += binding.channel_count
@@ -372,6 +406,9 @@ class SessionRecordingPlan:
     guest_local_originals: tuple[GuestLocalOriginalBinding, ...] = field(
         default_factory=tuple
     )
+    # Ordered widths aligned with expected_server_stems. Empty is a legacy or
+    # currently-unproven recorder contract and must not be treated as exact.
+    server_channel_counts: tuple[int, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -409,6 +446,18 @@ class SessionRecordingPlan:
         if len(set(stems)) != len(stems):
             raise ValueError("expected_server_stems must be unique.")
         object.__setattr__(self, "expected_server_stems", stems)
+        server_channel_counts = tuple(self.server_channel_counts)
+        if server_channel_counts:
+            if len(server_channel_counts) != len(stems):
+                raise ValueError(
+                    "server_channel_counts must describe every planned server source."
+                )
+            if any(
+                isinstance(width, bool) or width not in (1, 2)
+                for width in server_channel_counts
+            ):
+                raise ValueError("planned server sources must be mono or stereo.")
+        object.__setattr__(self, "server_channel_counts", server_channel_counts)
 
         object.__setattr__(
             self,
@@ -474,9 +523,7 @@ class SessionRecordingPlan:
         if len(set(names)) != len(names):
             raise ValueError("input map track names must be unique.")
         object.__setattr__(self, "input_maps", input_maps)
-        creator_profile_key = canonical_creator_profile_key(
-            self.creator_profile_key
-        )
+        creator_profile_key = canonical_creator_profile_key(self.creator_profile_key)
         if creator_profile_key is None:
             raise ValueError("creator_profile_key is unsupported.")
         object.__setattr__(
@@ -503,10 +550,25 @@ class SessionRecordingPlan:
             )
         object.__setattr__(self, "guest_local_originals", guest_local_originals)
 
-        host_local_count = sum(
-            1
-            for entry in input_maps
+        host_local_source_ids = tuple(
+            self.input_map_logical_source_ids[ordinal]
+            for ordinal, entry in enumerate(input_maps)
             if entry.enabled and entry.local_original_enabled
+        )
+        all_logical_source_ids = (
+            *self.server_logical_source_ids,
+            *host_local_source_ids,
+            *(
+                source_id
+                for guest in guest_local_originals
+                for source_id in guest.logical_source_ids
+            ),
+        )
+        if len(set(all_logical_source_ids)) != len(all_logical_source_ids):
+            raise ValueError("planned logical source IDs must be globally unique.")
+
+        host_local_count = sum(
+            1 for entry in input_maps if entry.enabled and entry.local_original_enabled
         )
         exact_source_count = (
             len(stems)
@@ -521,16 +583,103 @@ class SessionRecordingPlan:
     def __repr__(self) -> str:
         return "SessionRecordingPlan(private=[redacted])"
 
+    @property
+    def server_logical_source_ids(self) -> tuple[str, ...]:
+        """Stable IDs aligned one-for-one with ``expected_server_stems``."""
+
+        return tuple(
+            derive_logical_source_id(
+                self.session_id,
+                participant_id,
+                "jamulus_server",
+            )
+            for participant_id in self.expected_server_stems
+        )
+
+    @property
+    def input_map_logical_source_ids(self) -> tuple[str, ...]:
+        """Stable host input-slot IDs aligned with every configured map row."""
+
+        return tuple(
+            derive_logical_source_id(
+                self.session_id,
+                "host-local-original",
+                "local_original",
+                ordinal,
+            )
+            for ordinal, _entry in enumerate(self.input_maps)
+        )
+
+    def logical_source_id_for_server(self, participant_id: str) -> str:
+        """Return the planned server source ID, or empty for an unplanned ID."""
+
+        try:
+            ordinal = self.expected_server_stems.index(str(participant_id))
+        except ValueError:
+            return ""
+        return self.server_logical_source_ids[ordinal]
+
+    @property
+    def server_topology_exact(self) -> bool:
+        return len(self.server_channel_counts) == len(self.expected_server_stems)
+
+    def channel_count_for_server(self, participant_id: str) -> int | None:
+        """Return a proven planned width, never an inferred default."""
+
+        if not self.server_topology_exact:
+            return None
+        try:
+            ordinal = self.expected_server_stems.index(str(participant_id))
+        except ValueError:
+            return None
+        return self.server_channel_counts[ordinal]
+
+    def resolved_capture_tracks(self) -> tuple[LocalCaptureTrack, ...]:
+        """Build the exact typed host capture map bound by this plan.
+
+        Controllers should use this after planning instead of resolving mutable
+        settings a second time.
+        """
+
+        tracks: list[LocalCaptureTrack] = []
+        channel = 0
+        seen: set[str] = set()
+        for ordinal, entry in enumerate(self.input_maps):
+            if not entry.enabled or not entry.local_original_enabled:
+                continue
+            base = _capture_stem(entry.track_name, ordinal)
+            unique = base
+            suffix = 2
+            while unique.casefold() in seen:
+                suffix_text = f"-{suffix}"
+                unique = (
+                    base[: _MAX_CAPTURE_STEM_CHARS - len(suffix_text)].rstrip(" -_")
+                    + suffix_text
+                )
+                suffix += 1
+            seen.add(unique.casefold())
+            tracks.append(
+                LocalCaptureTrack(
+                    unique,
+                    tuple(range(channel, channel + entry.channel_count)),
+                    logical_source_id=self.input_map_logical_source_ids[ordinal],
+                    logical_source_ordinal=ordinal,
+                )
+            )
+            channel += entry.channel_count
+        return tuple(tracks)
+
     def to_public_dict(self) -> dict[str, object]:
         """A bounded, path-free projection for diagnostics and manifests."""
 
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "session_id": self.session_id,
             "take_id": self.take_id,
             "plan_generation": self.plan_generation,
             "roster_count": len(self.roster),
             "expected_server_stem_count": len(self.expected_server_stems),
+            "server_topology_bound": self.server_topology_exact,
             "count_in_frames": self.count_in_frames,
             "pre_roll_frames": self.pre_roll_frames,
             "storage_status": self.storage.status.value,
@@ -539,9 +688,7 @@ class SessionRecordingPlan:
             "shared_track_planned": self.shared_track_planned,
             "shared_track_bound": self.shared_track is not None,
             "input_map_count": len(self.input_maps),
-            "guest_local_original_participant_count": len(
-                self.guest_local_originals
-            ),
+            "guest_local_original_participant_count": len(self.guest_local_originals),
             "guest_local_original_track_count": sum(
                 item.track_count for item in self.guest_local_originals
             ),
@@ -565,6 +712,8 @@ class SessionRecordingPlan:
                 for participant_id, display_name in self.roster
             ],
             "expected_server_stems": list(self.expected_server_stems),
+            "server_logical_source_ids": list(self.server_logical_source_ids),
+            "server_channel_counts": list(self.server_channel_counts),
             "count_in_frames": self.count_in_frames,
             "pre_roll_frames": self.pre_roll_frames,
             "storage": {
@@ -595,12 +744,15 @@ class SessionRecordingPlan:
                 }
                 for entry in self.input_maps
             ],
+            "input_map_logical_source_ids": list(self.input_map_logical_source_ids),
             "guest_local_originals": [
                 {
                     "participant_id": entry.participant_id,
                     "track_count": entry.track_count,
                     "map_fingerprint_sha256": entry.map_fingerprint_sha256,
                     "presence_generation": entry.presence_generation,
+                    "channel_counts": list(entry.channel_counts),
+                    "logical_source_ids": list(entry.logical_source_ids),
                 }
                 for entry in self.guest_local_originals
             ],
@@ -666,6 +818,17 @@ class SessionRecordingPlan:
         if not isinstance(raw_stems, list):
             raise ValueError("expected_server_stems must be a list.")
         stems = tuple(_strict_text(stem, "expected_server_stem") for stem in raw_stems)
+
+        raw_server_source_ids = payload["server_logical_source_ids"]
+        if not isinstance(raw_server_source_ids, list):
+            raise ValueError("server_logical_source_ids must be a list.")
+        server_source_ids = tuple(
+            canonical_logical_source_id(value) for value in raw_server_source_ids
+        )
+        raw_server_channel_counts = payload["server_channel_counts"]
+        if not isinstance(raw_server_channel_counts, list):
+            raise ValueError("server_channel_counts must be a list.")
+        server_channel_counts = tuple(raw_server_channel_counts)
 
         raw_storage = _strict_mapping(
             payload["storage"],
@@ -748,6 +911,13 @@ class SessionRecordingPlan:
                 )
             )
 
+        raw_input_source_ids = payload["input_map_logical_source_ids"]
+        if not isinstance(raw_input_source_ids, list):
+            raise ValueError("input_map_logical_source_ids must be a list.")
+        input_source_ids = tuple(
+            canonical_logical_source_id(value) for value in raw_input_source_ids
+        )
+
         raw_guest_local_originals = payload["guest_local_originals"]
         if not isinstance(raw_guest_local_originals, list):
             raise ValueError("recording plan guest_local_originals must be a list.")
@@ -761,6 +931,8 @@ class SessionRecordingPlan:
                     "track_count",
                     "map_fingerprint_sha256",
                     "presence_generation",
+                    "channel_counts",
+                    "logical_source_ids",
                 },
             )
             map_fingerprint = entry["map_fingerprint_sha256"]
@@ -768,6 +940,12 @@ class SessionRecordingPlan:
                 map_fingerprint
             ):
                 raise ValueError("guest map fingerprint is invalid.")
+            raw_channel_counts = entry["channel_counts"]
+            raw_logical_source_ids = entry["logical_source_ids"]
+            if not isinstance(raw_channel_counts, list):
+                raise ValueError("guest channel_counts must be a list.")
+            if not isinstance(raw_logical_source_ids, list):
+                raise ValueError("guest logical_source_ids must be a list.")
             guest_local_originals.append(
                 GuestLocalOriginalBinding(
                     participant_id=_strict_text(
@@ -778,6 +956,8 @@ class SessionRecordingPlan:
                     presence_generation=_strict_int(
                         entry["presence_generation"], "presence_generation"
                     ),
+                    channel_counts=tuple(raw_channel_counts),
+                    logical_source_ids=tuple(raw_logical_source_ids),
                 )
             )
 
@@ -819,8 +999,13 @@ class SessionRecordingPlan:
                 payload["creator_profile_key"]
             ),
             guest_local_originals=tuple(guest_local_originals),
+            server_channel_counts=server_channel_counts,
         )
         actual_fingerprint = plan.plan_fingerprint()
+        if server_source_ids != plan.server_logical_source_ids:
+            raise ValueError("server logical source IDs do not match the plan.")
+        if input_source_ids != plan.input_map_logical_source_ids:
+            raise ValueError("input-map logical source IDs do not match the plan.")
         if not hmac.compare_digest(serialized_fingerprint, actual_fingerprint):
             raise ValueError("recording plan fingerprint does not match its facts.")
         if expected_take_id is not None:

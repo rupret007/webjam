@@ -348,6 +348,39 @@ class ReferenceStudioApplicationController(QObject):
             "workflow instead."
         )
 
+    def _reject_studio_edit(self, action: str) -> bool:
+        """Enforce creator capabilities below the disabled-command UI.
+
+        Reference Studio normally cannot own a Review Preview project, but
+        controller helpers are also called directly by tests and integration
+        surfaces.  Keep that lower-level boundary explicit so a future caller
+        cannot turn a disabled action into an editing path by bypassing the
+        workspace command state.
+        """
+
+        capabilities = self._creator_profile.capabilities
+        if capabilities.local_multitrack and capabilities.take_editing:
+            return False
+        self._status = (
+            f"{self._creator_profile.label} Preview is playback and source "
+            f"inspection only; it cannot {action}."
+        )
+        self._refresh()
+        return True
+
+    def _reject_studio_export(self, action: str) -> bool:
+        """Enforce the profile export boundary at the bounce entry point."""
+
+        capabilities = self._creator_profile.capabilities
+        if capabilities.local_multitrack and capabilities.track_export:
+            return False
+        self._status = (
+            f"{self._creator_profile.label} Preview is playback and source "
+            f"inspection only; it cannot {action}."
+        )
+        self._refresh()
+        return True
+
     @property
     def _is_recording(self) -> bool:
         recorder = self._recorder
@@ -722,7 +755,12 @@ class ReferenceStudioApplicationController(QObject):
         self._waveforms.shutdown()
         self.studio_controller.shutdown()
         if self._owns_executor:
-            self._executor.shutdown(wait=False, cancel_futures=True)
+            # Cancellation is cooperative for media verification and waveform
+            # jobs that are already running.  Join the owned pool before this
+            # QObject and its Qt signal receivers can be destroyed; otherwise
+            # a late native audio read or done-callback can race application
+            # teardown after shutdown() has reported success.
+            self._executor.shutdown(wait=True, cancel_futures=True)
         return True
 
     # ------------------------------------------------------------------
@@ -1221,6 +1259,8 @@ class ReferenceStudioApplicationController(QObject):
     # Immutable edits and workspace commands
     # ------------------------------------------------------------------
     def _apply_studio_edit(self, label: str, edit, *, rebuild: bool = True) -> bool:
+        if self._reject_studio_edit("edit the Studio arrangement"):
+            return False
         if self._reject_recording_change("editing the arrangement"):
             return False
         try:
@@ -1247,6 +1287,8 @@ class ReferenceStudioApplicationController(QObject):
         return True
 
     def _show_mixer(self) -> None:
+        if self._reject_studio_edit("open Studio mixing controls"):
+            return
         if self._reject_recording_change("opening the mixer"):
             return
         if not self.project_open:
@@ -1281,6 +1323,8 @@ class ReferenceStudioApplicationController(QObject):
         self._refresh()
 
     def _show_automation(self) -> None:
+        if self._reject_studio_edit("open Studio automation controls"):
+            return
         if self._reject_recording_change("opening automation"):
             return
         if not self.project_open:
@@ -1654,6 +1698,8 @@ class ReferenceStudioApplicationController(QObject):
             self._automation_dialog = None
 
     def _undo(self) -> None:
+        if self._reject_studio_edit("undo Studio edits"):
+            return
         if self._reject_recording_change("undoing an edit"):
             return
         try:
@@ -1668,6 +1714,8 @@ class ReferenceStudioApplicationController(QObject):
             self._refresh()
 
     def _redo(self) -> None:
+        if self._reject_studio_edit("redo Studio edits"):
+            return
         if self._reject_recording_change("redoing an edit"):
             return
         try:
@@ -1872,6 +1920,8 @@ class ReferenceStudioApplicationController(QObject):
     # Bounded offline analysis and bounce workers
     # ------------------------------------------------------------------
     def _bounce_dialog(self) -> None:
+        if self._reject_studio_export("bounce or export Studio audio"):
+            return
         if self._bounce_future is not None and not self._bounce_future.done():
             self._status = "A project bounce is already running."
             self._refresh()
@@ -1930,6 +1980,8 @@ class ReferenceStudioApplicationController(QObject):
         self._start_bounce(request)
 
     def _start_bounce(self, request: SongBounceRequest) -> None:
+        if self._reject_studio_export("bounce or export Studio audio"):
+            return
         if not self.save():
             QMessageBox.warning(
                 self.shell,

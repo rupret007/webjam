@@ -1,10 +1,10 @@
-# Creator profiles — v0.25.0 implemented contract
+# Creator profiles — v0.26.0 source-candidate contract
 
-> Status: implemented in the immutable v0.25.0 GitHub **Latest** private test
-> release. This document supersedes the earlier speculative cross-discipline
-> MVP; it describes only the bounded behavior in v0.25.0 code. Physical and
-> platform-trust results remain **NOT RUN** until separately observed against an
-> exact checksum-verified release asset.
+> Status: implemented in the unpublished v0.26.0 source candidate. Immutable
+> v0.25.0 remains GitHub **Latest**; no v0.26.0 tag, package, checksum manifest,
+> physical PASS, or GitHub release is claimed. This document supersedes the
+> earlier speculative cross-discipline MVP and describes only bounded current
+> source behavior. Physical and platform-trust results remain **NOT RUN**.
 
 ## Product decision
 
@@ -45,6 +45,20 @@ verdict, count-in/pre-roll, and expected source count. Finalization rechecks
 that identity and fails closed on missing, extra, changed, or substituted
 sources.
 
+Before capture, the same path-free readiness sheet shows every exact server,
+Local Original, and Shared Track row with mono/stereo topology,
+required/optional obligation, readiness/meter, storage, Shared Track state, and
+blockers. Start remains disabled until required facts are ready; private plan
+authority is checked again before arming. Stable logical-source IDs bind new
+recordings through transfer, manifests, recovery, Studio, and automatic exact
+repeated-take lanes. Music and Podcast & Voice permit those automatic lanes;
+Review Preview does not create them or a Studio sidecar.
+
+Podcast & Voice's local Host + Guest journey is 48 kHz with one mono Host and
+one stereo Guest track, persistent chapter markers, record/loop-overdub, and
+verified stereo PCM-24 **Bounce Episode**. Review Preview blocks every local
+create/open, edit, mix, save, bounce, and export entry point.
+
 Any meeting platform may receive an explicit hardened public-HTTPS link
 handoff. Native app verification and focus remain Webex-only. WebJam never
 directly or automatically taps a meeting app, browser, or system output.
@@ -52,7 +66,7 @@ Record Session can include explicitly planned Local Originals from input
 devices the user selects, so users must not route meeting or system-output
 audio into those inputs.
 
-## Explicit non-goals for v0.25.0
+## Explicit non-goals for v0.26.0
 
 - no visual canvas or frame-accurate video review;
 - no shared or network-synchronized notes;
@@ -61,4 +75,4 @@ audio into those inputs.
 - no Review & Rehearsal standalone project, edit, comp, mix mutation, or export;
 - no claim that a link handoff joined, muted, found participants, or recorded;
 - no physical-audio, hardware, signing, notarization, or accessibility PASS
-  without exact package evidence in the v0.25 checklist.
+  without exact package evidence in the v0.26 checklist.

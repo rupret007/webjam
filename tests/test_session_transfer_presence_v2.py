@@ -3,19 +3,23 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from dataclasses import asdict
+import wave
+from dataclasses import asdict, replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from core.network_invite import BandInvite
 from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
 from core.session_transfer import (
+    CaptureArmAcknowledgement,
     EnrollmentRegistry,
     LocalOriginalObligation,
     PresenceBinding,
     PresenceV2Challenge,
     PresenceV2Proof,
+    RecordingSignal,
     SessionControlState,
     SessionCredentials,
     SessionPeerClient,
@@ -86,6 +90,8 @@ def _bind(
     audio_connection_generation: int = 23,
     local_original_track_count: int | None = None,
     local_original_map_fingerprint: str = "",
+    local_original_channel_counts: tuple[int, ...] = (),
+    local_original_source_ids: tuple[str, ...] = (),
 ) -> PresenceV2Proof:
     return registry.bind_presence_v2(
         participant_id,
@@ -103,6 +109,8 @@ def _bind(
         capture_enabled=capture_enabled,
         local_original_track_count=local_original_track_count,
         local_original_map_fingerprint=local_original_map_fingerprint,
+        local_original_channel_counts=local_original_channel_counts,
+        local_original_source_ids=local_original_source_ids,
     )
 
 
@@ -1489,6 +1497,52 @@ def test_legacy_local_original_presence_is_readable_but_not_exact() -> None:
     assert obligation.capture_requested
 
 
+def test_positive_guest_inventory_without_ordered_topology_blocks_preflight(
+    tmp_path: Path,
+) -> None:
+    credentials = SessionCredentials.create()
+    registry = EnrollmentRegistry(tmp_path, credentials)
+    host_enrollment = registry.enroll(
+        _id(), "Host", invite_token=credentials.invite_token
+    )
+    guest_enrollment = registry.enroll(
+        _id(), "Guest", invite_token=credentials.invite_token
+    )
+    challenge = _install(registry, _digest("missing-exact-topology"), 2)
+    _bind(
+        registry,
+        host_enrollment.participant_id,
+        challenge,
+        ordinal=0,
+        presence_generation=1,
+        capture_enabled=False,
+    )
+    _bind(
+        registry,
+        guest_enrollment.participant_id,
+        challenge,
+        ordinal=1,
+        presence_generation=2,
+        capture_enabled=True,
+        local_original_track_count=1,
+        local_original_map_fingerprint=_digest("legacy-positive-map"),
+    )
+    host = HostPeerSession()
+    host.registry = registry
+    host.host_enrollment = host_enrollment
+
+    obligations = host.recording_local_original_obligations()
+    assert len(obligations) == 1
+    assert obligations[0].exact
+    assert not obligations[0].exact_topology
+    assert any(
+        "ordered mono/stereo source topology" in issue
+        for issue in host.recording_local_original_obligation_issues()
+    )
+    _prepared, issues = host.prepare_local_original_obligations(_id())
+    assert any("ordered mono/stereo source topology" in issue for issue in issues)
+
+
 def test_host_preflight_exposes_exact_zero_and_rejects_live_legacy_guest(
     tmp_path: Path,
 ) -> None:
@@ -1637,6 +1691,7 @@ def test_http_v2_exact_local_original_contract_is_authenticated_and_private(
     enrollment = client.enroll(_id(), "Private Artist")
     challenge = _install(registry, _digest("exact-contract"), 1)
     map_fingerprint = _digest("name-free-logical-map")
+    logical_source_id = _id()
     proof = client.bind_presence_v2(
         enrollment,
         display_name="Private Artist",
@@ -1653,10 +1708,15 @@ def test_http_v2_exact_local_original_contract_is_authenticated_and_private(
         capture_enabled=True,
         local_original_track_count=1,
         local_original_map_fingerprint=map_fingerprint,
+        local_original_channel_counts=(2,),
+        local_original_source_ids=(logical_source_id,),
     )
     wire = asdict(proof)
     assert wire["local_original_track_count"] == 1
     assert wire["local_original_map_fingerprint"] == map_fingerprint
+    assert wire["local_original_channel_counts"] == (2,)
+    assert wire["local_original_source_ids"] == (logical_source_id,)
+    assert proof.local_original_topology_exact
     encoded = json.dumps(wire)
     for private_value in (
         "/Users/alex/Music",
@@ -1665,3 +1725,661 @@ def test_http_v2_exact_local_original_contract_is_authenticated_and_private(
     ):
         assert private_value not in encoded
     assert map_fingerprint not in registry.path.read_text(encoding="utf-8")
+
+
+def test_capture_arm_ack_is_exact_authenticated_idempotent_and_stale_safe(
+    frozen_peer,
+) -> None:
+    _credentials, registry, server, client = frozen_peer
+    enrollment = client.enroll(_id(), "Guest")
+    challenge = _install(registry, _digest("capture-arm-roster"), 1)
+    map_fingerprint = _digest("capture-arm-map")
+    logical_source_id = _id()
+    proof = client.bind_presence_v2(
+        enrollment,
+        display_name="Guest",
+        ordered_roster_digest=challenge.ordered_roster_digest,
+        roster_count=challenge.roster_count,
+        self_ordinal=0,
+        process_generation=4,
+        rpc_connection_generation=5,
+        audio_connection_generation=6,
+        challenge=challenge.challenge,
+        challenge_epoch=challenge.challenge_epoch,
+        topology_epoch=challenge.topology_epoch,
+        presence_generation=7,
+        capture_enabled=True,
+        local_original_track_count=1,
+        local_original_map_fingerprint=map_fingerprint,
+        local_original_channel_counts=(2,),
+        local_original_source_ids=(logical_source_id,),
+    )
+    take_id = _id()
+    plan_fingerprint = _digest("capture-arm-plan")
+    obligation = LocalOriginalObligation.from_presence_proof(proof)
+    arm = server.control.publish_capture_arm(
+        take_id,
+        recording_plan_fingerprint=plan_fingerprint,
+        requirements=(obligation,),
+    )
+    non_required = client.enroll(_id(), "Departed Guest")
+    assert client.state(non_required).capture_arm is None
+    state = client.state(enrollment)
+    assert state.signal.value == "idle"
+    assert state.capture_arm == arm
+
+    acknowledgement = CaptureArmAcknowledgement(
+        participant_id=enrollment.participant_id,
+        take_id=take_id,
+        arm_generation=arm.arm_generation,
+        recording_plan_fingerprint=plan_fingerprint,
+        presence_generation=proof.presence_generation,
+        local_original_map_fingerprint=map_fingerprint,
+        local_original_channel_counts=(2,),
+        local_original_source_ids=(logical_source_id,),
+    )
+    contradictory = (
+        replace(acknowledgement, arm_generation=arm.arm_generation + 1),
+        replace(acknowledgement, take_id=_id()),
+        replace(
+            acknowledgement,
+            recording_plan_fingerprint=_digest("wrong-plan"),
+        ),
+        replace(
+            acknowledgement,
+            presence_generation=proof.presence_generation + 1,
+        ),
+        replace(
+            acknowledgement,
+            local_original_map_fingerprint=_digest("wrong-map"),
+        ),
+        replace(acknowledgement, local_original_channel_counts=(1,)),
+        replace(acknowledgement, local_original_source_ids=(_id(),)),
+    )
+    for candidate in contradictory:
+        with pytest.raises(TransferConflictError):
+            client.acknowledge_capture_arm(enrollment, candidate)
+    with pytest.raises(TransferConflictError, match="active capture arm"):
+        server.control.begin_armed_finalizing(
+            take_id,
+            arm_generation=arm.arm_generation + 1,
+            stopped_utc="2026-08-16T12:00:01Z",
+        )
+    with pytest.raises(TransferConflictError, match="not fully acknowledged"):
+        server.control.begin_armed_finalizing(
+            take_id,
+            arm_generation=arm.arm_generation,
+            stopped_utc="2026-08-16T12:00:01Z",
+        )
+    with pytest.raises(TransferConflictError, match="not fully acknowledged"):
+        server.control.begin(
+            take_id,
+            started_utc="2026-08-16T12:00:00Z",
+        )
+    assert server.control.publish_capture_arm(
+        take_id,
+        recording_plan_fingerprint=plan_fingerprint,
+        requirements=(obligation,),
+    ) == arm
+    assert client.acknowledge_capture_arm(enrollment, acknowledgement) == acknowledgement
+    assert client.acknowledge_capture_arm(enrollment, acknowledgement) == acknowledgement
+
+    assert server.control.cancel_capture_arm(
+        take_id,
+        arm_generation=arm.arm_generation,
+    )
+    replacement = server.control.publish_capture_arm(
+        take_id,
+        recording_plan_fingerprint=plan_fingerprint,
+        requirements=(obligation,),
+    )
+    assert replacement.arm_generation > arm.arm_generation
+    assert not server.control.cancel_capture_arm(
+        take_id,
+        arm_generation=arm.arm_generation,
+    )
+    with pytest.raises(TransferConflictError, match="stale"):
+        client.acknowledge_capture_arm(enrollment, acknowledgement)
+    assert server.control.cancel_capture_arm(
+        take_id,
+        arm_generation=replacement.arm_generation,
+    )
+    assert client.state(enrollment).capture_arm is None
+
+
+def test_capture_arm_excludes_exact_zero_track_opt_outs(tmp_path: Path) -> None:
+    credentials = SessionCredentials.create()
+    control = SessionControlState(tmp_path, credentials.session_id)
+    zero = LocalOriginalObligation(
+        participant_id=_id(),
+        track_count=0,
+        map_fingerprint=_digest("zero-track-map"),
+        presence_generation=1,
+        capture_requested=False,
+    )
+    arm = control.publish_capture_arm(
+        _id(),
+        recording_plan_fingerprint=_digest("zero-track-plan"),
+        requirements=(zero,),
+    )
+
+    current, requirements, acknowledgements = control.capture_arm_state()
+    assert current == arm
+    assert requirements == ()
+    assert acknowledgements == ()
+    durable = control.path.read_text(encoding="utf-8")
+    assert "capture_arm" not in durable
+    assert arm.recording_plan_fingerprint not in durable
+    recovered = SessionControlState(tmp_path, credentials.session_id).snapshot()
+    assert recovered.capture_arm is None
+    assert recovered.arm_handshake_required
+    assert recovered.arm_handshake_generation == arm.arm_generation
+
+
+def test_reloaded_capture_arm_fails_closed_until_exact_cancellation(
+    tmp_path: Path,
+) -> None:
+    credentials = SessionCredentials.create()
+    prior_take_id = _id()
+    take_id = _id()
+    control = SessionControlState(tmp_path, credentials.session_id)
+    control.begin(prior_take_id, started_utc="2026-08-16T11:59:58Z")
+    control.begin_finalizing(
+        prior_take_id,
+        stopped_utc="2026-08-16T11:59:59Z",
+    )
+    control.finish(prior_take_id, stopped_utc="2026-08-16T11:59:59Z")
+    arm = control.publish_capture_arm(
+        take_id,
+        recording_plan_fingerprint=_digest("restart-capture-arm-plan"),
+        requirements=(),
+    )
+
+    recovered = SessionControlState(tmp_path, credentials.session_id)
+    recovered_state = recovered.snapshot()
+    assert recovered_state.capture_arm is None
+    assert recovered_state.signal is RecordingSignal.COMPLETE
+    assert recovered_state.arm_handshake_required
+    assert recovered_state.arm_handshake_take_id == take_id
+    with pytest.raises(TransferConflictError, match="unresolved after restart"):
+        recovered.begin(_id(), started_utc="2026-08-16T12:00:00Z")
+    with pytest.raises(TransferConflictError, match="unresolved after restart"):
+        recovered.publish_capture_arm(
+            _id(),
+            recording_plan_fingerprint=_digest("unrelated-restart-plan"),
+            requirements=(),
+        )
+    assert not recovered.cancel_capture_arm(take_id)
+    assert not recovered.cancel_capture_arm(
+        take_id,
+        arm_generation=arm.arm_generation + 1,
+    )
+    assert not recovered.cancel_capture_arm(
+        _id(),
+        arm_generation=arm.arm_generation,
+    )
+    assert recovered.cancel_capture_arm(
+        take_id,
+        arm_generation=arm.arm_generation,
+    )
+    cancellation = recovered.snapshot().capture_arm_cancellation
+    assert cancellation is not None
+    assert cancellation.take_id == take_id
+    assert cancellation.arm_generation == arm.arm_generation
+
+    replacement = recovered.publish_capture_arm(
+        _id(),
+        recording_plan_fingerprint=_digest("replacement-restart-plan"),
+        requirements=(),
+    )
+    assert replacement.arm_generation > arm.arm_generation
+    assert recovered.snapshot().capture_arm_cancellation == cancellation
+
+
+def test_guest_capture_arm_starts_before_ack_and_cancel_is_idempotent(
+    tmp_path: Path,
+    peer,
+    monkeypatch,
+) -> None:
+    credentials, registry, server, _client = peer
+    digest = _digest("runtime-capture-arm-roster")
+    _install(registry, digest, 1)
+    events: list[str] = []
+    forbid_post_start_preflight = [False]
+
+    class ArmedCapture:
+        instances: list["ArmedCapture"] = []
+
+        def __init__(self, _root, **kwargs) -> None:
+            self.started = False
+            self.aborted = False
+            self.stopped = False
+            self.tracks = tuple(kwargs.get("tracks", ()))
+            self.__class__.instances.append(self)
+
+        def start(self) -> None:
+            events.append("capture-start")
+            self.started = True
+
+        def abort(self) -> None:
+            events.append("capture-abort")
+            self.aborted = True
+
+        def stop_into(self, destination):
+            events.append("capture-stop")
+            self.stopped = True
+            destination = Path(destination)
+            destination.mkdir(parents=True, exist_ok=True)
+            source = destination / "input-1.wav"
+            with wave.open(str(source), "wb") as wav:
+                wav.setnchannels(1)
+                wav.setsampwidth(2)
+                wav.setframerate(48_000)
+                wav.writeframes(b"\x00\x00" * 128)
+            return SimpleNamespace(
+                files=(source,),
+                started_utc="2026-08-16T12:00:00Z",
+                errors=(),
+                gaps=(),
+                capture_device=None,
+                tracks=self.tracks,
+            )
+
+    invite = BandInvite(
+        "127.0.0.1",
+        22124,
+        "Test",
+        credentials.session_id,
+        server.address[1],
+        credentials.invite_token,
+    )
+
+    def capture_tracks():
+        if forbid_post_start_preflight[0] and any(
+            item.started for item in ArmedCapture.instances
+        ):
+            raise AssertionError("capture map was queried after the stream opened")
+        return (("input-1", 0),)
+
+    guest = GuestPeerSession(
+        invite,
+        display_name="Guest",
+        takes_root=tmp_path / "guest",
+        installation_path=tmp_path / "guest-installation.json",
+        capture_enabled=lambda: True,
+        capture_config=lambda: (0, 48_000, 128),
+        capture_tracks=capture_tracks,
+        capture_factory=ArmedCapture,
+    )
+    guest.poll_once()
+    guest.observe_presence_v2(
+        "Guest",
+        ordered_roster_digest=digest,
+        roster_count=1,
+        self_ordinal=0,
+        process_generation=1,
+        rpc_connection_generation=2,
+        audio_connection_generation=3,
+    )
+    guest.poll_once()
+
+    host = HostPeerSession()
+    host.registry = registry
+    host.control = server.control
+    take_id = _id()
+    obligations, issues = host.prepare_local_original_obligations(take_id)
+    assert len(obligations) == 1
+    assert issues == ()
+    arm = host.publish_capture_arm(
+        take_id,
+        recording_plan_fingerprint=_digest("runtime-capture-arm-plan"),
+    )
+    real_ack = guest.client.acknowledge_capture_arm
+
+    def assert_started_before_ack(enrollment, acknowledgement):
+        assert ArmedCapture.instances[-1].started
+        events.append("capture-ack")
+        return real_ack(enrollment, acknowledgement)
+
+    monkeypatch.setattr(
+        guest.client,
+        "acknowledge_capture_arm",
+        assert_started_before_ack,
+    )
+    forbid_post_start_preflight[0] = True
+    observed = guest.poll_once()
+    forbid_post_start_preflight[0] = False
+
+    assert observed.signal.value == "idle"
+    assert observed.capture_arm == arm
+    assert events == ["capture-start", "capture-ack"]
+    assert host.capture_arm_pending_participant_ids(
+        take_id,
+        arm_generation=arm.arm_generation,
+    ) == ()
+    assert host.wait_for_capture_arm_acknowledgements(
+        take_id,
+        arm_generation=arm.arm_generation,
+        timeout_s=0.0,
+    )
+
+    assert host.cancel_capture_arm(
+        take_id,
+        arm_generation=arm.arm_generation,
+    )
+    assert not host.cancel_capture_arm(
+        take_id,
+        arm_generation=arm.arm_generation,
+    )
+    guest.poll_once()
+    assert events == ["capture-start", "capture-ack", "capture-abort"]
+    assert ArmedCapture.instances[-1].aborted
+    assert guest.active_take_id == ""
+
+    # Arm state is intentionally memory-only. If the host restarts, then
+    # publishes unrelated state at a newer generation, that ambiguity must
+    # preserve, not abort, guest audio without an exact cancellation proof.
+    recovery_take_id = _id()
+    _obligations, issues = host.prepare_local_original_obligations(
+        recovery_take_id
+    )
+    assert issues == ()
+    host.publish_capture_arm(
+        recovery_take_id,
+        recording_plan_fingerprint=_digest("recovery-capture-arm-plan"),
+    )
+    recovery_state = guest.poll_once()
+    recovery_capture = ArmedCapture.instances[-1]
+    real_state = guest.client.state
+    monkeypatch.setattr(
+        guest.client,
+        "state",
+        lambda _enrollment: replace(
+            recovery_state,
+            generation=recovery_state.generation + 1,
+            capture_arm=None,
+            capture_arm_cancellation=None,
+            capture_arm_supported=True,
+        ),
+    )
+    guest.poll_once()
+    monkeypatch.setattr(guest.client, "state", real_state)
+    assert recovery_capture.stopped
+    assert not recovery_capture.aborted
+    assert {
+        item.status
+        for item in guest.pending_segments
+        if item.descriptor.take_id == recovery_take_id
+    } == {"recovery_only"}
+    recovery_segment = next(
+        item
+        for item in guest.pending_segments
+        if item.descriptor.take_id == recovery_take_id
+    )
+    assert not server.transfers.status(recovery_segment.descriptor).complete
+    server.control.begin(
+        recovery_take_id,
+        started_utc="2026-08-16T12:00:00Z",
+    )
+    guest.poll_once()
+    # A later matching take UUID is insufficient authority to upload this
+    # media: the host may have canceled/re-armed that UUID at a newer arm
+    # generation. Keep ambiguous media local for explicit recovery.
+    assert {
+        item.status
+        for item in guest.pending_segments
+        if item.descriptor.take_id == recovery_take_id
+    } == {"recovery_only"}
+    server.control.begin_finalizing(
+        recovery_take_id,
+        stopped_utc="2026-08-16T12:00:01Z",
+    )
+    server.control.finish(
+        recovery_take_id,
+        stopped_utc="2026-08-16T12:00:01Z",
+    )
+
+    outsider = GuestPeerSession(
+        invite,
+        display_name="Departed Guest",
+        takes_root=tmp_path / "departed-guest",
+        installation_path=tmp_path / "departed-installation.json",
+        capture_enabled=lambda: True,
+        capture_config=lambda: (0, 48_000, 128),
+        capture_tracks=lambda: (("input-1", 0),),
+        capture_factory=ArmedCapture,
+    )
+    outsider.poll_once()
+
+    committed_take_id = _id()
+    _obligations, issues = host.prepare_local_original_obligations(
+        committed_take_id
+    )
+    assert issues == ()
+    committed_arm = host.publish_capture_arm(
+        committed_take_id,
+        recording_plan_fingerprint=_digest("committed-capture-arm-plan"),
+    )
+    capture_count = len(ArmedCapture.instances)
+    outsider_arm_state = outsider.poll_once()
+    assert outsider_arm_state.capture_arm is None
+    assert outsider_arm_state.capture_arm_supported
+    assert len(ArmedCapture.instances) == capture_count
+    guest.poll_once()
+    committed_capture = ArmedCapture.instances[-1]
+    assert committed_capture.started
+    assert host.capture_arm_ready(
+        committed_take_id,
+        arm_generation=committed_arm.arm_generation,
+    )
+    server.control.begin(
+        committed_take_id,
+        started_utc="2026-08-16T12:00:00Z",
+    )
+    outsider_recording_state = outsider.poll_once()
+    assert outsider_recording_state.signal is RecordingSignal.RECORDING
+    assert outsider_recording_state.capture_arm_supported
+    assert outsider.active_take_id == ""
+    assert len(ArmedCapture.instances) == capture_count + 1
+    server.control.begin_finalizing(
+        committed_take_id,
+        stopped_utc="2026-08-16T12:00:01Z",
+    )
+    # The 750 ms poll may legitimately miss a very short RECORDING snapshot.
+    # Matching terminal truth still commits and finalizes the armed capture.
+    guest.poll_once()
+    assert not committed_capture.aborted
+    assert committed_capture.stopped
+    assert guest.active_take_id == ""
+    server.control.finish(
+        committed_take_id,
+        stopped_utc="2026-08-16T12:00:01Z",
+    )
+
+    # A confirmed Stop after an unconfirmed server start commits the exact,
+    # fully ACKed arm directly to FINALIZING without inventing started_utc.
+    ambiguous_take_id = _id()
+    _obligations, issues = host.prepare_local_original_obligations(
+        ambiguous_take_id
+    )
+    assert issues == ()
+    ambiguous_arm = host.publish_capture_arm(
+        ambiguous_take_id,
+        recording_plan_fingerprint=_digest("ambiguous-capture-arm-plan"),
+    )
+    guest.poll_once()
+    ambiguous_capture = ArmedCapture.instances[-1]
+    with pytest.raises(TransferConflictError, match="active capture arm"):
+        host.begin_armed_take_finalization(
+            ambiguous_take_id,
+            arm_generation=ambiguous_arm.arm_generation + 1,
+            stopped_utc="2026-08-16T12:00:03Z",
+        )
+    ambiguous_finalizing = host.begin_armed_take_finalization(
+        ambiguous_take_id,
+        arm_generation=ambiguous_arm.arm_generation,
+        stopped_utc="2026-08-16T12:00:03Z",
+        message="The server start was not confirmed; audio was preserved.",
+    )
+    assert ambiguous_finalizing is not None
+    assert ambiguous_finalizing.signal is RecordingSignal.FINALIZING
+    assert ambiguous_finalizing.take_id == ambiguous_take_id
+    assert ambiguous_finalizing.started_utc == ""
+    assert ambiguous_finalizing.capture_arm is None
+    assert ambiguous_finalizing.arm_handshake_required
+    assert host.begin_armed_take_finalization(
+        ambiguous_take_id,
+        arm_generation=ambiguous_arm.arm_generation,
+        stopped_utc="2026-08-16T12:00:03Z",
+    ) == ambiguous_finalizing
+    with pytest.raises(TransferConflictError, match="committed capture arm"):
+        host.begin_armed_take_finalization(
+            ambiguous_take_id,
+            arm_generation=ambiguous_arm.arm_generation + 1,
+            stopped_utc="2026-08-16T12:00:03Z",
+        )
+    guest.poll_once()
+    assert ambiguous_capture.stopped
+    assert not ambiguous_capture.aborted
+    assert {
+        item.status
+        for item in guest.pending_segments
+        if item.descriptor.take_id == ambiguous_take_id
+    } == {"verified"}
+    server.control.finish(
+        ambiguous_take_id,
+        stopped_utc="2026-08-16T12:00:03Z",
+        needs_attention=True,
+        message="The server start confirmation was unavailable.",
+    )
+
+    # A current exact-roster host also advertises the protocol when the plan
+    # has zero guest tracks.  Session-wide RECORDING is never permission for a
+    # previously enrolled guest that received no take-scoped arm.
+    unarmed_take_id = _id()
+    capture_count = len(ArmedCapture.instances)
+    server.control.begin(
+        unarmed_take_id,
+        started_utc="2026-08-16T12:00:04Z",
+    )
+    assert outsider.poll_once().capture_arm_supported
+    assert guest.poll_once().capture_arm_supported
+    assert outsider.active_take_id == ""
+    assert guest.active_take_id == ""
+    assert len(ArmedCapture.instances) == capture_count
+    server.control.begin_finalizing(
+        unarmed_take_id,
+        stopped_utc="2026-08-16T12:00:05Z",
+    )
+    server.control.finish(
+        unarmed_take_id,
+        stopped_utc="2026-08-16T12:00:05Z",
+    )
+
+    # Closing after a locally confirmed ACK but before the next state poll is
+    # also uncertain.  The app must stop/finalize recovery media, never abort.
+    shutdown_take_id = _id()
+    _obligations, issues = host.prepare_local_original_obligations(shutdown_take_id)
+    assert issues == ()
+    shutdown_arm = host.publish_capture_arm(
+        shutdown_take_id,
+        recording_plan_fingerprint=_digest("shutdown-capture-arm-plan"),
+    )
+    guest.poll_once()
+    shutdown_capture = ArmedCapture.instances[-1]
+    assert guest.stop()
+    assert shutdown_capture.stopped
+    assert not shutdown_capture.aborted
+    assert {
+        item.status
+        for item in guest.pending_segments
+        if item.descriptor.take_id == shutdown_take_id
+    } == {"recovery_only"}
+    shutdown_segment = next(
+        item
+        for item in guest.pending_segments
+        if item.descriptor.take_id == shutdown_take_id
+    )
+    assert not server.transfers.status(shutdown_segment.descriptor).complete
+    assert host.cancel_capture_arm(
+        shutdown_take_id,
+        arm_generation=shutdown_arm.arm_generation,
+    )
+    assert outsider.stop()
+
+
+def test_guest_capture_start_failure_never_acknowledges_arm(
+    tmp_path: Path,
+    peer,
+) -> None:
+    credentials, registry, server, _client = peer
+    digest = _digest("failed-capture-arm-roster")
+    _install(registry, digest, 1)
+
+    class FailingCapture:
+        def __init__(self, _root, **_kwargs) -> None:
+            pass
+
+        def start(self) -> None:
+            raise RuntimeError("device disappeared")
+
+        def abort(self) -> None:
+            pass
+
+    invite = BandInvite(
+        "127.0.0.1",
+        22124,
+        "Test",
+        credentials.session_id,
+        server.address[1],
+        credentials.invite_token,
+    )
+    guest = GuestPeerSession(
+        invite,
+        display_name="Guest",
+        takes_root=tmp_path / "failed-guest",
+        installation_path=tmp_path / "failed-installation.json",
+        capture_enabled=lambda: True,
+        capture_config=lambda: (0, 48_000, 128),
+        capture_factory=FailingCapture,
+    )
+    guest.poll_once()
+    guest.observe_presence_v2(
+        "Guest",
+        ordered_roster_digest=digest,
+        roster_count=1,
+        self_ordinal=0,
+        process_generation=1,
+        rpc_connection_generation=2,
+        audio_connection_generation=3,
+    )
+    guest.poll_once()
+
+    host = HostPeerSession()
+    host.registry = registry
+    host.control = server.control
+    take_id = _id()
+    _obligations, issues = host.prepare_local_original_obligations(take_id)
+    assert issues == ()
+    arm = host.publish_capture_arm(
+        take_id,
+        recording_plan_fingerprint=_digest("failed-capture-arm-plan"),
+    )
+
+    with pytest.raises(RuntimeError, match="device disappeared"):
+        guest.poll_once()
+    assert not host.wait_for_capture_arm_acknowledgements(
+        take_id,
+        arm_generation=arm.arm_generation,
+        timeout_s=0.0,
+    )
+    assert host.capture_arm_pending_participant_ids(
+        take_id,
+        arm_generation=arm.arm_generation,
+    ) == (guest.participant_id,)
+    assert server.control.snapshot().signal.value == "idle"
+    assert host.cancel_capture_arm(
+        take_id,
+        arm_generation=arm.arm_generation,
+    )
+    guest.stop()

@@ -1,8 +1,10 @@
 # WebJam project brief
 
-**Review date:** 2026-08-15
-**Status:** v0.25.0 is the immutable GitHub Latest creator-multitrack private
-test candidate. Every v0.25 physical/hardware gate remains **NOT RUN**.
+**Review date:** 2026-08-16
+**Status:** v0.26.0 is an unpublished creator-multitrack source candidate;
+v0.25.0 remains immutable GitHub Latest. No v0.26.0 tag, package, checksum
+manifest, physical PASS, or GitHub release is claimed. Every v0.26
+physical/hardware gate remains **NOT RUN**.
 
 ## Executive summary
 
@@ -90,20 +92,27 @@ the full contract.
 
 ## Current product line
 
-v0.25.0 builds on immutable v0.24.0 with persisted creator profiles and an
-authoritative take-scoped recording plan. Local Originals are logical mono or
-true stereo sources within a 32-channel ceiling; exact guest obligations,
-Shared Track generation, source inventory, recovery, Studio, and export remain
-fail-closed. It also retains a provider-neutral handoff for any hardened public
-HTTPS meeting link. WebJam never directly or automatically taps a meeting app,
-browser, or system output. Local Originals record explicitly selected input
-devices, so users must not route meeting or system-output audio into those
-inputs. Known services receive friendly labels; generic providers remain
-neutral and receive no native-verification claim. Exact
-Jamulus correlation, bounded guest observation, and fail-closed take/export
-evidence remain the authority.
+The v0.26.0 source candidate builds on immutable v0.25.0 with an accessible,
+path-free Record Session Readiness sheet and stable logical-source identity
+from the frozen plan through capture, transfer, manifest, recovery, Studio, and
+exact repeated-take lanes. Every server, host, guest, and Shared Track source is
+bound as exact mono or stereo topology; changed, missing, duplicate, or
+ambiguous evidence fails closed. Music and Podcast & Voice automatically stack
+only exact same-session take matches. Podcast & Voice proves its 48 kHz
+Host-mono + Guest-stereo record/overdub/chapter/save/reopen/stereo-PCM-24-bounce
+journey. Review Preview remains read-only and blocks local projects, automatic
+lanes, mutation, sidecars, and export.
 
-This is a new source identity, not a patch to v0.24.0. Familiar DAW
+It retains a provider-neutral handoff for any hardened public HTTPS meeting
+link. WebJam never directly or automatically taps a meeting app, browser, or
+system output. Local Originals record explicitly selected input devices, so
+users must not route meeting or system-output audio into those inputs. Known
+services receive friendly labels; generic providers remain neutral and receive
+no native-verification claim. Exact Jamulus correlation, bounded guest
+observation, and fail-closed take/export evidence remain the authority.
+
+This is a new source identity, not a rebuild or replacement of v0.25.0.
+Familiar DAW
 interactions are used for clarity and musical flow without copying Apple
 artwork, exact layouts, assets, or trade dress. Physical audibility, isolation,
 alignment, recovery, output, and packaged UX remain **NOT RUN**.
@@ -129,9 +138,11 @@ claimed as implemented in this repository.
    [v0.25.0 release](https://github.com/rupret007/webjam/releases/tag/v0.25.0)
    and use only its exact checksum-verified assets; a branch artifact is not a
    release substitute.
-4. In a v0.25.0 package evaluation, choose a profile first, then use its Host or
-   Join action with wired headphones and Jamulus. Exercise Shared Track, Record
-   Session, finalization, and the profile's permitted Studio path.
+4. Treat v0.26.0 only as source/test evidence until exact tagged packages
+   exist. Once the v0.26 checklist authorizes them, choose a profile first,
+   then exercise Shared Track, the exact-source readiness sheet, Record
+   Session, finalization, automatic repeated-take lanes, and the profile's
+   permitted Studio path with wired headphones and Jamulus.
 5. Open **Conversation** without joining, then test the explicit Join/Open
    action only with an approved sandbox account.
 6. In Music or Podcast & Voice, inspect the separate non-destructive local
@@ -139,7 +150,8 @@ claimed as implemented in this repository.
    edit/comp/mix mutation, and export remain blocked while completed-session
    take playback stays read-only.
 7. Record every physical result against the exact artifact name, build ID, and
-   SHA-256; leave anything not physically observed as **NOT RUN**.
+   SHA-256; leave anything not physically observed as **NOT RUN**. Until those
+   v0.26 artifacts exist, do not execute the provisional checklist.
 
 ## Constraints and next decisions
 
@@ -155,3 +167,6 @@ claimed as implemented in this repository.
   the [v0.24 checklist](../V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md);
   v0.25.0 package observations belong only in the
   [v0.25 checklist](../V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md).
+  Future v0.26.0 observations belong only in the all-**NOT RUN**
+  [v0.26 checklist](../V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md) after
+  it records an exact annotated tag and package inventory.

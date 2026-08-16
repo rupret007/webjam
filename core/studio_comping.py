@@ -121,6 +121,24 @@ def _matching_source_tracks(
     """Return media-usable musician matches before the timing evidence gate."""
 
     usable = tuple(item for item in source_project.tracks if _usable_track(item))
+    logical_source_id = str(destination_track.logical_source_id or "")
+    if logical_source_id:
+        # New projects carry plan-bound IDs. Once present, never fall back to a
+        # display name, participant-wide match, or order: multiple inputs owned
+        # by the same participant must remain distinct.
+        return tuple(
+            sorted(
+                (
+                    item
+                    for item in usable
+                    if item.logical_source_id == logical_source_id
+                    and item.participant_id == destination_track.participant_id
+                    and item.source_type is destination_track.source_type
+                    and _same_live_reference_source(destination_track, item)
+                ),
+                key=lambda item: (item.order, item.track_id),
+            )
+        )
     if destination_track.participant_id:
         participant_matches = tuple(
             item
@@ -281,6 +299,126 @@ def compatible_source_tracks(
         for item in _matching_source_tracks(destination_track, source_project)
         if _timing_ready_source_track(item, source_project)
     )
+
+
+def automatic_source_track_match(
+    destination_track: ProjectTrack,
+    source_project: TakeProject,
+    *,
+    primary_project: TakeProject,
+) -> ProjectTrack | None:
+    """Return one exact repeated-take counterpart for automatic lane stacking.
+
+    The explicit primary catalog proves same-session/sample-rate ownership.
+    Legacy projects intentionally return ``None``. Their participant/name/order
+    hints remain available to the musician through the existing manual comping
+    workflow, but are not strong enough for an automatic edit.
+    """
+
+    if not isinstance(destination_track, ProjectTrack):
+        raise StudioCompingError("destination_track must be a ProjectTrack.")
+    if not isinstance(source_project, TakeProject):
+        raise StudioCompingError("source_project must be a TakeProject.")
+    if not isinstance(primary_project, TakeProject):
+        raise StudioCompingError("primary_project must be a TakeProject.")
+    if (
+        source_project.session_id != primary_project.session_id
+        or source_project.take_id == primary_project.take_id
+        or source_project.project_sample_rate != primary_project.project_sample_rate
+        or source_project.status not in _USABLE_PROJECTS
+        or not any(
+            track.track_id == destination_track.track_id
+            and track == destination_track
+            for track in primary_project.tracks
+        )
+    ):
+        return None
+    if not destination_track.logical_source_id:
+        return None
+    compatible = compatible_source_tracks(destination_track, source_project)
+    if len(compatible) != 1:
+        return None
+    candidate = compatible[0]
+    try:
+        same_topology = destination_track.channel_count == candidate.channel_count
+    except (AttributeError, ValueError):
+        return None
+    return candidate if same_topology else None
+
+
+def automatic_take_lane_matches(
+    document: StudioDocument,
+    primary_project: TakeProject,
+    source_project: TakeProject,
+) -> tuple[tuple[ProjectTrack, ProjectTrack], ...]:
+    """Return every provably safe exact counterpart for one repeated take.
+
+    Unlike the manual compatibility browser, this gate never uses names,
+    participant-only matching, or track order. The project/document check proves
+    same-session timing, and duplicate logical IDs on either side reject the
+    complete candidate before any edit is attempted.
+    """
+
+    _require_projects(document, primary_project, source_project)
+    primary_ids = tuple(
+        track.logical_source_id
+        for track in primary_project.tracks
+        if track.logical_source_id
+    )
+    source_ids = tuple(
+        track.logical_source_id
+        for track in source_project.tracks
+        if track.logical_source_id
+    )
+    if len(primary_ids) != len(set(primary_ids)) or len(source_ids) != len(
+        set(source_ids)
+    ):
+        return ()
+
+    matches: list[tuple[ProjectTrack, ProjectTrack]] = []
+    for destination in sorted(
+        primary_project.tracks,
+        key=lambda item: (item.order, item.track_id),
+    ):
+        if not destination.logical_source_id:
+            continue
+        candidate = automatic_source_track_match(
+            destination,
+            source_project,
+            primary_project=primary_project,
+        )
+        if candidate is not None:
+            matches.append((destination, candidate))
+    return tuple(matches)
+
+
+def stack_automatic_take_lanes(
+    document: StudioDocument,
+    primary_project: TakeProject,
+    source_project: TakeProject,
+) -> StudioDocument:
+    """Atomically plan exact repeated-take lanes without legacy fallbacks.
+
+    Cross-session, wrong-rate, incomplete, and self-take inputs raise before a
+    mutation. A valid project with no stable unambiguous counterpart returns the
+    original immutable document. Existing deterministic lanes are idempotent.
+    """
+
+    matches = automatic_take_lane_matches(
+        document,
+        primary_project,
+        source_project,
+    )
+    updated = document
+    for destination, candidate in matches:
+        updated = add_take_lane(
+            updated,
+            primary_project,
+            source_project,
+            destination_track_id=destination.track_id,
+            source_track_id=candidate.track_id,
+        )
+    return updated
 
 
 def _require_projects(
@@ -809,8 +947,11 @@ __all__ = [
     "DEFAULT_COMP_BOUNDARY_MS",
     "StudioCompingError",
     "add_take_lane",
+    "automatic_source_track_match",
+    "automatic_take_lane_matches",
     "audition_lane_document",
     "compatible_source_tracks",
     "remove_take_lane",
     "select_lane_range",
+    "stack_automatic_take_lanes",
 ]

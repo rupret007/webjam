@@ -49,16 +49,14 @@ _RECORDING_LOF_MAX_FILES = 1
 _RECORDING_RPP_MAX_FILES = 4
 _OPAQUE_SERVER_MEDIA_RE = re.compile(r"^server-media-[0-9]{3}\.wav$")
 _INTERRUPTED_PUBLICATION_ERROR = (
-    "Recording publication was interrupted. Source audio was preserved for "
-    "review."
+    "Recording publication was interrupted. Source audio was preserved for review."
 )
 _REQUIRED_REFERENCE_TRACK_ERROR = (
     "The Shared Track was part of this Record Session, but its exact "
     "band-server stem could not be verified. The take was preserved for review."
 )
 _UNSUPPORTED_CREATOR_PROFILE_ERROR = (
-    "The take's creator profile is unsupported. Studio is using generic "
-    "review labels."
+    "The take's creator profile is unsupported. Studio is using generic review labels."
 )
 
 EVIDENCE_ONLY_EXPORT_BLOCK_REASON = (
@@ -66,13 +64,15 @@ EVIDENCE_ONLY_EXPORT_BLOCK_REASON = (
     "cannot be exported."
 )
 
-_SAFE_CAPTURE_ERRORS = frozenset({
-    "Interrupted recording evidence recovered.",
-    "No new Jamulus take folder appeared after recording stopped.",
-    "Take files did not become stable in time.",
-    "Local capture was already finalized.",
-    EVIDENCE_ONLY_EXPORT_BLOCK_REASON,
-})
+_SAFE_CAPTURE_ERRORS = frozenset(
+    {
+        "Interrupted recording evidence recovered.",
+        "No new Jamulus take folder appeared after recording stopped.",
+        "Take files did not become stable in time.",
+        "Local capture was already finalized.",
+        EVIDENCE_ONLY_EXPORT_BLOCK_REASON,
+    }
+)
 
 
 def _safe_capture_error(value: object) -> str:
@@ -141,10 +141,11 @@ class TrackSegmentInfo:
 @dataclass
 class TrackInfo:
     """One audio track within a take."""
+
     path: Path
     name: str
-    offset_s: float = 0.0          # start offset within the take timeline
-    duration_s: float = 0.0        # audio length (0 if unknown)
+    offset_s: float = 0.0  # start offset within the take timeline
+    duration_s: float = 0.0  # audio length (0 if unknown)
     samplerate: int = 0
     source: str = "jamulus_server"
     # Runtime source truth.  Manifest-declared tracks stay in the project even
@@ -160,6 +161,8 @@ class TrackInfo:
     drift_ppm: float = 0.0
     alignment_confidence: float = 0.0
     alignment_method: str = "unverified"
+    # Appended for positional compatibility; empty means legacy/unproven.
+    logical_source_id: str = ""
 
     @property
     def end_s(self) -> float:
@@ -191,6 +194,7 @@ class TrackInfo:
 @dataclass
 class TakeInfo:
     """One recorded session: a folder of tracks + timing metadata."""
+
     path: Path
     name: str
     tracks: List[TrackInfo] = field(default_factory=list)
@@ -241,9 +245,7 @@ class TakeInfo:
         selected tracks. This property exposes the earlier evidence-only gate.
         """
         return (
-            bool(self.tracks)
-            and not self.review_only
-            and not self.export_block_reason
+            bool(self.tracks) and not self.review_only and not self.export_block_reason
         )
 
 
@@ -269,7 +271,8 @@ class TakeValidationResult:
         rate_values = {t.samplerate for t in self.take.tracks if t.samplerate > 0}
         rate = (
             f"{next(iter(rate_values)) / 1000:g} kHz"
-            if len(rate_values) == 1 else "mixed rate"
+            if len(rate_values) == 1
+            else "mixed rate"
         )
         duration = int(round(self.take.duration_s))
         return (
@@ -334,9 +337,8 @@ class JamulusRecordingFilename:
         digest = str(self.recorder_key_sha256 or "").strip().lower()
         if _RECORDER_KEY_RE.fullmatch(digest) is None:
             raise ValueError("recorder_key_sha256 must be a SHA-256 digest")
-        if (
-            isinstance(self.start_frame, bool)
-            or not 0 <= int(self.start_frame) <= (2**63 - 1)
+        if isinstance(self.start_frame, bool) or not 0 <= int(self.start_frame) <= (
+            2**63 - 1
         ):
             raise ValueError("start_frame is out of range")
         if isinstance(self.channels, bool) or int(self.channels) not in {1, 2}:
@@ -410,12 +412,11 @@ class RecorderClientReceipt:
         source_kind = str(self.source_kind or "").strip()
         if source_kind not in {"musician", "reference_track"}:
             raise ValueError("source_kind is unsupported")
-        source_fingerprint = str(
-            self.source_fingerprint_sha256 or ""
-        ).strip().lower()
-        if source_fingerprint and _RECORDER_KEY_RE.fullmatch(
+        source_fingerprint = str(self.source_fingerprint_sha256 or "").strip().lower()
+        if (
             source_fingerprint
-        ) is None:
+            and _RECORDER_KEY_RE.fullmatch(source_fingerprint) is None
+        ):
             raise ValueError("source_fingerprint_sha256 must be a SHA-256 digest")
         if source_fingerprint and source_kind != "reference_track":
             raise ValueError(
@@ -429,15 +430,11 @@ class RecorderClientReceipt:
         ):
             raise ValueError("playback_generation is outside the supported range")
         if playback_generation and source_kind != "reference_track":
-            raise ValueError(
-                "playback_generation is only valid for a reference track"
-            )
+            raise ValueError("playback_generation is only valid for a reference track")
         object.__setattr__(self, "server_channel_id", observation.server_channel_id)
         object.__setattr__(self, "display_name", observation.display_name)
         object.__setattr__(self, "channels", observation.channels)
-        object.__setattr__(
-            self, "recorder_key_sha256", observation.recorder_key_sha256
-        )
+        object.__setattr__(self, "recorder_key_sha256", observation.recorder_key_sha256)
         object.__setattr__(self, "participant_id", participant_id)
         object.__setattr__(self, "source_kind", source_kind)
         object.__setattr__(
@@ -467,21 +464,80 @@ def _jamulus_translate_recorder_text(value: str) -> str:
     for character in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz":
         charmap[ord(character)] = character
     charmap_updates = {
-        0x8A: "S", 0x8C: "O", 0x8E: "Z", 0x9A: "s", 0x9C: "o",
-        0x9E: "z", 0x9F: "Y", 0xB2: "2", 0xB3: "3", 0xB5: "u",
-        0xB9: "1", 0xC0: "A", 0xC1: "A", 0xC2: "A", 0xC3: "A",
-        0xC4: "A", 0xC5: "A", 0xC6: "A", 0xC7: "C", 0xC8: "E",
-        0xC9: "E", 0xCA: "E", 0xCB: "E", 0xCC: "I", 0xCD: "I",
-        0xCE: "I", 0xCF: "I", 0xD0: "D", 0xD1: "N", 0xD2: "O",
-        0xD3: "O", 0xD4: "O", 0xD5: "O", 0xD6: "O", 0xD7: "x",
-        0xD8: "O", 0xD9: "U", 0xDA: "U", 0xDB: "U", 0xDC: "U",
-        0xDD: "Y", 0xDE: "P", 0xDF: "S", 0xE0: "a", 0xE1: "a",
-        0xE2: "a", 0xE3: "a", 0xE4: "a", 0xE5: "a", 0xE6: "a",
-        0xE7: "c", 0xE8: "e", 0xE9: "e", 0xEA: "e", 0xEB: "e",
-        0xEC: "i", 0xED: "i", 0xEE: "i", 0xEF: "i", 0xF0: "d",
-        0xF1: "n", 0xF2: "o", 0xF3: "o", 0xF4: "o", 0xF5: "o",
-        0xF6: "o", 0xF8: "o", 0xF9: "u", 0xFA: "u", 0xFB: "u",
-        0xFC: "u", 0xFD: "y", 0xFE: "p", 0xFF: "y",
+        0x8A: "S",
+        0x8C: "O",
+        0x8E: "Z",
+        0x9A: "s",
+        0x9C: "o",
+        0x9E: "z",
+        0x9F: "Y",
+        0xB2: "2",
+        0xB3: "3",
+        0xB5: "u",
+        0xB9: "1",
+        0xC0: "A",
+        0xC1: "A",
+        0xC2: "A",
+        0xC3: "A",
+        0xC4: "A",
+        0xC5: "A",
+        0xC6: "A",
+        0xC7: "C",
+        0xC8: "E",
+        0xC9: "E",
+        0xCA: "E",
+        0xCB: "E",
+        0xCC: "I",
+        0xCD: "I",
+        0xCE: "I",
+        0xCF: "I",
+        0xD0: "D",
+        0xD1: "N",
+        0xD2: "O",
+        0xD3: "O",
+        0xD4: "O",
+        0xD5: "O",
+        0xD6: "O",
+        0xD7: "x",
+        0xD8: "O",
+        0xD9: "U",
+        0xDA: "U",
+        0xDB: "U",
+        0xDC: "U",
+        0xDD: "Y",
+        0xDE: "P",
+        0xDF: "S",
+        0xE0: "a",
+        0xE1: "a",
+        0xE2: "a",
+        0xE3: "a",
+        0xE4: "a",
+        0xE5: "a",
+        0xE6: "a",
+        0xE7: "c",
+        0xE8: "e",
+        0xE9: "e",
+        0xEA: "e",
+        0xEB: "e",
+        0xEC: "i",
+        0xED: "i",
+        0xEE: "i",
+        0xEF: "i",
+        0xF0: "d",
+        0xF1: "n",
+        0xF2: "o",
+        0xF3: "o",
+        0xF4: "o",
+        0xF5: "o",
+        0xF6: "o",
+        0xF8: "o",
+        0xF9: "u",
+        0xFA: "u",
+        0xFB: "u",
+        0xFC: "u",
+        0xFD: "y",
+        0xFE: "p",
+        0xFF: "y",
     }
     for index, character in charmap_updates.items():
         charmap[index] = character
@@ -768,13 +824,13 @@ def _privacy_safe_recording_rpp(
                 safe_name = f"unverified-server-media-{unknown_index:03d}.wav"
             lines.append(
                 f'{file_match.group("indent")}FILE "{safe_name}"'
-                f'{file_match.group("suffix")}{ending}'
+                f"{file_match.group('suffix')}{ending}"
             )
             continue
         name_match = _RPP_NAME_LINE_RE.fullmatch(body)
         if name_match is not None:
             lines.append(
-                f'{name_match.group("indent")}NAME WebJam recorded source{ending}'
+                f"{name_match.group('indent')}NAME WebJam recorded source{ending}"
             )
             continue
         safe_body = body
@@ -799,9 +855,9 @@ def _streaming_file_identity(path: Path) -> tuple[int, str]:
             flags |= int(getattr(os, flag_name, 0))
         descriptor = os.open(path, flags)
         opened = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(opened.st_mode)
-            or (opened.st_dev, opened.st_ino) != (initial.st_dev, initial.st_ino)
+        if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (
+            initial.st_dev,
+            initial.st_ino,
         ):
             raise OSError("media changed during validation")
         with os.fdopen(descriptor, "rb") as source:
@@ -811,10 +867,16 @@ def _streaming_file_identity(path: Path) -> tuple[int, str]:
                 digest.update(chunk)
             finished = os.fstat(source.fileno())
         if (
-            (finished.st_dev, finished.st_ino, finished.st_size, finished.st_mtime_ns)
-            != (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns)
-            or size != finished.st_size
-        ):
+            finished.st_dev,
+            finished.st_ino,
+            finished.st_size,
+            finished.st_mtime_ns,
+        ) != (
+            opened.st_dev,
+            opened.st_ino,
+            opened.st_size,
+            opened.st_mtime_ns,
+        ) or size != finished.st_size:
             raise OSError("media changed during validation")
         current = path.lstat()
         if (
@@ -966,12 +1028,15 @@ def recording_staging_identity(
 def _load_recording_staging_evidence(
     staging_path: Path,
     server_wavs: list[Path],
-) -> tuple[
-    dict[str, JamulusRecordingFilename | None],
-    dict[str, float | None],
-    dict[str, str],
-    RecordingStagingIdentity | None,
-] | None:
+) -> (
+    tuple[
+        dict[str, JamulusRecordingFilename | None],
+        dict[str, float | None],
+        dict[str, str],
+        RecordingStagingIdentity | None,
+    ]
+    | None
+):
     """Load only address-free, media-bound crash recovery evidence."""
 
     payload = _read_recording_staging_payload(staging_path)
@@ -1065,9 +1130,7 @@ def _load_recording_staging_evidence(
     unmatched = set(wavs_by_name)
     for target, parsed, offset, size, checksum in parsed_entries:
         candidates = [
-            name
-            for name in unmatched
-            if current_identities[name] == (size, checksum)
+            name for name in unmatched if current_identities[name] == (size, checksum)
         ]
         # A completed partial rename keeps its intended opaque target, which
         # is stronger than content identity alone when silent segments happen
@@ -1136,11 +1199,13 @@ def wait_for_take_files_stable(
     stable = 0
     for _ in range(max(1, polls)):
         try:
-            current = tuple(sorted(
-                (p.name, p.stat().st_size)
-                for p in take_dir.iterdir()
-                if p.is_file() and p.suffix.lower() in _AUDIO_EXTS
-            ))
+            current = tuple(
+                sorted(
+                    (p.name, p.stat().st_size)
+                    for p in take_dir.iterdir()
+                    if p.is_file() and p.suffix.lower() in _AUDIO_EXTS
+                )
+            )
         except OSError:
             current = ()
         if current and current == previous:
@@ -1164,7 +1229,11 @@ def _track_has_signal(path: Path) -> Optional[bool]:
             if len(audio) <= 0:
                 return False
             window = min(4096, len(audio))
-            starts = {0, max(0, len(audio) // 2 - window // 2), max(0, len(audio) - window)}
+            starts = {
+                0,
+                max(0, len(audio) // 2 - window // 2),
+                max(0, len(audio) - window),
+            }
             for start in starts:
                 audio.seek(start)
                 block = audio.read(window, dtype="float32", always_2d=True)
@@ -1175,9 +1244,13 @@ def _track_has_signal(path: Path) -> Optional[bool]:
         return None
 
 
-def validate_take(take_dir: str | Path, *, expected_tracks: int = 0,
-                  require_48k: bool = True,
-                  required_local_stems: int = 0) -> TakeValidationResult:
+def validate_take(
+    take_dir: str | Path,
+    *,
+    expected_tracks: int = 0,
+    require_48k: bool = True,
+    required_local_stems: int = 0,
+) -> TakeValidationResult:
     """Validate a completed Jamulus take and report errors separately from warnings."""
     path = Path(take_dir).expanduser()
     take = load_take(path)
@@ -1210,7 +1283,8 @@ def validate_take(take_dir: str | Path, *, expected_tracks: int = 0,
     if require_48k and any(rate != 48000 for rate in rates):
         errors.append(f"All tracks must be 48 kHz; found {sorted(rates)}.")
     local_tracks = [
-        track for track in take.tracks
+        track
+        for track in take.tracks
         if track.source in {"local_ssl", "local_isolated"}
     ]
     if required_local_stems and len(local_tracks) < required_local_stems:
@@ -1268,6 +1342,7 @@ class _LocalCaptureTopology:
     ordinal: int
     stem: str
     source_channels: tuple[int, ...]
+    logical_source_id: str = ""
 
     @property
     def channel_count(self) -> int:
@@ -1319,7 +1394,12 @@ def _validated_local_capture_topology(
         stems.add(stem_key)
         source_channels.update(item_channels)
         topology.append(
-            _LocalCaptureTopology(ordinal, item.stem, item_channels)
+            _LocalCaptureTopology(
+                ordinal,
+                item.stem,
+                item_channels,
+                str(item.logical_source_id or ""),
+            )
         )
     if len(source_channels) > 32:
         raise ValueError("local_capture_tracks exceeds the 32-channel limit.")
@@ -1366,7 +1446,9 @@ def _envelope_100hz(signal):
     return env - float(np.mean(env))
 
 
-def _refine_lag(server_sig, local_sig, coarse_lag: int, anchor: int) -> tuple[int, float]:
+def _refine_lag(
+    server_sig, local_sig, coarse_lag: int, anchor: int
+) -> tuple[int, float]:
     """Sample-accurate lag within ±one envelope block of the coarse peak.
 
     Sweeps a bounded normalized correlation of the raw 48 kHz signals around
@@ -1387,7 +1469,7 @@ def _refine_lag(server_sig, local_sig, coarse_lag: int, anchor: int) -> tuple[in
         if stop - start < 4800:  # need at least 100 ms of overlap
             continue
         local_part = local_sig[start:stop]
-        server_part = server_sig[start + lag:stop + lag]
+        server_part = server_sig[start + lag : stop + lag]
         denom = float(np.linalg.norm(local_part) * np.linalg.norm(server_part))
         if denom <= 0.0:
             continue
@@ -1476,15 +1558,23 @@ def estimate_local_alignment(
 
 
 def write_take_manifest(
-    take_dir: str | Path, *, expected_tracks: int, required_local_stems: int,
-    local_started_utc: str = "", local_duration_s: float = 0.0,
-    capture_errors: tuple[str, ...] = (), app_version: str = "",
+    take_dir: str | Path,
+    *,
+    expected_tracks: int,
+    required_local_stems: int,
+    local_started_utc: str = "",
+    local_duration_s: float = 0.0,
+    capture_errors: tuple[str, ...] = (),
+    app_version: str = "",
     participant_names: Optional[dict[int, str]] = None,
     session_title: str = "",
-    session_id: str = "", take_id: str = "",
+    session_id: str = "",
+    take_id: str = "",
     participant_ids: Optional[dict[int, str]] = None,
-    local_participant_id: str = "", local_participant_name: str = "Host",
-    capture_device=None, capture_gaps: tuple[object, ...] = (),
+    local_participant_id: str = "",
+    local_participant_name: str = "Host",
+    capture_device=None,
+    capture_gaps: tuple[object, ...] = (),
     local_capture_tracks: object = None,
     local_total_frames: int = 0,
     local_durable_frames: int | None = None,
@@ -1492,6 +1582,7 @@ def write_take_manifest(
     recording_receipts: tuple[RecorderClientReceipt, ...] | None = None,
     recording_identity_errors: tuple[str, ...] = (),
     required_reference_track: bool = False,
+    recording_plan: object | None = None,
 ) -> TakeValidationResult:
     """Validate a take and atomically publish schema-v2 project truth.
 
@@ -1567,23 +1658,35 @@ def write_take_manifest(
             required=required_reference_track,
         )
     local_topology = _validated_local_capture_topology(local_capture_tracks)
+    if recording_plan is not None:
+        if (
+            str(getattr(recording_plan, "session_id", "")) != str(session_id)
+            or str(getattr(recording_plan, "take_id", "")) != str(take_id)
+            or not callable(
+                getattr(recording_plan, "logical_source_id_for_server", None)
+            )
+            or not callable(getattr(recording_plan, "channel_count_for_server", None))
+        ):
+            raise ValueError("recording_plan does not match this take.")
     offset_s = 0.0
     confidence = 0.0
     # The old channel-keyed maps remain accepted for source compatibility but
     # can never identify recorder media: Jamulus writes startFrame in the
     # numeric filename position those maps previously consumed.
     del participant_names, participant_ids
-    capture_errors = tuple(dict.fromkeys(
-        safe
-        for item in capture_errors
-        if (safe := _safe_capture_error(item))
-    ))
+    capture_errors = tuple(
+        dict.fromkeys(
+            safe for item in capture_errors if (safe := _safe_capture_error(item))
+        )
+    )
     strict_recording_identity = recording_receipts is not None
-    identity_errors = list(dict.fromkeys(
-        safe
-        for item in recording_identity_errors
-        if (safe := _safe_identity_error(item))
-    ))
+    identity_errors = list(
+        dict.fromkeys(
+            safe
+            for item in recording_identity_errors
+            if (safe := _safe_identity_error(item))
+        )
+    )
     receipts_by_key: dict[tuple[str, int], RecorderClientReceipt] = {}
     conflicted_keys: set[str] = set()
     for receipt in tuple(recording_receipts or ()):
@@ -1600,8 +1703,7 @@ def write_take_manifest(
         if any(
             existing.participant_id != receipt.participant_id
             or existing.source_kind != receipt.source_kind
-            or existing.source_fingerprint_sha256
-            != receipt.source_fingerprint_sha256
+            or existing.source_fingerprint_sha256 != receipt.source_fingerprint_sha256
             or existing.playback_generation != receipt.playback_generation
             for existing in same_digest
         ):
@@ -1634,12 +1736,8 @@ def write_take_manifest(
             return new_project_id()
 
     original_offsets: dict[str, float] = {}
-    lofs = _bounded_recording_sidecars(
-        path, ".lof", max_files=_RECORDING_LOF_MAX_FILES
-    )
-    rpps = _bounded_recording_sidecars(
-        path, ".rpp", max_files=_RECORDING_RPP_MAX_FILES
-    )
+    lofs = _bounded_recording_sidecars(path, ".lof", max_files=_RECORDING_LOF_MAX_FILES)
+    rpps = _bounded_recording_sidecars(path, ".rpp", max_files=_RECORDING_RPP_MAX_FILES)
     try:
         sidecar_bytes = sum(item.lstat().st_size for item in (*lofs, *rpps))
     except OSError:
@@ -1653,13 +1751,10 @@ def write_take_manifest(
     # authenticated evidence has been reduced to digests, replace those names
     # with opaque take-local media names before writing WebJam's manifest.
     server_wavs = [
-        item
-        for item in sorted(path.glob("*.wav"))
-        if not is_local_stem_name(item.name)
+        item for item in sorted(path.glob("*.wav")) if not is_local_stem_name(item.name)
     ]
     native_filename_facts = {
-        item.name: parse_jamulus_recording_filename(item.name)
-        for item in server_wavs
+        item.name: parse_jamulus_recording_filename(item.name) for item in server_wavs
     }
     try:
         staging_path.lstat()
@@ -1689,18 +1784,13 @@ def write_take_manifest(
         ) = resumed_staging
     if resumed_identity is not None:
         try:
-            supplied_session_id = (
-                str(uuid.UUID(str(session_id))) if session_id else ""
-            )
+            supplied_session_id = str(uuid.UUID(str(session_id))) if session_id else ""
             supplied_take_id = str(uuid.UUID(str(take_id))) if take_id else ""
         except (TypeError, ValueError, AttributeError):
             raise OSError("Server recording privacy staging failed.") from None
         if (
-            supplied_session_id
-            and supplied_session_id != resumed_identity.session_id
-        ) or (
-            supplied_take_id and supplied_take_id != resumed_identity.take_id
-        ):
+            supplied_session_id and supplied_session_id != resumed_identity.session_id
+        ) or (supplied_take_id and supplied_take_id != resumed_identity.take_id):
             raise OSError("Server recording privacy staging failed.")
         stable_session_id = resumed_identity.session_id
         stable_take_id = resumed_identity.take_id
@@ -1710,17 +1800,17 @@ def write_take_manifest(
     stable_local_participant_id = (
         _id_or_new(local_participant_id)
         if local_participant_id
-        else str(uuid.uuid5(
-            uuid.UUID(stable_session_id), "participant:local-recorder"
-        ))
+        else str(uuid.uuid5(uuid.UUID(stable_session_id), "participant:local-recorder"))
     )
 
     def _child_id(label: str) -> str:
         return str(uuid.uuid5(uuid.UUID(stable_take_id), label))
 
-    privacy_stage = strict_recording_identity or any(
-        value is not None for value in native_filename_facts.values()
-    ) or staging_path.exists()
+    privacy_stage = (
+        strict_recording_identity
+        or any(value is not None for value in native_filename_facts.values())
+        or staging_path.exists()
+    )
     if privacy_stage:
         renames: list[tuple[Path, Path, str, str]] = []
         for index, source in enumerate(server_wavs, start=1):
@@ -1737,16 +1827,12 @@ def write_take_manifest(
             renames.append((source, target, source.name, target.name))
 
         original_names = {old_name for *_prefix, old_name, _new_name in renames}
-        renamed_names = {
-            old_name: new_name for *_prefix, old_name, new_name in renames
-        }
+        renamed_names = {old_name: new_name for *_prefix, old_name, new_name in renames}
         sidecars = (*lofs, *rpps)
         original_sidecars: dict[Path, bytes] = {}
         try:
             for sidecar in sidecars:
-                original_sidecars[sidecar] = _read_bounded_recording_sidecar(
-                    sidecar
-                )
+                original_sidecars[sidecar] = _read_bounded_recording_sidecar(sidecar)
             if sum(map(len, original_sidecars.values())) > (
                 _RECORDING_SIDECAR_TOTAL_MAX_BYTES
             ):
@@ -1792,14 +1878,11 @@ def write_take_manifest(
         recorder_keys = {
             match.group("key")
             for old_name in original_names
-            if (match := _JAMULUS_RECORDING_FILENAME_RE.fullmatch(old_name))
-            is not None
+            if (match := _JAMULUS_RECORDING_FILENAME_RE.fullmatch(old_name)) is not None
         }
         for rpp in rpps:
             try:
-                rpp_text = original_sidecars[rpp].decode(
-                    "utf-8", errors="strict"
-                )
+                rpp_text = original_sidecars[rpp].decode("utf-8", errors="strict")
             except UnicodeDecodeError:
                 raise OSError("Server recording privacy staging failed.") from None
             rpp_names = dict(renamed_names)
@@ -1811,9 +1894,9 @@ def write_take_manifest(
                 file_match = _RPP_FILE_LINE_RE.fullmatch(line)
                 if file_match is None:
                     continue
-                basename = file_match.group("path").replace("\\", "/").rsplit(
-                    "/", 1
-                )[-1]
+                basename = (
+                    file_match.group("path").replace("\\", "/").rsplit("/", 1)[-1]
+                )
                 parsed_basename = parse_jamulus_recording_filename(basename)
                 matches = (
                     targets_by_fact.get(parsed_basename, [])
@@ -1842,34 +1925,39 @@ def write_take_manifest(
             for source, _target, _old_name, new_name in renames:
                 size_bytes, checksum = _streaming_file_identity(source)
                 parsed = recording_filename_facts[new_name]
-                staging_entries.append({
-                    "filename": new_name,
-                    "recorder_key_sha256": (
-                        parsed.recorder_key_sha256 if parsed is not None else None
-                    ),
-                    "start_frame": (
-                        parsed.start_frame if parsed is not None else None
-                    ),
-                    "channels": parsed.channels if parsed is not None else None,
-                    "collision_index": (
-                        parsed.collision_index if parsed is not None else None
-                    ),
-                    "offset_s": recording_offsets[new_name],
-                    "size_bytes": size_bytes,
-                    "sha256": checksum,
-                })
+                staging_entries.append(
+                    {
+                        "filename": new_name,
+                        "recorder_key_sha256": (
+                            parsed.recorder_key_sha256 if parsed is not None else None
+                        ),
+                        "start_frame": (
+                            parsed.start_frame if parsed is not None else None
+                        ),
+                        "channels": parsed.channels if parsed is not None else None,
+                        "collision_index": (
+                            parsed.collision_index if parsed is not None else None
+                        ),
+                        "offset_s": recording_offsets[new_name],
+                        "size_bytes": size_bytes,
+                        "sha256": checksum,
+                    }
+                )
         except OSError:
             raise OSError("Server recording privacy staging failed.") from None
-        staging_text = json.dumps(
-            {
-                "schema": 2,
-                "session_id": stable_session_id,
-                "take_id": stable_take_id,
-                "entries": staging_entries,
-            },
-            indent=2,
-            sort_keys=True,
-        ) + "\n"
+        staging_text = (
+            json.dumps(
+                {
+                    "schema": 2,
+                    "session_id": stable_session_id,
+                    "take_id": stable_take_id,
+                    "entries": staging_entries,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        )
 
         completed: list[tuple[Path, Path]] = []
         rewritten_paths: list[Path] = []
@@ -1929,9 +2017,7 @@ def write_take_manifest(
                 except OSError:
                     rollback_failed = True
             if rollback_failed:
-                _logger.error(
-                    "Recording privacy staging rollback needs attention"
-                )
+                _logger.error("Recording privacy staging rollback needs attention")
             raise OSError("Server recording privacy staging failed.") from None
     else:
         if lofs:
@@ -1984,14 +2070,12 @@ def write_take_manifest(
         expected_tracks == 0
         and required_local_stems == 0
         and not has_audio_media
-        and final_session_evidence.recovery_status
-        is RecoveryStatus.NEEDS_ATTENTION
+        and final_session_evidence.recovery_status is RecoveryStatus.NEEDS_ATTENTION
     )
     if evidence_only:
         evidence_errors = list(dict.fromkeys(capture_errors))
         if not any(
-            EVIDENCE_ONLY_EXPORT_BLOCK_REASON in item
-            for item in evidence_errors
+            EVIDENCE_ONLY_EXPORT_BLOCK_REASON in item for item in evidence_errors
         ):
             evidence_errors.append(EVIDENCE_ONLY_EXPORT_BLOCK_REASON)
         errors = tuple(evidence_errors)
@@ -2055,28 +2139,30 @@ def write_take_manifest(
             "errors": list(capture_errors),
         },
         "tracks": [
-            {"filename": p.name,
-             "name": (
-                 (
-                     _receipt_for_filename(p.name).display_name
-                     if _receipt_for_filename(p.name) is not None
-                     else "Unverified Jamulus source"
-                 )
-                 if not is_local_stem_name(p.name)
-                 else None
-             ),
-             "source": (
-                 "local_ssl"
-                 if is_local_stem_name(p.name)
-                 else "live_reference"
-                 if (
-                     _receipt_for_filename(p.name) is not None
-                     and _receipt_for_filename(p.name).source_kind
-                     == "reference_track"
-                 )
-                 else "jamulus_server"
-             ),
-             "offset_s": round(offset_s, 6) if is_local_stem_name(p.name) else None}
+            {
+                "filename": p.name,
+                "name": (
+                    (
+                        _receipt_for_filename(p.name).display_name
+                        if _receipt_for_filename(p.name) is not None
+                        else "Unverified Jamulus source"
+                    )
+                    if not is_local_stem_name(p.name)
+                    else None
+                ),
+                "source": (
+                    "local_ssl"
+                    if is_local_stem_name(p.name)
+                    else "live_reference"
+                    if (
+                        _receipt_for_filename(p.name) is not None
+                        and _receipt_for_filename(p.name).source_kind
+                        == "reference_track"
+                    )
+                    else "jamulus_server"
+                ),
+                "offset_s": round(offset_s, 6) if is_local_stem_name(p.name) else None,
+            }
             for p in sorted(path.glob("*.wav"))
         ],
     }
@@ -2090,30 +2176,36 @@ def write_take_manifest(
     with take_project_manifest_lock(path):
         atomic_write_text(manifest_path, json.dumps(preliminary, indent=2), mode=0o600)
     result = validate_take(
-        path, expected_tracks=expected_tracks + required_local_stems,
+        path,
+        expected_tracks=expected_tracks + required_local_stems,
         required_local_stems=required_local_stems,
     )
-    errors = [
-        error
-        for error in result.errors
-        if error != _INTERRUPTED_PUBLICATION_ERROR
-    ] + list(capture_errors) + identity_errors
+    errors = (
+        [error for error in result.errors if error != _INTERRUPTED_PUBLICATION_ERROR]
+        + list(capture_errors)
+        + identity_errors
+    )
     if required_local_stems and confidence < ALIGNMENT_CONFIDENCE_MIN:
         errors.append("Isolated host stems could not be aligned confidently.")
     take = result.take
     if take is None:
-        preliminary.update({
-            "status": "needs_attention",
-            "errors": errors,
-            "warnings": list(result.warnings),
-            "tracks": [],
-        })
+        preliminary.update(
+            {
+                "status": "needs_attention",
+                "errors": errors,
+                "warnings": list(result.warnings),
+                "tracks": [],
+            }
+        )
         with take_project_manifest_lock(path):
             atomic_write_text(
                 manifest_path, json.dumps(preliminary, indent=2), mode=0o600
             )
         return TakeValidationResult(
-            None, tuple(errors), result.warnings, manifest_path,
+            None,
+            tuple(errors),
+            result.warnings,
+            manifest_path,
         )
 
     participants_by_id: dict[str, Participant] = {}
@@ -2133,9 +2225,7 @@ def write_take_manifest(
             )
         if capture_device is not None:
             planned_source_channels = tuple(
-                channel
-                for item in local_topology
-                for channel in item.source_channels
+                channel for item in local_topology for channel in item.source_channels
             )
             observed_source_channels = tuple(
                 getattr(capture_device, "channel_indices", ()) or ()
@@ -2189,10 +2279,7 @@ def write_take_manifest(
     local_channel_by_name = {
         name: index
         for index, name in enumerate(
-            sorted(
-                track.path.name.casefold()
-                for track in local_tracks
-            )
+            sorted(track.path.name.casefold() for track in local_tracks)
         )
     }
     for order, track in enumerate(take.tracks):
@@ -2200,6 +2287,7 @@ def write_take_manifest(
         topology_item: _LocalCaptureTopology | None = None
         source_fingerprint = ""
         playback_generation = 0
+        logical_source_id = ""
         if local:
             participant_id: str | None = stable_local_participant_id
             participant_name = (
@@ -2218,6 +2306,8 @@ def write_take_manifest(
                 if topology_item is not None
                 else f"local:{order}"
             )
+            if topology_item is not None:
+                logical_source_id = topology_item.logical_source_id
             project_start_frame = 0
         else:
             parsed = recording_filename_facts.get(track.path.name)
@@ -2255,6 +2345,13 @@ def write_take_manifest(
                     else SourceType.JAMULUS_SERVER
                 )
                 group_key = f"proved:{receipt.source_kind}:{receipt.participant_id}"
+                if recording_plan is not None:
+                    logical_source_id = str(
+                        recording_plan.logical_source_id_for_server(
+                            receipt.participant_id
+                        )
+                        or ""
+                    )
                 if source_fingerprint:
                     group_key = f"{group_key}:{source_fingerprint}"
                 if playback_generation:
@@ -2293,8 +2390,7 @@ def write_take_manifest(
         observed_channel_count = int(evidence["channels"] or 0)
         if observed_channel_count not in {1, 2}:
             errors.append(
-                f"{track.name} does not contain a supported mono/stereo "
-                "channel layout."
+                f"{track.name} does not contain a supported mono/stereo channel layout."
             )
         if (
             local
@@ -2314,6 +2410,23 @@ def write_take_manifest(
                 "A Jamulus recording's channel metadata did not match its audio. "
                 "The source was preserved for review."
             )
+        if not local and receipt is not None and recording_plan is not None:
+            planned_server_width = recording_plan.channel_count_for_server(
+                receipt.participant_id
+            )
+            if planned_server_width is None:
+                errors.append(
+                    "The recording plan had no exact mono/stereo width for a "
+                    "Jamulus source. Its audio was preserved for review."
+                )
+            elif (
+                int(receipt.channels) != planned_server_width
+                or observed_channel_count != planned_server_width
+            ):
+                errors.append(
+                    "A Jamulus recording did not match its planned mono/stereo "
+                    "source topology. Its audio was preserved for review."
+                )
         if local and local_total_frames > 0 and frame_count != int(local_total_frames):
             errors.append(
                 f"{track.name} contains {frame_count} frames but local "
@@ -2337,26 +2450,30 @@ def write_take_manifest(
                             f"{track.name} has gap metadata outside its audio frame range."
                         )
                         continue
-                    gaps.append(GapInterval(
-                        start_frame=gap_start,
-                        frame_count=gap_frames,
-                        reason=str(getattr(item, "reason")),
-                        # Capture gaps select logical WAVs. Once selected, the
-                        # unavailable interval covers every channel in that
-                        # mono/stereo logical track.
-                        channels=tuple(range(max(1, observed_channel_count))),
-                    ))
+                    gaps.append(
+                        GapInterval(
+                            start_frame=gap_start,
+                            frame_count=gap_frames,
+                            reason=str(getattr(item, "reason")),
+                            # Capture gaps select logical WAVs. Once selected, the
+                            # unavailable interval covers every channel in that
+                            # mono/stereo logical track.
+                            channels=tuple(range(max(1, observed_channel_count))),
+                        )
+                    )
                 except (TypeError, ValueError):
                     errors.append(f"{track.name} has unreadable local gap metadata.")
             if durable_frame_limit is not None:
                 durable_for_track = min(frame_count, durable_frame_limit)
                 if durable_for_track < frame_count:
-                    gaps.append(GapInterval(
-                        start_frame=durable_for_track,
-                        frame_count=frame_count - durable_for_track,
-                        reason="unverified_after_crash_checkpoint",
-                        channels=tuple(range(max(1, observed_channel_count))),
-                    ))
+                    gaps.append(
+                        GapInterval(
+                            start_frame=durable_for_track,
+                            frame_count=frame_count - durable_for_track,
+                            reason="unverified_after_crash_checkpoint",
+                            channels=tuple(range(max(1, observed_channel_count))),
+                        )
+                    )
                     errors.append(
                         f"{track.name} contains {frame_count} frames, but only the "
                         f"first {durable_for_track} were durably checkpointed before "
@@ -2384,9 +2501,7 @@ def write_take_manifest(
             sample_format=str(evidence["sample_format"] or "UNKNOWN"),
             media_status=segment_status,
             sha256=str(evidence["sha256"]),
-            device_id=(
-                str(getattr(capture_device, "device_id", "")) if local else ""
-            ),
+            device_id=(str(getattr(capture_device, "device_id", "")) if local else ""),
             gaps=tuple(gaps),
             size_bytes=int(evidence["size_bytes"]),
             has_signal=evidence["has_signal"],
@@ -2399,8 +2514,7 @@ def write_take_manifest(
                 "name": (
                     (
                         f"{participant_name} — {topology_item.display_name}"
-                        if topology_item is not None
-                        and topology_item.display_name
+                        if topology_item is not None and topology_item.display_name
                         else f"{participant_name} Input {local_channel + 1}"
                     )
                     if local
@@ -2417,6 +2531,7 @@ def write_take_manifest(
                     reference_fingerprint_sha256=source_fingerprint,
                     reference_playback_generation=playback_generation,
                 ),
+                "logical_source_id": logical_source_id,
             }
         else:
             segments = group["segments"]
@@ -2431,24 +2546,29 @@ def write_take_manifest(
     ):
         raw_segments = group["segments"]
         assert isinstance(raw_segments, list)
-        segments = tuple(sorted(
-            raw_segments,
-            key=lambda item: (item.project_start_frame, item.segment_id),
-        ))
+        segments = tuple(
+            sorted(
+                raw_segments,
+                key=lambda item: (item.project_start_frame, item.segment_id),
+            )
+        )
         first_order = int(group["first_order"])
-        project_tracks.append(ProjectTrack(
-            track_id=_child_id(f"track-group:{first_order}:{group_key}"),
-            source_id=_child_id(f"source-group:{first_order}:{group_key}"),
-            participant_id=group["participant_id"],
-            name=str(group["name"]),
-            instrument="",
-            source_type=group["source_type"],
-            quality=group["quality"],
-            media_status=group["media_status"],
-            order=project_order,
-            segments=segments,
-            alignment=group["alignment"],
-        ))
+        project_tracks.append(
+            ProjectTrack(
+                track_id=_child_id(f"track-group:{first_order}:{group_key}"),
+                source_id=_child_id(f"source-group:{first_order}:{group_key}"),
+                participant_id=group["participant_id"],
+                name=str(group["name"]),
+                instrument="",
+                source_type=group["source_type"],
+                quality=group["quality"],
+                media_status=group["media_status"],
+                order=project_order,
+                segments=segments,
+                alignment=group["alignment"],
+                logical_source_id=str(group.get("logical_source_id", "")),
+            )
+        )
 
     for project_track in project_tracks:
         try:
@@ -2460,8 +2580,7 @@ def write_take_manifest(
             )
 
     grouped_server_tracks = sum(
-        track.source_type is not SourceType.LOCAL_ISOLATED
-        for track in project_tracks
+        track.source_type is not SourceType.LOCAL_ISOLATED for track in project_tracks
     )
     if expected_tracks > 0 and grouped_server_tracks < expected_tracks:
         errors.append(
@@ -2510,8 +2629,7 @@ def write_take_manifest(
     )
 
     if required_reference_track and not any(
-        track.source_type is SourceType.LIVE_REFERENCE
-        for track in project_tracks
+        track.source_type is SourceType.LIVE_REFERENCE for track in project_tracks
     ):
         errors.append(_REQUIRED_REFERENCE_TRACK_ERROR)
 
@@ -2545,7 +2663,10 @@ def write_take_manifest(
     if staging_retire_error:
         errors.append(staging_retire_error)
     return TakeValidationResult(
-        loaded, tuple(errors), result.warnings, manifest_path,
+        loaded,
+        tuple(errors),
+        result.warnings,
+        manifest_path,
     )
 
 
@@ -2607,6 +2728,7 @@ def _probe_audio(path: Path) -> tuple[float, int]:
     stdlib ``wave`` module for plain WAVs, returns (0, 0) if unreadable."""
     try:
         import soundfile as sf  # type: ignore
+
         info = sf.info(str(path))
         if info.samplerate > 0:
             return (info.frames / info.samplerate, int(info.samplerate))
@@ -2674,15 +2796,11 @@ def _safe_manifest_audio_path(value: object) -> str | None:
     return path.as_posix()
 
 
-_SCHEMA_V2_INVALID_MEDIA_INVENTORY = (
-    "A completed take has an invalid media inventory."
-)
+_SCHEMA_V2_INVALID_MEDIA_INVENTORY = "A completed take has an invalid media inventory."
 _SCHEMA_V2_UNLISTED_MEDIA = (
     "A completed take contains audio outside its verified media inventory."
 )
-_SCHEMA_V2_UNSAFE_MEDIA = (
-    "A recorded segment was not a regular file inside the take."
-)
+_SCHEMA_V2_UNSAFE_MEDIA = "A recorded segment was not a regular file inside the take."
 
 
 def _schema_v2_segment_shape_valid(value: object) -> bool:
@@ -2825,9 +2943,7 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
     declared_segment_paths: set[str] = set()
     invalid_schema_v2_tracks: set[str] = set()
     reconciliation_errors: list[str] = []
-    creator_profile_key, creator_profile_error = _manifest_creator_profile_key(
-        manifest
-    )
+    creator_profile_key, creator_profile_error = _manifest_creator_profile_key(manifest)
     if creator_profile_error:
         reconciliation_errors.append(creator_profile_error)
     if (take_dir / _RECORDING_STAGING_NAME).exists():
@@ -2840,9 +2956,7 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
             filename = _safe_manifest_audio_path(item["filename"])
             # Manifests describe media inside the take directory.  Never turn
             # an untrusted/hand-edited path into a probe outside that boundary.
-            if (
-                not filename
-            ):
+            if not filename:
                 reconciliation_errors.append(
                     "The take manifest contains an invalid audio filename."
                 )
@@ -2856,9 +2970,7 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
             declared_filenames.append(filename)
             if schema_v2:
                 raw_segments = item.get("segments")
-                inventory_valid = bool(
-                    isinstance(raw_segments, list) and raw_segments
-                )
+                inventory_valid = bool(isinstance(raw_segments, list) and raw_segments)
                 if isinstance(raw_segments, list):
                     for raw_segment in raw_segments:
                         if not _schema_v2_segment_shape_valid(raw_segment):
@@ -2869,13 +2981,10 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
                         declared_segment_paths.add(relative)
                 if not inventory_valid:
                     invalid_schema_v2_tracks.add(filename)
-                    reconciliation_errors.append(
-                        _SCHEMA_V2_INVALID_MEDIA_INVENTORY
-                    )
+                    reconciliation_errors.append(_SCHEMA_V2_INVALID_MEDIA_INVENTORY)
 
     if schema_v2 and any(
-        item.name not in declared_segment_paths
-        for item in top_level_audio_entries
+        item.name not in declared_segment_paths for item in top_level_audio_entries
     ):
         reconciliation_errors.append(_SCHEMA_V2_UNLISTED_MEDIA)
 
@@ -2931,7 +3040,9 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
         media_entry_state = (
             _take_media_entry_state(take_dir, manifest_filename)
             if schema_v2 and manifest_filename is not None
-            else "regular" if audio.is_file() else "missing"
+            else "regular"
+            if audio.is_file()
+            else "missing"
         )
         available = media_entry_state == "regular"
         if available and not schema_v2:
@@ -2962,9 +3073,7 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
         alignment_drift = _safe_finite_float(alignment.get("drift_ppm", 0.0))
         if 1.0 + alignment_drift / 1_000_000.0 <= 0.0:
             alignment_drift = 0.0
-        manifest_offset = alignment.get(
-            "effective_offset_s", evidence.get("offset_s")
-        )
+        manifest_offset = alignment.get("effective_offset_s", evidence.get("offset_s"))
         offset = offsets.get(audio.name, 0.0)
         if isinstance(manifest_offset, (int, float)):
             offset = float(manifest_offset)
@@ -2985,11 +3094,11 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
             if not available and not schema_v2
             else declared_status
             if declared_status in allowed_media_statuses
-            else "damaged" if schema_v2 else "available"
+            else "damaged"
+            if schema_v2
+            else "available"
         )
-        native_recorder_media = (
-            parse_jamulus_recording_filename(audio.name) is not None
-        )
+        native_recorder_media = parse_jamulus_recording_filename(audio.name) is not None
         name = str(
             evidence.get("name")
             or (
@@ -3013,9 +3122,7 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
                     )
                     continue
                 segment_path = take_dir / relative
-                segment_status = str(
-                    raw_segment.get("media_status") or "available"
-                )
+                segment_status = str(raw_segment.get("media_status") or "available")
                 if segment_status not in {
                     "available",
                     "recovered",
@@ -3047,7 +3154,9 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
                 segment_entry_state = (
                     _take_media_entry_state(take_dir, relative)
                     if schema_v2
-                    else "regular" if segment_path.is_file() else "missing"
+                    else "regular"
+                    if segment_path.is_file()
+                    else "missing"
                 )
                 if segment_entry_state == "missing":
                     segment_status = "missing"
@@ -3064,18 +3173,16 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
                             segment_path, inspect_signal=False
                         )
                         declared_hash = str(raw_segment.get("sha256") or "")
-                        declared_format = str(
-                            raw_segment.get("sample_format") or ""
-                        ).strip().upper()
+                        declared_format = (
+                            str(raw_segment.get("sample_format") or "").strip().upper()
+                        )
                         declared_size = raw_segment.get("size_bytes")
                         valid_size = (
                             isinstance(declared_size, int)
                             and not isinstance(declared_size, bool)
                             and declared_size >= 0
                         )
-                        valid_hash = bool(
-                            re.fullmatch(r"[0-9a-f]{64}", declared_hash)
-                        )
+                        valid_hash = bool(re.fullmatch(r"[0-9a-f]{64}", declared_hash))
                         changed = (
                             int(observed["sample_rate"] or 0) != segment_rate
                             or int(observed["frame_count"] or 0) != frame_count
@@ -3090,9 +3197,7 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
                         )
                     else:
                         observed_duration, observed_rate = _probe_audio(segment_path)
-                        observed_frames = int(
-                            round(observed_duration * observed_rate)
-                        )
+                        observed_frames = int(round(observed_duration * observed_rate))
                         changed = (
                             observed_rate != segment_rate
                             or abs(observed_frames - frame_count) > 1
@@ -3160,7 +3265,9 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
                 }
                 if blocked_statuses:
                     media_status = (
-                        "missing" if "missing" in blocked_statuses else sorted(blocked_statuses)[0]
+                        "missing"
+                        if "missing" in blocked_statuses
+                        else sorted(blocked_statuses)[0]
                     )
         if schema_v2 and not segment_infos:
             media_status = "damaged"
@@ -3184,29 +3291,32 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
                     media_status=media_status,
                 )
             )
-        tracks.append(TrackInfo(
-            path=audio,
-            name=name,
-            # Signed: local stems normally start before the server take, so a
-            # negative offset here is valid alignment, not an error.
-            offset_s=offset,
-            duration_s=duration,
-            samplerate=rate,
-            source=str(evidence.get("source") or "jamulus_server"),
-            media_status=media_status,
-            track_id=str(evidence.get("track_id") or ""),
-            source_id=str(evidence.get("source_id") or ""),
-            participant_id=str(evidence.get("participant_id") or ""),
-            instrument=str(evidence.get("instrument") or ""),
-            quality=str(evidence.get("quality") or "unverified"),
-            segments=tuple(segment_infos),
-            drift_ppm=alignment_drift,
-            alignment_confidence=max(
-                0.0,
-                min(1.0, _safe_finite_float(alignment.get("confidence", 0.0))),
-            ),
-            alignment_method=str(alignment.get("method") or "unverified"),
-        ))
+        tracks.append(
+            TrackInfo(
+                path=audio,
+                name=name,
+                # Signed: local stems normally start before the server take, so a
+                # negative offset here is valid alignment, not an error.
+                offset_s=offset,
+                duration_s=duration,
+                samplerate=rate,
+                source=str(evidence.get("source") or "jamulus_server"),
+                media_status=media_status,
+                track_id=str(evidence.get("track_id") or ""),
+                source_id=str(evidence.get("source_id") or ""),
+                logical_source_id=str(evidence.get("logical_source_id") or ""),
+                participant_id=str(evidence.get("participant_id") or ""),
+                instrument=str(evidence.get("instrument") or ""),
+                quality=str(evidence.get("quality") or "unverified"),
+                segments=tuple(segment_infos),
+                drift_ppm=alignment_drift,
+                alignment_confidence=max(
+                    0.0,
+                    min(1.0, _safe_finite_float(alignment.get("confidence", 0.0))),
+                ),
+                alignment_method=str(alignment.get("method") or "unverified"),
+            )
+        )
         if media_status == "missing":
             reconciliation_errors.append(
                 f"{name} is missing from this take ({audio.name})."

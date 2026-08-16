@@ -1,8 +1,8 @@
-# WebJam quick help — v0.25.0
+# WebJam quick help — v0.26.0 source candidate
 
-> GitHub **Latest** is the immutable v0.25.0 private test release. These
-> creator-profile and multitrack labels describe that exact release; physical
-> results remain **NOT RUN** until observed against checksum-verified packages.
+> These labels describe the current unpublished v0.26.0 source candidate.
+> GitHub **Latest** remains immutable v0.25.0; no v0.26.0 package or physical
+> PASS is claimed, and every v0.26 physical row remains **NOT RUN**.
 
 | Need | Use |
 | --- | --- |
@@ -21,6 +21,7 @@
 | Add a host Shared Track | Live session → **Add Shared Track** or drop one supported local file; loading validates and decodes a first bounded block but does not start or unlock playback |
 | Replace or remove a Shared Track | Stop playback first → **Shared Track** → **Replace…** or **Remove** |
 | Record the live session | Host → **Record Session** |
+| Prove the recording plan | **Record Session Readiness** → inspect every server, Local Original, and Shared Track row, mono/stereo format, required/optional status, storage, and blockers → **Start Recording** only when enabled → required guests open and ACK exact streams before Jamulus recording starts |
 | Configure local interface stems | **Recording Setup → Edit Input Tracks…**; add named mono/stereo tracks totaling up to 32 enabled input channels |
 | Keep a stereo source together | Add one stereo row; it becomes one two-channel PCM-24 Local Original through Studio/export |
 | Keep local interface stems | First host **Record Session** → **Also Keep This Mac’s Inputs** |
@@ -28,7 +29,8 @@
 | Review a take | Direct **Studio** action |
 | Select a review source/output | Open a take in Studio |
 | Arrange a take | Music or Podcast & Voice Studio → drag/trim a region; use Undo/Redo if needed |
-| Comp another recording | Music or Podcast & Voice Studio → select track → **＋ Add Take** → Option/Alt-drag |
+| Comp another recording | New Music/Podcast takes stack exact stable-ID matches automatically; or select track → **＋ Add Take** → Option/Alt-drag |
+| Finish a voice episode | Podcast & Voice local project → record/overdub at 48 kHz → add chapters → save/reopen → **Bounce Episode** for stereo PCM-24 WAV |
 | Export for another editor | Music or Podcast & Voice Studio → **Track Export** |
 | Pair the owner-device iPhone preview | **More → Use iPhone as Pocket Stage…** |
 | Verify a live session | Music **Band Check**, Podcast **Sound Check**, or Review **Session Check** |

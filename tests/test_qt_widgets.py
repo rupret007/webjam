@@ -729,6 +729,10 @@ class TestSessionStrip(unittest.TestCase):
 
     def test_recording_validation_and_attention_states_are_explicit(self):
         s = self._strip()
+        s.set_recording_phase("stopping")
+        self.assertEqual(s._record_button.text(), "Stopping…")
+        self.assertIn("may still be recording", s._record_button.accessibleDescription())
+        self.assertNotIn("Recording stopped", s._record_button.accessibleDescription())
         s.set_recording_phase("validating")
         self.assertEqual(s._record_button.text(), "Finalizing…")
         self.assertFalse(s._record_button.isEnabled())
@@ -1555,7 +1559,7 @@ class TestConductorWindow(unittest.TestCase):
             w.show_about()
 
         body = set_text.call_args.args[0]
-        self.assertIn("WebJam v0.25.0", body)
+        self.assertIn("WebJam v0.26.0", body)
         self.assertIn("multitrack collaboration for creators", body)
         self.assertIn("aaaaaaaaaaaa", body)
         self.assertIn("macos-arm64", body)

@@ -104,8 +104,8 @@ def test_resolve_capture_tracks_is_the_single_capture_truth():
     ]
     resolved = resolve_capture_tracks(settings)
     assert resolved == (
-        LocalCaptureTrack("local-Guitar DI", (0,)),
-        LocalCaptureTrack("local-Room Pair", (1, 2)),
+        LocalCaptureTrack("local-Guitar DI", (0,), logical_source_ordinal=0),
+        LocalCaptureTrack("local-Room Pair", (1, 2), logical_source_ordinal=3),
     )
 
     # Hostile names sanitize deterministically and never collide.
@@ -160,7 +160,9 @@ def test_resolver_never_records_opted_out_rows_or_truncates_capacity():
     ] + [_entry(name="Last Stereo", channels=2)]
     resolved = resolve_capture_tracks(settings)
     assert len(resolved) == 31
-    assert resolved[-1] == LocalCaptureTrack("local-Last Stereo", (30, 31))
+    assert resolved[-1] == LocalCaptureTrack(
+        "local-Last Stereo", (30, 31), logical_source_ordinal=30
+    )
 
 
 def test_over_capacity_persisted_map_disables_capture_instead_of_defaulting(

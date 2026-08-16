@@ -9,6 +9,11 @@
 > download evidence; an untagged checkout is not a substitute. The exact
 > v0.25.0 release is the current downloadable boundary.
 
+> **What this checkout is:** v0.26.0 is an unpublished source candidate. It has
+> no v0.26.0 release package or physical PASS result yet, so use it only as
+> source/test evidence. Immutable v0.25.0 stays GitHub Latest until v0.26.0
+> passes its exact release gates.
+
 WebJam helps creators start a live audio session and keep its separate tracks
 organized. Jamulus handles low-latency audio. Any meeting platform can be
 optional for talking or video when it provides a public HTTPS meeting link
@@ -17,8 +22,8 @@ the meeting app, browser, or system output. Local Originals record only the
 input devices you explicitly select, so do not route meeting or system audio
 into those inputs.
 
-The v0.25.0 release offers Music and Podcast & Voice as GA creator
-profiles. Review & Rehearsal is visibly Preview: it supports live WebJam-audio
+The current v0.26.0 source candidate keeps Music and Podcast & Voice as GA
+creator profiles. Review & Rehearsal is visibly Preview: it supports live WebJam-audio
 Host/Join, Record Session, local notes, and playback/read-only review of a
 completed session take. It blocks standalone projects, take editing/comp/mix
 mutation, track export, shared notes, visual sync, and media timecode. No
@@ -101,10 +106,20 @@ action unavailable in Preview.
   names, or credentials.
 - **Recording:** the host chooses **Record Session**. The first time, choose
   shared recording only or also keep this Mac’s separate Local Originals.
-  Each mono input row becomes one mono file; each stereo row becomes one true
-  two-channel file. WebJam freezes the exact server stems, Shared Track,
-  host input topology, and guest Local Original obligations before capture and
-  rechecks them before Ready. WebJam does not directly tap meeting-app,
+  WebJam then shows one readiness sheet with every exact server, Local
+  Original, and Shared Track source; mono/stereo format; required/optional
+  status; storage; Shared Track status; and any blocker. Start stays disabled
+  until required facts are ready, and WebJam privately rechecks the same plan
+  before it arms capture. Each required guest then opens the exact planned
+  Local Original stream and returns an authenticated, take-scoped
+  acknowledgement; Jamulus recording stays off until every ACK and a final
+  authority check succeed. Zero-track guest opt-outs do not block, and a
+  missing or stale ACK starts no recorder. Each mono input row becomes one mono file;
+  each stereo row becomes one true two-channel file. One stable source ID keeps
+  that identity through capture, transfer, recovery, Studio, and repeated
+  takes. WebJam freezes the exact server stems, Shared Track, host input
+  topology, and guest Local Original obligations before capture and rechecks
+  them before Ready. WebJam does not directly tap meeting-app,
   browser, or system-output audio. Local Originals record the selected input
   devices, so do not route meeting or system audio into those inputs.
   Wait through Preparing, Count-in, Recording, Stopping, and Finalizing; only
@@ -127,6 +142,14 @@ action unavailable in Preview.
   output there. Review & Rehearsal Preview permits playback, scrubbing, and
   source inspection only. In Music or Podcast & Voice, you can also move or
   trim regions, use Undo/Redo, add a safely matched take lane, and comp a range.
+  A new completed take automatically stacks only earlier lanes with the exact
+  same session, stable source identity, sample rate, source kind, mono/stereo
+  format, and verified timing. Anything uncertain is skipped.
+- **Make a voice episode:** Podcast & Voice starts with a 48 kHz Host-mono +
+  Guest-stereo layout. Record, loop-overdub, add chapter markers, save/reopen,
+  then use **Bounce Episode** for a verified stereo 24-bit WAV. Review Preview
+  cannot create/open that local project or reach an edit, mix, save, bounce, or
+  export action.
 - **Export for another editor:** in Music or Podcast & Voice, Track Export makes
   edited and original 24-bit stems, a rough mix, markers, instructions,
   provenance, and checksums. Review & Rehearsal Preview has no Track Export.
@@ -148,9 +171,12 @@ Waveforms load in the background and recorded gaps remain silence. Studio
 autosaves choices to a separate file; a failed save keeps the edit pending and
 the recorded take safe. Real two-Mac output, hardware interruption/recovery,
 external-editor import, physical Reference Studio audio, and signed-install
-gates are **NOT RUN** for v0.25.0. Publishing a private candidate does not
-convert them to PASS. Use the
+gates are **NOT RUN** for the v0.26.0 source candidate and remain unclaimed for
+v0.25.0. Publishing a private candidate does not convert them to PASS. The
+[v0.26 physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
+is the all-NOT-RUN ledger for the next exact tagged packages; do not execute it
+against this checkout. The
 [v0.25 physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-for the exact multi-machine evidence to collect. The
+remains the immutable Latest package ledger. The
 [v0.24 checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md) remains
 immutable historical evidence for the prior package.

@@ -6,8 +6,101 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-> Work after the immutable v0.25.0 release belongs here. Every published tag,
-> release, and asset remains immutable historical evidence.
+> Work after the provisional v0.26.0 source boundary belongs here. Every
+> published tag, release, and asset remains immutable historical evidence.
+
+## [0.26.0] — Demo-proven creator multitrack candidate (provisional)
+
+> Current source and package identity only. No v0.26.0 tag, native package,
+> checksum manifest, physical PASS, or GitHub release is claimed yet. Immutable
+> v0.25.0 remains GitHub **Latest** until an exact v0.26.0 candidate completes
+> tag CI, package verification, physical testing, and protected promotion.
+> Record new physical evidence only in
+> [`V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md`](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md).
+
+### Record Session readiness and lifecycle
+
+- Added an accessible, path-free **Record Session Readiness** sheet before any
+  recorder, local-capture stream, or Shared Track playback is armed. It shows
+  every exact planned server track, Local Original, and Shared Track with its
+  participant/source label, mono or stereo topology, required/optional status,
+  readiness, bounded meter, storage verdict, Shared Track verdict, and explicit
+  blockers. **Start Recording** remains unavailable while a required fact is
+  unresolved.
+- Accepting the sheet is not recorder authority: WebJam rechecks the immutable
+  take/plan generation, roster proof, input maps, guest obligations, storage,
+  local device preflight, and Shared Track identity immediately before arming.
+  A changed fact or cancellation retires the provisional take without starting
+  a recorder or creating media.
+- Required guest Local Originals now use a backward-compatible, take-scoped
+  arm/ack handshake. The arm is visible only to its required authenticated
+  participant; the guest opens its exact frozen device/map before acknowledging
+  the plan fingerprint, presence generation, ordered mono/stereo widths, and
+  stable source IDs. Jamulus recording start is withheld until every required
+  ACK and a final authority recheck succeed. Timeout, disconnect, device-open failure,
+  stale or mismatched ACK, and late callbacks cancel safely; exact zero-track
+  opt-outs do not block. A fully acknowledged but ambiguously confirmed server
+  start can still move to fail-closed Finalizing after an exact confirmed Stop,
+  without inventing a start timestamp or discarding guest recovery media.
+  A guest that shuts down before observing host commit keeps acknowledged media
+  local and recovery-only; it cannot enter the upload queue until authenticated
+  state for that same take reaches Recording or a terminal result.
+- The creator-facing lifecycle now follows **Preparing → Count-in → Recording →
+  Stopping → Finalizing → Ready**, with **Needs attention** reserved for
+  preserved media that still requires explicit recovery. Count-in and
+  finalization are observed recorder states rather than optimistic UI-only
+  transitions.
+
+### Exact source topology and live multitrack feedback
+
+- Every new server stem, Shared Track, host input row, and guest Local Original
+  carries one stable logical-source identity from the frozen recording plan
+  through transfer receipts, take manifests, recovery, Studio, and repeated
+  takes. New recordings fail closed instead of matching by display name, row
+  order, or a newly invented fallback identity.
+- Server, host, and guest topology is exact and ordered: each source is one
+  mono channel or one true stereo pair. Missing topology, duplicate logical
+  IDs, changed maps, and missing/extra delivered files are rejected rather
+  than flattened or guessed. Capture stalls are padded as disclosed silence
+  and remain visible as dropout evidence.
+- Studio's recording view can now present the plan-bound server, Local
+  Original, and Shared Track rows as separate live lanes with source state,
+  meters where available, reported dropouts, and overload warnings. Malformed,
+  legacy, or duplicate source projections clear instead of being displayed as
+  authoritative.
+
+### Repeated takes and creator journeys
+
+- When a new editable Music or Podcast & Voice take completes, Studio
+  automatically stacks eligible earlier takes from the same session as
+  repeated-take lanes. Automatic matching requires the same project sample
+  rate, a complete or explicitly recovered take, one unique stable logical
+  source ID, matching participant/source kind and channel topology, verified
+  timing, and the same Shared Track fingerprint where applicable. The action is
+  deterministic and idempotent; uncertain or legacy matches remain manual.
+- The Podcast & Voice local journey now proves a 48 kHz Host-mono + Guest-stereo
+  project through recording, loop overdub, persistent chapter markers, save and
+  reopen, and **Bounce Episode** to verified stereo PCM-24 WAV. Track topology
+  and immutable recording evidence survive both passes.
+- Review & Rehearsal remains Preview and read-only. Completed session takes can
+  be played, scrubbed, and inspected, but automatic lane creation, local
+  project create/open, arrangement edits, comping, mix mutation, sidecar
+  writes, and export are blocked at both UI and lower-level controller entry
+  points.
+
+### Meeting and release boundaries
+
+- Webex, Zoom, Microsoft Teams, Google Meet, FaceTime on Mac, and any other
+  accepted provider remain optional external HTTPS meeting handoffs. No
+  meeting link or native-app focus action becomes a recording source; WebJam
+  never directly or automatically captures a meeting app, browser, or system
+  output. Meeting-service recording remains owned by that service.
+- Added the all-**NOT RUN** v0.26 physical checklist and a deliberately inert,
+  fail-closed publication stub. The candidate must still pass exact tag CI,
+  four-platform package/checksum verification, an honest physical decision
+  ledger with unobserved rows left **NOT RUN**, pinned promotion facts, and
+  protected publication before v0.26.0 can replace immutable v0.25.0 as GitHub
+  **Latest**.
 
 ## [0.25.0] — Creator profiles and authoritative multitrack private test candidate (2026-08-15)
 

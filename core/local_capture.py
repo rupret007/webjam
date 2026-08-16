@@ -32,6 +32,7 @@ from pathlib import Path
 import numpy as np
 
 from core.project_audio import CaptureBlockRing
+from core.logical_sources import canonical_logical_source_id, derive_logical_source_id
 
 LOGGER = logging.getLogger("webjam.local_capture")
 
@@ -61,6 +62,14 @@ class LocalCaptureTrack:
 
     stem: str
     source_channels: tuple[int, ...]
+    # Empty only for legacy callers/recovery records. New session plans bind a
+    # stable, session-scoped logical source UUID before capture begins.
+    logical_source_id: str = ""
+    # Optional configured-map slot retained before a guest can bind its
+    # session-scoped ID. This is deliberately not a filename/device fact. It
+    # prevents an earlier opted-out row from renumbering later sources across
+    # repeat takes. Legacy tuple callers leave it unset and retain list order.
+    logical_source_ordinal: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.stem, str):
@@ -91,6 +100,22 @@ class LocalCaptureTrack:
             )
         object.__setattr__(self, "stem", stem)
         object.__setattr__(self, "source_channels", channels)
+        try:
+            logical_source_id = canonical_logical_source_id(
+                self.logical_source_id, optional=True
+            )
+        except ValueError as exc:
+            raise LocalCaptureError(str(exc)) from exc
+        object.__setattr__(self, "logical_source_id", logical_source_id)
+        ordinal = self.logical_source_ordinal
+        if ordinal is not None and (
+            isinstance(ordinal, bool)
+            or not isinstance(ordinal, int)
+            or not 0 <= ordinal < _MAX_CAPTURE_TRACKS
+        ):
+            raise LocalCaptureError(
+                "A local capture logical source ordinal is out of range."
+            )
 
     @property
     def channel_count(self) -> int:
@@ -111,8 +136,15 @@ class LocalCaptureTrack:
             return (
                 self.stem == other.stem
                 and self.source_channels == other.source_channels
+                and self.logical_source_id == other.logical_source_id
+                and self.logical_source_ordinal == other.logical_source_ordinal
             )
         if isinstance(other, tuple) and len(other) == 2:
+            # Only an actually legacy track can equal the historical tuple
+            # projection. Once a stable source slot or ID exists, dropping it
+            # from equality would make distinct logical sources compare equal.
+            if self.logical_source_id or self.logical_source_ordinal is not None:
+                return False
             other_stem, other_channels = other
             if isinstance(other_channels, int) and not isinstance(other_channels, bool):
                 return (
@@ -132,6 +164,15 @@ class LocalCaptureTrack:
             if self.channel_count == 1
             else self.source_channels
         )
+        if self.logical_source_id or self.logical_source_ordinal is not None:
+            return hash(
+                (
+                    self.stem,
+                    self.source_channels,
+                    self.logical_source_id,
+                    self.logical_source_ordinal,
+                )
+            )
         return hash((self.stem, legacy_channels))
 
 
@@ -190,6 +231,13 @@ def _validated_capture_tracks(
                 "Local capture supports at most 32 unique input channels."
             )
         cleaned.append(track)
+    logical_ids = [track.logical_source_id for track in cleaned]
+    if any(logical_ids) and (
+        not all(logical_ids) or len(set(logical_ids)) != len(logical_ids)
+    ):
+        raise LocalCaptureError(
+            "Local capture tracks must use one complete, unique logical-source map."
+        )
     return tuple(cleaned)
 
 
@@ -203,13 +251,25 @@ def local_capture_track_map_fingerprint(tracks: object) -> str:
     """
 
     validated = _validated_capture_tracks(tracks)
+    exact_logical_sources = bool(validated) and all(
+        track.logical_source_id for track in validated
+    )
     payload = {
-        "schema": _CAPTURE_TRACK_MAP_FINGERPRINT_SCHEMA,
+        "schema": (
+            _CAPTURE_TRACK_MAP_FINGERPRINT_SCHEMA + 1
+            if exact_logical_sources
+            else _CAPTURE_TRACK_MAP_FINGERPRINT_SCHEMA
+        ),
         "tracks": [
             {
                 "ordinal": ordinal,
                 "channel_count": track.channel_count,
                 "source_channels": list(track.source_channels),
+                **(
+                    {"logical_source_id": track.logical_source_id}
+                    if exact_logical_sources
+                    else {}
+                ),
             }
             for ordinal, track in enumerate(validated)
         ],
@@ -221,6 +281,54 @@ def local_capture_track_map_fingerprint(tracks: object) -> str:
         sort_keys=True,
     ).encode("ascii")
     return hashlib.sha256(canonical).hexdigest()
+
+
+def bind_local_capture_logical_sources(
+    tracks: object,
+    *,
+    session_id: str,
+    participant_id: str,
+) -> tuple[LocalCaptureTrack, ...]:
+    """Bind one complete capture map to stable repeated-take source IDs.
+
+    The ordinal is part of the musician's immutable pre-take input map. Names,
+    device paths, and take IDs never enter the identity. Existing non-empty IDs
+    must match the deterministic contract instead of being silently replaced.
+    """
+
+    validated = _validated_capture_tracks(tracks)
+    bound: list[LocalCaptureTrack] = []
+    ordinals: set[int] = set()
+    for active_ordinal, track in enumerate(validated):
+        ordinal = (
+            active_ordinal
+            if track.logical_source_ordinal is None
+            else track.logical_source_ordinal
+        )
+        if ordinal in ordinals:
+            raise LocalCaptureError(
+                "Local capture logical source ordinals must be unique."
+            )
+        ordinals.add(ordinal)
+        expected = derive_logical_source_id(
+            session_id,
+            participant_id,
+            "local_original",
+            ordinal,
+        )
+        if track.logical_source_id and track.logical_source_id != expected:
+            raise LocalCaptureError(
+                "A local capture track contradicted its planned logical source ID."
+            )
+        bound.append(
+            LocalCaptureTrack(
+                track.stem,
+                track.source_channels,
+                logical_source_id=expected,
+                logical_source_ordinal=ordinal,
+            )
+        )
+    return tuple(bound)
 
 
 # The default ring accepts callback blocks through 8,192 frames without asking
@@ -249,6 +357,10 @@ _RECOVERY_SCHEMA = 2
 # exit recoverable without putting any I/O on PortAudio's callback thread.
 _DURABLE_CHECKPOINT_FRAMES = 48_000
 _RECOVERY_GAP_CAP = 128
+# Wall-clock is not sample-accurate, so tolerate a bounded scheduling/device
+# tail. A larger deficit means callbacks silently ceased while Record stayed
+# active; preserve the timeline with disclosed silence and fail completion.
+_DEVICE_STALL_TOLERANCE_S = 0.25
 
 
 @dataclass(frozen=True)
@@ -290,6 +402,89 @@ class LocalCaptureResult:
     @property
     def gap_count(self) -> int:
         return len(self.gaps)
+
+
+@dataclass(frozen=True, slots=True)
+class LocalCapturePreflight:
+    """Path/name-free capability result for one exact typed capture map."""
+
+    ready: bool
+    errors: tuple[str, ...]
+    track_count: int
+    required_input_channels: int
+    channel_counts: tuple[int, ...]
+    samplerate: int
+
+
+def check_local_capture_preflight(
+    *,
+    tracks: object,
+    device: int = -1,
+    samplerate: int = 48_000,
+    blocksize: int = 0,
+    sounddevice_module: object | None = None,
+) -> LocalCapturePreflight:
+    """Validate capture capability without opening a stream or creating files.
+
+    Native/library exception text may include a device name or path, so the
+    returned errors are fixed bounded codes suitable for readiness UI/logs.
+    """
+
+    errors: list[str] = []
+    try:
+        typed_tracks = _validated_capture_tracks(tracks)
+    except (LocalCaptureError, TypeError, ValueError):
+        typed_tracks = ()
+        errors.append("invalid_track_map")
+    try:
+        rate = int(samplerate)
+        block = int(blocksize)
+        selected_device = int(device)
+    except (TypeError, ValueError):
+        rate = 0
+        block = -1
+        selected_device = -1
+        errors.append("invalid_capture_settings")
+    if rate != 48_000:
+        errors.append("unsupported_sample_rate")
+    if block < 0:
+        errors.append("invalid_block_size")
+    required_channels = (
+        max(channel for track in typed_tracks for channel in track.source_channels) + 1
+        if typed_tracks
+        else 0
+    )
+    if not errors:
+        try:
+            sd = sounddevice_module
+            if sd is None:
+                import sounddevice as sd  # type: ignore
+
+            native_device = None if selected_device < 0 else selected_device
+            details = sd.query_devices(native_device, "input")
+            if not isinstance(details, dict):
+                raise ValueError("unavailable")
+            maximum = int(details.get("max_input_channels", 0))
+            if maximum < required_channels:
+                errors.append("insufficient_input_channels")
+            else:
+                sd.check_input_settings(
+                    device=native_device,
+                    channels=required_channels,
+                    samplerate=rate,
+                    dtype="float32",
+                )
+        except Exception:  # noqa: BLE001 - deliberately discard private native text
+            if "insufficient_input_channels" not in errors:
+                errors.append("input_device_or_format_unavailable")
+    return LocalCapturePreflight(
+        ready=not errors,
+        errors=tuple(dict.fromkeys(errors)),
+        track_count=len(typed_tracks),
+        required_input_channels=required_channels,
+        channel_counts=tuple(track.channel_count for track in typed_tracks),
+        samplerate=rate,
+    )
 
 
 @dataclass(frozen=True)
@@ -668,12 +863,20 @@ class LocalInputCapture:
         if target is None:
             target = self._next_input_frame
         if target > timeline_frame:
-            self._record_gap(
-                timeline_frame,
-                target - timeline_frame,
-                self._all_writer_channels,
-                "queue_overflow",
+            disclosed = any(
+                gap.reason == "device_stall"
+                and gap.start_frame <= timeline_frame
+                and gap.end_frame >= target
+                and gap.channels == self._all_writer_channels
+                for gap in self._snapshot_gaps()
             )
+            if not disclosed:
+                self._record_gap(
+                    timeline_frame,
+                    target - timeline_frame,
+                    self._all_writer_channels,
+                    "queue_overflow",
+                )
         for track_index in range(len(self._writers)):
             if not self._pad_writer_to(track_index, target):
                 self._writer_incomplete = True
@@ -816,6 +1019,7 @@ class LocalInputCapture:
             self._record_error("Local capture did not close cleanly.")
         finally:
             self._stream = None
+        self._reconcile_wall_clock_timeline()
         self._final_input_frame = self._next_input_frame
         self._stop_requested = True
         if self._writer_thread is not None:
@@ -829,6 +1033,40 @@ class LocalInputCapture:
                 return False
             self._writer_thread = None
         return True
+
+    def _reconcile_wall_clock_timeline(self) -> None:
+        """Materialize a silent tail when the device stopped calling back.
+
+        This runs only during finalization after callback generation has been
+        fenced and the native stream is closed. It performs no real-time work.
+        """
+
+        if (
+            self._started_monotonic <= 0.0
+            or self._stopped_monotonic <= self._started_monotonic
+        ):
+            return
+        elapsed = self._stopped_monotonic - self._started_monotonic
+        wall_frames = max(0, int(round(elapsed * self.samplerate)))
+        callback_frames = max(0, int(self._next_input_frame))
+        block_tolerance = max(
+            self._ring_block_frames * 2,
+            int(round(_DEVICE_STALL_TOLERANCE_S * self.samplerate)),
+        )
+        if wall_frames - callback_frames <= block_tolerance:
+            return
+        missing_frames = wall_frames - callback_frames
+        self._record_gap(
+            callback_frames,
+            missing_frames,
+            self._all_writer_channels,
+            "device_stall",
+        )
+        self._record_error(
+            "The audio device stopped delivering input before recording stopped; "
+            "the missing tail was preserved as silence."
+        )
+        self._next_input_frame = wall_frames
 
     def _collect_errors(self) -> list[str]:
         errors: list[str] = []
@@ -1202,6 +1440,16 @@ def _capture_tracks_payload(
         {
             "stem": track.stem,
             "source_channels": list(track.source_channels),
+            **(
+                {"logical_source_id": track.logical_source_id}
+                if track.logical_source_id
+                else {}
+            ),
+            **(
+                {"logical_source_ordinal": track.logical_source_ordinal}
+                if track.logical_source_ordinal is not None
+                else {}
+            ),
         }
         for track in tuple(tracks)[:_MAX_CAPTURE_TRACKS]
     ]
@@ -1273,6 +1521,8 @@ def _recovered_capture_tracks(metadata: dict) -> tuple[LocalCaptureTrack, ...]:
                 LocalCaptureTrack(
                     stem=item.get("stem"),
                     source_channels=channels,
+                    logical_source_id=item.get("logical_source_id", ""),
+                    logical_source_ordinal=item.get("logical_source_ordinal"),
                 )
             )
         return _validated_capture_tracks(recovered)

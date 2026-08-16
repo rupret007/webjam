@@ -1,4 +1,4 @@
-"""v0.25.0 release identity and immutable prior-release contracts."""
+"""v0.26.0 source identity and immutable prior-release contracts."""
 
 from __future__ import annotations
 
@@ -32,15 +32,15 @@ COMPONENT_UPDATE_SOURCE = (ROOT / "services" / "jamulus_component_update.py").re
 )
 
 
-def test_v0250_is_the_published_private_test_release_identity() -> None:
+def test_v0260_is_the_current_source_identity_without_rewriting_v025() -> None:
     match = re.search(
         r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$',
         VERSION_SOURCE,
         re.MULTILINE,
     )
     assert match is not None
-    assert match.group(1) == "0.25.0"
-    assert application_version() == "0.25.0"
+    assert match.group(1) == "0.26.0"
+    assert application_version() == "0.26.0"
     assert README.startswith(
         "# WebJam\n\n## Native creator collaboration and multitrack recording"
     )
@@ -76,27 +76,27 @@ def test_v0250_is_the_published_private_test_release_identity() -> None:
 def test_runtime_sbom_names_the_exact_desktop_version() -> None:
     component = SBOM["metadata"]["component"]
     assert component == {
-        "bom-ref": "pkg:generic/webjam@0.25.0",
+        "bom-ref": "pkg:generic/webjam@0.26.0",
         "name": "WebJam",
-        "purl": "pkg:generic/webjam@0.25.0",
+        "purl": "pkg:generic/webjam@0.26.0",
         "type": "application",
-        "version": "0.25.0",
+        "version": "0.26.0",
     }
 
 
 def test_component_sbom_names_the_exact_desktop_version() -> None:
     component = COMPONENT_SBOM["metadata"]["component"]
     assert component == {
-        "bom-ref": "pkg:github/rupret007/webjam@0.25.0",
+        "bom-ref": "pkg:github/rupret007/webjam@0.26.0",
         "group": "rupret007",
         "name": "WebJam",
-        "purl": "pkg:github/rupret007/webjam@0.25.0",
+        "purl": "pkg:github/rupret007/webjam@0.26.0",
         "type": "application",
-        "version": "0.25.0",
+        "version": "0.26.0",
     }
 
 
-def test_candidate_catalog_payload_tracks_v0250_without_rewriting_v0225() -> None:
+def test_candidate_catalog_payload_tracks_v0260_without_rewriting_v0225() -> None:
     # Exercise deterministic source metadata with an unpublished, synthetic
     # next sequence. Sequence 6 remains the sealed v0.22.5 public catalog and
     # is never reused for this in-memory payload.
@@ -107,7 +107,7 @@ def test_candidate_catalog_payload_tracks_v0250_without_rewriting_v0225() -> Non
         validity_days=30,
     )
     components = payload["components"]
-    assert payload["webjam_version"] == "0.25.0"
+    assert payload["webjam_version"] == "0.26.0"
     assert payload["sequence"] == synthetic_sequence
     assert isinstance(components, list)
     expected = {
@@ -123,11 +123,11 @@ def test_candidate_catalog_payload_tracks_v0250_without_rewriting_v0225() -> Non
     assert all(component["version"] == "3.12.3" for component in components)
     assert all(component["variant"] == "official" for component in components)
     assert all(
-        component["webjam_range"]["maximum"] == "0.25.0" for component in components
+        component["webjam_range"]["maximum"] == "0.26.0" for component in components
     )
 
 
-def test_current_guides_name_v0250_latest_and_keep_prior_history() -> None:
+def test_current_guides_separate_v026_source_from_v025_latest() -> None:
     expected = {
         "ARCHITECTURE.md": "# WebJam architecture — v0.25.0",
         "CHANGELOG.md": (
@@ -136,23 +136,27 @@ def test_current_guides_name_v0250_latest_and_keep_prior_history() -> None:
         ),
         "CLOSED_PILOT_PLAYBOOK.md": "v0.22.5 private test candidate",
         "CREATIVE_MODES_MVP_SPEC.md": (
-            "implemented in the immutable v0.25.0 GitHub **Latest**"
+            "# Creator profiles — v0.26.0 source-candidate contract"
         ),
         "DEVELOPMENT.md": "# Developing WebJam v0.25.0",
-        "FIRST_JAM.md": "# First Session — WebJam v0.25.0",
-        "HELP_ROUTING_MAP.md": "# WebJam help routing — v0.25.0",
-        "QUICK_HELP_MAP.md": "# WebJam quick help — v0.25.0",
+        "FIRST_JAM.md": "# First Session — WebJam v0.26.0 source candidate",
+        "HELP_ROUTING_MAP.md": "# WebJam help routing — v0.26.0 source candidate",
+        "QUICK_HELP_MAP.md": "# WebJam quick help — v0.26.0 source candidate",
         "README.md": "Immutable v0.25.0 GitHub Latest private test candidate",
         "README_SIMPLE.md": "use the exact release tag and attached checksum manifest",
-        "RECORDING_AND_STUDIO.md": "# Recording and Studio — v0.25.0",
+        "RECORDING_AND_STUDIO.md": (
+            "# Recording and Studio — v0.26.0 source candidate"
+        ),
         "SECURITY.md": "Immutable v0.25.0 is the GitHub **Latest**",
-        "TEST_PROCEDURE.md": "# WebJam v0.25.0 private-test release procedure",
-        "USER_GUIDE.md": "# WebJam creator guide — v0.25.0",
+        "TEST_PROCEDURE.md": "# WebJam v0.26.0 source-candidate test procedure",
+        "USER_GUIDE.md": "# WebJam creator guide — v0.26.0 source candidate",
         "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.25.0 UX acceptance checklist",
         "V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md": (
             "Immutable v0.25.0 is the GitHub **Latest**"
         ),
-        "WEBEX_AUDIO_MODES.md": "# Meeting-platform companion guidance — v0.25.0",
+        "WEBEX_AUDIO_MODES.md": (
+            "# Meeting-platform companion guidance — v0.26.0 source candidate"
+        ),
         "docs/DESKTOP_RELEASE_RUNBOOK.md": (
             "v0.25.0 creator-multitrack candidate — published Latest record"
         ),
@@ -160,21 +164,28 @@ def test_current_guides_name_v0250_latest_and_keep_prior_history() -> None:
             "v0.25.0 published fallback-only desktop state"
         ),
         "docs/PROJECT_BRIEF.md": (
-            "v0.25.0 is the immutable GitHub Latest creator-multitrack"
+            "v0.26.0 is an unpublished creator-multitrack source candidate"
         ),
         "docs/README.md": (
             "Current testing release:** immutable GitHub **Latest** is v0.25.0"
         ),
         "ios/README.md": "v0.25.0 private test release",
-        "requirements-lock/README.md": (
-            "The immutable v0.25.0 private test release retains"
+        "requirements-lock/README.md": "The v0.26.0 source candidate retains",
+        "packaging/windows/README-WINDOWS.txt": (
+            "WebJam v0.26.0 private test candidate for Windows x64"
+        ),
+        "packaging/linux/README-LINUX.txt": (
+            "WEBJAM v0.26.0 PRIVATE TEST CANDIDATE FOR LINUX x64"
+        ),
+        "packaging/macos/READ ME FIRST.txt": (
+            "WEBJAM v0.26.0 PRIVATE TEST CANDIDATE"
         ),
         "WEBJAM_V0225_DEMO_READINESS.md": "# WebJam v0.22.5 two-musician demo readiness",
         "V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md": (
             "Immutable historical release `367773776`, tag `v0.23.0`"
         ),
         "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": (
-            "v0.25.0 private test release guide"
+            "v0.26.0 source-candidate guide"
         ),
     }
     for relative_path, marker in expected.items():
@@ -209,6 +220,12 @@ def test_reference_track_play_story_is_route_gated_not_locked() -> None:
 def test_changelog_marks_v025_published_and_keeps_prior_history() -> None:
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "## [Unreleased]" in changelog
+    assert (
+        "## [0.26.0] — Demo-proven creator multitrack candidate (provisional)"
+        in changelog
+    )
+    assert "No v0.26.0 tag, native package" in changelog
+    assert "v0.25.0 remains GitHub **Latest**" in changelog
     assert (
         "## [0.25.0] — Creator profiles and authoritative multitrack "
         "private test candidate (2026-08-15)"
@@ -302,6 +319,46 @@ def test_v0250_physical_checklist_is_linked_and_every_result_is_not_run() -> Non
     ]
     assert len(decision_rows) == 15
     assert all("| **NOT RUN** |" in line for line in decision_rows)
+    assert "Release recommendation: **NOT RUN**" in checklist
+
+
+def test_v0260_physical_checklist_is_provisional_and_every_result_is_not_run() -> None:
+    checklist_name = "V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md"
+    checklist = (ROOT / checklist_name).read_text(encoding="utf-8")
+    assert checklist_name in CHANGELOG
+    assert "v0.26.0" in checklist
+    assert "Immutable v0.25.0 remains" in checklist
+    normalized = " ".join(checklist.replace(">", "").split())
+    assert "must not be executed until an exact annotated `v0.26.0` tag" in normalized
+    result_rows = [
+        line
+        for line in checklist.splitlines()
+        if re.match(r"^\| [A-Z][0-9]{2} \|", line)
+    ]
+    assert len(result_rows) >= 50
+    assert all(line.endswith("| **NOT RUN** |") for line in result_rows)
+    decision_section = checklist.split("## Release decision summary\n", 1)[1]
+    decision_rows = [
+        line
+        for line in decision_section.splitlines()
+        if line.startswith("| ") and "Gate family" not in line and "---" not in line
+    ]
+    assert len(decision_rows) == 11
+    assert all(line.endswith("| **NOT RUN** |") for line in decision_rows)
+    for marker in (
+        "two physical computers",
+        "one real multichannel audio interface",
+        "Music journey and persistence",
+        "Podcast & Voice journey and persistence",
+        "Review & Rehearsal Preview boundary",
+        "Generic meeting handoff and native Webex boundary",
+        "Shared Track audibility and source identity",
+        "guest capture",
+        "Failure recovery",
+        "Studio editing, persistence, and export",
+        "compact layout, and accessibility",
+    ):
+        assert marker in normalized
     assert "Release recommendation: **NOT RUN**" in checklist
 
 
@@ -612,7 +669,7 @@ def test_candidate_package_copy_is_explicit_about_platform_trust() -> None:
         normalized = " ".join(package_copy.split())
         assert "PRIVATE TEST CANDIDATE" in normalized
         assert "exact filename appears" in normalized
-        assert "Do not use the immutable v0.24.0 checksum manifest" in normalized
+        assert "Do not use the immutable v0.25.0 checksum manifest" in normalized
         assert "sealed v0.22.5" in normalized
         assert "embedded Jamulus 3.12.2 fallback" in normalized
     inventory = runbook.split("The exact v0.22.4 published inventory is:\n", 1)[

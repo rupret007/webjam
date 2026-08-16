@@ -11,6 +11,7 @@ import ipaddress
 import hashlib
 import json
 import logging
+import math
 import os
 import shutil
 import threading
@@ -23,6 +24,8 @@ from typing import Callable, Iterable
 from core.network_invite import BandInvite, create_invite_link
 from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
 from core.session_transfer import (
+    CaptureArmAcknowledgement,
+    CaptureArmSnapshot,
     EnrollmentRegistry,
     LocalOriginalObligation,
     ParticipantEnrollment,
@@ -201,6 +204,39 @@ def _participant_inventory_disposition(
             segment_count=segment_count,
             issue="local original did not represent every declared input.",
         )
+    if any(
+        (width := getattr(item.descriptor, "channels", None)) is not None
+        and int(width) not in {1, 2}
+        for item in records
+    ):
+        return _ParticipantInventoryDisposition(
+            "needs_attention",
+            input_count=input_count,
+            segment_count=segment_count,
+            issue="local original contained an unsupported channel layout.",
+        )
+    if obligation is not None and obligation.exact_topology:
+        by_ordinal = {
+            int(item.descriptor.source_channel): item.descriptor for item in records
+        }
+        for ordinal, (channel_count, logical_source_id) in enumerate(
+            zip(obligation.channel_counts, obligation.logical_source_ids, strict=True)
+        ):
+            descriptor = by_ordinal[ordinal]
+            if (
+                int(descriptor.channels) != channel_count
+                or str(getattr(descriptor, "logical_source_id", ""))
+                != logical_source_id
+            ):
+                return _ParticipantInventoryDisposition(
+                    "needs_attention",
+                    input_count=input_count,
+                    segment_count=segment_count,
+                    issue=(
+                        "local original did not match its pre-take ordered "
+                        "mono/stereo source topology."
+                    ),
+                )
     return _ParticipantInventoryDisposition(
         "complete",
         input_count=input_count,
@@ -210,7 +246,7 @@ def _participant_inventory_disposition(
 
 def _obligation_contract_key(
     obligations: Iterable[LocalOriginalObligation],
-) -> tuple[tuple[str, int | None, str, bool], ...]:
+) -> tuple[tuple[object, ...], ...]:
     return tuple(
         sorted(
             (
@@ -218,6 +254,8 @@ def _obligation_contract_key(
                 item.track_count,
                 item.map_fingerprint,
                 item.capture_requested,
+                item.channel_counts,
+                item.logical_source_ids,
             )
             for item in obligations
         )
@@ -436,6 +474,8 @@ class _DesiredPresenceV2:
     capture_enabled: bool
     local_original_track_count: int | None = None
     local_original_map_fingerprint: str = ""
+    local_original_channel_counts: tuple[int, ...] = ()
+    local_original_source_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         digest = _presence_digest_text(self.ordered_roster_digest)
@@ -483,12 +523,20 @@ class _DesiredPresenceV2:
             track_count=self.local_original_track_count,
             map_fingerprint=self.local_original_map_fingerprint,
             capture_requested=self.capture_enabled,
+            channel_counts=self.local_original_channel_counts,
+            logical_source_ids=self.local_original_source_ids,
         )
         object.__setattr__(self, "local_original_track_count", contract.track_count)
         object.__setattr__(
             self,
             "local_original_map_fingerprint",
             contract.map_fingerprint,
+        )
+        object.__setattr__(
+            self, "local_original_channel_counts", contract.channel_counts
+        )
+        object.__setattr__(
+            self, "local_original_source_ids", contract.logical_source_ids
         )
 
     def __repr__(self) -> str:
@@ -923,6 +971,8 @@ class HostPeerSession:
         capture_enabled: bool,
         local_original_track_count: int | None = None,
         local_original_map_fingerprint: str = "",
+        local_original_channel_counts: tuple[int, ...] = (),
+        local_original_source_ids: tuple[str, ...] = (),
     ) -> PresenceV2Proof | None:
         """Publish the enrolled host's challenge-scoped roster ordinal."""
 
@@ -939,6 +989,8 @@ class HostPeerSession:
             capture_enabled=capture_enabled,
             local_original_track_count=local_original_track_count,
             local_original_map_fingerprint=local_original_map_fingerprint,
+            local_original_channel_counts=local_original_channel_counts,
+            local_original_source_ids=local_original_source_ids,
         )
         fingerprint = _presence_fingerprint_text(host_roster_fingerprint)
         ambiguous = _presence_ordinal_tuple(
@@ -983,6 +1035,8 @@ class HostPeerSession:
                 capture_enabled=desired.capture_enabled,
                 local_original_track_count=desired.local_original_track_count,
                 local_original_map_fingerprint=(desired.local_original_map_fingerprint),
+                local_original_channel_counts=desired.local_original_channel_counts,
+                local_original_source_ids=desired.local_original_source_ids,
                 _allow_ambiguous_ordinal=(desired.self_ordinal in ambiguous),
             )
             self._host_presence_v2_generation = generation
@@ -1040,6 +1094,10 @@ class HostPeerSession:
                     == desired.local_original_track_count
                     and proof.local_original_map_fingerprint
                     == desired.local_original_map_fingerprint
+                    and proof.local_original_channel_counts
+                    == desired.local_original_channel_counts
+                    and proof.local_original_source_ids
+                    == desired.local_original_source_ids
                 ):
                     return proof
             generation = max(time.time_ns(), self._host_presence_v2_generation + 1)
@@ -1062,6 +1120,10 @@ class HostPeerSession:
                     local_original_map_fingerprint=(
                         desired.local_original_map_fingerprint
                     ),
+                    local_original_channel_counts=(
+                        desired.local_original_channel_counts
+                    ),
+                    local_original_source_ids=desired.local_original_source_ids,
                     _allow_ambiguous_ordinal=(
                         desired.self_ordinal in desired_ambiguous
                     ),
@@ -1171,6 +1233,14 @@ class HostPeerSession:
             issues.append(
                 "A guest's Local Original opt-in does not include an exact logical-track inventory."
             )
+        if any(
+            proof.participant_id != host_id and not proof.local_original_topology_exact
+            for proof in proofs
+        ):
+            issues.append(
+                "A guest's Local Original inventory does not include its exact "
+                "ordered mono/stereo source topology."
+            )
         return tuple(dict.fromkeys(issues))
 
     def prepare_local_original_obligations(
@@ -1249,6 +1319,184 @@ class HostPeerSession:
             return ()
         with self._lock:
             return self._local_original_obligations_by_take.get(canonical_take, ())
+
+    @staticmethod
+    def _capture_arm_obligation_key(
+        obligation: LocalOriginalObligation,
+    ) -> tuple[object, ...]:
+        return (
+            obligation.participant_id,
+            obligation.track_count,
+            obligation.map_fingerprint,
+            obligation.presence_generation,
+            obligation.capture_requested,
+            obligation.channel_counts,
+            obligation.logical_source_ids,
+        )
+
+    def publish_capture_arm(
+        self,
+        take_id: str,
+        *,
+        recording_plan_fingerprint: str,
+    ) -> CaptureArmSnapshot:
+        """Ask every exact, opted-in guest to open capture before server start."""
+
+        canonical_take = str(uuid.UUID(str(take_id)))
+        with self._lock:
+            if canonical_take not in self._prepared_local_original_obligation_takes:
+                raise TransferConflictError(
+                    "Guest Local Original obligations were not prepared for this take."
+                )
+            obligations = self._local_original_obligations_by_take.get(canonical_take)
+            control = self.control
+        if obligations is None or control is None:
+            raise SessionTransferError(
+                "The guest capture-arm service is unavailable."
+            )
+        required = tuple(
+            item
+            for item in obligations
+            if item.capture_requested and bool(item.track_count)
+        )
+        if any(not item.exact_topology for item in required):
+            raise TransferConflictError(
+                "A guest Local Original obligation has no exact source topology."
+            )
+        return control.publish_capture_arm(
+            canonical_take,
+            recording_plan_fingerprint=recording_plan_fingerprint,
+            requirements=required,
+        )
+
+    def capture_arm_pending_participant_ids(
+        self,
+        take_id: str,
+        *,
+        arm_generation: int,
+    ) -> tuple[str, ...]:
+        """Return every required guest lacking a current, exact start ACK."""
+
+        canonical_take = str(uuid.UUID(str(take_id)))
+        generation = int(arm_generation)
+        with self._lock:
+            control = self.control
+            registry = self.registry
+            planned = self._local_original_obligations_by_take.get(
+                canonical_take, ()
+            )
+        planned_required_ids = tuple(
+            sorted(
+                item.participant_id
+                for item in planned
+                if item.capture_requested and bool(item.track_count)
+            )
+        )
+        if control is None or registry is None:
+            return planned_required_ids
+        arm, requirements, acknowledgements = control.capture_arm_state()
+        if (
+            arm is None
+            or arm.take_id != canonical_take
+            or arm.arm_generation != generation
+        ):
+            return planned_required_ids
+        expected = {item.participant_id: item for item in requirements}
+        acknowledged = {item.participant_id: item for item in acknowledgements}
+        current = {
+            item.participant_id: item
+            for item in registry.current_local_original_obligations()
+        }
+        pending: list[str] = []
+        for participant_id, obligation in expected.items():
+            acknowledgement = acknowledged.get(participant_id)
+            current_obligation = current.get(participant_id)
+            if (
+                acknowledgement is None
+                or current_obligation is None
+                or self._capture_arm_obligation_key(current_obligation)
+                != self._capture_arm_obligation_key(obligation)
+            ):
+                pending.append(participant_id)
+        return tuple(sorted(pending))
+
+    def capture_arm_ready(
+        self,
+        take_id: str,
+        *,
+        arm_generation: int,
+    ) -> bool:
+        try:
+            canonical_take = str(uuid.UUID(str(take_id)))
+        except (TypeError, ValueError, AttributeError):
+            return False
+        with self._lock:
+            control = self.control
+            registry = self.registry
+        if control is None or registry is None:
+            return False
+        arm, _requirements, _acknowledgements = control.capture_arm_state()
+        if (
+            arm is None
+            or arm.take_id != canonical_take
+            or arm.arm_generation != int(arm_generation)
+        ):
+            return False
+        return not self.capture_arm_pending_participant_ids(
+            canonical_take,
+            arm_generation=arm_generation,
+        )
+
+    def wait_for_capture_arm_acknowledgements(
+        self,
+        take_id: str,
+        *,
+        arm_generation: int,
+        timeout_s: float,
+    ) -> bool:
+        """Wait boundedly without retaining host or HTTP-server locks."""
+
+        if isinstance(timeout_s, bool):
+            raise ValueError("timeout_s must be a finite non-negative number.")
+        timeout = float(timeout_s)
+        if not math.isfinite(timeout) or timeout < 0.0:
+            raise ValueError("timeout_s must be a finite non-negative number.")
+        deadline = time.monotonic() + timeout
+        while True:
+            if self.capture_arm_ready(
+                take_id,
+                arm_generation=arm_generation,
+            ):
+                return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0:
+                return False
+            with self._lock:
+                control = self.control
+            if control is None:
+                return False
+            _arm, _requirements, acknowledgements = control.capture_arm_state()
+            control.wait_for_capture_arm_change(
+                acknowledgement_count=len(acknowledgements),
+                timeout_s=min(remaining, 0.1),
+            )
+
+    def cancel_capture_arm(
+        self,
+        take_id: str,
+        *,
+        arm_generation: int | None = None,
+    ) -> bool:
+        """Cancel one exact pending request; delayed callbacks cannot cancel newer work."""
+
+        with self._lock:
+            control = self.control
+        if control is None:
+            return False
+        return control.cancel_capture_arm(
+            take_id,
+            arm_generation=arm_generation,
+        )
 
     def _update_expected_capture_participants(self, take_id: str) -> None:
         """Union enrolled-peer Local Original obligations for one take."""
@@ -1374,6 +1622,32 @@ class HostPeerSession:
         # classify the later Local Original inventory. If this refresh fails,
         # the caller sees the failure and final reconciliation remains
         # fail-closed, but guests no longer remain falsely Recording.
+        self._update_expected_capture_participants(take_id)
+        return snapshot
+
+    def begin_armed_take_finalization(
+        self,
+        take_id: str,
+        *,
+        arm_generation: int,
+        stopped_utc: str,
+        message: str = "",
+    ) -> SessionStateSnapshot | None:
+        """Publish stop truth when server start confirmation was ambiguous.
+
+        The control layer accepts this only for the exact, fully acknowledged
+        arm.  A stale callback or partially armed guest set therefore cannot
+        promote speculative media into a take.
+        """
+
+        if self.control is None:
+            return None
+        snapshot = self.control.begin_armed_finalizing(
+            take_id,
+            arm_generation=arm_generation,
+            stopped_utc=stopped_utc,
+            message=message,
+        )
         self._update_expected_capture_participants(take_id)
         return snapshot
 
@@ -1923,6 +2197,7 @@ class HostPeerSession:
                             ),
                         ),
                         alignment=AlignmentState(method=_PEER_ALIGNMENT_INITIAL_METHOD),
+                        logical_source_id=descriptor.logical_source_id,
                     )
                     tracks_by_id[track.track_id] = track
                     segment_ids.add(project_segment_id)
@@ -2352,9 +2627,14 @@ class GuestPeerSession:
         self._desired_presence_v2_topology_epoch = 0
         self._capture = None
         self._active_take_id = ""
+        self._active_capture_arm: CaptureArmSnapshot | None = None
+        self._active_capture_arm_state_generation: int | None = None
+        self._bound_capture_arm_ack: CaptureArmAcknowledgement | None = None
         self._capture_started_config: tuple[int, int, int] | None = None
         self._capture_started_tracks: tuple[object, ...] | None = None
-        self._capture_started_obligation: tuple[int, str] | None = None
+        self._capture_started_obligation: (
+            tuple[int, str, tuple[int, ...], tuple[str, ...]] | None
+        ) = None
         self._guidance_notification_generation = 0
         self._pending: list[PendingLocalSegment] = []
         self._stop_event = threading.Event()
@@ -2429,10 +2709,23 @@ class GuestPeerSession:
             if thread is not None and thread.is_alive():
                 return False
             self._thread = None
-            # A quit/network leave never deletes or aborts an active original.
-            self._finalize_capture(
-                needs_attention="Session ended before host stop was observed."
-            )
+            if getattr(self, "_active_capture_arm", None) is not None:
+                # An arm still visible here was never positively observed as
+                # canceled.  The ACK response or host commit may have crossed
+                # this shutdown, so preserve it as recovery media rather than
+                # destructively guessing that recording never started.
+                self._finalize_capture(
+                    needs_attention=(
+                        "Session ended before capture-arm commit or cancellation "
+                        "was confirmed."
+                    ),
+                    upload_allowed=False,
+                )
+            else:
+                # A quit/network leave never deletes or aborts an active take.
+                self._finalize_capture(
+                    needs_attention="Session ended before host stop was observed."
+                )
             try:
                 self._upload_pending()
             except SessionTransferError:
@@ -2458,7 +2751,14 @@ class GuestPeerSession:
 
     def _current_local_original_contract(
         self, *, capture_enabled: bool | None = None
-    ) -> tuple[bool, int | None, str, tuple[object, ...] | None]:
+    ) -> tuple[
+        bool,
+        int | None,
+        str,
+        tuple[object, ...] | None,
+        tuple[int, ...],
+        tuple[str, ...],
+    ]:
         """Resolve a name-free logical-track contract without exposing config.
 
         A malformed map deliberately returns the legacy/unknown shape. The
@@ -2472,7 +2772,7 @@ class GuestPeerSession:
         if type(requested) is not bool:
             raise ValueError("capture_enabled must be a boolean.")
         if not requested:
-            return False, 0, _ZERO_LOCAL_ORIGINAL_MAP_FINGERPRINT, ()
+            return False, 0, _ZERO_LOCAL_ORIGINAL_MAP_FINGERPRINT, (), (), ()
         try:
             tracks = (
                 tuple(self.capture_tracks())
@@ -2480,14 +2780,33 @@ class GuestPeerSession:
                 else None
             )
             if tracks == ():
-                return False, 0, _ZERO_LOCAL_ORIGINAL_MAP_FINGERPRINT, tracks
-            from core.local_capture import local_capture_track_map_fingerprint
+                return False, 0, _ZERO_LOCAL_ORIGINAL_MAP_FINGERPRINT, tracks, (), ()
+            from core.local_capture import (
+                bind_local_capture_logical_sources,
+                local_capture_track_map_fingerprint,
+            )
 
+            participant_id = self.participant_id or derive_participant_id(
+                self.invite.session_id, self.installation_id
+            )
+            tracks = bind_local_capture_logical_sources(
+                tracks,
+                session_id=self.invite.session_id,
+                participant_id=participant_id,
+            )
             fingerprint = local_capture_track_map_fingerprint(tracks)
-            count = 2 if tracks is None else len(tracks)
-            return True, count, fingerprint, tracks
+            channel_counts = tuple(int(track.channel_count) for track in tracks)
+            source_ids = tuple(str(track.logical_source_id) for track in tracks)
+            return (
+                True,
+                len(tracks),
+                fingerprint,
+                tracks,
+                channel_counts,
+                source_ids,
+            )
         except Exception:  # noqa: BLE001 - local names/paths stay private
-            return True, None, "", None
+            return True, None, "", None, (), ()
 
     def observe_presence_v2(
         self,
@@ -2509,9 +2828,14 @@ class GuestPeerSession:
         cooperative claim and invitations are intended for trusted bandmates.
         """
 
-        enabled, track_count, map_fingerprint, _tracks = (
-            self._current_local_original_contract(capture_enabled=capture_enabled)
-        )
+        (
+            enabled,
+            track_count,
+            map_fingerprint,
+            _tracks,
+            channel_counts,
+            logical_source_ids,
+        ) = self._current_local_original_contract(capture_enabled=capture_enabled)
         desired = _DesiredPresenceV2(
             display_name=display_name,
             ordered_roster_digest=ordered_roster_digest,
@@ -2523,6 +2847,8 @@ class GuestPeerSession:
             capture_enabled=enabled,
             local_original_track_count=track_count,
             local_original_map_fingerprint=map_fingerprint,
+            local_original_channel_counts=channel_counts,
+            local_original_source_ids=logical_source_ids,
         )
         with self._lock:
             if (
@@ -2582,6 +2908,7 @@ class GuestPeerSession:
                 and (
                     state.signal is not RecordingSignal.IDLE
                     or state.shared_track.generation > 0
+                    or state.capture_arm is not None
                 )
             )
             or (previous_state is not None and state != previous_state)
@@ -2601,8 +2928,16 @@ class GuestPeerSession:
             # while those independent guest-owned operations finish.
             self._notify_guidance_changed()
         guidance_before_work = self._guidance_notification_generation
+        self._apply_capture_arm_state(state)
         if state.signal is RecordingSignal.RECORDING and state.take_id:
-            if bool(self.capture_enabled()):
+            if bool(self.capture_enabled()) and (
+                not state.capture_arm_supported
+                or self._active_take_id == state.take_id
+            ):
+                # Legacy hosts have no capture-arm capability and retain their
+                # historical session-wide start behavior.  On a current host,
+                # the scoped arm/ACK is the participant's only authority to
+                # capture; an unrelated enrolled peer must not open a device.
                 self._start_capture(state.take_id)
         elif state.signal in {
             RecordingSignal.FINALIZING,
@@ -2626,6 +2961,136 @@ class GuestPeerSession:
             # notification first; the generation check avoids duplicates.
             self._notify_guidance_changed()
         return state
+
+    def _apply_capture_arm_state(self, state: SessionStateSnapshot) -> None:
+        """Open/ACK or cancel one additive pre-start capture instruction."""
+
+        arm = state.capture_arm
+        active_arm = self._active_capture_arm
+        cancellation = state.capture_arm_cancellation
+        exact_cancellation = bool(
+            active_arm is not None
+            and cancellation is not None
+            and cancellation.take_id == active_arm.take_id
+            and cancellation.arm_generation == active_arm.arm_generation
+        )
+        if arm is None:
+            if active_arm is None:
+                return
+            if state.take_id == active_arm.take_id and state.signal in {
+                RecordingSignal.RECORDING,
+                RecordingSignal.FINALIZING,
+                RecordingSignal.COMPLETE,
+                RecordingSignal.NEEDS_ATTENTION,
+            }:
+                # The host observed every exact ACK and committed this take.
+                # A very short take may already be terminal by the next poll;
+                # terminal truth must finalize, never discard, that real audio.
+                self._active_capture_arm = None
+                self._active_capture_arm_state_generation = None
+                self._bound_capture_arm_ack = None
+                return
+            if exact_cancellation:
+                # Abort is destructive, so a newer session generation alone
+                # is insufficient.  Require the host's exact take/generation
+                # cancellation proof; unrelated Shared Track or take state
+                # after a restart must preserve possibly recorded media.
+                self._cancel_armed_capture()
+            else:
+                self._finalize_capture(
+                    needs_attention=(
+                        "The host restarted or became uncertain before the "
+                        "capture-arm outcome was confirmed."
+                    ),
+                    upload_allowed=False,
+                )
+            return
+
+        if active_arm is not None and active_arm != arm:
+            if state.take_id == active_arm.take_id and state.signal in {
+                RecordingSignal.RECORDING,
+                RecordingSignal.FINALIZING,
+                RecordingSignal.COMPLETE,
+                RecordingSignal.NEEDS_ATTENTION,
+            }:
+                self._finalize_capture(
+                    needs_attention=(
+                        state.message
+                        if state.signal is RecordingSignal.NEEDS_ATTENTION
+                        else ""
+                    )
+                )
+            elif exact_cancellation:
+                self._cancel_armed_capture()
+            else:
+                self._finalize_capture(
+                    needs_attention=(
+                        "The capture-arm authority changed without a confirmed "
+                        "cancellation."
+                    ),
+                    upload_allowed=False,
+                )
+        if not bool(self.capture_enabled()):
+            return
+        if not self._start_capture(arm.take_id):
+            return
+        self._active_capture_arm = arm
+        self._active_capture_arm_state_generation = state.generation
+        acknowledgement = self._capture_arm_acknowledgement(arm)
+        if self._bound_capture_arm_ack == acknowledgement:
+            return
+        if self.enrollment is None:
+            raise SessionTransferError(
+                "Capture opened before participant enrollment completed."
+            )
+        accepted = self.client.acknowledge_capture_arm(
+            self.enrollment,
+            acknowledgement,
+        )
+        if accepted != acknowledgement:
+            raise SessionTransferError(
+                "The host acknowledged a different guest capture contract."
+            )
+        self._bound_capture_arm_ack = accepted
+
+    def _capture_arm_acknowledgement(
+        self,
+        arm: CaptureArmSnapshot,
+    ) -> CaptureArmAcknowledgement:
+        with self._lock:
+            desired = self._desired_presence_v2
+            bound = self._bound_presence_v2
+            presence_generation = self._presence_v2_generation
+        if desired is None or bound is None or bound[0] != desired:
+            raise TransferConflictError(
+                "A fresh exact Local Original presence proof is required."
+            )
+        started = self._capture_started_obligation
+        if started is None:
+            raise TransferConflictError(
+                "The Local Original capture did not bind an exact start contract."
+            )
+        track_count, map_fingerprint, channel_counts, logical_source_ids = started
+        if (
+            not track_count
+            or desired.local_original_track_count != track_count
+            or desired.local_original_map_fingerprint != map_fingerprint
+            or desired.local_original_channel_counts != channel_counts
+            or desired.local_original_source_ids != logical_source_ids
+        ):
+            raise TransferConflictError(
+                "The Local Original contract changed during capture arming."
+            )
+        return CaptureArmAcknowledgement(
+            participant_id=self.participant_id,
+            take_id=arm.take_id,
+            arm_generation=arm.arm_generation,
+            recording_plan_fingerprint=arm.recording_plan_fingerprint,
+            presence_generation=presence_generation,
+            local_original_map_fingerprint=map_fingerprint,
+            local_original_channel_counts=channel_counts,
+            local_original_source_ids=logical_source_ids,
+        )
 
     def _publish_presence_if_needed(self) -> None:
         if self.enrollment is None:
@@ -2672,14 +3137,21 @@ class GuestPeerSession:
             observed = self._desired_presence_v2
             capture_override = self._desired_presence_v2_capture_override
         if observed is not None:
-            enabled, track_count, map_fingerprint, _tracks = (
-                self._current_local_original_contract(capture_enabled=capture_override)
-            )
+            (
+                enabled,
+                track_count,
+                map_fingerprint,
+                _tracks,
+                channel_counts,
+                logical_source_ids,
+            ) = self._current_local_original_contract(capture_enabled=capture_override)
             refreshed = replace(
                 observed,
                 capture_enabled=enabled,
                 local_original_track_count=track_count,
                 local_original_map_fingerprint=map_fingerprint,
+                local_original_channel_counts=channel_counts,
+                local_original_source_ids=logical_source_ids,
             )
             if refreshed != observed:
                 with self._lock:
@@ -2752,6 +3224,8 @@ class GuestPeerSession:
             capture_enabled=desired.capture_enabled,
             local_original_track_count=desired.local_original_track_count,
             local_original_map_fingerprint=(desired.local_original_map_fingerprint),
+            local_original_channel_counts=desired.local_original_channel_counts,
+            local_original_source_ids=desired.local_original_source_ids,
         )
         with self._lock:
             if (
@@ -2794,22 +3268,27 @@ class GuestPeerSession:
             tracks=tracks,
         )
 
-    def _start_capture(self, take_id: str) -> None:
+    def _start_capture(self, take_id: str) -> bool:
         if self._capture is not None:
             if self._active_take_id == take_id:
-                return
+                return True
             # A different take cannot overwrite an unfinalized local original.
             self._finalize_capture(
                 needs_attention="A new take started before the prior stop."
             )
-        enabled, track_count, map_fingerprint, tracks = (
-            self._current_local_original_contract()
-        )
+        (
+            enabled,
+            track_count,
+            map_fingerprint,
+            tracks,
+            channel_counts,
+            logical_source_ids,
+        ) = self._current_local_original_contract()
         if not enabled or track_count == 0:
             # The musician opted every configured Local Original out (or the
             # map failed closed) between presence publication and take start.
             # Never reinterpret that as LocalInputCapture's legacy pair.
-            return
+            return False
         with self._lock:
             desired = self._desired_presence_v2
         if track_count is None or (
@@ -2817,12 +3296,14 @@ class GuestPeerSession:
             and (
                 desired.local_original_track_count != track_count
                 or desired.local_original_map_fingerprint != map_fingerprint
+                or desired.local_original_channel_counts != channel_counts
+                or desired.local_original_source_ids != logical_source_ids
             )
         ):
             self.last_error = (
                 "The Local Original input map needs a fresh pre-take proof."
             )
-            return
+            return False
         device, rate, blocksize = self.capture_config()
         originals = self.queue_path.parent
         originals.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -2840,16 +3321,58 @@ class GuestPeerSession:
         self._active_take_id = take_id
         self._capture_started_config = (int(device), int(rate), int(blocksize))
         self._capture_started_tracks = tracks
-        self._capture_started_obligation = (track_count, map_fingerprint)
+        self._capture_started_obligation = (
+            track_count,
+            map_fingerprint,
+            channel_counts,
+            logical_source_ids,
+        )
+        self._notify_guidance_changed()
+        return True
+
+    def _cancel_armed_capture(self) -> None:
+        """Discard only pre-start audio after the exact arm was canceled."""
+
+        capture = self._capture
+        self._capture = None
+        self._active_take_id = ""
+        self._active_capture_arm = None
+        self._active_capture_arm_state_generation = None
+        self._bound_capture_arm_ack = None
+        self._capture_started_config = None
+        self._capture_started_tracks = None
+        self._capture_started_obligation = None
+        if capture is None:
+            return
+        abort = getattr(capture, "abort", None)
+        if not callable(abort):
+            self.last_error = (
+                "The canceled pre-start Local Original could not be released."
+            )
+            return
+        try:
+            abort()
+        except Exception:  # noqa: BLE001 - native errors can expose local paths
+            self.last_error = (
+                "The canceled pre-start Local Original needs local recovery review."
+            )
         self._notify_guidance_changed()
 
-    def _finalize_capture(self, *, needs_attention: str = "") -> None:
+    def _finalize_capture(
+        self,
+        *,
+        needs_attention: str = "",
+        upload_allowed: bool = True,
+    ) -> None:
         capture = self._capture
         take_id = self._active_take_id
         if capture is None or not take_id:
             return
         self._capture = None
         self._active_take_id = ""
+        self._active_capture_arm = None
+        self._active_capture_arm_state_generation = None
+        self._bound_capture_arm_ack = None
         final_dir = self.queue_path.parent / take_id
         try:
             result = capture.stop_into(final_dir)
@@ -2871,23 +3394,31 @@ class GuestPeerSession:
                 "The selected input device or sample rate changed during this take; "
                 "the preserved segment uses the configuration captured at its start."
             )
-        current_tracks = (
-            tuple(self.capture_tracks()) if self.capture_tracks is not None else None
-        )
+        (
+            current_enabled,
+            current_count,
+            current_fingerprint,
+            _tracks,
+            current_channel_counts,
+            current_source_ids,
+        ) = self._current_local_original_contract()
         if (
             self._capture_started_tracks is not None
-            and current_tracks != self._capture_started_tracks
+            and _tracks != self._capture_started_tracks
         ):
             errors.append(
                 "The Local Original input map changed during this take; the "
                 "preserved segment uses the map captured at its start."
             )
-        current_enabled, current_count, current_fingerprint, _tracks = (
-            self._current_local_original_contract()
-        )
         if self._capture_started_obligation is not None and (
             not current_enabled
-            or (current_count, current_fingerprint) != self._capture_started_obligation
+            or (
+                current_count,
+                current_fingerprint,
+                current_channel_counts,
+                current_source_ids,
+            )
+            != self._capture_started_obligation
         ):
             errors.append("The Local Original obligation changed during this take.")
         capture_device = getattr(result, "capture_device", None)
@@ -2896,10 +3427,12 @@ class GuestPeerSession:
         source_files = tuple(getattr(result, "files", ()) or ())
         inventory_input_count = len(source_files)
         inventory_segment_count = len(source_files)
-        planned_count, inventory_map_fingerprint = self._capture_started_obligation or (
-            0,
-            "",
-        )
+        (
+            planned_count,
+            inventory_map_fingerprint,
+            planned_channel_counts,
+            planned_source_ids,
+        ) = self._capture_started_obligation or (0, "", (), ())
         result_tracks = getattr(result, "tracks", None)
         if result_tracks is not None:
             try:
@@ -2935,6 +3468,13 @@ class GuestPeerSession:
             except (OSError, RuntimeError):
                 errors.append("The preserved local WAV is unreadable.")
                 continue
+            if (
+                channel >= len(planned_channel_counts)
+                or int(info.channels) != planned_channel_counts[channel]
+            ):
+                errors.append(
+                    "The preserved local WAV did not match its planned mono/stereo layout."
+                )
             channel_gaps: list[TransferGap] = []
             for gap in gaps:
                 raw_channels = getattr(gap, "channels", ())
@@ -2986,11 +3526,22 @@ class GuestPeerSession:
                 inventory_input_count=inventory_input_count,
                 inventory_segment_count=inventory_segment_count,
                 inventory_map_fingerprint=inventory_map_fingerprint,
+                logical_source_id=(
+                    planned_source_ids[channel]
+                    if channel < len(planned_source_ids)
+                    else ""
+                ),
                 capture_errors=tuple(dict.fromkeys(errors)),
                 gaps=tuple(channel_gaps),
             )
             with self._lock:
-                self._pending.append(PendingLocalSegment(descriptor, source_path))
+                self._pending.append(
+                    PendingLocalSegment(
+                        descriptor,
+                        source_path,
+                        status="pending" if upload_allowed else "recovery_only",
+                    )
+                )
         self._capture_started_config = None
         self._capture_started_tracks = None
         self._capture_started_obligation = None
@@ -3026,7 +3577,7 @@ class GuestPeerSession:
         with self._lock:
             pending = tuple(self._pending)
         for item in pending:
-            if item.status == "verified":
+            if item.status in {"verified", "recovery_only"}:
                 continue
             if not item.source.is_file():
                 if item.status != "missing_local_original":

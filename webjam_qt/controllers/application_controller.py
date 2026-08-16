@@ -35,7 +35,7 @@ from core.creative_modes import (
     get_creator_profile_by_key_or_default,
     get_mode_by_key_or_default,
 )
-from core.local_capture import LocalCaptureTrack
+from core.local_capture import LocalCaptureTrack, check_local_capture_preflight
 from core.jamulus_rpc_client import (
     JamulusOrderedRosterProof,
     JamulusRpcMonitorIdentity,
@@ -1186,8 +1186,25 @@ class ApplicationController(QObject):
         try:
             from core.session_recording_plan import resolve_capture_tracks
 
-            def guest_capture_tracks() -> tuple[LocalCaptureTrack, ...]:
+            def configured_guest_capture_tracks() -> tuple[LocalCaptureTrack, ...]:
                 return resolve_capture_tracks(self.settings)
+
+            def guest_capture_tracks() -> tuple[LocalCaptureTrack, ...]:
+                tracks = configured_guest_capture_tracks()
+                if tracks:
+                    preflight = check_local_capture_preflight(
+                        tracks=tracks,
+                        device=self.settings.audio_input_device_index,
+                        samplerate=self.settings.audio_samplerate,
+                        blocksize=self.settings.audio_blocksize,
+                    )
+                    if not preflight.ready:
+                        # GuestPeerSession converts this to an authenticated
+                        # unknown-topology proof. The host then blocks Ready;
+                        # it must never reinterpret an unavailable device as an
+                        # intentional zero-track opt-out.
+                        raise RuntimeError("guest Local Original preflight failed")
+                return tracks
 
             self.guest_peer = GuestPeerSession(
                 invite,
@@ -1199,7 +1216,7 @@ class ApplicationController(QObject):
                 installation_path=default_installation_identity_path(
                     self.settings.config_file
                 ),
-                capture_enabled=lambda: bool(guest_capture_tracks()),
+                capture_enabled=lambda: bool(configured_guest_capture_tracks()),
                 capture_config=lambda: (
                     int(self.settings.audio_input_device_index),
                     int(self.settings.audio_samplerate),
@@ -1457,7 +1474,7 @@ class ApplicationController(QObject):
         signal = str(getattr(getattr(state, "signal", None), "value", "idle"))
         phase = {
             "recording": "recording",
-            "finalizing": "validating",
+            "finalizing": "finalizing",
             "complete": "complete",
             "needs_attention": "needs_attention",
         }.get(signal, "idle")
@@ -1581,7 +1598,10 @@ class ApplicationController(QObject):
             )
             else EvidenceState.FAILED
         )
-        if any(status in {"missing_local_original", "failed"} for status in statuses):
+        if any(
+            status in {"missing_local_original", "failed", "recovery_only"}
+            for status in statuses
+        ):
             return GuestMediaState.NEEDS_ATTENTION, preservation
         if statuses == {"verified"}:
             return GuestMediaState.VERIFIED, preservation
@@ -2948,8 +2968,10 @@ class ApplicationController(QObject):
         return {
             "preflight": MobileRecordingState.STARTING,
             "starting": MobileRecordingState.STARTING,
+            "count_in": MobileRecordingState.RECORDING,
             "recording": MobileRecordingState.RECORDING,
             "stopping": MobileRecordingState.STOPPING,
+            "finalizing": MobileRecordingState.VERIFYING,
             "validating": MobileRecordingState.VERIFYING,
             "complete": MobileRecordingState.READY,
             "needs_attention": MobileRecordingState.NEEDS_ATTENTION,
@@ -3558,15 +3580,26 @@ class ApplicationController(QObject):
         self._refresh_session_pulse()
 
     def _apply_recording_states_to_participants(self) -> None:
-        """Stamp per-take recording truth onto the card presentations."""
+        """Publish one plan-bound source snapshot to cards and Live Studio."""
 
         states: dict[str, str] = {}
+        rows = ()
         try:
-            for row in self.recording.recording_source_presentations():
+            rows = self.recording.recording_source_presentations()
+            for row in rows:
                 if row.kind == "musician" and row.participant_id:
                     states[row.participant_id] = row.state.value
         except Exception:  # noqa: BLE001 - presentation must never break the grid
             states = {}
+            rows = ()
+        try:
+            studio = self.window.recording_studio
+            if rows:
+                studio.set_recording_sources(rows)
+            else:
+                studio.clear_recording_sources()
+        except Exception:  # noqa: BLE001 - source UI cannot affect recording truth
+            pass
         for presentation in self.participants.values():
             presentation.recording_state = states.get(
                 getattr(presentation, "participant_id", "") or "", ""
@@ -6334,6 +6367,32 @@ class ApplicationController(QObject):
             ms=8000,
         )
 
+    def _confirm_recording_readiness(self, presentation: object) -> bool:
+        """Show one exact pre-record snapshot and return explicit consent.
+
+        The dialog is presentation only. ``RecordingCoordinator`` retains the
+        private plan and revalidates it after this modal returns, before any
+        capture stream, recovery file, or server recorder is started.
+        """
+
+        from core.recording_readiness_presentation import (
+            RecordingReadinessPresentation,
+        )
+        from webjam_qt.windows.recording_readiness import RecordingReadinessDialog
+
+        if not isinstance(presentation, RecordingReadinessPresentation):
+            return False
+        accepted_snapshot: list[RecordingReadinessPresentation] = []
+        dialog = RecordingReadinessDialog(presentation, parent=self.window)
+        dialog.start_requested.connect(accepted_snapshot.append)
+        result = dialog.exec()
+        return bool(
+            result == QDialog.DialogCode.Accepted
+            and accepted_snapshot == [presentation]
+            and dialog.presentation is presentation
+            and presentation.can_start
+        )
+
     def _on_record_requested(self) -> None:
         """Start a take after the one explicit Local Originals decision.
 
@@ -6357,6 +6416,7 @@ class ApplicationController(QObject):
                 "count_in",
                 "recording",
                 "stopping",
+                "finalizing",
                 "validating",
                 "stop_failed",
             }
@@ -6423,7 +6483,16 @@ class ApplicationController(QObject):
             not bool(getattr(self, "_recorder_armed", False))
             and not bool(getattr(self, "_server_recording", False))
             and recorder_phase
-            not in {"preflight", "starting", "recording", "stopping", "validating"}
+            not in {
+                "preflight",
+                "starting",
+                "count_in",
+                "recording",
+                "stopping",
+                "finalizing",
+                "validating",
+                "stop_failed",
+            }
         )
         shared_track = getattr(self, "_reference_track", None)
         shared_snapshot = getattr(shared_track, "snapshot", None)
@@ -8150,15 +8219,17 @@ class ApplicationController(QObject):
         recorder_state = {
             "preflight": RecorderState.REQUESTED,
             "starting": RecorderState.STARTING,
+            "count_in": RecorderState.RECORDING,
             "recording": RecorderState.RECORDING,
             "stopping": RecorderState.STOPPING,
+            "finalizing": RecorderState.STOPPED,
             "validating": RecorderState.STOPPED,
             "stop_failed": RecorderState.FAILED,
             "error": RecorderState.FAILED,
         }.get(recorder_phase, RecorderState.IDLE)
         validation = getattr(recorder, "last_validation", None)
         completed_take = getattr(recorder, "last_completed_take", None)
-        if recorder_phase == "validating":
+        if recorder_phase in {"finalizing", "validating"}:
             take_validation = TakeValidationState.VALIDATING
         elif recorder_phase == "needs_attention":
             take_validation = TakeValidationState.NEEDS_ATTENTION
@@ -8527,6 +8598,13 @@ class ApplicationController(QObject):
             self._render_startup_journey()
             return
         display_override = self._update_session_hud_legacy()
+        if bool(getattr(self, "_conductor_studio_reviewing", False)):
+            # Live-session recovery copy (for example a denied microphone
+            # permission) must not replace the completed-take facts that own
+            # Studio. Playback, inspection, and an already-authorized export
+            # do not require a live input device. The legacy pass still runs
+            # above so strip/invite side effects remain current.
+            display_override = None
         self._render_session_conductor(display_override)
 
     def _on_conductor_action_requested(self, action_kind: str) -> None:
@@ -8642,7 +8720,7 @@ class ApplicationController(QObject):
             "complete",
         }:
             self._shared_track_play_after_recording = ""
-        if phase == "validating" and bool(
+        if phase in {"finalizing", "validating"} and bool(
             getattr(
                 self.recording,
                 "shared_track_required_for_active_take",
@@ -11134,15 +11212,10 @@ class ApplicationController(QObject):
         recorder_phase = str(
             getattr(getattr(recorder, "phase", None), "value", "idle") or "idle"
         )
-        count_in_visible = bool(
-            recorder_phase == "recording"
-            and getattr(snapshot, "count_in_active", False)
-        )
-        if count_in_visible != self._shared_track_count_in_visible:
-            self._shared_track_count_in_visible = count_in_visible
-            visible_phase = "count_in" if count_in_visible else recorder_phase
-            self.window.session_strip.set_recording_phase(visible_phase)
-            self.window.recording_studio.set_recording_phase(visible_phase)
+        # COUNT_IN is now an authoritative coordinator phase. Keep this
+        # compatibility flag for callers that inspect it, but never synthesize
+        # a second UI-only lifecycle over the frozen Record Session state.
+        self._shared_track_count_in_visible = recorder_phase == "count_in"
 
     def _publish_shared_track_peer_state(self, snapshot) -> None:
         """Project bounded host transport truth onto the private peer plane."""

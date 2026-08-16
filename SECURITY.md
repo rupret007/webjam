@@ -36,6 +36,12 @@ immutable predecessors share
 this test-only trust boundary: Windows is unsigned and macOS is ad-hoc signed
 and unnotarized.
 
+The repository's current v0.26.0 identity is an unpublished source candidate,
+not a downloadable or physically certified release. It has no tag, package,
+checksum manifest, physical PASS, or GitHub release. Its release checklist
+remains entirely **NOT RUN**, and immutable v0.25.0 stays Latest until protected
+publication succeeds.
+
 The Conversation boundary accepts any meeting provider only through a
 hardened public HTTPS DNS-host link; it rejects embedded credentials, custom
 ports, local/special-use names, IP literals, percent-encoded hosts, and
@@ -52,6 +58,19 @@ external routing can feed content into an input, users must not route meeting
 or system-output audio into those inputs. Meeting-service recording remains
 externally owned. Review & Rehearsal Preview cannot enable shared notes, visual
 synchronization, or media timecode.
+
+The v0.26 Record Session readiness surface receives only a bounded, path-free
+presentation snapshot: opaque logical-source IDs, safe participant/source
+labels, mono/stereo topology, required/optional status, readiness, bounded
+meters, storage/Shared Track summaries, and redacted blockers. It does not
+receive device identifiers, media paths, plan fingerprints, RPC credentials,
+or mutable service objects. Clicking Start is not authority; the controller
+revalidates the private take/plan generation, roster, input maps, guest
+obligations, device preflight, storage, and Shared Track identity before
+arming. Stable logical-source IDs—not display names or ordering—bind new source
+topology through transfer, manifests, recovery, and automatic repeated-take
+matching. Missing, duplicate, or changed identity fails closed.
+
 Local scratchpads are profile-scoped, atomically written with mode `0600`, and
 read only from fixed regular no-follow files up to 1 MiB. They are never shared
 and never enter a session synchronization, meeting handoff, public projection,

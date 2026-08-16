@@ -162,7 +162,11 @@ class SessionStrip(QFrame):
         self._audio_button.setVisible(False)
 
         self._record_button = QPushButton("● Record Session")
-        self._record_button.setObjectName("GhostButton")
+        # Recording is the one creative action in the live strip that must
+        # remain unmistakable at a glance.  Reuse Studio's primary record
+        # treatment so the same action has the same visual language in both
+        # surfaces; profile-specific copy and accessibility stay semantic.
+        self._record_button.setObjectName("StudioRecordButton")
         self._record_button.setAccessibleName(
             "Start or stop band-server multitrack recording"
         )
@@ -896,8 +900,11 @@ class SessionStrip(QFrame):
             self._record_clock.stop()
             self._record_elapsed.setText("STOPPING")
             self._record_elapsed.setVisible(True)
-            description = "Recording stopped; WebJam is saving and checking the tracks."
-        elif phase == "validating":
+            description = (
+                "Stop was requested; the server may still be recording while it "
+                "closes the recorder. WebJam will finalize only after confirmation."
+            )
+        elif phase in {"finalizing", "validating"}:
             self._set_record_button_label("Finalizing…")
             self._record_button.setEnabled(False)
             self._record_clock.stop()

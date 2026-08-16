@@ -14,10 +14,13 @@ import soundfile as sf
 from core.studio_comping import (
     StudioCompingError,
     add_take_lane,
+    automatic_source_track_match,
+    automatic_take_lane_matches,
     audition_lane_document,
     compatible_source_tracks,
     remove_take_lane,
     select_lane_range,
+    stack_automatic_take_lanes,
 )
 from core.studio_project import StudioProjectError, default_studio_document
 from core.studio_renderer import StudioRenderError, StudioRenderer
@@ -54,10 +57,18 @@ def _project(
     source_type: SourceType = SourceType.LOCAL_ISOLATED,
     quality: SourceQuality = SourceQuality.VERIFIED_ISOLATED,
     alignment: AlignmentState | None = None,
+    logical_source_id: str = "",
+    session_id: str = _id(1),
+    channels: int = 1,
 ) -> TakeProject:
     root.mkdir(parents=True, exist_ok=True)
     media = root / "vocal.wav"
-    sf.write(media, np.full(16, value, dtype=np.float32), 8_000, subtype="FLOAT")
+    samples = np.full(
+        16 if channels == 1 else (16, channels),
+        value,
+        dtype=np.float32,
+    )
+    sf.write(media, samples, 8_000, subtype="FLOAT")
     info = sf.info(media)
     segment = MediaSegment(
         segment_id=segment_id,
@@ -88,9 +99,10 @@ def _project(
             if alignment is not None
             else AlignmentState(confidence=0.91, method="test-verified-alignment")
         ),
+        logical_source_id=logical_source_id,
     )
     project = TakeProject(
-        session_id=_id(1),
+        session_id=session_id,
         take_id=take_id,
         session_title="Comp fixture",
         take_name=f"Take {take_id[-2:]}",
@@ -104,6 +116,157 @@ def _project(
         encoding="utf-8",
     )
     return project
+
+
+def test_automatic_match_requires_exact_stable_logical_source_id(
+    tmp_path: Path,
+) -> None:
+    logical_source_id = _id(900)
+    primary = _project(
+        tmp_path / "primary-exact",
+        take_id=_id(201),
+        value=0.1,
+        logical_source_id=logical_source_id,
+    )
+    repeated = _project(
+        tmp_path / "repeated-exact",
+        take_id=_id(202),
+        value=0.2,
+        logical_source_id=logical_source_id,
+    )
+    decoy = replace(
+        repeated.tracks[0],
+        track_id=_id(12),
+        source_id=_id(112),
+        logical_source_id=_id(901),
+        name="Same participant, other input",
+        order=1,
+        segments=(replace(repeated.tracks[0].segments[0], segment_id=_id(22)),),
+    )
+    repeated = replace(repeated, tracks=(decoy, repeated.tracks[0]))
+
+    assert (
+        automatic_source_track_match(
+            primary.tracks[0],
+            repeated,
+            primary_project=primary,
+        )
+        == repeated.tracks[1]
+    )
+    assert (
+        automatic_source_track_match(
+            replace(primary.tracks[0], logical_source_id=""),
+            repeated,
+            primary_project=replace(
+                primary,
+                tracks=(replace(primary.tracks[0], logical_source_id=""),),
+            ),
+        )
+        is None
+    )
+
+    wrong_topology = _project(
+        tmp_path / "repeated-stereo",
+        take_id=_id(203),
+        value=0.3,
+        logical_source_id=logical_source_id,
+        channels=2,
+    )
+    assert (
+        automatic_source_track_match(
+            primary.tracks[0],
+            wrong_topology,
+            primary_project=primary,
+        )
+        is None
+    )
+    unaligned = _project(
+        tmp_path / "repeated-unaligned",
+        take_id=_id(204),
+        value=0.4,
+        logical_source_id=logical_source_id,
+        alignment=AlignmentState(confidence=0.0, method="unverified"),
+    )
+    assert (
+        automatic_source_track_match(
+            primary.tracks[0],
+            unaligned,
+            primary_project=primary,
+        )
+        is None
+    )
+
+
+def test_automatic_lane_stack_is_same_session_exact_and_idempotent(
+    tmp_path: Path,
+) -> None:
+    logical_source_id = _id(920)
+    primary = _project(
+        tmp_path / "auto-primary",
+        take_id=_id(211),
+        value=0.1,
+        logical_source_id=logical_source_id,
+    )
+    repeated = _project(
+        tmp_path / "auto-repeated",
+        take_id=_id(212),
+        value=0.2,
+        logical_source_id=logical_source_id,
+    )
+    document = default_studio_document(primary)
+
+    matches = automatic_take_lane_matches(document, primary, repeated)
+    assert matches == ((primary.tracks[0], repeated.tracks[0]),)
+    stacked = stack_automatic_take_lanes(document, primary, repeated)
+    assert len([lane for lane in stacked.take_lanes if not lane.deleted]) == 1
+    assert stack_automatic_take_lanes(stacked, primary, repeated) == stacked
+
+    other_session = _project(
+        tmp_path / "auto-other-session",
+        take_id=_id(213),
+        value=0.3,
+        logical_source_id=logical_source_id,
+        session_id=_id(2),
+    )
+    with pytest.raises(StudioCompingError, match="different session"):
+        stack_automatic_take_lanes(document, primary, other_session)
+
+    legacy = replace(
+        repeated,
+        take_id=_id(214),
+        tracks=(replace(repeated.tracks[0], logical_source_id=""),),
+    )
+    assert stack_automatic_take_lanes(document, primary, legacy) is document
+
+
+def test_automatic_lane_stack_rejects_duplicate_source_identity(tmp_path: Path) -> None:
+    logical_source_id = _id(930)
+    primary = _project(
+        tmp_path / "duplicate-primary",
+        take_id=_id(221),
+        value=0.1,
+        logical_source_id=logical_source_id,
+    )
+    repeated = _project(
+        tmp_path / "duplicate-repeated",
+        take_id=_id(222),
+        value=0.2,
+        logical_source_id=logical_source_id,
+    )
+    duplicate = replace(
+        repeated.tracks[0],
+        track_id=_id(223),
+        source_id=_id(224),
+        order=1,
+        segments=(
+            replace(repeated.tracks[0].segments[0], segment_id=_id(225)),
+        ),
+    )
+    ambiguous = replace(repeated, tracks=(repeated.tracks[0], duplicate))
+    document = default_studio_document(primary)
+
+    assert automatic_take_lane_matches(document, primary, ambiguous) == ()
+    assert stack_automatic_take_lanes(document, primary, ambiguous) is document
 
 
 def _peer_project(
@@ -644,9 +807,7 @@ def test_live_reference_comp_requires_the_same_uploaded_source_fingerprint(
     assert len(document.take_lanes) == 1
 
     assert compatible_source_tracks(primary.tracks[0], replacement) == ()
-    with pytest.raises(
-        StudioCompingError, match="different Shared Track song"
-    ):
+    with pytest.raises(StudioCompingError, match="different Shared Track song"):
         add_take_lane(
             default_studio_document(primary),
             primary,
@@ -658,9 +819,7 @@ def test_live_reference_comp_requires_the_same_uploaded_source_fingerprint(
     # prove that two stable Shared Track participant IDs represent one song;
     # the refusal now names that missing evidence honestly.
     assert compatible_source_tracks(primary.tracks[0], legacy_unknown) == ()
-    with pytest.raises(
-        StudioCompingError, match="no Shared Track source evidence"
-    ):
+    with pytest.raises(StudioCompingError, match="no Shared Track source evidence"):
         add_take_lane(
             default_studio_document(primary),
             primary,

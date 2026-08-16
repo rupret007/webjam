@@ -586,14 +586,22 @@ def test_guest_capture_uses_the_exact_configured_local_original_map(
         guest.poll_once()
 
         assert len(_FakeCapture.instances) == 1
-        assert _FakeCapture.instances[0].tracks == mapped_tracks
+        started_tracks = _FakeCapture.instances[0].tracks
+        assert tuple(
+            (track.stem, track.source_channels) for track in started_tracks
+        ) == (
+            ("local-Voice", (0,)),
+            ("local-Guitar L", (1,)),
+            ("local-Guitar R", (2,)),
+        )
+        assert len({track.logical_source_id for track in started_tracks}) == 3
+        assert all(track.logical_source_id for track in started_tracks)
 
         control.finish(take_id, stopped_utc="2026-08-11T12:01:00Z")
         guest.poll_once()
         assert len(guest.pending_segments) == 3
         assert {
-            item.descriptor.inventory_input_count
-            for item in guest.pending_segments
+            item.descriptor.inventory_input_count for item in guest.pending_segments
         } == {3}
     finally:
         guest.stop()
@@ -658,9 +666,7 @@ def test_guest_finalizing_state_notifies_after_capture_clears_active_take(
         capture_enabled=lambda: True,
         capture_config=lambda: (7, 48_000, 128),
         capture_factory=_FakeCapture,
-        on_guidance_changed=lambda: guidance_updates.append(
-            guest.last_state.signal
-        ),
+        on_guidance_changed=lambda: guidance_updates.append(guest.last_state.signal),
     )
     guest.poll_once()
     take_id = _id()
@@ -871,11 +877,13 @@ def test_guest_capture_gaps_survive_queue_transfer_and_host_attachment(
 
         host.register_take(take_id, take_dir)
         _wait_until(
-            lambda: sum(
-                track.source_type is SourceType.LOCAL_ISOLATED
-                for track in load_take_project(take_dir).tracks
-            )
-            == 2,
+            lambda: (
+                sum(
+                    track.source_type is SourceType.LOCAL_ISOLATED
+                    for track in load_take_project(take_dir).tracks
+                )
+                == 2
+            ),
             "both gapped peer tracks",
         )
         project = load_take_project(take_dir)
@@ -1232,8 +1240,7 @@ def test_host_preserves_legacy_descriptor_media_but_fails_inventory_closed(
         project = load_take_project(take_dir)
         assert project.status is ProjectStatus.NEEDS_ATTENTION
         assert any(
-            error.startswith(PEER_TRANSFER_ERROR_PREFIX)
-            and "did not declare" in error
+            error.startswith(PEER_TRANSFER_ERROR_PREFIX) and "did not declare" in error
             for error in project.errors
         )
         assert any(
@@ -1309,9 +1316,7 @@ def test_host_promotes_verified_guest_original_only_with_strong_same_participant
         credentials = host.credentials
         assert credentials is not None
         assert host.host_enrollment is not None
-        client = SessionPeerClient(
-            "127.0.0.1", host.peer_port, credentials=credentials
-        )
+        client = SessionPeerClient("127.0.0.1", host.peer_port, credentials=credentials)
         guest = client.enroll(_id(), "Alex")
         client.bind_presence(
             guest,
@@ -1376,7 +1381,9 @@ def test_host_promotes_verified_guest_original_only_with_strong_same_participant
         )
         assert attached.alignment.confidence >= 0.85
         assert attached.alignment.residual_ms <= 2.0
-        assert attached.alignment.automatic_offset_s == pytest.approx(offset_s, abs=0.002)
+        assert attached.alignment.automatic_offset_s == pytest.approx(
+            offset_s, abs=0.002
+        )
         assert len(attached.alignment.anchors) >= 3
         assert attached.alignment.reference_track_id == reference_track_id
         assert len(attached.alignment.reference_fingerprint_sha256) == 64
@@ -1413,9 +1420,7 @@ def test_host_retries_guest_alignment_when_its_server_reference_arrives_later(
         credentials = host.credentials
         assert credentials is not None
         assert host.host_enrollment is not None
-        client = SessionPeerClient(
-            "127.0.0.1", host.peer_port, credentials=credentials
-        )
+        client = SessionPeerClient("127.0.0.1", host.peer_port, credentials=credentials)
         guest = client.enroll(_id(), "Alex")
         client.bind_presence(
             guest,
@@ -1519,9 +1524,7 @@ def test_host_retries_after_manifest_changes_during_peer_alignment(
         credentials = host.credentials
         assert credentials is not None
         assert host.host_enrollment is not None
-        client = SessionPeerClient(
-            "127.0.0.1", host.peer_port, credentials=credentials
-        )
+        client = SessionPeerClient("127.0.0.1", host.peer_port, credentials=credentials)
         guest = client.enroll(_id(), "Alex")
         client.bind_presence(
             guest,
@@ -1639,9 +1642,7 @@ def test_host_retries_when_manifest_changes_just_before_conditional_commit(
         credentials = host.credentials
         assert credentials is not None
         assert host.host_enrollment is not None
-        client = SessionPeerClient(
-            "127.0.0.1", host.peer_port, credentials=credentials
-        )
+        client = SessionPeerClient("127.0.0.1", host.peer_port, credentials=credentials)
         guest = client.enroll(_id(), "Alex")
         client.bind_presence(
             guest,
@@ -1664,9 +1665,7 @@ def test_host_retries_when_manifest_changes_just_before_conditional_commit(
 
         original = tmp_path / "alex-original.wav"
         _wav(original)
-        descriptor = _descriptor(
-            original, credentials, guest.participant_id, take_id
-        )
+        descriptor = _descriptor(original, credentials, guest.participant_id, take_id)
         assert client.upload_file(guest, descriptor, original).complete
 
         result: list[bool] = []
@@ -1883,10 +1882,7 @@ def test_host_stop_suppresses_late_reconcile_after_rapid_restart(
     release_checksum = threading.Event()
 
     def delayed_hash(path: str | Path) -> str:
-        if (
-            Path(path).name.endswith(".wav.copying")
-            and not checksum_entered.is_set()
-        ):
+        if Path(path).name.endswith(".wav.copying") and not checksum_entered.is_set():
             checksum_entered.set()
             assert release_checksum.wait(10.0)
         return real_hash(path)
@@ -1983,8 +1979,7 @@ def test_host_stop_suppresses_late_reconcile_after_rapid_restart(
         host.finish_take(second_take_id, stopped_utc="2026-07-15T00:03:00Z")
         host.register_take(second_take_id, second_take_dir)
         _wait_until(
-            lambda: updates
-            == [(second_take_id, second_take_dir.resolve(), False)],
+            lambda: updates == [(second_take_id, second_take_dir.resolve(), False)],
             "current-session peer inventory after restart",
         )
         assert updates == [(second_take_id, second_take_dir.resolve(), False)]
@@ -2234,21 +2229,73 @@ def test_pre_take_obligation_validates_zero_one_many_and_map_identity() -> None:
             for index in range(count)
         )
 
-    assert _participant_inventory_disposition(
-        records(2, 2, many_fingerprint), many
-    ).status == "needs_attention"
-    assert _participant_inventory_disposition(
-        records(4, 4, many_fingerprint), many
-    ).status == "needs_attention"
-    assert _participant_inventory_disposition(
-        records(3, 3, hashlib.sha256(b"substitute").hexdigest()), many
-    ).status == "needs_attention"
-    assert _participant_inventory_disposition(
-        records(3, 3, many_fingerprint), many
-    ).status == "complete"
+    assert (
+        _participant_inventory_disposition(records(2, 2, many_fingerprint), many).status
+        == "needs_attention"
+    )
+    assert (
+        _participant_inventory_disposition(records(4, 4, many_fingerprint), many).status
+        == "needs_attention"
+    )
+    assert (
+        _participant_inventory_disposition(
+            records(3, 3, hashlib.sha256(b"substitute").hexdigest()), many
+        ).status
+        == "needs_attention"
+    )
+    assert (
+        _participant_inventory_disposition(records(3, 3, many_fingerprint), many).status
+        == "complete"
+    )
 
 
-def test_guest_contract_fingerprint_excludes_stem_device_and_path(tmp_path: Path) -> None:
+def test_exact_guest_obligation_rejects_width_or_logical_source_substitution() -> None:
+    participant_id = _id()
+    fingerprint = hashlib.sha256(b"exact-map").hexdigest()
+    source_ids = (_id(), _id())
+    obligation = LocalOriginalObligation(
+        participant_id,
+        2,
+        fingerprint,
+        capture_requested=True,
+        channel_counts=(1, 2),
+        logical_source_ids=source_ids,
+    )
+
+    def inventory(widths=(1, 2), ids=source_ids):
+        return tuple(
+            SimpleNamespace(
+                descriptor=SimpleNamespace(
+                    inventory_input_count=2,
+                    inventory_segment_count=2,
+                    inventory_map_fingerprint=fingerprint,
+                    source_channel=ordinal,
+                    channels=width,
+                    logical_source_id=ids[ordinal],
+                )
+            )
+            for ordinal, width in enumerate(widths)
+        )
+
+    assert obligation.exact_topology
+    assert (
+        _participant_inventory_disposition(inventory(), obligation).status == "complete"
+    )
+    assert (
+        _participant_inventory_disposition(inventory(widths=(2, 1)), obligation).status
+        == "needs_attention"
+    )
+    assert (
+        _participant_inventory_disposition(
+            inventory(ids=(source_ids[1], source_ids[0])), obligation
+        ).status
+        == "needs_attention"
+    )
+
+
+def test_guest_contract_fingerprint_excludes_stem_device_and_path(
+    tmp_path: Path,
+) -> None:
     first = (LocalCaptureTrack("Private Vocal", (0, 1)),)
     renamed = (LocalCaptureTrack("Dialogue Pair", (0, 1)),)
     fingerprint = local_capture_track_map_fingerprint(first)

@@ -1,0 +1,54 @@
+name: WebJam v0.26 Publisher Placeholder (INERT)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Reserved exact v0.26.0 annotated candidate tag"
+        required: true
+        default: v0.26.0
+        type: string
+
+# This source-candidate placeholder is deliberately incapable of publishing.
+# Replace UNSET pins only after the annotated tag, successful tag CI, draft
+# release, exact asset inventory, and release body exist and have been audited.
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: v026-release-publisher-placeholder
+  cancel-in-progress: false
+
+env:
+  EXPECTED_TAG: v0.26.0
+  EXPECTED_VERSION: 0.26.0
+  PINNED_TAG_OBJECT: UNSET_POST_TAG_OBJECT
+  PINNED_TAG_COMMIT: UNSET_POST_TAG_COMMIT
+  PINNED_TAG_CI_RUN_ID: UNSET_POST_TAG_CI_RUN_ID
+  PINNED_RELEASE_ID: UNSET_POST_TAG_RELEASE_ID
+  PINNED_INVENTORY_SHA256: UNSET_POST_TAG_INVENTORY_SHA256
+  PINNED_BODY_SHA256: UNSET_POST_TAG_BODY_SHA256
+
+jobs:
+  refuse-unpinned-publication:
+    name: Refuse publication until exact post-tag pins exist
+    runs-on: ubuntu-22.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Confirm placeholder identity and fail closed
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$REQUESTED_TAG" != "$EXPECTED_TAG" ]]; then
+            echo "This inert placeholder is reserved for $EXPECTED_TAG." >&2
+            exit 1
+          fi
+          echo "v0.26 publication is disabled: exact post-tag pins are unset." >&2
+          echo "Create and audit the tag, tag CI, draft, inventory, and body before replacing this placeholder." >&2
+          exit 1

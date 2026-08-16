@@ -103,6 +103,10 @@ def test_studio_review_uses_studio_owned_action_and_truthful_outputs(
     controller, window, old_home = _controller(tmp_path)
     studio = window.recording_studio
     try:
+        monkeypatch.setattr(
+            "webjam_qt.platform_permissions.microphone_permission_status",
+            lambda: "denied",
+        )
         facts = StudioGuidanceFacts(
             take_selected=True,
             take_validated=True,
@@ -437,6 +441,12 @@ def test_guest_media_mapping_uses_only_bounded_transfer_facts(tmp_path):
             EvidenceState.VERIFIED,
         )
 
+        segment.status = "recovery_only"
+        assert controller._guest_media_state() == (
+            GuestMediaState.NEEDS_ATTENTION,
+            EvidenceState.VERIFIED,
+        )
+
         segment.status = "missing_local_original"
         source.unlink()
         assert controller._guest_media_state() == (
@@ -492,8 +502,15 @@ def test_guidance_is_idempotent_and_studio_tick_does_not_announce(tmp_path):
         )[-1]
         studio.guidance_changed.connect(lambda: announcements.append("changed"))
         snapshot = controller._last_session_conductor_snapshot
-        controller._publish_musician_guidance(snapshot)
-        controller._publish_musician_guidance(snapshot)
+        display_override = controller._last_guidance_display_override
+        controller._publish_musician_guidance(
+            snapshot,
+            display_override=display_override,
+        )
+        controller._publish_musician_guidance(
+            snapshot,
+            display_override=display_override,
+        )
         studio._tick()
         QCoreApplication.processEvents()
 

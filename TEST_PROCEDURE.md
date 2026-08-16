@@ -1,8 +1,10 @@
-# WebJam v0.25.0 private-test release procedure
+# WebJam v0.26.0 source-candidate test procedure
 
-> Immutable v0.25.0 is the GitHub **Latest** private test release. Its exact
-> package and publication identity is verified, but every v0.25.0 physical,
-> credentialed, signing, and platform-trust gate remains **NOT RUN**.
+> Immutable v0.25.0 is the GitHub **Latest** private test release. Current
+> v0.26.0 is source identity only: no tag, native package, checksum manifest,
+> physical PASS, or GitHub release is claimed. Its physical checklist remains
+> entirely **NOT RUN** and must not be executed until it identifies exact tagged
+> candidate packages.
 
 ## Scope
 
@@ -86,11 +88,36 @@ Review at minimum:
 - Each take plan binds and rechecks the exact roster/server stems, Shared Track
   fingerprint and playback generation, host logical mono/stereo topology,
   guest Local Original obligations, storage verdict, and expected source count.
+- The path-free Record Session Readiness sheet shows every exact server, Local
+  Original, and Shared Track source; mono/stereo format; required/optional
+  status; readiness/meter; storage; Shared Track status; and blockers. Start is
+  disabled when blocked. Acceptance must recheck private plan authority before
+  any recorder, local stream, or Shared Track begins; Cancel must start none.
+- For each required guest Local Original, acceptance publishes a
+  participant-scoped arm bound to the exact take and plan. Prove the guest opens
+  its frozen device/map before sending an authenticated acknowledgement, that
+  every required acknowledgement arrives before the Jamulus start-recording RPC, and
+  that the host repeats authority validation after acknowledgement. Zero-track
+  opt-outs do not block; timeout, disconnect, device failure, stale generation,
+  wrong width/source ID, and late acknowledgement start no server recorder.
+- Every new source keeps one stable logical-source ID and exact one- or
+  two-channel width through capture, transfer, manifest, recovery, Studio, and
+  automatic repeated-take matching. Missing/duplicate identity, absent width,
+  topology drift, and missing/extra files fail closed without a name/order
+  fallback.
 - A mono row yields one mono PCM-24 file; a stereo row yields one true
   two-channel PCM-24 file that remains stereo through recovery, Studio, and
   export. Verify that the plan contains only authoritative server stems,
   Shared Track, and explicitly planned Local Originals; do not feed meeting or
   system-output audio into the selected Local Original inputs during the test.
+- A newly completed editable Music or Podcast take automatically stacks only
+  same-session, same-rate, unique stable-ID matches with the same participant,
+  source kind, channel topology, verified timing, and Shared Track fingerprint
+  where relevant. Review Preview performs no automatic edit or sidecar write.
+- Podcast & Voice proves the 48 kHz Host-mono + Guest-stereo journey through
+  record, loop overdub, chapter persistence, save/reopen, and verified stereo
+  PCM-24 **Bounce Episode**. Review Preview lower-level edit, mix, save, bounce,
+  and export entry points remain fail-closed.
 - Notes and Creative Pulse cannot change operational phase/action/output facts
   and never enter diagnostics or Companion output.
 - Guidance generation/revision guards reject stale observations; identical
@@ -261,13 +288,22 @@ Review at minimum:
 6. Preserve the current rollback package before installing any freshly verified
    candidate app.
 
-## v0.25.0 creator-multitrack physical gate
+## v0.26.0 creator-multitrack physical gate — provisional
 
 Run the dedicated
+[v0.26.0 creator-multitrack physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
+only after its identity section records an exact annotated tag, unique
+successful native tag CI, candidate package inventory, and checksum manifest.
+The checklist currently forbids execution, and every row remains **NOT RUN**.
+Do not reuse source-test results, a branch artifact, local freeze, or an earlier
+release observation.
+
+## v0.25.0 creator-multitrack physical gate — immutable Latest ledger
+
+Immutable v0.25.0 remains GitHub **Latest**. Its dedicated
 [v0.25.0 creator-multitrack physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-only against exact future tagged assets and their checksum manifest. Do not
-reuse source-test results, a branch artifact, or a v0.24.0 observation. Every
-row currently remains **NOT RUN**.
+retains its exact publication evidence and **NOT RUN** physical rows. Never
+write v0.26 source or package results into that historical ledger.
 
 ## v0.24.0 physical musician gate — immutable historical checklist
 

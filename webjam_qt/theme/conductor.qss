@@ -1212,6 +1212,107 @@ QWizard QPushButton:default {
 }
 
 /* -------------------------------------------------------------------------
+ * Record Session readiness
+ * ---------------------------------------------------------------------- */
+#RecordingReadinessDialog {
+    background-color: ${COLOR_BG_BASE};
+}
+
+#RecordingReadinessEyebrow,
+#RecordingReadinessSectionTitle,
+#RecordingReadinessBlockerTitle {
+    color: ${COLOR_ACCENT_PRIMARY};
+    font-size: ${FONT_SIZE_XS}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+    letter-spacing: 0.12em;
+}
+
+#RecordingReadinessTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_XL}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#RecordingReadinessSummary,
+#RecordingReadinessSourceCount,
+#RecordingReadinessCardDetail,
+#RecordingReadinessSourceDetail,
+#RecordingReadinessBlockerText {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#RecordingReadinessScroll,
+#RecordingReadinessScroll > QWidget > QWidget,
+#RecordingReadinessSourceList,
+#RecordingReadinessIdentity,
+#RecordingReadinessFormat {
+    background-color: transparent;
+}
+
+#RecordingReadinessSummaryCard,
+#RecordingReadinessSourceRow,
+#RecordingReadinessBlockers {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+}
+
+#RecordingReadinessSummaryCard[readinessState="action_needed"],
+#RecordingReadinessSourceRow[readinessState="action_needed"],
+#RecordingReadinessBlockers {
+    border-left: 3px solid ${COLOR_ACCENT_PRIMARY};
+}
+
+#RecordingReadinessSummaryCard[readinessState="checking"],
+#RecordingReadinessSourceRow[readinessState="checking"] {
+    border: 1px dashed ${COLOR_BORDER_STRONG};
+}
+
+#RecordingReadinessCardTitle,
+#RecordingReadinessParticipant,
+#RecordingReadinessCardSummary,
+#RecordingReadinessState {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#RecordingReadinessSourceLabel,
+#RecordingReadinessTopology {
+    color: ${COLOR_TEXT_SECONDARY};
+}
+
+#RecordingReadinessKind,
+#RecordingReadinessObligation {
+    color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_PANEL};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_PILL}px;
+    padding: 2px ${SPACE_SM}px;
+    font-size: ${FONT_SIZE_XS}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#RecordingReadinessState[readinessState="action_needed"] {
+    color: ${COLOR_ACCENT_PRIMARY};
+}
+
+QProgressBar#RecordingReadinessMeter {
+    min-height: 16px;
+    color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_INPUT};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_SM}px;
+    font-size: ${FONT_SIZE_XS}px;
+    text-align: center;
+}
+
+QProgressBar#RecordingReadinessMeter::chunk {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_SM}px;
+}
+
+/* -------------------------------------------------------------------------
  * Multitrack Studio
  * ---------------------------------------------------------------------- */
 #RecordingStudio {
@@ -1259,8 +1360,19 @@ QPushButton#StudioRecordButton:hover {
     background-color: ${COLOR_ACCENT_HOVER};
 }
 
+QPushButton#StudioRecordButton:pressed {
+    background-color: ${COLOR_ACCENT_PRESSED};
+    border-color: ${COLOR_ACCENT_PRESSED};
+}
+
 QPushButton#StudioRecordButton:focus {
     border: 2px solid ${COLOR_TEXT_PRIMARY};
+}
+
+QPushButton#StudioRecordButton:disabled {
+    color: ${COLOR_TEXT_MUTED};
+    background-color: ${COLOR_BG_PANEL};
+    border-color: ${COLOR_BORDER_SUBTLE};
 }
 
 #StudioLibrary, #StudioEditor {
