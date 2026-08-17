@@ -1,9 +1,9 @@
-# Meeting-platform companion guidance — v0.26.0 source candidate
+# Meeting-platform companion guidance — v0.26.0
 
-> This document describes the current unpublished v0.26.0 source candidate.
-> Immutable v0.25.0 remains GitHub **Latest**. No v0.26.0 package or physical
-> meeting result is claimed; every external meeting-app behavior remains a
-> separate **NOT RUN** physical gate.
+> This document describes immutable v0.26.0, the GitHub **Latest** private test
+> release. Exact packages exist, but no physical meeting result is claimed;
+> every external meeting-app behavior remains a separate **NOT RUN** physical
+> gate.
 
 Any meeting service is optional for talking or video. Jamulus carries the
 music.
@@ -112,5 +112,6 @@ two-endpoint rehearsal. Its checks remain **NOT RUN** until completed against
 an exact package after all previously disclosed test passwords are rotated.
 The broader
 [`V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md`](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-must not be executed until an exact annotated v0.26.0 tag, native packages, and
-checksum manifest exist.
+may be executed only against the exact published v0.26.0 packages and checksum
+manifest recorded in its verified identity section; its meeting-platform rows
+remain **NOT RUN** until that physical evidence is collected.

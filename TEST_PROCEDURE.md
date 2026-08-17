@@ -1,10 +1,9 @@
-# WebJam v0.26.0 source-candidate test procedure
+# WebJam v0.26.0 private-test-release procedure
 
-> Immutable v0.25.0 is the GitHub **Latest** private test release. Current
-> v0.26.0 is source identity only: no tag, native package, checksum manifest,
-> physical PASS, or GitHub release is claimed. Its physical checklist remains
-> entirely **NOT RUN** and must not be executed until it identifies exact tagged
-> candidate packages.
+> Immutable v0.26.0 is the GitHub **Latest** private test release. Its exact
+> tag, packages, checksum manifest, protected publication, and public redownload
+> are verified. No physical PASS is claimed: its physical, hardware, provider,
+> accessibility, production-trust, and release-decision rows remain **NOT RUN**.
 
 ## Scope
 
@@ -288,19 +287,19 @@ Review at minimum:
 6. Preserve the current rollback package before installing any freshly verified
    candidate app.
 
-## v0.26.0 creator-multitrack physical gate — provisional
+## v0.26.0 creator-multitrack physical gate — published identity
 
 Run the dedicated
 [v0.26.0 creator-multitrack physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-only after its identity section records an exact annotated tag, unique
-successful native tag CI, candidate package inventory, and checksum manifest.
-The checklist currently forbids execution, and every row remains **NOT RUN**.
-Do not reuse source-test results, a branch artifact, local freeze, or an earlier
-release observation.
+only against the exact annotated tag and checksum-verified package inventory
+recorded in its identity section. Automated release-identity rows are verified;
+every physical observation, release-decision row, and recommendation remains
+**NOT RUN**. Do not reuse source-test results, a branch artifact, local freeze,
+or an earlier release observation.
 
-## v0.25.0 creator-multitrack physical gate — immutable Latest ledger
+## v0.25.0 creator-multitrack physical gate — immutable historical ledger
 
-Immutable v0.25.0 remains GitHub **Latest**. Its dedicated
+Immutable v0.25.0 remains historical release evidence. Its dedicated
 [v0.25.0 creator-multitrack physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 retains its exact publication evidence and **NOT RUN** physical rows. Never
 write v0.26 source or package results into that historical ledger.

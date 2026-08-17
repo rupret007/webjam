@@ -1,4 +1,4 @@
-"""Current-facing v0.26 documentation and local-link truth contracts."""
+"""Published v0.26 documentation and local-link truth contracts."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CURRENT_GUIDES = (
     "README.md",
     "README_SIMPLE.md",
+    "ARCHITECTURE.md",
+    "DEVELOPMENT.md",
     "FIRST_JAM.md",
     "USER_GUIDE.md",
     "RECORDING_AND_STUDIO.md",
@@ -20,11 +22,16 @@ CURRENT_GUIDES = (
     "TEST_PROCEDURE.md",
     "WEBEX_AUDIO_MODES.md",
     "CREATIVE_MODES_MVP_SPEC.md",
+    "UX_ACCEPTANCE_CHECKLIST.md",
+    "V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md",
     "CHANGELOG.md",
     "docs/README.md",
     "docs/DESKTOP_RELEASE_RUNBOOK.md",
+    "docs/JAMULUS_COMPONENT_RELEASE_RUNBOOK.md",
     "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md",
     "docs/PROJECT_BRIEF.md",
+    "requirements-lock/README.md",
+    "ios/README.md",
 )
 LINK_RE = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$", re.MULTILINE)
@@ -42,7 +49,9 @@ def _heading_anchors(text: str) -> set[str]:
     return anchors
 
 
-def test_current_guides_state_candidate_and_latest_identities_truthfully() -> None:
+def test_current_guides_state_published_latest_and_physical_boundary_truthfully() -> (
+    None
+):
     for relative_path in (
         "README.md",
         "README_SIMPLE.md",
@@ -58,17 +67,59 @@ def test_current_guides_state_candidate_and_latest_identities_truthfully() -> No
     ):
         text = _normalized(relative_path)
         assert "v0.26.0" in text, relative_path
-        assert "v0.25.0" in text and "Latest" in text, relative_path
+        assert "Latest" in text, relative_path
         assert "NOT RUN" in text, relative_path
 
     combined = " ".join(_normalized(path) for path in CURRENT_GUIDES)
-    for claim in (
+    for marker in (
+        "https://github.com/rupret007/webjam/releases/tag/v0.26.0",
+        "371442375",
+        "2026-08-16T22:40:56Z",
+        "WebJam-v0.26.0-SHA256SUMS.txt",
+    ):
+        assert marker.casefold() in combined.casefold()
+
+    for stale_claim in (
         "No v0.26.0 tag",
         "no v0.26.0 package",
         "unpublished v0.26.0",
+        "deliberately inert, fail-closed publication stub",
+        "before v0.26.0 can replace",
         "v0.25.0 remains GitHub **Latest**",
+        "GitHub **Latest** remains immutable v0.25.0",
+        "Immutable v0.25.0 is the GitHub **Latest**",
     ):
-        assert claim.casefold() in combined.casefold()
+        assert stale_claim.casefold() not in combined.casefold(), stale_claim
+
+
+def test_v026_checklist_verifies_only_automated_release_identity() -> None:
+    checklist = (ROOT / "V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md").read_text(
+        encoding="utf-8"
+    )
+    identity = checklist.split("## Exact candidate identity\n", 1)[1].split(
+        "\n## A. Native packages, clean start, and trust", 1
+    )[0]
+    assert identity.count("**VERIFIED \u2014 automated release evidence:**") == 6
+    assert "| I07 |" in identity and "**NOT RUN" in identity
+    assert "| I08 |" in identity and "**NOT RUN" in identity
+
+    physical_rows = [
+        line
+        for line in checklist.splitlines()
+        if re.match(r"^\| [A-F][0-9]{2} \|", line)
+    ]
+    assert len(physical_rows) >= 50
+    assert all(line.endswith("| **NOT RUN** |") for line in physical_rows)
+
+    decision = checklist.split("## Release decision summary\n", 1)[1]
+    decision_rows = [
+        line
+        for line in decision.splitlines()
+        if line.startswith("| ") and "Gate family" not in line and "---" not in line
+    ]
+    assert len(decision_rows) == 11
+    assert all(line.endswith("| **NOT RUN** |") for line in decision_rows)
+    assert "Release recommendation: **NOT RUN**" in decision
 
 
 def test_v026_guides_cover_exact_recording_and_creator_boundaries() -> None:
@@ -131,7 +182,9 @@ def test_v026_current_guide_local_links_and_anchors_resolve() -> None:
             if target.startswith(("https://", "http://", "mailto:")):
                 continue
             path_part, separator, fragment = target.partition("#")
-            target_path = source if not path_part else source.parent / unquote(path_part)
+            target_path = (
+                source if not path_part else source.parent / unquote(path_part)
+            )
             target_path = target_path.resolve()
             if not target_path.exists():
                 failures.append(f"{relative_path}: missing {target}")

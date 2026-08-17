@@ -35,10 +35,19 @@
 > 0.25.0 without moving the component channel. The v0.25.0 source registry
 > extends the unchanged audited 3.12.2/3.12.3 identities through exact WebJam
 > 0.25.0 and rejects 0.25.1 so the embedded fallback remains known, but that is
-> not a signed managed-update authorization. Immutable v0.25.0 is GitHub
-> **Latest** desktop release `371028390`. No v0.25 component tag, release,
+> not a signed managed-update authorization. Immutable v0.25.0 is historical
+> desktop release `371028390`. No v0.25 component tag, release,
 > sequence, asset, signature, or PASS evidence exists. A future managed update
 > requires a new fixed channel and the complete procedure below.
+
+> **v0.26.0 published fallback-only desktop state:** the protected publisher
+> proved that sealed v3 still authorizes exact WebJam 0.22.5 only and rejects
+> 0.26.0 without moving the component channel. The v0.26.0 source registry
+> recognizes the unchanged audited 3.12.2/3.12.3 identities through exact
+> WebJam 0.26.0, but that is not signed managed-update authorization. Immutable
+> v0.26.0 is GitHub **Latest** desktop release `371442375`. No v0.26 component
+> tag, release, sequence, asset, signature, or PASS evidence exists. A future
+> managed update requires a new fixed channel and the complete procedure below.
 
 This runbook records the sealed v1/v2 history and current v3 catalog channel. The
 catalog tells WebJam which exact

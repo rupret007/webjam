@@ -1,11 +1,10 @@
-# WebJam creator guide — v0.26.0 source candidate
+# WebJam creator guide — v0.26.0
 
-> This guide describes the current v0.26.0 source candidate. It has no tag,
-> native package, checksum manifest, physical PASS, or GitHub release yet.
-> Immutable v0.25.0 remains GitHub **Latest**; use only its exact checksum-
-> verified assets when a downloadable package is required. Every v0.26
-> physical result remains **NOT RUN** until the candidate checklist authorizes
-> an exact tagged package run.
+> This guide describes immutable v0.26.0, the GitHub **Latest** private test
+> release. Use only its exact checksum-verified assets when a downloadable
+> package is required. Windows is unsigned and macOS is ad-hoc signed and
+> unnotarized. Every v0.26 physical result remains **NOT RUN** until separately
+> observed against an exact release asset.
 
 ## Follow the current guide
 
@@ -337,7 +336,7 @@ source count. Finalization rechecks those facts and refuses source
 substitution, a changed map, or missing/extra delivery instead of calling the
 take Ready.
 
-The v0.26.0 source candidate presents that frozen plan in one accessible,
+WebJam v0.26.0 presents that frozen plan in one accessible,
 path-free **Record Session Readiness** sheet. Every server track, Local
 Original, and Shared Track row shows its source label, exact mono/stereo format,
 required/optional status, readiness, and a bounded meter when available.
@@ -429,7 +428,7 @@ and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
 manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
-v0.26.0 source candidate.
+v0.26.0 private test release.
 
 For a standalone Podcast & Voice episode, use the 48 kHz Host-mono +
 Guest-stereo preset, record the first pass, add a chapter marker, set a cycle
@@ -464,8 +463,7 @@ WebJam stops only processes it owns and finalizes a hosted take before ending
 the server.
 
 The [v0.26 physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-is still entirely **NOT RUN** and must not be executed until it identifies an
-exact tagged package. The
+still has every physical observation and release-decision row **NOT RUN** and
+must be executed only against an exact checksum-verified release package. The
 [v0.25 checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md) remains
-the immutable evidence ledger for the package currently shown by GitHub
-Latest.
+immutable historical evidence for the prior release.

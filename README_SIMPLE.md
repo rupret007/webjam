@@ -2,17 +2,16 @@
 
 > **Private test release:** GitHub
 > [Latest](https://github.com/rupret007/webjam/releases/latest) is the immutable,
-> checksum-verified v0.25.0 package set. Windows is unsigned; macOS is ad-hoc
+> checksum-verified v0.26.0 package set. Windows is unsigned; macOS is ad-hoc
 > signed and unnotarized.
 
 > **Source note:** use the exact release tag and attached checksum manifest as
 > download evidence; an untagged checkout is not a substitute. The exact
-> v0.25.0 release is the current downloadable boundary.
+> v0.26.0 release is the current downloadable boundary.
 
-> **What this checkout is:** v0.26.0 is an unpublished source candidate. It has
-> no v0.26.0 release package or physical PASS result yet, so use it only as
-> source/test evidence. Immutable v0.25.0 stays GitHub Latest until v0.26.0
-> passes its exact release gates.
+> **What this checkout is:** v0.26.0 is also the current source identity. The
+> exact published release assets—not this checkout or a branch artifact—are
+> package evidence. No physical PASS result is claimed.
 
 WebJam helps creators start a live audio session and keep its separate tracks
 organized. Jamulus handles low-latency audio. Any meeting platform can be
@@ -22,7 +21,7 @@ the meeting app, browser, or system output. Local Originals record only the
 input devices you explicitly select, so do not route meeting or system audio
 into those inputs.
 
-The current v0.26.0 source candidate keeps Music and Podcast & Voice as GA
+WebJam v0.26.0 keeps Music and Podcast & Voice as GA
 creator profiles. Review & Rehearsal is visibly Preview: it supports live WebJam-audio
 Host/Join, Record Session, local notes, and playback/read-only review of a
 completed session take. It blocks standalone projects, take editing/comp/mix
@@ -30,8 +29,8 @@ mutation, track export, shared notes, visual sync, and media timecode. No
 profile directly or automatically taps a meeting app, browser, or system
 output.
 
-Current private test release: **v0.25.0**. Use only the exact assets attached to
-the immutable v0.25.0 GitHub release and verify them with its checksum manifest.
+Current private test release: **v0.26.0**. Use only the exact assets attached to
+the immutable v0.26.0 GitHub release and verify them with its checksum manifest.
 The four-platform release covers
 Windows, Ubuntu 22.04, Intel Mac, and
 Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc
@@ -171,12 +170,12 @@ Waveforms load in the background and recorded gaps remain silence. Studio
 autosaves choices to a separate file; a failed save keeps the edit pending and
 the recorded take safe. Real two-Mac output, hardware interruption/recovery,
 external-editor import, physical Reference Studio audio, and signed-install
-gates are **NOT RUN** for the v0.26.0 source candidate and remain unclaimed for
-v0.25.0. Publishing a private candidate does not convert them to PASS. The
+gates are **NOT RUN** for the v0.26.0 private test release and remain unclaimed
+for v0.25.0. Publishing a private candidate does not convert them to PASS. The
 [v0.26 physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-is the all-NOT-RUN ledger for the next exact tagged packages; do not execute it
-against this checkout. The
+is the all-NOT-RUN physical ledger for the exact published packages; do not
+execute it against this checkout. The
 [v0.25 physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-remains the immutable Latest package ledger. The
+remains immutable historical evidence. The
 [v0.24 checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md) remains
 immutable historical evidence for the prior package.

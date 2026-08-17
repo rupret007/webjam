@@ -5,10 +5,10 @@ matching its native package. These locks preserve the Python dependency graph
 that is reviewed and tested before signing; `requirements.txt` remains the
 human-maintained application dependency declaration.
 
-The v0.26.0 source candidate retains the exact dependency locks reviewed for
-immutable v0.25.0. Those locks become v0.26 package evidence only after exact
-tag CI artifacts and a checksum manifest exist. A source checkout remains
-metadata, not a published package claim.
+The v0.26.0 release uses the exact dependency locks reviewed by its successful
+native tag CI and protected publisher. Those locks are package evidence only
+when bound to an exact checksum-verified v0.26.0 release asset; a source
+checkout remains metadata, not a published package claim.
 The locks target CPython
 3.11.9 on Windows and both macOS targets, CPython
 3.11.15 on Linux, pip 26.1.2, setuptools 81.0.0 on macOS, and setuptools 83.0.0

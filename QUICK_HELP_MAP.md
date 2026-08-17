@@ -1,8 +1,8 @@
-# WebJam quick help — v0.26.0 source candidate
+# WebJam quick help — v0.26.0
 
-> These labels describe the current unpublished v0.26.0 source candidate.
-> GitHub **Latest** remains immutable v0.25.0; no v0.26.0 package or physical
-> PASS is claimed, and every v0.26 physical row remains **NOT RUN**.
+> These labels describe immutable v0.26.0, the GitHub **Latest** private test
+> release. Its exact packages are published, but no physical PASS is claimed;
+> every v0.26 physical and release-decision row remains **NOT RUN**.
 
 | Need | Use |
 | --- | --- |

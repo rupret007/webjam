@@ -1,12 +1,13 @@
 # WebJam v0.26.0 creator-multitrack physical test checklist
 
-> Physical-test status: **NOT RUN**. This ledger is provisional and must not be
-> executed until an exact annotated `v0.26.0` tag, successful native tag CI,
-> candidate packages, and a checksum manifest exist. Immutable v0.25.0 remains
-> GitHub **Latest**; source metadata is not release or hardware evidence.
+> Physical-test status: **NOT RUN**. Immutable v0.26.0 is the GitHub **Latest**
+> private test release. Its automated release identity is verified below; no
+> physical, hardware, provider, accessibility, or production-trust PASS is
+> implied. Use only exact release assets whose hashes match the published
+> checksum manifest.
 
 Use only exact candidate packages whose filenames, SHA-256 values, app version,
-and source build IDs agree with the future manifest. Record no invitation or
+and source build IDs agree with the published manifest. Record no invitation or
 meeting links, credentials, device UIDs, private paths, participant names, or
 raw exceptions. A result may change only after its observation and evidence
 reference are recorded in the controlled test record.
@@ -19,14 +20,14 @@ and a second participant able to upload guest originals.
 
 | ID | Evidence to freeze before physical testing | Result |
 | --- | --- | --- |
-| I01 | Annotated `v0.26.0` tag object and peeled commit | **NOT RUN** |
-| I02 | Unique successful `v0.26.0` native tag CI run and attempt | **NOT RUN** |
-| I03 | Exact Windows, macOS arm64/x64, and Ubuntu package filenames | **NOT RUN** |
-| I04 | Package sizes, SHA-256 values, app versions, and source build IDs | **NOT RUN** |
-| I05 | Checksum-manifest filename, SHA-256, and complete sorted inventory | **NOT RUN** |
-| I06 | Draft release ID/body hash and post-tag publisher pins | **NOT RUN** |
-| I07 | Packaged Jamulus client/server versions and build identities | **NOT RUN** |
-| I08 | Tester, machine, OS, interface, headphones, and channel-map record | **NOT RUN** |
+| I01 | Annotated `v0.26.0` tag object and peeled commit | **VERIFIED — automated release evidence:** tag object `3989baadaaa00b4655115e23cf900ea2c1c7fd4c`; peeled candidate commit `4b5208098981943df8ddaf1fac31aa36c15146bb` |
+| I02 | Candidate and unique successful native CI | **VERIFIED — automated release evidence:** candidate master CI `31971991226`; tag CI `31973256062`, attempt 1; release job `95231413287` |
+| I03 | Exact Windows, macOS arm64/x64, Ubuntu, and manifest assets | **VERIFIED — automated release evidence:** IDs/names: `517251779` `WebJam-linux-x64.zip`; `517251778` `WebJam-macos-arm64-ADHOC-TEST-ONLY.zip`; `517251781` `WebJam-macos-x64-ADHOC-TEST-ONLY.zip`; `517251780` `WebJam-v0.26.0-macos-arm64-ADHOC-TEST-ONLY.dmg`; `517251786` `WebJam-v0.26.0-macos-x64-ADHOC-TEST-ONLY.dmg`; `517251782` `WebJam-v0.26.0-SHA256SUMS.txt`; `517251783` `WebJam-v0.26.0-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`; `517251787` `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip` |
+| I04 | Package sizes, SHA-256 values, app version, and source build | **VERIFIED — automated release evidence:** v0.26.0 from `4b5208098981943df8ddaf1fac31aa36c15146bb`; Linux `168211648` / `9b7216fa8591de0edb5e34dc45bb0b1a59e413bf9572c8e7c6c3c018ef72082e`; Mac arm64 ZIP `216225400` / `9c92fa23ba334166b5d3fac6f26965d3a59519af6707f3f7fb5c2abdca04a80b`; Mac x64 ZIP `222536890` / `e3d3a1875cedcd232fba6ed4ba22d99e8016d6bd717736f4b66c9757c3691da3`; Mac arm64 DMG `217302612` / `92ea140b1f5f820cae525f35b76e68af7c3d8a8d4fb330f200a3c40ec6659163`; Mac x64 DMG `223532070` / `043339f5f45858ab7eec0df0a884a50acd841056103303e320108f2f8b9abbe7`; Windows Setup `144846325` / `a3ec7711500836ced1bd0168107c441ef88681f1d48f770e31188cc9ed01b03d`; Windows ZIP `165555420` / `0a1df1d8868e3b687824b84ff0bf75af2d1b07ba4fdb2bc0e0870e530658df32` |
+| I05 | Checksum manifest, body, and complete sorted inventory | **VERIFIED — automated release evidence:** manifest ID `517251782`, `749` bytes, SHA-256 `c5c9e07c33ac74a62110ef60442fe8994cc4512adfe6dfe70a43d1986da7d77e`, seven package lines verified; release-body SHA-256 `404c5378017a37df6c5813d39348d16c386492a7acccd23797a3659495dea4da`; inventory SHA-256 `e6c49c6568877961ce484fa9dc477d8939c8bf881dfd568497da5752199d3aa3` |
+| I06 | Protected publisher, deployment, and immutable release | **VERIFIED — automated release evidence:** release-control commit `6b944ea1ef4693c85f4c9af453b56af38e0af8aa`; CI `31975672599`; publisher run `31976890936`, proof job `95237620181`, publish job `95237650912`; deployment `5936210571`, successful status `16891234364`; release `371442375`, published `2026-08-16T22:40:56Z`; <https://github.com/rupret007/webjam/releases/tag/v0.26.0> |
+| I07 | Physical client/server Jamulus identity and package build IDs | **NOT RUN — no physical package run recorded** |
+| I08 | Tester, machine, OS, interface, headphones, and channel-map record | **NOT RUN — no physical package run recorded** |
 
 ## A. Native packages, clean start, and trust
 
@@ -133,6 +134,7 @@ and a second participant able to upload guest originals.
 | Studio editing, persistence, and export | **NOT RUN** |
 | Workstation UI, compact layout, and accessibility | **NOT RUN** |
 
-Release recommendation: **NOT RUN**. Do not tag, publish, promote, or call
-v0.26.0 demo-ready from this checklist until every required row has exact
-evidence and every release-decision gate is explicitly reviewed.
+Release recommendation: **NOT RUN**. Publication already completed from the
+verified automated identity above; do not infer demo readiness, replace release
+bytes, or convert any physical/release-decision row to PASS until that exact
+observation has dated evidence and explicit review.

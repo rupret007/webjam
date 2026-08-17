@@ -23,15 +23,15 @@
 > unique successful four-target tag CI produced an eight-asset draft with a
 > seven-package checksum manifest. Those observed identities and hashes are
 > pinned in the enabled publisher. Protected promotion and public redownload
-> verification passed, making immutable v0.25.0 GitHub Latest. Every v0.25
-> physical and hardware gate remains **NOT RUN**.
+> verification passed. Immutable v0.25.0 is now historical evidence; every
+> v0.25 physical and hardware gate remains **NOT RUN**.
 
-> **v0.26.0 pinned draft boundary:** the exact annotated tag, unique successful
-> four-target tag CI attempt, unpublished eight-asset draft, release body,
-> inventory, and checksum manifest have been independently observed and pinned.
-> Immutable v0.25.0 remains GitHub **Latest**. Every v0.26 physical gate remains
-> **NOT RUN**. The enabled publisher has not been dispatched or approved; only
-> its protected `release-latest` job can publish the pinned draft.
+> **v0.26.0 published testing boundary:** candidate master CI, the exact
+> annotated tag, unique successful four-target tag CI attempt, eight-asset
+> inventory, release body, checksum manifest, release-control CI, protected
+> promotion, deployment, and public redownload verification all passed.
+> Immutable v0.26.0 is GitHub **Latest** release `371442375`. Every v0.26
+> physical and hardware gate remains **NOT RUN**.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version
@@ -95,30 +95,35 @@ publication, and post-publication redownload checks. Release-control commit
 protected publisher run `31882801893` passed proof job `95007614475` and publish
 job `95007634063`. Do not edit the tag, release body, or assets. Run the
 [v0.25 physical checklist](../V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-only against the exact published asset hashes; all rows remain **NOT RUN**.
+only against the exact published asset hashes; all physical observations,
+release-decision rows, and its recommendation remain **NOT RUN**.
 
-## v0.26.0 pinned promotion status — unpublished
+## v0.26.0 pinned promotion status — completed
 
-The exact post-tag facts below were independently observed on GitHub and are
-pinned by `.github/workflows/publish-v026-testing-release.yml`. The v0.26.0
-release is still an unpublished draft. Immutable v0.25.0 remains GitHub
-**Latest**; neither this release-control change nor source/tag CI publishes or
-moves Latest.
+The exact release chain below was independently observed on GitHub. The
+immutable publisher file `.github/workflows/publish-v026-testing-release.yml`
+pinned the tag, draft, body, inventory, checksum manifest, prior-Latest
+precondition, and one allowed PATCH. Its protected run published v0.26.0 as
+immutable GitHub **Latest**, then redownloaded and reverified every byte.
 
 | Evidence | Exact value |
 | --- | --- |
 | Annotated tag | `v0.26.0` |
 | Annotated tag object | `3989baadaaa00b4655115e23cf900ea2c1c7fd4c` |
 | Peeled tag/source commit | `4b5208098981943df8ddaf1fac31aa36c15146bb` |
-| Unique successful tag CI | `31973256062`, attempt 1 |
-| Unpublished draft release | ID `371442375` |
+| Candidate master CI | `31971991226` |
+| Unique successful tag CI | `31973256062`, attempt 1; release job `95231413287` |
+| Release-control commit and CI | `6b944ea1ef4693c85f4c9af453b56af38e0af8aa`; CI `31975672599` |
+| Protected publisher | Run `31976890936`; proof job `95237620181`; publish job `95237650912` |
+| GitHub deployment | Deployment `5936210571`; successful status `16891234364` |
+| Immutable published release | ID `371442375`; published `2026-08-16T22:40:56Z`; <https://github.com/rupret007/webjam/releases/tag/v0.26.0> |
 | Exact release-body SHA-256 | `404c5378017a37df6c5813d39348d16c386492a7acccd23797a3659495dea4da` |
 | Canonical asset-inventory SHA-256 | `e6c49c6568877961ce484fa9dc477d8939c8bf881dfd568497da5752199d3aa3` |
 | Checksum-manifest SHA-256 | `c5c9e07c33ac74a62110ef60442fe8994cc4512adfe6dfe70a43d1986da7d77e` |
 
 The inventory digest is over the compact JSON array of
-`{id,name,size,digest}` objects sorted by asset name. The exact unpublished
-draft inventory is:
+`{id,name,size,digest}` objects sorted by asset name. The exact immutable
+published inventory is:
 
 | Asset ID | Filename | Size (bytes) | GitHub digest |
 | ---: | --- | ---: | --- |
@@ -143,27 +148,30 @@ a3ec7711500836ced1bd0168107c441ef88681f1d48f770e31188cc9ed01b03d  WebJam-v0.26.0
 0a1df1d8868e3b687824b84ff0bf75af2d1b07ba4fdb2bc0e0870e530658df32  WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip
 ```
 
-The first job is read-only and proves the exact annotated tag and tagged
-source, descendant current `master`, sealed historical catalog rejection,
-embedded Jamulus 3.12.2 fallback, and unique successful tag CI attempt. The
-only write-capable job is protected by `release-latest`. It first requires
-public Latest to be the exact immutable v0.25.0 release, revalidates the exact
-v0.26.0 draft body and eight-asset inventory, redownloads all bytes, and checks
-the strict manifest. Because that byte gate can take time, the same shell that
-performs the single draft-to-published PATCH then freshly revalidates the exact
-current `master`, annotated tag object and peeled commit, unique successful CI
-run and attempt, immutable v0.25.0 Latest, and complete v0.26.0 draft identity,
-state, body, and `{id,name,size,digest}` inventory immediately before the
-PATCH. Afterward it requires v0.26.0 to be immutable GitHub Latest and
-redownloads and checks every byte again. It contains no asset upload,
+The publisher's first job was read-only and proved the exact annotated tag and
+tagged source, descendant current `master`, sealed historical catalog
+rejection, embedded Jamulus 3.12.2 fallback, and unique successful tag CI
+attempt. The
+only write-capable job was protected by `release-latest`. As a historical
+prepublication condition, it required public Latest to be the exact immutable
+v0.25.0 release, revalidated the exact v0.26.0 draft body and eight-asset
+inventory, redownloaded all bytes, and checked the strict manifest. Because
+that byte gate could take time, the same shell that performed the single
+draft-to-published PATCH then freshly revalidated exact current `master`, the
+annotated tag object and peeled commit, the unique successful CI run and
+attempt, the immutable prior v0.25.0 Latest, and the complete v0.26.0 draft
+identity, state, body, and `{id,name,size,digest}` inventory immediately before
+the PATCH. Afterward it required v0.26.0 to be immutable GitHub Latest and
+redownloaded and checked every byte again. It contained no asset upload,
 replacement, or deletion path.
 
-Do not dispatch or approve that protected job until release-control CI is green
-and the human release decision is explicit. Do not edit the draft body or
-assets after these pins were recorded. Never move or rebuild v0.25.0. The
+Do not rerun the publisher to mutate or recreate this release. Do not edit the
+published body or assets. Never move or rebuild v0.26.0, v0.25.0, or any earlier
+release. The
 [v0.26 physical checklist](../V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-must be executed only against these exact hashes; all rows remain **NOT RUN**
-until dated physical evidence records otherwise.
+must be executed only against these exact hashes; all physical observations,
+release-decision rows, and the recommendation remain **NOT RUN** until dated
+physical evidence records otherwise.
 
 ## Supported targets
 

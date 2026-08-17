@@ -1,12 +1,12 @@
-# Developing WebJam v0.25.0
+# Developing WebJam v0.26.0
 
-> **Current source line:** this guide describes the v0.25.0 creator-profile and
-> authoritative multitrack line. The exact v0.25.0 tag is the immutable GitHub
+> **Current source line:** this guide describes the v0.26.0 creator-profile and
+> authoritative multitrack line. The exact v0.26.0 tag is the immutable GitHub
 > **Latest** private test release.
 
-> **Release boundary:** only the exact tagged v0.25.0 assets and attached
-> `WebJam-v0.25.0-SHA256SUMS.txt` manifest are authoritative for the current
-> download. A checkout or branch artifact is not a release; every v0.25
+> **Release boundary:** only the exact tagged v0.26.0 assets and attached
+> `WebJam-v0.26.0-SHA256SUMS.txt` manifest are authoritative for the current
+> download. A checkout or branch artifact is not a release; every v0.26
 > physical result remains **NOT RUN**.
 
 ## Local setup
@@ -24,7 +24,7 @@ Use the repository virtual environment:
 For Studio arrangement changes, run the focused model, persistence, history,
 controller, renderer, comping, waveform, export, and Qt integration modules in
 addition to the full suite. The physical-output and external-editor gates in
-`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.25.0.
+`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.26.0.
 
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
@@ -167,7 +167,7 @@ Linux/JACK real-Jamulus companion and its evidence boundary are documented in
 - UI surfaces render the shared snapshot and route semantic actions back to an
   owner. They must not start work while rendering.
 - Creative Pulse content stays local and cannot mutate conductor facts. No
-  cloud model, agent, or SDK belongs in the v0.25 release line.
+  cloud model, agent, or SDK belongs in the v0.26 release line.
 - Public consumers get only `to_public_dict()` followed by their own strict
   allowlist. Never add free-form copy, notes, names, channel IDs, addresses,
   devices, paths, invitations, credentials, tokens, or raw exceptions.

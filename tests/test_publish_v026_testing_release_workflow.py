@@ -283,22 +283,37 @@ def test_tag_draft_notes_describe_fallback_without_false_catalog_claim() -> None
     assert "Jamulus 3.12.3 updates are authorized" not in CI
 
 
-def test_runbook_records_pinned_unpublished_v026_boundary() -> None:
+def test_runbook_records_exact_completed_v026_publication_chain() -> None:
     normalized = " ".join(RUNBOOK.split())
-    assert "v0.26.0 pinned promotion status" in RUNBOOK
-    assert "Immutable v0.25.0 remains GitHub **Latest**" in normalized
+    v026_section = " ".join(
+        RUNBOOK.split("## v0.26.0 pinned promotion status — completed", 1)[1]
+        .split("## Supported targets", 1)[0]
+        .split()
+    )
+    assert "v0.26.0 pinned promotion status — completed" in RUNBOOK
+    assert "Immutable v0.26.0 is GitHub **Latest**" in normalized
     assert "release-latest" in RUNBOOK
     for value in (
         "3989baadaaa00b4655115e23cf900ea2c1c7fd4c",
         "4b5208098981943df8ddaf1fac31aa36c15146bb",
+        "31971991226",
         "31973256062",
+        "95231413287",
+        "6b944ea1ef4693c85f4c9af453b56af38e0af8aa",
+        "31975672599",
+        "31976890936",
+        "95237620181",
+        "95237650912",
+        "5936210571",
+        "16891234364",
         "371442375",
+        "2026-08-16T22:40:56Z",
         "404c5378017a37df6c5813d39348d16c386492a7acccd23797a3659495dea4da",
         "e6c49c6568877961ce484fa9dc477d8939c8bf881dfd568497da5752199d3aa3",
         "c5c9e07c33ac74a62110ef60442fe8994cc4512adfe6dfe70a43d1986da7d77e",
     ):
         assert value in RUNBOOK
-    assert "still an unpublished draft" in normalized
-    assert "all rows remain **NOT RUN**" in normalized
+    assert "still an unpublished draft" not in v026_section
+    assert "all physical observations, release-decision rows" in normalized
     assert "the same shell" in normalized
     assert "immediately before the PATCH" in normalized

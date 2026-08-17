@@ -1,7 +1,8 @@
 # WebJam v0.25.0 creator-multitrack physical test checklist
 
-> Physical-test status: **NOT RUN**. Immutable v0.25.0 is the GitHub **Latest**
-> private test release. This ledger may be filled only with observations from
+> Physical-test status: **NOT RUN**. Immutable v0.25.0 was GitHub **Latest**
+> when this private test release was published and is now historical evidence.
+> This ledger may be filled only with observations from
 > exact v0.25.0 release assets whose SHA-256 values match their published
 > checksum manifest.
 

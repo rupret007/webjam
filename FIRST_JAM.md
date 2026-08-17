@@ -1,10 +1,10 @@
-# First Session — WebJam v0.26.0 source candidate
+# First Session — WebJam v0.26.0
 
-> This guide describes the current v0.26.0 source candidate. It is not tagged,
-> packaged, physically certified, or published. Immutable, checksum-verified
-> v0.25.0 remains GitHub **Latest**; do not treat this checkout or a branch
-> artifact as a package. Every v0.26 physical gate remains **NOT RUN** until an
-> exact tagged candidate exists and the checklist authorizes execution.
+> This guide describes immutable, checksum-verified v0.26.0, the GitHub
+> **Latest** private test release. Windows is unsigned and macOS is ad-hoc
+> signed and unnotarized. Do not treat this checkout or a branch artifact as a
+> package. Every v0.26 physical gate remains **NOT RUN** until separately
+> observed against an exact release asset.
 
 Before Host or Join, choose what you are creating: **Music** (GA), **Podcast &
 Voice** (GA), or **Review & Rehearsal** (Preview). The chosen profile changes
@@ -91,10 +91,10 @@ app, browser, or system output.
 
 Use the all-**NOT RUN**
 [v0.26 physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-only after it authorizes an exact tagged candidate; never record this checkout
+only with an exact checksum-verified release asset; never record this checkout
 as physical package evidence. The immutable
 [v0.25 physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-remains the ledger for GitHub Latest. The
+remains historical evidence. The
 [v0.24 checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md) remains
 immutable historical evidence for the prior release.
 

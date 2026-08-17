@@ -1,10 +1,10 @@
 # WebJam project brief
 
 **Review date:** 2026-08-16
-**Status:** v0.26.0 is an unpublished creator-multitrack source candidate;
-v0.25.0 remains immutable GitHub Latest. No v0.26.0 tag, package, checksum
-manifest, physical PASS, or GitHub release is claimed. Every v0.26
-physical/hardware gate remains **NOT RUN**.
+**Status:** immutable v0.26.0 is the GitHub Latest private test release. Its
+exact tag, packages, checksum manifest, and protected publication are verified;
+no physical PASS is claimed. Every v0.26 physical/hardware gate remains
+**NOT RUN**.
 
 ## Executive summary
 
@@ -69,7 +69,7 @@ the full contract.
 
 ## Verified status
 
-- The published v0.25.0 release contains Windows x64, Ubuntu 22.04 x64, Intel
+- The published v0.26.0 release contains Windows x64, Ubuntu 22.04 x64, Intel
   Mac, and Apple-silicon Mac packages plus an exact checksum manifest.
 - `cryptography` 50.0.0 remediates the three audited runtime CVEs; the Intel
   Mac source-build exception is explicit, hash-locked, and separately verified.
@@ -79,20 +79,22 @@ the full contract.
 - Physical two-Mac audibility, hardware recovery, meeting handoff, Pocket Stage
   owner-device pairing, signing/notarization, and long-session evidence remain
   **NOT RUN**. Automated green does not mean those gates passed.
-- v0.25.0 publication passed its exact tag, package inventory, checksum
+- v0.26.0 publication passed its exact tag, package inventory, checksum
   manifest, fallback proof, protected promotion, and public redownload checks.
-  The sealed v0.22.5 catalog was explicitly rejected for v0.25.0 and is not
+  The sealed v0.22.5 catalog was explicitly rejected for v0.26.0 and is not
   managed-update authorization for the changed line.
+- Immutable v0.25.0 remains historical release evidence with its original tag,
+  assets, checksums, and protected promotion.
 - Immutable v0.24.0 remains historical release evidence with its original tag,
   assets, checksums, and protected promotion.
-- v0.25.0 binds each take to the exact roster/server stems,
+- v0.26.0 binds each take to the exact roster/server stems,
   Shared Track identity/generation, host mono/stereo topology, guest Local
   Original obligations, storage verdict, and expected source count. One stereo
   row remains one true two-channel file through recovery, Studio, and export.
 
 ## Current product line
 
-The v0.26.0 source candidate builds on immutable v0.25.0 with an accessible,
+The v0.26.0 release builds on immutable v0.25.0 with an accessible,
 path-free Record Session Readiness sheet and stable logical-source identity
 from the frozen plan through capture, transfer, manifest, recovery, Studio, and
 exact repeated-take lanes. Every server, host, guest, and Shared Track source is
@@ -111,9 +113,9 @@ services receive friendly labels; generic providers remain neutral and receive
 no native-verification claim. Exact Jamulus correlation, bounded guest
 observation, and fail-closed take/export evidence remain the authority.
 
-This is a new source identity, not a rebuild or replacement of v0.25.0.
-Familiar DAW
-interactions are used for clarity and musical flow without copying Apple
+This is a new source and package identity, not a rebuild or replacement of
+v0.25.0. Familiar DAW interactions are used for clarity and musical flow
+without copying Apple
 artwork, exact layouts, assets, or trade dress. Physical audibility, isolation,
 alignment, recovery, output, and packaged UX remain **NOT RUN**.
 
@@ -135,14 +137,13 @@ claimed as implemented in this repository.
    immutable [v0.23.0](https://github.com/rupret007/webjam/releases/tag/v0.23.0)
    only when evaluating that historical baseline.
 3. Confirm Latest resolves to the immutable
-   [v0.25.0 release](https://github.com/rupret007/webjam/releases/tag/v0.25.0)
+   [v0.26.0 release](https://github.com/rupret007/webjam/releases/tag/v0.26.0)
    and use only its exact checksum-verified assets; a branch artifact is not a
    release substitute.
-4. Treat v0.26.0 only as source/test evidence until exact tagged packages
-   exist. Once the v0.26 checklist authorizes them, choose a profile first,
-   then exercise Shared Track, the exact-source readiness sheet, Record
-   Session, finalization, automatic repeated-take lanes, and the profile's
-   permitted Studio path with wired headphones and Jamulus.
+4. Choose a profile first, then exercise Shared Track, the exact-source
+   readiness sheet, Record Session, finalization, automatic repeated-take
+   lanes, and the profile's permitted Studio path with wired headphones and
+   Jamulus. Record this as physical evidence only against the exact package.
 5. Open **Conversation** without joining, then test the explicit Join/Open
    action only with an approved sandbox account.
 6. In Music or Podcast & Voice, inspect the separate non-destructive local
@@ -150,8 +151,8 @@ claimed as implemented in this repository.
    edit/comp/mix mutation, and export remain blocked while completed-session
    take playback stays read-only.
 7. Record every physical result against the exact artifact name, build ID, and
-   SHA-256; leave anything not physically observed as **NOT RUN**. Until those
-   v0.26 artifacts exist, do not execute the provisional checklist.
+   SHA-256; leave anything not physically observed as **NOT RUN**. Publication
+   and automated release identity do not turn any physical row into PASS.
 
 ## Constraints and next decisions
 
@@ -159,14 +160,16 @@ claimed as implemented in this repository.
   signed and unnotarized.
 - The v3 Jamulus component catalog is sealed at exact sequence 6 for v0.22.5.
   The v1/v0.22.3 and v2/v0.22.4 channels remain immutable historical evidence.
-- The fallback-only v0.25.0 private testing release has complete desktop
+- The fallback-only v0.26.0 private testing release has complete desktop
   asset/checksum evidence and passed its protected release-environment gate. A
   new exact-target component authorization remains mandatory before managed
   3.12.3 download can be enabled. Nothing may move or replace the sealed
-  v0.22.5 catalog, tag, or assets. Immutable v0.24.0 release evidence remains in
-  the [v0.24 checklist](../V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md);
+  v0.22.5 catalog, tag, or assets. Immutable v0.25.0 and v0.24.0 release
+  evidence remains in their historical ledgers, including the
+  [v0.24 checklist](../V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md);
   v0.25.0 package observations belong only in the
   [v0.25 checklist](../V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md).
-  Future v0.26.0 observations belong only in the all-**NOT RUN**
-  [v0.26 checklist](../V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md) after
-  it records an exact annotated tag and package inventory.
+  v0.26.0 physical observations belong only in the
+  [v0.26 checklist](../V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md),
+  whose automated release identity is verified while every physical and
+  decision row remains **NOT RUN**.

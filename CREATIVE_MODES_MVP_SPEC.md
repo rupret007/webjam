@@ -1,10 +1,11 @@
-# Creator profiles — v0.26.0 source-candidate contract
+# Creator profiles — v0.26.0 release contract
 
-> Status: implemented in the unpublished v0.26.0 source candidate. Immutable
-> v0.25.0 remains GitHub **Latest**; no v0.26.0 tag, package, checksum manifest,
-> physical PASS, or GitHub release is claimed. This document supersedes the
-> earlier speculative cross-discipline MVP and describes only bounded current
-> source behavior. Physical and platform-trust results remain **NOT RUN**.
+> Status: implemented in immutable v0.26.0, the GitHub **Latest** private test
+> release. The exact tag, packages, checksum manifest, and protected publication
+> are verified release evidence; no physical PASS is claimed. This document
+> supersedes the earlier speculative cross-discipline MVP and describes only
+> bounded current behavior. Physical and platform-trust results remain
+> **NOT RUN**.
 
 ## Product decision
 

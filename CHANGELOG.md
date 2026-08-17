@@ -6,16 +6,18 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-> Work after the provisional v0.26.0 source boundary belongs here. Every
+> Work after the immutable v0.26.0 release boundary belongs here. Every
 > published tag, release, and asset remains immutable historical evidence.
 
-## [0.26.0] — Demo-proven creator multitrack candidate (provisional)
+## [0.26.0] — Demo-proven creator multitrack private test release (2026-08-16)
 
-> Current source and package identity only. No v0.26.0 tag, native package,
-> checksum manifest, physical PASS, or GitHub release is claimed yet. Immutable
-> v0.25.0 remains GitHub **Latest** until an exact v0.26.0 candidate completes
-> tag CI, package verification, physical testing, and protected promotion.
-> Record new physical evidence only in
+> Published on 2026-08-16 as immutable GitHub **Latest** release
+> [`v0.26.0`](https://github.com/rupret007/webjam/releases/tag/v0.26.0) after
+> exact annotated-tag, four-platform CI, eight-asset inventory, checksum,
+> fallback, protected-promotion, and public-redownload verification passed.
+> Publication is not physical PASS evidence: every physical, hardware,
+> provider, accessibility, and release-decision row remains **NOT RUN**. Record
+> any later physical evidence only in
 > [`V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md`](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md).
 
 ### Record Session readiness and lifecycle
@@ -95,12 +97,12 @@ All notable improvements and features for the WebJam creator collaboration platf
   meeting link or native-app focus action becomes a recording source; WebJam
   never directly or automatically captures a meeting app, browser, or system
   output. Meeting-service recording remains owned by that service.
-- Added the all-**NOT RUN** v0.26 physical checklist and a deliberately inert,
-  fail-closed publication stub. The candidate must still pass exact tag CI,
-  four-platform package/checksum verification, an honest physical decision
-  ledger with unobserved rows left **NOT RUN**, pinned promotion facts, and
-  protected publication before v0.26.0 can replace immutable v0.25.0 as GitHub
-  **Latest**.
+- Began the release with an all-**NOT RUN** v0.26 physical checklist and an
+  inert, fail-closed publication stub. Exact tag CI, four-platform
+  package/checksum verification, pinned promotion facts, protected
+  publication, and public redownload verification subsequently passed, making
+  immutable v0.26.0 GitHub **Latest**. The physical decision ledger remains
+  honest: every unobserved physical row is still **NOT RUN**.
 
 ## [0.25.0] — Creator profiles and authoritative multitrack private test candidate (2026-08-15)
 

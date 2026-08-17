@@ -4,16 +4,16 @@ This index is the front door for WebJam's documentation. Start with the
 audience that matches what you are trying to do; the root [README](../README.md)
 keeps the product story and five-minute demo intentionally short.
 
-> **Current testing release:** immutable GitHub **Latest** is v0.25.0. Use only
-> an exact release asset verified by `WebJam-v0.25.0-SHA256SUMS.txt`. Windows is
+> **Current testing release:** immutable GitHub **Latest** is v0.26.0. Use only
+> an exact release asset verified by `WebJam-v0.26.0-SHA256SUMS.txt`. Windows is
 > unsigned; macOS is ad-hoc signed and unnotarized; every physical test remains
 > **NOT RUN** until recorded against those packages.
 
-> **Current source:** v0.26.0 is an unpublished creator-multitrack candidate.
-> It adds plan-bound recording readiness, exact logical-source topology,
+> **Current source:** v0.26.0 is the published creator-multitrack line. It adds
+> plan-bound recording readiness, exact logical-source topology,
 > automatic exact repeated-take lanes, and completed creator journeys. Do not
-> use a checkout or branch artifact as a release. It has no v0.26.0 package or
-> physical PASS; all v0.26 physical/hardware rows remain **NOT RUN**.
+> use a checkout or branch artifact as package evidence. Exact packages exist,
+> but all v0.26 physical/hardware rows remain **NOT RUN**.
 
 ## Start here
 
@@ -57,7 +57,7 @@ keeps the product story and five-minute demo intentionally short.
 - [Test procedure](../TEST_PROCEDURE.md) — automated evidence and the physical /
   credentialed ledger. **NOT RUN** is not a claim of failure; it means evidence
   has not yet been collected against an exact package.
-- [v0.26 creator-multitrack physical checklist — provisional, all NOT RUN](../V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
+- [v0.26 creator-multitrack physical checklist — release identity verified; physical rows NOT RUN](../V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.25 creator-multitrack physical checklist](../V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.24 recording-first physical checklist](../V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
 - [Historical v0.23 Shared Track and recording checklist](../V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)

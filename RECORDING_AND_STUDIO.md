@@ -1,11 +1,10 @@
-# Recording and Studio — v0.26.0 source candidate
+# Recording and Studio — v0.26.0
 
-> This document describes the current v0.26.0 source candidate. It has no tag,
-> native package, checksum manifest, physical PASS, or GitHub release yet.
-> Immutable v0.25.0 remains GitHub **Latest**. Physical recording, Shared Track
-> audibility/isolation, playback, recovery, long-session, and external-editor
-> gates remain **NOT RUN** until the v0.26 checklist authorizes testing against
-> exact tagged packages.
+> This document describes immutable v0.26.0, the GitHub **Latest** private test
+> release. Use only exact checksum-verified release assets. Physical recording,
+> Shared Track audibility/isolation, playback, recovery, long-session, and
+> external-editor gates remain **NOT RUN** until separately observed against
+> those packages.
 
 Music and Podcast & Voice are GA creator profiles with live recording,
 completed-take editing/mixing/export, and standalone local projects. Review &
@@ -59,7 +58,7 @@ source count. Finalization rechecks those exact facts. A reconnect, changed
 topology, missing/extra source, or substituted Shared Track cannot be accepted
 as the planned take.
 
-The v0.26.0 source candidate shows this frozen plan in one accessible,
+WebJam v0.26.0 shows this frozen plan in one accessible,
 path-free **Record Session Readiness** sheet before any recorder, local input
 stream, or Shared Track playback is armed. Each exact server, Local Original,
 and Shared Track row identifies the participant/source, mono or stereo format,
@@ -379,7 +378,7 @@ requested operation.
 
 Export never rewrites the original take.
 
-## v0.26.0 source-candidate evidence boundary
+## v0.26.0 private-test-release evidence boundary
 
 Automated source tests can establish state-machine, identity, source
 validation, timing-model, persistence/recovery, rendering, waveform, export,
@@ -393,12 +392,12 @@ hardware interruption, long recording, Studio playback, external-editor
 import, packaged accessibility, SmartScreen, Gatekeeper, signing, and
 notarization remain **NOT RUN**. The
 [v0.26 physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-must not be executed until it names an exact annotated tag and package set;
-this checkout is not physical evidence.
+must be executed only against its named exact package set; this checkout is not
+physical evidence.
 
-Immutable v0.25.0 remains GitHub **Latest** and keeps its separate
+Immutable v0.25.0 remains historical evidence and keeps its separate
 [v0.25 physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md).
-No v0.26 source-test result may be written into that historical ledger.
+No v0.26 result may be written into that historical ledger.
 
 The [v0.24 checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md) remains
 immutable historical evidence for that earlier release.
