@@ -236,6 +236,13 @@ Review at minimum:
 - Named-section drag ripple-reorders every track as one revision/undo, preserves
   affine source mapping through seam splits, moves contained arrangement
   metadata, reloads playback, and fails atomically for unsafe seam crossings.
+- A dragged section snaps to the other blocks' start/end edges (never to a
+  target the reorder itself refuses); Duplicate Section copies the block's
+  interior — region fragments, markers, comps, crossfades — under new durable
+  IDs right after the original; Remove Section closes the gap and tombstones
+  the block's contents at their original position without touching media, and
+  both refuse atomically for intervals straddling a section edge. Review &
+  Rehearsal Preview refuses both at the controller boundary.
 - Waveform work is viewport-bounded, progressive, gap-aware, identity-checked,
   and cancelled when its generation becomes stale.
 - The deterministic sparse 12-track/60-minute workspace gate passes

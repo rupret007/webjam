@@ -9,6 +9,30 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the immutable v0.26.0 release boundary belongs here. Every
 > published tag, release, and asset remains immutable historical evidence.
 
+### Song-section arranger: duplicate, remove, and drop-between snapping
+
+- **Duplicate Section** inserts a copy of a named section immediately after
+  itself across every track as one atomic, undoable edit. Everything provably
+  inside the block — region fragments, point markers, nested sections, comp
+  choices, and crossfades — is copied under new durable IDs; take-lane
+  inventory extends to the copies, and the renderer repeats bit-equal samples.
+  An active interval straddling a section edge refuses instead of producing a
+  copy that sounds different from its original.
+- **Remove Section** drops a named section's block and closes the gap, again
+  as one atomic, undoable edit. The block's contents become tombstones at
+  their original position — no media is deleted and the arrangement still
+  records where the removed audio came from. A cycle range inside the removed
+  block is cleared; edge-straddling intervals refuse.
+- Dragging a section bar now snaps to the other blocks' edges (start-to-start
+  lands in front, end-to-end lands right behind), so a drop between blocks
+  needs no precision. A snap target the reorder itself would refuse is never
+  offered, and Ctrl+Alt+Right now swaps cleanly with a longer following block
+  by aligning block ends.
+- Both commands are available from the section bar's context menu and from
+  the keyboard (Ctrl+Alt+D duplicate, Ctrl+Alt+Backspace remove) in
+  completed-take Studio and Reference Studio song projects. Review &
+  Rehearsal Preview keeps refusing them at the controller boundary.
+
 ## [0.26.0] — Demo-proven creator multitrack private test release (2026-08-16)
 
 > Published on 2026-08-16 as immutable GitHub **Latest** release

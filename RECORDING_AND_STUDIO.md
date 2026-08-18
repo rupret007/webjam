@@ -200,6 +200,24 @@ arrangement choices with the block, reloads playback, and refuses the move
 atomically when an interval cannot cross a seam safely. Source recordings and
 existing tombstones remain unchanged.
 
+While dragging, the section bar snaps to the other blocks' edges — its start to
+another section's start to land in front of that block, or its end to that
+block's end to land right behind it — so a drop between blocks needs no
+precision; away from every edge, free placement and the general snap mode still
+apply. A snap target the reorder itself would refuse is never offered.
+
+Right-click a section bar, or press Ctrl+Alt+D or Ctrl+Alt+Backspace with the
+playhead inside a section, to **Duplicate** or **Remove** that block across
+every track as one undoable edit. Duplicate inserts a copy immediately after
+the original and copies everything provably inside the block — region
+fragments, point markers, nested sections, comp choices, and crossfades — under
+new durable IDs. Remove closes the gap and records the block's contents as
+tombstones at their original position; a cycle range inside a removed block is
+cleared. Both refuse atomically when an active interval straddles a section
+edge, and neither ever changes a source recording. Ctrl+Alt+Right lands the
+playhead section cleanly behind a longer following block by aligning the two
+blocks' ends.
+
 In a **Reference Studio song project**, Shift-click or Ctrl/Cmd-click regions to
 build a selection, or press **Select All** (⌘/Ctrl+A) to select every active
 region. Cut, Copy, Paste, and Delete then act on the whole selection as one
@@ -218,9 +236,10 @@ size. A new edit after Undo clears the abandoned redo branch.
 Arrange is operable without a mouse: Arrow keys move through track/take rows
 and regions, Alt+Left/Right nudges the selected region, and Ctrl+Left/Right
 Bracket trims its start/end to the playhead. Ctrl+Alt+A auditions the selected
-take lane, Ctrl+Alt+C comps its selected region, and Ctrl+Alt+Left/Right moves
-the named section at the playhead. The accessible timeline description reports
-the current track, lane, region, frame range, snap state, and audition state.
+take lane, Ctrl+Alt+C comps its selected region, Ctrl+Alt+Left/Right moves the
+named section at the playhead, and Ctrl+Alt+D / Ctrl+Alt+Backspace duplicate
+or remove it. The accessible timeline description reports the current track,
+lane, region, frame range, snap state, and audition state.
 
 **Cycle Region** loops the selected range on exact project frames, including
 when a loop boundary falls inside an output-device block. For cycles of four
