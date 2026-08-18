@@ -18,6 +18,9 @@ from typing import Callable
 
 from core.studio_project import (
     MAX_PROJECT_FRAMES,
+    MAX_STUDIO_COMP_RANGES,
+    MAX_STUDIO_CROSSFADES,
+    MAX_STUDIO_MARKERS,
     MAX_STUDIO_REGIONS,
     FadeCurve,
     MarkerKind,
@@ -41,6 +44,8 @@ class _Permutation:
     section_start: int
     section_end: int
     target_start: int
+
+    kind = "reorder"
 
     @property
     def section_length(self) -> int:
@@ -77,7 +82,44 @@ class _Permutation:
 
         if any(start < cut < end for cut in self.cuts):
             raise StudioSectionError(
-                f"{description} crosses a section-reorder boundary."
+                f"{description} crosses a section-{self.kind} boundary."
+            )
+        return self.delta_at(start)
+
+
+@dataclass(frozen=True)
+class _InsertGap:
+    """Timeline map that opens one gap of the section's own length after it.
+
+    Both section edges are cuts so an interval straddling either edge refuses,
+    and every region fragment ends up fully inside or fully outside the
+    section — the copies a duplicate adds are then whole fragments.
+    """
+
+    section_start: int
+    section_end: int
+
+    kind = "duplicate"
+
+    @property
+    def section_length(self) -> int:
+        return self.section_end - self.section_start
+
+    @property
+    def cuts(self) -> tuple[int, ...]:
+        return (self.section_start, self.section_end)
+
+    def delta_at(self, frame: int) -> int:
+        """Return the half-open gap delta for one original frame."""
+
+        return self.section_length if frame >= self.section_end else 0
+
+    def interval_delta(self, start: int, end: int, description: str) -> int:
+        """Return one interval's delta or reject a non-representable seam."""
+
+        if any(start < cut < end for cut in self.cuts):
+            raise StudioSectionError(
+                f"{description} crosses a section-{self.kind} boundary."
             )
         return self.delta_at(start)
 
@@ -121,7 +163,12 @@ def _target_frame(value: object) -> int:
     return value
 
 
-def _selected_section(document: StudioDocument, marker_id: str) -> StudioMarker:
+def _selected_section(
+    document: StudioDocument,
+    marker_id: str,
+    *,
+    verb: str = "reordered",
+) -> StudioMarker:
     marker = next(
         (item for item in document.markers if item.marker_id == marker_id),
         None,
@@ -129,9 +176,9 @@ def _selected_section(document: StudioDocument, marker_id: str) -> StudioMarker:
     if marker is None:
         raise StudioSectionError("The section marker is not part of this document.")
     if marker.deleted:
-        raise StudioSectionError("A deleted section marker cannot be reordered.")
+        raise StudioSectionError(f"A deleted section marker cannot be {verb}.")
     if marker.kind is not MarkerKind.SECTION or marker.end_frame is None:
-        raise StudioSectionError("Only an active section marker can be reordered.")
+        raise StudioSectionError(f"Only an active section marker can be {verb}.")
     return marker
 
 
@@ -160,7 +207,9 @@ def _plan_region(
         or fade_out_start < cut < region.timeline_end_frame
         for cut in permutation.cuts
     ):
-        raise StudioSectionError("A section-reorder boundary crosses a region fade.")
+        raise StudioSectionError(
+            f"A section-{permutation.kind} boundary crosses a region fade."
+        )
 
     boundaries = (
         region.timeline_start_frame,
@@ -398,7 +447,7 @@ def _planned_regions(
         > MAX_STUDIO_REGIONS
     ):
         raise StudioSectionError(
-            "The section reorder would exceed the Studio region limit."
+            f"The section {time_map.kind} would exceed the Studio region limit."
         )
     factory = split_id_factory or (lambda: str(uuid.uuid4()))
     allocated_ids = iter(
@@ -570,4 +619,237 @@ def reorder_section(
         ) from exc
 
 
-__all__ = ["SplitIdFactory", "StudioSectionError", "reorder_section"]
+def duplicate_section(
+    document: StudioDocument,
+    section_marker_id: str,
+    *,
+    id_factory: SplitIdFactory | None = None,
+) -> StudioDocument:
+    """Insert one copy of an active ``SECTION`` immediately after itself.
+
+    Later time ripples right by the section's length, and everything fully
+    inside the section — region fragments, point markers, nested sections,
+    comp choices, and crossfades — is copied into the opened gap with new
+    durable IDs.  Both section edges are seams: any active interval that
+    straddles an edge refuses, because its copy could not be represented
+    truthfully.  Source recordings and existing tombstones are never touched.
+
+    ``id_factory`` supplies every new UUID deterministically in one documented
+    order: region split IDs in document region order, then region copy IDs,
+    marker copy IDs, comp-range copy IDs, and crossfade copy IDs.  The copy of
+    the duplicated section's own marker is allocated with the marker copies.
+    """
+
+    if not isinstance(document, StudioDocument):
+        raise StudioSectionError("document must be a StudioDocument.")
+    marker_id = _canonical_marker_id(section_marker_id)
+    section = _selected_section(document, marker_id, verb="duplicated")
+    start = section.start_frame
+    section_end = int(section.end_frame)
+    length = section_end - start
+    if section_end + length > MAX_PROJECT_FRAMES:
+        raise StudioSectionError(
+            "The duplicated section would exceed the Studio project frame range."
+        )
+    if document.revision >= MAX_PROJECT_FRAMES:
+        raise StudioSectionError("Studio document revision is exhausted.")
+    if id_factory is not None and not callable(id_factory):
+        raise StudioSectionError("id_factory must be callable.")
+    gap = _InsertGap(start, section_end)
+
+    markers: list[StudioMarker] = []
+    for marker in document.markers:
+        if marker.deleted:
+            markers.append(marker)
+        elif marker.kind is MarkerKind.MARKER:
+            markers.append(
+                replace(
+                    marker,
+                    start_frame=(
+                        marker.start_frame + gap.delta_at(marker.start_frame)
+                    ),
+                )
+            )
+        else:
+            marker_end = int(marker.end_frame)
+            delta = gap.interval_delta(
+                marker.start_frame,
+                marker_end,
+                f'Section marker "{marker.label}"',
+            )
+            markers.append(
+                replace(
+                    marker,
+                    start_frame=marker.start_frame + delta,
+                    end_frame=marker_end + delta,
+                )
+            )
+
+    comp_ranges = _transformed_comp_ranges(document, gap)
+    crossfade_deltas = _crossfade_interval_deltas(document, gap)
+    cycle_range = _transformed_cycle_range(document, gap)
+
+    def _inside(interval_start: int, interval_end: int) -> bool:
+        return start <= interval_start and interval_end <= section_end
+
+    copy_candidates = sum(
+        1
+        for region in document.regions
+        if not region.deleted
+        and region.timeline_start_frame < section_end
+        and region.timeline_end_frame > start
+    )
+    region_values, fragments_by_region = _planned_regions(
+        document,
+        gap,
+        id_factory,
+        reserved_region_count=copy_candidates,
+    )
+    crossfades = _rebuilt_crossfades(document, crossfade_deltas, fragments_by_region)
+
+    interior_regions = tuple(
+        region
+        for region in region_values
+        if not region.deleted
+        and _inside(region.timeline_start_frame, region.timeline_end_frame)
+    )
+    marker_sources = tuple(
+        marker
+        for marker in document.markers
+        if not marker.deleted
+        and (
+            start <= marker.start_frame < section_end
+            if marker.kind is MarkerKind.MARKER
+            else _inside(marker.start_frame, int(marker.end_frame))
+        )
+    )
+    comp_sources = tuple(
+        comp_range
+        for comp_range in comp_ranges
+        if not comp_range.deleted
+        and _inside(
+            comp_range.timeline_start_frame,
+            comp_range.timeline_end_frame,
+        )
+    )
+    crossfade_sources = tuple(
+        crossfade
+        for crossfade in crossfades
+        if not crossfade.deleted
+        and _inside(crossfade.start_frame, crossfade.end_frame)
+    )
+
+    if len(markers) + len(marker_sources) > MAX_STUDIO_MARKERS:
+        raise StudioSectionError(
+            "The section duplicate would exceed the Studio marker limit."
+        )
+    if len(comp_ranges) + len(comp_sources) > MAX_STUDIO_COMP_RANGES:
+        raise StudioSectionError(
+            "The section duplicate would exceed the Studio comp-range limit."
+        )
+    if len(crossfades) + len(crossfade_sources) > MAX_STUDIO_CROSSFADES:
+        raise StudioSectionError(
+            "The section duplicate would exceed the Studio crossfade limit."
+        )
+
+    existing_ids = (
+        {item.region_id for item in region_values}
+        | {item.marker_id for item in document.markers}
+        | {item.comp_range_id for item in document.comp_ranges}
+        | {item.crossfade_id for item in document.crossfades}
+        | {item.lane_id for item in document.take_lanes}
+    )
+    factory = id_factory or (lambda: str(uuid.uuid4()))
+    copy_ids = iter(
+        _allocate_split_ids(
+            len(interior_regions)
+            + len(marker_sources)
+            + len(comp_sources)
+            + len(crossfade_sources),
+            factory,
+            existing_ids,
+        )
+    )
+
+    region_copy_ids = {
+        region.region_id: next(copy_ids) for region in interior_regions
+    }
+    region_copies = tuple(
+        replace(
+            region,
+            region_id=region_copy_ids[region.region_id],
+            timeline_start_frame=region.timeline_start_frame + length,
+            mapping_timeline_start_frame=(
+                int(region.mapping_timeline_start_frame) + length
+            ),
+        )
+        for region in interior_regions
+    )
+    marker_copies = tuple(
+        replace(
+            marker,
+            marker_id=next(copy_ids),
+            start_frame=marker.start_frame + length,
+            end_frame=(
+                None if marker.end_frame is None else int(marker.end_frame) + length
+            ),
+        )
+        for marker in marker_sources
+    )
+    comp_copies = tuple(
+        replace(
+            comp_range,
+            comp_range_id=next(copy_ids),
+            timeline_start_frame=comp_range.timeline_start_frame + length,
+        )
+        for comp_range in comp_sources
+    )
+    crossfade_copies = tuple(
+        replace(
+            crossfade,
+            crossfade_id=next(copy_ids),
+            left_region_id=region_copy_ids[crossfade.left_region_id],
+            right_region_id=region_copy_ids[crossfade.right_region_id],
+            start_frame=crossfade.start_frame + length,
+        )
+        for crossfade in crossfade_sources
+    )
+
+    lanes = tuple(
+        replace(
+            lane,
+            region_ids=(
+                lane.region_ids
+                + tuple(
+                    region_copy_ids[region_id]
+                    for region_id in lane.region_ids
+                    if region_id in region_copy_ids
+                )
+            ),
+        )
+        for lane in _remapped_lanes(document, fragments_by_region)
+    )
+
+    try:
+        return replace(
+            document,
+            regions=region_values + region_copies,
+            take_lanes=lanes,
+            comp_ranges=comp_ranges + comp_copies,
+            markers=tuple(markers) + marker_copies,
+            crossfades=crossfades + crossfade_copies,
+            cycle_range=cycle_range,
+            revision=document.revision + 1,
+        )
+    except StudioProjectError as exc:
+        raise StudioSectionError(
+            "The section duplicate would create an invalid Studio document."
+        ) from exc
+
+
+__all__ = [
+    "SplitIdFactory",
+    "StudioSectionError",
+    "duplicate_section",
+    "reorder_section",
+]
