@@ -20,9 +20,11 @@ from core.song_project import LEGACY_SONG_PROJECT_SCHEMA_VERSION
 from core.song_project_store import PROJECT_MANIFEST_FILENAME
 from core.song_studio_reconcile import reconcile_song_studio_document
 from core.studio_project import (
+    MarkerKind,
     StudioAutomationInterpolation,
     StudioAutomationParameter,
     StudioEffectKind,
+    StudioMarker,
     StudioTrackKind,
 )
 from core.take_player import TakePlayer
@@ -896,3 +898,116 @@ def test_multi_region_selection_batches_clipboard_and_undoes_atomically(
     assert "Selected all 4 regions" in controller._status
     assert controller.save()
     assert controller.shutdown()
+
+
+def test_song_section_duplicate_and_remove_ripple_the_whole_project(
+    tmp_path: Path,
+    qapp: QApplication,
+) -> None:
+    shell = _shell()
+    output = _ProjectOutput()
+    controller = ReferenceStudioApplicationController(
+        shell,
+        config_file=tmp_path / "settings.json",
+        output_backend=output,
+    )
+    bundle = tmp_path / "Sectioned Song"
+    try:
+        controller.create_project(bundle, "Sectioned Song")
+        _wait_until(qapp, lambda: controller._catalog is not None)
+
+        backing = tmp_path / "backing.wav"
+        phase = np.arange(12_000, dtype=np.float32) / np.float32(48_000)
+        sf.write(
+            backing,
+            np.column_stack(
+                (
+                    np.sin(phase * np.float32(2 * np.pi * 220)),
+                    np.sin(phase * np.float32(2 * np.pi * 330)),
+                )
+            ),
+            48_000,
+            subtype="FLOAT",
+        )
+        controller.import_backing(backing)
+        _wait_until(
+            qapp,
+            lambda: (
+                controller._renderer is not None
+                and controller.workspace.presentation.can_play
+            ),
+        )
+        section_id = "9d1fb1f0-24a4-4d5f-9d4e-2f4f8f4c0a01"
+        assert controller._apply_studio_edit(
+            "Add chorus section",
+            lambda document: document.upsert_marker(
+                StudioMarker(
+                    marker_id=section_id,
+                    start_frame=0,
+                    end_frame=6_000,
+                    label="Chorus",
+                    kind=MarkerKind.SECTION,
+                )
+            ),
+            rebuild=False,
+        )
+        before = controller.studio_controller.document
+
+        controller._duplicate_section(section_id)
+        doubled = controller.studio_controller.document
+        assert doubled.revision == before.revision + 1
+        sections = sorted(
+            (item.start_frame, int(item.end_frame))
+            for item in doubled.markers
+            if item.kind is MarkerKind.SECTION and not item.deleted
+        )
+        assert sections == [(0, 6_000), (6_000, 12_000)]
+        active = sorted(
+            (
+                item.timeline_start_frame,
+                item.timeline_frame_count,
+                item.source_start_frame,
+            )
+            for item in doubled.regions
+            if item.enabled and not item.deleted
+        )
+        assert active == [
+            (0, 6_000, 0),
+            (6_000, 6_000, 0),
+            (12_000, 6_000, 6_000),
+        ]
+
+        controller._remove_section(section_id)
+        removed = controller.studio_controller.document
+        assert removed.revision == doubled.revision + 1
+        original = next(
+            item for item in removed.markers if item.marker_id == section_id
+        )
+        assert original.deleted is True
+        surviving = sorted(
+            (item.start_frame, int(item.end_frame))
+            for item in removed.markers
+            if item.kind is MarkerKind.SECTION and not item.deleted
+        )
+        assert surviving == [(0, 6_000)]
+        # Removing the duplicated block restores the audible layout: the copy
+        # plays the first half and the rippled tail plays the second half.
+        active_after = sorted(
+            (
+                item.timeline_start_frame,
+                item.timeline_frame_count,
+                item.source_start_frame,
+            )
+            for item in removed.regions
+            if item.enabled and not item.deleted
+        )
+        assert active_after == [(0, 6_000, 0), (6_000, 6_000, 6_000)]
+
+        controller._undo()
+        assert controller.studio_controller.document == doubled
+        controller._undo()
+        assert controller.studio_controller.document == before
+    finally:
+        if controller.project_open:
+            assert controller.close_project(choice="discard")
+        assert controller.shutdown()

@@ -31,7 +31,11 @@ from core.studio_project import (
     StudioProjectError,
     StudioRegion,
 )
-from core.studio_sections import reorder_section
+from core.studio_sections import (
+    duplicate_section,
+    remove_section,
+    reorder_section,
+)
 from core.studio_source_catalog import (
     StudioSourceCatalog,
     StudioSourceCatalogError,
@@ -105,6 +109,8 @@ class StudioArrangementWorkflowMixin:
         arrange.region_selected.connect(self._select_arrange_region)
         arrange.region_move_requested.connect(self._move_arrange_region)
         arrange.section_move_requested.connect(self._move_arrange_section)
+        arrange.section_duplicate_requested.connect(self._duplicate_arrange_section)
+        arrange.section_remove_requested.connect(self._remove_arrange_section)
         arrange.region_trim_requested.connect(self._trim_arrange_region)
         arrange.split_region_requested.connect(self._split_arrange_region)
         arrange.duplicate_region_requested.connect(self._duplicate_arrange_region)
@@ -765,6 +771,52 @@ class StudioArrangementWorkflowMixin:
             self._hint.setText(
                 f'Moved "{label}" to {position} across every track. '
                 "Undo is available."
+            )
+
+    def _named_section_label(self, section_marker_id: str) -> str:
+        document = self._studio_state
+        section = (
+            next(
+                (
+                    marker
+                    for marker in document.markers
+                    if marker.marker_id == section_marker_id and not marker.deleted
+                ),
+                None,
+            )
+            if document is not None
+            else None
+        )
+        return section.label if section is not None else "Section"
+
+    def _duplicate_arrange_section(self, section_marker_id: str) -> None:
+        """Repeat one named song section right after itself on every track."""
+
+        label = self._named_section_label(section_marker_id)
+        changed = self._perform_arrange_edit(
+            "Duplicate song section",
+            lambda document: duplicate_section(document, section_marker_id),
+            reload_audio=True,
+        )
+        if changed:
+            self._hint.setText(
+                f'Duplicated "{label}" right after itself across every track. '
+                "Undo is available."
+            )
+
+    def _remove_arrange_section(self, section_marker_id: str) -> None:
+        """Remove one named song section and close the gap on every track."""
+
+        label = self._named_section_label(section_marker_id)
+        changed = self._perform_arrange_edit(
+            "Remove song section",
+            lambda document: remove_section(document, section_marker_id),
+            reload_audio=True,
+        )
+        if changed:
+            self._hint.setText(
+                f'Removed "{label}" and closed the gap across every track. '
+                "The recording itself is unchanged. Undo is available."
             )
 
     def _trim_arrange_region(

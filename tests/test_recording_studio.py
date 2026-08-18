@@ -4700,3 +4700,186 @@ def test_completed_take_is_auto_selected_and_loaded_in_studio(tmp_path):
         assert selected.data(Qt.ItemDataRole.UserRole) == str(take_dir)
     finally:
         studio.shutdown()
+
+
+def test_named_section_duplicate_repeats_the_block_as_one_undoable_edit(tmp_path):
+    take_dir, track_ids = _schema2_studio_take(tmp_path)
+    manifest = take_dir / "webjam-take.json"
+    media = tuple(sorted((take_dir / "media").glob("*.wav")))
+    truth = {path: path.read_bytes() for path in (manifest, *media)}
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        section_id = new_project_id()
+        assert studio._perform_arrange_edit(
+            "Add Verse section",
+            lambda document: document.upsert_marker(
+                StudioMarker(
+                    marker_id=section_id,
+                    start_frame=0,
+                    label="Verse",
+                    kind=MarkerKind.SECTION,
+                    end_frame=RATE // 2,
+                )
+            ),
+            reload_audio=False,
+        )
+        before = studio._studio_state
+        assert before is not None
+        history = studio._studio_controller._history
+        assert history is not None
+        undo_depth = history.undo_depth
+
+        studio._studio_arrange.section_duplicate_requested.emit(section_id)
+
+        doubled = studio._studio_state
+        assert doubled is not None
+        assert doubled.revision == before.revision + 1
+        assert history.undo_depth == undo_depth + 1
+        sections = sorted(
+            (item.start_frame, item.end_frame, item.label)
+            for item in doubled.markers
+            if item.kind is MarkerKind.SECTION and not item.deleted
+        )
+        assert sections == [
+            (0, RATE // 2, "Verse"),
+            (RATE // 2, RATE, "Verse"),
+        ]
+        for track_id in track_ids:
+            fragments = sorted(
+                (
+                    item.timeline_start_frame,
+                    item.timeline_frame_count,
+                    item.source_start_frame,
+                    item.source_frame_count,
+                )
+                for item in doubled.regions
+                if item.track_id == track_id and item.enabled and not item.deleted
+            )
+            assert fragments == [
+                (0, RATE // 2, 0, RATE // 2),
+                (RATE // 2, RATE // 2, 0, RATE // 2),
+                (RATE, RATE // 2, RATE // 2, RATE // 2),
+            ]
+        assert studio._player._studio_renderer is not None
+        assert studio._player._studio_renderer.document is doubled
+        hint_text = studio._hint.text().lower()
+        assert "duplicated" in hint_text
+        assert "verse" in hint_text
+        assert "every track" in hint_text
+
+        studio._studio_arrange.undo_requested.emit()
+        assert studio._studio_state == before
+        studio._studio_arrange.redo_requested.emit()
+        assert studio._studio_state == doubled
+    finally:
+        studio.shutdown()
+
+    assert all(path.read_bytes() == before for path, before in truth.items())
+
+
+def test_named_section_remove_closes_the_gap_and_keeps_recordings_unchanged(
+    tmp_path,
+):
+    take_dir, track_ids = _schema2_studio_take(tmp_path)
+    manifest = take_dir / "webjam-take.json"
+    media = tuple(sorted((take_dir / "media").glob("*.wav")))
+    truth = {path: path.read_bytes() for path in (manifest, *media)}
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        section_id = new_project_id()
+        assert studio._perform_arrange_edit(
+            "Add Verse section",
+            lambda document: document.upsert_marker(
+                StudioMarker(
+                    marker_id=section_id,
+                    start_frame=0,
+                    label="Verse",
+                    kind=MarkerKind.SECTION,
+                    end_frame=RATE // 2,
+                )
+            ),
+            reload_audio=False,
+        )
+        before = studio._studio_state
+        assert before is not None
+        history = studio._studio_controller._history
+        assert history is not None
+        undo_depth = history.undo_depth
+
+        studio._studio_arrange.section_remove_requested.emit(section_id)
+
+        removed = studio._studio_state
+        assert removed is not None
+        assert removed.revision == before.revision + 1
+        assert history.undo_depth == undo_depth + 1
+        section = next(
+            item for item in removed.markers if item.marker_id == section_id
+        )
+        assert section.deleted is True
+        for track_id in track_ids:
+            active = sorted(
+                (
+                    item.timeline_start_frame,
+                    item.timeline_frame_count,
+                    item.source_start_frame,
+                    item.source_frame_count,
+                )
+                for item in removed.regions
+                if item.track_id == track_id and item.enabled and not item.deleted
+            )
+            assert active == [(0, RATE // 2, RATE // 2, RATE // 2)]
+            tombstones = sorted(
+                (
+                    item.timeline_start_frame,
+                    item.timeline_frame_count,
+                    item.source_start_frame,
+                    item.source_frame_count,
+                )
+                for item in removed.regions
+                if item.track_id == track_id and item.deleted
+            )
+            assert tombstones == [(0, RATE // 2, 0, RATE // 2)]
+        hint_text = studio._hint.text().lower()
+        assert "removed" in hint_text
+        assert "closed the gap" in hint_text
+        assert "recording itself is unchanged" in hint_text
+
+        studio._studio_arrange.undo_requested.emit()
+        assert studio._studio_state == before
+    finally:
+        studio.shutdown()
+
+    assert all(path.read_bytes() == before for path, before in truth.items())
+
+
+def test_review_preview_ignores_section_duplicate_and_remove_requests(tmp_path):
+    take_dir, _track_ids = _schema2_studio_take(
+        tmp_path,
+        creator_profile_key="review_rehearsal",
+    )
+    sidecar = take_dir / ".webjam-studio-state.json"
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._on_take_selected(0)
+        APP.processEvents()
+        assert studio._studio_state is None
+
+        studio._studio_arrange.section_duplicate_requested.emit(new_project_id())
+        studio._studio_arrange.section_remove_requested.emit(new_project_id())
+
+        assert studio._studio_state is None
+        assert studio._studio_controller.take_path is None
+        assert not sidecar.exists()
+    finally:
+        studio.shutdown()

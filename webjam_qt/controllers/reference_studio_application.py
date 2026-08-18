@@ -119,7 +119,12 @@ from core.studio_project import (
     StudioTrackKind,
 )
 from core.studio_renderer import StudioRenderError, StudioRenderer
-from core.studio_sections import StudioSectionError, reorder_section
+from core.studio_sections import (
+    StudioSectionError,
+    duplicate_section,
+    remove_section,
+    reorder_section,
+)
 from core.studio_tempo import (
     MICRO_BPM_PER_BPM,
     TempoAnalysisCancelled,
@@ -788,6 +793,8 @@ class ReferenceStudioApplicationController(QObject):
         arrange.delete_region_requested.connect(self._delete_region)
         arrange.comp_range_requested.connect(self._select_comp_range)
         arrange.section_move_requested.connect(self._move_section)
+        arrange.section_duplicate_requested.connect(self._duplicate_section)
+        arrange.section_remove_requested.connect(self._remove_section)
         arrange.viewport_changed.connect(self._schedule_waveforms)
         arrange.snap_mode_requested.connect(self._set_arrange_snap)
         arrange.undo_requested.connect(self._undo)
@@ -1807,6 +1814,20 @@ class ReferenceStudioApplicationController(QObject):
         self._apply_studio_edit(
             f"Moved {section} across every track",
             lambda document: reorder_section(document, marker_id, target),
+        )
+
+    def _duplicate_section(self, marker_id: str) -> None:
+        section = self._creator_profile.vocabulary.section_noun
+        self._apply_studio_edit(
+            f"Duplicated {section} across every track",
+            lambda document: duplicate_section(document, marker_id),
+        )
+
+    def _remove_section(self, marker_id: str) -> None:
+        section = self._creator_profile.vocabulary.section_noun
+        self._apply_studio_edit(
+            f"Removed {section} and closed the gap across every track",
+            lambda document: remove_section(document, marker_id),
         )
 
     def _set_arrange_snap(self, mode: str) -> None:

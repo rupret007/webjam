@@ -12,7 +12,7 @@ from __future__ import annotations
 import bisect
 import math
 from collections import OrderedDict
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
@@ -27,7 +27,13 @@ from PySide6.QtGui import (
     QShortcut,
     QWheelEvent,
 )
-from PySide6.QtWidgets import QAbstractScrollArea, QHBoxLayout, QSizePolicy, QWidget
+from PySide6.QtWidgets import (
+    QAbstractScrollArea,
+    QHBoxLayout,
+    QMenu,
+    QSizePolicy,
+    QWidget,
+)
 
 from core.studio_project import (
     STUDIO_SONG_PROJECT_SCHEMA_VERSION,
@@ -55,8 +61,51 @@ MAX_ARRANGE_WAVEFORM_BYTES = 32 * 1024 * 1024
 
 _EDGE_HIT_PIXELS = 7.0
 _MARKER_SNAP_PIXELS = 12.0
+SECTION_SNAP_PIXELS = 12.0
 _MAX_SCROLL_UNITS = 1_000_000_000
 _MAX_TRACK_NAME_CHARACTERS = 160
+
+
+def section_snap_target(
+    raw_target: int,
+    section_start: int,
+    section_length: int,
+    other_section_spans: Sequence[tuple[int, int]],
+    threshold_frames: float,
+) -> int | None:
+    """Return the section-boundary drop target nearest ``raw_target``.
+
+    A dragged section wants to land *between* blocks, so the candidates place
+    its start at another section's start (drop in front of that block), its
+    end at another section's end (drop right behind it), or its start at the
+    song's first frame.  A candidate strictly inside the dragged section's
+    own original span is never offered, because the section reorder refuses
+    such targets.  The nearest candidate within ``threshold_frames`` wins,
+    ties preferring the earlier frame; ``None`` means the drop is not near
+    any block edge and free placement applies.
+    """
+
+    if section_length <= 0 or threshold_frames < 0:
+        return None
+    section_end = section_start + section_length
+    candidates = {0}
+    for span_start, span_end in other_section_spans:
+        candidates.add(span_start)
+        behind = span_end - section_length
+        if behind >= 0:
+            candidates.add(behind)
+    best: int | None = None
+    best_distance = float(threshold_frames)
+    for candidate in sorted(candidates):
+        if section_start < candidate < section_end:
+            continue
+        distance = abs(raw_target - candidate)
+        if distance <= best_distance and (
+            best is None or distance < best_distance
+        ):
+            best = candidate
+            best_distance = float(distance)
+    return best
 
 
 @dataclass(frozen=True)
@@ -1479,7 +1528,35 @@ class _ArrangeScrollArea(QAbstractScrollArea):
         marker.closeSubpath()
         painter.drawPath(marker)
 
+    def _section_context_menu(self, section: StudioMarker) -> QMenu:
+        """Build the arranger-bar menu for one named section block."""
+
+        menu = QMenu(self)
+        duplicate = menu.addAction(f'Duplicate "{section.label}"')
+        duplicate.triggered.connect(
+            lambda: self._arrange.section_duplicate_requested.emit(
+                section.marker_id
+            )
+        )
+        remove = menu.addAction(f'Remove "{section.label}" and close the gap')
+        remove.triggered.connect(
+            lambda: self._arrange.section_remove_requested.emit(section.marker_id)
+        )
+        return menu
+
     def _mouse_press(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.RightButton:
+            point = event.position()
+            if point.y() < RULER_HEIGHT:
+                section = self._section_at(point.x(), point.y())
+                if section is not None and section.end_frame is not None:
+                    self._section_context_menu(section).exec(
+                        event.globalPosition().toPoint()
+                    )
+                    event.accept()
+                    return
+            event.ignore()
+            return
         if event.button() != Qt.MouseButton.LeftButton:
             event.ignore()
             return
@@ -1648,6 +1725,19 @@ class _ArrangeScrollArea(QAbstractScrollArea):
         frame = max(0, self._snap_frame(self.frame_at_x(x)))
         self._arrange.scrub_requested.emit(frame)
 
+    def _other_section_spans(self, marker_id: str) -> tuple[tuple[int, int], ...]:
+        document = self._document
+        if document is None:
+            return ()
+        return tuple(
+            (marker.start_frame, int(marker.end_frame))
+            for marker in document.markers
+            if not marker.deleted
+            and marker.kind is MarkerKind.SECTION
+            and marker.end_frame is not None
+            and marker.marker_id != marker_id
+        )
+
     def _emit_section_gesture(
         self,
         gesture: _Gesture,
@@ -1656,11 +1746,20 @@ class _ArrangeScrollArea(QAbstractScrollArea):
         commit: bool,
     ) -> None:
         length = gesture.original_end - gesture.original_start
+        raw_target = gesture.original_start + current_frame - gesture.press_frame
+        # A section drag is a structural move, so landing cleanly between
+        # blocks always wins over the general snap mode; free placement
+        # remains available away from the other sections' edges.
+        snapped = section_snap_target(
+            raw_target,
+            gesture.original_start,
+            length,
+            self._other_section_spans(gesture.region_id),
+            SECTION_SNAP_PIXELS / self.pixels_per_frame,
+        )
         target = max(
             0,
-            self._snap_frame(
-                gesture.original_start + current_frame - gesture.press_frame
-            ),
+            self._snap_frame(raw_target) if snapped is None else snapped,
         )
         if gesture.original_start < target < gesture.original_end:
             target = gesture.original_start
@@ -1806,6 +1905,8 @@ class StudioArrange(QWidget):
     lane_audition_requested = Signal(str)
     comp_range_requested = Signal(str, object, object)
     section_move_requested = Signal(str, object)
+    section_duplicate_requested = Signal(str)
+    section_remove_requested = Signal(str)
     viewport_changed = Signal()
     snap_mode_requested = Signal(str)
     undo_requested = Signal()
@@ -1855,6 +1956,8 @@ class StudioArrange(QWidget):
             "Ctrl+Z undo · Ctrl+Shift+Z redo · Ctrl+E split · Ctrl+D duplicate · "
             "Delete remove · arrows select tracks/regions · Alt+←/→ nudge · "
             "drag a named section bar to rearrange the song · "
+            "right-click a section to duplicate or remove it · "
+            "Ctrl+Alt+D/Backspace duplicate/remove the section at the playhead · "
             "Option/Alt-drag lane to comp · double-click lane to audition · "
             "Ctrl++/Ctrl+- zoom"
         )
@@ -2687,11 +2790,11 @@ class StudioArrange(QWidget):
             region.timeline_end_frame,
         )
 
-    def _request_section_move(self, direction: int) -> None:
+    def _sorted_sections(self) -> tuple[StudioMarker, ...]:
         document = self._document
         if document is None:
-            return
-        sections = tuple(
+            return ()
+        return tuple(
             sorted(
                 (
                     marker
@@ -2703,9 +2806,11 @@ class StudioArrange(QWidget):
                 key=lambda marker: (marker.start_frame, marker.marker_id),
             )
         )
-        if not sections:
-            return
-        current_index = next(
+
+    def _playhead_section_index(
+        self, sections: tuple[StudioMarker, ...]
+    ) -> int:
+        return next(
             (
                 index
                 for index, marker in enumerate(sections)
@@ -2713,13 +2818,46 @@ class StudioArrange(QWidget):
             ),
             -1,
         )
+
+    def _request_section_move(self, direction: int) -> None:
+        sections = self._sorted_sections()
+        current_index = self._playhead_section_index(sections)
         if current_index < 0:
             return
         target_index = current_index + direction
         if not 0 <= target_index < len(sections):
             return
-        target = sections[target_index].start_frame
-        self.section_move_requested.emit(sections[current_index].marker_id, target)
+        current = sections[current_index]
+        length = int(current.end_frame) - current.start_frame
+        if direction > 0:
+            # Landing behind the next block means the moved section's end
+            # aligns with that block's end, so unequal-length neighbours
+            # swap cleanly instead of cutting into the longer one.  A next
+            # block shorter than this section would put that target inside
+            # the section's own span — which the reorder refuses — so fall
+            # back to the block's start.
+            behind = int(sections[target_index].end_frame) - length
+            if current.start_frame < behind < int(current.end_frame):
+                target = sections[target_index].start_frame
+            else:
+                target = behind
+        else:
+            target = sections[target_index].start_frame
+        self.section_move_requested.emit(current.marker_id, target)
+
+    def _request_section_duplicate(self) -> None:
+        sections = self._sorted_sections()
+        current_index = self._playhead_section_index(sections)
+        if current_index < 0:
+            return
+        self.section_duplicate_requested.emit(sections[current_index].marker_id)
+
+    def _request_section_remove(self) -> None:
+        sections = self._sorted_sections()
+        current_index = self._playhead_section_index(sections)
+        if current_index < 0:
+            return
+        self.section_remove_requested.emit(sections[current_index].marker_id)
 
     def _selected_region(self) -> StudioRegion | None:
         document = self._document
@@ -2783,6 +2921,8 @@ class StudioArrange(QWidget):
         self._add_shortcut("Ctrl+Alt+C", self._request_selected_lane_comp)
         self._add_shortcut("Ctrl+Alt+Left", lambda: self._request_section_move(-1))
         self._add_shortcut("Ctrl+Alt+Right", lambda: self._request_section_move(1))
+        self._add_shortcut("Ctrl+Alt+D", self._request_section_duplicate)
+        self._add_shortcut("Ctrl+Alt+Backspace", self._request_section_remove)
         self._add_shortcut("Alt+1", lambda: self._request_snap_mode(SnapMode.OFF))
         self._add_shortcut("Alt+2", lambda: self._request_snap_mode(SnapMode.TIME))
         self._add_shortcut("Alt+3", lambda: self._request_snap_mode(SnapMode.MARKERS))

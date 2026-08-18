@@ -38,10 +38,12 @@ from webjam_qt.widgets.studio_arrange import (  # noqa: E402
     MAX_PIXELS_PER_SECOND,
     MIN_PIXELS_PER_SECOND,
     RULER_HEIGHT,
+    SECTION_SNAP_PIXELS,
     STUDIO_ARRANGE_TRACK_HEADER_WIDTH,
     TAKE_LANE_HEIGHT,
     TRACK_HEIGHT,
     StudioArrange,
+    section_snap_target,
 )
 from webjam_qt.widgets import studio_arrange as studio_arrange_module  # noqa: E402
 
@@ -1121,9 +1123,13 @@ def test_keyboard_selection_nudge_trim_comp_audition_and_section_reorder(
         Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier,
     )
     qapp.processEvents()
+    # Moving right lands the section BEHIND the next block: its end aligns
+    # with that block's end, so unequal-length neighbours (36 000-frame verse,
+    # 60 000-frame chorus) swap cleanly instead of emitting a target the core
+    # refuses for cutting into the longer section.
     assert sections == [
         (chorus.marker_id, verse.start_frame),
-        (verse.marker_id, chorus.start_frame),
+        (verse.marker_id, int(chorus.end_frame) - 36_000),
     ]
     arrange.close()
 
@@ -1290,4 +1296,140 @@ def test_modifier_clicks_build_and_prune_a_multi_region_selection(
         region_id=first_region.region_id,
     )
     assert arrange.selected_region_ids == (first_region.region_id,)
+    arrange.close()
+
+
+def test_section_snap_target_lands_drops_between_blocks() -> None:
+    spans = ((36_000, 96_000), (120_000, 150_000))
+
+    # Aligning starts drops the dragged section in front of a block.
+    assert section_snap_target(35_000, 0, 24_000, spans, 2_400) == 36_000
+    # Aligning ends drops it right behind a block.
+    assert section_snap_target(73_000, 0, 24_000, spans, 2_400) == 72_000
+    assert section_snap_target(125_000, 0, 24_000, spans, 2_400) == 126_000
+    # The song start is always a candidate.
+    assert section_snap_target(1_500, 200_000, 24_000, spans, 2_400) == 0
+    # Away from every block edge the drop stays free.
+    assert section_snap_target(50_000, 0, 24_000, spans, 2_400) is None
+    # Ties prefer the earlier frame deterministically.
+    assert section_snap_target(1_200, 200_000, 24_000, (), 2_400) == 0
+    # A behind-candidate that would start before the song is not offered.
+    assert section_snap_target(100, 100_000, 40_000, ((0, 36_000),), 2_400) == 0
+    # A candidate inside the dragged section's own span is never offered,
+    # because the core reorder refuses such targets.
+    assert (
+        section_snap_target(59_000, 30_000, 60_000, ((60_000, 66_000),), 2_400)
+        is None
+    )
+    # Degenerate inputs never snap.
+    assert section_snap_target(10, 0, 0, spans, 2_400) is None
+    assert section_snap_target(10, 0, 24_000, spans, -1.0) is None
+
+
+def test_section_drag_snaps_to_neighbouring_block_edges(
+    qapp: QApplication,
+) -> None:
+    document = _document()
+    chorus = next(
+        marker for marker in document.markers if marker.kind is MarkerKind.SECTION
+    )
+    bridge = StudioMarker(
+        marker_id=_id("section:bridge"),
+        start_frame=120_000,
+        end_frame=150_000,
+        label="Bridge",
+        kind=MarkerKind.SECTION,
+    )
+    document = replace(
+        document,
+        markers=(*document.markers, bridge),
+        revision=document.revision + 1,
+    )
+    arrange = _shown_arrange(qapp, document)
+    arrange.set_zoom(180)
+    arrange.scroll_to_frame(0, center=False)
+    viewport = arrange._canvas.viewport()
+    requests: list[tuple[str, int]] = []
+    arrange.section_move_requested.connect(
+        lambda marker_id, frame: requests.append((marker_id, frame))
+    )
+
+    # Release the chorus with its raw target near 121 000 — inside the
+    # 12-px snap radius (3 200 frames at this zoom) of the in-front-of-the-
+    # bridge candidate at 120 000 — and the emitted move lands exactly on
+    # the block edge rather than a pixel-rounded frame.
+    grab_frame = chorus.start_frame + 2_000
+    press = QPoint(round(arrange._canvas.x_for_frame(grab_frame)), 22)
+    release = QPoint(
+        round(arrange._canvas.x_for_frame(grab_frame + 85_000)),
+        22,
+    )
+    QTest.mousePress(viewport, Qt.MouseButton.LeftButton, pos=press)
+    QTest.mouseMove(viewport, release)
+    QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, pos=release)
+
+    assert requests == [(chorus.marker_id, bridge.start_frame)]
+    threshold = SECTION_SNAP_PIXELS / arrange._canvas.pixels_per_frame
+    assert threshold >= 3_200
+    arrange.close()
+
+
+def test_keyboard_and_menu_target_the_section_at_the_playhead(
+    qapp: QApplication,
+) -> None:
+    document = _document()
+    section = next(
+        marker for marker in document.markers if marker.kind is MarkerKind.SECTION
+    )
+    arrange = _shown_arrange(qapp, document)
+    viewport = arrange._canvas.viewport()
+    viewport.setFocus()
+    duplicates: list[str] = []
+    removals: list[str] = []
+    arrange.section_duplicate_requested.connect(duplicates.append)
+    arrange.section_remove_requested.connect(removals.append)
+
+    # Outside every named section the commands stay inert.
+    arrange.set_playhead(section.start_frame - 1_000)
+    QTest.keyClick(
+        viewport,
+        Qt.Key.Key_D,
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier,
+    )
+    QTest.keyClick(
+        viewport,
+        Qt.Key.Key_Backspace,
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier,
+    )
+    qapp.processEvents()
+    assert duplicates == []
+    assert removals == []
+
+    arrange.set_playhead(section.start_frame + 1_000)
+    QTest.keyClick(
+        viewport,
+        Qt.Key.Key_D,
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier,
+    )
+    QTest.keyClick(
+        viewport,
+        Qt.Key.Key_Backspace,
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier,
+    )
+    qapp.processEvents()
+    assert duplicates == [section.marker_id]
+    assert removals == [section.marker_id]
+
+    # The arranger-bar context menu offers the same two commands without
+    # executing anything until an action is triggered.
+    menu = arrange._canvas._section_context_menu(section)
+    actions = menu.actions()
+    assert [action.text() for action in actions] == [
+        f'Duplicate "{section.label}"',
+        f'Remove "{section.label}" and close the gap',
+    ]
+    actions[0].trigger()
+    actions[1].trigger()
+    assert duplicates == [section.marker_id, section.marker_id]
+    assert removals == [section.marker_id, section.marker_id]
     arrange.close()
