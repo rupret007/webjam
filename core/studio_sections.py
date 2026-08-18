@@ -323,6 +323,150 @@ def _crossfade_region_id(
     return candidates[0]
 
 
+def _transformed_comp_ranges(document, time_map):
+    """Shift comp ranges through one seam-checked timeline delta map."""
+
+    comp_ranges = []
+    for comp_range in document.comp_ranges:
+        if comp_range.deleted:
+            comp_ranges.append(comp_range)
+            continue
+        delta = time_map.interval_delta(
+            comp_range.timeline_start_frame,
+            comp_range.timeline_end_frame,
+            "A comp range",
+        )
+        comp_ranges.append(
+            replace(
+                comp_range,
+                timeline_start_frame=comp_range.timeline_start_frame + delta,
+            )
+        )
+    return tuple(comp_ranges)
+
+
+def _crossfade_interval_deltas(document, time_map):
+    """Collect each active crossfade's seam-checked delta before rebuilding."""
+
+    crossfade_deltas: dict[str, int] = {}
+    for crossfade in document.crossfades:
+        if crossfade.deleted:
+            continue
+        crossfade_deltas[crossfade.crossfade_id] = time_map.interval_delta(
+            crossfade.start_frame,
+            crossfade.end_frame,
+            "A crossfade",
+        )
+    return crossfade_deltas
+
+
+def _transformed_cycle_range(document, time_map):
+    """Shift the cycle range, refusing one that crosses a seam."""
+
+    cycle_range = document.cycle_range
+    if cycle_range is None:
+        return None
+    cycle_delta = time_map.interval_delta(
+        cycle_range.start_frame,
+        cycle_range.end_frame,
+        "The cycle range",
+    )
+    return replace(
+        cycle_range,
+        start_frame=cycle_range.start_frame + cycle_delta,
+        end_frame=cycle_range.end_frame + cycle_delta,
+    )
+
+
+def _planned_regions(
+    document: StudioDocument,
+    time_map,
+    split_id_factory: SplitIdFactory | None,
+    *,
+    reserved_region_count: int = 0,
+):
+    """Split every region at the map's seams and return the rebuilt tuple.
+
+    ``reserved_region_count`` reserves headroom under the Studio region limit
+    for regions the caller will add after the split (for example copies).
+    """
+
+    plans = tuple(_plan_region(region, time_map) for region in document.regions)
+    split_count = sum(len(plan.fragments) - 1 for plan in plans)
+    if (
+        len(document.regions) + split_count + reserved_region_count
+        > MAX_STUDIO_REGIONS
+    ):
+        raise StudioSectionError(
+            "The section reorder would exceed the Studio region limit."
+        )
+    factory = split_id_factory or (lambda: str(uuid.uuid4()))
+    allocated_ids = iter(
+        _allocate_split_ids(
+            split_count,
+            factory,
+            {item.region_id for item in document.regions},
+        )
+    )
+
+    fragments_by_region: dict[str, tuple[_BuiltFragment, ...]] = {}
+    region_values: list[StudioRegion] = []
+    for plan in plans:
+        fragment_ids = tuple(
+            next(allocated_ids) for _index in range(len(plan.fragments) - 1)
+        )
+        built = _build_region_fragments(plan, fragment_ids)
+        fragments_by_region[plan.original.region_id] = built
+        region_values.extend(item.region for item in built)
+    return tuple(region_values), fragments_by_region
+
+
+def _remapped_lanes(document, fragments_by_region):
+    """Point each take lane at the fragments of its original regions."""
+
+    return tuple(
+        replace(
+            lane,
+            region_ids=tuple(
+                fragment.region.region_id
+                for region_id in lane.region_ids
+                for fragment in fragments_by_region[region_id]
+            ),
+        )
+        for lane in document.take_lanes
+    )
+
+
+def _rebuilt_crossfades(document, crossfade_deltas, fragments_by_region):
+    """Reattach each crossfade to exactly one fragment of each partner."""
+
+    crossfades: list[StudioCrossfade] = []
+    for crossfade in document.crossfades:
+        if crossfade.deleted:
+            crossfades.append(crossfade)
+            continue
+        delta = crossfade_deltas[crossfade.crossfade_id]
+        crossfades.append(
+            replace(
+                crossfade,
+                left_region_id=_crossfade_region_id(
+                    fragments_by_region,
+                    crossfade.left_region_id,
+                    crossfade.start_frame,
+                    crossfade.end_frame,
+                ),
+                right_region_id=_crossfade_region_id(
+                    fragments_by_region,
+                    crossfade.right_region_id,
+                    crossfade.start_frame,
+                    crossfade.end_frame,
+                ),
+                start_frame=crossfade.start_frame + delta,
+            )
+        )
+    return tuple(crossfades)
+
+
 def reorder_section(
     document: StudioDocument,
     section_marker_id: str,
@@ -398,116 +542,25 @@ def reorder_section(
                 )
             )
 
-    comp_ranges = []
-    for comp_range in document.comp_ranges:
-        if comp_range.deleted:
-            comp_ranges.append(comp_range)
-            continue
-        delta = permutation.interval_delta(
-            comp_range.timeline_start_frame,
-            comp_range.timeline_end_frame,
-            "A comp range",
-        )
-        comp_ranges.append(
-            replace(
-                comp_range,
-                timeline_start_frame=comp_range.timeline_start_frame + delta,
-            )
-        )
-
-    crossfade_deltas: dict[str, int] = {}
-    for crossfade in document.crossfades:
-        if crossfade.deleted:
-            continue
-        crossfade_deltas[crossfade.crossfade_id] = permutation.interval_delta(
-            crossfade.start_frame,
-            crossfade.end_frame,
-            "A crossfade",
-        )
-
-    cycle_range = document.cycle_range
-    if cycle_range is not None:
-        cycle_delta = permutation.interval_delta(
-            cycle_range.start_frame,
-            cycle_range.end_frame,
-            "The cycle range",
-        )
-        cycle_range = replace(
-            cycle_range,
-            start_frame=cycle_range.start_frame + cycle_delta,
-            end_frame=cycle_range.end_frame + cycle_delta,
-        )
-
-    plans = tuple(_plan_region(region, permutation) for region in document.regions)
-    split_count = sum(len(plan.fragments) - 1 for plan in plans)
-    if len(document.regions) + split_count > MAX_STUDIO_REGIONS:
-        raise StudioSectionError(
-            "The section reorder would exceed the Studio region limit."
-        )
-    factory = split_id_factory or (lambda: str(uuid.uuid4()))
-    allocated_ids = iter(
-        _allocate_split_ids(
-            split_count,
-            factory,
-            {item.region_id for item in document.regions},
-        )
+    comp_ranges = _transformed_comp_ranges(document, permutation)
+    crossfade_deltas = _crossfade_interval_deltas(document, permutation)
+    cycle_range = _transformed_cycle_range(document, permutation)
+    region_values, fragments_by_region = _planned_regions(
+        document, permutation, split_id_factory
     )
-
-    fragments_by_region: dict[str, tuple[_BuiltFragment, ...]] = {}
-    region_values: list[StudioRegion] = []
-    for plan in plans:
-        fragment_ids = tuple(
-            next(allocated_ids) for _index in range(len(plan.fragments) - 1)
-        )
-        built = _build_region_fragments(plan, fragment_ids)
-        fragments_by_region[plan.original.region_id] = built
-        region_values.extend(item.region for item in built)
-
-    lanes = tuple(
-        replace(
-            lane,
-            region_ids=tuple(
-                fragment.region.region_id
-                for region_id in lane.region_ids
-                for fragment in fragments_by_region[region_id]
-            ),
-        )
-        for lane in document.take_lanes
+    lanes = _remapped_lanes(document, fragments_by_region)
+    crossfades = _rebuilt_crossfades(
+        document, crossfade_deltas, fragments_by_region
     )
-
-    crossfades: list[StudioCrossfade] = []
-    for crossfade in document.crossfades:
-        if crossfade.deleted:
-            crossfades.append(crossfade)
-            continue
-        delta = crossfade_deltas[crossfade.crossfade_id]
-        crossfades.append(
-            replace(
-                crossfade,
-                left_region_id=_crossfade_region_id(
-                    fragments_by_region,
-                    crossfade.left_region_id,
-                    crossfade.start_frame,
-                    crossfade.end_frame,
-                ),
-                right_region_id=_crossfade_region_id(
-                    fragments_by_region,
-                    crossfade.right_region_id,
-                    crossfade.start_frame,
-                    crossfade.end_frame,
-                ),
-                start_frame=crossfade.start_frame + delta,
-            )
-        )
 
     try:
         return replace(
             document,
-            regions=tuple(region_values),
+            regions=region_values,
             take_lanes=lanes,
-            comp_ranges=tuple(comp_ranges),
+            comp_ranges=comp_ranges,
             markers=tuple(markers),
-            crossfades=tuple(crossfades),
+            crossfades=crossfades,
             cycle_range=cycle_range,
             revision=document.revision + 1,
         )
