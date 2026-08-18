@@ -77,6 +77,11 @@ class _Permutation:
             return -length
         return 0
 
+    def interval_dropped(self, start: int, end: int) -> bool:
+        """A reorder never drops timeline intervals."""
+
+        return False
+
     def interval_delta(self, start: int, end: int, description: str) -> int:
         """Return one interval's delta or reject a non-representable seam."""
 
@@ -113,6 +118,54 @@ class _InsertGap:
         """Return the half-open gap delta for one original frame."""
 
         return self.section_length if frame >= self.section_end else 0
+
+    def interval_dropped(self, start: int, end: int) -> bool:
+        """A duplicate never drops timeline intervals."""
+
+        return False
+
+    def interval_delta(self, start: int, end: int, description: str) -> int:
+        """Return one interval's delta or reject a non-representable seam."""
+
+        if any(start < cut < end for cut in self.cuts):
+            raise StudioSectionError(
+                f"{description} crosses a section-{self.kind} boundary."
+            )
+        return self.delta_at(start)
+
+
+@dataclass(frozen=True)
+class _Collapse:
+    """Timeline map that drops the section's block and closes its gap.
+
+    Both section edges are cuts, so every region fragment ends up fully
+    inside or fully outside the removed block.  Interior intervals are
+    *dropped* rather than shifted; the caller records them as tombstones so
+    the arrangement still shows where the removed audio came from.
+    """
+
+    section_start: int
+    section_end: int
+
+    kind = "removal"
+
+    @property
+    def section_length(self) -> int:
+        return self.section_end - self.section_start
+
+    @property
+    def cuts(self) -> tuple[int, ...]:
+        return (self.section_start, self.section_end)
+
+    def delta_at(self, frame: int) -> int:
+        """Return the half-open collapse delta for one original frame."""
+
+        return -self.section_length if frame >= self.section_end else 0
+
+    def interval_dropped(self, start: int, end: int) -> bool:
+        """Return whether one interval lies inside the removed block."""
+
+        return self.section_start <= start and end <= self.section_end
 
     def interval_delta(self, start: int, end: int, description: str) -> int:
         """Return one interval's delta or reject a non-representable seam."""
@@ -380,6 +433,12 @@ def _transformed_comp_ranges(document, time_map):
         if comp_range.deleted:
             comp_ranges.append(comp_range)
             continue
+        if time_map.interval_dropped(
+            comp_range.timeline_start_frame,
+            comp_range.timeline_end_frame,
+        ):
+            comp_ranges.append(replace(comp_range, enabled=False, deleted=True))
+            continue
         delta = time_map.interval_delta(
             comp_range.timeline_start_frame,
             comp_range.timeline_end_frame,
@@ -401,6 +460,9 @@ def _crossfade_interval_deltas(document, time_map):
     for crossfade in document.crossfades:
         if crossfade.deleted:
             continue
+        if time_map.interval_dropped(crossfade.start_frame, crossfade.end_frame):
+            crossfade_deltas[crossfade.crossfade_id] = 0
+            continue
         crossfade_deltas[crossfade.crossfade_id] = time_map.interval_delta(
             crossfade.start_frame,
             crossfade.end_frame,
@@ -414,6 +476,8 @@ def _transformed_cycle_range(document, time_map):
 
     cycle_range = document.cycle_range
     if cycle_range is None:
+        return None
+    if time_map.interval_dropped(cycle_range.start_frame, cycle_range.end_frame):
         return None
     cycle_delta = time_map.interval_delta(
         cycle_range.start_frame,
@@ -486,7 +550,7 @@ def _remapped_lanes(document, fragments_by_region):
     )
 
 
-def _rebuilt_crossfades(document, crossfade_deltas, fragments_by_region):
+def _rebuilt_crossfades(document, time_map, crossfade_deltas, fragments_by_region):
     """Reattach each crossfade to exactly one fragment of each partner."""
 
     crossfades: list[StudioCrossfade] = []
@@ -495,24 +559,25 @@ def _rebuilt_crossfades(document, crossfade_deltas, fragments_by_region):
             crossfades.append(crossfade)
             continue
         delta = crossfade_deltas[crossfade.crossfade_id]
-        crossfades.append(
-            replace(
-                crossfade,
-                left_region_id=_crossfade_region_id(
-                    fragments_by_region,
-                    crossfade.left_region_id,
-                    crossfade.start_frame,
-                    crossfade.end_frame,
-                ),
-                right_region_id=_crossfade_region_id(
-                    fragments_by_region,
-                    crossfade.right_region_id,
-                    crossfade.start_frame,
-                    crossfade.end_frame,
-                ),
-                start_frame=crossfade.start_frame + delta,
-            )
+        value = replace(
+            crossfade,
+            left_region_id=_crossfade_region_id(
+                fragments_by_region,
+                crossfade.left_region_id,
+                crossfade.start_frame,
+                crossfade.end_frame,
+            ),
+            right_region_id=_crossfade_region_id(
+                fragments_by_region,
+                crossfade.right_region_id,
+                crossfade.start_frame,
+                crossfade.end_frame,
+            ),
+            start_frame=crossfade.start_frame + delta,
         )
+        if time_map.interval_dropped(crossfade.start_frame, crossfade.end_frame):
+            value = replace(value, deleted=True)
+        crossfades.append(value)
     return tuple(crossfades)
 
 
@@ -599,7 +664,7 @@ def reorder_section(
     )
     lanes = _remapped_lanes(document, fragments_by_region)
     crossfades = _rebuilt_crossfades(
-        document, crossfade_deltas, fragments_by_region
+        document, permutation, crossfade_deltas, fragments_by_region
     )
 
     try:
@@ -705,7 +770,9 @@ def duplicate_section(
         id_factory,
         reserved_region_count=copy_candidates,
     )
-    crossfades = _rebuilt_crossfades(document, crossfade_deltas, fragments_by_region)
+    crossfades = _rebuilt_crossfades(
+        document, gap, crossfade_deltas, fragments_by_region
+    )
 
     interior_regions = tuple(
         region
@@ -847,9 +914,122 @@ def duplicate_section(
         ) from exc
 
 
+def remove_section(
+    document: StudioDocument,
+    section_marker_id: str,
+    *,
+    split_id_factory: SplitIdFactory | None = None,
+) -> StudioDocument:
+    """Remove one active ``SECTION`` and close the gap it occupied.
+
+    Later time ripples left by the section's length as one atomic, undoable
+    document revision.  Everything fully inside the section — region
+    fragments (split at both edges by the same seam machinery as section
+    reorder), point markers, nested sections, comp choices, crossfades, and
+    the removed section's own marker — becomes a tombstone at its original
+    position, so the arrangement still records where the removed audio came
+    from and no media is deleted.  A cycle range inside the removed block is
+    cleared.  Any active interval that straddles a section edge refuses,
+    because a single stored interval could no longer describe its meaning
+    truthfully.
+    """
+
+    if not isinstance(document, StudioDocument):
+        raise StudioSectionError("document must be a StudioDocument.")
+    marker_id = _canonical_marker_id(section_marker_id)
+    section = _selected_section(document, marker_id, verb="removed")
+    start = section.start_frame
+    section_end = int(section.end_frame)
+    if document.revision >= MAX_PROJECT_FRAMES:
+        raise StudioSectionError("Studio document revision is exhausted.")
+    if split_id_factory is not None and not callable(split_id_factory):
+        raise StudioSectionError("split_id_factory must be callable.")
+    collapse = _Collapse(start, section_end)
+
+    markers: list[StudioMarker] = []
+    for marker in document.markers:
+        if marker.deleted:
+            markers.append(marker)
+        elif marker.kind is MarkerKind.MARKER:
+            if start <= marker.start_frame < section_end:
+                markers.append(replace(marker, deleted=True))
+            else:
+                markers.append(
+                    replace(
+                        marker,
+                        start_frame=(
+                            marker.start_frame
+                            + collapse.delta_at(marker.start_frame)
+                        ),
+                    )
+                )
+        else:
+            marker_end = int(marker.end_frame)
+            if collapse.interval_dropped(marker.start_frame, marker_end):
+                markers.append(replace(marker, deleted=True))
+            else:
+                delta = collapse.interval_delta(
+                    marker.start_frame,
+                    marker_end,
+                    f'Section marker "{marker.label}"',
+                )
+                markers.append(
+                    replace(
+                        marker,
+                        start_frame=marker.start_frame + delta,
+                        end_frame=marker_end + delta,
+                    )
+                )
+
+    comp_ranges = _transformed_comp_ranges(document, collapse)
+    crossfade_deltas = _crossfade_interval_deltas(document, collapse)
+    cycle_range = _transformed_cycle_range(document, collapse)
+    _, fragments_by_region = _planned_regions(
+        document, collapse, split_id_factory
+    )
+    crossfades = _rebuilt_crossfades(
+        document, collapse, crossfade_deltas, fragments_by_region
+    )
+    # Tombstoning walks the fragments in the same order _planned_regions
+    # emitted them, testing each fragment's ORIGINAL interval: an interior
+    # fragment keeps its pre-removal position as a tombstone, while a live
+    # fragment that rippled left into the removed span must stay live.
+    regions = tuple(
+        (
+            replace(fragment.region, enabled=False, deleted=True)
+            if not fragment.region.deleted
+            and collapse.interval_dropped(
+                fragment.original_start,
+                fragment.original_end,
+            )
+            else fragment.region
+        )
+        for original in document.regions
+        for fragment in fragments_by_region[original.region_id]
+    )
+    lanes = _remapped_lanes(document, fragments_by_region)
+
+    try:
+        return replace(
+            document,
+            regions=regions,
+            take_lanes=lanes,
+            comp_ranges=comp_ranges,
+            markers=tuple(markers),
+            crossfades=crossfades,
+            cycle_range=cycle_range,
+            revision=document.revision + 1,
+        )
+    except StudioProjectError as exc:
+        raise StudioSectionError(
+            "The section removal would create an invalid Studio document."
+        ) from exc
+
+
 __all__ = [
     "SplitIdFactory",
     "StudioSectionError",
     "duplicate_section",
+    "remove_section",
     "reorder_section",
 ]

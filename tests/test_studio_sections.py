@@ -28,6 +28,7 @@ from core.studio_renderer import StudioRenderer
 from core.studio_sections import (
     StudioSectionError,
     duplicate_section,
+    remove_section,
     reorder_section,
 )
 from core.take_project import (
@@ -1141,4 +1142,419 @@ def test_duplicate_section_rejects_revision_frame_and_id_bounds() -> None:
             split,
             _id(300),
             id_factory="not-callable",  # type: ignore[arg-type]
+        )
+
+
+def test_remove_section_closes_the_gap_and_tombstones_the_block() -> None:
+    first = _region(100, 10, 0, 30, fade_in=2, fade_out=3)
+    second = _region(101, 11, 5, 10)
+    disabled = _region(102, 10, 22, 5, enabled=False)
+    tombstone = _region(103, 11, 0, 30, enabled=False, deleted=True)
+    contained = _region(104, 11, 12, 6)
+    markers = (
+        StudioMarker(
+            _id(300),
+            10,
+            "Verse",
+            kind=MarkerKind.SECTION,
+            end_frame=20,
+        ),
+        StudioMarker(_id(301), 5, "Before point"),
+        StudioMarker(_id(302), 12, "Inside point"),
+        StudioMarker(_id(303), 20, "After point"),
+        StudioMarker(
+            _id(304),
+            12,
+            "Nested phrase",
+            kind=MarkerKind.SECTION,
+            end_frame=16,
+        ),
+        StudioMarker(
+            _id(305),
+            20,
+            "Following phrase",
+            kind=MarkerKind.SECTION,
+            end_frame=25,
+        ),
+        StudioMarker(_id(306), 5, "Deleted", deleted=True),
+    )
+    original = _document(
+        regions=(first, second, disabled, tombstone, contained),
+        markers=markers,
+    )
+    original_snapshot = original.to_dict()
+
+    removed = remove_section(
+        original,
+        _id(300),
+        split_id_factory=_ids(400, 401, 402),
+    )
+
+    assert removed.revision == original.revision + 1
+    assert original.to_dict() == original_snapshot
+    values = {item.region_id: item for item in removed.regions}
+    assert tuple(item.region_id for item in removed.regions) == (
+        _id(100),
+        _id(400),
+        _id(401),
+        _id(101),
+        _id(402),
+        _id(102),
+        _id(103),
+        _id(104),
+    )
+    assert (
+        values[_id(100)].timeline_start_frame,
+        values[_id(100)].timeline_end_frame,
+    ) == (0, 10)
+    assert values[_id(100)].fade_in_frames == 2
+    assert values[_id(100)].fade_out_frames == 0
+    assert values[_id(100)].deleted is False
+    assert (
+        values[_id(400)].timeline_start_frame,
+        values[_id(400)].timeline_end_frame,
+    ) == (10, 20)
+    assert values[_id(400)].deleted is True
+    assert values[_id(400)].enabled is False
+    assert values[_id(400)].source_start_frame == 10
+    assert values[_id(400)].source_end_frame == 20
+    assert (
+        values[_id(401)].timeline_start_frame,
+        values[_id(401)].timeline_end_frame,
+    ) == (10, 20)
+    assert values[_id(401)].deleted is False
+    assert values[_id(401)].source_start_frame == 20
+    assert values[_id(401)].source_end_frame == 30
+    assert values[_id(401)].fade_out_frames == 3
+    assert (
+        values[_id(101)].timeline_start_frame,
+        values[_id(101)].timeline_end_frame,
+    ) == (5, 10)
+    assert values[_id(402)].deleted is True
+    assert (
+        values[_id(402)].timeline_start_frame,
+        values[_id(402)].timeline_end_frame,
+    ) == (10, 15)
+    assert (
+        values[_id(102)].timeline_start_frame,
+        values[_id(102)].timeline_end_frame,
+    ) == (12, 17)
+    assert values[_id(102)].enabled is False
+    assert values[_id(102)].deleted is False
+    assert values[_id(103)] is tombstone
+    assert values[_id(104)].deleted is True
+    assert values[_id(104)].enabled is False
+    assert (
+        values[_id(104)].timeline_start_frame,
+        values[_id(104)].timeline_end_frame,
+    ) == (12, 18)
+
+    marker_map = {item.marker_id: item for item in removed.markers}
+    assert marker_map[_id(300)].deleted is True
+    assert (marker_map[_id(300)].start_frame, marker_map[_id(300)].end_frame) == (
+        10,
+        20,
+    )
+    assert marker_map[_id(301)].start_frame == 5
+    assert marker_map[_id(301)].deleted is False
+    assert marker_map[_id(302)].deleted is True
+    assert marker_map[_id(303)].start_frame == 10
+    assert marker_map[_id(303)].deleted is False
+    assert marker_map[_id(304)].deleted is True
+    assert (marker_map[_id(305)].start_frame, marker_map[_id(305)].end_frame) == (
+        10,
+        15,
+    )
+    assert marker_map[_id(306)] is markers[-1]
+
+
+def test_remove_section_tombstones_comp_choices_and_crossfades_in_the_block() -> (
+    None
+):
+    left = _region(100, 10, 5, 10)
+    right = _region(101, 10, 13, 12)
+    later_left = _region(106, 10, 25, 5)
+    later_right = _region(107, 10, 28, 6)
+    lane_region = _region(105, 10, 5, 20)
+    lane = StudioTakeLane(
+        lane_id=_id(500),
+        track_id=_id(10),
+        source_take_id=_id(2),
+        source_track_id=_id(10),
+        region_ids=(lane_region.region_id,),
+    )
+    comp = StudioCompRange(_id(501), _id(10), lane.lane_id, 6, 4)
+    inside_crossfade = StudioCrossfade(
+        _id(502), left.region_id, right.region_id, 13, 2
+    )
+    later_crossfade = StudioCrossfade(
+        _id(503), later_left.region_id, later_right.region_id, 28, 2
+    )
+    original = _document(
+        regions=(left, right, later_left, later_right, lane_region),
+        markers=(
+            StudioMarker(
+                _id(300),
+                5,
+                "Verse",
+                kind=MarkerKind.SECTION,
+                end_frame=25,
+            ),
+        ),
+        take_lanes=(lane,),
+        comp_ranges=(comp,),
+        crossfades=(inside_crossfade, later_crossfade),
+        cycle_range=StudioCycleRange(6, 10, enabled=False),
+    )
+    original_snapshot = original.to_dict()
+
+    removed = remove_section(original, _id(300))
+
+    assert original.to_dict() == original_snapshot
+    values = {item.region_id: item for item in removed.regions}
+    assert values[_id(100)].deleted is True
+    assert values[_id(101)].deleted is True
+    assert values[_id(105)].deleted is True
+    assert (
+        values[_id(106)].timeline_start_frame,
+        values[_id(106)].timeline_end_frame,
+    ) == (5, 10)
+    assert (
+        values[_id(107)].timeline_start_frame,
+        values[_id(107)].timeline_end_frame,
+    ) == (8, 14)
+
+    lanes = {item.lane_id: item for item in removed.take_lanes}
+    assert lanes[_id(500)].region_ids == (_id(105),)
+
+    comps = {item.comp_range_id: item for item in removed.comp_ranges}
+    assert comps[_id(501)].deleted is True
+    assert comps[_id(501)].enabled is False
+    assert comps[_id(501)].timeline_start_frame == 6
+
+    crossfades = {item.crossfade_id: item for item in removed.crossfades}
+    assert crossfades[_id(502)].deleted is True
+    assert crossfades[_id(502)].start_frame == 13
+    assert crossfades[_id(503)].deleted is False
+    assert crossfades[_id(503)].start_frame == 8
+    assert crossfades[_id(503)].left_region_id == _id(106)
+    assert crossfades[_id(503)].right_region_id == _id(107)
+
+    assert removed.cycle_range is None
+
+
+def test_remove_section_renderer_excises_exactly_the_block(
+    tmp_path: Path,
+) -> None:
+    samples = np.arange(1, 13, dtype=np.float32) / 100.0
+    source = tmp_path / "remove-source.wav"
+    sf.write(source, samples, 8_000, subtype="FLOAT")
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    segment = MediaSegment(
+        segment_id=_id(20),
+        path=source.name,
+        project_start_frame=0,
+        frame_count=12,
+        sample_rate=8_000,
+        channels=1,
+        sample_format="FLOAT",
+        media_status=MediaStatus.AVAILABLE,
+        sha256=digest,
+        size_bytes=source.stat().st_size,
+        gaps=(),
+        has_signal=True,
+    )
+    track = ProjectTrack(
+        track_id=_id(10),
+        source_id=_id(110),
+        participant_id=None,
+        name="Guitar",
+        instrument="guitar",
+        source_type=SourceType.JAMULUS_SERVER,
+        quality=SourceQuality.NETWORK_TRACK,
+        media_status=MediaStatus.AVAILABLE,
+        order=0,
+        segments=(segment,),
+        alignment=AlignmentState(),
+    )
+    project = TakeProject(
+        session_id=_id(1),
+        take_id=_id(2),
+        session_title="Remove fixture",
+        take_name="Take 01",
+        status=ProjectStatus.COMPLETE,
+        project_sample_rate=8_000,
+        participants=(),
+        tracks=(track,),
+    )
+    project_snapshot = project.to_dict()
+    document = replace(
+        default_studio_document(project),
+        regions=(
+            replace(
+                default_studio_document(project).regions[0],
+                fade_in_frames=3,
+                fade_out_frames=1,
+                fade_in_curve=FadeCurve.EQUAL_POWER,
+                fade_out_curve=FadeCurve.S_CURVE,
+            ),
+        ),
+        markers=(
+            StudioMarker(
+                _id(300),
+                3,
+                "Solo",
+                kind=MarkerKind.SECTION,
+                end_frame=6,
+            ),
+        ),
+    )
+
+    removed = remove_section(
+        document,
+        _id(300),
+        split_id_factory=_ids(400, 401),
+    )
+    original_render = StudioRenderer(project, document, tmp_path).render_block(0, 12)
+    rendered = StudioRenderer(project, removed, tmp_path).render_block(0, 9)
+    order = [0, 1, 2, 6, 7, 8, 9, 10, 11]
+
+    np.testing.assert_allclose(rendered, original_render[order], atol=1e-7)
+    np.testing.assert_array_equal(rendered[:, 0], rendered[:, 1])
+    assert project.to_dict() == project_snapshot
+    assert hashlib.sha256(source.read_bytes()).hexdigest() == digest
+
+
+@pytest.mark.parametrize(
+    ("hazard", "message"),
+    (
+        ("section", "crosses a section-removal boundary"),
+        ("comp", "crosses a section-removal boundary"),
+        ("crossfade", "crosses a section-removal boundary"),
+        ("cycle", "crosses a section-removal boundary"),
+        ("fade", "crosses a region fade"),
+    ),
+)
+def test_remove_section_fails_closed_for_intervals_crossing_its_edges(
+    hazard: str,
+    message: str,
+) -> None:
+    left = _region(100, 10, 0, 30)
+    right = _region(101, 10, 0, 30)
+    markers = (
+        StudioMarker(
+            _id(300),
+            10,
+            "Verse",
+            kind=MarkerKind.SECTION,
+            end_frame=20,
+        ),
+    )
+    lane = StudioTakeLane(
+        lane_id=_id(500),
+        track_id=_id(10),
+        source_take_id=_id(2),
+        source_track_id=_id(10),
+        region_ids=(left.region_id,),
+    )
+    regions: tuple[StudioRegion, ...] = (left, right)
+    kwargs: dict[str, object] = {}
+    if hazard == "section":
+        markers = (
+            *markers,
+            StudioMarker(
+                _id(301),
+                19,
+                "Unsafe",
+                kind=MarkerKind.SECTION,
+                end_frame=21,
+            ),
+        )
+    elif hazard == "comp":
+        kwargs["take_lanes"] = (lane,)
+        kwargs["comp_ranges"] = (
+            StudioCompRange(_id(501), _id(10), lane.lane_id, 9, 2),
+        )
+    elif hazard == "crossfade":
+        kwargs["crossfades"] = (
+            StudioCrossfade(_id(502), left.region_id, right.region_id, 19, 2),
+        )
+    elif hazard == "cycle":
+        kwargs["cycle_range"] = StudioCycleRange(9, 11, enabled=False)
+    else:
+        regions = (_region(104, 10, 8, 6, fade_in=4), right)
+    original = _document(regions=regions, markers=markers, **kwargs)
+    snapshot = original.to_dict()
+    calls = 0
+
+    def next_id() -> str:
+        nonlocal calls
+        calls += 1
+        return _id(600 + calls)
+
+    with pytest.raises(StudioSectionError, match=message):
+        remove_section(
+            original,
+            _id(300),
+            split_id_factory=next_id,
+        )
+
+    assert calls == 0
+    assert original.to_dict() == snapshot
+
+
+@pytest.mark.parametrize(
+    "marker_id",
+    ("not-a-uuid", _id(999), _id(301), _id(302)),
+)
+def test_remove_section_rejects_invalid_deleted_or_point_markers(
+    marker_id: str,
+) -> None:
+    document = _document(
+        markers=(
+            StudioMarker(
+                _id(300),
+                10,
+                "Verse",
+                kind=MarkerKind.SECTION,
+                end_frame=20,
+            ),
+            StudioMarker(_id(301), 5, "Point"),
+            StudioMarker(
+                _id(302),
+                20,
+                "Deleted section",
+                kind=MarkerKind.SECTION,
+                end_frame=30,
+                deleted=True,
+            ),
+        )
+    )
+    with pytest.raises(StudioSectionError):
+        remove_section(document, marker_id)
+
+
+def test_remove_section_rejects_revision_and_id_bounds() -> None:
+    exhausted = _document(revision=MAX_PROJECT_FRAMES)
+    with pytest.raises(StudioSectionError, match="revision is exhausted"):
+        remove_section(exhausted, _id(300))
+
+    split = _document(regions=(_region(100, 10, 0, 30),))
+    with pytest.raises(StudioSectionError, match="duplicate ID"):
+        remove_section(
+            split,
+            _id(300),
+            split_id_factory=lambda: _id(100),
+        )
+    with pytest.raises(StudioSectionError, match="valid UUIDs"):
+        remove_section(
+            split,
+            _id(300),
+            split_id_factory=lambda: "not-a-uuid",
+        )
+    with pytest.raises(StudioSectionError, match="split_id_factory must be callable"):
+        remove_section(
+            split,
+            _id(300),
+            split_id_factory="not-callable",  # type: ignore[arg-type]
         )
