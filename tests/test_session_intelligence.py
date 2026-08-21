@@ -164,9 +164,9 @@ class TestSessionIntelligence(unittest.TestCase):
             creator_profile_key="visual_studio",
         )
 
-        self.assertEqual(pulse.mode_key, "review_rehearsal")
-        self.assertEqual(pulse.mode_label, "Review & Rehearsal")
-        self.assertEqual(pulse.checkpoint, "shared goal")
+        self.assertEqual(pulse.mode_key, "studio_visit")
+        self.assertEqual(pulse.mode_label, "Studio Visit")
+        self.assertEqual(pulse.checkpoint, "set up the table")
 
     def test_unknown_creator_profile_falls_back_to_music(self):
         pulse = build_session_pulse(

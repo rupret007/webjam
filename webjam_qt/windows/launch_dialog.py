@@ -140,7 +140,40 @@ _CREATOR_LAUNCH_COPY = {
         join_title="Join Review.",
         join_subtitle="Paste the WebJam review invitation your host sent you.",
     ),
+    "studio_visit": _CreatorLaunchCopy(
+        host="Host Studio Visit",
+        join="Join Studio Visit",
+        local="Standalone Studio Visit Unavailable",
+        host_description=(
+            "Open a room where artists talk and work, and create an invitation "
+            "link. You may optionally share one local video file you have the "
+            "right to play; everyone watches their own copy under your "
+            "transport. This Preview has no shared canvas, no camera feed, no "
+            "recorded take, and no frame-accurate review. "
+            f"{MEETING_DIRECT_CAPTURE_BOUNDARY}"
+        ),
+        join_description=(
+            "Join a studio visit using one WebJam invitation link. To follow a "
+            "shared video you need your own copy of the host's exact file; you "
+            "can also hide it and stay in the room. "
+            f"{MEETING_DIRECT_CAPTURE_BOUNDARY}"
+        ),
+        local_description=(
+            "Standalone Studio Visit projects are not available in this Preview."
+        ),
+        helper=(
+            "Preview: host or join a room to talk and make art. An optional "
+            "reference video follows the host."
+        ),
+        join_title="Join Studio Visit.",
+        join_subtitle="Paste the WebJam studio invitation your host sent you.",
+    ),
 }
+
+if set(_CREATOR_LAUNCH_COPY) != {profile.key for profile in CREATOR_PROFILES}:
+    # Launch is the first thing a person touches. Catch a profile added
+    # without copy at import time instead of as a KeyError mid-selection.
+    raise RuntimeError("Every creator profile requires launch copy.")
 
 
 def default_musician_name(settings: AppSettings) -> str:

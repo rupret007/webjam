@@ -2138,6 +2138,193 @@ class SharedTrackSessionSnapshot:
         }
 
 
+class ReferenceVideoPlaybackState(str, Enum):
+    """Bounded host-owned reference video truth that followers may render.
+
+    Studio Visit's reference video is watched locally on every computer and
+    clocked by the host, so unlike Shared Track there is no route to bring up
+    and no routing state.  ``stop`` returns to ``READY`` with the file still
+    shared; ``IDLE`` means the host is sharing nothing at all.
+    """
+
+    IDLE = "idle"
+    READY = "ready"
+    PLAYING = "playing"
+    PAUSED = "paused"
+    FAILED = "failed"
+
+
+_REFERENCE_VIDEO_SCHEMA = 1
+_MAX_REFERENCE_VIDEO_GENERATION = (1 << 63) - 1
+_MAX_REFERENCE_VIDEO_DURATION_S = 24.0 * 60.0 * 60.0
+_MAX_REFERENCE_VIDEO_NAME_CHARS = 255
+_MAX_REFERENCE_VIDEO_NAME_BYTES = 1_024
+_REFERENCE_VIDEO_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _reference_video_generation(value: object, label: str) -> int:
+    if type(value) is not int or not 0 <= value <= _MAX_REFERENCE_VIDEO_GENERATION:
+        raise ValueError(f"{label} is outside the supported range.")
+    return value
+
+
+def _reference_video_bool(value: object, label: str) -> bool:
+    if type(value) is not bool:
+        raise ValueError(f"{label} must be a boolean.")
+    return value
+
+
+def _reference_video_seconds(value: object, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be a finite non-negative number.")
+    parsed = float(value)
+    if (
+        not math.isfinite(parsed)
+        or parsed < 0.0
+        or parsed > _MAX_REFERENCE_VIDEO_DURATION_S
+    ):
+        raise ValueError(f"{label} is outside the supported range.")
+    return parsed
+
+
+def _reference_video_display_name(value: object) -> str:
+    if type(value) is not str:
+        raise ValueError("source_display_name must be text.")
+    if any(not character.isprintable() for character in value):
+        raise ValueError("source_display_name contains unsupported characters.")
+    if any(character in value for character in ("\0", "\r", "\n", "/", "\\")):
+        raise ValueError("source_display_name must not contain a path.")
+    normalized = " ".join(value.split())
+    if (
+        len(normalized) > _MAX_REFERENCE_VIDEO_NAME_CHARS
+        or len(normalized.encode("utf-8")) > _MAX_REFERENCE_VIDEO_NAME_BYTES
+    ):
+        raise ValueError("source_display_name is too long.")
+    return normalized
+
+
+def _reference_video_identity_digest(value: object) -> str:
+    if type(value) is not str:
+        raise ValueError("identity_digest must be text.")
+    if not value:
+        return ""
+    if _REFERENCE_VIDEO_DIGEST_RE.fullmatch(value) is None:
+        raise ValueError("identity_digest is not a supported digest.")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceVideoSessionSnapshot:
+    """Path-free reference video projection carried by the private peer plane.
+
+    Followers may mirror this transport state, and only this.  The object
+    grants no control authority and makes no claim that any other computer is
+    actually showing the same frame.
+
+    ``identity_digest`` is a session-scoped HMAC over the host's private
+    content hash, not the hash itself.  Followers hold the same session token,
+    so they can prove they opened the host's exact file; the digest is
+    meaningless to anyone outside the session and cannot be matched against a
+    known media library.
+    """
+
+    generation: int = 0
+    playback_generation: int = 0
+    state: ReferenceVideoPlaybackState = ReferenceVideoPlaybackState.IDLE
+    shared: bool = False
+    source_display_name: str = ""
+    identity_digest: str = ""
+    position_s: float = 0.0
+    duration_s: float = 0.0
+    needs_attention: bool = False
+
+    def __post_init__(self) -> None:
+        generation = _reference_video_generation(self.generation, "generation")
+        playback_generation = _reference_video_generation(
+            self.playback_generation, "playback_generation"
+        )
+        state = ReferenceVideoPlaybackState(self.state)
+        shared = _reference_video_bool(self.shared, "shared")
+        source_name = _reference_video_display_name(self.source_display_name)
+        identity_digest = _reference_video_identity_digest(self.identity_digest)
+        position = _reference_video_seconds(self.position_s, "position_s")
+        duration = _reference_video_seconds(self.duration_s, "duration_s")
+        attention = _reference_video_bool(self.needs_attention, "needs_attention")
+
+        if not shared:
+            if source_name or identity_digest or position != 0.0 or duration != 0.0:
+                raise ValueError(
+                    "An unshared reference video cannot expose media facts."
+                )
+            if state not in {
+                ReferenceVideoPlaybackState.IDLE,
+                ReferenceVideoPlaybackState.FAILED,
+            }:
+                raise ValueError("That reference video state requires shared media.")
+        else:
+            if state is ReferenceVideoPlaybackState.IDLE:
+                raise ValueError("A shared reference video cannot be idle.")
+            if duration <= 0.0:
+                raise ValueError("A shared reference video requires a duration.")
+            if position > duration:
+                raise ValueError("position_s must not exceed duration_s.")
+            if not identity_digest:
+                # Without proven identity a follower could open any file and
+                # believe it was watching the host's video.
+                raise ValueError(
+                    "A shared reference video requires a proven identity digest."
+                )
+
+        object.__setattr__(self, "generation", generation)
+        object.__setattr__(self, "playback_generation", playback_generation)
+        object.__setattr__(self, "state", state)
+        object.__setattr__(self, "shared", shared)
+        object.__setattr__(self, "source_display_name", source_name)
+        object.__setattr__(self, "identity_digest", identity_digest)
+        object.__setattr__(self, "position_s", position)
+        object.__setattr__(self, "duration_s", duration)
+        object.__setattr__(self, "needs_attention", attention)
+
+    @classmethod
+    def from_mapping(cls, value: object) -> "ReferenceVideoSessionSnapshot":
+        """Parse a peer payload, treating absence as a host sharing nothing."""
+
+        if value is None:
+            return cls()
+        if not isinstance(value, Mapping):
+            raise ValueError("reference_video must be an object.")
+        if value.get("schema") != _REFERENCE_VIDEO_SCHEMA:
+            raise ValueError("reference_video schema is not supported.")
+        required = {
+            "generation",
+            "playback_generation",
+            "state",
+            "shared",
+            "source_display_name",
+            "identity_digest",
+            "position_s",
+            "duration_s",
+            "needs_attention",
+        }
+        if not required.issubset(value):
+            raise ValueError("reference_video is incomplete.")
+        return cls(**{key: value[key] for key in required})
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "schema": _REFERENCE_VIDEO_SCHEMA,
+            "generation": self.generation,
+            "playback_generation": self.playback_generation,
+            "state": self.state.value,
+            "shared": self.shared,
+            "source_display_name": self.source_display_name,
+            "identity_digest": self.identity_digest,
+            "position_s": self.position_s,
+            "duration_s": self.duration_s,
+            "needs_attention": self.needs_attention,
+        }
+
+
 @dataclass(frozen=True)
 class SessionStateSnapshot:
     session_id: str
@@ -2149,6 +2336,9 @@ class SessionStateSnapshot:
     message: str = ""
     shared_track: SharedTrackSessionSnapshot = field(
         default_factory=SharedTrackSessionSnapshot
+    )
+    reference_video: ReferenceVideoSessionSnapshot = field(
+        default_factory=ReferenceVideoSessionSnapshot
     )
     creator_profile_key: str = "music"
     capture_arm: CaptureArmSnapshot | None = None
@@ -2183,6 +2373,16 @@ class SessionStateSnapshot:
         if not isinstance(shared_track, SharedTrackSessionSnapshot):
             raise ValueError("shared_track must be a SharedTrackSessionSnapshot.")
         object.__setattr__(self, "shared_track", shared_track)
+        reference_video = self.reference_video
+        if isinstance(reference_video, Mapping):
+            reference_video = ReferenceVideoSessionSnapshot.from_mapping(
+                reference_video
+            )
+        if not isinstance(reference_video, ReferenceVideoSessionSnapshot):
+            raise ValueError(
+                "reference_video must be a ReferenceVideoSessionSnapshot."
+            )
+        object.__setattr__(self, "reference_video", reference_video)
         capture_arm = self.capture_arm
         if isinstance(capture_arm, Mapping):
             capture_arm = CaptureArmSnapshot.from_mapping(capture_arm)
@@ -2254,7 +2454,10 @@ def _session_state_mapping(
         "creator_profile_key": snapshot.creator_profile_key,
     }
     if include_shared_track:
+        # Both live media projections share this flag: they are memory-only
+        # guest rendering state, never part of the durable recording journal.
         payload["shared_track"] = snapshot.shared_track.to_mapping()
+        payload["reference_video"] = snapshot.reference_video.to_mapping()
     if include_capture_arm and (
         snapshot.capture_arm is not None
         or snapshot.arm_handshake_required
@@ -2840,6 +3043,60 @@ class SessionControlState:
                 return current
             candidate = replace(candidate, generation=current.generation + 1)
             self._snapshot = replace(self._snapshot, shared_track=candidate)
+            return candidate
+
+    def publish_reference_video(
+        self,
+        *,
+        state: ReferenceVideoPlaybackState | str,
+        shared: bool,
+        source_display_name: str = "",
+        identity_digest: str = "",
+        position_s: float = 0.0,
+        duration_s: float = 0.0,
+        needs_attention: bool = False,
+        playback_generation: int | None = None,
+    ) -> ReferenceVideoSessionSnapshot:
+        """Publish one idempotent, memory-only follower projection.
+
+        Position is deliberately not fsynced into the durable recording-state
+        journal.  A restarted host publishes nothing shared until its
+        reference video owner republishes, so a follower never resumes against
+        a position no one is holding.
+        """
+
+        with self._lock:
+            current = self._snapshot.reference_video
+            parsed_state = ReferenceVideoPlaybackState(state)
+            if playback_generation is None:
+                playback_generation = current.playback_generation
+                if (
+                    parsed_state is ReferenceVideoPlaybackState.PLAYING
+                    and current.state is not ReferenceVideoPlaybackState.PLAYING
+                ):
+                    playback_generation += 1
+            parsed_playback_generation = _reference_video_generation(
+                playback_generation, "playback_generation"
+            )
+            if parsed_playback_generation < current.playback_generation:
+                raise TransferConflictError(
+                    "A newer reference video playback is already published."
+                )
+            candidate = ReferenceVideoSessionSnapshot(
+                generation=current.generation,
+                playback_generation=parsed_playback_generation,
+                state=parsed_state,
+                shared=shared,
+                source_display_name=source_display_name,
+                identity_digest=identity_digest,
+                position_s=position_s,
+                duration_s=duration_s,
+                needs_attention=needs_attention,
+            )
+            if candidate == current:
+                return current
+            candidate = replace(candidate, generation=current.generation + 1)
+            self._snapshot = replace(self._snapshot, reference_video=candidate)
             return candidate
 
     def finish(
@@ -4064,6 +4321,9 @@ class SessionPeerClient:
             message=str(payload.get("message", "")),
             shared_track=SharedTrackSessionSnapshot.from_mapping(
                 payload.get("shared_track")
+            ),
+            reference_video=ReferenceVideoSessionSnapshot.from_mapping(
+                payload.get("reference_video")
             ),
             creator_profile_key=payload.get("creator_profile_key", "music"),
             capture_arm=(

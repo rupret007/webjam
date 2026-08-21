@@ -567,6 +567,10 @@ class ApplicationController(QObject):
         # the primary Jamulus client.
         self._reference_track = None
         self._reference_track_dialog = None
+        self._reference_video = None
+        self._reference_video_dialog = None
+        self._reference_video_binding: tuple[str, str] | tuple[()] = ()
+        self._reference_video_notified_state = ""
         self._reference_track_operation_lock = threading.RLock()
         self._reference_track_worker_state_lock = threading.Lock()
         self._reference_track_operation_inflight = False
@@ -665,6 +669,13 @@ class ApplicationController(QObject):
         self._reference_track_timer = QTimer(self)
         self._reference_track_timer.setInterval(250)
         self._reference_track_timer.timeout.connect(self._refresh_reference_track_ui)
+
+        # Studio Visit's reference video is corrected toward the host on a
+        # slower cadence than audio meters: the peer plane only publishes new
+        # host truth about once a second, so a faster tick would chase noise.
+        self._reference_video_timer = QTimer(self)
+        self._reference_video_timer.setInterval(500)
+        self._reference_video_timer.timeout.connect(self._tick_reference_video)
 
         self._connection_timer = QTimer(self)
         self._connection_timer.setSingleShot(True)
@@ -940,6 +951,9 @@ class ApplicationController(QObject):
         self._reference_track_session_generation = (
             int(getattr(self, "_reference_track_session_generation", 0)) + 1
         )
+        # A reference video owns only a local player and a memory-only peer
+        # projection, so it can be released before the audio path unwinds.
+        self._release_reference_video()
         reference_track = getattr(self, "_reference_track", None)
         if reference_track is not None:
             reference_closed = False
@@ -1144,6 +1158,7 @@ class ApplicationController(QObject):
         reference_track_timer = getattr(self, "_reference_track_timer", None)
         if reference_track_timer is not None:
             reference_track_timer.stop()
+        self._release_reference_video()
         self._connection_timer.stop()
         jamulus_update_dialog = getattr(self, "_jamulus_update_dialog", None)
         if jamulus_update_dialog is not None:
@@ -1481,6 +1496,10 @@ class ApplicationController(QObject):
             phase = "count_in"
         self.window.session_strip.set_recording_phase(phase)
         self.window.recording_studio.set_recording_phase(phase)
+
+        coordinator = self._reference_video_coordinator()
+        if coordinator is not None:
+            coordinator.observe_host_state(state)
 
         if shared is None or int(getattr(shared, "generation", 0) or 0) <= 0:
             return
@@ -11016,6 +11035,8 @@ class ApplicationController(QObject):
             self._show_webex_conversation()
         elif key == "reference_track":
             self._open_reference_track()
+        elif key == "reference_video":
+            self._open_reference_video()
         elif key == "jamulus_updates":
             self._open_jamulus_updates()
         elif key == "pocket_stage":
@@ -11096,6 +11117,249 @@ class ApplicationController(QObject):
         token = getattr(snapshot, "token", None)
         role = getattr(token, "role", SessionRole.HOST)
         return role is SessionRole.HOST
+
+    # ------------------------------------------------------------------
+    # Studio Visit reference video
+    # ------------------------------------------------------------------
+
+    def _reference_video_supported(self) -> bool:
+        """Only the profile whose contract includes it may share video."""
+
+        return bool(self.creator_profile.capabilities.shared_reference_video)
+
+    def _reference_video_identity(self) -> tuple[str, str, str]:
+        """Return this computer's ``(role, session_id, session_key)``.
+
+        Identity comes from whichever peer session actually exists, never from
+        an intent flag, so a coordinator can only ever be bound to a room that
+        has real credentials.
+        """
+
+        host_peer = getattr(self, "host_peer", None)
+        credentials = getattr(host_peer, "credentials", None)
+        if bool(getattr(host_peer, "active", False)) and credentials is not None:
+            return "host", credentials.session_id, credentials.invite_token
+        guest_peer = getattr(self, "guest_peer", None)
+        invite = getattr(guest_peer, "invite", None)
+        if invite is not None and bool(getattr(invite, "peer_enabled", False)):
+            return "guest", invite.session_id, invite.invite_token
+        return "", "", ""
+
+    def _reference_video_coordinator(self):
+        """Return a coordinator bound to the current room, or ``None``.
+
+        Binding is re-derived rather than driven from session lifecycle hooks:
+        a profile switch, a new invite, or a role change all produce a
+        different binding key and rebuild the coordinator from scratch.
+        """
+
+        if getattr(self, "_shutdown", False) or not self._reference_video_supported():
+            self._release_reference_video()
+            return None
+        role, session_id, session_key = self._reference_video_identity()
+        if not role or not session_id or not session_key:
+            self._release_reference_video()
+            return None
+        binding = (role, session_id)
+        coordinator = getattr(self, "_reference_video", None)
+        if coordinator is not None:
+            if getattr(self, "_reference_video_binding", ()) == binding:
+                return coordinator
+            self._release_reference_video()
+
+        from webjam_qt.controllers.reference_video_coordinator import (
+            ReferenceVideoCoordinator,
+        )
+
+        def build_player():
+            from webjam_qt.widgets.reference_video_player import (
+                create_qt_reference_video_player,
+            )
+
+            return create_qt_reference_video_player(self.window)
+
+        coordinator = ReferenceVideoCoordinator(
+            player_factory=build_player,
+            host_peer_provider=lambda: getattr(self, "host_peer", None),
+            on_host_snapshot=self._on_reference_video_host_snapshot,
+            on_follow_snapshot=self._on_reference_video_follow_snapshot,
+        )
+        if role == "host":
+            coordinator.begin_host(session_id=session_id, session_key=session_key)
+        else:
+            coordinator.begin_guest(session_id=session_id, session_key=session_key)
+        self._reference_video = coordinator
+        self._reference_video_binding = binding
+        timer = getattr(self, "_reference_video_timer", None)
+        if timer is not None:
+            timer.start()
+        return coordinator
+
+    def _release_reference_video(self) -> None:
+        """Return this computer to the no-video path and free its player."""
+
+        timer = getattr(self, "_reference_video_timer", None)
+        if timer is not None:
+            timer.stop()
+        dialog = getattr(self, "_reference_video_dialog", None)
+        if dialog is not None:
+            dialog.attach_surface(None)
+            dialog.close()
+            dialog.deleteLater()
+            self._reference_video_dialog = None
+        coordinator = getattr(self, "_reference_video", None)
+        if coordinator is not None:
+            coordinator.end()
+        self._reference_video = None
+        self._reference_video_binding = ()
+        self._reference_video_notified_state = ""
+
+    def _open_reference_video(self) -> None:
+        """Open the reference video panel for whichever role this computer has."""
+
+        if self._shutdown or self._shutdown_cleanup_blocks_action():
+            return
+        if not self._reference_video_supported():
+            self.window.flash_message(
+                "A shared reference video is part of Studio Visit.",
+                ms=6000,
+            )
+            return
+        coordinator = self._reference_video_coordinator()
+        if coordinator is None:
+            self.window.flash_message(
+                "Start or join a studio visit before sharing a reference video.",
+                ms=6000,
+            )
+            return
+        dialog = getattr(self, "_reference_video_dialog", None)
+        if dialog is None:
+            from webjam_qt.windows.reference_video import ReferenceVideoDialog
+
+            dialog = ReferenceVideoDialog(
+                hosting=coordinator.hosting, parent=self.window
+            )
+            if coordinator.hosting:
+                dialog.share_requested.connect(
+                    lambda path: self._run_reference_video(
+                        lambda: coordinator.share(path)
+                    )
+                )
+                dialog.withdraw_requested.connect(
+                    lambda: self._run_reference_video(coordinator.withdraw)
+                )
+                dialog.play_requested.connect(
+                    lambda: self._run_reference_video(coordinator.play)
+                )
+                dialog.pause_requested.connect(
+                    lambda: self._run_reference_video(coordinator.pause)
+                )
+                dialog.stop_requested.connect(
+                    lambda: self._run_reference_video(coordinator.stop)
+                )
+                dialog.seek_requested.connect(
+                    lambda seconds: self._run_reference_video(
+                        lambda: coordinator.seek(float(seconds))
+                    )
+                )
+            else:
+                dialog.open_local_copy_requested.connect(
+                    lambda path: self._run_reference_video(
+                        lambda: coordinator.open_local_copy(path)
+                    )
+                )
+                dialog.close_local_copy_requested.connect(
+                    lambda: self._run_reference_video(coordinator.close_local_copy)
+                )
+                dialog.hide_requested.connect(
+                    lambda hidden: self._run_reference_video(
+                        lambda: coordinator.set_hidden(bool(hidden))
+                    )
+                )
+            self._reference_video_dialog = dialog
+        if coordinator.hosting:
+            dialog.set_host_snapshot(coordinator.host_snapshot)
+        else:
+            dialog.set_follow_snapshot(coordinator.follow_snapshot)
+        dialog.attach_surface(coordinator.player_surface)
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _run_reference_video(self, operation) -> None:
+        """Run one reference video intent, surfacing bounded failure text."""
+
+        from core.reference_video import ReferenceVideoError
+
+        try:
+            operation()
+        except ReferenceVideoError as exc:
+            self.window.flash_message(str(exc), ms=8000)
+        except Exception:  # noqa: BLE001 - never let a panel kill the room
+            LOGGER.exception("A reference video operation failed safely")
+            self.window.flash_message(
+                "WebJam couldn't complete that reference video request. The "
+                "room is still running.",
+                ms=8000,
+            )
+        dialog = getattr(self, "_reference_video_dialog", None)
+        coordinator = getattr(self, "_reference_video", None)
+        if dialog is not None and coordinator is not None:
+            dialog.attach_surface(coordinator.player_surface)
+
+    def _tick_reference_video(self) -> None:
+        coordinator = getattr(self, "_reference_video", None)
+        if self._shutdown or coordinator is None:
+            return
+        try:
+            coordinator.tick()
+        except Exception:  # noqa: BLE001 - a periodic sample is best effort
+            LOGGER.debug("Reference video tick failed", exc_info=True)
+
+    def _on_reference_video_host_snapshot(self, snapshot) -> None:
+        dialog = getattr(self, "_reference_video_dialog", None)
+        if dialog is not None:
+            dialog.set_host_snapshot(snapshot)
+
+    def _on_reference_video_follow_snapshot(self, snapshot) -> None:
+        dialog = getattr(self, "_reference_video_dialog", None)
+        if dialog is not None:
+            dialog.set_follow_snapshot(snapshot)
+        self._announce_reference_video_follow_state(snapshot)
+
+    #: Follow states worth interrupting an artist for, and what to say. A
+    #: state that resolves itself, or that the artist chose, stays silent.
+    _REFERENCE_VIDEO_NOTICES = {
+        "needs_file": (
+            "The host is sharing a reference video. Open your own copy of the "
+            "same file from More → Reference Video, or ignore it and keep "
+            "working."
+        ),
+        "mismatched_file": (
+            "That is not the same file the host is playing, so WebJam will "
+            "not follow it. Open the host's exact file, or hide the video."
+        ),
+        "file_unavailable": (
+            "Your copy of the reference video moved, changed, or became "
+            "unreadable, so WebJam stopped following the host."
+        ),
+    }
+
+    def _announce_reference_video_follow_state(self, snapshot) -> None:
+        """Tell an artist once when the shared video needs them.
+
+        Without this, a guest who never opens the panel would never learn that
+        a video is being shared, or that the copy they opened stopped
+        matching. Only transitions speak, so a steady state stays quiet.
+        """
+
+        state = str(getattr(getattr(snapshot, "state", None), "value", "") or "")
+        if state == getattr(self, "_reference_video_notified_state", ""):
+            return
+        self._reference_video_notified_state = state
+        notice = self._REFERENCE_VIDEO_NOTICES.get(state)
+        if notice and not getattr(self, "_shutdown", False):
+            self.window.flash_message(notice, ms=9000)
 
     def _reference_track_controller(self):
         controller = getattr(self, "_reference_track", None)

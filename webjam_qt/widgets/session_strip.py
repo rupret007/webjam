@@ -137,6 +137,12 @@ class SessionStrip(QFrame):
         self._timer_label.setObjectName("SessionTimer")
         self._timer_label.setAccessibleName("Session elapsed time")
 
+        # Backing store for the legacy creative-mode key that session metadata
+        # still records. It is deliberately not a picker: what someone is
+        # making is chosen once, at launch, from the creator profiles. This
+        # combo is never shown, never laid out, and never enabled, so the
+        # retired five-mode list cannot resurface as a second, contradictory
+        # choice beside the profile they already made.
         self._mode_picker = QComboBox()
         self._mode_picker.setAccessibleName("Session mode")
         self._mode_picker.setMaximumWidth(140)
@@ -149,6 +155,7 @@ class SessionStrip(QFrame):
         self._mode_picker.currentIndexChanged.connect(self._on_mode_index_changed)
         self._sync_subtitle()
         self._mode_picker.setVisible(False)
+        self._mode_picker.setEnabled(False)
 
         self._audio_button = QPushButton("Start Session")
         self._audio_button.setObjectName("AudioButton")
@@ -335,6 +342,15 @@ class SessionStrip(QFrame):
         self._reference_track_action.triggered.connect(
             lambda: self.tool_requested.emit("reference_track")
         )
+        self._reference_video_action = QAction("Reference Video…", tools_menu)
+        self._reference_video_action.setToolTip(
+            "Optional. Watch one local video the host plays, paused and moved "
+            "for everyone. Each computer plays its own copy of the same file."
+        )
+        self._reference_video_action.triggered.connect(
+            lambda: self.tool_requested.emit("reference_video")
+        )
+        self._reference_video_action.setVisible(False)
         self._notes_action = QAction("Notes", tools_menu)
         self._notes_action.triggered.connect(
             lambda: self.tool_requested.emit("canvas")
@@ -372,6 +388,7 @@ class SessionStrip(QFrame):
         # This session
         tools_menu.addAction(self._recording_setup_action)
         tools_menu.addAction(self._reference_track_action)
+        tools_menu.addAction(self._reference_video_action)
         tools_menu.addAction(self._notes_action)
         tools_menu.addAction(self._pocket_stage_action)
         # Resetting the invite acts on this session, so it belongs with the
@@ -460,6 +477,12 @@ class SessionStrip(QFrame):
         self._participant_plural = profile.vocabulary.participant_plural
         self._session_noun = profile.vocabulary.session_noun
         self._reference_audio_noun = profile.vocabulary.reference_audio_noun
+        reference_video = bool(profile.capabilities.shared_reference_video)
+        self._reference_video_action.setVisible(reference_video)
+        self._reference_video_action.setEnabled(reference_video)
+        self._reference_video_action.setText(
+            f"{profile.vocabulary.reference_video_noun.title()}…"
+        )
         self._sync_subtitle()
         self._subtitle.setVisible(True)
         self._title_input.setAccessibleDescription(

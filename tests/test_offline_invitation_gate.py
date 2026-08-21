@@ -318,6 +318,7 @@ def test_every_live_more_menu_action_emits_an_explicit_semantic_command() -> Non
         "tool:conversation",
         "tool:recording_setup",
         "tool:reference_track",
+        "tool:reference_video",
         "tool:canvas",
         "tool:pocket_stage",
         "reset_invite",

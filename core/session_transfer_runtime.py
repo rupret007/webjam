@@ -33,6 +33,8 @@ from core.session_transfer import (
     PresenceV2Challenge,
     PresenceV2Proof,
     RecordingSignal,
+    ReferenceVideoPlaybackState,
+    ReferenceVideoSessionSnapshot,
     SessionControlState,
     SessionCredentials,
     SessionPeerClient,
@@ -1683,6 +1685,38 @@ class HostPeerSession:
             playback_generation=playback_generation,
         )
 
+    def publish_reference_video_state(
+        self,
+        *,
+        state: ReferenceVideoPlaybackState | str,
+        shared: bool,
+        source_display_name: str = "",
+        identity_digest: str = "",
+        position_s: float = 0.0,
+        duration_s: float = 0.0,
+        needs_attention: bool = False,
+        playback_generation: int | None = None,
+    ) -> ReferenceVideoSessionSnapshot | None:
+        """Publish bounded reference video transport for authenticated peers.
+
+        The projection grants no transport authority and is not evidence that
+        any other computer is showing the same frame.  A follower may mirror
+        it only after proving it opened the same file.
+        """
+
+        if self.control is None:
+            return None
+        return self.control.publish_reference_video(
+            state=state,
+            shared=shared,
+            source_display_name=source_display_name,
+            identity_digest=identity_digest,
+            position_s=position_s,
+            duration_s=duration_s,
+            needs_attention=needs_attention,
+            playback_generation=playback_generation,
+        )
+
     def finish_take(
         self,
         take_id: str,
@@ -2910,6 +2944,10 @@ class GuestPeerSession:
                 and (
                     state.signal is not RecordingSignal.IDLE
                     or state.shared_track.generation > 0
+                    # A first poll into a room where the host is already
+                    # playing must notify, or a late joiner would sit on the
+                    # default projection until the host next touched anything.
+                    or state.reference_video.generation > 0
                     or state.capture_arm is not None
                 )
             )
