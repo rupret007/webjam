@@ -24,6 +24,7 @@ import unicodedata
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, Optional
 
 from PySide6.QtCore import QObject, Qt, QTimer
 from PySide6.QtWidgets import QDialog, QMessageBox
@@ -200,9 +201,33 @@ def _meeting_service_name(url: object, *, fallback: str = "") -> str:
     return meeting_service_label(service) if service else fallback
 
 
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from core.art_companion import ArtCompanionProjection
+
+
 def _meeting_open_action_label(url: object) -> str:
     service = _meeting_service_name(url)
     return f"Open {service}" if service else "Join / Open Meeting"
+
+
+def _same_companion_view(left: object, right: object) -> bool:
+    """Whether two projections show a companion the same thing.
+
+    Compared field by field rather than by equality so the revision, which is
+    the one field that differs by construction, cannot decide the answer.
+    """
+
+    return all(
+        getattr(left, name, None) == getattr(right, name, None)
+        for name in (
+            "generation",
+            "in_room",
+            "canvas",
+            "video",
+            "transport_allowed",
+            "ai",
+        )
+    )
 
 
 class ApplicationController(QObject):
@@ -11233,6 +11258,123 @@ class ApplicationController(QObject):
         return role is SessionRole.HOST
 
     # ------------------------------------------------------------------
+    # Art companion projection
+    # ------------------------------------------------------------------
+
+    def _companion_paired(self) -> bool:
+        """Whether a companion panel is currently showing this room.
+
+        The seam a companion transport fills in later. It is deliberately
+        false here: no companion exists on this branch, so every Art surface
+        keeps its standalone behaviour and the fallback path is the only path
+        that runs.
+        """
+
+        return bool(getattr(self, "_art_companion_paired", False))
+
+    def _present_art_panel(self, dialog) -> None:
+        """Show one Art panel, taking focus only when nobody is watching it.
+
+        Without a companion this is the ordinary raise-and-activate every
+        other panel does. With one paired, the artist is looking at the
+        meeting window, so taking focus would pull them off the faces they
+        are talking to in order to show them something they can already see.
+        The panel still opens; it just waits its turn.
+        """
+
+        dialog.show()
+        if self._companion_paired():
+            return
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def art_companion_projection(self) -> "ArtCompanionProjection":
+        """Return what a paired companion may see of this Art room.
+
+        Built from the coordinators that already own each fact, so a
+        companion cannot disagree with the desktop. Every value is a finite
+        state: no path, no file name, no canvas address, no digest, no token,
+        and no prompt has a field to travel in.
+        """
+
+        from core.art_companion import ArtCompanionProjection
+        from webjam_qt.controllers.art_companion_projection import (
+            build_art_companion_projection,
+        )
+
+        if getattr(self, "_shutdown", False):
+            return ArtCompanionProjection(
+                generation=int(getattr(self, "_art_companion_generation", 0))
+            )
+        video = self._reference_video_coordinator()
+        canvas = self._shared_canvas_coordinator()
+        ai = self._ai_image_controller() if self._in_art_room() else None
+        hosting = bool(
+            getattr(video, "hosting", False) or getattr(canvas, "hosting", False)
+        )
+        in_room = video is not None or canvas is not None or ai is not None
+        generation = self._art_companion_generation_for(in_room)
+        video_snapshot = None
+        if video is not None:
+            video_snapshot = (
+                video.host_snapshot if video.hosting else video.follow_snapshot
+            )
+        canvas_snapshot = None
+        if canvas is not None:
+            canvas_snapshot = (
+                canvas.host_snapshot if canvas.hosting else canvas.follow_snapshot
+            )
+        projection = build_art_companion_projection(
+            generation=generation,
+            revision=int(getattr(self, "_art_companion_revision", 0)),
+            in_room=in_room,
+            hosting=hosting,
+            canvas_snapshot=canvas_snapshot,
+            video_snapshot=video_snapshot,
+            ai_snapshot=getattr(ai, "snapshot", None),
+        )
+        return self._advance_art_companion_revision(projection)
+
+    def _art_companion_generation_for(self, in_room: bool) -> int:
+        """Return a generation that changes whenever the room does.
+
+        A companion binds commands to a generation as well as a revision, so
+        an intent formed in one room can never be replayed into the next one.
+        """
+
+        role, session_id, _ = self._reference_video_identity()
+        binding = (role, session_id) if in_room else ()
+        if getattr(self, "_art_companion_binding", None) != binding:
+            self._art_companion_binding = binding
+            self._art_companion_generation = (
+                int(getattr(self, "_art_companion_generation", 0)) + 1
+            )
+            # A new room means the old view is not something to compare
+            # against; the next projection is a change by definition.
+            self._art_companion_last = None
+        return int(getattr(self, "_art_companion_generation", 0))
+
+    def _advance_art_companion_revision(
+        self, projection: "ArtCompanionProjection"
+    ) -> "ArtCompanionProjection":
+        """Bump the revision only when the projected view actually changed.
+
+        A companion binds its commands to a revision, so the number has to
+        mean "something you can see is different" rather than "time passed".
+        """
+
+        from dataclasses import replace
+
+        previous = getattr(self, "_art_companion_last", None)
+        if previous is not None and _same_companion_view(previous, projection):
+            return previous
+        revision = int(getattr(self, "_art_companion_revision", 0)) + 1
+        projection = replace(projection, revision=revision)
+        self._art_companion_revision = revision
+        self._art_companion_last = projection
+        return projection
+
+    # ------------------------------------------------------------------
     # Art reference video
     # ------------------------------------------------------------------
 
@@ -11396,9 +11538,7 @@ class ApplicationController(QObject):
         else:
             dialog.set_follow_snapshot(coordinator.follow_snapshot)
         dialog.attach_surface(coordinator.player_surface)
-        dialog.show()
-        dialog.raise_()
-        dialog.activateWindow()
+        self._present_art_panel(dialog)
 
     def _run_reference_video(self, operation) -> None:
         """Run one reference video intent, surfacing bounded failure text."""
@@ -11603,9 +11743,7 @@ class ApplicationController(QObject):
         clock = self._room_clock_coordinator()
         if clock is not None:
             dialog.set_room_clock(clock.view)
-        dialog.show()
-        dialog.raise_()
-        dialog.activateWindow()
+        self._present_art_panel(dialog)
 
     def _open_drawpile_download(self) -> None:
         """Hand the artist to Drawpile's own download page, once, on request."""
@@ -11866,9 +12004,7 @@ class ApplicationController(QObject):
             )
             self._ai_image_dialog = dialog
         dialog.set_snapshot(controller.snapshot)
-        dialog.show()
-        dialog.raise_()
-        dialog.activateWindow()
+        self._present_art_panel(dialog)
 
     def _open_krita_download(self) -> None:
         from core.krita_ai import krita_download_url

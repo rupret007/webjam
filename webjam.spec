@@ -335,6 +335,11 @@ a = Analysis(
         "core.room_clock",
         "webjam_qt.controllers.room_clock_coordinator",
         "webjam_qt.widgets.room_clock_label",
+        # The companion projection is reached through function-local imports
+        # from the controller, so a frozen build would answer a paired panel
+        # with an import error rather than a room.
+        "core.art_companion",
+        "webjam_qt.controllers.art_companion_projection",
         "PySide6.QtMultimedia",
         "PySide6.QtMultimediaWidgets",
         "soundfile",

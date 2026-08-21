@@ -43,6 +43,8 @@ ART_MODULES = (
     "core/room_clock.py",
     "core/reference_video.py",
     "core/external_program.py",
+    "core/art_companion.py",
+    "webjam_qt/controllers/art_companion_projection.py",
     "services/drawpile_service.py",
     "services/krita_ai_service.py",
     "webjam_qt/controllers/shared_canvas_coordinator.py",
