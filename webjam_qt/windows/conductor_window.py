@@ -477,14 +477,23 @@ class ConductorWindow(QMainWindow):
         from webjam_qt import __version__
 
         if sys.platform == "darwin":
-            navigation_shortcuts = "⌘1 / ⌘2 / ⌘3 / ⌘4"
+            navigation_shortcuts = "⌘1 / ⌘2 / ⌘3"
+            song_shortcut = "⌘4"
             mix_shortcuts = "⌘S / ⌘O"
             reset_shortcut = "Control+Shift+R"
         else:
-            navigation_shortcuts = "Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4"
+            navigation_shortcuts = "Ctrl+1 / Ctrl+2 / Ctrl+3"
+            song_shortcut = "Ctrl+4"
             mix_shortcuts = "Ctrl+S / Ctrl+O"
             reset_shortcut = "Ctrl+Shift+R"
         profile = self._creator_profile
+        # Song exists only in Music, so only Music advertises its shortcut.
+        navigation_line = (
+            f"{navigation_shortcuts} / {song_shortcut} — "
+            "Live / Notes / Studio / Song"
+            if profile.key == "music"
+            else f"{navigation_shortcuts} — Live / Notes / Studio"
+        )
         if self._reference_studio_only and profile.key == "podcast_voice":
             body = (
                 f"<b>WebJam v{__version__} — Podcast & Voice Studio</b><br>"
@@ -542,7 +551,7 @@ class ConductorWindow(QMainWindow):
                 "<b>8.</b> Press <b>End Session</b> when recording is finished.<br><br>"
                 "<b>Useful shortcuts</b><br>"
                 "F2 — Sound Check<br>"
-                f"{navigation_shortcuts} — Live / Notes / Studio<br>"
+                f"{navigation_line}<br>"
                 f"{mix_shortcuts} — Save / load your monitor mix while Live is open<br>"
                 f"{reset_shortcut} — Reset every fader to 0 dB<br>"
                 "F11 / Esc — Enter / leave full screen"
@@ -565,7 +574,7 @@ class ConductorWindow(QMainWindow):
                 "<b>8.</b> Press <b>End Session</b> when the review is over.<br><br>"
                 "<b>Useful shortcuts</b><br>"
                 "F2 — Session Check (Preview)<br>"
-                f"{navigation_shortcuts} — Live / Notes / Studio<br>"
+                f"{navigation_line}<br>"
                 "F11 / Esc — Enter / leave full screen"
             )
         else:
@@ -589,7 +598,7 @@ class ConductorWindow(QMainWindow):
                 "<b>8.</b> Press <b>End Session</b> when the jam is over.<br><br>"
                 "<b>Useful shortcuts</b><br>"
                 "F2 — Band Check<br>"
-                f"{navigation_shortcuts} — Live / Notes / Studio<br>"
+                f"{navigation_line}<br>"
                 f"{mix_shortcuts} — Save / load your monitor mix while Live is open<br>"
                 f"{reset_shortcut} — Reset every fader to 0 dB<br>"
                 "F11 / Esc — Enter / leave full screen"

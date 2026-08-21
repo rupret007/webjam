@@ -1483,13 +1483,39 @@ class TestConductorWindow(unittest.TestCase):
             w.show_help()
 
         body = set_text.call_args.args[0]
-        self.assertIn("⌘1 / ⌘2 / ⌘3 — Live / Notes / Studio", body)
+        # Music has a fourth surface, so its help lists a fourth shortcut.
+        self.assertIn("⌘1 / ⌘2 / ⌘3 / ⌘4 — Live / Notes / Studio / Song", body)
         self.assertIn(
             "⌘S / ⌘O — Save / load your monitor mix while Live is open",
             body,
         )
         self.assertIn("Control+Shift+R — Reset every fader", body)
         self.assertNotIn("Ctrl+1", body)
+
+    def test_only_music_help_advertises_the_song_shortcut(self):
+        """Song exists only in Music; other profiles must not promise it."""
+
+        from unittest import mock
+
+        from core.creative_modes import get_creator_profile_by_key_or_default
+
+        for profile_key in ("podcast_voice", "review_rehearsal"):
+            window = self._window()
+            window.set_creator_profile(
+                get_creator_profile_by_key_or_default(profile_key)
+            )
+            with mock.patch("sys.platform", "darwin"), mock.patch(
+                "PySide6.QtWidgets.QMessageBox.exec",
+                return_value=0,
+            ), mock.patch(
+                "PySide6.QtWidgets.QMessageBox.setText",
+            ) as set_text:
+                window.show_help()
+
+            body = set_text.call_args.args[0]
+            self.assertIn("⌘1 / ⌘2 / ⌘3 — Live / Notes / Studio", body)
+            self.assertNotIn("⌘4", body)
+            self.assertNotIn("Song", body)
 
     def test_help_and_recording_status_follow_creator_profile(self):
         from core.creative_modes import get_creator_profile_by_key_or_default
