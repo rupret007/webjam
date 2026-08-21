@@ -9,6 +9,60 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the immutable v0.26.0 release boundary belongs here. Every
 > published tag, release, and asset remains immutable historical evidence.
 
+### Studio Visit creator profile (Preview)
+
+- Added **Studio Visit**, a Preview creator profile for artists working in any
+  medium — painting, drawing, sculpture, anything at a table. It reuses the
+  existing session conductor, invite, roster, and meeting-handoff rules
+  unchanged, and speaks to *artists* rather than musicians throughout: launch,
+  conductor, session pulse, and menu copy. Registry validation refuses to load
+  a Studio Visit profile whose vocabulary addresses a band.
+- Added an **optional host-clocked reference video**. A room with no video is
+  the first-class path; nothing requires anyone to share anything. When the
+  host does share, everyone watches their own local copy of the same file under
+  the host's play, pause, stop, and position control.
+- The reference video is **not routed through Jamulus**. Unlike Shared Track,
+  which sends decoded audio to guests, each computer plays its own file, so
+  same-file identity must be provable across machines. The host hashes its
+  file's descriptor-bound bytes and publishes a **session-scoped HMAC** of that
+  hash rather than the hash itself: peers holding the session token can prove
+  they opened the host's exact file, while the published digest is meaningless
+  outside the room and cannot be matched against a known media library. A
+  digest captured in one room never matches in another.
+- Every failure path is closed. A computer that has not opened a copy, opened a
+  different file, or whose copy later moved, changed, or became unreadable does
+  not play, and says which of those happened. A guest arriving mid-play lands on
+  the host's position advanced by the locally measured age of that projection,
+  so no clock synchronization between machines is needed or claimed. If the
+  host's position becomes too old to trust, followers hold rather than drifting
+  while claiming to be in sync.
+- Guests have **no transport at all**: the follower type and the follower's
+  panel expose no play, pause, stop, or seek control. Hiding the video is
+  always available, before or after opening a file, and keeps the artist fully
+  in the room. A computer that cannot play video says so and stays in the room.
+- Studio Visit **does not record a session**. Its reference video is not bound
+  into the recording plan's source identity, so rather than fake a take whose
+  sources cannot be proven, the profile disables session recording and
+  therefore take review, editing, and export. Its conductor offers no Record
+  action, and there is no second session truth.
+- The profile projection travels beside Shared Track on the private peer plane
+  with the same rules: path-free, memory-only, monotonic generation, and a
+  separate playback generation per play attempt. A restarted host shares
+  nothing until it republishes.
+- Sync is host transport plus a position corrected on a tolerance bounded by
+  the peer poll interval — the same honesty bar as Shared Track. It is **not**
+  frame-accurate review and carries **no media timecode**; the registry refuses
+  a Studio Visit profile that claims otherwise. There is no shared canvas, no
+  camera feed, and no shipped, downloaded, or ingested video catalog.
+- `studio_visit` is a new canonical profile key, not an alias target. The legacy
+  `visual_studio` mode still migrates to Review & Rehearsal, unknown keys still
+  fail safely to Music, and Music, Podcast & Voice, and Review & Rehearsal are
+  unchanged. Launch copy and a private scratchpad path are now required for
+  every registered profile, so a future profile fails at import instead of as a
+  KeyError mid-selection.
+- Two-computer behavior is **NOT RUN**: this profile is covered by automated
+  tests only and has no release or physical evidence.
+
 ## [0.26.0] — Demo-proven creator multitrack private test release (2026-08-16)
 
 > Published on 2026-08-16 as immutable GitHub **Latest** release

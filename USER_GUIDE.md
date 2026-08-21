@@ -20,15 +20,53 @@ notes. It can help decide what to do or arrange next, but it never changes
 WebJam's operational status. For example, typing “recording finished” cannot
 create a take or unlock export.
 
-At launch, choose **Music** (GA), **Podcast & Voice** (GA), or **Review &
-Rehearsal** (Preview). The profile follows the launch, live session, recording,
-Studio, local session metadata, and new standalone projects. Legacy content
-without a saved profile opens as Music. Review & Rehearsal allows live
-WebJam-audio Host/Join, Record Session, local notes, and playback/read-only
-review of completed session takes. It blocks standalone projects, take
-editing/comp/mix mutation, track export, shared notes, visual sync, and media
-timecode. No profile directly or automatically taps a meeting app, browser, or
-system output.
+At launch, choose **Music** (GA), **Podcast & Voice** (GA), **Review &
+Rehearsal** (Preview), or **Studio Visit** (Preview). The profile follows the
+launch, live session, recording, Studio, local session metadata, and new
+standalone projects. Legacy content without a saved profile opens as Music.
+Review & Rehearsal allows live WebJam-audio Host/Join, Record Session, local
+notes, and playback/read-only review of completed session takes. It blocks
+standalone projects, take editing/comp/mix mutation, track export, shared
+notes, visual sync, and media timecode. Studio Visit is a room for artists in
+any medium; see [Studio Visit](#studio-visit) below. No profile directly or
+automatically taps a meeting app, browser, or system output.
+
+## Studio Visit
+
+Studio Visit (Preview) opens a room where you talk while you work — painting,
+drawing, sculpting, anything at a table. Hosting and joining work exactly as
+they do in the other profiles, and **a room with no video is a completely
+normal room**. Nothing asks you to share anything.
+
+If you want a reference to work from, the host can share one video file:
+
+1. The host chooses **More ▾ → Reference Video…**, then **Share Video…**, and
+   picks a local video file they have the right to play. WebJam does not ship,
+   bundle, download, or fetch any video, and it will not open anything from a
+   streaming service.
+2. Everyone else opens the same panel and chooses **Open My Copy…**, pointing at
+   their own copy of that same file. WebJam checks that it really is the same
+   file. If it is not, it says so and plays nothing rather than showing you the
+   wrong thing.
+3. The host presses play, pause, stop, or drags the position. Everyone follows.
+   If you join partway through, you land where the host currently is.
+
+Things worth knowing:
+
+- **Only the host controls playback.** Guests have no play, pause, stop, or
+  scrub control, by design.
+- **You can hide the video** at any time and keep working. You stay in the room
+  and in the conversation.
+- **If your copy moves, changes, or disappears**, WebJam stops following and
+  tells you, instead of drifting silently.
+- **If WebJam loses track of the host's position**, it holds rather than
+  guessing. Playback resumes when the host is heard from again.
+- **This is not frame-accurate review.** Everyone stays within about a second
+  of the host. There is no timecode, and Studio Visit is not a video review
+  tool.
+- Studio Visit has **no shared drawing canvas**, no camera feed, and **does not
+  record the session**, so there is no take to review afterwards. Your notes
+  stay local to your own computer as in every other profile.
 
 Each profile has a separate local scratchpad on this computer. Switching
 profiles safely saves and loads the matching private file; reads refuse links
@@ -394,7 +432,8 @@ deliberately does not integrate with or control Logic or another editor.
 The editing, arrangement, comping, mix-mutation, and export steps below apply
 only to Music and Podcast & Voice. Review & Rehearsal Preview can play, scrub,
 and inspect a completed take and its sources, but it cannot mutate the take's
-arrangement or mix, create a Studio sidecar, or export tracks.
+arrangement or mix, create a Studio sidecar, or export tracks. Studio Visit
+does not record a session at all, so it has no take and no Studio.
 
 - Drag a region to move it or drag an edge to trim it. The selected region can
   also be split, duplicated, disabled, or deleted without changing its WAV.
