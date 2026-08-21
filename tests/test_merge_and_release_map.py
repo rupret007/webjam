@@ -54,13 +54,52 @@ def _heading_anchors(text: str) -> set[str]:
 
 
 def test_map_lands_the_audio_core_then_each_room_after_a_rebase() -> None:
-    positions = [FLAT_MAP_TEXT.index(pull) for pull in ("#14", "#15", "#17")]
-    assert positions == sorted(positions), "land order must read #14, #15, #17"
-    for pull in ("#15", "#17"):
+    positions = [FLAT_MAP_TEXT.index(f"| {step} |") for step in range(1, 7)]
+    assert positions == sorted(positions), "the land order steps must read in order"
+    assert FLAT_MAP_TEXT.index("Land [#14]") < FLAT_MAP_TEXT.index("Rebase [#19]")
+    for step, pull in ((3, "#19"), (5, "#17")):
         assert FLAT_MAP_TEXT.index(f"Rebase [{pull}]") < FLAT_MAP_TEXT.index(
-            f"| 3 | Land {pull}" if pull == "#15" else f"| 5 | Land {pull}"
+            f"| {step} | Land {pull}"
         ), pull
-    assert "#16" in FLAT_MAP_TEXT and "already on `master`" in FLAT_MAP_TEXT
+    for landed in ("#15", "#16"):
+        assert landed in FLAT_MAP_TEXT, landed
+    assert "already on `master`" in FLAT_MAP_TEXT
+
+
+def test_map_gates_landing_and_release_on_the_ten_second_read() -> None:
+    gate_section = MAP_TEXT.partition("## 1. Ten-second UX gate")[2].partition(
+        "## 2."
+    )[0]
+    assert gate_section, "the map must keep the UX gate ahead of the land order"
+    flat_gate = " ".join(gate_section.split())
+
+    assert "not ready to land" in flat_gate
+    assert "not ready to be called released" in flat_gate
+
+    doors = [line for line in gate_section.splitlines() if line.startswith("| ")]
+    art, music = (line for line in doors if line.startswith(("| Art ", "| Music ")))
+    for door in ("**Talk & make**", "**Paint together**", "**Paint along**"):
+        assert door in art, door
+    assert "**Host** / **Join**" in art and "**Host** / **Join**" in music
+    assert "nothing else" in music
+
+    banned = (
+        "Studio Visit",
+        "Drawpile",
+        "Jamulus",
+        "host-clocked",
+        "Moises",
+        "BYOK",
+        "Preview caveats",
+        "API",
+    )
+    banned_line = flat_gate.partition("Banned on the first screen:")[2]
+    assert banned_line, "the map must keep the banned first-screen list"
+    for term in banned:
+        assert term in banned_line, term
+        assert term not in art and term not in music, term
+
+    assert "#19" in flat_gate and "#15 is not the Art door" in flat_gate
 
 
 def test_map_keeps_the_merge_button_attended() -> None:
@@ -105,7 +144,6 @@ def test_map_docs_pass_targets_exist_and_stay_kiss() -> None:
         assert relative_path in MAP_TEXT, relative_path
 
     assert "**Art** and **Music**" in FLAT_MAP_TEXT
-    assert 'No "Studio Visit" wording' in FLAT_MAP_TEXT
     assert "No add-on" in FLAT_MAP_TEXT
     assert "No integration wall" in FLAT_MAP_TEXT
 
