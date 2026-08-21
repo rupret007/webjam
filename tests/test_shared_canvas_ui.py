@@ -30,6 +30,10 @@ from core.shared_canvas import (  # noqa: E402
     SharedCanvasSnapshot,
     SharedCanvasState,
 )
+from core.art_room_presence import (  # noqa: E402
+    ArtPresenceTarget,
+    ArtPresenceTone,
+)
 from webjam_qt.controllers.application_controller import (  # noqa: E402
     ApplicationController,
 )
@@ -712,13 +716,29 @@ def test_the_profile_capability_is_the_only_gate_on_the_menu_entry():
 
 def _with_start(controller: ApplicationController, start_key: str) -> None:
     controller.settings = SimpleNamespace(
-        drawpile_candidates=[], last_creator_start_key=start_key
+        drawpile_candidates=[],
+        krita_candidates=[],
+        krita_resource_dirs=[],
+        comfyui_url="",
+        last_creator_start_key=start_key,
     )
-    controller._announced_creator_start = ()
     controller._art_start_timer = SimpleNamespace(stop=MagicMock())
     controller._reference_video = None
     controller._reference_video_dialog = None
     controller._reference_video_binding = ()
+    controller._ai_image = None
+    controller.window.session_strip = SimpleNamespace(
+        set_art_room_presence=MagicMock()
+    )
+
+
+def _presence(controller: ApplicationController):
+    """Run the real derivation and return what the room was told to show."""
+
+    controller._sync_art_room_presence()
+    strip = controller.window.session_strip
+    strip.set_art_room_presence.assert_called_once()
+    return strip.set_art_room_presence.call_args.args[0]
 
 
 def test_the_chosen_start_resolves_against_the_active_profile(fake_launchers):
@@ -735,19 +755,37 @@ def test_the_chosen_start_resolves_against_the_active_profile(fake_launchers):
     assert music.creator_start is None
 
 
-def test_a_canvas_start_tells_the_host_once_where_the_control_is(fake_launchers):
+def test_a_canvas_start_shows_the_host_a_persistent_way_in(fake_launchers):
+    """The room used to answer this with a nine-second message naming the menu
+    to open. It carries a control now, which is still there a minute later."""
+
     controller = _controller("art")
     _with_start(controller, "paint_together")
     _as_host(controller)
 
-    controller._tick_creator_start()
-    controller._tick_creator_start()
+    presence = _presence(controller)
 
-    controller.window.flash_message.assert_called_once()
-    message = controller.window.flash_message.call_args.args[0]
-    assert "Paint together" in message
-    assert "Shared Canvas" in message
-    controller._art_start_timer.stop.assert_called()
+    assert presence.label == "Set up shared canvas"
+    assert presence.target is ArtPresenceTarget.CANVAS
+    assert presence.tone is ArtPresenceTone.PRESENT
+    # Nothing is opened at the host, so nothing takes focus from the meeting.
+    assert controller.window.flash_message.call_count == 0
+
+
+def test_the_way_in_does_not_disappear_after_being_shown_once(fake_launchers):
+    controller = _controller("art")
+    _with_start(controller, "paint_together")
+    _as_host(controller)
+
+    controller._sync_art_room_presence()
+    controller._sync_art_room_presence()
+    strip = controller.window.session_strip
+
+    assert strip.set_art_room_presence.call_count == 2
+    labels = {
+        call.args[0].label for call in strip.set_art_room_presence.call_args_list
+    }
+    assert labels == {"Set up shared canvas"}
 
 
 def test_a_video_start_points_at_the_reference_video_instead(fake_launchers):
@@ -756,56 +794,74 @@ def test_a_video_start_points_at_the_reference_video_instead(fake_launchers):
     _as_host(controller)
     controller.host_peer.publish_reference_video_state = MagicMock()
 
-    controller._tick_creator_start()
+    presence = _presence(controller)
 
-    message = controller.window.flash_message.call_args.args[0]
-    assert "Paint along" in message
-    assert "Reference Video" in message
+    assert presence.label == "Set up reference video"
+    assert presence.target is ArtPresenceTarget.VIDEO
 
 
-def test_a_talk_only_start_says_nothing_and_stops_waiting(fake_launchers):
+def test_a_talk_only_start_leaves_the_room_chrome_empty(fake_launchers):
+    """Someone who chose to just talk and work has a finished room."""
+
     controller = _controller("art")
     _with_start(controller, "talk_and_make")
     _as_host(controller)
 
-    controller._tick_creator_start()
+    presence = _presence(controller)
 
-    controller.window.flash_message.assert_not_called()
-    controller._art_start_timer.stop.assert_called_once()
+    assert presence.offered is False
+    assert presence.target is ArtPresenceTarget.NONE
 
 
-def test_a_start_says_nothing_until_there_is_a_room(fake_launchers):
+def test_a_start_shows_nothing_until_there_is_a_room(fake_launchers):
     controller = _controller("art")
     _with_start(controller, "paint_together")
     controller.host_peer = SimpleNamespace(active=False, credentials=None)
     controller.guest_peer = None
 
-    controller._tick_creator_start()
+    presence = _presence(controller)
 
-    controller.window.flash_message.assert_not_called()
-    # Still waiting, so the timer must keep running.
-    controller._art_start_timer.stop.assert_not_called()
+    assert presence.offered is False
 
 
-def test_a_guest_is_never_told_about_a_start_they_did_not_choose(fake_launchers):
-    """A guest's saved start says nothing about the room they joined."""
+def test_a_guest_is_never_shown_a_start_they_did_not_choose(fake_launchers):
+    """A guest's saved start says nothing about the room they joined, so an
+    empty room stays empty for them however they last hosted."""
 
     controller = _controller("art")
     _with_start(controller, "paint_together")
     _as_guest(controller)
 
-    controller._tick_creator_start()
+    presence = _presence(controller)
 
-    controller.window.flash_message.assert_not_called()
+    assert presence.offered is False
 
 
-def test_a_profile_without_starts_never_arms_anything(fake_launchers):
+def test_a_profile_without_starts_never_shows_an_art_line(fake_launchers):
     for profile_key in ("music", "podcast_voice", "review_rehearsal"):
         controller = _controller(profile_key)
         _with_start(controller, "paint_together")
         _as_host(controller)
 
-        controller._tick_creator_start()
+        controller._sync_art_room_presence()
 
-        controller.window.flash_message.assert_not_called()
+        strip = controller.window.session_strip
+        presence = strip.set_art_room_presence.call_args.args[0]
+        assert presence.offered is False
         assert fake_launchers == []
+
+
+def test_the_room_survives_a_presence_failure_without_going_quiet(fake_launchers):
+    """Room chrome must not be able to take the room down with it -- and a
+    real fault must not vanish silently either."""
+
+    controller = _controller("art")
+    _with_start(controller, "paint_together")
+    _as_host(controller)
+    controller.window.session_strip = SimpleNamespace(
+        set_art_room_presence=MagicMock(side_effect=RuntimeError("boom"))
+    )
+
+    controller._tick_creator_start()
+
+    assert controller._art_room_presence_failed is True

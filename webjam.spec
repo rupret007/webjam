@@ -340,6 +340,9 @@ a = Analysis(
         # with an import error rather than a room.
         "core.art_companion",
         "webjam_qt.controllers.art_companion_projection",
+        # The room's own Art line, rendered from the same projection.
+        "core.art_room_presence",
+        "webjam_qt.widgets.art_room_chip",
         "PySide6.QtMultimedia",
         "PySide6.QtMultimediaWidgets",
         "soundfile",

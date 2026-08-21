@@ -827,6 +827,50 @@ QPushButton#StatusChip[tone="recovery"]:hover {
     border-color: ${COLOR_TEXT_PRIMARY};
 }
 
+/* -------------------------------------------------------------------------
+ * Art's one line in the room chrome
+ *
+ * Sized to the strip rather than to a panel: this is a room status a person
+ * glances at, not the primary action of a dialog. It shares the chip's tones
+ * so "Install Drawpile" here and "Install Drawpile" inside the panel read as
+ * one control seen twice rather than as two features.
+ * ---------------------------------------------------------------------- */
+
+#ArtRoomDeck {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+}
+
+/* Neither tone is filled. The strip already has one loud control, and a second
+   accent block would make the room argue with itself, so a request is marked
+   by an accent edge rather than by shouting. */
+QPushButton#ArtRoomChipAction {
+    min-height: 30px;
+    font-size: ${FONT_SIZE_SM}px;
+    padding: 0 ${SPACE_SM}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+    background-color: transparent;
+    color: ${COLOR_TEXT_SECONDARY};
+    border: 1px solid transparent;
+    border-radius: ${RADIUS_SM}px;
+    text-align: left;
+}
+
+QPushButton#ArtRoomChipAction[tone="recovery"] {
+    color: ${COLOR_TEXT_PRIMARY};
+    border-color: ${COLOR_ACCENT_PRIMARY};
+}
+
+QPushButton#ArtRoomChipAction:hover {
+    color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_CARD_HOVER};
+}
+
+QPushButton#ArtRoomChipAction:focus {
+    border-color: ${COLOR_BORDER_FOCUS};
+}
+
 /* Quiet is about weight, not size. The fill is absent, the colour is muted
    and the type is small, but the target stays large enough to hit reliably --
    a secondary action should be easy to press and hard to mistake for the

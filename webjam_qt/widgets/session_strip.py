@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.art_room_presence import ABSENT, ArtRoomPresence
 from core.creative_modes import CreatorProfile
 from core.meeting_link import (
     MEETING_DIRECT_CAPTURE_BOUNDARY,
@@ -37,6 +38,7 @@ from core.meeting_link import (
 )
 from webjam_qt.theme.brand import BrandMark
 from webjam_qt.theme.tokens import Space
+from webjam_qt.widgets.art_room_chip import ArtRoomChip
 from webjam_qt.widgets.shared_track_waveform import SharedTrackWaveform
 
 
@@ -292,6 +294,16 @@ class SessionStrip(QFrame):
         shared_layout.addWidget(self._shared_track_state)
         self._shared_track_surface.setVisible(False)
 
+        # Art's one line about this room. Absent for every other profile, and
+        # absent in a talk-only Art room, which is a finished room.
+        self._art_room_supported = False
+        self._art_room_chip = ArtRoomChip(self)
+        self._art_room_chip.open_requested.connect(
+            lambda target: self.tool_requested.emit(
+                "shared_canvas" if target == "canvas" else "reference_video"
+            )
+        )
+
         self._invite_button = QPushButton("Copy Invite")
         self._invite_button.setObjectName("GhostButton")
         self._invite_button.setAccessibleName("Copy band invite")
@@ -468,6 +480,7 @@ class SessionStrip(QFrame):
         layout.addWidget(self._invite_button)
         layout.addWidget(self._video_button)
         layout.addWidget(self._shared_track_surface)
+        layout.addWidget(self._art_room_chip)
         layout.addWidget(self._studio_button)
         layout.addWidget(self._tools_button)
 
@@ -509,6 +522,11 @@ class SessionStrip(QFrame):
         ai_image = bool(profile.capabilities.ai_image)
         self._ai_image_action.setVisible(ai_image)
         self._ai_image_action.setEnabled(ai_image)
+        # A profile without these layers has no room state to show, so the
+        # chip is not merely empty for it -- it is gone.
+        self._art_room_supported = reference_video or shared_canvas
+        if not self._art_room_supported:
+            self._art_room_chip.set_presence(ABSENT)
         self._sync_subtitle()
         self._subtitle.setVisible(True)
         self._title_input.setAccessibleDescription(
@@ -1044,6 +1062,18 @@ class SessionStrip(QFrame):
             or self._shared_track_channel_present
             or self._shared_track_projection_visible
         )
+
+    def set_art_room_presence(self, presence: ArtRoomPresence) -> None:
+        """Show the room's one Art line, if this profile has one to show."""
+
+        if not self._art_room_supported:
+            self._art_room_chip.set_presence(ABSENT)
+            return
+        self._art_room_chip.set_presence(presence)
+
+    @property
+    def art_room_chip(self) -> ArtRoomChip:
+        return self._art_room_chip
 
     def set_shared_track_snapshot(self, snapshot: object) -> None:
         """Render the host-owned source/transport truth in the live mini deck."""

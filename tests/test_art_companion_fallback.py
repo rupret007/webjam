@@ -121,6 +121,67 @@ def test_no_art_surface_knows_the_companion_exists(name):
     assert not any("art_companion" in module for module in imported)
 
 
+#: The room's own chrome reads the projection on purpose -- it is the state
+#: vocabulary both the room chip and a companion panel render from, so the two
+#: cannot disagree. What it may never touch is the *command* side, which is
+#: the part that carries a companion's authority.
+PROJECTION_READERS = (
+    "core/art_room_presence.py",
+    "webjam_qt/widgets/art_room_chip.py",
+    "webjam_qt/widgets/session_strip.py",
+)
+
+COMPANION_AUTHORITY = (
+    "ArtCommand",
+    "ArtCommandRequest",
+    "ArtCommandReceipt",
+    "ArtCommandStatus",
+    "ArtScope",
+    "ArtRejectionReason",
+    "authorize_art_command",
+)
+
+
+@pytest.mark.parametrize("name", PROJECTION_READERS)
+def test_the_room_reads_companion_state_but_never_companion_authority(name):
+    """Sharing a vocabulary is not depending on a companion.
+
+    The room describes itself with the same finite states a panel would read,
+    which is why the two can never disagree. Importing a command, a scope, or
+    the authorizer would be different: that is the half that decides what a
+    remote panel is allowed to do, and the room has no business asking.
+    """
+
+    tree = ast.parse(Path(name).read_text(encoding="utf-8"))
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            imported.update(alias.name for alias in node.names)
+
+    for authority in COMPANION_AUTHORITY:
+        assert authority not in imported, (name, authority)
+
+
+@pytest.mark.parametrize("name", PROJECTION_READERS)
+def test_the_room_never_asks_whether_a_companion_is_paired(name):
+    """If the chrome behaved differently when paired, the unpaired room would
+    stop being the one that gets exercised.
+
+    Identifiers are inspected rather than raw text, so prose explaining the
+    relationship is allowed while a branch on it is not.
+    """
+
+    tree = ast.parse(Path(name).read_text(encoding="utf-8"))
+    identifiers = {
+        node.attr if isinstance(node, ast.Attribute) else node.id
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Attribute, ast.Name))
+    }
+
+    assert not any("paired" in identifier for identifier in identifiers)
+    assert not any("companion" in identifier for identifier in identifiers)
+
+
 def test_the_projection_is_a_read_and_never_a_requirement():
     """Asking for the projection outside a room is answered, not refused.
 

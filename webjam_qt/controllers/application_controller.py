@@ -711,10 +711,11 @@ class ApplicationController(QObject):
         self._reference_video_timer.setInterval(500)
         self._reference_video_timer.timeout.connect(self._tick_reference_video)
 
-        # Art's start card is chosen before there is a room to act on, so this
-        # waits for one and then says, once, where the control it promised
-        # lives. It stops itself as soon as it has spoken; a card that opened
-        # a window instead would steal focus from the meeting beside WebJam.
+        # Art's start card is chosen before there is a room to act on, so the
+        # room carries one small line about its canvas or its video: the way
+        # in while a host has not set theirs up, and the status once they
+        # have. A card that opened a window instead would steal focus from
+        # the meeting beside WebJam.
         self._art_start_timer = QTimer(self)
         self._art_start_timer.setInterval(1000)
         self._art_start_timer.timeout.connect(self._tick_creator_start)
@@ -1618,60 +1619,66 @@ class ApplicationController(QObject):
         )
 
     #: What to say once, per start that promises an add-on, when a room exists.
-    _CREATOR_START_NOTICES = {
-        "paint_together": (
-            "Paint together: open More → Shared Canvas to host the canvas in "
-            "Drawpile and share its invitation with the room."
-        ),
-        "paint_along": (
-            "Paint along: open More → Reference Video to share one local "
-            "video. Everyone follows it on their own copy of the same file."
-        ),
-    }
-
     def _tick_creator_start(self) -> None:
-        """Wait for a real room, then point the host at what they chose.
+        """Keep the room's one Art line true, including before anything exists.
 
         A start is picked at launch, before any room exists, so it cannot be
-        acted on there. Rather than opening a window later and taking focus,
-        this says where the control is and then stops for good.
+        acted on there. This used to be answered with a nine-second message
+        naming the menu to open, which is a user interface explaining how to
+        navigate itself. The room carries a small persistent chip instead: it
+        is the way in when a host has chosen a layer and not set it up yet,
+        and it is the room's status once they have.
+
+        Nothing here opens or focuses a window. The chip is a control the
+        artist presses when they are ready.
         """
 
-        timer = getattr(self, "_art_start_timer", None)
         if getattr(self, "_shutdown", False):
-            if timer is not None:
-                timer.stop()
-            return
-        start = self.creator_start
-        if start is None or start.talk_only:
+            timer = getattr(self, "_art_start_timer", None)
             if timer is not None:
                 timer.stop()
             return
         try:
-            coordinator = (
-                self._shared_canvas_coordinator()
-                if start.shared_canvas
-                else self._reference_video_coordinator()
-            )
-        except Exception:  # noqa: BLE001 - a nudge never breaks the room
-            LOGGER.debug("Creator start binding failed safely", exc_info=True)
+            self._sync_art_room_presence()
+        except Exception:  # noqa: BLE001 - room chrome never breaks the room
+            # Reported once at warning so a real fault is discoverable, then
+            # quietly: this runs every second, and a repeating stack trace
+            # would bury whatever else the log was trying to say.
+            if not getattr(self, "_art_room_presence_failed", False):
+                self._art_room_presence_failed = True
+                LOGGER.warning(
+                    "Art room presence is unavailable this session",
+                    exc_info=True,
+                )
+            else:
+                LOGGER.debug("Art room presence failed again", exc_info=True)
+
+    def _sync_art_room_presence(self) -> None:
+        """Render the room's Art line from the projection the companion reads.
+
+        One derivation feeds both, so the chip in this room and a chip in a
+        paired meeting-window panel cannot disagree about what is happening.
+        """
+
+        strip = getattr(getattr(self, "window", None), "session_strip", None)
+        if strip is None or not hasattr(strip, "set_art_room_presence"):
             return
-        # Only a host chose this card. A guest's saved start says nothing about
-        # the room they joined, and the canvas and video each already announce
-        # themselves to a guest when the host shares one.
-        if coordinator is None or not coordinator.hosting:
+        from core.art_room_presence import ABSENT, art_room_presence
+
+        if not (self._shared_canvas_supported() or self._reference_video_supported()):
+            strip.set_art_room_presence(ABSENT)
             return
-        binding = (start.key, str(getattr(self, "_shared_canvas_binding", ()) or ""))
-        if getattr(self, "_announced_creator_start", ()) == binding:
-            if timer is not None:
-                timer.stop()
-            return
-        self._announced_creator_start = binding
-        notice = self._CREATOR_START_NOTICES.get(start.key)
-        if notice:
-            self.window.flash_message(notice, ms=9000)
-        if timer is not None:
-            timer.stop()
+        projection = self.art_companion_projection()
+        start = self.creator_start
+        # Only a host chose a card. A guest's saved start says nothing about
+        # the room they joined, so what the host shared is the only fact.
+        presence = art_room_presence(
+            projection,
+            hosting=projection.transport_allowed,
+            intended_canvas=bool(start is not None and start.shared_canvas),
+            intended_video=bool(start is not None and start.reference_video),
+        )
+        strip.set_art_room_presence(presence)
 
     def _apply_creator_profile_key(
         self,
