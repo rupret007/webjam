@@ -320,6 +320,7 @@ def test_every_live_more_menu_action_emits_an_explicit_semantic_command() -> Non
         "tool:reference_track",
         "tool:reference_video",
         "tool:shared_canvas",
+        "tool:ai_image",
         "tool:canvas",
         "tool:pocket_stage",
         "reset_invite",

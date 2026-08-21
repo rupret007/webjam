@@ -35,11 +35,12 @@ They are never shared, session-synchronized, or media-timecoded.
 Art is a room where artists in any medium — painting, drawing, sculpture,
 anything on a table — talk while they work. Conversation uses the same WebJam
 audio path and the same optional external meeting handoff as every other
-profile. The profile adds exactly two capabilities of its own, both optional: a
-**shared canvas** it hands to Drawpile, and a **host-clocked reference video**.
+profile. The profile adds three capabilities of its own, all optional: a
+**shared canvas** it hands to Drawpile, a **host-clocked reference video**, and
+an in-session **AI image** action it hands to Krita.
 
-**A room with neither is the first-class path**, not a degraded empty player.
-Nothing about the profile requires anyone to share anything.
+**A room with none of them is the first-class path**, not a degraded empty
+player. Nothing about the profile requires anyone to share anything.
 
 Art shipped its Preview under the name "Studio Visit". The old `studio_visit`
 key remains only as a migrate-from alias so a saved choice survives the rename.
@@ -60,7 +61,10 @@ refuses a fourth:
 
 A start carries **at most one** add-on. Combining the canvas and the video is
 an in-room decision the host makes afterwards, not a fourth card, because the
-point of the list is that a person reads it once. A profile that offers starts
+point of the list is that a person reads it once. **AI is not a start either**:
+nobody decides what they are making by choosing an image generator, so it is an
+in-session action available from any of the three starts, and the registry
+refuses a start that expresses it. A profile that offers starts
 must keep a talk-only one, so an add-on can never look required. No other
 profile offers start cards.
 
@@ -152,19 +156,66 @@ sources cannot be proven, the profile disables session recording, and therefore
 take review, take editing, and track export. Its conductor offers no Record
 action.
 
+### AI image
+
+Someone in the room can have AI **Make** a new image from text, or **Edit** a
+photo they already own. One in-session action, two verbs, same button family.
+
+WebJam generates nothing. The real stack is **Krita AI Diffusion** — a Krita
+plugin — driving a **local ComfyUI** backend, which covers generation,
+inpaint/outpaint, object removal, and photo editing. WebJam finds Krita, checks
+that the plugin is installed in Krita's own `pykrita/ai_diffusion` folder, and
+opens Krita on a fresh canvas (Make) or on the artist's file (Edit).
+
+- **No generator of WebJam's own.** There is no prompt box, no model list, no
+  LoRA browser, no sampler, and no step count. Krita owns all of it, and
+  reproducing any of it here would be inventing a generator rather than
+  integrating one. WebJam does not even take the prompt.
+- **Loopback only.** The backend address is checked in exactly one place and
+  must be on this machine. A remote or cloud address is refused before a
+  request is built, including one arriving from an edited config file or an
+  environment variable. The probe is a `GET` to ComfyUI's read-only status
+  endpoint with proxies and redirects disabled. No path through this feature
+  can upload an artist's photo to somebody else's computer.
+- **A backend WebJam cannot see is normal.** Krita AI Diffusion installs and
+  manages its own server, and also connects to one already running. Both are
+  ready states.
+- **Results are the artist's files.** They live on that computer and belong to
+  whoever made them. WebJam ships no models and no image catalog, requires no
+  cloud key for the happy path, and never asks for one.
+- **Nothing is published.** The module has no publisher, imports no transfer
+  layer, and the session wire schema gains no AI member. A generated image
+  reaches the room only if its owner drops it on the shared Drawpile canvas, or
+  if the host later shares a file they own under the reference-video contract —
+  which remains video, under same-file identity.
+- **Nobody drives anyone else's generator.** There is no host and no guest
+  here, only this computer. Guests Make and Edit for themselves.
+- **Fail closed.** No Krita, or Krita without the plugin, offers an install
+  path and says which is missing. Neither verb is enabled until both are real.
+
+The shared canvas is never fed to a model. WebJam does not read it, and any
+future choice to do so would be an explicit, separate decision rather than a
+side effect of this action.
+
 ### In-session chrome
 
 Few controls. Talk is already there. The reference video adds host transport
 and a guest hide. The canvas adds one open action and a status line — ready,
-missing Drawpile, or unreadable. There is no brush, colour, or layer control in
-WebJam, because those belong to Drawpile.
+missing Drawpile, or unreadable. AI adds two buttons and a status line. There
+is no brush, colour, or layer control in WebJam because those belong to
+Drawpile, and no prompt or model control because those belong to Krita.
 
 ### Explicit non-goals for Art
 
 - no canvas surface inside WebJam, and no brush, colour, or layer control;
 - no Drawpile server run by WebJam, and no session posted on an artist's behalf;
-- no launch menu of other creative tools; finishing a piece in Krita, MyPaint,
-  GIMP, Inkscape, Blender, or OpenToonz is the artist's own business;
+- no launch menu of other creative tools; finishing a piece in MyPaint, GIMP,
+  Inkscape, Blender, or OpenToonz is the artist's own business. Krita is opened
+  only as the host of the AI image plugin, from the in-session AI action, and
+  never offered as a start;
+- no image generator, prompt, model, or sampler inside WebJam, and no cloud
+  image API;
+- no reading of the shared canvas by any model;
 - no camera-on-the-easel feed;
 - no shipped, bundled, or downloadable video catalog, and no ripped or ingested
   third-party lesson content;

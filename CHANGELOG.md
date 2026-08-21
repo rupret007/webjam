@@ -51,8 +51,38 @@ All notable improvements and features for the WebJam creator collaboration platf
     because a Drawpile session password has no business surviving in the
     durable recording journal. A restarted host offers no canvas until its
     owner shares one again.
-- Added an **optional host-clocked reference video**. A room with neither
-  add-on is the first-class path; nothing requires anyone to share anything.
+- Added an **in-session AI image action**: Make a new image from text, or Edit
+  a photo the artist already owns. One action, two verbs, and deliberately
+  **not** a fourth start card, because nobody decides what they are making by
+  choosing an image generator. The registry refuses a start that expresses AI.
+  - WebJam generates nothing. The real stack is **Krita AI Diffusion** driving
+    a **local ComfyUI**, which already covers generation, inpaint, outpaint,
+    object removal, and photo editing. WebJam finds Krita, checks the plugin is
+    installed in Krita's own `pykrita/ai_diffusion` folder, and opens Krita on
+    a fresh canvas or on the artist's file.
+  - There is **no prompt box, no model list, no LoRA browser, no sampler, and
+    no step count**. Krita owns all of it, and WebJam does not even take the
+    prompt.
+  - **Loopback only**, checked in exactly one place. A remote or cloud backend
+    address is refused before a request is built, including one arriving from
+    an edited config file or `WEBJAM_COMFYUI_URL`. The probe is a `GET` to
+    ComfyUI's read-only status endpoint with proxies and redirects disabled, so
+    no path through this feature can upload an artist's photo anywhere.
+  - A backend WebJam cannot see is a **normal state**: Krita AI Diffusion
+    installs and manages its own server, and also connects to one already
+    running. Both are ready.
+  - **Nothing is published.** The module has no publisher, imports no transfer
+    layer, and the session wire schema gains no AI member. A generated image
+    reaches the room only if its owner drops it on the shared canvas, or if the
+    host later shares a file they own under the unchanged reference-video
+    contract. The shared canvas is never read by any model.
+  - **Nobody drives anyone else's generator.** There is no host and no guest in
+    this path, only this computer; guests Make and Edit for themselves.
+  - **Fail closed.** A missing Krita or a missing plugin says which one and
+    offers that download rather than opening an editor that cannot generate.
+    WebJam ships no models, no image catalog, and needs no cloud key.
+- Added an **optional host-clocked reference video**. A room with none of the
+  three add-ons is the first-class path; nothing requires anyone to share anything.
   When the host does share, everyone watches their own local copy of the same
   file under the host's play, pause, stop, and position control.
 - The reference video is **not routed through Jamulus**. Unlike Shared Track,
@@ -87,7 +117,8 @@ All notable improvements and features for the WebJam creator collaboration platf
   the peer poll interval — the same honesty bar as Shared Track. It is **not**
   frame-accurate review and carries **no media timecode**; the registry refuses
   an Art profile that claims otherwise. There is no camera feed, no canvas
-  surface inside WebJam, and no shipped, downloaded, or ingested video catalog.
+  surface inside WebJam, no image generator or model of WebJam's own, and no
+  shipped, downloaded, or ingested video or image catalog.
 - Art ships **no Webex Embedded App, companion projection, or in-meeting
   surface**. A free or personal Webex account cannot create or load a custom
   embedded app, so the desktop application is the whole product and Webex stays
@@ -111,9 +142,15 @@ All notable improvements and features for the WebJam creator collaboration platf
   registered profile, so a future profile fails at import instead of as a
   KeyError mid-selection.
 - Two-computer behavior is **NOT RUN**: this profile is covered by automated
-  tests only and has no release or physical evidence. The Drawpile handoff in
-  particular has not been exercised against a real Drawpile install on two
-  machines.
+  tests only and has no release or physical evidence. The Drawpile and Krita
+  handoffs in particular have not been exercised against real installs of
+  either program, and the AI path has never met a real ComfyUI backend.
+
+### Internal
+
+- Discovery rules for a program WebJam did not ship now live once, in
+  `core/external_program.py`: explicit absolute locations, no `PATH` search, no
+  glob, and a resolved real executable file. Drawpile and Krita share it.
 
 ### Test reliability
 

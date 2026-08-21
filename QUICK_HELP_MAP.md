@@ -12,6 +12,8 @@
 | Talk while making art | Art → **Talk & make** → **Host** or **Join**; a room with no canvas and no video is normal and needs no setup |
 | Paint on one shared canvas | Art → **Paint together** → **Host**, then **More → Shared Canvas… → Host in Drawpile**; keep the Drawpile session **Personal** and paste its invitation back into WebJam |
 | Join the shared canvas | Art guest → **More → Shared Canvas… → Open shared canvas**; Drawpile must be installed, and WebJam says so plainly when it is not |
+| Make an image with AI | Art, in session → **More → AI Image… → Make**; Krita opens a new canvas and its AI Image Generation docker takes your prompt. WebJam generates nothing and uploads nothing |
+| Edit a photo with AI | Art, in session → **More → AI Image… → Edit…** and pick an image you own; Krita opens it for fill, extend, or remove |
 | Share a reference video | Art host → **More → Reference Video… → Share Video…** and pick one local file you have the right to play; WebJam ships and downloads none |
 | Follow the host's video | Art guest → **More → Reference Video… → Open My Copy…** and pick your own copy of the host's exact file; a different file is refused rather than played |
 | Ignore a shared video | Art → **Reference Video… → Hide Video**; you stay in the room and in the conversation |

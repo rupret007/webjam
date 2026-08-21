@@ -24,9 +24,11 @@ artists rather than musicians: a live WebJam-audio room to talk in while
 painting, drawing, sculpting, or building. It offers three starts and no more --
 the room alone, the room plus one shared Drawpile canvas, or the room plus one
 optional reference video the host plays while each computer shows its own copy
-of the same local file. It blocks standalone projects, session recording and
-every take capability, a Jamulus reference-audio route, any canvas surface of
-its own, and any frame-accurate or media-timecode claim. No profile directly or
+of the same local file. Inside a session it can also open Krita's AI plugin to
+make or edit one local image. It blocks standalone projects, session recording
+and every take capability, a Jamulus reference-audio route, any canvas surface
+or image generator of its own, any cloud image service, and any frame-accurate
+or media-timecode claim. No profile directly or
 automatically taps a meeting app, browser, or system output.
 
 The product thesis is simple: creators should have one clear place to conduct
@@ -49,6 +51,7 @@ and truthful failure states.
 | Creator profile | Select Music, Podcast & Voice, Review & Rehearsal, or Art presentation and capability gates | WebJam profile registry |
 | Reference Video | Art only: host-clocked play/pause/stop/seek over one local file each computer holds its own proven copy of | WebJam reference video controller |
 | Shared Canvas | Art only: one Drawpile session the host chooses and WebJam's invitation carries; Drawpile draws every stroke and WebJam cannot see the canvas | Drawpile |
+| AI Image | Art only, in session: Make a new image or Edit one the artist owns, in Krita's AI plugin against a loopback backend; results are local files, nothing is published to the room | Krita AI Diffusion + local ComfyUI |
 | Host / Join | Start or enter a private live session | WebJam session conductor + Jamulus |
 | Conversation | Provider-neutral public-HTTPS meeting handoff; friendly labels for Webex/Zoom/Teams/Meet/FaceTime; separate native Webex focus guidance | Selected meeting service |
 | Record Session | Capture and finalize a session with durable identity | WebJam recorder + Jamulus evidence |

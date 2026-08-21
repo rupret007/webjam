@@ -43,6 +43,10 @@ three ways to start, and nothing more:
 - **Paint together** — the room plus one shared canvas, painted in Drawpile.
 - **Paint along** — the room plus one video the host plays for everyone.
 
+AI image work is *not* a fourth choice: it is an in-session action available
+from any of the three, because nobody plans a session around an image
+generator.
+
 Then **Host** or **Join** as in every other profile. Joining is one pasted
 invitation: it carries whatever the host started, so there is nothing else for
 a guest to choose. The host can add the other option later from inside the
@@ -105,10 +109,43 @@ Things worth knowing:
 - **This is not frame-accurate review.** Everyone stays within about a second
   of the host. There is no timecode, and Art is not a video review tool.
 
+### Making or editing an image with AI
+
+Once you are in the room, **More ▾ → AI Image…** offers two things and nothing
+else: **Make** a new image from a description, or **Edit** a photo you already
+have.
+
+WebJam does not generate anything. Krita's **AI Image Generation** plugin does,
+on your own computer.
+
+1. Install [Krita](https://krita.org/en/download/) 5.2.0 or newer, then install
+   [Krita AI Diffusion](https://github.com/Acly/krita-ai-diffusion/releases/latest)
+   into it (Krita → Tools → Scripts → Import Python Plugin from File).
+2. In WebJam, choose **Make** for a fresh canvas, or **Edit…** and pick an image
+   you own. Krita opens.
+3. In Krita, use **Settings → Dockers → AI Image Generation**. Type your
+   prompt there, or select part of your photo and fill, extend, or remove it.
+   The first time, the plugin will offer to install its local backend for you.
+
+Things worth knowing:
+
+- **Everything stays on your computer.** WebJam only ever looks for an image
+  backend at a loopback address, and refuses a remote or cloud one outright.
+  Your photos are never uploaded, and no API key is needed.
+- **What you make is your file.** It is not sent to the room. If you want the
+  others to see it, drop it on the shared canvas yourself.
+- **Nobody generates on your behalf.** The host cannot Make or Edit on your
+  machine, and you cannot on theirs. Guests use it for themselves.
+- **The prompt, the model, and the settings are Krita's.** WebJam has no prompt
+  box and no model list, on purpose.
+- If Krita or the plugin is missing, WebJam says which one and offers the
+  download rather than opening an editor that cannot generate.
+
 ### What Art does not do
 
 Art has no camera feed and **does not record the session**, so there is no take
-to review afterwards. Your notes stay local to your own computer as in every
+to review afterwards. It has no image generator of its own, no model list, and
+no cloud image service. Your notes stay local to your own computer as in every
 other profile. There is no standalone Art project in this Preview.
 
 Art is also the whole product on your desktop. If you want to see faces, use

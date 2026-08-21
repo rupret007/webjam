@@ -18,6 +18,8 @@ meeting services reached through hardened external links. The boundary is delibe
 | `core/creative_modes.py` | Canonical Music and Podcast & Voice GA profiles, Review & Rehearsal and Art Preview profiles, Art's three bounded start cards, safe defaults, legacy aliases, and cross-surface presentation vocabulary |
 | `core/reference_video.py` | Art's host-clocked reference video: descriptor-bound content hashing, session-scoped same-file identity, host-only transport, and a fail-closed follower |
 | `core/drawpile.py`, `core/shared_canvas.py`, `services/drawpile_service.py` | Art's shared canvas as a Drawpile handoff: explicit install-location discovery with no PATH search, documented invitation parsing and normalization, host-only canvas choice, and a fail-closed follower that never launches an unparseable address |
+| `core/krita_ai.py`, `core/ai_image.py`, `services/krita_ai_service.py` | Art's in-session AI image action as a Krita handoff: Krita and AI-plugin discovery, a single loopback-only backend boundary, two local verbs (Make and Edit), and no prompt, model, publisher, or wire projection of any kind |
+| `core/external_program.py` | The one implementation of the honesty rules for a program WebJam did not ship: explicit absolute locations, no PATH search, no glob, and a resolved real executable file |
 | `core/song_*`, `core/project_*`, schema-3 Studio | Portable Reference Studio project/media ownership, local playback/recording, non-destructive arrangement/mix, and bounce |
 | `services/bridge_service.py` | Direct owned-process launch/stop, hosted-server supervision, authenticated Jamulus RPC, and verified managed/embedded/explicit/system component resolution |
 | `core/jamulus_profile.py` | Dedicated Jamulus profile launch contract and private, allowlisted restart records |
@@ -41,7 +43,9 @@ mutation, track export, shared notes, visual sync, and media-timecode behavior.
 Art is also visibly Preview. It offers exactly three starts -- a room alone, a
 room plus one shared Drawpile canvas, or a room plus one host-clocked reference
 video that each computer plays from its own copy of the same local file -- and
-the registry refuses a fourth. It refuses standalone projects, session
+the registry refuses a fourth. An in-session AI image action opens Krita's own
+AI plugin against a loopback backend; it is deliberately not a start, publishes
+nothing to the room, and cannot reach off the machine. It refuses standalone projects, session
 recording, take review/editing/export, a Jamulus reference-audio route, any
 canvas surface of its own, and any frame-accurate or media-timecode behavior.
 WebJam brokers the canvas invitation and never draws a stroke; Drawpile owns
