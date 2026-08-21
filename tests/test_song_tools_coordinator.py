@@ -1899,3 +1899,101 @@ def test_a_host_who_left_does_not_pretend_a_confirmation_is_pending(app):
 
     confirm.assert_not_called()
     assert coordinator._running_verb == ""
+
+
+# ----------------------------------------------------------------------
+# A companion can tell that something changed
+# ----------------------------------------------------------------------
+def test_the_revision_moves_when_the_song_position_does(app):
+    """A counter that only moved on suggestions would show bar one all night."""
+
+    coordinator, now = _clock_coordinator(app)
+    coordinator.workbench.clock.start()
+
+    first = coordinator.companion_snapshot()
+    now["value"] = 10.0
+    second = coordinator.companion_snapshot()
+
+    assert second.revision > first.revision
+    assert second.bar != first.bar
+
+
+def test_the_revision_holds_still_when_nothing_changed(app):
+    coordinator, _now = _clock_coordinator(app)
+
+    first = coordinator.companion_snapshot()
+    second = coordinator.companion_snapshot()
+
+    assert second.revision == first.revision
+
+
+def test_the_revision_moves_for_a_suggestion_and_for_its_dismissal(app):
+    coordinator = _coordinator(app)
+
+    quiet = coordinator.companion_snapshot().revision
+    coordinator.show_chords("Verse")
+    suggested = coordinator.companion_snapshot().revision
+    coordinator.dismiss_suggestions()
+    dismissed = coordinator.companion_snapshot().revision
+
+    assert suggested > quiet
+    assert dismissed > suggested
+
+
+def test_the_revision_moves_when_a_job_starts_and_finishes(app):
+    coordinator = _coordinator(app)
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+
+    idle = coordinator.companion_snapshot().revision
+    coordinator._running_verb = "stems"
+    running = coordinator.companion_snapshot().revision
+    coordinator._running_verb = ""
+    finished = coordinator.companion_snapshot().revision
+
+    assert running > idle
+    assert finished > running
+
+
+# ----------------------------------------------------------------------
+# A failed discovery is retried, not permanent
+# ----------------------------------------------------------------------
+def test_reopening_the_panel_retries_a_failed_discovery(app):
+    """A network blip must not disable Song tools for the rest of the night."""
+
+    coordinator = _coordinator(app)
+    coordinator._catalog = failed_catalog("WebJam could not reach Music AI.")
+
+    with patch.object(coordinator, "discover_workflows") as discover:
+        coordinator.toggle_panel()
+
+    discover.assert_called_once()
+
+
+def test_reopening_does_not_re_fetch_a_list_it_already_has(app):
+    coordinator = _coordinator(app)
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+
+    with patch.object(coordinator, "discover_workflows") as discover:
+        coordinator.toggle_panel()
+
+    discover.assert_not_called()
+
+
+def test_a_failed_discovery_says_how_to_try_again(app):
+    coordinator = _coordinator(app)
+    coordinator.overlay.setVisible(True)
+    coordinator._apply_catalog(failed_catalog("WebJam could not reach Music AI."))
+
+    status = coordinator.overlay._tools_status.text()
+    assert "could not reach Music AI" in status
+    assert "Reopening Song tools tries again" in status
+
+
+def test_discovery_is_still_never_attempted_without_a_key(app):
+    coordinator = _coordinator(app, api_key="")
+    coordinator._catalog = failed_catalog("WebJam could not reach Music AI.")
+
+    with patch.object(coordinator, "discover_workflows") as discover:
+        coordinator.toggle_panel()
+
+    discover.assert_not_called()

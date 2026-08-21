@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -81,6 +82,7 @@ class SongToolsCoordinator:
         self._last_suggestion = None
         self._last_suggestion_section = ""
         self._companion_revision = 0
+        self._last_companion_public: dict | None = None
         # A job WebJam stopped waiting for -- usually because the machine
         # slept -- is still running at Music AI. It is remembered so the
         # status can be reported honestly instead of silently restarted.
@@ -112,7 +114,11 @@ class SongToolsCoordinator:
             return
         overlay.setVisible(True)
         self.refresh()
-        if self._api_key() and self._catalog is None:
+        # Retry a discovery that failed. A network blip while the panel was
+        # open once should not disable Song tools for the rest of the night;
+        # a successful list is kept and not re-fetched.
+        catalog = self._catalog
+        if self._api_key() and (catalog is None or not catalog.discovered):
             self.discover_workflows()
 
     def close_panel(self) -> None:
@@ -234,8 +240,8 @@ class SongToolsCoordinator:
         """
 
         if not self.is_available():
-            return build_snapshot(
-                revision=self._companion_revision, is_music_session=False
+            return self._with_revision(
+                build_snapshot(revision=0, is_music_session=False)
             )
 
         self._sync_workbench()
@@ -260,8 +266,8 @@ class SongToolsCoordinator:
                 lyric = section.lyrics[0]
                 break
 
-        return build_snapshot(
-            revision=self._companion_revision,
+        return self._with_revision(build_snapshot(
+            revision=0,
             is_music_session=True,
             clock=self.workbench.clock_snapshot(),
             form_rows=self.workbench.form_overlay(),
@@ -276,7 +282,24 @@ class SongToolsCoordinator:
             else "",
             suggestion=self._last_suggestion,
             suggestion_section=self._last_suggestion_section,
-        )
+        ))
+
+    def _with_revision(
+        self, snapshot: MusicCompanionSnapshot
+    ) -> MusicCompanionSnapshot:
+        """Stamp a revision that changes whenever anything published changes.
+
+        A companion polls on this, so a counter that only moved when a
+        suggestion changed would leave a panel showing bar one all night.
+        Comparing the produced wire form is exact and stays monotonic.
+        """
+
+        published = snapshot.to_public_dict()
+        published.pop("revision", None)
+        if published != self._last_companion_public:
+            self._last_companion_public = published
+            self._companion_revision += 1
+        return replace(snapshot, revision=self._companion_revision)
 
     def handle_companion_command(self, payload) -> MusicCompanionDecision:
         """Answer one companion request. The desktop decides; this is where.
@@ -586,7 +609,6 @@ class SongToolsCoordinator:
             advice.suggestions[0] if advice.available else None
         )
         self._last_suggestion_section = advice.section_label
-        self._companion_revision += 1
         overlay.set_song_state(
             catch_up=None,
             form_summary=self.workbench.conductor_line(),
@@ -634,7 +656,6 @@ class SongToolsCoordinator:
 
         self._last_suggestion = None
         self._last_suggestion_section = ""
-        self._companion_revision += 1
         overlay = self.overlay
         if overlay is not None:
             overlay.clear_suggestions()

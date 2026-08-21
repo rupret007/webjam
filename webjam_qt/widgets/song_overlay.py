@@ -807,8 +807,10 @@ class SongOverlay(QFrame):
             self._tools_unsupported.setText(_unsupported_text(None))
             return
         if catalog is None or not catalog.discovered:
+            failed = catalog is not None and bool(catalog.error)
             self._tools_status.setText(
-                catalog.error if catalog is not None and catalog.error
+                f"{catalog.error} Reopening Song tools tries again."
+                if failed
                 else "Checking which Song tools this account can run…"
             )
             self._tools_unsupported.setText("")
