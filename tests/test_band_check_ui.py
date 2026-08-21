@@ -82,17 +82,36 @@ def _session(mode: BandCheckMode = BandCheckMode.PRE_SESSION) -> BandCheckSessio
     )
 
 
+class _ImmediateThread:
+    def __init__(self, *, target, **_kwargs):
+        self.target = target
+
+    def start(self):
+        self.target()
+
+
 def _dialog(session: BandCheckSession) -> BandCheckDialog:
+    """Build a dialog whose configuration scan has already reported.
+
+    The dialog scans on a daemon thread and reports back through a signal.
+    Spinning the event loop a fixed number of times could return before that
+    thread ran, which left it to call the *real* scan after this patch was
+    torn down and to emit into a dialog the finished test no longer held --
+    a race that crashed the interpreter under load. Running the scan inline
+    removes the thread instead of narrowing the window.
+    """
+
     with mock.patch(
         "webjam_qt.windows.ready_check.build_band_check_session",
         return_value=session,
+    ), mock.patch(
+        "webjam_qt.windows.ready_check.threading.Thread",
+        _ImmediateThread,
     ):
         dialog = BandCheckDialog(lambda: _settings(), mode=session.mode)
         dialog.show()
-        for _ in range(30):
-            APP.processEvents()
-            if dialog._session is not None:
-                break
+        APP.processEvents()
+        assert dialog._session is not None, "the Band Check scan never reported"
     return dialog
 
 
@@ -693,14 +712,6 @@ def test_support_action_is_explicit_and_emits() -> None:
         assert received == [True]
     finally:
         dialog.close()
-
-
-class _ImmediateThread:
-    def __init__(self, *, target, **_kwargs):
-        self.target = target
-
-    def start(self):
-        self.target()
 
 
 def test_startup_reuses_only_a_matching_usable_verification() -> None:
