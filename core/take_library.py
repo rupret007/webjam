@@ -1475,6 +1475,11 @@ def _refine_lag(
         if denom <= 0.0:
             continue
         value = abs(float(np.dot(local_part, server_part))) / denom
+        # Normalized correlation is mathematically bounded by one, but float32
+        # dot/norm rounding can exceed it by a few ulps. Durable alignment
+        # truth rejects confidence above 1.0, so clamp at this calculation
+        # boundary instead of letting a perfect match crash finalization.
+        value = min(1.0, max(0.0, value))
         if value > best_val:
             best_val = value
             best_lag = lag
