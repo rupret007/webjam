@@ -62,12 +62,13 @@ def test_art_is_a_registered_preview_profile(profile):
     assert ART in get_creator_profile_keys()
 
 
-def test_art_claims_a_room_a_canvas_and_a_video_and_nothing_else(profile):
+def test_art_claims_a_room_a_canvas_a_video_and_ai_and_nothing_else(profile):
     capabilities = profile.capabilities
     assert capabilities.live_session is True
     assert capabilities.meeting_handoff is True
     assert capabilities.shared_reference_video is True
     assert capabilities.shared_canvas is True
+    assert capabilities.ai_image is True
 
     # Everything below is a claim Art must not make.
     assert capabilities.media_timecode is False
@@ -81,11 +82,30 @@ def test_art_claims_a_room_a_canvas_and_a_video_and_nothing_else(profile):
     assert profile.default_studio_preset is None
 
 
-def test_only_art_ships_the_canvas_and_reference_video_contracts():
+def test_only_art_ships_the_canvas_video_and_ai_contracts():
     for key in OTHER_PROFILES:
         other = get_creator_profile_by_key(key)
         assert other.capabilities.shared_reference_video is False
         assert other.capabilities.shared_canvas is False
+        assert other.capabilities.ai_image is False
+
+
+def test_an_ai_image_capability_requires_a_live_session():
+    """AI Image is an in-session action, so it cannot exist without a room."""
+
+    with pytest.raises(ValueError, match="ai_image requires live_session"):
+        CreatorCapabilities(
+            live_session=False,
+            local_multitrack=False,
+            shared_reference_audio=False,
+            meeting_handoff=False,
+            media_timecode=False,
+            session_recording=False,
+            take_review=False,
+            take_editing=False,
+            track_export=False,
+            ai_image=True,
+        )
 
 
 def test_art_speaks_to_artists_not_to_a_band(profile):
@@ -232,6 +252,31 @@ def test_no_start_combines_a_canvas_and_a_video():
             shared_canvas=True,
             reference_video=True,
         )
+
+
+def test_ai_is_never_a_start_card(profile):
+    """Adding AI must not add a fourth door.
+
+    Nobody decides what they are making by choosing an image generator, and a
+    fourth card would undo the point of a short list. AI stays an in-session
+    action, so no start expresses it and the start type has no field for it.
+    """
+
+    assert len(profile.starts) == 3
+    for start in profile.starts:
+        assert not hasattr(start, "ai_image")
+        assert "generat" not in start.label.casefold()
+        assert "generat" not in start.summary.casefold()
+
+    fields = set(CreatorStart.__dataclass_fields__)
+    assert fields == {
+        "key",
+        "label",
+        "summary",
+        "detail",
+        "shared_canvas",
+        "reference_video",
+    }
 
 
 def test_no_other_profile_offers_start_cards():

@@ -31,11 +31,12 @@ from __future__ import annotations
 
 import os
 import re
-import stat
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote, urlsplit, urlunsplit
+
+from core.external_program import find_program
 
 #: Drawpile's own scheme, plus the two WebSocket schemes its client accepts as
 #: session URLs.  Anything else is not a canvas invitation.
@@ -275,9 +276,8 @@ def _carries_password(tokens: list[str]) -> bool:
 # Finding an installed Drawpile
 # ---------------------------------------------------------------------------
 
-#: Explicit install locations only.  WebJam ships no Drawpile and searches no
-#: ``PATH``, so an executable is either where Drawpile's own installers put it
-#: or the artist named it themselves.
+#: Explicit install locations only.  See :mod:`core.external_program` for why
+#: there is no ``PATH`` search and no glob here.
 DEFAULT_DRAWPILE_CANDIDATES: tuple[str, ...] = (
     # macOS
     "/Applications/Drawpile.app/Contents/MacOS/drawpile",
@@ -295,52 +295,17 @@ DEFAULT_DRAWPILE_CANDIDATES: tuple[str, ...] = (
 )
 
 
-def _executable_target(candidate: str | os.PathLike[str]) -> Path | None:
-    """Return the real executable a candidate names, or ``None``.
+def find_drawpile(candidates: object = None) -> Path | None:
+    """Return the first real Drawpile executable among ``candidates``.
 
-    Symlinks are followed rather than rejected because Flatpak, Homebrew, and
-    Snap all publish their entry points as links, and WebJam is not claiming
-    provenance for a binary it did not ship.  What it does insist on is that
-    the resolved object is a real, executable, regular file: a dangling link
-    or a directory must fail closed instead of reaching a launcher.
+    Discovery rules live in :mod:`core.external_program`, which Krita's
+    lookup shares, so the honesty rules for a program WebJam did not ship are
+    written once.
     """
 
-    try:
-        path = Path(candidate).expanduser()
-    except (TypeError, ValueError):
-        return None
-    if not path.is_absolute():
-        return None
-    try:
-        resolved = path.resolve(strict=True)
-        details = resolved.stat()
-    except (OSError, RuntimeError):
-        return None
-    if not stat.S_ISREG(details.st_mode):
-        return None
-    if os.name == "posix" and not details.st_mode & 0o111:
-        return None
-    return resolved
-
-
-def find_drawpile(candidates: object = None) -> Path | None:
-    """Return the first real Drawpile executable among ``candidates``."""
-
-    if candidates is None:
-        candidates = DEFAULT_DRAWPILE_CANDIDATES
-    if isinstance(candidates, (str, bytes, os.PathLike)):
-        candidates = (candidates,)
-    try:
-        entries = list(candidates)
-    except TypeError:
-        return None
-    for entry in entries:
-        if not isinstance(entry, (str, os.PathLike)):
-            continue
-        resolved = _executable_target(entry)
-        if resolved is not None:
-            return resolved
-    return None
+    return find_program(
+        DEFAULT_DRAWPILE_CANDIDATES if candidates is None else candidates
+    )
 
 
 def drawpile_host_arguments(executable: str | os.PathLike[str]) -> list[str]:

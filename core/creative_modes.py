@@ -72,6 +72,11 @@ class CreatorCapabilities:
     # install themselves.  WebJam brokers the invitation and never draws a
     # stroke, so this capability claims a handoff, not a canvas widget.
     shared_canvas: bool = False
+    # One in-session action that opens an external open-source image
+    # generator (Krita AI Diffusion over a local ComfyUI) on a new canvas or
+    # on a file the artist already owns.  It is deliberately not a start
+    # workflow, publishes nothing to the room, and never leaves the machine.
+    ai_image: bool = False
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -86,6 +91,7 @@ class CreatorCapabilities:
             "track_export",
             "shared_reference_video",
             "shared_canvas",
+            "ai_image",
         ):
             if type(getattr(self, field_name)) is not bool:
                 raise ValueError(f"{field_name} must be a boolean.")
@@ -97,6 +103,8 @@ class CreatorCapabilities:
             raise ValueError("shared_reference_video requires live_session.")
         if self.shared_canvas and not self.live_session:
             raise ValueError("shared_canvas requires live_session.")
+        if self.ai_image and not self.live_session:
+            raise ValueError("ai_image requires live_session.")
 
 
 @dataclass(frozen=True)
@@ -370,10 +378,10 @@ _REVIEW_CAPABILITIES = CreatorCapabilities(
     track_export=False,
 )
 # Art is a room for making things at a table.  It carries live conversation,
-# an optional shared Drawpile canvas, and an optional host-clocked reference
-# video.  It claims nothing else: no Jamulus reference-audio route, no
-# recorded take, and therefore no review, editing, or export contract to
-# honor afterwards.
+# an optional shared Drawpile canvas, an optional host-clocked reference
+# video, and an in-session AI image action.  It claims nothing else: no
+# Jamulus reference-audio route, no recorded take, and therefore no review,
+# editing, or export contract to honor afterwards.
 _ART_CAPABILITIES = CreatorCapabilities(
     live_session=True,
     local_multitrack=False,
@@ -386,6 +394,7 @@ _ART_CAPABILITIES = CreatorCapabilities(
     track_export=False,
     shared_reference_video=True,
     shared_canvas=True,
+    ai_image=True,
 )
 
 # Exactly three ways to begin: a room, a room plus a canvas, a room plus a
@@ -705,6 +714,14 @@ def _validate_creator_registry() -> None:
         if profile.key != "art"
     ):
         raise RuntimeError("Only Art ships the shared-canvas contract.")
+    if not art.capabilities.ai_image:
+        raise RuntimeError("Art requires the in-session AI image action.")
+    if any(
+        profile.capabilities.ai_image
+        for profile in CREATOR_PROFILES
+        if profile.key != "art"
+    ):
+        raise RuntimeError("Only Art ships the AI image action.")
     if LEGACY_MODE_KEY_ALIASES.get("studio_visit") != "art":
         raise RuntimeError("The Studio Visit Preview key must migrate to Art.")
 
@@ -725,6 +742,12 @@ def _validate_creator_registry() -> None:
         raise RuntimeError("Art offers exactly one reference-video start.")
     if any(profile.starts for profile in CREATOR_PROFILES if profile.key != "art"):
         raise RuntimeError("Only Art offers start cards.")
+    # AI is an in-session action and never a way to begin. Nobody decides what
+    # they are making by choosing an image generator, and a fourth card would
+    # undo the point of a short list. Catching the field here means a future
+    # edit cannot quietly promote it into the start screen.
+    if any(hasattr(start, "ai_image") for start in art.starts):
+        raise RuntimeError("AI is an in-session action, not an Art start card.")
     if LEGACY_MODE_KEY_ALIASES.get("visual_studio") != "review_rehearsal":
         # Tempting, and wrong. A session already recorded under the legacy
         # visual-arts mode resolves today to a profile that can play it back,

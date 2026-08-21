@@ -575,6 +575,8 @@ class ApplicationController(QObject):
         self._shared_canvas_dialog = None
         self._shared_canvas_binding: tuple[str, str] | tuple[()] = ()
         self._shared_canvas_notified_state = ""
+        self._ai_image = None
+        self._ai_image_dialog = None
         self._announced_creator_start: tuple[str, str] | tuple[()] = ()
         self._reference_track_operation_lock = threading.RLock()
         self._reference_track_worker_state_lock = threading.Lock()
@@ -971,6 +973,7 @@ class ApplicationController(QObject):
         # Drawpile, which keeps running.
         self._release_reference_video()
         self._release_shared_canvas()
+        self._release_ai_image()
         reference_track = getattr(self, "_reference_track", None)
         if reference_track is not None:
             reference_closed = False
@@ -1180,6 +1183,7 @@ class ApplicationController(QObject):
             art_start_timer.stop()
         self._release_reference_video()
         self._release_shared_canvas()
+        self._release_ai_image()
         self._connection_timer.stop()
         jamulus_update_dialog = getattr(self, "_jamulus_update_dialog", None)
         if jamulus_update_dialog is not None:
@@ -11135,6 +11139,8 @@ class ApplicationController(QObject):
             self._open_reference_video()
         elif key == "shared_canvas":
             self._open_shared_canvas()
+        elif key == "ai_image":
+            self._open_ai_image()
         elif key == "jamulus_updates":
             self._open_jamulus_updates()
         elif key == "pocket_stage":
@@ -11588,12 +11594,22 @@ class ApplicationController(QObject):
     def _open_drawpile_download(self) -> None:
         """Hand the artist to Drawpile's own download page, once, on request."""
 
-        from PySide6.QtGui import QDesktopServices
-        from PySide6.QtCore import QUrl
-
         from core.drawpile import drawpile_download_url
 
-        QDesktopServices.openUrl(QUrl(drawpile_download_url()))
+        self._open_external_page(drawpile_download_url())
+
+    @staticmethod
+    def _open_external_page(url: str) -> None:
+        """Open one fixed https page an artist explicitly asked for.
+
+        Every caller passes a constant from a core module, so nothing
+        user-controlled reaches the browser.
+        """
+
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        QDesktopServices.openUrl(QUrl(str(url)))
 
     def _run_shared_canvas(self, operation) -> None:
         """Run one canvas intent, surfacing bounded failure text."""
@@ -11662,6 +11678,129 @@ class ApplicationController(QObject):
         notice = self._SHARED_CANVAS_NOTICES.get(state)
         if notice and not getattr(self, "_shutdown", False):
             self.window.flash_message(notice, ms=9000)
+
+    # ------------------------------------------------------------------
+    # Art AI image
+    # ------------------------------------------------------------------
+
+    def _ai_image_supported(self) -> bool:
+        """Only the profile whose contract includes it may generate images."""
+
+        return bool(self.creator_profile.capabilities.ai_image)
+
+    def _in_art_room(self) -> bool:
+        """Whether this computer is actually in a started session.
+
+        AI Image is an in-session action, so it needs a room. It needs nothing
+        else from the room: it publishes nothing and reads nothing, so unlike
+        the canvas and the video it does not care which role this computer has.
+        """
+
+        role, session_id, session_key = self._reference_video_identity()
+        return bool(role and session_id and session_key)
+
+    def _ai_image_controller(self):
+        """Return this computer's AI image controller, or ``None``."""
+
+        if getattr(self, "_shutdown", False) or not self._ai_image_supported():
+            self._release_ai_image()
+            return None
+        controller = getattr(self, "_ai_image", None)
+        if controller is not None:
+            return controller
+
+        from core.ai_image import AiImageController
+
+        def build_studio():
+            from services.krita_ai_service import create_ai_image_studio
+
+            return create_ai_image_studio(self.settings)
+
+        controller = AiImageController(
+            build_studio(),
+            in_room=self._in_art_room,
+            on_change=self._on_ai_image_snapshot,
+        )
+        self._ai_image = controller
+        return controller
+
+    def _release_ai_image(self) -> None:
+        """Close WebJam's panel. Krita is the artist's own program."""
+
+        dialog = getattr(self, "_ai_image_dialog", None)
+        if dialog is not None:
+            dialog.close()
+            dialog.deleteLater()
+            self._ai_image_dialog = None
+        self._ai_image = None
+
+    def _open_ai_image(self) -> None:
+        """Open the AI image panel, which offers exactly two verbs."""
+
+        if self._shutdown or self._shutdown_cleanup_blocks_action():
+            return
+        if not self._ai_image_supported():
+            self.window.flash_message("AI Image is part of Art.", ms=6000)
+            return
+        controller = self._ai_image_controller()
+        if controller is None:  # pragma: no cover - guarded above
+            return
+        dialog = getattr(self, "_ai_image_dialog", None)
+        if dialog is None:
+            from webjam_qt.windows.ai_image import AiImageDialog
+
+            dialog = AiImageDialog(parent=self.window)
+            dialog.make_requested.connect(
+                lambda: self._run_ai_image(controller.make)
+            )
+            dialog.edit_requested.connect(
+                lambda path: self._run_ai_image(lambda: controller.edit(path))
+            )
+            dialog.install_krita_requested.connect(self._open_krita_download)
+            dialog.install_plugin_requested.connect(
+                self._open_ai_plugin_download
+            )
+            self._ai_image_dialog = dialog
+        dialog.set_snapshot(controller.snapshot)
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _open_krita_download(self) -> None:
+        from core.krita_ai import krita_download_url
+
+        self._open_external_page(krita_download_url())
+
+    def _open_ai_plugin_download(self) -> None:
+        from core.krita_ai import ai_plugin_download_url
+
+        self._open_external_page(ai_plugin_download_url())
+
+    def _run_ai_image(self, operation) -> None:
+        """Run one AI image intent, surfacing bounded failure text."""
+
+        from core.krita_ai import AiImageError
+
+        try:
+            operation()
+        except AiImageError as exc:
+            self.window.flash_message(str(exc), ms=8000)
+        except Exception:  # noqa: BLE001 - never let a panel kill the room
+            LOGGER.exception("An AI image operation failed safely")
+            self.window.flash_message(
+                "WebJam couldn't complete that AI image request. The room is "
+                "still running.",
+                ms=8000,
+            )
+        dialog = getattr(self, "_ai_image_dialog", None)
+        controller = getattr(self, "_ai_image", None)
+        if dialog is not None and controller is not None:
+            dialog.set_snapshot(controller.snapshot)
+
+    def _on_ai_image_snapshot(self, snapshot) -> None:
+        dialog = getattr(self, "_ai_image_dialog", None)
+        if dialog is not None:
+            dialog.set_snapshot(snapshot)
 
     def _reference_track_controller(self):
         controller = getattr(self, "_reference_track", None)

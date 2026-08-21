@@ -319,10 +319,17 @@ a = Analysis(
         # from the application controller, so a frozen candidate would
         # silently lose the Drawpile handoff without these.
         "core.drawpile",
+        "core.external_program",
         "core.shared_canvas",
         "services.drawpile_service",
         "webjam_qt.controllers.shared_canvas_coordinator",
         "webjam_qt.windows.shared_canvas",
+        # Art's AI image action reaches Krita the same way, so a frozen
+        # candidate would silently lose Make and Edit without these.
+        "core.ai_image",
+        "core.krita_ai",
+        "services.krita_ai_service",
+        "webjam_qt.windows.ai_image",
         "PySide6.QtMultimedia",
         "PySide6.QtMultimediaWidgets",
         "soundfile",

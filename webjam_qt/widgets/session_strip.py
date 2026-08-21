@@ -360,6 +360,15 @@ class SessionStrip(QFrame):
             lambda: self.tool_requested.emit("shared_canvas")
         )
         self._shared_canvas_action.setVisible(False)
+        self._ai_image_action = QAction("AI Image…", tools_menu)
+        self._ai_image_action.setToolTip(
+            "Optional. Make a new image, or edit one you already own, in "
+            "Krita's AI plugin on this computer. Nothing is uploaded."
+        )
+        self._ai_image_action.triggered.connect(
+            lambda: self.tool_requested.emit("ai_image")
+        )
+        self._ai_image_action.setVisible(False)
         self._notes_action = QAction("Notes", tools_menu)
         self._notes_action.triggered.connect(
             lambda: self.tool_requested.emit("canvas")
@@ -399,6 +408,7 @@ class SessionStrip(QFrame):
         tools_menu.addAction(self._reference_track_action)
         tools_menu.addAction(self._reference_video_action)
         tools_menu.addAction(self._shared_canvas_action)
+        tools_menu.addAction(self._ai_image_action)
         tools_menu.addAction(self._notes_action)
         tools_menu.addAction(self._pocket_stage_action)
         # Resetting the invite acts on this session, so it belongs with the
@@ -496,6 +506,9 @@ class SessionStrip(QFrame):
         shared_canvas = bool(profile.capabilities.shared_canvas)
         self._shared_canvas_action.setVisible(shared_canvas)
         self._shared_canvas_action.setEnabled(shared_canvas)
+        ai_image = bool(profile.capabilities.ai_image)
+        self._ai_image_action.setVisible(ai_image)
+        self._ai_image_action.setEnabled(ai_image)
         self._sync_subtitle()
         self._subtitle.setVisible(True)
         self._title_input.setAccessibleDescription(

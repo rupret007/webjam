@@ -777,6 +777,32 @@ QCommandLinkButton#LaunchStartCard:disabled {
     padding: 0 ${SPACE_SM}px;
 }
 
+/* -------------------------------------------------------------------------
+ * Art AI image panel
+ * ---------------------------------------------------------------------- */
+
+#AiImageHeadline {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#AiImageStatus {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_BASE}px;
+}
+
+#AiImageActivity {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#AiImageOwnership, #AiImageHint {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+    padding-top: ${SPACE_XS}px;
+}
+
 #LaunchInviteInput {
     min-height: 46px;
     padding: 0 ${SPACE_LG}px;

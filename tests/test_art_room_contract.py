@@ -237,13 +237,12 @@ def test_a_guest_may_still_act_locally_on_both(tmp_path: Path):
 
 
 @pytest.mark.parametrize("profile_key", OTHER_PROFILES)
-def test_music_podcast_and_review_gain_no_canvas_or_reference_video(
-    profile_key: str,
-):
+def test_music_podcast_and_review_gain_no_canvas_video_or_ai(profile_key: str):
     profile = get_creator_profile_by_key(profile_key)
 
     assert profile.capabilities.shared_canvas is False
     assert profile.capabilities.shared_reference_video is False
+    assert profile.capabilities.ai_image is False
     assert profile.starts == ()
 
 
@@ -259,12 +258,49 @@ def test_the_other_profiles_keep_their_recording_contract(profile_key: str):
     assert capabilities.take_review is True
 
 
-def test_exactly_one_profile_ships_each_of_arts_two_add_ons():
+def test_exactly_one_profile_ships_each_of_arts_optional_capabilities():
     canvas = [p.key for p in CREATOR_PROFILES if p.capabilities.shared_canvas]
     video = [p.key for p in CREATOR_PROFILES if p.capabilities.shared_reference_video]
+    ai = [p.key for p in CREATOR_PROFILES if p.capabilities.ai_image]
 
     assert canvas == [ART]
     assert video == [ART]
+    assert ai == [ART]
+
+
+def test_ai_image_adds_nothing_to_the_room_that_anyone_else_can_see():
+    """One artist's generator is none of the room's business.
+
+    The canvas and the reference video each have a projection because the room
+    genuinely shares them. AI has none, so a generated image can only reach
+    the room if its owner puts it on the shared canvas themselves.
+    """
+
+    import sys
+
+    from core import ai_image
+    from core.ai_image import AiImageController
+
+    wire = set(SessionStateSnapshot.__dataclass_fields__)
+    assert "shared_canvas" in wire
+    assert "reference_video" in wire
+    assert not any(name.startswith("ai") for name in wire)
+
+    # Nothing the module or the controller exposes can publish anything.
+    exported = set(dir(ai_image)) | set(dir(AiImageController))
+    assert not any("publish" in name or "broadcast" in name for name in exported)
+
+    # And it cannot reach the transfer layer even indirectly through its own
+    # imports, so there is no seam for a projection to be added quietly.
+    imported = {
+        name
+        for name, value in vars(ai_image).items()
+        if getattr(value, "__module__", "").startswith("core.session_transfer")
+    }
+    assert imported == set()
+    assert "core.session_transfer" not in {
+        module for module in sys.modules if module in vars(ai_image)
+    }
 
 
 def test_a_non_art_room_never_publishes_a_canvas_or_a_video(tmp_path: Path):

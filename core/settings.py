@@ -12,6 +12,11 @@ from core.creative_modes import (
     get_creator_profile_by_key_or_default,
 )
 from core.drawpile import DEFAULT_DRAWPILE_CANDIDATES
+from core.krita_ai import (
+    DEFAULT_BACKEND_URL,
+    DEFAULT_KRITA_CANDIDATES,
+    DEFAULT_KRITA_RESOURCE_DIRS,
+)
 from core.jamulus_name import (
     recover_jamulus_name,
     validate_jamulus_name,
@@ -148,7 +153,12 @@ def _coerce_settings_data(data: dict) -> None:
         data.get("last_creator_start_key", ""),
     )
     # Lists of strings
-    for key in ("jamulus_candidates", "drawpile_candidates"):
+    for key in (
+        "jamulus_candidates",
+        "drawpile_candidates",
+        "krita_candidates",
+        "krita_resource_dirs",
+    ):
         if key not in data:
             continue
         v = data[key]
@@ -172,9 +182,21 @@ def _coerce_settings_data(data: dict) -> None:
                 "take_playback_output_device", "jamulus_audio_input_uid",
                 "jamulus_audio_output_uid",
                 "audio_latency", "sentry_dsn", "log_level", "log_file",
-                "musician_name"):
+                "musician_name", "comfyui_url"):
         if key in data and data[key] is not None and not isinstance(data[key], str):
             data[key] = str(data[key])
+    if "comfyui_url" in data:
+        # A saved address that is not loopback is dropped rather than kept,
+        # so an edited config file can never turn the AI action into an
+        # upload path. The refusal is silent because the value is
+        # user-controlled data that must not reach a log.
+        from core.krita_ai import AiImageError, normalize_local_backend_url
+
+        try:
+            data["comfyui_url"] = normalize_local_backend_url(data["comfyui_url"])
+        except AiImageError:
+            _logger.debug("Non-loopback image backend address ignored")
+            data["comfyui_url"] = defaults["comfyui_url"]
 
 
 @dataclass
@@ -249,6 +271,17 @@ class AppSettings:
     drawpile_candidates: list[str] = field(
         default_factory=lambda: list(DEFAULT_DRAWPILE_CANDIDATES)
     )
+    # The same arrangement for Krita, which hosts the AI image plugin, and for
+    # Krita's resource folder where that plugin is installed.
+    krita_candidates: list[str] = field(
+        default_factory=lambda: list(DEFAULT_KRITA_CANDIDATES)
+    )
+    krita_resource_dirs: list[str] = field(
+        default_factory=lambda: list(DEFAULT_KRITA_RESOURCE_DIRS)
+    )
+    # The local image backend address. Loopback only: a remote or cloud value
+    # is refused rather than used, so this can never become an upload path.
+    comfyui_url: str = DEFAULT_BACKEND_URL
     # Companion API — optional localhost HTTP bridge for DAWs/editors/scripts.
     # Opt-in: starts on launch only when enabled and fastapi/uvicorn exist.
     companion_api_enabled: bool = False
@@ -322,6 +355,9 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         "WEBJAM_MUSICIAN_NAME": "musician_name",
         "WEBJAM_JAMULUS_CANDIDATES": "jamulus_candidates",
         "WEBJAM_DRAWPILE_CANDIDATES": "drawpile_candidates",
+        "WEBJAM_KRITA_CANDIDATES": "krita_candidates",
+        "WEBJAM_KRITA_RESOURCE_DIRS": "krita_resource_dirs",
+        "WEBJAM_COMFYUI_URL": "comfyui_url",
         "WEBJAM_AUDIO_BLOCKSIZE": "audio_blocksize",
         "WEBJAM_AUDIO_SAMPLERATE": "audio_samplerate",
         "WEBJAM_AUDIO_LATENCY": "audio_latency",
@@ -366,7 +402,12 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
             "host_server_enabled",
         }:
             data[key] = _as_bool(raw)
-        elif key in {"jamulus_candidates", "drawpile_candidates"}:
+        elif key in {
+            "jamulus_candidates",
+            "drawpile_candidates",
+            "krita_candidates",
+            "krita_resource_dirs",
+        }:
             data[key] = [item.strip() for item in raw.split(";") if item.strip()]
         else:
             data[key] = raw
