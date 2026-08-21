@@ -490,3 +490,41 @@ def test_mid_recording_music_quit_copy_remains_exact(
         assert coordinator.confirm_quit() is False
 
     assert box.setText.call_args.args[0] == expected
+
+
+def test_copy_invite_names_the_song_the_room_already_chose() -> None:
+    """A joiner arrives bound to the song, not to a second picker."""
+
+    clipboard = MagicMock()
+    controller = _invite_controller("music")
+    controller._song_tools = SimpleNamespace(
+        invite_song_line=MagicMock(
+            return_value="Tuesday · Key G major · 120 BPM · Verse → Chorus"
+        )
+    )
+
+    with patch("PySide6.QtWidgets.QApplication") as application:
+        application.clipboard.return_value = clipboard
+        ApplicationController._copy_band_invite(controller)
+
+    copied = clipboard.setText.call_args.args[0]
+    assert "Song: Tuesday · Key G major · 120 BPM · Verse → Chorus" in copied
+    assert "webjam://join?v=3" in copied
+
+
+def test_copy_invite_still_works_when_there_is_no_song() -> None:
+    """Copying an invite is safety-critical; it degrades to a plain link."""
+
+    clipboard = MagicMock()
+    controller = _invite_controller("music")
+    controller._song_tools = SimpleNamespace(
+        invite_song_line=MagicMock(side_effect=RuntimeError("no song"))
+    )
+
+    with patch("PySide6.QtWidgets.QApplication") as application:
+        application.clipboard.return_value = clipboard
+        ApplicationController._copy_band_invite(controller)
+
+    copied = clipboard.setText.call_args.args[0]
+    assert "webjam://join?v=3" in copied
+    assert "Song:" not in copied

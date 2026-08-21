@@ -112,6 +112,24 @@ from webjam_qt.windows.conductor_window import ConductorWindow
 LOGGER = logging.getLogger("webjam.qt.application_controller")
 
 
+def _invite_song_line_for(controller) -> str:
+    """Return the song a joiner is joining, or "" if there isn't one.
+
+    Copying an invite is a safety-critical action, so it degrades to a plain
+    link rather than failing because a song line could not be built.
+    """
+
+    coordinator = getattr(controller, "_song_tools", None)
+    reader = getattr(coordinator, "invite_song_line", None)
+    if reader is None:
+        return ""
+    try:
+        return str(reader() or "")
+    except Exception:  # noqa: BLE001 - an invite must never fail on copy
+        LOGGER.debug("song line unavailable for invite", exc_info=True)
+        return ""
+
+
 def _creator_profile_for_controller(controller: object):
     """Resolve presentation copy safely for real and partial controllers."""
 
@@ -6755,7 +6773,7 @@ class ApplicationController(QObject):
             participant_noun=_creator_profile_for_controller(
                 self
             ).vocabulary.participant_singular,
-            song_line=self._invite_song_line(),
+            song_line=_invite_song_line_for(self),
         )
         QApplication.clipboard().setText(invite_message.text)
         invite_url = ""
@@ -11276,17 +11294,6 @@ class ApplicationController(QObject):
                     # familiar live review controls.
                     self.window.reference_studio.show_take_review()
             self._update_session_hud()
-
-    def _invite_song_line(self) -> str:
-        """Return the song a joiner is joining, when the room has chosen one."""
-
-        if self._song_tools is None:
-            return ""
-        try:
-            return self._song_tools.invite_song_line()
-        except Exception:  # noqa: BLE001 - an invite must never fail on copy
-            LOGGER.debug("song line unavailable for invite", exc_info=True)
-            return ""
 
     @property
     def song_tools(self):
