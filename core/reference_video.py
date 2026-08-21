@@ -725,6 +725,21 @@ class ReferenceVideoFollower:
 
     # -- guest inputs --------------------------------------------------
 
+    def set_player(self, player: ReferenceVideoPlayer | None) -> None:
+        """Attach the local surface before the first copy is opened.
+
+        Followers exist from the moment a room starts so hiding and host
+        observation work immediately, but a real player is only built when
+        someone actually opens a file.
+        """
+
+        with self._lock:
+            if self._local_identity:
+                raise ReferenceVideoError(
+                    "Close the current reference video before changing players."
+                )
+            self._player = player
+
     def open_local_copy(
         self, path: str | os.PathLike[str]
     ) -> ReferenceVideoFollowSnapshot:

@@ -307,6 +307,16 @@ a = Analysis(
         "services.reference_track_backend",
         "webjam_qt.windows.pocket_stage_pairing",
         "webjam_qt.windows.reference_track",
+        # Studio Visit's reference video is reached only through
+        # function-local imports from the application controller, and its Qt
+        # player pulls QtMultimedia. Keep the whole path explicit so a frozen
+        # candidate cannot omit the profile's one real capability.
+        "core.reference_video",
+        "webjam_qt.controllers.reference_video_coordinator",
+        "webjam_qt.widgets.reference_video_player",
+        "webjam_qt.windows.reference_video",
+        "PySide6.QtMultimedia",
+        "PySide6.QtMultimediaWidgets",
         "soundfile",
         # The frozen Jamulus updater constructs HTTPS trust from Certifi's
         # packaged CA bytes; do not let module-graph changes omit its hook/data.
