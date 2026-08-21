@@ -244,9 +244,29 @@ def test_identity_context_is_domain_separated():
     assert REFERENCE_VIDEO_IDENTITY_CONTEXT == "webjam-reference-video-v1"
 
 
-def test_identities_match_rejects_empty_values(signer):
-    assert not identities_match("", "")
-    assert not identities_match("a" * 64, "")
+@pytest.mark.parametrize(
+    "left, right",
+    [
+        ("", ""),
+        ("a" * 64, ""),
+        ("a" * 64, None),
+        (None, "a" * 64),
+        ("a" * 64, 0),
+        # A digest arriving from another computer must fail closed rather
+        # than raise out of the follow path.
+        ("a" * 64, "\u00e9" * 64),
+        ("\u00e9" * 64, "a" * 64),
+    ],
+)
+def test_identities_match_fails_closed_on_anything_unusable(left, right):
+    assert identities_match(left, right) is False
+
+
+def test_identities_match_accepts_one_equal_digest(signer, tmp_path):
+    digest = signer(load_reference_video_source(
+        write_video(tmp_path / "v.mp4")
+    ).content_sha256)
+    assert identities_match(digest, digest) is True
 
 
 # ---------------------------------------------------------------------------
@@ -420,6 +440,19 @@ def test_withdraw_returns_the_room_to_the_no_video_path(tmp_path):
     assert snapshot.identity_digest == ""
     assert snapshot.duration_s == 0.0
     assert "stop" in player.calls
+
+
+def test_a_video_that_will_not_stop_is_not_reported_as_withdrawn(tmp_path):
+    controller, player, _ = make_host(tmp_path)
+    controller.share(write_video(tmp_path / "lesson.mp4"))
+    controller.play()
+    player.fail_on.add("stop")
+
+    snapshot = controller.withdraw()
+
+    assert snapshot.state is ReferenceVideoState.FAILED
+    assert snapshot.needs_attention is True
+    assert "needs attention" in snapshot.error
 
 
 def test_close_releases_the_player_and_refuses_further_sharing(tmp_path):

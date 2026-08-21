@@ -280,12 +280,19 @@ def session_identity_signer(*, session_id: str, session_key: str) -> IdentitySig
     return sign
 
 
-def identities_match(left: str, right: str) -> bool:
-    """Compare two published identity digests in constant time."""
+def identities_match(left: object, right: object) -> bool:
+    """Compare two published identity digests in constant time.
 
-    if not left or not right:
+    Anything that is not a pair of non-empty ASCII digests is a mismatch. One
+    side of this comparison arrives from another computer, so a malformed
+    value must fail closed rather than raise out of the follow path.
+    """
+
+    if not isinstance(left, str) or not isinstance(right, str):
         return False
-    return hmac.compare_digest(str(left), str(right))
+    if not left or not right or not left.isascii() or not right.isascii():
+        return False
+    return hmac.compare_digest(left, right)
 
 
 @runtime_checkable
@@ -507,7 +514,15 @@ class ReferenceVideoHostController:
         with self._lock:
             if self._state is ReferenceVideoState.CLOSED:
                 return self._snapshot_locked()
-            self._safe_player_call("stop")
+            try:
+                self._player.stop()
+            except Exception:
+                # Reporting "not shared" while this computer keeps playing
+                # would be the one lie this feature must not tell.
+                return self._fail_locked(
+                    "WebJam couldn't stop that video on this computer, so it "
+                    "needs attention before sharing again."
+                )
             self._source = None
             self._identity_digest = ""
             self._position_s = 0.0

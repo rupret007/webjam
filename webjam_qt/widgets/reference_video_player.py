@@ -151,8 +151,11 @@ class QtReferenceVideoPlayer:
                 QMediaPlayer.MediaStatus.NoMedia,
             }:
                 return 0
+            # User input stays excluded so pumping events to resolve a
+            # duration cannot re-enter the transport that asked for it.
             QCoreApplication.processEvents(
-                QEventLoop.ProcessEventsFlag.AllEvents, _DURATION_POLL_MS
+                QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents,
+                _DURATION_POLL_MS,
             )
         return int(self._player.duration())
 
