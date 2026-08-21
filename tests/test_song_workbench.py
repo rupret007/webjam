@@ -364,8 +364,19 @@ def test_the_form_overlay_shows_the_shape_with_its_changes():
 
     assert [row.label for row in rows] == ["Verse", "Chorus"]
     assert rows[0].chords == "Am F C G"
-    assert rows[0].describe() == "Verse: Am F C G"
+    # The lyric written under the part rides with it, so the form reads like a
+    # chart rather than chords and words in separate places.
+    assert rows[0].lyric == "Driving through the same town twice"
+    assert rows[0].describe() == (
+        "Verse: Am F C G\n    Driving through the same town twice"
+    )
     assert not any(row.detected for row in rows)
+
+
+def test_a_part_with_no_lyric_reads_as_just_its_chords():
+    rows = SongWorkbench(notes="[Verse]\nAm F C G\n").form_overlay()
+    assert rows[0].lyric == ""
+    assert rows[0].describe() == "Verse: Am F C G"
 
 
 def test_a_section_without_chords_still_appears_in_the_form():
