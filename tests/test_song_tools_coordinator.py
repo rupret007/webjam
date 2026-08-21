@@ -1989,6 +1989,71 @@ def test_a_failed_discovery_says_how_to_try_again(app):
     assert "Reopening Song tools tries again" in status
 
 
+def test_a_rejected_key_is_not_offered_as_something_to_retry(app):
+    """Reopening will not fix a wrong key; do not send anyone round the loop."""
+
+    coordinator = _coordinator(app)
+    coordinator.overlay.setVisible(True)
+    coordinator._apply_catalog(
+        failed_catalog("Music AI rejected this API key.", retryable=False)
+    )
+
+    status = coordinator.overlay._tools_status.text()
+    assert status == "Music AI rejected this API key."
+    assert "tries again" not in status
+
+    with patch.object(coordinator, "discover_workflows") as discover:
+        coordinator.toggle_panel()
+    discover.assert_not_called()
+
+
+def test_a_rejected_key_is_recorded_as_not_retryable(app):
+    from core.music_ai_client import MusicAIAuthError
+
+    coordinator = _coordinator(app)
+
+    class InlineThread:
+        def __init__(self, target=None, **_kwargs):
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.MusicAIClient",
+        side_effect=MusicAIAuthError("Music AI rejected this API key."),
+    ), patch(
+        "webjam_qt.controllers.song_tools_coordinator.threading.Thread", InlineThread
+    ):
+        coordinator.discover_workflows()
+
+    assert coordinator._catalog is not None
+    assert not coordinator._catalog.retryable
+
+
+def test_a_network_failure_is_recorded_as_retryable(app):
+    from core.music_ai_client import MusicAITransportError
+
+    coordinator = _coordinator(app)
+
+    class InlineThread:
+        def __init__(self, target=None, **_kwargs):
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.MusicAIClient",
+        side_effect=MusicAITransportError("WebJam could not reach Music AI."),
+    ), patch(
+        "webjam_qt.controllers.song_tools_coordinator.threading.Thread", InlineThread
+    ):
+        coordinator.discover_workflows()
+
+    assert coordinator._catalog.retryable
+
+
 def test_discovery_is_still_never_attempted_without_a_key(app):
     coordinator = _coordinator(app, api_key="")
     coordinator._catalog = failed_catalog("WebJam could not reach Music AI.")

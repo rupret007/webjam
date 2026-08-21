@@ -221,7 +221,9 @@ def test_a_discovery_failure_offers_nothing_and_shows_why(overlay):
         is_host=True,
     )
     assert _tool_labels(overlay) == []
-    assert overlay._tools_status.text() == "Music AI rejected this API key."
+    assert overlay._tools_status.text() == (
+        "Music AI rejected this API key. Reopening Song tools tries again."
+    )
 
 
 def test_only_verbs_the_account_can_run_become_buttons(overlay):

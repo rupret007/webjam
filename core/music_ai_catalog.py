@@ -206,6 +206,10 @@ class SongToolCatalog:
     workflow_count: int = 0
     discovered: bool = False
     error: str = ""
+    # Whether looking again could plausibly succeed. A network blip yes; a key
+    # the API rejected, no -- telling someone to retry a wrong key wastes
+    # their evening.
+    retryable: bool = False
 
     @property
     def available(self) -> tuple[SongToolCapability, ...]:
@@ -286,8 +290,8 @@ def resolve_song_tools(
     )
 
 
-def failed_catalog(reason: str) -> SongToolCatalog:
-    """Return a catalog that offers nothing and says why."""
+def failed_catalog(reason: str, *, retryable: bool = True) -> SongToolCatalog:
+    """Return a catalog that offers nothing, says why, and whether to retry."""
 
     return SongToolCatalog(
         capabilities=tuple(
@@ -296,6 +300,7 @@ def failed_catalog(reason: str) -> SongToolCatalog:
         ),
         discovered=False,
         error=str(reason),
+        retryable=bool(retryable),
     )
 
 

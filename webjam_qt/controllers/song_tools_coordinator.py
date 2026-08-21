@@ -35,6 +35,7 @@ from core.meeting_companion import (
 )
 from core.music_ai_catalog import SongToolCatalog, failed_catalog, resolve_song_tools
 from core.music_ai_client import (
+    MusicAIAuthError,
     MusicAIClient,
     MusicAIError,
     missing_key_message,
@@ -118,7 +119,9 @@ class SongToolsCoordinator:
         # open once should not disable Song tools for the rest of the night;
         # a successful list is kept and not re-fetched.
         catalog = self._catalog
-        if self._api_key() and (catalog is None or not catalog.discovered):
+        if self._api_key() and (
+            catalog is None or (not catalog.discovered and catalog.retryable)
+        ):
             self.discover_workflows()
 
     def close_panel(self) -> None:
@@ -702,6 +705,9 @@ class SongToolsCoordinator:
             try:
                 client = MusicAIClient(key)
                 catalog = resolve_song_tools(client.list_workflows())
+            except MusicAIAuthError as exc:
+                # A rejected key will be rejected again; fix it, do not retry.
+                catalog = failed_catalog(str(exc), retryable=False)
             except MusicAIError as exc:
                 catalog = failed_catalog(str(exc))
             except Exception:  # noqa: BLE001 - a worker must never escape
