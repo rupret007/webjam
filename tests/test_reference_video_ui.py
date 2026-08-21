@@ -358,9 +358,6 @@ def test_the_qt_player_satisfies_the_seam_and_closes_cleanly(qapp):
     contract and does not keep working after it is closed.
     """
 
-    pytest.importorskip("PySide6.QtMultimedia")
-    pytest.importorskip("PySide6.QtMultimediaWidgets")
-
     from core.reference_video import (
         ReferenceVideoPlayer,
         ReferenceVideoPlayerError,
@@ -370,6 +367,11 @@ def test_the_qt_player_satisfies_the_seam_and_closes_cleanly(qapp):
         qt_video_name_filter,
     )
 
+    # A machine without QtMultimedia, or without the shared libraries it
+    # loads, is exactly the case the adapter turns into a bounded error so an
+    # artist stays in the room. Skipping here relies on that conversion rather
+    # than on importing QtMultimedia directly, because a missing shared object
+    # raises a plain ImportError that ``importorskip`` re-raises.
     try:
         player = create_qt_reference_video_player()
     except ReferenceVideoPlayerError as exc:
