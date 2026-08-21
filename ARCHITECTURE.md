@@ -215,12 +215,24 @@ Machine-derived route authority is not physical audibility, direct-monitor,
 independent-mix, or long-session proof; those acceptance gates remain **NOT
 RUN**.
 
-A future Webex Embedded App is described in
+A Webex Embedded App companion is described in
 [ADR 0007](docs/adr/0007-future-webex-embedded-app-companion.md). It is a
 separate hosted and authorized product surface, not a hidden desktop webview.
 It may expose focused status and approved controls through a secure
 synchronization boundary, while the desktop remains the authoritative
 audio/session engine.
+
+Art's side of that boundary is settled in
+[ADR 0013](docs/adr/0013-art-companion-projection-and-commands.md):
+`core/art_companion.py` defines an allowlisted status projection and a closed
+command contract, and
+`webjam_qt/controllers/art_companion_projection.py` derives the projection
+from the coordinators that already own each fact. The projection has no field
+for a path, file name, canvas address, digest, token, position, or prompt;
+host-only transport is refused to a guest's panel from the desktop's own role;
+and any command that would start Drawpile or Krita waits for a local
+confirmation. No Art surface imports the contract, so the no-companion path
+stays the only path Art has.
 
 ## Unified creator guidance
 

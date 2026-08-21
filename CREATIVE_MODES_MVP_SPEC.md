@@ -302,10 +302,21 @@ prompt or model control because those belong to Krita.
 - no Jamulus reference-audio route;
 - no recorded take, take review, take editing, or track export;
 - no standalone Art project;
-- no Webex Embedded App, companion projection, or in-meeting surface. A free or
-  personal Webex account cannot create or load a custom embedded app, so the
-  desktop application is the whole product and Webex stays the second window
-  described in ADR 0004.
+- no Webex Embedded App, iframe, hosted page, or pairing transport in Art.
+  Webex stays the second window described in ADR 0004. Art does publish a
+  companion-safe status projection and command contract (ADR 0013) for a
+  companion built on a separate track — a seam, not a surface;
+- nothing private in that projection, and not by filtering: canvas, video, and
+  image status are finite states, and no path, file name, canvas address,
+  identity digest, session token, participant name, playback position, image,
+  or prompt has a field to travel in;
+- no companion authority. Host-only transport is refused to a guest's panel
+  from this desktop's own role, and `open_canvas`, `ai_make`, and `ai_edit`
+  wait for a local yes rather than starting a program on someone's computer;
+- no Art surface that needs a companion. The dependency runs one way, so the
+  no-companion path is the only path Art has. A free or personal Webex account
+  still cannot load a custom embedded app, which is why the desktop is the
+  whole product.
 
 ## Persistence and migration
 

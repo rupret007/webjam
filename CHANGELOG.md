@@ -172,12 +172,47 @@ All notable improvements and features for the WebJam creator collaboration platf
   surface inside WebJam, no image generator or model of WebJam's own, no song
   engine, metronome, tempo detection, or chord inference, and no shipped,
   downloaded, or ingested video or image catalog.
-- Art ships **no Webex Embedded App, companion projection, or in-meeting
-  surface**. A free or personal Webex account cannot create or load a custom
-  embedded app, so the desktop application is the whole product and Webex stays
-  the second window described in ADR 0004: Show Webex App, Join / Open Meeting,
-  and Webex Controls. WebJam's mute and Webex's mute remain separate controls,
-  and leaving a WebJam room does not leave a meeting.
+- Art ships **no Webex Embedded App or in-meeting surface** of its own. Webex
+  stays the second window described in ADR 0004: Show Webex App, Join / Open
+  Meeting, and Webex Controls. WebJam's mute and Webex's mute remain separate
+  controls, and leaving a WebJam room does not leave a meeting.
+- Art does publish a **companion-safe status projection and command contract**
+  (ADR 0013) for a companion panel built on a separate track. It is a seam,
+  not a surface: no iframe, hosted page, or pairing transport ships here.
+  - The projection is an allowlist of finite states — canvas
+    (`none`/`ready`/`opening`/`missing_app`/`unreadable`), reference video
+    (`none`/`ready`/`playing`/`paused`/`hidden` plus the blocked states), the
+    image action (`unavailable`/`idle`/`handed_off`/`failed`), and one
+    host-only `transport_allowed` flag. Nothing private has a **field** to
+    travel in: no path, file name, canvas address, identity digest, session
+    token, participant name, playback position, or image. There is no prompt
+    field rather than a length-capped one, because WebJam never holds a
+    prompt — the generator owns it.
+  - It says `opening`, not `open`, and `handed_off`, not `running`. WebJam
+    launches Drawpile and Krita; it cannot see inside them, so a companion is
+    given no vocabulary for a progress spinner it could not justify.
+  - Commands a paired companion may **ask** for: `open_canvas`, `hide_video`,
+    host transport `play`/`pause`/`stop`/`seek`, and `ai_make`/`ai_edit`. Each
+    declares a scope and a bounded argument list, and is bound to a generation
+    and revision so an intent formed in one room cannot be replayed into the
+    next. Receipts carry a finite reason and no raw error text.
+  - **Host-only transport stays host-only.** A guest's companion is refused
+    with `not_host`, decided from this desktop's own role rather than from
+    anything the panel claims about itself.
+  - **Anything that would start another program waits for a local yes.**
+    `open_canvas`, `ai_make`, and `ai_edit` return
+    `needs_local_confirmation`; a panel inside a meeting may ask, and the
+    person at the desk decides. `ai_edit` carries no path, so the desktop
+    opens its own picker. Hiding the video and moving the transport change
+    state the desktop already owns and need no prompt.
+- **Art works with nothing paired, and cannot learn to need a companion.** The
+  dependency runs one way: no Art surface imports the contract, and a test
+  walks their imports to keep it that way. A pairing changes exactly one
+  desktop behaviour — with a panel already showing this room, opening an Art
+  panel no longer takes focus, because pulling the desktop in front of the
+  faces someone is talking to would be the focus-stealing ADR 0004 rules out.
+  A free or personal Webex account still cannot load a custom embedded app,
+  which is why the fallback is the product rather than a gap in it.
 - `art` is the canonical profile key. `studio_visit` — the key the Preview
   briefly used — is now a **migrate-from alias only**, so a saved choice
   survives the rename. The legacy `visual_studio` mode still migrates to
