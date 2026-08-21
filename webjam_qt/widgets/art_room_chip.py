@@ -13,6 +13,7 @@ read as one control at different moments rather than as two features.
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QAccessible, QAccessibleEvent
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QSizePolicy, QWidget
 
 from core.art_room_presence import (
@@ -71,13 +72,25 @@ class ArtRoomChip(QFrame):
         return self._chip
 
     def set_presence(self, presence: ArtRoomPresence) -> None:
-        """Render one line, or leave the room chrome alone entirely."""
+        """Render one line, or leave the room chrome alone entirely.
 
+        Called on a timer, so repainting and announcing are both gated on the
+        line actually changing. A screen reader hearing "shared canvas" once a
+        second would be worse than silence.
+        """
+
+        changed = (
+            presence.label != self._presence.label
+            or presence.description != self._presence.description
+            or presence.tone is not self._presence.tone
+        )
         self._presence = presence
         if not presence.offered:
             self._chip.withdraw()
             self.setVisible(False)
             self.setAccessibleDescription("")
+            return
+        if not changed:
             return
         tone = (
             StatusChip.RECOVERY
@@ -87,6 +100,21 @@ class ArtRoomChip(QFrame):
         self._chip.offer(presence.label, presence.description, tone=tone)
         self.setAccessibleDescription(presence.description)
         self.setVisible(True)
+        # A canvas appearing in the room is worth hearing about, and the room
+        # is where someone who cannot see the chip finds out.
+        self._announce()
+
+    def _announce(self) -> None:
+        try:
+            QAccessible.updateAccessibility(
+                QAccessibleEvent(
+                    self._chip, QAccessible.Event.NameChanged
+                )
+            )
+        except (RuntimeError, TypeError):
+            # Headless and teardown paths have no accessibility backend. The
+            # visible and semantic text is still correct.
+            pass
 
     def _on_clicked(self) -> None:
         target = self._presence.target

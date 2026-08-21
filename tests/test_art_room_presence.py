@@ -384,6 +384,60 @@ def test_a_described_room_state_is_not_painted_like_a_call_to_action():
     assert requested > 0
 
 
+def test_repeating_the_same_line_does_not_repaint_or_re_announce():
+    """It is refreshed on a timer, so an unchanged line has to be a no-op.
+
+    A screen reader hearing "shared canvas" once a second would be worse than
+    silence, and repolishing a styled widget every tick is wasted work.
+    """
+
+    from unittest.mock import patch
+
+    from webjam_qt.widgets.art_room_chip import ArtRoomChip
+
+    chip = ArtRoomChip()
+    presence = art_room_presence(_room(canvas=CanvasCompanionState.READY))
+    chip.set_presence(presence)
+
+    with patch.object(ArtRoomChip, "_announce") as announce:
+        for _ in range(5):
+            chip.set_presence(presence)
+
+    assert announce.call_count == 0
+    assert chip.chip.text() == "Shared canvas"
+
+
+def test_a_changed_line_is_announced_once():
+    from unittest.mock import patch
+
+    from webjam_qt.widgets.art_room_chip import ArtRoomChip
+
+    chip = ArtRoomChip()
+    chip.set_presence(art_room_presence(_room(canvas=CanvasCompanionState.READY)))
+
+    with patch.object(ArtRoomChip, "_announce") as announce:
+        chip.set_presence(
+            art_room_presence(_room(canvas=CanvasCompanionState.MISSING_APP))
+        )
+        chip.set_presence(
+            art_room_presence(_room(canvas=CanvasCompanionState.MISSING_APP))
+        )
+
+    assert announce.call_count == 1
+    assert chip.chip.text() == "Install Drawpile"
+
+
+def test_announcing_survives_a_headless_accessibility_backend():
+    """Offscreen and teardown paths have none, and the room must not care."""
+
+    from webjam_qt.widgets.art_room_chip import ArtRoomChip
+
+    chip = ArtRoomChip()
+    chip.set_presence(art_room_presence(_room(canvas=CanvasCompanionState.READY)))
+
+    assert chip.chip.accessibleName() == "Shared canvas"
+
+
 def test_the_chip_leaves_rather_than_sitting_there_disabled():
     from webjam_qt.widgets.art_room_chip import ArtRoomChip
 
