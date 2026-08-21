@@ -31,8 +31,6 @@ import socket
 import time
 from pathlib import Path
 
-from typing_extensions import Self
-
 _logger = logging.getLogger("webjam.server_rpc")
 
 
@@ -117,7 +115,7 @@ class JamulusServerRpc:
             except OSError:
                 pass
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> "JamulusServerRpc":
         return self.connect()
 
     def __exit__(self, *exc_info) -> None:

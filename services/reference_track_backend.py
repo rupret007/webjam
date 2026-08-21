@@ -36,7 +36,6 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 import numpy as np
-from typing_extensions import Self
 
 from core.audio_route_profile import (
     AudioRoutePlatform,
@@ -192,7 +191,7 @@ class _ReferenceLifecycleLock:
         self._poll_interval = float(poll_interval)
         self._descriptor: int | None = None
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> "_ReferenceLifecycleLock":
         if self._descriptor is not None:
             raise ComponentLockError("Shared Track lock is not re-entrant")
         if not self._directory.path_matches():

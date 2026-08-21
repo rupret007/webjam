@@ -8,9 +8,6 @@ import stat
 import time
 from pathlib import Path
 
-from typing_extensions import Self
-
-
 class ComponentLockError(RuntimeError):
     pass
 
@@ -47,7 +44,7 @@ class InterProcessComponentLock:
         if self.poll_interval <= 0 or self.poll_interval > 1:
             raise ValueError("lock poll interval must be between 0 and 1 second")
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> "InterProcessComponentLock":
         if self._descriptor is not None:
             raise ComponentLockError("component lock is not re-entrant")
         self.path.parent.mkdir(parents=True, exist_ok=True)

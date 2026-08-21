@@ -28,8 +28,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from typing_extensions import Self
-
 from core.remote_invitation import RemoteInvitation
 
 IPC_VERSION = 1
@@ -779,7 +777,7 @@ class TransportProcess:
         self._force_stop()
         self._prepared_host_pin = None
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> "TransportProcess":
         self.start()
         return self
 

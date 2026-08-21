@@ -19,8 +19,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from typing_extensions import Self
-
 _PRIVATE_DIRECTORY_MODE = 0o700
 _PRIVATE_FILE_MODE = 0o600
 
@@ -763,7 +761,7 @@ class SecureRuntimeDirectory:
                 "WebJam could not close its private runtime directory."
             ) from None
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> "SecureRuntimeDirectory":
         return self
 
     def __del__(self) -> None:

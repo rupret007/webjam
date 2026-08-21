@@ -29,7 +29,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
-from typing_extensions import Self
 
 from core.song_media_catalog import (
     SongMediaCatalog,
@@ -2097,7 +2096,7 @@ class StudioRenderStream:
             if binding is not None:
                 binding.close()
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> "StudioRenderStream":
         return self
 
     def __exit__(self, _exc_type, _exc, _traceback) -> None:

@@ -5,6 +5,8 @@ import hashlib
 import json
 from pathlib import Path
 import stat
+import subprocess
+import sys
 import textwrap
 import threading
 import time
@@ -27,6 +29,32 @@ from services.transport_runtime import (
 
 HOST_PIN = bytes(range(1, 33))
 HOST_PIN_TEXT = base64.urlsafe_b64encode(HOST_PIN).rstrip(b"=").decode("ascii")
+
+
+def test_transport_runtime_imports_without_typing_extensions() -> None:
+    root = Path(__file__).resolve().parents[1]
+    program = f"""
+import importlib.abc
+import sys
+
+sys.path.insert(0, {str(root)!r})
+
+class DenyTypingExtensions(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "typing_extensions":
+            raise ModuleNotFoundError("typing_extensions is intentionally unavailable")
+        return None
+
+sys.meta_path.insert(0, DenyTypingExtensions())
+import services.transport_runtime
+"""
+    completed = subprocess.run(
+        [sys.executable, "-I", "-c", program],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 def _invitation(*, host_pin: bytes = HOST_PIN):

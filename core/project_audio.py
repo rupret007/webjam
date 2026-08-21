@@ -29,7 +29,6 @@ from pathlib import Path
 from typing import Final
 
 import numpy as np
-from typing_extensions import Self
 
 from core.mp3_scan import (
     MP3_MAX_TRAILING_REPORT_FRAMES,
@@ -722,7 +721,7 @@ class ProjectAudioDecoder:
             except Exception:
                 pass
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> "ProjectAudioDecoder":
         return self
 
     def __exit__(self, _exc_type, _exc, _traceback) -> None:
