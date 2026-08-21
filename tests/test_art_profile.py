@@ -455,6 +455,39 @@ def test_a_take_recorded_under_the_legacy_visual_mode_stays_reviewable():
     assert get_creator_profile_by_key(key).capabilities.take_review is True
 
 
+def test_only_the_studio_visit_preview_key_moves_and_every_other_alias_stays():
+    from core.creative_modes import LEGACY_MODE_KEY_ALIASES
+
+    assert dict(LEGACY_MODE_KEY_ALIASES) == {
+        "music_jam": "music",
+        "visual_studio": "review_rehearsal",
+        "writers_room": "review_rehearsal",
+        "design_critique": "review_rehearsal",
+        "storyboard_film_room": "review_rehearsal",
+        "studio_visit": ART,
+    }
+    # A canonical key must never also be an alias, or the registry refuses to
+    # load. That is why the renamed profile is keyed ``art`` rather than
+    # keeping ``studio_visit``, which the alias still needs.
+    assert not set(LEGACY_MODE_KEY_ALIASES) & set(get_creator_profile_keys())
+
+
+def test_the_legacy_mode_key_itself_still_resolves_for_old_session_metadata():
+    """Renaming the profile must not invalidate saved session metadata.
+
+    ``visual_studio`` remains a legacy *mode* key in its own registry. Session
+    metadata stores that mode alongside the profile, so it has to keep
+    resolving, and it has to keep resolving to a profile that can review the
+    takes recorded under it.
+    """
+
+    from core.creative_modes import get_mode_by_key
+
+    mode = get_mode_by_key("visual_studio")
+    assert mode is not None
+    assert mode.creator_profile_key == "review_rehearsal"
+
+
 def test_every_profile_keeps_a_private_scratchpad_of_its_own():
     from webjam_qt.controllers.session_persistence import _PROFILE_NOTES_FILES
 

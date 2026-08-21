@@ -767,6 +767,85 @@ def test_apply_seeks_once_per_playback_generation_then_only_on_real_drift(
     assert player.seeks[-1] == pytest.approx(20.2)
 
 
+def test_a_host_scrub_moves_followers_within_one_playback(tmp_path, signer):
+    """Dragging the host's scrubber does not start a new playback attempt.
+
+    Seeking leaves the playback generation alone, so the only thing that can
+    carry a mid-play jump to a follower is the drift check. If that were
+    generation-gated, an artist would keep watching the old spot.
+    """
+
+    player = FakePlayer()
+    follower = make_follower(player=player, tolerance_s=0.75)
+    follower.open_local_copy(write_video(tmp_path / "mine.mp4", b"the lesson"))
+    follower.observe(
+        shared_projection(
+            tmp_path,
+            signer,
+            state="playing",
+            position_s=10.0,
+            duration_s=1_800.0,
+            playback_generation=1,
+        ),
+        received_monotonic_s=0.0,
+    )
+    follower.apply(0.0)
+    player.position = 10.0
+
+    # The host drags to 900s. Same playback, same generation.
+    follower.observe(
+        shared_projection(
+            tmp_path,
+            signer,
+            state="playing",
+            position_s=900.0,
+            duration_s=1_800.0,
+            playback_generation=1,
+        ),
+        received_monotonic_s=1.0,
+    )
+    snapshot = follower.apply(1.0)
+
+    assert snapshot.target_position_s == pytest.approx(900.0)
+    assert player.seeks[-1] == pytest.approx(900.0)
+    assert player.state == "playing"
+
+
+def test_a_host_who_swaps_the_shared_file_stops_followers_on_the_old_one(
+    tmp_path, signer
+):
+    """A follower proven against one file must not follow a different one."""
+
+    player = FakePlayer()
+    follower = make_follower(player=player)
+    follower.open_local_copy(write_video(tmp_path / "mine.mp4", b"the lesson"))
+    follower.observe(
+        shared_projection(tmp_path, signer, state="playing", position_s=5.0),
+        received_monotonic_s=0.0,
+    )
+    assert follower.apply(0.0).state is ReferenceVideoFollowState.FOLLOWING
+    assert player.state == "playing"
+
+    # The host shares a different file, so the published identity changes.
+    other = load_reference_video_source(
+        write_video(tmp_path / "host-second.mp4", b"a different lesson entirely")
+    )
+    follower.observe(
+        Projection(
+            state="playing",
+            source_display_name="host-second.mp4",
+            identity_digest=signer(other.content_sha256),
+            position_s=0.0,
+        ),
+        received_monotonic_s=1.0,
+    )
+    snapshot = follower.apply(1.0)
+
+    assert snapshot.state is ReferenceVideoFollowState.MISMATCHED_FILE
+    assert snapshot.can_follow is False
+    assert player.state == "paused"
+
+
 def test_apply_hard_seeks_when_the_host_starts_a_new_playback(tmp_path, signer):
     player = FakePlayer()
     follower = make_follower(player=player)

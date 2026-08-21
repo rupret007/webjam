@@ -575,6 +575,13 @@ CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
 
 # Explicit migration from every previously persisted mode key.  Canonical keys
 # are deliberately absent so callers can distinguish migration from identity.
+#
+# ``visual_studio`` was the visual-arts mode, so pointing it at Art reads as
+# the obvious tidy-up.  It stays on Review & Rehearsal anyway: a session
+# already recorded under that mode resolves today to a profile that can play it
+# back, and Art records nothing and reviews nothing, so repointing the alias
+# would quietly make existing take evidence unreviewable on upgrade.  The other
+# three legacy modes are discussion and planning rooms and stay on Review too.
 LEGACY_MODE_KEY_ALIASES: Mapping[str, str] = MappingProxyType(
     {
         "music_jam": "music",
@@ -583,9 +590,8 @@ LEGACY_MODE_KEY_ALIASES: Mapping[str, str] = MappingProxyType(
         "design_critique": "review_rehearsal",
         "storyboard_film_room": "review_rehearsal",
         # Art shipped its Preview under the name "Studio Visit" before the
-        # room was named for what people make in it.  The old key migrates so
-        # a saved choice survives; ``visual_studio`` deliberately does not
-        # move here, because takes recorded under it must stay reviewable.
+        # room was named for what people make in it.  Only that key migrates,
+        # and only because nothing was ever recorded under it.
         "studio_visit": "art",
     }
 )
@@ -719,6 +725,15 @@ def _validate_creator_registry() -> None:
         raise RuntimeError("Art offers exactly one reference-video start.")
     if any(profile.starts for profile in CREATOR_PROFILES if profile.key != "art"):
         raise RuntimeError("Only Art offers start cards.")
+    if LEGACY_MODE_KEY_ALIASES.get("visual_studio") != "review_rehearsal":
+        # Tempting, and wrong. A session already recorded under the legacy
+        # visual-arts mode resolves today to a profile that can play it back,
+        # and Art records nothing and reviews nothing. Repointing the alias
+        # would make existing take evidence unreviewable on upgrade.
+        raise RuntimeError(
+            "The legacy visual-arts mode must keep migrating to Review & "
+            "Rehearsal so recorded takes stay reviewable."
+        )
 
 
 _validate_creator_registry()

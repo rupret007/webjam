@@ -193,6 +193,10 @@ WebJam, because those belong to Drawpile.
 - The chosen start key is re-validated against the resolved profile on every
   load and save. A start decides whether a canvas or a video is armed, so a
   stale or foreign key falls back to the talk-only start.
+- `visual_studio` remains a valid legacy *mode* key in its own registry, so
+  session metadata that records it keeps resolving.
+- The retired five-mode list is not offered anywhere as a picker. What someone
+  is making is chosen once, at launch, from the creator profiles.
 - Every profile owns a distinct private scratchpad file; a profile registered
   without one refuses to start rather than writing another profile's notes.
 

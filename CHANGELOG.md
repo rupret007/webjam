@@ -103,6 +103,10 @@ All notable improvements and features for the WebJam creator collaboration platf
   re-validated against the resolved profile on every load and save, so a stale
   or foreign key falls back to talk-only rather than arming a capability the
   profile no longer has.
+- The retired five-mode list is not offered anywhere as a picker, so "Visual
+  Studio" cannot resurface beside the profile someone already chose. Its combo
+  is hidden, disabled, and unlaid-out, and the legacy mode key still resolves
+  so session metadata recording it is unaffected.
 - Launch copy and a private scratchpad path remain required for every
   registered profile, so a future profile fails at import instead of as a
   KeyError mid-selection.

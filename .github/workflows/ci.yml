@@ -63,9 +63,13 @@ jobs:
       - name: Install Qt + audio system libraries (Linux)
         run: |
           sudo apt-get update
+          # libpulse0 is what QtMultimedia's audio output loads. Without it the
+          # Studio Visit reference video player cannot be constructed at all,
+          # so its seam test would silently skip instead of covering the one
+          # module that talks to QtMultimedia.
           sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
             libegl1 libxkbcommon0 libdbus-1-3 libxcb-cursor0 libportaudio2 \
-            python3-tk
+            libpulse0 python3-tk
 
       - name: Install dependencies
         run: |
