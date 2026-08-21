@@ -182,7 +182,7 @@ def _coerce_settings_data(data: dict) -> None:
                 "take_playback_output_device", "jamulus_audio_input_uid",
                 "jamulus_audio_output_uid",
                 "audio_latency", "sentry_dsn", "log_level", "log_file",
-                "musician_name", "comfyui_url"):
+                "musician_name", "comfyui_url", "music_ai_api_key"):
         if key in data and data[key] is not None and not isinstance(data[key], str):
             data[key] = str(data[key])
     if "comfyui_url" in data:
@@ -300,6 +300,12 @@ class AppSettings:
     # server, e.g. scp'd into this folder). Empty = the Deck shows a hint.
     takes_directory: str = ""
     take_playback_output_device: str = ""
+    # Music AI developer API key for Song tools, created at music.ai/dash. It
+    # is sent verbatim in the Authorization header — a Moises app login is a
+    # different account and is never requested or stored. The config file is
+    # written 0o600 and the field name matches redaction's api_key hint, so it
+    # stays out of support bundles and logs.
+    music_ai_api_key: str = ""
 
     @property
     def webex_audio_bridge_enabled(self) -> bool:
@@ -368,6 +374,7 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         "WEBJAM_LOG_FILE": "log_file",
         "WEBJAM_COMPANION_API": "companion_api_enabled",
         "WEBJAM_COMPANION_API_PORT": "companion_api_port",
+        "WEBJAM_MUSIC_AI_API_KEY": "music_ai_api_key",
     }
     for env_name, key in env_map.items():
         raw = os.getenv(env_name)
