@@ -23,6 +23,7 @@ from webjam_qt.widgets import song_overlay as song_overlay_module
 from webjam_qt.widgets.song_overlay import (
     PAGE_MEETING,
     PAGE_SONG,
+    PAGE_STEMS,
     PAGE_TOOLS,
     SongOverlay,
 )
@@ -415,7 +416,7 @@ def test_with_no_meeting_the_page_makes_no_claim_about_one(overlay):
 # ----------------------------------------------------------------------
 # Navigation
 # ----------------------------------------------------------------------
-@pytest.mark.parametrize("page", [PAGE_SONG, PAGE_TOOLS, PAGE_MEETING])
+@pytest.mark.parametrize("page", [PAGE_SONG, PAGE_STEMS, PAGE_TOOLS, PAGE_MEETING])
 def test_each_page_can_be_shown(overlay, page):
     overlay.show_page(page)
     assert overlay.current_page() == page
@@ -575,3 +576,217 @@ def test_the_song_page_keeps_to_its_control_budget(overlay):
     assert len(glyphs) == 2
     assert all(button.width() <= 32 for button in glyphs)
     assert len(page.findChildren(QComboBox)) == 1
+
+
+# ----------------------------------------------------------------------
+# The shared clock on the session surface
+# ----------------------------------------------------------------------
+CLOCKED_SHEET = """Key: G major
+Tempo: 120
+[Intro x4]
+G D
+[Verse x8]
+G D Em C
+"""
+
+
+def _clocked(monotonic):
+    return SongWorkbench(
+        title="Tuesday", notes=CLOCKED_SHEET, monotonic=monotonic
+    )
+
+
+def test_the_position_reads_as_bars_within_a_part(overlay):
+    now = {"value": 0.0}
+    workbench = _clocked(lambda: now["value"])
+    workbench.clock.start()
+    now["value"] = 10.0
+
+    overlay.set_song_state(clock=workbench.clock_snapshot())
+    assert overlay._clock_line.text() == "Verse · bar 2 of 8"
+    assert overlay._clock_button.text() == "■"
+
+
+def test_a_stopped_clock_offers_to_start(overlay):
+    workbench = _clocked(lambda: 0.0)
+    overlay.set_song_state(clock=workbench.clock_snapshot())
+
+    assert overlay._clock_button.text() == "▶"
+    assert overlay._clock_button.isEnabled()
+
+
+def test_the_clock_says_what_it_needs_before_it_can_run(overlay):
+    overlay.set_song_state(clock=SongWorkbench(notes="").clock_snapshot())
+    assert "Write a section header" in overlay._clock_line.text()
+    assert not overlay._clock_button.isEnabled()
+
+    overlay.set_song_state(
+        clock=SongWorkbench(notes="[Verse]\nG D\n").clock_snapshot()
+    )
+    assert "Write a tempo" in overlay._clock_line.text()
+    assert not overlay._clock_button.isEnabled()
+
+
+def test_assumed_section_lengths_are_admitted_on_the_surface(overlay):
+    workbench = SongWorkbench(notes="Tempo: 100\n[Verse]\nG D\n")
+    overlay.set_song_state(clock=workbench.clock_snapshot())
+    assert "lengths assumed" in overlay._clock_line.text()
+
+
+def test_the_clock_never_claims_to_follow_the_band_in_its_copy(overlay):
+    workbench = _clocked(lambda: 0.0)
+    overlay.set_song_state(clock=workbench.clock_snapshot())
+
+    tip = overlay._clock_line.toolTip() + overlay._clock_button.toolTip()
+    assert "does not follow" in tip or "does not follow the band" in tip
+    assert "will not correct if the band drifts" in tip
+
+
+def test_the_playhead_marks_where_the_room_is_on_the_form(overlay):
+    now = {"value": 0.0}
+    workbench = _clocked(lambda: now["value"])
+    workbench.clock.start()
+    now["value"] = 10.0
+
+    overlay.set_song_state(
+        form_rows=workbench.form_overlay(), clock=workbench.clock_snapshot()
+    )
+    lines = overlay._form_rows.text().splitlines()
+
+    assert lines[0].startswith("  Intro")
+    assert lines[1].startswith("▸ Verse")
+
+
+def test_starting_the_clock_is_one_click(overlay):
+    seen: list[bool] = []
+    overlay.clock_toggled.connect(lambda: seen.append(True))
+    overlay._clock_button.click()
+    assert seen == [True]
+
+
+def test_locating_asks_for_the_chosen_part(overlay):
+    overlay.set_sections(("Intro", "Verse"))
+    overlay._section_picker.setCurrentIndex(2)
+    seen: list[str] = []
+    overlay.section_located.connect(seen.append)
+    overlay._locate_button.click()
+
+    assert seen == ["Verse"]
+
+
+# ----------------------------------------------------------------------
+# Stems beside the jam
+# ----------------------------------------------------------------------
+def _bench_workbench():
+    workbench = SongWorkbench(notes=SHEET)
+    workbench.attach_run(
+        SongToolRun(
+            verb_key="stems",
+            label="Split stems",
+            workflow_slug="stems",
+            job_id="j20",
+            source_name="demo_mix.wav",
+            artifacts=(
+                SongArtifact("vocals", "audio", local_path="/tmp/v.wav"),
+                SongArtifact("drums", "audio", local_path="/tmp/d.wav"),
+                SongArtifact("bass", "audio", local_path="/tmp/b.wav"),
+            ),
+        )
+    )
+    return workbench
+
+
+def test_stems_render_as_one_row_each_with_mute_and_solo(overlay):
+    workbench = _bench_workbench()
+    bench = workbench.stem_bench
+    overlay.set_stems(stems=bench.stems, mix=bench.mix())
+
+    assert len(overlay._stem_rows) == 3
+    buttons = overlay._stem_rows[0].findChildren(QPushButton)
+    assert [button.text() for button in buttons] == ["M", "S"]
+    assert all(button.isCheckable() for button in buttons)
+
+
+def test_the_stem_page_says_what_you_would_hear(overlay):
+    workbench = _bench_workbench()
+    bench = workbench.stem_bench
+    bench.sing_this_one()
+    overlay.set_stems(stems=bench.stems, mix=bench.mix())
+
+    assert overlay._stem_status.text() == (
+        "Playing Drums, Bass · without Vocals"
+    )
+
+
+def test_muting_a_stem_asks_the_coordinator_rather_than_deciding(overlay):
+    workbench = _bench_workbench()
+    bench = workbench.stem_bench
+    overlay.set_stems(stems=bench.stems, mix=bench.mix())
+
+    seen: list[str] = []
+    overlay.stem_mute_toggled.connect(seen.append)
+    overlay._stem_rows[0].findChildren(QPushButton)[0].click()
+
+    assert seen == ["vocals"]
+
+
+def test_soloing_a_stem_is_a_separate_signal(overlay):
+    workbench = _bench_workbench()
+    bench = workbench.stem_bench
+    overlay.set_stems(stems=bench.stems, mix=bench.mix())
+
+    seen: list[str] = []
+    overlay.stem_solo_toggled.connect(seen.append)
+    overlay._stem_rows[1].findChildren(QPushButton)[1].click()
+
+    assert seen == ["drums"]
+
+
+def test_sing_this_one_is_offered_once_stems_exist(overlay):
+    overlay.set_stems(stems=(), mix=None)
+    assert not overlay._sing_button.isEnabled()
+    assert "Run Split stems" in overlay._stem_status.text()
+
+    workbench = _bench_workbench()
+    overlay.set_stems(
+        stems=workbench.stem_bench.stems, mix=workbench.stem_bench.mix()
+    )
+    assert overlay._sing_button.isEnabled()
+    assert "sings it" in overlay._sing_button.toolTip()
+
+
+def test_sending_stems_to_the_jam_is_gated(overlay):
+    workbench = _bench_workbench()
+    bench = workbench.stem_bench
+    overlay.set_stems(stems=bench.stems, mix=bench.mix(), can_send=False)
+    assert not overlay._send_stems_button.isEnabled()
+
+    overlay.set_stems(stems=bench.stems, mix=bench.mix(), can_send=True)
+    assert overlay._send_stems_button.isEnabled()
+
+
+def test_the_reason_a_send_is_unavailable_is_shown(overlay):
+    workbench = _bench_workbench()
+    bench = workbench.stem_bench
+    _path, note = bench.shared_track_plan()
+    overlay.set_stems(stems=bench.stems, mix=bench.mix(), note=note)
+
+    assert overlay._stem_note.text() == note
+    assert not overlay._stem_note.isHidden()
+
+
+def test_the_stems_page_keeps_to_two_worded_actions(overlay):
+    workbench = _bench_workbench()
+    bench = workbench.stem_bench
+    overlay.set_stems(stems=bench.stems, mix=bench.mix())
+
+    page = overlay._stack.widget(1)
+    worded = [
+        button
+        for button in page.findChildren(QPushButton)
+        if len(button.text()) > 2
+    ]
+    assert sorted(button.text() for button in worded) == [
+        "Send to jam",
+        "Sing this one",
+    ]

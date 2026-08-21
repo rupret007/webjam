@@ -418,3 +418,137 @@ def test_the_workbench_scopes_chord_help_to_a_named_part():
     advice = SongWorkbench(notes=SHEET).chord_advice(section_name="Chorus")
     assert advice.section_label == "Chorus"
     assert advice.neighbours.previous_label == "Verse"
+
+
+# ----------------------------------------------------------------------
+# The shared clock, owned by the session
+# ----------------------------------------------------------------------
+CLOCKED = """Key: G major
+Tempo: 120
+[Intro x4]
+G D
+[Verse x8]
+G D Em C
+"""
+
+
+def _clocked_workbench():
+    now = {"value": 0.0}
+    workbench = SongWorkbench(
+        title="Tuesday", notes=CLOCKED, monotonic=lambda: now["value"]
+    )
+    return workbench, now
+
+
+def test_the_session_owns_a_clock_over_its_own_form():
+    workbench, _now = _clocked_workbench()
+    snapshot = workbench.clock_snapshot()
+
+    assert snapshot.section_label == "Intro"
+    assert snapshot.bars_total == 12
+    assert snapshot.tempo_bpm == 120
+
+
+def test_editing_the_notes_moves_the_clock_onto_the_new_form():
+    workbench, _now = _clocked_workbench()
+    workbench.set_notes(CLOCKED + "[Chorus x8]\nC G D G\n")
+
+    assert workbench.clock_snapshot().bars_total == 20
+
+
+def test_re_reading_identical_notes_does_not_disturb_a_running_clock():
+    workbench, now = _clocked_workbench()
+    workbench.clock.start()
+    now["value"] = 6.0
+    before = workbench.clock_snapshot().bar
+
+    workbench.set_notes(CLOCKED)
+
+    assert workbench.clock_snapshot().bar == before
+    assert workbench.clock_snapshot().running
+
+
+def test_the_conductor_line_leads_with_position_once_the_clock_runs():
+    workbench, now = _clocked_workbench()
+    assert "from your notes" in workbench.conductor_line()
+
+    workbench.clock.start()
+    now["value"] = 10.0
+    assert workbench.conductor_line().startswith("Verse · bar")
+
+
+def test_another_profile_can_subscribe_to_the_sessions_clock():
+    """The cross-profile seam: bars without importing anything musical."""
+
+    workbench, now = _clocked_workbench()
+    seen: list[dict] = []
+    workbench.clock_publisher.subscribe(
+        lambda snapshot: seen.append(snapshot.to_public_dict())
+    )
+
+    workbench.clock.start()
+    now["value"] = 10.0
+    workbench.clock_publisher.publish(force=True)
+
+    assert seen[-1]["section"] == "Verse"
+    assert seen[-1]["bar"] == 6
+    assert seen[-1]["following_audio"] is False
+
+
+# ----------------------------------------------------------------------
+# Stems arriving from a finished separation
+# ----------------------------------------------------------------------
+def test_a_finished_separation_becomes_faders_immediately():
+    workbench = SongWorkbench(notes=SHEET)
+    workbench.attach_run(
+        SongToolRun(
+            verb_key="stems",
+            label="Split stems",
+            workflow_slug="stems",
+            job_id="j10",
+            source_name="demo_mix.wav",
+            artifacts=(
+                SongArtifact("vocals", "audio", local_path="/tmp/v.wav"),
+                SongArtifact("drums", "audio", local_path="/tmp/d.wav"),
+                SongArtifact("chords", "text", local_path="/tmp/c.json"),
+            ),
+        )
+    )
+
+    bench = workbench.stem_bench
+    assert [stem.label for stem in bench.stems] == ["Vocals", "Drums"]
+    assert bench.source_name == "demo_mix.wav"
+    assert bench.sing_this_one()
+
+
+def test_a_run_with_no_downloaded_audio_leaves_the_bench_empty():
+    workbench = SongWorkbench()
+    workbench.attach_run(
+        SongToolRun(
+            verb_key="stems",
+            label="Split stems",
+            workflow_slug="stems",
+            job_id="j11",
+            source_name="demo.wav",
+            artifacts=(SongArtifact("vocals", "audio", url="https://cdn.music.ai/v"),),
+        )
+    )
+    assert not workbench.stem_bench.loaded
+
+
+def test_clearing_runs_clears_the_bench_too():
+    workbench = SongWorkbench()
+    workbench.attach_run(
+        SongToolRun(
+            verb_key="stems",
+            label="Split stems",
+            workflow_slug="stems",
+            job_id="j12",
+            source_name="demo.wav",
+            artifacts=(SongArtifact("vocals", "audio", local_path="/tmp/v.wav"),),
+        )
+    )
+    workbench.clear_runs()
+
+    assert not workbench.stem_bench.loaded
+    assert workbench.runs == ()

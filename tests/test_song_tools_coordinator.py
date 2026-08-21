@@ -17,6 +17,9 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from core.creative_modes import get_creator_profile_by_key_or_default
 from core.music_ai_catalog import failed_catalog, resolve_song_tools
 from core.music_ai_client import API_BASE_URL, MusicAIResponse, MusicAIWorkflow
+from core.music_ai_results import SongArtifact, SongToolRun
+from core.song_workbench import SongWorkbench
+from core.stem_bench import StemBenchError
 from webjam_qt.controllers.song_tools_coordinator import SongToolsCoordinator
 from webjam_qt.widgets.song_overlay import SongOverlay
 
@@ -549,3 +552,248 @@ def test_the_form_overlay_reaches_the_panel_on_refresh(app):
     coordinator.refresh()
 
     assert "Verse: Am F C G" in coordinator.overlay._form_rows.text()
+
+
+# ----------------------------------------------------------------------
+# The shared clock
+# ----------------------------------------------------------------------
+CLOCK_NOTES = "Key: G major\nTempo: 120\n[Intro x4]\nG D\n[Verse x8]\nG D Em C\n"
+
+
+def _clock_coordinator(app):
+    now = {"value": 0.0}
+    coordinator = _coordinator(app, notes=CLOCK_NOTES)
+    coordinator.workbench = SongWorkbench(
+        title="Tuesday", notes=CLOCK_NOTES, monotonic=lambda: now["value"]
+    )
+    return coordinator, now
+
+
+def test_starting_and_stopping_the_clock_is_one_control(app):
+    coordinator, now = _clock_coordinator(app)
+    coordinator.overlay.setVisible(True)
+
+    coordinator.toggle_clock()
+    assert coordinator.workbench.clock_snapshot().running
+
+    now["value"] = 10.0
+    coordinator._on_tick()  # what the repaint timer does in a live session
+    assert coordinator.overlay._clock_line.text() == "Verse · bar 2 of 8"
+
+    coordinator.toggle_clock()
+    assert not coordinator.workbench.clock_snapshot().running
+
+
+def test_starting_the_clock_says_it_does_not_follow_the_band(app):
+    coordinator, _now = _clock_coordinator(app)
+    coordinator.toggle_clock()
+
+    assert any(
+        "does not follow the band" in message for message in _flashes(coordinator)
+    )
+
+
+def test_a_song_with_no_tempo_is_told_what_the_clock_needs(app):
+    coordinator = _coordinator(app, notes="[Verse]\nG D\n")
+    coordinator.toggle_clock()
+
+    assert not coordinator.workbench.clock_snapshot().running
+    assert any("Write a tempo" in message for message in _flashes(coordinator))
+
+
+def test_the_clock_can_be_moved_to_the_chosen_part(app):
+    coordinator, _now = _clock_coordinator(app)
+    coordinator.overlay.setVisible(True)
+    coordinator.locate_section("Verse")
+
+    assert coordinator.workbench.clock_snapshot().section_label == "Verse"
+
+
+def test_locating_a_part_that_is_not_there_says_so(app):
+    coordinator, _now = _clock_coordinator(app)
+    coordinator.locate_section("Bridge")
+
+    assert any("not in this song's form" in m for m in _flashes(coordinator))
+
+
+def test_the_clock_belongs_to_the_room_not_the_panel(app):
+    """Closing the panel must not stop the count the band is following."""
+
+    coordinator, _now = _clock_coordinator(app)
+    coordinator.overlay.setVisible(True)
+    coordinator.toggle_clock()
+
+    coordinator.close_panel()
+    coordinator._on_panel_closed()
+
+    assert coordinator.workbench.clock_snapshot().running
+
+
+def test_a_repaint_tick_never_shows_the_panel_on_its_own(app):
+    coordinator, now = _clock_coordinator(app)
+    coordinator.toggle_clock()
+    now["value"] = 4.0
+
+    coordinator._on_tick()
+
+    assert not coordinator.overlay.isVisible()
+
+
+# ----------------------------------------------------------------------
+# Stems beside the jam
+# ----------------------------------------------------------------------
+def _with_stems(app, tmp_path, *, is_host=True):
+    import numpy
+    import soundfile
+
+    coordinator = _coordinator(app, is_host=is_host)
+    paths = {}
+    for name in ("vocals", "drums", "bass"):
+        path = tmp_path / f"{name}.wav"
+        soundfile.write(
+            str(path), numpy.zeros((4800, 2), dtype="float32"), 48000
+        )
+        paths[name] = str(path)
+    coordinator.workbench.attach_run(
+        SongToolRun(
+            verb_key="stems",
+            label="Split stems",
+            workflow_slug="my-stems",
+            job_id="j30",
+            source_name="demo_mix.wav",
+            artifacts=tuple(
+                SongArtifact(name, "audio", local_path=path)
+                for name, path in paths.items()
+            ),
+        )
+    )
+    coordinator._c.settings.takes_directory = str(tmp_path / "takes")
+    return coordinator, paths
+
+
+def test_a_finished_separation_arrives_as_faders(app, tmp_path):
+    coordinator, _paths = _with_stems(app, tmp_path)
+    coordinator.overlay.setVisible(True)
+    coordinator.refresh()
+
+    assert len(coordinator.overlay._stem_rows) == 3
+    assert "All stems" in coordinator.overlay._stem_status.text()
+
+
+def test_muting_a_stem_updates_what_the_room_would_hear(app, tmp_path):
+    coordinator, _paths = _with_stems(app, tmp_path)
+    coordinator.toggle_stem_mute("vocals")
+
+    assert coordinator.workbench.stem_bench.stem("vocals").muted
+    assert "without Vocals" in coordinator.overlay._stem_status.text()
+
+
+def test_soloing_uses_the_same_rule_as_the_participant_grid(app, tmp_path):
+    coordinator, _paths = _with_stems(app, tmp_path)
+    coordinator.toggle_stem_solo("drums")
+
+    mix = coordinator.workbench.stem_bench.mix()
+    assert [stem.name for stem in mix.audible] == ["drums"]
+
+
+def test_sing_this_one_mutes_the_vocal_and_says_so(app, tmp_path):
+    coordinator, _paths = _with_stems(app, tmp_path)
+    coordinator.sing_this_one()
+
+    assert coordinator.workbench.stem_bench.stem("vocals").muted
+    assert any("Sing it" in message for message in _flashes(coordinator))
+
+
+def test_sing_this_one_without_a_vocal_stem_is_honest(app):
+    coordinator = _coordinator(app)
+    coordinator.workbench.stem_bench.load([("drums", "/tmp/d.wav")])
+    coordinator.sing_this_one()
+
+    assert any("no separate vocal" in message for message in _flashes(coordinator))
+
+
+def test_one_audible_stem_goes_straight_into_the_jam(app, tmp_path):
+    coordinator, paths = _with_stems(app, tmp_path)
+    loaded: list[str] = []
+    coordinator._c._load_reference_track = loaded.append
+
+    coordinator.toggle_stem_solo("drums")
+    coordinator.send_stems_to_jam()
+
+    assert loaded == [paths["drums"]]
+    assert any("host control" in message for message in _flashes(coordinator))
+
+
+def test_several_audible_stems_are_mixed_before_they_reach_the_jam(app, tmp_path):
+    import soundfile
+
+    coordinator, _paths = _with_stems(app, tmp_path)
+    loaded: list[str] = []
+    coordinator._c._load_reference_track = loaded.append
+
+    class InlineThread:
+        def __init__(self, target=None, **_kwargs):
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    coordinator.sing_this_one()
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.threading.Thread", InlineThread
+    ):
+        coordinator.send_stems_to_jam()
+
+    assert len(loaded) == 1
+    assert soundfile.info(loaded[0]).samplerate == 48000
+    assert "WebJam Song Tools" in loaded[0]
+
+
+def test_a_guest_cannot_send_stems_into_the_jam(app, tmp_path):
+    coordinator, _paths = _with_stems(app, tmp_path, is_host=False)
+    loaded: list[str] = []
+    coordinator._c._load_reference_track = loaded.append
+
+    coordinator.toggle_stem_solo("drums")
+    coordinator.send_stems_to_jam()
+
+    assert loaded == []
+    assert any("Only the host" in message for message in _flashes(coordinator))
+
+
+def test_everything_muted_reports_the_reason_and_sends_nothing(app, tmp_path):
+    coordinator, _paths = _with_stems(app, tmp_path)
+    loaded: list[str] = []
+    coordinator._c._load_reference_track = loaded.append
+
+    for name in ("vocals", "drums", "bass"):
+        coordinator.toggle_stem_mute(name)
+    coordinator.send_stems_to_jam()
+
+    assert loaded == []
+    assert any("Every stem is muted" in message for message in _flashes(coordinator))
+
+
+def test_a_failed_mix_reports_the_reason_and_leaves_the_jam_alone(app, tmp_path):
+    coordinator, _paths = _with_stems(app, tmp_path)
+    loaded: list[str] = []
+    coordinator._c._load_reference_track = loaded.append
+
+    class InlineThread:
+        def __init__(self, target=None, **_kwargs):
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    coordinator.sing_this_one()
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.bounce_stems",
+        side_effect=StemBenchError("These stems do not share a sample rate."),
+    ), patch(
+        "webjam_qt.controllers.song_tools_coordinator.threading.Thread", InlineThread
+    ):
+        coordinator.send_stems_to_jam()
+
+    assert loaded == []
+    assert any("sample rate" in message for message in _flashes(coordinator))

@@ -206,9 +206,13 @@ class SongToolsCoordinator:
 
     def _start_ticking(self) -> None:
         if self._tick_timer is None:
-            from PySide6.QtCore import QTimer
+            from PySide6.QtCore import QObject, QTimer
 
-            timer = QTimer(self._c.window)
+            # Parented to the panel, whose lifetime the repaint follows. The
+            # clock itself keeps counting regardless; only the redraw stops.
+            overlay = self.overlay
+            parent = overlay if isinstance(overlay, QObject) else None
+            timer = QTimer(parent)
             timer.setInterval(250)
             timer.timeout.connect(self._on_tick)
             self._tick_timer = timer

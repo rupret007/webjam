@@ -179,3 +179,105 @@ def test_the_documented_base_url_and_console_are_used():
 
     assert API_BASE_URL == "https://api.music.ai/v1"
     assert API_KEY_CONSOLE_URL == "https://music.ai/dash"
+
+
+# ----------------------------------------------------------------------
+# The clock is a cross-profile contract, not a Music internal
+# ----------------------------------------------------------------------
+def test_the_clock_does_not_depend_on_anything_music_specific():
+    """A painter must be able to read bars without importing Song tools."""
+
+    tree = ast.parse((REPO_ROOT / "core" / "song_clock.py").read_text())
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
+        elif isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+
+    assert imported <= {
+        "__future__",
+        "threading",
+        "time",
+        "dataclasses",
+        "typing",
+        "core.song_form",
+    }
+    for forbidden in (
+        "core.music_ai_client",
+        "core.music_ai_catalog",
+        "core.stem_bench",
+        "core.song_workbench",
+    ):
+        assert forbidden not in imported
+
+
+def test_no_art_or_drawing_surface_was_implemented():
+    """The clock is published for another profile; the profile is not built."""
+
+    offenders = [
+        str(path.relative_to(REPO_ROOT))
+        for path, text in _shipping_sources()
+        for marker in ("Drawpile", "drawpile", "CanvasStroke", "brush_stroke")
+        if marker in text
+    ]
+    assert offenders == []
+
+
+def test_the_published_clock_contract_is_stable_and_declared():
+    from core.song_clock import describe_contract
+
+    contract = describe_contract()
+    # A rename here breaks every subscribing profile, so the field list is
+    # pinned rather than merely documented.
+    assert set(contract["fields"]) == {
+        "generation",
+        "state",
+        "position_s",
+        "section",
+        "section_index",
+        "section_role",
+        "bar",
+        "bar_in_section",
+        "beat",
+        "bars_total",
+        "beats_per_bar",
+        "key",
+        "key_source",
+        "bpm",
+        "bpm_source",
+        "chords_now",
+        "sections",
+        "following_audio",
+        "section_lengths_assumed",
+    }
+
+
+def test_the_clock_never_reads_the_live_jam():
+    """No beat tracking exists, so no code here may reach for audio.
+
+    Checked on identifiers rather than raw text: the module docstring names
+    Jamulus precisely in order to say it does not touch it, and that sentence
+    should not have to be deleted to keep this guard honest.
+    """
+
+    tree = ast.parse((REPO_ROOT / "core" / "song_clock.py").read_text())
+    identifiers = {
+        node.id for node in ast.walk(tree) if isinstance(node, ast.Name)
+    } | {
+        node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
+    }
+
+    for forbidden in (
+        "jamulus",
+        "sounddevice",
+        "numpy",
+        "np",
+        "soundfile",
+        "sf",
+        "audio_engine",
+        "detect_tempo",
+    ):
+        assert not any(
+            forbidden in name.lower() for name in identifiers
+        ), forbidden
