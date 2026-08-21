@@ -1179,3 +1179,191 @@ def test_the_panel_copy_follows_whichever_meeting_service_is_configured(app):
 
     assert "Zoom mute" in coordinator.overlay._mute_lines.text()
     assert "Zoom" in coordinator.overlay._end_note.text()
+
+
+# ----------------------------------------------------------------------
+# The companion surface: publishes the song, accepts only requests
+# ----------------------------------------------------------------------
+def test_the_companion_snapshot_carries_the_live_song(app):
+    coordinator, now = _clock_coordinator(app)
+    coordinator.workbench.clock.start()
+    now["value"] = 10.0
+
+    snapshot = coordinator.companion_snapshot()
+
+    assert snapshot.is_music_session
+    assert snapshot.section == "Verse"
+    assert snapshot.key == "G major"
+    assert snapshot.bpm == 120.0
+    assert snapshot.position_known
+
+
+def test_a_non_music_session_publishes_an_empty_projection(app):
+    coordinator = _coordinator(app)
+    coordinator._c.creator_profile = get_creator_profile_by_key_or_default(
+        "podcast_voice"
+    )
+
+    snapshot = coordinator.companion_snapshot()
+
+    assert not snapshot.is_music_session
+    assert snapshot.chord_overlay == ()
+
+
+def test_the_projection_never_carries_a_path_or_a_key(app, tmp_path):
+    import json
+
+    source = tmp_path / "private_mix.wav"
+    source.write_bytes(b"RIFF" + b"0" * 4096)
+    coordinator = _coordinator(app, api_key="sk-live-secret-value")
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+    coordinator._c._reference_track_load_pending = str(source)
+
+    published = json.dumps(coordinator.companion_snapshot().to_public_dict())
+
+    assert "private_mix" not in published
+    assert str(tmp_path) not in published
+    assert "sk-live-secret-value" not in published
+    assert "music.ai" not in published
+
+
+def test_the_projection_shows_the_current_suggestion(app):
+    coordinator = _coordinator(app)
+    coordinator.show_chords("Verse")
+
+    snapshot = coordinator.companion_snapshot()
+
+    assert snapshot.suggestion is not None
+    assert snapshot.suggestion.section == "Verse"
+    assert snapshot.suggestion.chords
+
+
+def test_dismissing_clears_what_the_companion_would_show(app):
+    coordinator = _coordinator(app)
+    coordinator.show_chords("Verse")
+    coordinator.dismiss_suggestions()
+
+    assert coordinator.companion_snapshot().suggestion is None
+
+
+def test_a_companion_can_ask_for_write_help(app):
+    coordinator = _coordinator(app)
+
+    decision = coordinator.handle_companion_command({"command": "write_help"})
+
+    assert decision.accepted
+    assert coordinator.overlay._advice.text()
+
+
+def test_a_companion_can_ask_for_chords_for_a_named_part(app):
+    coordinator = _coordinator(app)
+
+    decision = coordinator.handle_companion_command(
+        {"command": "suggest_chords", "section": "Verse"}
+    )
+
+    assert decision.accepted
+    assert "Verse already plays" in coordinator.overlay._suggestion_headline.text()
+
+
+def test_a_companion_request_never_opens_a_file_picker(app, tmp_path):
+    """A dialog nobody asked for, in front of someone looking elsewhere."""
+
+    coordinator = _coordinator(app)
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.QFileDialog.getOpenFileName"
+    ) as picker, patch(
+        "webjam_qt.controllers.song_tools_coordinator.MusicAIClient"
+    ) as client:
+        decision = coordinator.handle_companion_command(
+            {"command": "run_song_tool", "verb": "stems"}
+        )
+
+    picker.assert_not_called()
+    client.assert_not_called()
+    assert not decision.accepted
+    assert "Load a Shared Track on the desktop first" in decision.reason
+
+
+def test_a_companion_tool_request_runs_on_the_track_the_host_chose(app, tmp_path):
+    source = tmp_path / "backing.wav"
+    source.write_bytes(b"RIFF" + b"0" * 4096)
+    coordinator = _coordinator(app)
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+    coordinator._c._reference_track_load_pending = str(source)
+
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.QFileDialog.getOpenFileName"
+    ) as picker, patch(
+        "webjam_qt.controllers.song_tools_coordinator.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.No,
+    ) as confirm:
+        decision = coordinator.handle_companion_command(
+            {"command": "run_song_tool", "verb": "stems"}
+        )
+
+    assert decision.accepted
+    picker.assert_not_called()
+    # The host still confirms on the desktop; the companion only asked.
+    assert confirm.call_count == 1
+    assert "backing.wav" in confirm.call_args.args[2]
+
+
+def test_a_guest_companion_request_is_refused_before_any_dialog(app, tmp_path):
+    source = tmp_path / "backing.wav"
+    source.write_bytes(b"RIFF" + b"0" * 4096)
+    coordinator = _coordinator(app, is_host=False)
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+    coordinator._c._reference_track_load_pending = str(source)
+
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.QMessageBox.question"
+    ) as confirm:
+        decision = coordinator.handle_companion_command(
+            {"command": "run_song_tool", "verb": "stems"}
+        )
+
+    confirm.assert_not_called()
+    assert not decision.accepted
+    assert "Only the host" in decision.reason
+
+
+def test_a_companion_cannot_smuggle_a_path_into_a_request(app, tmp_path):
+    victim = tmp_path / "not_mine.wav"
+    victim.write_bytes(b"RIFF" + b"0" * 4096)
+    coordinator = _coordinator(app)
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.QMessageBox.question"
+    ) as confirm, patch(
+        "webjam_qt.controllers.song_tools_coordinator.MusicAIClient"
+    ) as client:
+        decision = coordinator.handle_companion_command(
+            {
+                "command": "run_song_tool",
+                "verb": "stems",
+                "path": str(victim),
+                "inputUrl": "https://storage.googleapis.com/upload/x",
+            }
+        )
+
+    confirm.assert_not_called()
+    client.assert_not_called()
+    assert not decision.accepted
+
+
+def test_the_native_strip_still_shows_the_song_with_no_companion(app):
+    """No add-on anywhere; the overlay renders where it always did."""
+
+    coordinator, now = _clock_coordinator(app)
+    coordinator.overlay.setVisible(True)
+    coordinator.workbench.clock.start()
+    now["value"] = 10.0
+
+    coordinator._on_tick()
+
+    assert "Verse · bar 2 of 8" in _song_line(coordinator)
+    assert coordinator.overlay._clock_line.text() == "Verse · bar 2 of 8"

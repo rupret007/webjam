@@ -37,6 +37,15 @@ from core.music_ai_client import (
     missing_key_message,
 )
 from core.music_ai_results import download_artifacts, interpret_job
+from core.music_companion import (
+    COMMAND_SUGGEST_CHORDS,
+    COMMAND_WRITE_HELP,
+    MusicCompanionDecision,
+    MusicCompanionSnapshot,
+    build_snapshot,
+    evaluate_command,
+    parse_command,
+)
 from core.song_workbench import (
     SOURCE_PICKED_FILE,
     SOURCE_SHARED_TRACK,
@@ -65,6 +74,9 @@ class SongToolsCoordinator:
         self._running_verb = ""
         self._cancelled = threading.Event()
         self._tick_timer = None
+        self._last_suggestion = None
+        self._last_suggestion_section = ""
+        self._companion_revision = 0
 
     # ------------------------------------------------------------------
     # Panel lifecycle
@@ -171,6 +183,85 @@ class SongToolsCoordinator:
             ).meeting_note,
             meeting_configured=self._meeting_configured(),
         )
+
+    # ------------------------------------------------------------------
+    # Companion surface (see core.music_companion)
+    # ------------------------------------------------------------------
+    def companion_snapshot(self) -> MusicCompanionSnapshot:
+        """Return what a companion may know about this Music session.
+
+        Safe to call from any surface; it reads state and publishes nothing.
+        The bounding and scrubbing live in ``core.music_companion`` so this
+        cannot leak a path or a key by forgetting to.
+        """
+
+        if not self.is_available():
+            return build_snapshot(
+                revision=self._companion_revision, is_music_session=False
+            )
+
+        self._sync_workbench()
+        self._sync_clock_to_shared_track()
+        catalog = self._catalog
+        available = (
+            tuple(item.key for item in catalog.available)
+            if catalog is not None
+            else ()
+        )
+        reason = ""
+        if not self._api_key():
+            reason = missing_key_message()
+        elif catalog is not None and not catalog.usable:
+            reason = catalog.summary_line()
+
+        form = self.workbench.form
+        lyric = ""
+        section_label = self.workbench.clock_snapshot().section_label
+        for section in form.sections:
+            if section.label == section_label and section.lyrics:
+                lyric = section.lyrics[0]
+                break
+
+        return build_snapshot(
+            revision=self._companion_revision,
+            is_music_session=True,
+            clock=self.workbench.clock_snapshot(),
+            form_rows=self.workbench.form_overlay(),
+            lyric_line=lyric,
+            shared_track_loaded=bool(self._shared_track_path()),
+            is_host=self._is_host(),
+            tools_available=available,
+            tools_unavailable_reason=reason,
+            job_verb=self._running_verb,
+            job_label=self._verb_label(self._running_verb)
+            if self._running_verb
+            else "",
+            suggestion=self._last_suggestion,
+            suggestion_section=self._last_suggestion_section,
+        )
+
+    def handle_companion_command(self, payload) -> MusicCompanionDecision:
+        """Answer one companion request. The desktop decides; this is where.
+
+        An accepted tool request runs on the Shared Track the host already
+        chose. There is no path in the contract, so no companion can point
+        Song tools anywhere else, and none of these paths opens a file picker.
+        """
+
+        command = parse_command(payload)
+        snapshot = self.companion_snapshot()
+        decision = evaluate_command(command, snapshot)
+        if not decision.accepted or decision.command is None:
+            return decision
+
+        accepted = decision.command
+        if accepted.name == COMMAND_WRITE_HELP:
+            self.show_writing_help()
+        elif accepted.name == COMMAND_SUGGEST_CHORDS:
+            self.show_chords(accepted.section)
+        else:
+            self.run_song_tool(accepted.verb, from_companion=True)
+        return decision
 
     # ------------------------------------------------------------------
     # The shared clock
@@ -435,12 +526,20 @@ class SongToolsCoordinator:
             return
         self._sync_workbench()
         selection = str(section or "")
+        advice = self.workbench.chord_advice(section_name=selection)
+        # Retained so a companion surface can show the same suggestion the
+        # panel is showing, rather than asking for its own.
+        self._last_suggestion = (
+            advice.suggestions[0] if advice.available else None
+        )
+        self._last_suggestion_section = advice.section_label
+        self._companion_revision += 1
         overlay.set_song_state(
             catch_up=None,
             form_summary=self.workbench.conductor_line(),
             form_rows=self.workbench.form_overlay(),
             clock=self.workbench.clock_snapshot(),
-            chords=self.workbench.chord_advice(section_name=selection),
+            chords=advice,
             next_chords=(
                 self.workbench.next_chord_advice(section_name=selection)
                 if selection
@@ -480,6 +579,9 @@ class SongToolsCoordinator:
     def dismiss_suggestions(self) -> None:
         """Clear the suggestions on screen. Nothing was written, so nothing undoes."""
 
+        self._last_suggestion = None
+        self._last_suggestion_section = ""
+        self._companion_revision += 1
         overlay = self.overlay
         if overlay is not None:
             overlay.clear_suggestions()
@@ -539,8 +641,15 @@ class SongToolsCoordinator:
             target=work, daemon=True, name="music-ai-workflows"
         ).start()
 
-    def run_song_tool(self, verb_key: str) -> None:
-        """Run one Music AI verb on a file the host picks and confirms."""
+    def run_song_tool(self, verb_key: str, *, from_companion: bool = False) -> None:
+        """Run one Music AI verb on a file the host picks and confirms.
+
+        ``from_companion`` means the request arrived from outside the desktop
+        window. A file picker there would be a dialog nobody asked for in front
+        of a musician who is looking at something else, so a companion request
+        acts only on the Shared Track the host already chose and is refused
+        otherwise.
+        """
 
         key = str(verb_key or "")
         if self._running_verb:
@@ -551,8 +660,16 @@ class SongToolsCoordinator:
         )
         api_key = self._api_key()
 
-        source_kind, path = self._choose_source(capability)
+        source_kind, path = self._choose_source(
+            capability, from_companion=from_companion
+        )
         if not path:
+            if from_companion:
+                self._flash(
+                    "Load a Shared Track on the desktop first. WebJam never "
+                    "uploads the live jam.",
+                    ms=8000,
+                )
             return
 
         decision = evaluate_upload(
@@ -645,7 +762,12 @@ class SongToolsCoordinator:
         self._flash(run.summary_line(), ms=8000)
         self.refresh()
 
-    def _choose_source(self, capability: Any) -> tuple[str, str]:
+    def _choose_source(
+        self,
+        capability: Any,
+        *,
+        from_companion: bool = False,
+    ) -> tuple[str, str]:
         """Return the file the host chose. Never discovers one on its own."""
 
         if capability is None or not getattr(capability, "supported", False):
@@ -659,6 +781,9 @@ class SongToolsCoordinator:
         shared = self._shared_track_path()
         if shared:
             return SOURCE_SHARED_TRACK, shared
+        if from_companion:
+            # No picker for a request made from outside this window.
+            return SOURCE_SHARED_TRACK, ""
 
         path, _filter = QFileDialog.getOpenFileName(
             self._c.window,

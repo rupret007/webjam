@@ -2,11 +2,14 @@
 
 ADR 0004 settled the shape: Webex is an independent application in its own
 window. WebJam stores a meeting link and nothing else — no account, no token,
-no embedded runtime, and no Webex Embedded App. That last point is a product
-decision as much as a technical one. A custom Webex add-on requires a licensed
+and no embedded runtime here.
+
+Whether an Embedded App companion ships is a separate track's decision, and it
+does not change anything in this module. A custom add-on needs a licensed
 organization and a Control Hub administrator to approve it, which the musician
-this product is for does not have. So no WebJam music feature may depend on
-one, and :func:`music_features_require_meeting` exists to be asserted against.
+this product is for often does not have, so **no music feature may depend on
+one either way**. :func:`music_features_require_meeting` exists to be asserted
+against. What Music publishes to a companion when one does exist is ADR 0012.
 
 What the second-window arrangement actually costs a musician is confusion, and
 this module exists to remove three specific kinds of it:
@@ -136,7 +139,7 @@ def service_name_for_link(meeting_url: str = "") -> str:
 
 
 def music_features_require_meeting() -> bool:
-    """Music never depends on a meeting, a Webex add-on, or a licensed org.
+    """Music never depends on a meeting, an add-on, or a licensed organization.
 
     This is asserted by the test suite rather than merely documented, so a
     future change that gates Song tools, songwriting help, Shared Track, or

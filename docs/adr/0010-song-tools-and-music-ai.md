@@ -261,4 +261,6 @@ workflows produce. Both are visible to the musician by design.
 - [Music AI file upload](https://music.ai/docs/api/file-upload/)
 - [Music AI quick start](https://music.ai/docs/getting-started/quick-start/)
 - ADR 0004 — external Webex launch (the second-window boundary this builds on)
-- ADR 0007 — Webex Embedded App companion, rejected for this product
+- ADR 0007 — Webex Embedded App companion, owned by the companion track. Music
+  gates on none of it either way; see ADR 0012 for what Music publishes to a
+  companion when one exists
