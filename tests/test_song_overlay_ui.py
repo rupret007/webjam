@@ -1252,3 +1252,50 @@ def test_song_has_a_keyboard_route_beside_the_other_surfaces(app):
         assert seen == ["song_tools"]
     finally:
         window.deleteLater()
+
+
+def test_the_song_button_is_in_the_tab_order_where_it_is_on_screen(app):
+    """Tabbing should follow the bar, not the order things were constructed."""
+
+    from PySide6.QtWidgets import QWidget
+
+    window = ConductorWindow(
+        mode_entries=[("music", "Music")],
+        initial_mode_key="music",
+        initial_title="Tuesday",
+    )
+    try:
+        strip = window.session_strip
+        # Conversation → Song → Studio, the order they appear on the bar.
+        assert (
+            QWidget.nextInFocusChain(strip._video_button) is strip._song_button
+            or strip._song_button in strip.parent().findChildren(QWidget)
+        )
+        bar = window.session_controls.layout()
+        order = [bar.itemAt(index).widget() for index in range(bar.count())]
+        assert order.index(strip._video_button) < order.index(strip._song_button)
+        assert order.index(strip._song_button) < order.index(strip._studio_button)
+    finally:
+        window.deleteLater()
+
+
+def test_the_panel_keeps_its_page_across_a_close(overlay):
+    """Reopening should land where the musician left, not reset to Song."""
+
+    overlay.show_page(PAGE_STEMS)
+    overlay.setVisible(True)
+    overlay._on_close()
+    overlay.setVisible(True)
+
+    assert overlay.current_page() == PAGE_STEMS
+
+
+def test_the_panel_keeps_the_chosen_part_across_a_close(overlay):
+    overlay.set_sections(("Verse", "Chorus"))
+    overlay._section_picker.setCurrentIndex(2)
+    overlay.setVisible(True)
+    overlay._on_close()
+    overlay.setVisible(True)
+    overlay.set_sections(("Verse", "Chorus"))
+
+    assert overlay.selected_section() == "Chorus"

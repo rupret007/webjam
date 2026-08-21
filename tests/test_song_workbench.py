@@ -697,3 +697,77 @@ def test_a_count_in_is_not_the_song():
 def test_a_loaded_but_stopped_track_carries_nothing():
     assert not SharedTrackView(loaded=True, source_name="a.wav").carries_the_form
     assert not SharedTrackView().carries_the_form
+
+
+# ----------------------------------------------------------------------
+# A very long song cannot flood any surface
+# ----------------------------------------------------------------------
+def _huge_song(parts: int = 40) -> str:
+    body = "".join(
+        f"[Part {index} x8]\n"
+        + ("G D Em C " * 12)
+        + "\n"
+        + ("a very long lyric line " * 20)
+        + "\n"
+        for index in range(parts)
+    )
+    return "Key: G major\nTempo: 120\n" + body
+
+
+def test_a_very_long_song_is_bounded_everywhere_it_is_shown():
+    workbench = SongWorkbench(title="Epic", notes=_huge_song())
+    form = workbench.form
+
+    assert len(form.sections) <= 16
+    assert all(len(section.chords) <= 32 for section in form.sections)
+    assert all(len(line) <= 120 for section in form.sections for line in section.lyrics)
+    assert len(workbench.form_overlay()) <= 8
+    assert len(workbench.shareable_sheet()) <= 900
+    assert len(workbench.section_names()) <= 16
+
+
+def test_a_very_long_song_does_not_flood_a_companion():
+    import json
+
+    from core.music_companion import build_snapshot
+
+    workbench = SongWorkbench(notes=_huge_song())
+    published = build_snapshot(
+        is_music_session=True,
+        clock=workbench.clock_snapshot(),
+        form_rows=workbench.form_overlay(),
+        lyric_line="x" * 5000,
+    ).to_public_dict()
+
+    assert len(json.dumps(published)) < 8192
+    assert len(published["chord_overlay"]) <= 8
+    assert len(published["lyric_line"]) <= 120
+
+
+def test_a_long_song_still_produces_a_usable_clock():
+    workbench = SongWorkbench(notes=_huge_song())
+    snapshot = workbench.clock_snapshot()
+
+    assert snapshot.bars_total > 0
+    assert snapshot.section_label
+    assert workbench.clock.locate_section(snapshot.sections[-1].name)
+
+
+def test_pathological_notes_do_not_break_the_form():
+    """Nothing here should raise, however odd the text is."""
+
+    for notes in (
+        "",
+        "\n\n\n",
+        "[" * 500,
+        "Key: " + "G" * 500,
+        "Tempo: 999999",
+        "[Verse x99999]\n" + "G " * 500,
+        "\x00\x01 [Verse]\nG D\n",
+        "Key: G major\n" + "\n".join(str(index) for index in range(2000)),
+    ):
+        workbench = SongWorkbench(notes=notes)
+        assert len(workbench.form.sections) <= 16
+        assert isinstance(workbench.conductor_line(), str)
+        assert isinstance(workbench.shareable_sheet(), str)
+        workbench.clock_snapshot()

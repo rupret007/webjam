@@ -428,6 +428,9 @@ class ConductorWindow(QMainWindow):
                 strip._invite_button,
                 strip._record_button,
                 strip._video_button,
+                # Song sits where it sits on the bar, so tabbing matches what
+                # a musician sees rather than the order things were built in.
+                strip._song_button,
                 strip._studio_button,
                 strip._tools_button,
                 strip._audio_button,
