@@ -288,11 +288,26 @@ def test_save_failure_is_announced_without_leaking_or_moving_from_retry_action(
 def test_settings_store_no_webex_identity_or_password_fields(tmp_path):
     dialog = _dialog(tmp_path, opener=lambda _url: True)
     fields = dialog.findChildren(QLineEdit)
-
-    assert fields == [dialog._name, dialog._video]
-    assert all(
-        field.echoMode() is QLineEdit.EchoMode.Normal
+    normal = [
+        field
         for field in fields
+        if field.echoMode() is QLineEdit.EchoMode.Normal
+    ]
+    secrets = [
+        field
+        for field in fields
+        if field.echoMode() is QLineEdit.EchoMode.Password
+    ]
+
+    assert normal == [dialog._name, dialog._video]
+    assert dialog._name in fields
+    assert dialog._video in fields
+    # Optional BYOK key fields may appear as password boxes. They are not
+    # a Webex identity or password.
+    assert all(
+        "webex" not in (field.accessibleName() or "").casefold()
+        and "password" not in (field.accessibleName() or "").casefold()
+        for field in secrets
     )
     copy = " ".join(label.text() for label in dialog.findChildren(QLabel))
     assert "selected meeting service handles sign-in" in copy

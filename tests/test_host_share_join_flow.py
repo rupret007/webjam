@@ -93,7 +93,6 @@ def test_launch_shows_live_and_offline_music_paths(qapp, tmp_path):
     assert [button.accessibleName() for button in visible_actions] == [
         "Host",
         "Join",
-        "New Music Project",
     ]
     assert dialog.selected_creator_profile_key == "music"
     assert dialog.showing_choices
@@ -126,12 +125,12 @@ def test_launch_creator_selector_uses_canonical_profiles_and_truthful_actions(
         assert dialog.selected_creator_profile_key == "music"
         assert dialog._host_button.text() == "Host"
         assert dialog._join_button.text() == "Join"
-        assert dialog._studio_button.text() == "New Music Project"
+        assert dialog._studio_button.isHidden() is True
+        assert dialog._studio_button.isEnabled() is False
         for control in (
             selector,
             dialog._host_button,
             dialog._join_button,
-            dialog._studio_button,
         ):
             assert control.isVisibleTo(dialog)
             assert dialog.rect().contains(
@@ -144,7 +143,6 @@ def test_launch_creator_selector_uses_canonical_profiles_and_truthful_actions(
         for button in (
             dialog._host_button,
             dialog._join_button,
-            dialog._studio_button,
         ):
             assert button.accessibleName() == button.text()
 

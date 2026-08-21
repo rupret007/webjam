@@ -96,7 +96,7 @@ _CREATOR_LAUNCH_COPY = {
             "Create a local multitrack music project without starting or joining "
             "a live session."
         ),
-        helper="Play live together or build a multitrack music project locally.",
+        helper="Host a room or paste the invite.",
         join_title="Join Music.",
         join_subtitle="Paste the WebJam invitation your host sent you.",
     ),
@@ -777,7 +777,11 @@ class LaunchDialog(QDialog):
         self._join_button.setAccessibleDescription(copy.join_description)
         self._join_button.setEnabled(not self._submitting)
 
-        local_available = profile.capabilities.local_multitrack
+        # Music's live door is Host / Join only. Local studio stays a
+        # capability, not a third button on the first screen.
+        local_available = (
+            profile.capabilities.local_multitrack and profile.key != "music"
+        )
         self._studio_button.setText(copy.local)
         self._studio_button.setAccessibleName(copy.local)
         self._studio_button.setAccessibleDescription(copy.local_description)
