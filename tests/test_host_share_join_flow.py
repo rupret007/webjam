@@ -22,12 +22,12 @@ from PySide6.QtWidgets import (
 )
 
 from core.creative_modes import CREATOR_PROFILES
-from core.jamulus_name import DEFAULT_JAMULUS_NAME
 from core.network_invite import (
     InviteLinkError,
     create_invite_link,
     parse_invite_link,
 )
+from core.jamulus_name import DEFAULT_JAMULUS_NAME
 from core.settings import AppSettings, load_settings, save_settings
 from webjam_qt.widgets.session_hud import SessionHud
 from webjam_qt.windows.launch_dialog import (
@@ -40,6 +40,14 @@ from webjam_qt.windows.launch_dialog import (
 @pytest.fixture(scope="module")
 def qapp():
     return QApplication.instance() or QApplication(sys.argv[:1])
+
+
+@pytest.fixture(autouse=True)
+def _authorize_microphone_permission(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "webjam_qt.platform_permissions.microphone_permission_status",
+        lambda: "authorized",
+    )
 
 
 def test_invite_link_round_trip_contains_only_public_connection_data():

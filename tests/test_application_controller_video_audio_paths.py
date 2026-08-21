@@ -9,29 +9,27 @@ diagnostics exporter.  All headless (QT_QPA_PLATFORM=offscreen).
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import tempfile
 import time
 import unittest
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
+from PySide6.QtCore import QTimer  # noqa: E402
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
-from core.settings import AppSettings
-from services.macos_process_activation import (
+from core.settings import AppSettings  # noqa: E402
+from services.macos_process_activation import (  # noqa: E402
     JamulusForegroundOutcome,
     JamulusForegroundReason,
 )
-from tests.support.jamulus_monitor import bind_primary_rpc_monitor
-from webjam_qt.controllers.application_controller import (
-    ApplicationController,
-)
-from webjam_qt.windows.conductor_window import ConductorWindow
+from tests.support.jamulus_monitor import bind_primary_rpc_monitor  # noqa: E402
+from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
+from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
 
 
 def _wait_until(predicate, timeout: float = 3.0) -> bool:
@@ -60,9 +58,15 @@ class _ControllerTestBase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.window, cls.controller = _make_controller()
+        cls._permission_patch = patch(
+            "webjam_qt.platform_permissions.microphone_permission_status",
+            return_value="authorized",
+        )
+        cls._permission_patch.start()
 
     @classmethod
     def tearDownClass(cls):
+        cls._permission_patch.stop()
         cls.controller.shutdown()
 
     def setUp(self):
@@ -1134,7 +1138,7 @@ class TestExportDiagnostics(_ControllerTestBase):
 
 class TestRoutingScanShutdownRace(unittest.TestCase):
     def test_routing_is_automatic_and_starts_no_scan_thread(self):
-        _window, controller = _make_controller()
+        window, controller = _make_controller()
         controller.settings.webex_audio_mode = "audience_bridge"
         controller.window.set_status_routing = MagicMock()
         with patch("core.audio_routing.scan_loopback_devices") as scan:
@@ -1146,7 +1150,7 @@ class TestRoutingScanShutdownRace(unittest.TestCase):
 
 class TestShutdownAutoSave(unittest.TestCase):
     def test_shutdown_autosaves_dirty_mix_when_connected(self):
-        _window, controller = _make_controller()
+        window, controller = _make_controller()
         controller._mix_dirty = True
         controller._jamulus_connected = True
         controller._mix_manager.save = MagicMock(return_value=True)
@@ -1155,7 +1159,7 @@ class TestShutdownAutoSave(unittest.TestCase):
         self.assertFalse(controller._mix_dirty)
 
     def test_shutdown_skips_autosave_when_demo_only(self):
-        _window, controller = _make_controller()
+        window, controller = _make_controller()
         controller._mix_dirty = True
         controller._jamulus_connected = False
         controller._mix_manager.save = MagicMock(return_value=True)

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import stat
+import socket
+import unittest
 
 from core import session_transfer_runtime
 from tests.support.dual_musician_rehearsal_lab import (
@@ -13,6 +15,24 @@ from tests.support.dual_musician_rehearsal_lab import (
 )
 
 
+def _loopback_bind_permitted() -> bool:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(("127.0.0.1", 0))
+    except PermissionError:
+        return False
+    finally:
+        sock.close()
+    return True
+
+
+_LOOPBACK_BIND_PERMITTED = _loopback_bind_permitted()
+
+
+@unittest.skipIf(
+    not _LOOPBACK_BIND_PERMITTED,
+    "Skipping dual-musician lab: loopback sockets are unavailable in this environment.",
+)
 def test_dual_musician_rehearsal_lab_is_repeatable_and_sanitized(
     tmp_path,
     monkeypatch,

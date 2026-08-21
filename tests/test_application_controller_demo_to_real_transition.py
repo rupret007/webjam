@@ -11,17 +11,15 @@ from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
-from core.settings import AppSettings
-from jamulus_controller import JamulusParticipant
-from tests.support.jamulus_monitor import bind_primary_rpc_monitor
-from webjam_qt.controllers.application_controller import (
-    ApplicationController,
-)
-from webjam_qt.windows.conductor_window import ConductorWindow
+from core.settings import AppSettings  # noqa: E402
+from jamulus_controller import JamulusParticipant  # noqa: E402
+from tests.support.jamulus_monitor import bind_primary_rpc_monitor  # noqa: E402
+from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
+from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
 
 
 def _live_primary(pid: int) -> MagicMock:
@@ -34,6 +32,11 @@ def _live_primary(pid: int) -> MagicMock:
 class TestDemoToRealTransition(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls._microphone_permission_patch = patch(
+            "webjam_qt.platform_permissions.microphone_permission_status",
+            return_value="authorized",
+        )
+        cls._microphone_permission_patch.start()
         cls.window = ConductorWindow(
             mode_entries=ApplicationController.mode_entries(),
             initial_mode_key="music_jam",
@@ -43,6 +46,7 @@ class TestDemoToRealTransition(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        cls._microphone_permission_patch.stop()
         cls.controller.shutdown()
 
     def setUp(self):

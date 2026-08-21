@@ -14,6 +14,20 @@ from unittest.mock import MagicMock, patch
 from tests.support.component_store import isolated_component_store_root
 
 
+def _loopback_bind_permitted() -> bool:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(("127.0.0.1", 0))
+    except PermissionError:
+        return False
+    finally:
+        sock.close()
+    return True
+
+
+_LOOPBACK_BIND_PERMITTED = _loopback_bind_permitted()
+
+
 def _make_settings(jamulus_rpc_port: int = 22222) -> MagicMock:
     s = MagicMock()
     s.jamulus_server = "jam.example.com"
@@ -52,6 +66,10 @@ def _make_bridge(rpc_port: int = 22222):
 
 def _free_port() -> int:
     """Bind ephemeral, capture the port, close — then assume it stays free."""
+    if not _LOOPBACK_BIND_PERMITTED:
+        raise unittest.SkipTest(
+            "Skipping bridge port-conflict assertions: loopback bind unavailable."
+        )
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]
@@ -61,6 +79,10 @@ def _free_port() -> int:
 
 def _leave_loopback_port_in_time_wait() -> int:
     """Close the accepted side first so its local port enters TIME_WAIT."""
+    if not _LOOPBACK_BIND_PERMITTED:
+        raise unittest.SkipTest(
+            "Skipping bridge port-conflict assertions: loopback bind unavailable."
+        )
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.bind(("127.0.0.1", 0))
     port = listener.getsockname()[1]
@@ -78,6 +100,10 @@ def _leave_loopback_port_in_time_wait() -> int:
     return port
 
 
+@unittest.skipIf(
+    not _LOOPBACK_BIND_PERMITTED,
+    "Skipping bridge port-conflict assertions: loopback bind unavailable.",
+)
 class TestRpcPortDetection(unittest.TestCase):
     def test_returns_false_when_port_is_free(self):
         port = _free_port()
@@ -182,6 +208,10 @@ class TestRpcPortDetection(unittest.TestCase):
         self.assertFalse(bridge._is_rpc_port_in_use())
 
 
+@unittest.skipIf(
+    not _LOOPBACK_BIND_PERMITTED,
+    "Skipping bridge port-conflict assertions: loopback bind unavailable.",
+)
 class TestLaunchAbortsOnPortConflict(unittest.TestCase):
     def test_manual_launch_calls_show_actionable_error_when_port_in_use(self):
         # Occupy a real port to force the conflict path.

@@ -15,10 +15,19 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from core.jamulus_compatibility import ComponentTarget
 from tests.support.component_store import isolated_component_store_root
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+@pytest.fixture(autouse=True)
+def _authorize_microphone_permission(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "webjam_qt.platform_permissions.microphone_permission_status",
+        lambda: "authorized",
+    )
 
 
 def _make_bridge(tmp: str):
@@ -535,12 +544,13 @@ class TestEnsureHostedServer(unittest.TestCase):
             with self.assertLogs(
                 "webjam.services.bridge",
                 level="ERROR",
-            ) as captured, patch.object(
-                bridge, "ensure_hosted_server", side_effect=raise_after_spawn
-            ), patch.object(
-                bridge, "_wait_for_hosted_ports_release", return_value=True
-            ):
-                result = bridge.certify_hosted_server_lifecycle()
+            ) as captured:
+                with patch.object(
+                    bridge, "ensure_hosted_server", side_effect=raise_after_spawn
+                ), patch.object(
+                    bridge, "_wait_for_hosted_ports_release", return_value=True
+                ):
+                    result = bridge.certify_hosted_server_lifecycle()
             self.assertFalse(result.ok)
             self.assertIn("failed before it could complete", result.detail)
             combined = "\n".join(
@@ -610,7 +620,6 @@ class _Immediate:
 class TestHostedSettings(unittest.TestCase):
     def test_hosting_derives_container_defaults_when_unset(self):
         import json
-
         from core.settings import (
             hosted_server_recordings_dir,
             hosted_server_secret_path,
@@ -637,7 +646,6 @@ class TestHostedSettings(unittest.TestCase):
 
     def test_hosting_replaces_incompatible_explicit_paths_with_container_paths(self):
         import json
-
         from core.settings import (
             hosted_server_recordings_dir,
             hosted_server_secret_path,
