@@ -42,6 +42,24 @@ def _close_controller(
     )
 
 
+def _invite_controller(profile_key: str, *, webex_url: str = "") -> SimpleNamespace:
+    return SimpleNamespace(
+        _active_creator_profile_key=profile_key,
+        _remote_invite_owner=SimpleNamespace(
+            copy_for_clipboard=MagicMock(return_value="webjam://join?v=3")
+        ),
+        _shutdown_cleanup_blocks_action=lambda: False,
+        _host_peer_warning="",
+        settings=SimpleNamespace(webex_url=webex_url),
+        window=SimpleNamespace(
+            flash_message=MagicMock(),
+            session_strip=SimpleNamespace(
+                current_title=MagicMock(return_value="Tuesday Jam")
+            ),
+        ),
+    )
+
+
 @pytest.mark.parametrize(
     ("profile_key", "expected"),
     [
@@ -58,22 +76,52 @@ def test_copy_invite_success_uses_creator_participant_vocabulary(
     expected: str,
 ) -> None:
     clipboard = MagicMock()
-    controller = SimpleNamespace(
-        _active_creator_profile_key=profile_key,
-        _remote_invite_owner=SimpleNamespace(
-            copy_for_clipboard=MagicMock(return_value="webjam://join?v=3")
-        ),
-        _shutdown_cleanup_blocks_action=lambda: False,
-        _host_peer_warning="",
-        window=SimpleNamespace(flash_message=MagicMock()),
+    controller = _invite_controller(profile_key)
+
+    with patch("PySide6.QtWidgets.QApplication") as application:
+        application.clipboard.return_value = clipboard
+        ApplicationController._copy_band_invite(controller)
+
+    copied = clipboard.setText.call_args.args[0]
+    assert "webjam://join?v=3" in copied
+    assert controller.window.flash_message.call_args.args[0] == expected
+
+
+def test_copy_invite_carries_the_meeting_link_in_the_same_message() -> None:
+    """One paste, not two: a bandmate should not have to chase a second link."""
+
+    clipboard = MagicMock()
+    controller = _invite_controller(
+        "music", webex_url="https://band.webex.com/meet/jeff"
     )
 
     with patch("PySide6.QtWidgets.QApplication") as application:
         application.clipboard.return_value = clipboard
         ApplicationController._copy_band_invite(controller)
 
-    clipboard.setText.assert_called_once_with("webjam://join?v=3")
-    assert controller.window.flash_message.call_args.args[0] == expected
+    copied = clipboard.setText.call_args.args[0]
+    assert "webjam://join?v=3" in copied
+    assert "https://band.webex.com/meet/jeff" in copied
+    assert "does not run it" in copied
+    assert controller.window.flash_message.call_args.args[0] == (
+        "One invite copied — jam link and meeting link. Send it to another "
+        "musician."
+    )
+
+
+def test_copy_invite_drops_a_meeting_link_that_fails_validation() -> None:
+    """A malformed or non-Webex link is never pasted into a bandmate's chat."""
+
+    clipboard = MagicMock()
+    controller = _invite_controller("music", webex_url="https://evil.example.com/meet")
+
+    with patch("PySide6.QtWidgets.QApplication") as application:
+        application.clipboard.return_value = clipboard
+        ApplicationController._copy_band_invite(controller)
+
+    copied = clipboard.setText.call_args.args[0]
+    assert "evil.example.com" not in copied
+    assert "webjam://join?v=3" in copied
 
 
 @pytest.mark.parametrize(

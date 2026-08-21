@@ -393,9 +393,14 @@ def _extend_section(
         if section.name != current:
             continue
         merged = list(section.chords)
-        for chord in chords:
-            if len(merged) < _MAX_CHORDS_PER_SECTION:
-                merged.append(chord)
+        # A section header can legitimately appear twice — "[Verse]" before
+        # verse one and again before verse two — and the sheet may be quoted
+        # back into the notes from chat. Re-reading the same run must not turn
+        # "Am F C G" into "Am F C G Am F C G".
+        if merged[-len(chords):] != list(chords):
+            for chord in chords:
+                if len(merged) < _MAX_CHORDS_PER_SECTION:
+                    merged.append(chord)
         sections[index] = replace(section, chords=tuple(merged))
         return
 

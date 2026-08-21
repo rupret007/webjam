@@ -61,6 +61,7 @@ from webjam_qt.widgets import (
     SessionStrip,
     SideRail,
     WebexEmbed,
+    SongOverlay,
 )
 
 
@@ -123,6 +124,10 @@ class ConductorWindow(QMainWindow):
         self.session_canvas = SessionCanvas()
         self.recording_studio = RecordingStudio()
         self.reference_studio = ReferenceStudioShell(self.recording_studio)
+        # Compact chrome that can sit beside a free Webex window: a fixed
+        # column rather than a dialog, so opening it never takes the
+        # foreground away from the meeting. Hidden until Music asks for it.
+        self.song_overlay = SongOverlay()
         # Video, notes, Studio, and Settings are session tools.  They remain
         # available from one menu without competing with the live session.
         self.side_rail.setVisible(False)
@@ -190,6 +195,7 @@ class ConductorWindow(QMainWindow):
         body_layout.setSpacing(0)
         body_layout.addWidget(self.side_rail)
         body_layout.addWidget(self.workspace_stack, stretch=1)
+        body_layout.addWidget(self.song_overlay)
 
         central = QWidget()
         central_layout = QVBoxLayout(central)

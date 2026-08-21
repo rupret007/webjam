@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QMessageBox
 
 from core.jamulus_name import JamulusNameError, validate_jamulus_name
 from core.jamulus_rpc_client import JamulusRpcMonitorIdentity
+from core.meeting_companion import end_session_prompt
 from core.session_lifecycle import SessionLifecyclePhase
 from services.bridge_service import JamulusRpcFreshness
 from webjam_qt.session_state import SessionUiState
@@ -279,23 +280,19 @@ class AudioCoordinator:
                 + "This keeps every musician's track complete and verified.",
             )
             return
-        question = (
-            "Leave this jam?\n\n"
-            "The host and other musicians will stay connected."
+        # Ending the jam does not end the meeting. WebJam runs beside an
+        # independent Webex window and cannot close it, so the confirmation
+        # says so rather than leaving a musician to discover it afterwards.
+        prompt = end_session_prompt(
+            hosting=hosting,
+            recording_active=recording_active,
+            meeting_configured=bool(
+                str(getattr(self._c.settings, "webex_url", "") or "").strip()
+            ),
         )
-        if hosting:
-            question = (
-                "End this jam for everyone?\n\n"
-                "WebJam will safely finish any recording and stop the hosted session."
-            )
-        if recording_active:
-            question = (
-                "Leave this jam?\n\nThe host's recording will keep running. "
-                "Only this Mac will disconnect."
-            )
         reply = QMessageBox.question(
-            self._c.window, "End Jam?" if hosting else "Leave Jam?",
-            question,
+            self._c.window, prompt.title,
+            prompt.full_text(),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )

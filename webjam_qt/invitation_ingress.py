@@ -47,6 +47,41 @@ def _has_literal_version_marker(value: str, version: str) -> bool:
     return any(part == f"v={version}" for part in query.split("&"))
 
 
+# A host now copies one message that carries the jam link and, optionally, a
+# meeting link and a line explaining which is which. Bandmates forward that
+# through chat and email, which add quoting and signatures of their own, so a
+# paste is rarely just a URL any more.
+_MAX_PASTE_CHARS = 8192
+
+
+def _link_from_pasted_text(value: str) -> str:
+    """Return the single ``webjam://`` link inside pasted text.
+
+    Only the exact link is returned; the surrounding text is discarded here and
+    the link still goes through the strict parser unchanged. Two different jam
+    links in one paste is ambiguous rather than merely messy, so it is refused
+    instead of guessing which one the sender meant.
+    """
+
+    if len(value) > _MAX_PASTE_CHARS:
+        raise InvitationIngressError(
+            InvitationIngressErrorCode.INVALID,
+            "That invite link doesn’t look right. Copy it again from your host.",
+        )
+    candidates = [
+        token.strip().strip("<>\"'`,;")
+        for token in value.split()
+        if token.strip().strip("<>\"'`,;").lower().startswith("webjam://")
+    ]
+    unique = list(dict.fromkeys(candidates))
+    if len(unique) != 1:
+        raise InvitationIngressError(
+            InvitationIngressErrorCode.INVALID,
+            "That invite link doesn’t look right. Copy it again from your host.",
+        )
+    return unique[0]
+
+
 def parse_invitation_at_ingress(
     text: object,
     *,
@@ -73,6 +108,14 @@ def parse_invitation_at_ingress(
     current_platform = sys.platform if platform is None else str(platform)
     raw = str(text or "")
     value = raw.strip()
+    # Extract the link from a longer paste before any policy check, so the
+    # version guards below see the same string the parser will.
+    if (
+        source == InvitationSource.PASTE
+        and not value.lower().startswith("webjam://")
+        and "webjam://" in value.lower()
+    ):
+        value = _link_from_pasted_text(value)
     if ingress_source is InvitationSource.MAC_FILE_OPEN and current_platform != "darwin":
         raise InvitationIngressError(
             InvitationIngressErrorCode.SOURCE_NOT_ALLOWED,

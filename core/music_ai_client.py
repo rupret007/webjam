@@ -309,6 +309,12 @@ class MusicAIClient:
         self._sleep = sleep
         self._monotonic = monotonic
 
+    @property
+    def transport(self) -> MusicAITransport:
+        """The transport this client uses, for downloading finished results."""
+
+        return self._transport
+
     # ------------------------------------------------------------------
     # Applications and workflows
     # ------------------------------------------------------------------

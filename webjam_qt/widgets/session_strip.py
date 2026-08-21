@@ -385,6 +385,16 @@ class SessionStrip(QFrame):
         self._notes_action.triggered.connect(
             lambda: self.tool_requested.emit("canvas")
         )
+        # Song tools open a compact panel beside the jam rather than a window,
+        # so the musician never leaves the session to look at their own song.
+        # Music only: the other creator profiles have no song form.
+        self._song_tools_action = QAction("Song Tools", tools_menu)
+        self._song_tools_action.setToolTip(
+            "Chords, lyrics, and writing help for the song in this session."
+        )
+        self._song_tools_action.triggered.connect(
+            lambda: self.tool_requested.emit("song_tools")
+        )
         self._pocket_stage_action = QAction("Use iPhone as Pocket Stage…", tools_menu)
         self._pocket_stage_action.setToolTip(
             "Pair an iPhone as a secure instrument-side session remote."
@@ -422,6 +432,7 @@ class SessionStrip(QFrame):
         tools_menu.addAction(self._shared_canvas_action)
         tools_menu.addAction(self._ai_image_action)
         tools_menu.addAction(self._notes_action)
+        tools_menu.addAction(self._song_tools_action)
         tools_menu.addAction(self._pocket_stage_action)
         # Resetting the invite acts on this session, so it belongs with the
         # session group rather than trailing the About item.
@@ -714,6 +725,12 @@ class SessionStrip(QFrame):
             "Open local session notes. Notes stay on this computer and are not "
             "media-timecode synchronized."
         )
+        # Song tools read a song form — a key, sections, and chords. Podcast
+        # and Review sessions have none, so the entry is absent there rather
+        # than present and inert.
+        song_tools_available = profile_key == "music"
+        self._song_tools_action.setVisible(song_tools_available)
+        self._song_tools_action.setEnabled(song_tools_available)
         self._tools_button.setAccessibleDescription(
             f"Open sound settings, {check_label}, conversation, recording, Shared "
             "Track, local notes, and WebJam support options."
