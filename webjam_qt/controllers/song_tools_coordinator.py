@@ -50,6 +50,10 @@ from core.music_companion import (
     evaluate_command,
     parse_command,
 )
+from core.provider_credentials import ProviderCredentials, provider_spec
+from core.song_model_help import ask_for_section, consent_body
+from core.song_help import resolve_section_label
+from core.text_model_client import missing_model_key_message
 from core.song_workbench import (
     SOURCE_PICKED_FILE,
     SOURCE_SHARED_TRACK,
@@ -90,6 +94,11 @@ class SongToolsCoordinator:
         self._unfinished_job = ""
         # A jam should not be able to fire the same separation twenty times.
         self._budget = JobBudget()
+        # Asking a model sends text a musician typed. The first ask of a
+        # session shows exactly what would go; after that the button means
+        # what they already agreed to.
+        self._model_consent: set[str] = set()
+        self._asking_model = ""
 
     # ------------------------------------------------------------------
     # Panel lifecycle
@@ -136,6 +145,7 @@ class SongToolsCoordinator:
         if overlay is None:
             return
         overlay.write_help_requested.connect(self.show_writing_help)
+        overlay.model_help_requested.connect(self.ask_model_for_chords)
         overlay.chords_requested.connect(self.show_chords)
         overlay.song_tool_requested.connect(self.run_song_tool)
         overlay.share_sheet_requested.connect(self.share_sheet_to_chat)
@@ -179,6 +189,7 @@ class SongToolsCoordinator:
             ),
             sheet_shareable=bool(self.workbench.shareable_sheet()),
         )
+        self._render_model_help_state()
         overlay.set_tools_state(
             catalog=self._catalog,
             has_api_key=bool(self._api_key()),
@@ -591,6 +602,127 @@ class SongToolsCoordinator:
             results=tuple(run.summary_line() for run in self.workbench.runs[-2:]),
             sheet_shareable=bool(self.workbench.shareable_sheet()),
         )
+        self._render_model_help_state()
+
+    # ------------------------------------------------------------------
+    # Writing help from a musician's own model key
+    # ------------------------------------------------------------------
+    def _render_model_help_state(self) -> None:
+        """Offer the keys this computer has, or say in one line that it has none."""
+
+        overlay = self.overlay
+        if overlay is None:
+            return
+        providers = self._configured_models()
+        overlay.set_model_help_state(
+            providers=providers,
+            note="" if providers else missing_model_key_message(),
+            enabled=(
+                bool(self.workbench.form.has_content) and not self._asking_model
+            ),
+        )
+
+    def _configured_models(self) -> tuple[tuple[str, str], ...]:
+        credentials = ProviderCredentials(settings=self._c.settings)
+        pairs: list[tuple[str, str]] = []
+        for provider_id in credentials.configured_text_ids():
+            spec = provider_spec(provider_id)
+            pairs.append((provider_id, spec.label if spec is not None else provider_id))
+        return tuple(pairs)
+
+    def ask_model_for_chords(self, provider_id: str = "") -> None:
+        """Ask one provider for chords for the selected part, on request only.
+
+        Nothing here runs on its own: no polling, no pre-fetch, no request when
+        the panel opens. The band's own suggestions are already on screen and
+        cost nothing, so this is strictly the extra a musician asked for.
+        """
+
+        overlay = self.overlay
+        if overlay is None or self._asking_model:
+            return
+        if not self.is_available():
+            self._flash("Song tools are part of a Music session.", ms=6000)
+            return
+
+        configured = self._configured_models()
+        if not configured:
+            self._flash(missing_model_key_message(), ms=8000)
+            return
+        chosen = str(provider_id or "") or configured[0][0]
+        label = dict(configured).get(chosen, chosen)
+        if chosen not in dict(configured):
+            self._flash(missing_model_key_message(chosen), ms=8000)
+            return
+
+        self._sync_workbench()
+        form = self.workbench.form
+        section = resolve_section_label(
+            form, section_name=overlay.selected_section()
+        )
+        if not form.has_content:
+            self._flash(
+                "Write a key and one section header first. There is nothing "
+                "to ask about yet.",
+                ms=8000,
+            )
+            return
+        if chosen not in self._model_consent and not self._confirm_model_send(
+            form, section=section, provider_label=label
+        ):
+            return
+        self._model_consent.add(chosen)
+
+        api_key = ProviderCredentials(settings=self._c.settings).api_key(chosen)
+        self._asking_model = chosen
+        overlay.set_model_busy(label)
+        self._render_model_help_state()
+
+        def work() -> None:
+            result = ask_for_section(
+                form,
+                section_label=section,
+                provider_id=chosen,
+                api_key=api_key,
+            )
+            self._on_ui(lambda: self._finish_model_help(result))
+
+        threading.Thread(target=work, daemon=True, name="model-write-help").start()
+
+    def _confirm_model_send(self, form, *, section: str, provider_label: str) -> bool:
+        """Show the exact text before the first send of a session."""
+
+        answer = QMessageBox.question(
+            self._c.window,
+            f"Ask {provider_label}?",
+            consent_body(
+                form, section_label=section, provider_label=provider_label
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    def _finish_model_help(self, result: Any) -> None:
+        self._asking_model = ""
+        overlay = self.overlay
+        self._render_model_help_state()
+        if overlay is None:
+            return
+        overlay.set_model_busy("")
+        if not result.available:
+            overlay.set_model_suggestions(None)
+            self._flash(result.blocked_reason, ms=9000)
+            return
+        # Published to a companion the same way WebJam's own suggestion is,
+        # and labelled a suggestion there too -- with the provider named, so
+        # nobody can mistake it for something the room measured.
+        first = result.suggestions[0]
+        self._last_suggestion = replace(
+            first, reason=f"{first.provider_label}: {first.reason}".strip(": ")
+        )
+        self._last_suggestion_section = result.section_label
+        overlay.set_model_suggestions(result)
 
     def show_chords(self, section: str = "") -> None:
         """Suggest changes for one part of the song, in the context around it.
@@ -1000,9 +1132,14 @@ class SongToolsCoordinator:
         return base / _RESULTS_DIRNAME
 
     def _api_key(self) -> str:
-        return str(
-            getattr(self._c.settings, "music_ai_api_key", "") or ""
-        ).strip()
+        """The Music AI key, wherever this musician chose to keep it.
+
+        The audio-facts key and the writing-help keys resolve through the same
+        module, so a key saved in the OS credential store works for both and
+        neither of them can end up in the settings file by accident.
+        """
+
+        return ProviderCredentials(settings=self._c.settings).api_key("music_ai")
 
     def _is_host(self) -> bool:
         checker = getattr(self._c, "_reference_track_is_host", None)
@@ -1049,7 +1186,13 @@ class SongToolsCoordinator:
 
     def _open_settings(self) -> None:
         opener = getattr(self._c, "_open_settings_wizard", None)
-        if opener is not None:
+        if opener is None:
+            return
+        try:
+            opener(show_keys=True)
+        except TypeError:
+            # An older or stubbed controller. Settings is still the right
+            # place to land; it just opens with the section collapsed.
             opener()
 
     def _flash(self, message: str, *, ms: int = 6000) -> None:

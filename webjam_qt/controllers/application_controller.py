@@ -10947,7 +10947,7 @@ class ApplicationController(QObject):
                 audience_bridge_active=(self._webex_audio_mode() == "audience_bridge")
             )
 
-    def _open_settings_wizard(self) -> None:
+    def _open_settings_wizard(self, *, show_keys: bool = False) -> None:
         from webjam_qt.windows.simple_settings import SimpleSettingsDialog
 
         if self._shutdown_cleanup_blocks_action():
@@ -10974,6 +10974,10 @@ class ApplicationController(QObject):
         wizard.install_webex_requested.connect(
             lambda: self._on_install_webex_requested(parent=wizard)
         )
+        if show_keys:
+            # Somebody arrived here from a feature that wanted a key. Opening
+            # on a collapsed section would make them go looking twice.
+            wizard.show_optional_keys()
         if wizard.exec() == SimpleSettingsDialog.DialogCode.Accepted:
             from core.settings import load_settings
 

@@ -34,6 +34,7 @@ from core.meeting_companion import MuteSurface
 from core.music_ai_catalog import UNSUPPORTED_MOISES_FEATURES, SongToolCatalog
 from core.song_clock import SongClockSnapshot
 from core.song_help import ChordAdvice, NextChordAdvice, WritingAdvice
+from core.song_model_help import ModelHelpResult
 from core.song_workbench import CatchUp, FormRow
 from core.stem_bench import StemMix, StemTarget
 from webjam_qt.theme.tokens import Color, Font, Space
@@ -67,6 +68,7 @@ class SongOverlay(QFrame):
     closed = Signal()
     song_tool_requested = Signal(str)     # Music AI verb key
     write_help_requested = Signal()
+    model_help_requested = Signal(str)    # text provider id; "" means the only one
     chords_requested = Signal(str)        # section name; "" means next missing
     share_sheet_requested = Signal()
     api_key_requested = Signal()
@@ -242,6 +244,38 @@ class SongOverlay(QFrame):
         buttons.addWidget(self._write_button)
         buttons.addWidget(self._chords_button)
 
+        # Asking a model is an extra a musician opts into by bringing a key.
+        # It sits under WebJam's own help rather than above it, because the
+        # help above works on a computer that has never seen an API key.
+        self._model_row = QWidget()
+        model_layout = QHBoxLayout(self._model_row)
+        model_layout.setContentsMargins(0, 0, 0, 0)
+        model_layout.setSpacing(Space.XS)
+        self._model_provider = QComboBox()
+        self._model_provider.setObjectName("SongOverlayModelProvider")
+        self._model_provider.setAccessibleName("Which model to ask")
+        self._model_provider.setToolTip(
+            "You have more than one key saved. This picks which one to use."
+        )
+        self._model_provider.setVisible(False)
+        self._model_button = QPushButton("Ask a model")
+        self._model_button.setObjectName("GhostButton")
+        self._model_button.clicked.connect(
+            lambda: self.model_help_requested.emit(self.selected_model_provider())
+        )
+        # Hidden until a key exists. A control that does nothing is worse than
+        # no control, and this page's whole point is that it works without one.
+        self._model_button.setVisible(False)
+        model_layout.addWidget(self._model_provider, 1)
+        model_layout.addWidget(self._model_button)
+        self._model_row.setVisible(False)
+
+        # One line, not a wall: an absent optional key is a fact about this
+        # computer, not a thing standing between anyone and the jam.
+        self._model_note = _body_label("")
+        self._model_note.setObjectName("SongOverlayMuted")
+        self._model_note.setVisible(False)
+
         self._advice = _body_label("")
         self._suggestion_headline = _body_label("")
         # Suggestions are never written anywhere until a musician says so, so
@@ -281,6 +315,8 @@ class SongOverlay(QFrame):
         layout.addLayout(clock_row)
         layout.addWidget(self._section_picker)
         layout.addLayout(buttons)
+        layout.addWidget(self._model_row)
+        layout.addWidget(self._model_note)
         layout.addWidget(self._advice)
         layout.addWidget(self._suggestion_headline)
         layout.addWidget(self._suggestion_container)
@@ -464,6 +500,89 @@ class SongOverlay(QFrame):
 
         return str(self._section_picker.currentData() or "")
 
+    def selected_model_provider(self) -> str:
+        """Return the provider to ask, chosen here rather than at launch.
+
+        Host and Join never mention a model. Which key to use is a decision
+        about one suggestion, so it is made where the suggestion is asked for.
+        """
+
+        return str(self._model_provider.currentData() or "")
+
+    def set_model_help_state(
+        self,
+        *,
+        providers: tuple[tuple[str, str], ...] = (),
+        note: str = "",
+        enabled: bool = True,
+    ) -> None:
+        """Offer the musician's own keys, or say in one line that there are none.
+
+        With no key the row disappears entirely and a single muted line takes
+        its place. Write-help itself is unaffected: everything above this is
+        computed on this computer and needs nothing.
+        """
+
+        previous = self.selected_model_provider()
+        self._model_provider.blockSignals(True)
+        self._model_provider.clear()
+        for provider_id, label in providers:
+            self._model_provider.addItem(label, provider_id)
+        index = self._model_provider.findData(previous)
+        self._model_provider.setCurrentIndex(max(0, index))
+        self._model_provider.blockSignals(False)
+
+        self._model_row.setVisible(bool(providers))
+        self._model_button.setVisible(bool(providers))
+        self._model_provider.setVisible(len(providers) > 1)
+        if providers:
+            only = providers[0][1] if len(providers) == 1 else ""
+            self._model_button.setText(f"Ask {only}" if only else "Ask")
+            self._model_button.setAccessibleName(
+                f"Ask {only} for chords for this part"
+                if only
+                else "Ask the chosen model for chords for this part"
+            )
+            self._model_button.setToolTip(
+                "Sends the key, tempo, section names, and the chords you have "
+                "written, using your own key. No audio, no lyrics, no file."
+            )
+            self._model_button.setEnabled(bool(enabled))
+        self._model_note.setText(note)
+        self._model_note.setVisible(bool(note) and not providers)
+
+    def set_model_busy(self, provider_label: str = "") -> None:
+        """Show that a model was asked, without covering anything."""
+
+        busy = bool(provider_label)
+        self._model_button.setEnabled(not busy)
+        if busy:
+            self._suggestion_headline.setText(f"Asking {provider_label}…")
+            self._suggestion_headline.setVisible(True)
+
+    def set_model_suggestions(self, result: ModelHelpResult | None) -> None:
+        """Render a model's answer in the same place, labelled as its own."""
+
+        self._clear_suggestion_rows()
+        if result is None:
+            self._suggestion_headline.setVisible(False)
+            self._dismiss_button.setVisible(False)
+            return
+
+        self._suggestion_headline.setText(result.headline())
+        self._suggestion_headline.setVisible(True)
+        self._dismiss_button.setVisible(True)
+        for suggestion in result.suggestions[:_MAX_LIST_ROWS]:
+            label = suggestion.provider_label or "Model"
+            self._suggestion_rows.append(
+                self._add_suggestion_row(
+                    headline=f"{label} suggestion · {suggestion.chord_line}",
+                    detail=suggestion.reason,
+                    section_label=result.section_label,
+                    chord_line=suggestion.chord_line,
+                )
+            )
+
     def set_sections(
         self,
         names: tuple[str, ...],
@@ -590,14 +709,64 @@ class SongOverlay(QFrame):
         )
         self._now_next.setVisible(True)
 
-    def _render_suggestions(self, chords: ChordAdvice | None) -> None:
-        """Draw each suggestion with the one tap that would keep it."""
-
+    def _clear_suggestion_rows(self) -> None:
         for row in self._suggestion_rows:
             self._suggestion_layout.removeWidget(row)
             row.setParent(None)
             row.deleteLater()
         self._suggestion_rows = []
+
+    def _add_suggestion_row(
+        self,
+        *,
+        headline: str,
+        detail: str,
+        section_label: str,
+        chord_line: str,
+    ) -> QWidget:
+        """Build one suggestion with the single tap that would keep it.
+
+        Shared by WebJam's own theory suggestions and a model's, so both are
+        drawn the same way, both say what they are, and both are equally inert
+        until someone presses Keep.
+        """
+
+        row = QWidget()
+        row_layout = QVBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(1)
+
+        top = QHBoxLayout()
+        top.setSpacing(Space.XS)
+        top.addWidget(_body_label(headline), 1)
+        keep = QPushButton("Keep")
+        keep.setObjectName("GhostButton")
+        keep.setFixedHeight(22)
+        keep.setAccessibleName(f"Keep {chord_line} for {section_label}")
+        keep.setToolTip(
+            f"Write {chord_line} under {section_label} in your notes. The "
+            "Studio arrangement is not touched."
+        )
+        keep.clicked.connect(
+            lambda _checked=False, label=section_label, line=chord_line: (
+                self.suggestion_kept.emit(label, line)
+            )
+        )
+        top.addWidget(keep)
+        row_layout.addLayout(top)
+
+        if detail:
+            reason = _body_label(detail)
+            reason.setObjectName("SongOverlayMuted")
+            row_layout.addWidget(reason)
+
+        self._suggestion_layout.addWidget(row)
+        return row
+
+    def _render_suggestions(self, chords: ChordAdvice | None) -> None:
+        """Draw each suggestion with the one tap that would keep it."""
+
+        self._clear_suggestion_rows()
 
         if chords is None:
             self._suggestion_headline.setText("")
@@ -622,42 +791,17 @@ class SongOverlay(QFrame):
         self._suggestion_headline.setVisible(True)
 
         for suggestion in chords.suggestions[:_MAX_LIST_ROWS]:
-            row = QWidget()
-            row_layout = QVBoxLayout(row)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(1)
-
-            headline = QHBoxLayout()
-            headline.setSpacing(Space.XS)
-            text = _body_label(f"Suggestion · {suggestion.chord_line}")
-            headline.addWidget(text, 1)
-            keep = QPushButton("Keep")
-            keep.setObjectName("GhostButton")
-            keep.setFixedHeight(22)
-            keep.setAccessibleName(
-                f"Keep {suggestion.chord_line} for {chords.section_label}"
+            self._suggestion_rows.append(
+                self._add_suggestion_row(
+                    headline=f"Suggestion · {suggestion.chord_line}",
+                    detail=(
+                        f"{suggestion.numeral_line} · "
+                        f"{suggestion.reason} {suggestion.context}".strip()
+                    ),
+                    section_label=chords.section_label,
+                    chord_line=suggestion.chord_line,
+                )
             )
-            keep.setToolTip(
-                f"Write {suggestion.chord_line} under {chords.section_label} in "
-                "your notes. The Studio arrangement is not touched."
-            )
-            keep.clicked.connect(
-                lambda _checked=False,
-                label=chords.section_label,
-                line=suggestion.chord_line: self.suggestion_kept.emit(label, line)
-            )
-            headline.addWidget(keep)
-            row_layout.addLayout(headline)
-
-            reason = _body_label(
-                f"{suggestion.numeral_line} · "
-                f"{suggestion.reason} {suggestion.context}".strip()
-            )
-            reason.setObjectName("SongOverlayMuted")
-            row_layout.addWidget(reason)
-
-            self._suggestion_layout.addWidget(row)
-            self._suggestion_rows.append(row)
 
         self._dismiss_button.setVisible(True)
 

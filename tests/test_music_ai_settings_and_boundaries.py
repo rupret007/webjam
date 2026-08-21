@@ -88,7 +88,16 @@ def test_no_api_key_is_committed_to_this_repository():
     assignment = re.compile(
         r"music_ai_api_key\s*(?:[:=]|=)\s*[\"']([^\"']*)[\"']"
     )
-    allowed = {"", "k", "env-key-1", "env-key-2", "file-key", "saved-key"}
+    allowed = {
+        "",
+        "k",
+        "env-key-1",
+        "env-key-2",
+        "file-key",
+        "saved-key",
+        "from-the-old-file",
+        "from-the-keychain",
+    }
     offenders: list[str] = []
 
     for directory in (*SHIPPING_DIRS, "tests"):
@@ -145,9 +154,13 @@ def test_no_music_module_imports_a_meeting_dependency():
         "core/song_form.py",
         "core/song_help.py",
         "core/song_workbench.py",
+        "core/song_model_help.py",
         "core/music_ai_client.py",
         "core/music_ai_catalog.py",
         "core/music_ai_results.py",
+        "core/provider_credentials.py",
+        "core/secret_store.py",
+        "core/text_model_client.py",
     ]
     for relative in music_modules:
         tree = ast.parse((REPO_ROOT / relative).read_text())
@@ -547,6 +560,10 @@ SONG_MODULES = (
     "core/music_ai_client.py",
     "core/music_ai_catalog.py",
     "core/music_ai_results.py",
+    "core/provider_credentials.py",
+    "core/secret_store.py",
+    "core/text_model_client.py",
+    "core/song_model_help.py",
     "webjam_qt/widgets/song_overlay.py",
     "webjam_qt/controllers/song_tools_coordinator.py",
 )

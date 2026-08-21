@@ -573,9 +573,11 @@ def test_next_chord_candidates_render_with_their_reasons(overlay):
 def test_the_song_page_keeps_to_its_control_budget(overlay):
     """Few words: three worded actions, two transport glyphs, one picker.
 
-    The budget is split because a 28px transport glyph does not cost a
-    musician the same attention as another labelled button. Anything that adds
-    a fourth worded action to this page should have to change this test.
+    This is the default page on a computer with no keys of any kind, which is
+    the shape most musicians will ever see. The budget is split because a 28px
+    transport glyph does not cost a musician the same attention as another
+    labelled button. Anything that adds a fourth worded action to this page
+    should have to change this test.
     """
 
     from PySide6.QtWidgets import QComboBox
@@ -594,7 +596,12 @@ def test_the_song_page_keeps_to_its_control_budget(overlay):
     ]
     assert len(glyphs) == 2
     assert all(button.width() <= 32 for button in glyphs)
-    assert len(page.findChildren(QComboBox)) == 1
+    visible_pickers = [
+        combo for combo in page.findChildren(QComboBox) if not combo.isHidden()
+    ]
+    assert [combo.objectName() for combo in visible_pickers] == [
+        "SongOverlaySection"
+    ]
 
 
 # ----------------------------------------------------------------------
@@ -1427,7 +1434,10 @@ def test_the_panel_stays_smaller_than_a_plugin_rack(overlay):
     ]
     # Worded actions across every page, tabs excluded by the length filter.
     assert len(buttons) <= 18
-    assert len(overlay.findChildren(QComboBox)) == 1
+    visible_pickers = [
+        combo for combo in overlay.findChildren(QComboBox) if not combo.isHidden()
+    ]
+    assert len(visible_pickers) == 1
 
 
 def test_leaving_music_closes_the_song_panel(app):
