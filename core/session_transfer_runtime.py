@@ -41,6 +41,7 @@ from core.session_transfer import (
     SessionPeerServer,
     SessionStateSnapshot,
     SessionTransferError,
+    SharedCanvasSessionSnapshot,
     SharedTrackPlaybackState,
     SharedTrackSessionSnapshot,
     TransferConflictError,
@@ -1717,6 +1718,30 @@ class HostPeerSession:
             playback_generation=playback_generation,
         )
 
+    def publish_shared_canvas_state(
+        self,
+        *,
+        shared: bool,
+        join_url: str = "",
+        server_label: str = "",
+        session_label: str = "",
+    ) -> SharedCanvasSessionSnapshot | None:
+        """Offer authenticated peers the host's Drawpile invitation.
+
+        The projection is an address, not authority: WebJam cannot see the
+        canvas and never reports that anyone else opened it.  Drawpile still
+        applies its own session password and account rules on join.
+        """
+
+        if self.control is None:
+            return None
+        return self.control.publish_shared_canvas(
+            shared=shared,
+            join_url=join_url,
+            server_label=server_label,
+            session_label=session_label,
+        )
+
     def finish_take(
         self,
         take_id: str,
@@ -2945,9 +2970,11 @@ class GuestPeerSession:
                     state.signal is not RecordingSignal.IDLE
                     or state.shared_track.generation > 0
                     # A first poll into a room where the host is already
-                    # playing must notify, or a late joiner would sit on the
-                    # default projection until the host next touched anything.
+                    # playing or already painting must notify, or a late
+                    # joiner would sit on the default projection until the
+                    # host next touched anything.
                     or state.reference_video.generation > 0
+                    or state.shared_canvas.generation > 0
                     or state.capture_arm is not None
                 )
             )
