@@ -19,6 +19,7 @@ meeting services reached through hardened external links. The boundary is delibe
 | `core/reference_video.py` | Art's host-clocked reference video: descriptor-bound content hashing, session-scoped same-file identity, host-only transport, and a fail-closed follower |
 | `core/drawpile.py`, `core/shared_canvas.py`, `services/drawpile_service.py` | Art's shared canvas as a Drawpile handoff: explicit install-location discovery with no PATH search, documented invitation parsing and normalization, host-only canvas choice, and a fail-closed follower that never launches an unparseable address |
 | `core/krita_ai.py`, `core/ai_image.py`, `services/krita_ai_service.py` | Art's in-session AI image action as a Krita handoff: Krita and AI-plugin discovery, a single loopback-only backend boundary, two local verbs (Make and Edit), and no prompt, model, publisher, or wire projection of any kind |
+| `core/room_clock.py`, `webjam_qt/controllers/room_clock_coordinator.py` | One named pulse for the whole room: a schema that refuses to call a file offset a bar, elapsed-time-only extrapolation on a locally measured age, source precedence (a song outranks a video), and the published seam a music surface owns later |
 | `core/external_program.py` | The one implementation of the honesty rules for a program WebJam did not ship: explicit absolute locations, no PATH search, no glob, and a resolved real executable file |
 | `core/song_*`, `core/project_*`, schema-3 Studio | Portable Reference Studio project/media ownership, local playback/recording, non-destructive arrangement/mix, and bounce |
 | `services/bridge_service.py` | Direct owned-process launch/stop, hosted-server supervision, authenticated Jamulus RPC, and verified managed/embedded/explicit/system component resolution |
@@ -45,7 +46,9 @@ room plus one shared Drawpile canvas, or a room plus one host-clocked reference
 video that each computer plays from its own copy of the same local file -- and
 the registry refuses a fourth. An in-session AI image action opens Krita's own
 AI plugin against a loopback backend; it is deliberately not a start, publishes
-nothing to the room, and cannot reach off the machine. It refuses standalone projects, session
+nothing to the room, and cannot reach off the machine. A room clock projection,
+deliberately ungated by profile, lets a painter read the bar a band is on
+without Art owning a song engine. It refuses standalone projects, session
 recording, take review/editing/export, a Jamulus reference-audio route, any
 canvas surface of its own, and any frame-accurate or media-timecode behavior.
 WebJam brokers the canvas invitation and never draws a stroke; Drawpile owns

@@ -156,6 +156,49 @@ sources cannot be proven, the profile disables session recording, and therefore
 take review, take editing, and track export. Its conductor offers no Record
 action.
 
+### The room clock
+
+Art is the visual half of a room that also carries live audio, and the room
+clock is what makes those halves one product rather than two windows. It
+answers "where are we right now" once, for everybody, from whoever actually
+owns the pulse.
+
+A clock has exactly one owner at a time, and its source is always named:
+
+| Source | Owner | What it states |
+| --- | --- | --- |
+| `song_form` | a music surface | bar, beat, section, and optionally tempo and meter |
+| `reference_video` | Art's host-clocked video | a position in that file |
+| `none` | nobody | the room has no pulse |
+
+`none` is a first-class answer. A room where people talk and work has no clock,
+and Art says so plainly rather than showing a hopeful zero.
+
+**A song outranks a video.** When something in the room owns a song, that is
+the pulse a painter should be riding; a reference video speaks only when no
+song does.
+
+**Two rules keep this from becoming a fake music engine.** The first is
+structural: a `reference_video` clock **cannot** carry a bar, beat, section,
+tempo, or meter, because the wire schema refuses that combination. A file
+offset is not a musical position, so no caller can produce one by passing an
+extra keyword. The second is that only *elapsed time* is ever extrapolated,
+and only by the locally measured age of the projection — the same bounded trick
+the reference video follower uses, needing no clock shared between computers. A
+bar is rendered exactly as it was published and is never advanced, interpolated,
+or derived.
+
+**Art owns no song engine.** The song-form owner is a published seam, and Art
+supplies nothing for it: every Art surface works exactly as well with no
+musical pulse. A music surface can become the owner later by calling
+`publish_room_clock_state`, and no painting surface changes when it does. The
+projection is deliberately **not** gated on a creator profile for exactly that
+reason.
+
+The readout is one line with nothing to press, shown where a painter already
+is. The room has one owner, and someone reading the pulse is not it. A lost
+owner stops the clock and says so rather than drifting.
+
 ### AI image
 
 Someone in the room can have AI **Make** a new image from text, or **Edit** a
@@ -201,9 +244,10 @@ side effect of this action.
 
 Few controls. Talk is already there. The reference video adds host transport
 and a guest hide. The canvas adds one open action and a status line — ready,
-missing Drawpile, or unreadable. AI adds two buttons and a status line. There
-is no brush, colour, or layer control in WebJam because those belong to
-Drawpile, and no prompt or model control because those belong to Krita.
+missing Drawpile, or unreadable. AI adds two buttons and a status line. The
+room clock adds no control at all, because it is a readout. There is no brush,
+colour, or layer control in WebJam because those belong to Drawpile, and no
+prompt or model control because those belong to Krita.
 
 ### Explicit non-goals for Art
 
@@ -216,6 +260,8 @@ Drawpile, and no prompt or model control because those belong to Krita.
 - no image generator, prompt, model, or sampler inside WebJam, and no cloud
   image API;
 - no reading of the shared canvas by any model;
+- no song engine, metronome, tempo detection, or chord inference in Art. Art
+  reads a musical pulse that something else owns, and never computes one;
 - no camera-on-the-easel feed;
 - no shipped, bundled, or downloadable video catalog, and no ripped or ingested
   third-party lesson content;

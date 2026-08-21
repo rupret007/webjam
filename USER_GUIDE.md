@@ -141,11 +141,32 @@ Things worth knowing:
 - If Krita or the plugin is missing, WebJam says which one and offers the
   download rather than opening an editor that cannot generate.
 
+### Seeing where the room is
+
+If the room has a pulse, the shared canvas panel shows it in one line, so you
+can keep painting and still know where everyone is:
+
+- **Bar 17.3 · Chorus** — something in the room owns a song, and you are riding
+  its bars.
+- **2:14 / 5:30** — the host's reference video is running, and that is the
+  position in the file.
+- **No shared clock** — the room has neither. That is normal; work freely.
+
+Things worth knowing:
+
+- **It is a readout, not a control.** The room has one owner of its pulse, and
+  reading it does not make you that owner.
+- **A video position is never shown as a bar.** A place in a file is not a
+  place in a song, and WebJam will not pretend otherwise.
+- **If WebJam loses track of the owner**, it stops the clock and says so rather
+  than drifting.
+
 ### What Art does not do
 
 Art has no camera feed and **does not record the session**, so there is no take
 to review afterwards. It has no image generator of its own, no model list, and
-no cloud image service. Your notes stay local to your own computer as in every
+no cloud image service, and no song engine, metronome, or chord detection — it
+reads a musical pulse that something else in the room owns. Your notes stay local to your own computer as in every
 other profile. There is no standalone Art project in this Preview.
 
 Art is also the whole product on your desktop. If you want to see faces, use

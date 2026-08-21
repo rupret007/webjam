@@ -51,6 +51,36 @@ All notable improvements and features for the WebJam creator collaboration platf
     because a Drawpile session password has no business surviving in the
     durable recording journal. A restarted host offers no canvas until its
     owner shares one again.
+- Added a **room clock**: one named pulse the whole room can read, whatever
+  kind of maker you are. This is the piece that makes a shared canvas and a
+  live song one product rather than two windows -- a painter working on the
+  cover can see what bar the band is on without leaving the canvas.
+  - A clock has exactly one owner and its source is always stated: `song_form`
+    when something in the room owns a song, `reference_video` when Art's
+    host-clocked video is running, or `none` when the room honestly has no
+    pulse. `none` is a first-class answer, not a degraded one; a hopeful
+    `0:00` would be a small lie told continuously.
+  - **A song outranks a video.** When something owns a song, that is the pulse
+    a painter should be riding.
+  - **A file offset is never a bar, and the wire enforces it.** A
+    `reference_video` clock cannot carry a bar, beat, section, tempo, or meter;
+    the schema refuses the combination outright, so no future caller can turn
+    Art into a metronome by passing one extra keyword.
+  - **Only elapsed time is extrapolated**, and only by the age of the
+    projection as measured locally -- the same bounded technique the reference
+    video follower uses, needing no clock shared between computers. A musical
+    position is rendered exactly as published and never advanced here. A lost
+    owner stops the clock and says so rather than drifting.
+  - **Art owns no song engine, and the seam is published.** The song-form
+    owner is a callable that Art supplies nothing for, so every Art surface
+    works exactly as well with no musical pulse. A music surface becomes the
+    owner through `publish_room_clock_state` and no painting surface changes.
+    The projection is deliberately not gated on a creator profile for that
+    reason.
+  - The readout is one line in the shared canvas panel with nothing to press:
+    the room has one owner of its pulse, and someone reading it is not it.
+    Memory-only like the other live projections, so a restarted host has no
+    clock until its owner republishes.
 - Added an **in-session AI image action**: Make a new image from text, or Edit
   a photo the artist already owns. One action, two verbs, and deliberately
   **not** a fourth start card, because nobody decides what they are making by
@@ -117,8 +147,9 @@ All notable improvements and features for the WebJam creator collaboration platf
   the peer poll interval — the same honesty bar as Shared Track. It is **not**
   frame-accurate review and carries **no media timecode**; the registry refuses
   an Art profile that claims otherwise. There is no camera feed, no canvas
-  surface inside WebJam, no image generator or model of WebJam's own, and no
-  shipped, downloaded, or ingested video or image catalog.
+  surface inside WebJam, no image generator or model of WebJam's own, no song
+  engine, metronome, tempo detection, or chord inference, and no shipped,
+  downloaded, or ingested video or image catalog.
 - Art ships **no Webex Embedded App, companion projection, or in-meeting
   surface**. A free or personal Webex account cannot create or load a custom
   embedded app, so the desktop application is the whole product and Webex stays
@@ -144,7 +175,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Two-computer behavior is **NOT RUN**: this profile is covered by automated
   tests only and has no release or physical evidence. The Drawpile and Krita
   handoffs in particular have not been exercised against real installs of
-  either program, and the AI path has never met a real ComfyUI backend.
+  either program, the AI path has never met a real ComfyUI backend, and the
+  room clock's `song_form` source has never been published by a real music
+  surface because none exists yet.
 
 ### Internal
 
