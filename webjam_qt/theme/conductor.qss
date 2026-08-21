@@ -827,12 +827,16 @@ QPushButton#StatusChip[tone="recovery"]:hover {
     border-color: ${COLOR_TEXT_PRIMARY};
 }
 
+/* Quiet is about weight, not size. The fill is absent, the colour is muted
+   and the type is small, but the target stays large enough to hit reliably --
+   a secondary action should be easy to press and hard to mistake for the
+   primary one, which are different problems. */
 QPushButton#QuietAction {
     background: transparent;
     color: ${COLOR_TEXT_MUTED};
     border: none;
     border-radius: ${RADIUS_SM}px;
-    min-height: 30px;
+    min-height: 44px;
     padding: 0 ${SPACE_SM}px;
     font-size: ${FONT_SIZE_SM}px;
     text-align: left;
