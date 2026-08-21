@@ -153,6 +153,16 @@ wrong, so each is pinned by a test rather than by intent.
   alone above everything else, with the next chord beside it, and only while
   the position is actually known — a big chord that is a guess would be the
   most confident wrong thing on the screen.
+- **A jam cannot spend an account by accident.** One job runs at a time, and a
+  sliding per-hour budget refuses the rest before a picker opens. Each run
+  spends credits and none is more correct than the first, so the refusal says
+  that and when to try again.
+- **The click stays the clock.** Song tools start no player. The only route
+  into the room is the host-owned Shared Track, and a count-in is held through
+  rather than counted, because the four beats before bar one are not the song.
+- **A host who leaves keeps the room's song.** Overlays are local facts and
+  stay on screen. New uploads wait for a host rather than failing, and no
+  confirmation is left pretending to be pending.
 - **Sleep does not restart work.** When WebJam stops waiting for a job it says
   so ("Split stems — still at Music AI") and never runs it again, because a
   blind retry spends the account's credits twice for one answer.

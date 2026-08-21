@@ -43,6 +43,14 @@
 | “What comes with Track Export?” | In Music or Podcast & Voice, equal-length edited/original 24-bit stems, rough mix, markers, instructions, provenance, and checksums. Review & Rehearsal Preview has no Track Export. |
 | “How do I verify sound?” | Make sound and verify another participant hears you. Use Music's **Band Check**, Podcast's **Sound Check**, or Review's **Session Check** if you need help. |
 | “Jamulus closed or lost sound.” | Bring Jamulus forward, fix sound there, then return to WebJam’s safe retry path. |
+| “Where are chords and lyrics?” | Music live session → the direct **Song** control beside Studio. The panel reads your session notes; write `Key: G major`, `Tempo: 120`, and `[Verse x8]` with chords under each part. |
+| “Are these chords real or a guess?” | Both are shown and labelled. A fact from your notes says *from your notes*, a Music AI result says *detected*, and a WebJam idea says **Suggestion** and is never written down until you press **Keep**. |
+| “Why can I not run Split stems?” | One of: no Music AI key (add one at music.ai/dash or set `MUSIC_AI_API_KEY`), you are not the host, your Music AI account has no matching workflow, a job is already running, or the hourly job limit is reached. The panel says which. |
+| “Did Song tools change my audio devices?” | No. The meeting platform uses the computer mic and speakers; Jamulus uses your interface; Song tools read and write files only and never re-bind either. |
+| “Will the stem mute chips mute the band?” | No. They are the reference file. Musician faders and the meeting are unaffected. |
+| “The clock does not match what we are playing.” | It is a shared reference at your stated tempo, not a follower — WebJam does not listen to the band. When a Shared Track holds the song, that transport owns the position instead. |
+| “A Song tools job never finished.” | WebJam stops waiting after a while and says so; Music AI keeps working and nothing is cancelled or re-run. Check the Music AI dashboard. |
+| “How do I show the chords to everyone?” | They are on the WebJam strip on each computer. Screen-sharing your desktop into a meeting is your own choice, not a WebJam feature. |
 
 Do not ask a creator for ports, CoreAudio UIDs, JSON-RPC details, Jamulus
 profile filenames, private file paths, or server process information.

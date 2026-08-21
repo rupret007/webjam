@@ -22,7 +22,7 @@ host can paste into band chat, without inventing a sync protocol.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -84,11 +84,22 @@ class SharedTrackView:
     position_s: float = 0.0
     duration_s: float = 0.0
     host_controlled: bool = True
+    # A count-in is the click before bar one, not the song. Following it would
+    # walk the form during the four beats everyone is waiting through.
+    count_in: bool = False
+
+    @property
+    def carries_the_form(self) -> bool:
+        """Whether this transport is currently playing the song itself."""
+
+        return self.loaded and self.playing and not self.count_in
 
     def status_line(self) -> str:
         if not self.loaded:
             return "No Shared Track loaded."
         name = self.source_name or "Shared Track"
+        if self.count_in:
+            return f"{name} — counting in"
         if self.playing:
             return f"{name} — playing {_clock(self.position_s)}"
         return f"{name} — paused {_clock(self.position_s)}"
@@ -135,11 +146,65 @@ class CatchUp:
         return bool(self.lines)
 
 
+@dataclass
+class JobBudget:
+    """A bounded number of Music AI jobs per session, per window.
+
+    One job at a time is already enforced elsewhere; this stops the other
+    failure, which is a room firing the same separation twenty times in an
+    evening because nothing said no. Each one spends the account's credits and
+    none of them is more correct than the first.
+
+    Deliberately simple: a sliding window over start times, with an injectable
+    clock so it is exact under test.
+    """
+
+    limit: int = 6
+    window_s: float = 3600.0
+    _started: list[float] = field(default_factory=list)
+
+    def _prune(self, now: float) -> None:
+        cutoff = float(now) - max(1.0, float(self.window_s))
+        self._started = [start for start in self._started if start > cutoff]
+
+    def allows(self, now: float) -> bool:
+        self._prune(now)
+        return len(self._started) < max(1, int(self.limit))
+
+    def record(self, now: float) -> None:
+        self._prune(now)
+        self._started.append(float(now))
+
+    def remaining(self, now: float) -> int:
+        self._prune(now)
+        return max(0, max(1, int(self.limit)) - len(self._started))
+
+    def retry_after_s(self, now: float) -> float:
+        """Seconds until the oldest run leaves the window, or 0."""
+
+        self._prune(now)
+        if not self._started or self.allows(now):
+            return 0.0
+        return max(
+            0.0, (self._started[0] + float(self.window_s)) - float(now)
+        )
+
+    def reason(self, now: float) -> str:
+        minutes = max(1, int(round(self.retry_after_s(now) / 60.0)))
+        return (
+            f"That is {max(1, int(self.limit))} Music AI jobs this hour. Each "
+            "one spends your account's credits, so WebJam pauses here. Try "
+            f"again in about {minutes} minute{'s' if minutes != 1 else ''}."
+        )
+
+
 def evaluate_upload_preconditions(
     *,
     capability: SongToolCapability | None,
     is_host: bool,
     has_api_key: bool,
+    budget: JobBudget | None = None,
+    now: float = 0.0,
 ) -> UploadDecision:
     """Answer everything that does not depend on which file was chosen.
 
@@ -163,10 +228,13 @@ def evaluate_upload_preconditions(
         return UploadDecision(
             allowed=False,
             reason=(
-                "Only the host can send a file to Music AI. Ask the host to "
-                f"run {capability.label} for the room."
+                f"{capability.label} waits for a host. Only the host sends a "
+                "file to Music AI, so this runs when someone is hosting "
+                "again. Chords and lyrics already here stay."
             ),
         )
+    if budget is not None and not budget.allows(now):
+        return UploadDecision(allowed=False, reason=budget.reason(now))
     return UploadDecision(allowed=True)
 
 
@@ -177,6 +245,8 @@ def evaluate_upload(
     path: str,
     is_host: bool,
     has_api_key: bool,
+    budget: JobBudget | None = None,
+    now: float = 0.0,
 ) -> UploadDecision:
     """Decide whether this exact file may be sent, failing closed by default.
 
@@ -185,25 +255,19 @@ def evaluate_upload(
     without a key is not told to go find the host.
     """
 
-    if not has_api_key:
-        return UploadDecision(allowed=False, reason=missing_key_message())
-    if capability is None:
-        return UploadDecision(
-            allowed=False, reason="That Song tool is not available."
-        )
-    if not capability.supported:
-        return UploadDecision(
-            allowed=False,
-            reason=capability.reason or f"{capability.label} is unavailable.",
-        )
-    if not is_host:
-        return UploadDecision(
-            allowed=False,
-            reason=(
-                "Only the host can send a file to Music AI. Ask the host to "
-                f"run {capability.label} for the room."
-            ),
-        )
+    # Everything that does not depend on the file is answered in exactly one
+    # place, so the pre-dialog gate and this one can never disagree.
+    preconditions = evaluate_upload_preconditions(
+        capability=capability,
+        is_host=is_host,
+        has_api_key=has_api_key,
+        budget=budget,
+        now=now,
+    )
+    if preconditions.blocked:
+        return preconditions
+    assert capability is not None  # preconditions reject None
+
     if source_kind == LIVE_MIX_SOURCE or path == LIVE_MIX_SOURCE:
         return UploadDecision(
             allowed=False,
@@ -638,6 +702,7 @@ __all__ = [
     "SOURCE_SHARED_TRACK",
     "CatchUp",
     "FormRow",
+    "JobBudget",
     "SharedTrackView",
     "SongWorkbench",
     "UploadDecision",

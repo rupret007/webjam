@@ -8,6 +8,7 @@ socket, a real window, or a real session.
 from __future__ import annotations
 
 import json
+import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -18,7 +19,7 @@ from core.creative_modes import get_creator_profile_by_key_or_default
 from core.music_ai_catalog import failed_catalog, resolve_song_tools
 from core.music_ai_client import API_BASE_URL, MusicAIResponse, MusicAIWorkflow
 from core.music_ai_results import SongArtifact, SongToolRun
-from core.song_workbench import SongWorkbench
+from core.song_workbench import JobBudget, SongWorkbench
 from core.stem_bench import StemBenchError
 from webjam_qt.controllers.song_tools_coordinator import SongToolsCoordinator
 from webjam_qt.windows.conductor_window import ConductorWindow
@@ -1750,3 +1751,151 @@ def test_a_refusal_before_the_picker_is_not_an_accident_of_wording(app):
     assert source.index("evaluate_upload_preconditions") < source.index(
         "_choose_source"
     )
+
+
+# ----------------------------------------------------------------------
+# Quota, the click, and a host who left
+# ----------------------------------------------------------------------
+def test_a_jam_cannot_fire_twenty_stem_jobs(app, tmp_path):
+    source = tmp_path / "mix.wav"
+    source.write_bytes(b"RIFF" + b"0" * 4096)
+    coordinator = _coordinator(app)
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+    coordinator._budget = JobBudget(limit=2, window_s=3600.0)
+
+    started = 0
+    for _attempt in range(5):
+        coordinator._running_verb = ""
+        with patch(
+            "webjam_qt.controllers.song_tools_coordinator.QFileDialog"
+            ".getOpenFileName",
+            return_value=(str(source), ""),
+        ), patch(
+            "webjam_qt.controllers.song_tools_coordinator.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ), patch(
+            "webjam_qt.controllers.song_tools_coordinator.MusicAIClient"
+        ), patch(
+            "webjam_qt.controllers.song_tools_coordinator.threading.Thread"
+        ) as thread:
+            coordinator.run_song_tool("stems")
+            started += thread.call_count
+
+    assert started == 2
+    assert any("Music AI jobs this hour" in m for m in _flashes(coordinator))
+
+
+def test_the_limit_refuses_before_the_picker_opens(app):
+    coordinator = _coordinator(app)
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+    coordinator._budget = JobBudget(limit=1, window_s=3600.0)
+    coordinator._budget.record(time.monotonic())
+
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.QFileDialog.getOpenFileName"
+    ) as picker, patch(
+        "webjam_qt.controllers.song_tools_coordinator.QMessageBox.question"
+    ) as confirm:
+        coordinator.run_song_tool("stems")
+
+    picker.assert_not_called()
+    confirm.assert_not_called()
+
+
+def test_song_tools_never_start_a_second_player(app):
+    """Count-in, metronome, and Shared Track transport stay the clock."""
+
+    import inspect
+
+    from webjam_qt.controllers.song_tools_coordinator import SongToolsCoordinator
+
+    source = inspect.getsource(SongToolsCoordinator)
+    # The only route into the room is the host-owned Shared Track loader.
+    assert "_load_reference_track" in source
+    for forbidden in (
+        "QMediaPlayer",
+        "QSoundEffect",
+        "sounddevice",
+        "_play_reference_track",
+        "start_playback",
+        "metronome",
+    ):
+        assert forbidden not in source, forbidden
+
+
+def test_the_clock_holds_through_a_count_in(app):
+    coordinator, _now = _clock_coordinator(app)
+    coordinator.overlay.setVisible(True)
+    coordinator._c.window.session_strip._shared_track_last_snapshot = SimpleNamespace(
+        state="playing",
+        source_name="demo.wav",
+        position_s=30.0,
+        duration_s=180.0,
+        count_in_active=True,
+    )
+
+    coordinator.refresh()
+
+    snapshot = coordinator.workbench.clock_snapshot()
+    assert snapshot.follows_shared_track
+    assert not snapshot.running          # the click is not the song
+    assert coordinator.overlay._now_chord.isHidden()
+
+
+def test_the_clock_starts_when_the_count_in_ends(app):
+    coordinator, _now = _clock_coordinator(app)
+    coordinator.overlay.setVisible(True)
+    strip = coordinator._c.window.session_strip
+    strip._shared_track_last_snapshot = SimpleNamespace(
+        state="playing",
+        source_name="demo.wav",
+        position_s=30.0,
+        duration_s=180.0,
+        count_in_active=True,
+    )
+    coordinator.refresh()
+
+    strip._shared_track_last_snapshot = SimpleNamespace(
+        state="playing",
+        source_name="demo.wav",
+        position_s=30.0,
+        duration_s=180.0,
+        count_in_active=False,
+    )
+    coordinator.refresh()
+
+    assert coordinator.workbench.clock_snapshot().running
+
+
+def test_a_host_who_left_keeps_the_overlays_and_defers_the_upload(app, tmp_path):
+    source = tmp_path / "mix.wav"
+    source.write_bytes(b"RIFF" + b"0" * 4096)
+    coordinator = _coordinator(app, is_host=False)
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+    coordinator.overlay.setVisible(True)
+    coordinator.refresh()
+
+    # Local facts are still on screen.
+    assert "Verse: Am F C G" in coordinator.overlay._form_rows.text()
+    assert coordinator.workbench.conductor_line()
+
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.QFileDialog.getOpenFileName"
+    ) as picker:
+        coordinator.run_song_tool("stems")
+
+    picker.assert_not_called()
+    assert any("waits for a host" in m for m in _flashes(coordinator))
+
+
+def test_a_host_who_left_does_not_pretend_a_confirmation_is_pending(app):
+    coordinator = _coordinator(app, is_host=False)
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.QMessageBox.question"
+    ) as confirm:
+        coordinator.run_song_tool("stems")
+
+    confirm.assert_not_called()
+    assert coordinator._running_verb == ""

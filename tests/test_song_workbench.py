@@ -8,12 +8,14 @@ from core.music_ai_catalog import resolve_song_tools
 from core.music_ai_client import MusicAIWorkflow
 from core.music_ai_results import SongArtifact, SongToolRun
 from core.song_workbench import (
+    JobBudget,
     LIVE_MIX_SOURCE,
     SOURCE_PICKED_FILE,
     SOURCE_SHARED_TRACK,
     SharedTrackView,
     SongWorkbench,
     evaluate_upload,
+    evaluate_upload_preconditions,
 )
 
 ACCOUNT = [
@@ -592,3 +594,106 @@ def test_clearing_runs_clears_the_bench_too():
 
     assert not workbench.stem_bench.loaded
     assert workbench.runs == ()
+
+
+# ----------------------------------------------------------------------
+# Quota: one at a time, and not twenty in an evening
+# ----------------------------------------------------------------------
+def test_a_budget_allows_a_normal_evening_then_pauses():
+    budget = JobBudget(limit=3, window_s=3600.0)
+
+    for index in range(3):
+        assert budget.allows(index * 60.0)
+        budget.record(index * 60.0)
+
+    assert not budget.allows(180.0)
+    assert budget.remaining(180.0) == 0
+
+
+def test_the_budget_says_why_and_when_to_try_again():
+    budget = JobBudget(limit=2, window_s=3600.0)
+    budget.record(0.0)
+    budget.record(0.0)
+
+    reason = budget.reason(600.0)
+    assert "2 Music AI jobs this hour" in reason
+    assert "spends your account's credits" in reason
+    assert "50 minutes" in reason
+    assert 0 < budget.retry_after_s(600.0) <= 3600.0
+
+
+def test_the_window_slides_rather_than_locking_the_session_out():
+    budget = JobBudget(limit=2, window_s=3600.0)
+    budget.record(0.0)
+    budget.record(10.0)
+
+    assert not budget.allows(100.0)
+    assert budget.allows(3601.0)
+    assert budget.retry_after_s(3601.0) == 0.0
+
+
+def test_the_budget_refuses_uploads_before_a_file_is_ever_chosen():
+    budget = JobBudget(limit=1, window_s=3600.0)
+    budget.record(0.0)
+
+    decision = evaluate_upload_preconditions(
+        capability=STEMS, is_host=True, has_api_key=True, budget=budget, now=60.0
+    )
+
+    assert decision.blocked
+    assert "Music AI jobs this hour" in decision.reason
+
+
+def test_without_a_budget_nothing_changes():
+    assert evaluate_upload_preconditions(
+        capability=STEMS, is_host=True, has_api_key=True
+    ).allowed
+
+
+# ----------------------------------------------------------------------
+# Host leaves: local facts stay, new uploads wait
+# ----------------------------------------------------------------------
+def test_a_session_with_no_host_waits_rather_than_failing(audio_file):
+    decision = evaluate_upload(
+        capability=STEMS,
+        source_kind=SOURCE_PICKED_FILE,
+        path=audio_file,
+        is_host=False,
+        has_api_key=True,
+    )
+
+    assert decision.blocked
+    assert "waits for a host" in decision.reason
+    assert "Chords and lyrics already here stay" in decision.reason
+
+
+def test_the_song_the_room_wrote_survives_losing_the_host():
+    """Overlays are local facts; they do not belong to whoever is hosting."""
+
+    workbench = SongWorkbench(title="Tuesday", notes=SHEET)
+    before = workbench.form_overlay()
+
+    catch_up = workbench.catch_up(is_host=False)
+
+    assert workbench.form_overlay() == before
+    assert workbench.conductor_line()
+    assert catch_up.sheet_available
+
+
+# ----------------------------------------------------------------------
+# The click stays the clock
+# ----------------------------------------------------------------------
+def test_a_count_in_is_not_the_song():
+    counting = SharedTrackView(
+        loaded=True, playing=True, source_name="demo.wav", count_in=True
+    )
+    playing = SharedTrackView(loaded=True, playing=True, source_name="demo.wav")
+
+    assert not counting.carries_the_form
+    assert playing.carries_the_form
+    assert "counting in" in counting.status_line()
+
+
+def test_a_loaded_but_stopped_track_carries_nothing():
+    assert not SharedTrackView(loaded=True, source_name="a.wav").carries_the_form
+    assert not SharedTrackView().carries_the_form

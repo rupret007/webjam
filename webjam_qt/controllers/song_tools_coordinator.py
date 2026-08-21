@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +51,7 @@ from core.music_companion import (
 from core.song_workbench import (
     SOURCE_PICKED_FILE,
     SOURCE_SHARED_TRACK,
+    JobBudget,
     SharedTrackView,
     SongWorkbench,
     evaluate_upload,
@@ -83,6 +85,8 @@ class SongToolsCoordinator:
         # slept -- is still running at Music AI. It is remembered so the
         # status can be reported honestly instead of silently restarted.
         self._unfinished_job = ""
+        # A jam should not be able to fire the same separation twenty times.
+        self._budget = JobBudget()
 
     # ------------------------------------------------------------------
     # Panel lifecycle
@@ -722,6 +726,8 @@ class SongToolsCoordinator:
             capability=capability,
             is_host=self._is_host(),
             has_api_key=bool(api_key),
+            budget=self._budget,
+            now=time.monotonic(),
         )
         if precheck.blocked:
             self._flash(precheck.reason, ms=9000)
@@ -755,6 +761,9 @@ class SongToolsCoordinator:
         assert capability is not None  # evaluate_upload rejects None
         self._running_verb = key
         self._unfinished_job = ""
+        # Counted at the moment a job actually starts, not when one is asked
+        # for, so a refused attempt costs the room nothing.
+        self._budget.record(time.monotonic())
         self._cancelled.clear()
         overlay = self.overlay
         if overlay is not None:
@@ -915,6 +924,7 @@ class SongToolsCoordinator:
             position_s=float(getattr(snapshot, "position_s", 0.0) or 0.0),
             duration_s=float(getattr(snapshot, "duration_s", 0.0) or 0.0),
             host_controlled=True,
+            count_in=bool(getattr(snapshot, "count_in_active", False)),
         )
 
     def _sync_clock_to_shared_track(self) -> None:
@@ -925,15 +935,17 @@ class SongToolsCoordinator:
         """
 
         view = self._shared_track_view()
+        # The count-in is the click before bar one. Holding through it keeps
+        # the overlay on the downbeat everyone is counting toward.
         self.workbench.clock.follow_shared_track(
             loaded=view.loaded,
             position_s=view.position_s,
-            playing=view.playing,
+            playing=view.carries_the_form,
         )
         # A musician who joined late is watching a song that is already
         # moving. Nobody pressed start here, so nothing would repaint their
         # overlay unless the Shared Track itself starts the tick.
-        if view.loaded and view.playing:
+        if view.carries_the_form:
             self._start_ticking()
 
     def _shared_track_path(self) -> str:
