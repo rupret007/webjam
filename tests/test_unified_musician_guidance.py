@@ -29,6 +29,7 @@ from webjam_qt.theme import load_stylesheet
 from webjam_qt.widgets.recording_studio import RecordingStudio
 from webjam_qt.windows.conductor_window import ConductorWindow
 
+
 APP = QApplication.instance() or QApplication([])
 
 
@@ -351,10 +352,7 @@ def test_stale_or_cancelled_startup_cannot_mask_terminal_bridge_truth(tmp_path):
             "conductor_token": stale_token,
             "cancel_event": threading.Event(),
         }
-        assert (
-            controller._session_conductor_facts().music_path
-            is MusicPathState.FAILED
-        )
+        assert controller._session_conductor_facts().music_path is MusicPathState.FAILED
 
         current_token = controller.session_conductor.token
         cancelled = threading.Event()
@@ -366,10 +364,7 @@ def test_stale_or_cancelled_startup_cannot_mask_terminal_bridge_truth(tmp_path):
             "conductor_token": current_token,
             "cancel_event": cancelled,
         }
-        assert (
-            controller._session_conductor_facts().music_path
-            is MusicPathState.FAILED
-        )
+        assert controller._session_conductor_facts().music_path is MusicPathState.FAILED
     finally:
         controller._startup_attempt = None
         _close(controller, window, old_home)
@@ -415,6 +410,7 @@ def test_guest_media_mapping_uses_only_bounded_transfer_facts(tmp_path):
     segment = SimpleNamespace(source=source, status="pending")
     guest = SimpleNamespace(
         active_take_id="",
+        capture_finalization_needs_attention=False,
         recovered_captures=(),
         pending_segments=(segment,),
         stop=lambda: None,
@@ -432,6 +428,19 @@ def test_guest_media_mapping_uses_only_bounded_transfer_facts(tmp_path):
             GuestMediaState.WAITING,
             EvidenceState.IN_PROGRESS,
         )
+
+        guest.capture_finalization_needs_attention = True
+        assert controller._guest_media_state() == (
+            GuestMediaState.NEEDS_ATTENTION,
+            EvidenceState.UNKNOWN,
+        )
+        controller.settings.local_capture_enabled = False
+        assert controller._guest_media_state() == (
+            GuestMediaState.NEEDS_ATTENTION,
+            EvidenceState.UNKNOWN,
+        )
+        controller.settings.local_capture_enabled = True
+        guest.capture_finalization_needs_attention = False
 
         guest.active_take_id = ""
         segment.status = "verified"

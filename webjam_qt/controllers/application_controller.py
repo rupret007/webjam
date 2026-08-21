@@ -1569,9 +1569,11 @@ class ApplicationController(QObject):
         """Map the guest transfer owner's finite facts without exposing errors."""
 
         guest = getattr(self, "guest_peer", None)
-        if guest is None or not bool(
-            getattr(self.settings, "local_capture_enabled", False)
-        ):
+        if guest is None:
+            return GuestMediaState.NOT_EXPECTED, EvidenceState.NOT_REQUIRED
+        if bool(getattr(guest, "capture_finalization_needs_attention", False)):
+            return GuestMediaState.NEEDS_ATTENTION, EvidenceState.UNKNOWN
+        if not bool(getattr(self.settings, "local_capture_enabled", False)):
             return GuestMediaState.NOT_EXPECTED, EvidenceState.NOT_REQUIRED
         try:
             segments = tuple(guest.pending_segments)

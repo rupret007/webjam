@@ -1350,9 +1350,7 @@ class HostPeerSession:
             obligations = self._local_original_obligations_by_take.get(canonical_take)
             control = self.control
         if obligations is None or control is None:
-            raise SessionTransferError(
-                "The guest capture-arm service is unavailable."
-            )
+            raise SessionTransferError("The guest capture-arm service is unavailable.")
         required = tuple(
             item
             for item in obligations
@@ -1381,9 +1379,7 @@ class HostPeerSession:
         with self._lock:
             control = self.control
             registry = self.registry
-            planned = self._local_original_obligations_by_take.get(
-                canonical_take, ()
-            )
+            planned = self._local_original_obligations_by_take.get(canonical_take, ())
         planned_required_ids = tuple(
             sorted(
                 item.participant_id
@@ -2634,6 +2630,7 @@ class GuestPeerSession:
         self._capture_started_obligation: (
             tuple[int, str, tuple[int, ...], tuple[str, ...]] | None
         ) = None
+        self._capture_finalization_needs_attention = False
         self._guidance_notification_generation = 0
         self._pending: list[PendingLocalSegment] = []
         self._stop_event = threading.Event()
@@ -2669,6 +2666,12 @@ class GuestPeerSession:
     @property
     def active_take_id(self) -> str:
         return self._active_take_id
+
+    @property
+    def capture_finalization_needs_attention(self) -> bool:
+        """Whether capture finalization has an indeterminate durable outcome."""
+
+        return bool(getattr(self, "_capture_finalization_needs_attention", False))
 
     @property
     def pending_segments(self) -> tuple[PendingLocalSegment, ...]:
@@ -2730,7 +2733,7 @@ class GuestPeerSession:
             except SessionTransferError:
                 pass
             self.invalidate_recording_presence()
-            return True
+            return not self.capture_finalization_needs_attention
 
     def observe_presence(self, channel_id: int, display_name: str) -> None:
         desired = (
@@ -2930,8 +2933,7 @@ class GuestPeerSession:
         self._apply_capture_arm_state(state)
         if state.signal is RecordingSignal.RECORDING and state.take_id:
             if bool(self.capture_enabled()) and (
-                not state.capture_arm_supported
-                or self._active_take_id == state.take_id
+                not state.capture_arm_supported or self._active_take_id == state.take_id
             ):
                 # Legacy hosts have no capture-arm capability and retain their
                 # historical session-wide start behavior.  On a current host,
@@ -3274,6 +3276,8 @@ class GuestPeerSession:
             self._finalize_capture(
                 needs_attention="A new take started before the prior stop."
             )
+            if self._capture is not None:
+                return False
         (
             enabled,
             track_count,
@@ -3325,11 +3329,18 @@ class GuestPeerSession:
             channel_counts,
             logical_source_ids,
         )
+        self._capture_finalization_needs_attention = False
         self._notify_guidance_changed()
         return True
 
     def _cancel_armed_capture(self) -> None:
         """Discard only pre-start audio after the exact arm was canceled."""
+
+        if self.capture_finalization_needs_attention:
+            # stop_into() may already have partially moved durable files. An
+            # automatic abort cannot distinguish that outcome from an intact
+            # armed stream, so preserve the exact owner for recovery review.
+            return
 
         capture = self._capture
         self._capture = None
@@ -3362,24 +3373,40 @@ class GuestPeerSession:
         needs_attention: str = "",
         upload_allowed: bool = True,
     ) -> None:
+        if self.capture_finalization_needs_attention:
+            # A prior stop_into() failed after an unknown amount of durable
+            # work. Retrying could split, duplicate, or overwrite the take.
+            return
         capture = self._capture
         take_id = self._active_take_id
         if capture is None or not take_id:
+            return
+        final_dir = self.queue_path.parent / take_id
+        try:
+            result = capture.stop_into(final_dir)
+        except Exception:  # noqa: BLE001 - capture errors may contain local paths
+            self._capture_finalization_needs_attention = True
+            self.last_error = (
+                "The local original could not be finalized and needs local "
+                "recovery review."
+            )
+            self._notify_guidance_changed()
+            return
+        source_files = tuple(getattr(result, "files", ()) or ())
+        if not source_files:
+            self._capture_finalization_needs_attention = True
+            self.last_error = (
+                "The local original could not be finalized and needs local "
+                "recovery review."
+            )
+            self._notify_guidance_changed()
             return
         self._capture = None
         self._active_take_id = ""
         self._active_capture_arm = None
         self._active_capture_arm_state_generation = None
         self._bound_capture_arm_ack = None
-        final_dir = self.queue_path.parent / take_id
-        try:
-            result = capture.stop_into(final_dir)
-        except Exception:  # noqa: BLE001 - capture errors may contain local paths
-            self.last_error = (
-                "The local original could not be finalized and needs local "
-                "recovery review."
-            )
-            return
+        self._capture_finalization_needs_attention = False
         errors = list(getattr(result, "errors", ()) or ())
         if needs_attention:
             errors.append(needs_attention)
@@ -3422,7 +3449,6 @@ class GuestPeerSession:
         capture_device = getattr(result, "capture_device", None)
         device_id = str(getattr(capture_device, "device_id", "") or "")
         gaps = tuple(getattr(result, "gaps", ()) or ())
-        source_files = tuple(getattr(result, "files", ()) or ())
         inventory_input_count = len(source_files)
         inventory_segment_count = len(source_files)
         (

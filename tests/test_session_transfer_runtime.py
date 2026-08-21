@@ -16,16 +16,16 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from core.local_capture import (
-    LocalCaptureGap,
-    LocalCaptureTrack,
-    local_capture_track_map_fingerprint,
-)
 from core.network_invite import (
     BandInvite,
     InviteLinkError,
     create_invite_link,
     parse_invite_link,
+)
+from core.local_capture import (
+    LocalCaptureGap,
+    LocalCaptureTrack,
+    local_capture_track_map_fingerprint,
 )
 from core.session_transfer import (
     EnrollmentRegistry,
@@ -42,9 +42,9 @@ from core.session_transfer import (
     load_or_create_installation_id,
 )
 from core.session_transfer_runtime import (
-    PEER_TRANSFER_ERROR_PREFIX,
     GuestPeerSession,
     HostPeerSession,
+    PEER_TRANSFER_ERROR_PREFIX,
     _participant_inventory_disposition,
     is_private_lan_host,
 )
@@ -120,10 +120,10 @@ def _click_wav(
     """Write bounded shared-transient fixtures for peer timing tests."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    audio = np.zeros(round(duration_s * rate), dtype=np.float32)
+    audio = np.zeros(int(round(duration_s * rate)), dtype=np.float32)
     shape = np.asarray((0.88, 0.54, 0.24, 0.08), dtype=np.float32)
     for time_s in times:
-        frame = round(time_s * rate)
+        frame = int(round(time_s * rate))
         if 0 <= frame <= len(audio) - len(shape):
             audio[frame : frame + len(shape)] = shape
     sf.write(path, audio, rate, subtype="PCM_24")
@@ -210,7 +210,7 @@ def _descriptor(
 
 
 class _FakeCapture:
-    instances: list[_FakeCapture] = []
+    instances: list["_FakeCapture"] = []
 
     def __init__(
         self,
@@ -259,7 +259,7 @@ class _FakeCapture:
 class _GappedFakeCapture(_FakeCapture):
     """A deterministic local-capture result with one gap per source stem."""
 
-    instances: list[_GappedFakeCapture] = []
+    instances: list["_GappedFakeCapture"] = []
 
     def stop_into(self, destination: Path):
         result = super().stop_into(destination)
@@ -548,6 +548,73 @@ def test_guest_capture_starts_only_after_confirmed_state_survives_peer_outage_an
     # guidance refreshes once more when both Local Originals are verified.
     assert guidance_updates == ["changed", "changed", "changed"]
     guest.stop()
+
+
+def test_guest_finalization_failure_retains_exact_owner_and_never_retries(
+    tmp_path: Path,
+    peer,
+) -> None:
+    credentials, _registry, control, _transfers, server = peer
+
+    class FailingFinalizeCapture(_FakeCapture):
+        instances: list["FailingFinalizeCapture"] = []
+
+        def stop_into(self, _destination: Path):
+            self.stop_calls += 1
+            raise OSError("ENOSPC while writing /private/client-project/take.wav")
+
+    invite = BandInvite(
+        "127.0.0.1",
+        22124,
+        "Test",
+        credentials.session_id,
+        server.address[1],
+        credentials.invite_token,
+    )
+    guidance_updates: list[str] = []
+    guest = GuestPeerSession(
+        invite,
+        display_name="Alex",
+        takes_root=tmp_path / "guest",
+        installation_path=tmp_path / "installation.json",
+        capture_enabled=lambda: True,
+        capture_config=lambda: (7, 48_000, 128),
+        capture_factory=FailingFinalizeCapture,
+        on_guidance_changed=lambda: guidance_updates.append("changed"),
+    )
+    guest.poll_once()
+    take_id = _id()
+    control.begin(take_id, started_utc="2026-08-17T01:00:00Z")
+    guest.poll_once()
+    capture = FailingFinalizeCapture.instances[-1]
+
+    control.finish(take_id, stopped_utc="2026-08-17T01:00:01Z")
+    guest.poll_once()
+    guidance_after_failure = len(guidance_updates)
+    guest.poll_once()
+
+    assert capture.stop_calls == 1
+    assert guest.active_take_id == take_id
+    assert guest.capture_finalization_needs_attention
+    assert guest.pending_segments == ()
+    assert guest.last_error == (
+        "The local original could not be finalized and needs local recovery review."
+    )
+    assert "ENOSPC" not in guest.last_error
+    assert "client-project" not in guest.last_error
+    assert len(guidance_updates) == guidance_after_failure
+
+    replacement_take_id = _id()
+    control.begin(
+        replacement_take_id,
+        started_utc="2026-08-17T01:00:02Z",
+    )
+    guest.poll_once()
+    assert guest.active_take_id == take_id
+    assert len(FailingFinalizeCapture.instances) == 1
+    assert capture.stop_calls == 1
+    assert guest.stop() is False
+    assert capture.stop_calls == 1
 
 
 def test_guest_capture_uses_the_exact_configured_local_original_map(
