@@ -95,6 +95,9 @@ def test_launch_shows_live_and_offline_music_paths(qapp, tmp_path):
         "Join",
     ]
     assert dialog.selected_creator_profile_key == "music"
+    assert dialog._name_label.isVisibleTo(dialog) is False
+    assert dialog._name_input.isVisibleTo(dialog) is False
+    assert dialog._name_preview.isVisibleTo(dialog) is False
     assert dialog.showing_choices
     assert not dialog._invite_input.isVisibleTo(dialog)
     dialog.close()
@@ -224,14 +227,24 @@ def test_launch_exposes_exact_jamulus_wrap_preview_without_changing_saved_name(
     dialog.show()
     qapp.processEvents()
     try:
+        assert dialog.selected_creator_profile_key == "music"
+        assert dialog._name_label.isVisibleTo(dialog) is False
+        assert dialog._name_input.isVisibleTo(dialog) is False
+        assert dialog._name_preview.isVisibleTo(dialog) is False
         assert dialog._name_input.text() == "Jeff Story"
+        selector = dialog._creator_profile_selector
+        selector.setCurrentIndex(selector.findData("podcast_voice"))
+        qapp.processEvents()
+        assert dialog._name_label.isVisibleTo(dialog) is True
+        assert dialog._name_input.isVisibleTo(dialog) is True
+        assert dialog._name_preview.isVisibleTo(dialog) is True
         assert "Jeff Sto / ry" in dialog._name_preview.text()
         assert "two lines" in dialog._name_preview.text()
     finally:
         dialog.close()
 
 
-def test_reference_studio_choice_persists_profile_without_rewriting_live_settings(
+def test_local_project_choice_persists_profile_without_rewriting_live_settings(
     qapp, tmp_path
 ):
     config = tmp_path / "settings.json"
@@ -242,16 +255,16 @@ def test_reference_studio_choice_persists_profile_without_rewriting_live_setting
     )
     dialog = LaunchDialog(settings)
     dialog._creator_profile_selector.setCurrentIndex(
-        dialog._creator_profile_selector.findData("music")
+        dialog._creator_profile_selector.findData("podcast_voice")
     )
 
     dialog._studio_button.click()
 
     assert dialog.selected_role == "studio"
-    assert dialog.session_name == "Reference Studio"
+    assert dialog.session_name == "Host + Guest"
     assert dialog.result() == dialog.DialogCode.Accepted
     persisted = load_settings(config)
-    assert persisted.last_creator_profile_key == "music"
+    assert persisted.last_creator_profile_key == "podcast_voice"
     assert persisted.jamulus_server == "band.example"
     assert persisted.host_server_enabled is False
     assert settings.jamulus_server == "band.example"
@@ -475,7 +488,8 @@ def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     visible_fields = [
         field for field in dialog.findChildren(QLineEdit) if field.isVisibleTo(dialog)
     ]
-    assert visible_fields == [dialog._name_input, dialog._invite_input]
+    assert visible_fields == [dialog._invite_input]
+    assert dialog._name_input.isVisibleTo(dialog) is False
     dialog._name_input.setText("Drummer")
     dialog._invite_input.setText(
         create_invite_link("192.168.1.42", session_name="Drummer Test")

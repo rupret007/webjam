@@ -276,7 +276,7 @@ def test_a_profile_without_cards_keeps_its_headline_and_helper(
     try:
         assert dialog._choice_title.isVisibleTo(dialog._choice_page) is True
         assert dialog._choice_subtitle.isVisibleTo(dialog._choice_page) is True
-        assert "multitrack music project" in dialog._choice_helper.text()
+        assert dialog._choice_helper.text() == "Play live together."
     finally:
         dialog.deleteLater()
 

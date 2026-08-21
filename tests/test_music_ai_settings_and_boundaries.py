@@ -240,14 +240,26 @@ def test_the_clock_does_not_depend_on_anything_music_specific():
         assert forbidden not in imported
 
 
-def test_no_art_or_drawing_surface_was_implemented():
-    """The clock is published for another profile; the profile is not built."""
+def test_music_song_stack_does_not_implement_a_drawing_surface():
+    """Art owns the canvas. Music's song stack must not grow one."""
 
+    music_paths = [
+        path
+        for path in (REPO_ROOT / "core").glob("*.py")
+        if path.name.startswith(("music_ai", "song_", "stem_bench"))
+    ]
+    music_paths.extend(
+        [
+            REPO_ROOT / "webjam_qt" / "controllers" / "song_tools_coordinator.py",
+            REPO_ROOT / "webjam_qt" / "widgets" / "song_overlay.py",
+        ]
+    )
     offenders = [
         str(path.relative_to(REPO_ROOT))
-        for path, text in _shipping_sources()
+        for path in music_paths
+        if path.is_file()
         for marker in ("Drawpile", "drawpile", "CanvasStroke", "brush_stroke")
-        if marker in text
+        if marker in path.read_text(encoding="utf-8", errors="ignore")
     ]
     assert offenders == []
 

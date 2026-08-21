@@ -96,7 +96,7 @@ _CREATOR_LAUNCH_COPY = {
             "Create a local multitrack music project without starting or joining "
             "a live session."
         ),
-        helper="Host a room or paste the invite.",
+        helper="Play live together.",
         join_title="Join Music.",
         join_subtitle="Paste the WebJam invitation your host sent you.",
     ),
@@ -388,6 +388,7 @@ class LaunchDialog(QDialog):
         name_row.setSpacing(Space.SM)
         name_label = QLabel("Your name")
         name_label.setObjectName("LaunchNameLabel")
+        self._name_label = name_label
         self._name_input = QLineEdit(default_musician_name(settings))
         self._name_input.setObjectName("LaunchNameInput")
         self._name_input.setPlaceholderText("Short stage name")
@@ -779,14 +780,20 @@ class LaunchDialog(QDialog):
 
         # Music's live door is Host / Join only. Local studio stays a
         # capability, not a third button on the first screen.
-        local_available = (
-            profile.capabilities.local_multitrack and profile.key != "music"
-        )
+        music_door = profile.key == "music"
+        local_available = profile.capabilities.local_multitrack and not music_door
         self._studio_button.setText(copy.local)
         self._studio_button.setAccessibleName(copy.local)
         self._studio_button.setAccessibleDescription(copy.local_description)
         self._studio_button.setEnabled(local_available and not self._submitting)
         self._studio_button.setHidden(not local_available)
+
+        # first-screen identity: Music is Host or Join only
+        hide_name = music_door and not bool(self._name_error.text())
+        self._name_label.setVisible(not hide_name)
+        self._name_input.setVisible(not hide_name)
+        self._name_preview.setVisible(not hide_name)
+        self._name_error.setVisible(bool(self._name_error.text()))
 
         helper = copy.helper
         if not self._host_available:
@@ -1014,6 +1021,11 @@ class LaunchDialog(QDialog):
             return validate_jamulus_name(self._name_input.text()).value
         except JamulusNameError as exc:
             self._name_error.setText(str(exc))
+            # Music hides the name on the first screen; a failed Host/Join
+            # still has to show the field so the name can be fixed.
+            self._name_label.setVisible(True)
+            self._name_input.setVisible(True)
+            self._name_preview.setVisible(True)
             self._name_error.setVisible(True)
             self._announce_error(self._name_error, focus=self._name_input)
             return None

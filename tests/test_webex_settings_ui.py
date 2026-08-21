@@ -13,6 +13,10 @@ from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication, QLabel, QLineEdit  # noqa: E402
 
 from core.jamulus_name import JAMULUS_NAME_HELP  # noqa: E402
+from core.provider_credentials import (  # noqa: E402
+    AUDIO_PROVIDER_IDS,
+    TEXT_PROVIDER_IDS,
+)
 from core.settings import AppSettings, load_settings  # noqa: E402
 from webjam_qt.windows.simple_settings import SimpleSettingsDialog  # noqa: E402
 
@@ -288,27 +292,18 @@ def test_save_failure_is_announced_without_leaking_or_moving_from_retry_action(
 def test_settings_store_no_webex_identity_or_password_fields(tmp_path):
     dialog = _dialog(tmp_path, opener=lambda _url: True)
     fields = dialog.findChildren(QLineEdit)
-    normal = [
-        field
-        for field in fields
-        if field.echoMode() is QLineEdit.EchoMode.Normal
-    ]
-    secrets = [
-        field
-        for field in fields
-        if field.echoMode() is QLineEdit.EchoMode.Password
-    ]
+    byok_fields = dialog._keys_panel.findChildren(QLineEdit)
+    identity_fields = [field for field in fields if field not in byok_fields]
 
-    assert normal == [dialog._name, dialog._video]
-    assert dialog._name in fields
-    assert dialog._video in fields
-    # Optional BYOK key fields may appear as password boxes. They are not
-    # a Webex identity or password.
+    assert identity_fields == [dialog._name, dialog._video]
     assert all(
-        "webex" not in (field.accessibleName() or "").casefold()
-        and "password" not in (field.accessibleName() or "").casefold()
-        for field in secrets
+        field.echoMode() is QLineEdit.EchoMode.Normal
+        for field in identity_fields
     )
+    assert len(byok_fields) == len((*AUDIO_PROVIDER_IDS, *TEXT_PROVIDER_IDS))
+    assert {field.echoMode() for field in byok_fields} == {
+        QLineEdit.EchoMode.Password
+    }
     copy = " ".join(label.text() for label in dialog.findChildren(QLabel))
     assert "selected meeting service handles sign-in" in copy
     assert "does not change your identity there" in copy
