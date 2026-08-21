@@ -4,6 +4,31 @@
 - Date: 2026-07-28; rejected 2026-08-21; reopened 2026-08-21
 - Scope: Optional in-meeting companion surface
 
+## Rejection (2026-08-21)
+
+A Webex Embedded App is not a path this product can take, for a reason that is
+commercial rather than technical. A custom add-on must be registered against a
+Webex organization and approved by a Control Hub administrator. WebJam's actual
+user is a musician on free or personal Webex, who has no organization and no
+administrator, and never will. Anything built here would have been unreachable
+by the people it was for.
+
+Consequently:
+
+- No WebJam music feature may be gated on an embedded app, an add-on, a Webex
+  licence, or an organization. `core.meeting_companion.music_features_require_meeting`
+  returns `False` and is asserted by the suite so a future change that gates
+  Song tools, songwriting help, Shared Track, or recording behind Webex fails a
+  test rather than shipping.
+- The companion snapshot, pairing-grant, relay, and in-meeting panel APIs in
+  the delivery phases below are abandoned, not deferred. None were implemented,
+  and none should be.
+- ADR 0004's external second-window boundary is the decision. ADR 0010 builds on
+  it.
+
+Everything below is retained as the record of what was considered and why it
+was dropped. It does not describe shipped or planned behaviour.
+
 > **v0.22.4 published boundary:** the current desktop labels and activation
 > behavior are included in the immutable published v0.22.4 private test
 > candidate.

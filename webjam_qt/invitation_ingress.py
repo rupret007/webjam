@@ -109,13 +109,12 @@ def parse_invitation_at_ingress(
     raw = str(text or "")
     value = raw.strip()
     # Extract the link from a longer paste before any policy check, so the
-    # version guards below see the same string the parser will.
-    if (
-        source == InvitationSource.PASTE
-        and not value.lower().startswith("webjam://")
-        and "webjam://" in value.lower()
-    ):
-        value = _link_from_pasted_text(value)
+    # version guards below see the same string the parser will. A paste that
+    # is already exactly one bare link takes the original path untouched.
+    if source == InvitationSource.PASTE and "webjam://" in value.lower():
+        tokens = value.split()
+        if len(tokens) != 1 or not tokens[0].lower().startswith("webjam://"):
+            value = _link_from_pasted_text(value)
     if ingress_source is InvitationSource.MAC_FILE_OPEN and current_platform != "darwin":
         raise InvitationIngressError(
             InvitationIngressErrorCode.SOURCE_NOT_ALLOWED,

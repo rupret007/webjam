@@ -340,7 +340,7 @@ def _first_key(flat: Mapping[str, Any]) -> str:
             if match is not None:
                 tonic, quality = match.groups()
                 mode = (quality or "").lower()
-                suffix = "minor" if mode.startswith("m") and mode != "maj" else "major"
+                suffix = "minor" if mode in {"m", "min", "minor"} else "major"
                 return f"{tonic[0].upper()}{tonic[1:]} {suffix}"
     return ""
 
@@ -387,13 +387,20 @@ def _first_chords(payload: Any, flat: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 def _first_lyrics(payload: Any, flat: Mapping[str, Any]) -> str:
+    del payload
+    # Word-timed transcripts are lists of segments, and flattening lifts a
+    # segment's own "text" to the top level. Take the structured transcript
+    # first so a whole lyric is never replaced by its first word.
+    for field_name in _LYRIC_FIELDS:
+        lines = _labels_from(
+            flat.get(field_name), ("text", "word", "line", "value")
+        )
+        if lines:
+            return " ".join(lines)[:_MAX_TEXT_PREVIEW]
     for field_name in _LYRIC_FIELDS:
         value = flat.get(field_name)
         if isinstance(value, str) and value.strip():
             return value.strip()[:_MAX_TEXT_PREVIEW]
-        lines = _labels_from(value, ("text", "word", "line", "value"))
-        if lines:
-            return " ".join(lines)[:_MAX_TEXT_PREVIEW]
     return ""
 
 
