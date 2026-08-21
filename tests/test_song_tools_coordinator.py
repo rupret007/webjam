@@ -51,7 +51,9 @@ def _controller(app, *, is_host=True, api_key="k", webex_url="", notes=SHEET):
         song_overlay=overlay,
         session_canvas=SimpleNamespace(current_notes=lambda: notes),
         session_strip=SimpleNamespace(
-            current_title=lambda: "Tuesday Jam", _elapsed_seconds=1320
+            current_title=lambda: "Tuesday Jam",
+            _elapsed_seconds=1320,
+            _shared_track_last_snapshot=None,
         ),
         flash_message=MagicMock(),
     )
@@ -797,3 +799,83 @@ def test_a_failed_mix_reports_the_reason_and_leaves_the_jam_alone(app, tmp_path)
 
     assert loaded == []
     assert any("sample rate" in message for message in _flashes(coordinator))
+
+
+# ----------------------------------------------------------------------
+# Shared Track owns the clock while it holds a song
+# ----------------------------------------------------------------------
+class _TrackSnapshot(SimpleNamespace):
+    pass
+
+
+def _with_shared_track(coordinator, *, name="demo.wav", position=20.0, state="playing"):
+    coordinator._c.window.session_strip._shared_track_last_snapshot = _TrackSnapshot(
+        state=state, source_name=name, position_s=position, duration_s=180.0
+    )
+
+
+def test_the_clock_follows_the_shared_track_when_one_is_loaded(app):
+    coordinator, _now = _clock_coordinator(app)
+    coordinator.overlay.setVisible(True)
+    _with_shared_track(coordinator)
+
+    coordinator.refresh()
+    snapshot = coordinator.workbench.clock_snapshot()
+
+    assert snapshot.follows_shared_track
+    assert snapshot.section_label == "Verse"
+    assert "with Shared Track" in coordinator.overlay._clock_line.text()
+
+
+def test_the_panel_will_not_start_a_competing_count(app):
+    coordinator, _now = _clock_coordinator(app)
+    _with_shared_track(coordinator)
+
+    coordinator.toggle_clock()
+
+    snapshot = coordinator.workbench.clock_snapshot()
+    assert snapshot.follows_shared_track
+    assert snapshot.position_s == 20.0  # untouched by the panel's button
+    assert any(
+        "Shared Track is the clock" in message for message in _flashes(coordinator)
+    )
+
+
+def test_the_transport_controls_defer_to_the_shared_track(app):
+    coordinator, _now = _clock_coordinator(app)
+    coordinator.overlay.setVisible(True)
+    _with_shared_track(coordinator)
+    coordinator.refresh()
+
+    assert not coordinator.overlay._clock_button.isEnabled()
+    assert not coordinator.overlay._locate_button.isEnabled()
+
+
+def test_a_guest_projection_drives_the_clock_too(app):
+    """Guests read the host's published Shared Track position, so they agree."""
+
+    coordinator, _now = _clock_coordinator(app)
+    coordinator.overlay.setVisible(True)
+    coordinator._c.window.session_strip._shared_track_last_snapshot = SimpleNamespace(
+        state=SimpleNamespace(value="playing"),
+        source_display_name="demo.wav",
+        position_s=34.0,
+        duration_s=180.0,
+    )
+    coordinator.refresh()
+
+    assert coordinator.workbench.clock_snapshot().follows_shared_track
+    assert coordinator.workbench.clock_snapshot().section_label == "Verse"
+
+
+def test_removing_the_track_returns_the_count_to_the_panel(app):
+    coordinator, _now = _clock_coordinator(app)
+    coordinator.overlay.setVisible(True)
+    _with_shared_track(coordinator)
+    coordinator.refresh()
+
+    coordinator._c.window.session_strip._shared_track_last_snapshot = None
+    coordinator.refresh()
+
+    assert not coordinator.workbench.clock_snapshot().follows_shared_track
+    assert coordinator.overlay._clock_button.isEnabled()

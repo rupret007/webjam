@@ -83,6 +83,7 @@ class SessionStrip(QFrame):
         self._shared_track_channel_present = False
         self._shared_track_source_change_allowed = False
         self._shared_track_snapshot_seen = False
+        self._shared_track_last_snapshot: object | None = None
         self._shared_track_projection_visible = False
         self._shared_track_transport_action = "play"
         self._shared_track_transport_enabled = False
@@ -1096,6 +1097,10 @@ class SessionStrip(QFrame):
         """Render the host-owned source/transport truth in the live mini deck."""
 
         self._shared_track_snapshot_seen = True
+        # Retained so other session surfaces can read the host's transport
+        # without a second subscription. Host and guest projections both
+        # arrive here, so this is the one place that sees every update.
+        self._shared_track_last_snapshot = snapshot
         state_value = getattr(getattr(snapshot, "state", None), "value", "")
         state = str(state_value or getattr(snapshot, "state", "idle")).lower()
         loaded = bool(str(getattr(snapshot, "source_name", "") or ""))
@@ -1190,6 +1195,7 @@ class SessionStrip(QFrame):
         """Retire host-published guest truth at the session ownership boundary."""
 
         self._shared_track_snapshot_seen = False
+        self._shared_track_last_snapshot = None
         self._shared_track_projection_visible = False
         self._shared_track_source_change_allowed = self._shared_track_host
         self._shared_track_transport_action = "play"

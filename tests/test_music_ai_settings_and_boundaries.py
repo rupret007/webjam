@@ -228,9 +228,11 @@ def test_the_published_clock_contract_is_stable_and_declared():
     from core.song_clock import describe_contract
 
     contract = describe_contract()
-    # A rename here breaks every subscribing profile, so the field list is
-    # pinned rather than merely documented.
+    # A rename or removal here breaks every subscribing profile, so the field
+    # list is pinned rather than merely documented. Adding a field is allowed
+    # and updates this pin; changing what an existing one means is not.
     assert set(contract["fields"]) == {
+        "position_source",
         "generation",
         "state",
         "position_s",
@@ -322,3 +324,85 @@ def test_the_coordinator_is_built_on_first_use():
 
     assert type(first).__name__ == "SongToolsCoordinator"
     assert first is second
+
+
+# ----------------------------------------------------------------------
+# ADR 0002: no model SDK on the realtime path
+# ----------------------------------------------------------------------
+def test_no_generative_model_sdk_is_bundled():
+    """ADR 0002: no model SDK or generative runtime on the realtime path."""
+
+    requirements = (REPO_ROOT / "requirements.txt").read_text().lower()
+    for sdk in (
+        "openai",
+        "anthropic",
+        "transformers",
+        "torch",
+        "onnxruntime",
+        "llama",
+        "langchain",
+        "google-generativeai",
+    ):
+        assert sdk not in requirements, sdk
+
+    for path, text in _shipping_sources():
+        lowered = text.lower()
+        for sdk in ("import openai", "import anthropic", "import torch"):
+            assert sdk not in lowered, f"{path}: {sdk}"
+
+
+def test_music_ai_never_runs_on_the_jamulus_realtime_path():
+    """Cloud jobs are worker-thread only and touch no audio callback."""
+
+    source = (
+        REPO_ROOT / "webjam_qt" / "controllers" / "song_tools_coordinator.py"
+    ).read_text()
+    assert "threading.Thread" in source
+
+    tree = ast.parse((REPO_ROOT / "core" / "music_ai_client.py").read_text())
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
+        elif isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+    for audio in ("sounddevice", "jamulus_controller", "core.audio_engine", "numpy"):
+        assert audio not in imported
+
+
+def test_the_session_pulse_stays_local_and_untouched():
+    """ADR 0002 keeps SessionPulse the creative authority; nothing rewires it."""
+
+    import subprocess
+
+    changed = subprocess.run(
+        ["git", "diff", "--name-only", "origin/master...HEAD"],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+    ).stdout.split()
+    for owned_elsewhere in (
+        "core/session_intelligence.py",
+        "core/session_conductor.py",
+        "core/musician_guidance.py",
+        "core/studio_project.py",
+        "core/studio_sections.py",
+    ):
+        assert owned_elsewhere not in changed, owned_elsewhere
+
+
+def test_song_help_is_labelled_a_suggestion_everywhere_it_is_offered():
+    """ADR 0002: a future assistant must be visibly labeled as a suggestion."""
+
+    from core.song_form import parse_song_form
+    from core.song_help import suggest_chords, suggest_next_chords
+
+    form = parse_song_form("Key: G major\n[Verse]\nG D Em C\n")
+    assert "Suggestions for" in suggest_chords(form).headline()
+    assert "try:" in suggest_next_chords(form, section_name="Verse").headline()
+
+    overlay = (
+        REPO_ROOT / "webjam_qt" / "widgets" / "song_overlay.py"
+    ).read_text()
+    assert "Suggest chords" in overlay
+    assert "Nothing is uploaded" in overlay

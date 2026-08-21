@@ -56,6 +56,13 @@ STATE_STOPPED = "stopped"
 STATE_RUNNING = "running"
 STATE_PAUSED = "paused"
 
+# Where the position comes from. Shared Track is the host's clock for audio,
+# so whenever one is loaded the bar count is read off it rather than counted
+# independently -- two clocks in one room is how a band ends up arguing with
+# its own screen.
+POSITION_SHARED_TRACK = "shared_track"
+POSITION_HOST_COUNT = "host_count"
+
 
 @dataclass(frozen=True, slots=True)
 class FormSection:
@@ -108,6 +115,13 @@ class SongClockSnapshot:
     # A reference, never a measurement. See the module docstring.
     following_audio: bool = False
     section_lengths_assumed: bool = False
+    position_source: str = POSITION_HOST_COUNT
+
+    @property
+    def follows_shared_track(self) -> bool:
+        """Whether position is read off the host's Shared Track transport."""
+
+        return self.position_source == POSITION_SHARED_TRACK
 
     @property
     def running(self) -> bool:
@@ -182,6 +196,7 @@ class SongClockSnapshot:
             ],
             "following_audio": self.following_audio,
             "section_lengths_assumed": self.section_lengths_assumed,
+            "position_source": self.position_source,
         }
 
 
@@ -225,6 +240,8 @@ class SongClock:
         self._started_at = 0.0
         self._offset_s = 0.0
         self._generation = 0
+        self._shared_track_position: float | None = None
+        self._shared_track_playing = False
 
     # ------------------------------------------------------------------
     # Form and tempo
@@ -275,6 +292,50 @@ class SongClock:
         return True
 
     # ------------------------------------------------------------------
+    # Shared Track: the host's clock for audio
+    # ------------------------------------------------------------------
+    def follow_shared_track(
+        self,
+        *,
+        loaded: bool,
+        position_s: float = 0.0,
+        playing: bool = False,
+    ) -> None:
+        """Read position off the Shared Track instead of counting separately.
+
+        A live session already has one host-owned transport for audio. When it
+        holds a song, that transport *is* where the room is, and counting a
+        second time from a start button would drift against the thing everyone
+        can actually hear. Releasing the Shared Track hands the count back.
+
+        The bar mapping still assumes the file begins at bar one and runs at
+        the room's stated tempo. That assumption is reported, not hidden.
+        """
+
+        with self._lock:
+            if not loaded:
+                if self._shared_track_position is not None:
+                    # Keep the musical position the room just heard rather
+                    # than snapping back to the top of the form.
+                    self._offset_s = max(0.0, self._shared_track_position)
+                    self._started_at = self._monotonic()
+                    self._shared_track_position = None
+                    self._shared_track_playing = False
+                    self._generation += 1
+                return
+
+            position = max(0.0, float(position_s or 0.0))
+            playing = bool(playing)
+            if (
+                self._shared_track_position is None
+                or abs(position - self._shared_track_position) > 0.02
+                or playing != self._shared_track_playing
+            ):
+                self._generation += 1
+            self._shared_track_position = position
+            self._shared_track_playing = playing
+
+    # ------------------------------------------------------------------
     # Transport
     # ------------------------------------------------------------------
     def start(self) -> bool:
@@ -282,6 +343,9 @@ class SongClock:
 
         with self._lock:
             if not self._sections or self._effective_tempo() <= 0:
+                return False
+            if self._shared_track_position is not None:
+                # The Shared Track owns the transport while it is loaded.
                 return False
             if self._state != STATE_RUNNING:
                 self._started_at = self._monotonic()
@@ -331,10 +395,13 @@ class SongClock:
             beats_per_bar = max(1, self._beats_per_bar)
             total_bars = sum(max(1, item.bars) for item in self._sections)
 
+            state = self._state_locked()
+            source = self._position_source_locked()
+
             if not self._sections or tempo <= 0:
                 return SongClockSnapshot(
                     generation=self._generation,
-                    state=self._state,
+                    state=state,
                     position_s=position,
                     key=self._key,
                     key_source=self._key_source,
@@ -344,6 +411,7 @@ class SongClock:
                     sections=self._sections,
                     bars_total=total_bars,
                     section_lengths_assumed=self._lengths_assumed(),
+                    position_source=source,
                 )
 
             beats = self._beats_at_locked(position)
@@ -358,7 +426,7 @@ class SongClock:
 
             return SongClockSnapshot(
                 generation=self._generation,
-                state=self._state,
+                state=state,
                 position_s=position,
                 section_index=index,
                 section_label=section.name if section is not None else "",
@@ -375,6 +443,7 @@ class SongClock:
                 chords_now=section.chords if section is not None else (),
                 sections=self._sections,
                 section_lengths_assumed=self._lengths_assumed(),
+                position_source=source,
             )
 
     # ------------------------------------------------------------------
@@ -388,9 +457,21 @@ class SongClock:
         return (60.0 / tempo) * max(1, self._beats_per_bar)
 
     def _position_seconds_locked(self) -> float:
+        if self._shared_track_position is not None:
+            return self._shared_track_position
         if self._state != STATE_RUNNING:
             return self._offset_s
         return self._offset_s + max(0.0, self._monotonic() - self._started_at)
+
+    def _position_source_locked(self) -> str:
+        if self._shared_track_position is not None:
+            return POSITION_SHARED_TRACK
+        return POSITION_HOST_COUNT
+
+    def _state_locked(self) -> str:
+        if self._shared_track_position is None:
+            return self._state
+        return STATE_RUNNING if self._shared_track_playing else STATE_PAUSED
 
     def _beats_at_locked(self, position_s: float) -> float:
         tempo = self._effective_tempo()

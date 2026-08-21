@@ -13,6 +13,8 @@ import pytest
 
 from core.song_clock import (
     DEFAULT_SECTION_BARS,
+    POSITION_HOST_COUNT,
+    POSITION_SHARED_TRACK,
     MAX_TEMPO_BPM,
     MIN_TEMPO_BPM,
     STATE_PAUSED,
@@ -355,3 +357,92 @@ def test_the_clock_view_of_a_form_uses_stated_lengths_where_given():
     assert [item.name for item in sections] == ["Intro", "Verse", "Chorus"]
     assert [item.bars for item in sections] == [4, 8, 8]
     assert all(item.bars_stated for item in sections)
+
+
+# ----------------------------------------------------------------------
+# Shared Track is the session's clock for audio
+# ----------------------------------------------------------------------
+def test_a_loaded_shared_track_takes_over_the_position(clock):
+    """One host transport for audio; the panel must not count separately."""
+
+    clock.start()
+    clock.advance(4.0)
+    assert clock.snapshot().position_source == POSITION_HOST_COUNT
+
+    clock.follow_shared_track(loaded=True, position_s=20.0, playing=True)
+    snapshot = clock.snapshot()
+
+    assert snapshot.position_source == POSITION_SHARED_TRACK
+    assert snapshot.follows_shared_track
+    assert snapshot.position_s == 20.0
+    assert snapshot.section_label == "Verse"
+
+
+def test_the_panel_cannot_start_a_second_count_while_a_track_holds_one(clock):
+    clock.follow_shared_track(loaded=True, position_s=6.0, playing=True)
+    assert clock.start() is False
+    assert clock.snapshot().position_s == 6.0
+
+
+def test_the_tracks_transport_decides_running_or_paused(clock):
+    clock.follow_shared_track(loaded=True, position_s=6.0, playing=True)
+    assert clock.snapshot().state == STATE_RUNNING
+
+    clock.follow_shared_track(loaded=True, position_s=6.0, playing=False)
+    assert clock.snapshot().state == STATE_PAUSED
+
+
+def test_scrubbing_the_track_moves_the_bar_count_with_it(clock):
+    clock.follow_shared_track(loaded=True, position_s=2.0, playing=True)
+    assert clock.snapshot().section_label == "Intro"
+
+    clock.follow_shared_track(loaded=True, position_s=34.0, playing=True)
+    assert clock.snapshot().section_label == "Chorus"
+
+
+def test_the_clock_does_not_drift_while_following_a_paused_track(clock):
+    clock.follow_shared_track(loaded=True, position_s=10.0, playing=False)
+    before = clock.snapshot().bar
+    clock.advance(120.0)
+
+    assert clock.snapshot().bar == before
+
+
+def test_removing_the_track_hands_the_count_back_where_the_room_heard_it(clock):
+    clock.follow_shared_track(loaded=True, position_s=20.0, playing=True)
+    heard = clock.snapshot()
+
+    clock.follow_shared_track(loaded=False)
+    handed_back = clock.snapshot()
+
+    assert handed_back.position_source == POSITION_HOST_COUNT
+    assert handed_back.section_label == heard.section_label
+    assert handed_back.bar == heard.bar
+    assert clock.start() is True
+
+
+def test_following_a_track_is_still_not_following_the_band(clock):
+    """Position comes from a file's transport, not from listening to players."""
+
+    clock.follow_shared_track(loaded=True, position_s=20.0, playing=True)
+    snapshot = clock.snapshot()
+
+    assert snapshot.following_audio is False
+    assert snapshot.to_public_dict()["position_source"] == POSITION_SHARED_TRACK
+
+
+def test_the_position_source_is_part_of_the_published_contract(clock):
+    published = clock.snapshot().to_public_dict()
+    assert published["position_source"] == POSITION_HOST_COUNT
+    assert "position_source" in describe_contract()["fields"]
+
+
+def test_a_track_with_no_movement_does_not_churn_the_generation(clock):
+    clock.follow_shared_track(loaded=True, position_s=5.0, playing=True)
+    generation = clock.snapshot().generation
+
+    clock.follow_shared_track(loaded=True, position_s=5.0, playing=True)
+    assert clock.snapshot().generation == generation
+
+    clock.follow_shared_track(loaded=True, position_s=9.0, playing=True)
+    assert clock.snapshot().generation != generation

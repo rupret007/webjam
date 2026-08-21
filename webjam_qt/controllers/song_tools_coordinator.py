@@ -130,6 +130,7 @@ class SongToolsCoordinator:
         if overlay is None or not overlay.isVisible():
             return
         self._sync_workbench()
+        self._sync_clock_to_shared_track()
         overlay.set_sections(self.workbench.section_names())
         overlay.set_song_state(
             catch_up=self.workbench.catch_up(
@@ -173,7 +174,15 @@ class SongToolsCoordinator:
         """Start or stop the room's shared bar and section count."""
 
         self._sync_workbench()
+        self._sync_clock_to_shared_track()
         clock = self.workbench.clock
+        if clock.snapshot().follows_shared_track:
+            self._flash(
+                "The Shared Track is the clock while it holds a song. Use its "
+                "own transport.",
+                ms=7000,
+            )
+            return
         if clock.snapshot().running:
             clock.stop()
             self._stop_ticking()
@@ -226,6 +235,7 @@ class SongToolsCoordinator:
         """Repaint the position and publish it. Never takes focus."""
 
         overlay = self.overlay
+        self._sync_clock_to_shared_track()
         snapshot = self.workbench.clock_publisher.publish()
         if overlay is None or not overlay.isVisible():
             if not snapshot.running:
@@ -587,12 +597,21 @@ class SongToolsCoordinator:
         if strip is not None:
             self.workbench.set_title(strip.current_title())
 
+    def _shared_track_snapshot(self):
+        """The host's Shared Track truth, host-local or guest projection."""
+
+        strip = getattr(self._c.window, "session_strip", None)
+        return getattr(strip, "_shared_track_last_snapshot", None)
+
     def _shared_track_view(self) -> SharedTrackView:
-        snapshot = getattr(self._c, "_last_shared_track_snapshot", None)
+        snapshot = self._shared_track_snapshot()
         if snapshot is None:
             return SharedTrackView()
-        state = str(getattr(snapshot, "state", "") or "").lower()
-        name = str(getattr(snapshot, "source_name", "") or "")
+        raw_state = getattr(snapshot, "state", "")
+        state = str(getattr(raw_state, "value", raw_state) or "").lower()
+        name = str(getattr(snapshot, "source_name", "") or "") or str(
+            getattr(snapshot, "source_display_name", "") or ""
+        )
         return SharedTrackView(
             loaded=bool(name),
             playing="play" in state,
@@ -600,6 +619,20 @@ class SongToolsCoordinator:
             position_s=float(getattr(snapshot, "position_s", 0.0) or 0.0),
             duration_s=float(getattr(snapshot, "duration_s", 0.0) or 0.0),
             host_controlled=True,
+        )
+
+    def _sync_clock_to_shared_track(self) -> None:
+        """Hand the bar count to the Shared Track whenever it holds a song.
+
+        Shared Track is the session's clock for audio. Counting separately
+        while it plays would put two positions on one screen.
+        """
+
+        view = self._shared_track_view()
+        self.workbench.clock.follow_shared_track(
+            loaded=view.loaded,
+            position_s=view.position_s,
+            playing=view.playing,
         )
 
     def _shared_track_path(self) -> str:

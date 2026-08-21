@@ -18,58 +18,15 @@ import re
 from dataclasses import dataclass, replace
 from typing import Iterable, Sequence
 
+from core.song_sections import ROLE_ORDER, normalize_role
+
 STATED = "stated"
 DETECTED = "detected"
 
 _SOURCES = frozenset({STATED, DETECTED})
 
-# Section labels people actually type on a lyric sheet, mapped to the role that
-# decides how a part should behave harmonically. Unknown labels keep their text
-# and fall back to the neutral "part" role rather than being dropped.
-_ROLE_ALIASES: dict[str, str] = {
-    "intro": "intro",
-    "introduction": "intro",
-    "count in": "intro",
-    "verse": "verse",
-    "v": "verse",
-    "prechorus": "prechorus",
-    "pre chorus": "prechorus",
-    "pre-chorus": "prechorus",
-    "rise": "prechorus",
-    "lift": "prechorus",
-    "build": "prechorus",
-    "chorus": "chorus",
-    "hook": "chorus",
-    "refrain": "chorus",
-    "drop": "chorus",
-    "bridge": "bridge",
-    "middle eight": "bridge",
-    "middle 8": "bridge",
-    "b section": "bridge",
-    "solo": "solo",
-    "lead": "solo",
-    "instrumental": "solo",
-    "break": "breakdown",
-    "breakdown": "breakdown",
-    "vamp": "breakdown",
-    "interlude": "breakdown",
-    "outro": "outro",
-    "coda": "outro",
-    "ending": "outro",
-    "tag": "outro",
-}
-
-ROLE_ORDER: tuple[str, ...] = (
-    "intro",
-    "verse",
-    "prechorus",
-    "chorus",
-    "bridge",
-    "solo",
-    "breakdown",
-    "outro",
-    "part",
-)
+# The section vocabulary is shared with Studio's ``MarkerKind.SECTION`` labels
+# rather than duplicated here. ``core.song_sections`` is the one list.
 
 _NOTE_NAMES = "A-G"
 _CHORD_BODY = (
@@ -332,27 +289,6 @@ def parse_song_form(notes: str, *, title: str = "") -> SongForm:
         sections=tuple(sections[:_MAX_SECTIONS]),
         lyric_lines=tuple(lyric_lines[:_MAX_LYRIC_LINES]),
     )
-
-
-def normalize_role(label: str) -> str:
-    """Return the harmonic role a written section label implies."""
-
-    cleaned = re.sub(r"[^a-z0-9 ]+", " ", str(label or "").lower())
-    cleaned = " ".join(cleaned.split())
-    if not cleaned:
-        return "part"
-    if cleaned in _ROLE_ALIASES:
-        return _ROLE_ALIASES[cleaned]
-    # "Verse 2", "Chorus (last)" and "Guitar solo" should all still route to a
-    # role; match on the words present rather than requiring an exact label.
-    words = cleaned.split()
-    for alias, role in _ROLE_ALIASES.items():
-        alias_words = alias.split()
-        if len(alias_words) > 1 and alias in cleaned:
-            return role
-        if len(alias_words) == 1 and alias in words:
-            return role
-    return "part"
 
 
 def extract_chords(text: str) -> tuple[str, ...]:

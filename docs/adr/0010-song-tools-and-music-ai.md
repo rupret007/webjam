@@ -54,6 +54,36 @@ Project, with no fourth start card.
 Song tools are Music-only. Podcast & Voice and Review & Rehearsal sessions have
 no song form, so the entry is absent there rather than present and inert.
 
+### One section vocabulary, two honest representations
+
+Master already describes song parts twice, and the two are genuinely
+different moments rather than a duplication to be collapsed:
+
+* **In the jam** no `StudioDocument` exists at all — `RecordingStudio` runs
+  with `_studio_state = None` while the band plays — so the only form that can
+  exist is the one musicians typed into the notes.
+* **In Studio** a part is a `StudioMarker` with `MarkerKind.SECTION`: a frame
+  range on a take, which is what `core.studio_sections.reorder_section`
+  permutes.
+
+Two representations is unavoidable. Two *vocabularies* is not.
+`core.song_sections` is the single list of role names and aliases; the live
+parser imports `normalize_role` from it rather than keeping a copy, and
+`section_markers_from_form` carries the form the room played onto a take as
+real, contiguous `MarkerKind.SECTION` markers — clipped to the take rather than
+running past its end. `form_labels_from_markers` reads the other direction. So
+a band jams, writes the form, and finds that arrangement already marked up in
+take review instead of retyping it.
+
+Note that no fixed Intro/Verse/Chorus vocabulary existed on master to adopt:
+Studio labels are free text, with `"Section N"` and a flat `"Verse"` as dialog
+defaults. `next_section_label` gives Studio a better default drawn from the
+same list.
+
+`core/song_sections.py` imports `core.studio_project` lazily inside the one
+function that needs it, so a live session never loads the Studio document model
+to describe its own form.
+
 ### Facts and suggestions are distinguishable
 
 `core.song_form` reads the notes into a key, tempo, sections, chords, and lines.

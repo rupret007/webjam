@@ -25,6 +25,23 @@ Pretending to have it would be worse than not having it.
 
 Publish one host-run clock as a first-class, profile-agnostic contract.
 
+### Shared Track owns the position whenever it holds a song
+
+A live session already has one host-owned transport for audio. Whenever the
+Shared Track holds a song, that transport *is* where the room is, so the clock
+reads its `position_s` instead of counting independently and
+`position_source` reports `shared_track`. The panel's start button and locate
+control are disabled while that is true, because a second start button beside a
+playing backing track is how a band ends up arguing with its own screen.
+Releasing the Shared Track hands the count back at the position the room last
+heard, rather than snapping to the top of the form.
+
+Guests get this for free: host and guest projections both arrive at
+`SessionStrip.set_shared_track_snapshot`, so everyone reads the same bar.
+
+Bar mapping still assumes the file begins at bar one and runs at the room's
+stated tempo. That assumption is reported in the copy, not hidden.
+
 ### It is a reference, not a measurement
 
 `core.song_clock.SongClock` counts beats, bars, and sections across the form the

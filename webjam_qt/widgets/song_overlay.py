@@ -449,12 +449,17 @@ class SongOverlay(QFrame):
         """Render the shared position, and never imply it follows the band."""
 
         running = snapshot.running
+        follows_track = snapshot.follows_shared_track
         self._clock_button.setText("■" if running else "▶")
         self._clock_button.setAccessibleName(
             "Stop the shared song clock" if running else "Start the shared song clock"
         )
-        self._clock_button.setEnabled(snapshot.has_form and snapshot.tempo_bpm > 0)
-        self._locate_button.setEnabled(snapshot.has_form)
+        # While a Shared Track holds a song it owns the transport, so the
+        # panel does not offer a second, competing start button.
+        self._clock_button.setEnabled(
+            snapshot.has_form and snapshot.tempo_bpm > 0 and not follows_track
+        )
+        self._locate_button.setEnabled(snapshot.has_form and not follows_track)
 
         if not snapshot.has_form:
             self._clock_line.setText("Write a section header to start the clock.")
@@ -463,13 +468,20 @@ class SongOverlay(QFrame):
             self._clock_line.setText("Write a tempo to start the clock.")
             return
         line = snapshot.position_label or "Not started"
+        if follows_track:
+            line = f"{line} · with Shared Track"
         if snapshot.section_lengths_assumed:
             line = f"{line} · lengths assumed"
         self._clock_line.setText(line)
         self._clock_line.setToolTip(
-            "A shared reference the host runs. WebJam does not follow the "
-            "live audio, so this will not correct if the band drifts. Write "
-            "\"[Verse x8]\" to state a part's length."
+            (
+                "Counting against the Shared Track, which the host controls. "
+                "Bars assume the file starts at bar one at this tempo."
+                if follows_track
+                else "A shared reference the host runs. WebJam does not follow "
+                "the live audio, so this will not correct if the band drifts."
+            )
+            + " Write \"[Verse x8]\" to state a part's length."
         )
 
     def set_stems(
