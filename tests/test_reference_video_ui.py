@@ -22,6 +22,7 @@ from core.creative_modes import (  # noqa: E402
 )
 from core.reference_video import (  # noqa: E402
     NO_VIDEO_MESSAGE,
+    REFERENCE_VIDEO_SUFFIXES,
     ReferenceVideoFollowSnapshot,
     ReferenceVideoFollowState,
     ReferenceVideoSnapshot,
@@ -327,3 +328,54 @@ def test_every_profile_has_launch_copy():
     from webjam_qt.windows.launch_dialog import _CREATOR_LAUNCH_COPY
 
     assert set(_CREATOR_LAUNCH_COPY) == {profile.key for profile in CREATOR_PROFILES}
+
+
+# ---------------------------------------------------------------------------
+# The Qt player adapter
+# ---------------------------------------------------------------------------
+
+
+def test_the_qt_player_satisfies_the_seam_and_closes_cleanly(qapp):
+    """Real decoding needs a codec and a screen, but the seam must still hold.
+
+    Everything else about the reference video is proven against a fake player,
+    so this is the one check that the real adapter implements the same
+    contract and does not keep working after it is closed.
+    """
+
+    pytest.importorskip("PySide6.QtMultimedia")
+    pytest.importorskip("PySide6.QtMultimediaWidgets")
+
+    from core.reference_video import (
+        ReferenceVideoPlayer,
+        ReferenceVideoPlayerError,
+    )
+    from webjam_qt.widgets.reference_video_player import (
+        create_qt_reference_video_player,
+        qt_video_name_filter,
+    )
+
+    try:
+        player = create_qt_reference_video_player()
+    except ReferenceVideoPlayerError as exc:
+        pytest.skip(f"no video backend on this machine: {exc}")
+
+    assert isinstance(player, ReferenceVideoPlayer)
+    assert player.surface is not None
+    assert player.position_s() == 0.0
+
+    player.set_muted(True)
+    player.stop()
+    player.close()
+
+    assert player.position_s() == 0.0
+    player.stop()  # closing twice must stay safe
+    player.close()
+    for closed in (player.play, player.pause):
+        with pytest.raises(ReferenceVideoPlayerError):
+            closed()
+    with pytest.raises(ReferenceVideoPlayerError):
+        player.seek(1.0)
+
+    for suffix in REFERENCE_VIDEO_SUFFIXES:
+        assert suffix in qt_video_name_filter()
