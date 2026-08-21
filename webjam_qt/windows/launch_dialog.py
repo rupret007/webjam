@@ -179,7 +179,7 @@ class StartCard(QCommandLinkButton):
     nested inside a button that cannot measure them.
     """
 
-    def __init__(self, start: CreatorStart, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, start: CreatorStart, parent: QWidget | None = None) -> None:
         # Qt reads "&" in button text as a mnemonic marker, which would render
         # "Talk & make" as "Talk _make". The label is product copy, so it is
         # escaped rather than reworded.

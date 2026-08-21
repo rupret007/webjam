@@ -24,7 +24,7 @@ import unicodedata
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, Qt, QTimer
 from PySide6.QtWidgets import QDialog, QMessageBox
