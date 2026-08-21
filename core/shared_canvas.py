@@ -39,11 +39,9 @@ from enum import Enum
 from typing import Protocol, runtime_checkable
 
 from core.drawpile import (
-    INSTALL_DRAWPILE_MESSAGE,
     NOT_A_CANVAS_INVITE_MESSAGE,
     CanvasInvite,
     DrawpileError,
-    DrawpileUnavailableError,
     parse_canvas_invite,
 )
 
@@ -221,15 +219,19 @@ class SharedCanvasHostController:
     # -- host actions --------------------------------------------------
 
     def open_drawpile_to_host(self) -> SharedCanvasSnapshot:
-        """Open Drawpile's Host page so the artist can host their own session."""
+        """Open Drawpile's Host page so the artist can host their own session.
+
+        The launcher is asked directly rather than probed first, because only
+        it knows *why* it cannot run: a missing install and a build that
+        cannot launch Drawpile at all need different recoveries, and a
+        pre-check here would flatten both into one guess.
+        """
 
         self._require_host()
         with self._lock:
-            if not self._launcher_available():
-                raise DrawpileUnavailableError(INSTALL_DRAWPILE_MESSAGE)
             try:
                 self._launcher.open_host_page()
-            except DrawpileError:
+            except (DrawpileError, SharedCanvasError):
                 raise
             except Exception as exc:
                 raise SharedCanvasError(
@@ -274,11 +276,9 @@ class SharedCanvasHostController:
             invite = self._invite
             if self._state is not SharedCanvasState.SHARED or invite is None:
                 raise SharedCanvasError("No canvas is shared yet.")
-            if not self._launcher_available():
-                raise DrawpileUnavailableError(INSTALL_DRAWPILE_MESSAGE)
             try:
                 self._launcher.open_canvas(invite)
-            except DrawpileError:
+            except (DrawpileError, SharedCanvasError):
                 raise
             except Exception:
                 return self._fail_locked(
@@ -388,11 +388,9 @@ class SharedCanvasFollower:
                 raise SharedCanvasError(
                     CANVAS_UNREADABLE_MESSAGE if self._unreadable else NO_CANVAS_MESSAGE
                 )
-            if not self._launcher_available():
-                raise DrawpileUnavailableError(INSTALL_DRAWPILE_MESSAGE)
             try:
                 self._launcher.open_canvas(invite)
-            except DrawpileError:
+            except (DrawpileError, SharedCanvasError):
                 raise
             except Exception as exc:
                 raise SharedCanvasError(

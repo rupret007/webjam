@@ -27,6 +27,31 @@ def qapp():
     return QApplication.instance() or QApplication(sys.argv[:1])
 
 
+@pytest.fixture(autouse=True)
+def _restore_application_appearance():
+    """Undo the process-wide appearance this file's startup tests install.
+
+    Some tests here run the real ``_run_app`` against the shared
+    ``QApplication``, which installs WebJam's bundled font and its whole
+    stylesheet. Both outlive the test. Widget tests in other files then
+    measure elision and minimum button widths against an appearance their own
+    setup never chose, so whether they pass depends on file order. Putting
+    both back keeps every test in the environment it declared.
+    """
+
+    app = QApplication.instance()
+    if app is None:
+        yield
+        return
+    font = QFont(app.font())
+    stylesheet = app.styleSheet()
+    try:
+        yield
+    finally:
+        app.setFont(font)
+        app.setStyleSheet(stylesheet)
+
+
 @pytest.fixture
 def settings(tmp_path):
     return AppSettings(
