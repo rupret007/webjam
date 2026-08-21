@@ -507,3 +507,45 @@ def test_the_key_action_opens_settings(app):
     coordinator = _coordinator(app)
     coordinator._open_settings()
     coordinator._c._open_settings_wizard.assert_called_once()
+
+
+# ----------------------------------------------------------------------
+# Section-scoped help
+# ----------------------------------------------------------------------
+def test_chord_help_for_a_named_part_also_offers_what_comes_next(app):
+    coordinator = _coordinator(app)
+    coordinator.show_chords("Verse")
+
+    text = coordinator.overlay._advice.text()
+    assert "Verse already plays Am F C G. Instead:" in text
+    assert "After Am F C G in Verse" in text
+
+
+def test_chord_help_with_no_selection_answers_the_next_missing_part(app):
+    coordinator = _coordinator(app)
+    coordinator.show_chords("")
+
+    text = coordinator.overlay._advice.text()
+    assert "Suggestions for Chorus" in text
+    # Nothing exists to continue from, so no next-chord block is offered.
+    assert "After " not in text
+
+
+def test_the_picker_is_filled_from_the_live_notes(app):
+    coordinator = _coordinator(app)
+    coordinator.overlay.setVisible(True)
+    coordinator.refresh()
+
+    labels = [
+        coordinator.overlay._section_picker.itemText(index)
+        for index in range(coordinator.overlay._section_picker.count())
+    ]
+    assert labels == ["Next part", "Verse"]
+
+
+def test_the_form_overlay_reaches_the_panel_on_refresh(app):
+    coordinator = _coordinator(app)
+    coordinator.overlay.setVisible(True)
+    coordinator.refresh()
+
+    assert "Verse: Am F C G" in coordinator.overlay._form_rows.text()

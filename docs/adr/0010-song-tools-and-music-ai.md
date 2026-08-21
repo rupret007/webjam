@@ -21,6 +21,24 @@ The wrong shape for both of these is a side tool. A musician mid-jam who wants
 chords for the bridge, or wants to hear the drums on their own, should not leave
 the session to get it.
 
+## What already exists, and what to take from it
+
+The patterns below are borrowed deliberately. None of these products is cloned,
+and none is a dependency.
+
+| Product | What it proves | What WebJam takes |
+|---|---|---|
+| **Moises** (consumer) / **Music AI** (developer) | Stems, chords, lyrics, sections, pitch/tempo on the song you're learning | The verb set, and the actual API. `api.music.ai` is the developer platform; the consumer app login is not a key |
+| **Chordify** | Detected chords read well when overlaid on the track you're playing | Chords displayed against the session's own form. No public API exists and none is scraped — the chords come from a Music AI job on a file the user chose |
+| **Hookpad Aria** (Hooktheory) | The strongest write-help operates on a *selected region of a song you already have*, in context | `suggest_chords(section_name=...)` scores against the parts on either side and explains the seam. Aria is powered by a symbolic model; WebJam's version is deterministic theory, which is a real difference in capability and is labelled as suggestion either way |
+| **Tonaly**, **Song Cage** | Theory-aware next-chord suggestions land better when each one is explained, and can run on-device | `suggest_next_chords` ships the reasoning with every candidate, and runs locally |
+| **BandLab SongStarter** | Generating a fresh sketch from genre/mood is a different product | **Deliberately not copied.** There is no genre or mood input anywhere, and no cold-start generator. Help requires existing material, asserted by test |
+| **Endlesss** | People do jam together live | Confirms the jam, not the AI model |
+
+Nobody ships Moises-class song tools plus section-aware write help *inside a
+live Jamulus jam*. That integration is the product, which is why every result
+lands on the session surface rather than in a separate window.
+
 ## Decision
 
 ### Song tools live on the live session surface
@@ -49,6 +67,22 @@ stored as scale degrees and rendered into the song's key; when no key is stated
 or detected, one is read off the written chords and reported as an assumption.
 A progression the song already uses elsewhere is demoted, so "a progression for
 a different part" actually differs.
+
+Help is always asked for **one part** of the song. A named part is a region to
+rewrite; with no selection, the next part the song is missing is answered
+instead. Either way the suggestion is scored against the parts on both sides —
+a progression that opens on the chord the previous part ends on is ranked down,
+and one that ends on the dominant before a part that starts on the tonic is
+ranked up — and the reason for that placement is shown. `suggest_next_chords`
+answers the narrower "we're on this, what comes next" from the chord a part
+currently ends on, using ordinary functional harmony with the explanation
+attached.
+
+The song's form, with each part's chords and a separate row for any chord run a
+Music AI job heard on a file, is rendered over the session. Detected chords are
+never spread across the written parts: the API returns a chord list for a whole
+file, and claiming which chords belong to which part would be an alignment
+WebJam has not been given.
 
 ### Songwriting help never leaves the computer
 

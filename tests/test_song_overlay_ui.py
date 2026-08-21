@@ -439,3 +439,127 @@ def test_closing_the_panel_hides_it_and_reports_once(overlay):
 def test_a_profile_must_be_a_creator_profile(overlay):
     with pytest.raises(TypeError):
         overlay.set_creator_profile("music")
+
+
+# ----------------------------------------------------------------------
+# Form overlay and the section picker
+# ----------------------------------------------------------------------
+def test_the_form_is_shown_over_the_jam_with_its_chords(overlay):
+    workbench = SongWorkbench(title="Tuesday", notes=SHEET)
+    overlay.set_song_state(
+        form_summary=workbench.conductor_line(),
+        form_rows=workbench.form_overlay(),
+    )
+
+    text = overlay._form_rows.text()
+    assert "Verse: Am F C G" in text
+    assert not overlay._form_rows.isHidden()
+
+
+def test_detected_chords_are_marked_apart_from_written_ones(overlay):
+    workbench = SongWorkbench(notes=SHEET)
+    workbench.attach_run(
+        SongToolRun(
+            verb_key="chords",
+            label="Chords & key",
+            workflow_slug="chords",
+            job_id="j7",
+            source_name="mix.wav",
+            chord_symbols=("Am", "F", "C", "G"),
+        )
+    )
+    overlay.set_song_state(form_rows=workbench.form_overlay())
+
+    text = overlay._form_rows.text()
+    assert "Heard on the file: Am F C G ·detected" in text
+    assert "Verse: Am F C G\n" in text
+
+
+def test_an_empty_song_shows_no_form_rows(overlay):
+    overlay.set_song_state(form_rows=())
+    assert overlay._form_rows.isHidden()
+
+
+def test_the_picker_offers_the_songs_own_parts(overlay):
+    overlay.set_sections(("Verse", "Chorus"))
+
+    labels = [
+        overlay._section_picker.itemText(index)
+        for index in range(overlay._section_picker.count())
+    ]
+    assert labels == ["Next part", "Verse", "Chorus"]
+    assert overlay.selected_section() == ""
+
+
+def test_choosing_a_part_is_what_the_chords_button_asks_about(overlay):
+    overlay.set_sections(("Verse", "Chorus"))
+    overlay._section_picker.setCurrentIndex(2)
+
+    seen: list[str] = []
+    overlay.chords_requested.connect(seen.append)
+    overlay._chords_button.click()
+
+    assert seen == ["Chorus"]
+
+
+def test_a_chosen_part_survives_the_song_being_re_read(overlay):
+    overlay.set_sections(("Verse", "Chorus"))
+    overlay._section_picker.setCurrentIndex(2)
+    overlay.set_sections(("Verse", "Chorus", "Bridge"))
+
+    assert overlay.selected_section() == "Chorus"
+
+
+def test_a_chosen_part_that_disappears_falls_back_to_the_next_one(overlay):
+    overlay.set_sections(("Verse", "Chorus"))
+    overlay._section_picker.setCurrentIndex(2)
+    overlay.set_sections(("Verse",))
+
+    assert overlay.selected_section() == ""
+
+
+def test_the_picker_is_disabled_until_the_song_has_parts(overlay):
+    overlay.set_sections(())
+    assert not overlay._section_picker.isEnabled()
+    overlay.set_sections(("Verse",))
+    assert overlay._section_picker.isEnabled()
+
+
+def test_rewriting_a_part_says_what_it_already_plays(overlay):
+    workbench = SongWorkbench(notes=SHEET)
+    overlay.set_song_state(chords=workbench.chord_advice(section_name="Verse"))
+
+    text = overlay._advice.text()
+    assert "Verse already plays Am F C G. Instead:" in text
+
+
+def test_the_seam_reasoning_reaches_the_musician(overlay):
+    workbench = SongWorkbench(notes=SHEET)
+    overlay.set_song_state(chords=workbench.chord_advice(section_name="Chorus"))
+    assert "Verse ends on" in overlay._advice.text()
+
+
+def test_next_chord_candidates_render_with_their_reasons(overlay):
+    workbench = SongWorkbench(notes=SHEET)
+    overlay.set_song_state(
+        next_chords=workbench.next_chord_advice(section_name="Verse")
+    )
+
+    text = overlay._advice.text()
+    assert "After Am F C G in Verse" in text
+    assert "—" in text
+
+
+def test_the_song_page_stays_to_two_actions_and_one_picker(overlay):
+    """Few controls: help for a part, chords for a part, and which part."""
+
+    from PySide6.QtWidgets import QComboBox
+
+    page = overlay._stack.widget(0)
+    buttons = [
+        child
+        for child in page.findChildren(QPushButton)
+        if not child.isHidden()
+    ]
+    assert len(buttons) <= 3  # Help write, Suggest chords, Share sheet
+    assert len(page.findChildren(QComboBox)) == 1

@@ -24,6 +24,7 @@ from core.song_help import (
     infer_key_from_chords,
     resolve_key,
     suggest_chords,
+    suggest_next_chords,
     suggest_writing,
 )
 
@@ -330,3 +331,173 @@ def test_writing_help_never_reaches_the_network(monkeypatch):
     form = parse_song_form(SHEET)
     assert suggest_writing(form).available
     assert suggest_chords(form).available
+
+
+# ----------------------------------------------------------------------
+# Section-scoped, neighbour-aware suggestions (the Hookpad Aria pattern)
+# ----------------------------------------------------------------------
+VERSE_CHORUS = """Key: G major
+[Verse]
+G D Em C
+[Chorus]
+C G D G
+"""
+
+
+def test_help_operates_on_a_named_part_of_the_existing_song():
+    """Fill a region of the song in front of you, not produce a new song."""
+
+    advice = suggest_chords(parse_song_form(VERSE_CHORUS), section_name="Chorus")
+
+    assert advice.section_label == "Chorus"
+    assert advice.rewrites_existing
+    assert advice.existing_chords == ("C", "G", "D", "G")
+
+
+def test_a_selected_part_knows_what_comes_before_it():
+    advice = suggest_chords(parse_song_form(VERSE_CHORUS), section_name="Chorus")
+
+    assert advice.neighbours.previous_label == "Verse"
+    assert advice.neighbours.previous_last_chord == "C"
+    assert "after Verse" in advice.headline()
+    assert any("Verse ends on C" in item.context for item in advice.suggestions)
+
+
+def test_a_new_part_is_placed_where_it_conventionally_belongs():
+    """A bridge lands after the chorus, so it is scored against the chorus."""
+
+    advice = suggest_chords(parse_song_form(VERSE_CHORUS), role="bridge")
+
+    assert advice.neighbours.previous_label == "Chorus"
+    assert advice.neighbours.previous_last_chord == "G"
+    assert advice.section_label == "Bridge"
+    assert not advice.rewrites_existing
+
+
+def test_a_middle_part_sees_both_sides():
+    form = parse_song_form(
+        "Key: C major\n[Verse]\nC F\n[Solo]\nAm G\n[Chorus]\nF C\n"
+    )
+    advice = suggest_chords(form, section_name="Solo")
+
+    assert advice.neighbours.previous_label == "Verse"
+    assert advice.neighbours.following_label == "Chorus"
+    assert advice.neighbours.following_first_chord == "F"
+    assert "after Verse before Chorus" in advice.headline()
+
+
+def test_a_progression_that_repeats_the_previous_ending_is_ranked_lower():
+    form = parse_song_form("Key: C major\n[Verse]\nF G C\n[Chorus]\nAm F\n")
+    advice = suggest_chords(form, section_name="Chorus")
+
+    # The verse ends on C, so a suggestion opening on C is the least useful
+    # thing to put directly after it.
+    assert advice.suggestions[0].chords[0] != "C"
+
+
+def test_rewriting_a_part_is_not_blocked_by_that_parts_own_chords():
+    """Its own progression must not count as "already used elsewhere"."""
+
+    form = parse_song_form("Key: C major\n[Chorus]\nC G Am F\n")
+    advice = suggest_chords(form, section_name="Chorus")
+    assert advice.available
+
+
+def test_an_unknown_section_name_falls_back_to_the_next_missing_part():
+    advice = suggest_chords(parse_song_form(VERSE_CHORUS), section_name="Nope")
+    assert advice.section_label == "Bridge"
+
+
+def test_suggestions_stay_section_scoped_with_no_genre_or_mood_input():
+    """Explicitly not the SongStarter pattern: no new song from a vibe."""
+
+    import inspect
+
+    from core import song_help
+
+    signature = inspect.signature(song_help.suggest_chords)
+    assert set(signature.parameters) == {"form", "role", "section_name", "limit"}
+    writing = inspect.signature(song_help.suggest_writing)
+    assert set(writing.parameters) == {"form"}
+
+    source = inspect.getsource(song_help)
+    for absent in ("genre", "mood", "style_prompt", "generate_song"):
+        assert absent not in source.lower()
+
+
+def test_write_help_produces_nothing_without_existing_material():
+    """Help is grounded in the room's song; there is no cold-start generator."""
+
+    empty = suggest_chords(parse_song_form(""))
+    assert not empty.available
+    assert "does not know this song's key" in empty.headline()
+
+
+# ----------------------------------------------------------------------
+# Next-chord suggestions (the Tonaly pattern: theory-aware and explained)
+# ----------------------------------------------------------------------
+def test_the_next_chord_is_suggested_from_what_the_part_already_plays():
+    advice = suggest_next_chords(
+        parse_song_form(VERSE_CHORUS), section_name="Chorus"
+    )
+
+    assert advice.available
+    assert advice.from_chords == ("C", "G", "D", "G")
+    assert "After C G D G in Chorus" in advice.headline()
+    for candidate in advice.candidates:
+        assert candidate.chord and candidate.numeral and candidate.reason
+
+
+def test_every_next_chord_explains_itself():
+    """Suggestion, with the reasoning attached — never a bare answer."""
+
+    advice = suggest_next_chords(
+        parse_song_form("Key: C major\n[Verse]\nC F G\n"), section_name="Verse"
+    )
+    reasons = " ".join(candidate.reason for candidate in advice.candidates)
+    assert "resolution" in reasons or "resolves" in reasons
+    for candidate in advice.candidates:
+        described = candidate.describe()
+        assert candidate.chord in described
+        assert candidate.numeral in described
+        assert candidate.reason in described
+
+
+def test_the_dominant_resolves_to_the_tonic_first():
+    advice = suggest_next_chords(
+        parse_song_form("Key: C major\n[Verse]\nAm F G\n"), section_name="Verse"
+    )
+    assert advice.candidates[0].chord == "C"
+    assert advice.candidates[0].numeral == "I"
+
+
+def test_minor_keys_get_minor_moves():
+    advice = suggest_next_chords(
+        parse_song_form("Key: A minor\n[Verse]\nDm Am\n"), section_name="Verse"
+    )
+    assert advice.available
+    assert advice.candidates[0].numeral.islower() or advice.candidates[0].numeral.isupper()
+    assert advice.key == "A minor"
+
+
+def test_a_part_with_no_chords_says_so_rather_than_guessing():
+    advice = suggest_next_chords(
+        parse_song_form("Key: C major\n[Verse]\nC F\n[Bridge]\n"),
+        section_name="Bridge",
+    )
+    assert not advice.available
+    assert "no chords written under it yet" in advice.headline()
+
+
+def test_a_chord_outside_the_key_is_not_extended_by_guesswork():
+    advice = suggest_next_chords(
+        parse_song_form("Key: C major\n[Verse]\nC F Ab\n"), section_name="Verse"
+    )
+    assert not advice.available
+    assert "outside C major" in advice.headline()
+
+
+def test_next_chords_need_a_key_like_everything_else():
+    advice = suggest_next_chords(parse_song_form("[Verse]\nla la la\n"))
+    assert not advice.available
+    assert "does not know this song's key" in advice.headline()

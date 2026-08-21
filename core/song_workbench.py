@@ -28,9 +28,22 @@ from pathlib import Path
 from core.music_ai_catalog import SongToolCapability, SongToolCatalog
 from core.music_ai_client import missing_key_message
 from core.music_ai_results import SongToolRun
-from core.song_form import SongForm, merge_sections, parse_song_form
-from core.song_help import ChordAdvice, WritingAdvice, detected_sections
-from core.song_help import suggest_chords, suggest_writing
+from core.song_form import (
+    DETECTED,
+    STATED,
+    SongForm,
+    merge_sections,
+    parse_song_form,
+)
+from core.song_help import (
+    ChordAdvice,
+    NextChordAdvice,
+    WritingAdvice,
+    detected_sections,
+    suggest_chords,
+    suggest_next_chords,
+    suggest_writing,
+)
 
 # The live jam is never an upload candidate. Naming it makes the refusal
 # testable instead of relying on nobody ever wiring it up.
@@ -76,6 +89,32 @@ class SharedTrackView:
         if self.playing:
             return f"{name} — playing {_clock(self.position_s)}"
         return f"{name} — paused {_clock(self.position_s)}"
+
+
+@dataclass(frozen=True, slots=True)
+class FormRow:
+    """One line of the song form, with where its chords came from.
+
+    This is the overlay a musician reads while playing: the shape of the song
+    with the changes written against it. The provenance is part of the row
+    because a chord someone wrote down and a chord a detector heard are not
+    the same claim.
+    """
+
+    label: str
+    chords: str
+    source: str = STATED
+    is_detection_row: bool = False
+
+    @property
+    def detected(self) -> bool:
+        return self.source == DETECTED
+
+    def describe(self) -> str:
+        marker = " ·detected" if self.detected else ""
+        if not self.chords:
+            return f"{self.label}:{marker}"
+        return f"{self.label}: {self.chords}{marker}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,8 +286,16 @@ class SongWorkbench:
     def writing_advice(self) -> WritingAdvice:
         return suggest_writing(self.form)
 
-    def chord_advice(self, role: str = "") -> ChordAdvice:
-        return suggest_chords(self.form, role=role)
+    def chord_advice(
+        self,
+        role: str = "",
+        *,
+        section_name: str = "",
+    ) -> ChordAdvice:
+        return suggest_chords(self.form, role=role, section_name=section_name)
+
+    def next_chord_advice(self, *, section_name: str = "") -> NextChordAdvice:
+        return suggest_next_chords(self.form, section_name=section_name)
 
     def stems(self) -> tuple[str, ...]:
         """Return local paths of separated stems, newest run first."""
@@ -273,6 +320,40 @@ class SongWorkbench:
             if run.chord_symbols:
                 return run.chord_symbols
         return ()
+
+    def section_names(self) -> tuple[str, ...]:
+        """Return the parts a musician can ask for help on, in song order."""
+
+        return tuple(section.label for section in self.form.sections)
+
+    def form_overlay(self, *, max_rows: int = 8) -> tuple[FormRow, ...]:
+        """Return the song's shape with its chords, for display over the jam.
+
+        A detected chord run is shown as its own row rather than being spread
+        across the sections. Music AI returns a chord list for a whole file;
+        claiming which chords belong to which part would be an alignment this
+        has not been given.
+        """
+
+        rows = [
+            FormRow(
+                label=section.label,
+                chords=section.chord_line,
+                source=section.source,
+            )
+            for section in self.form.sections[: max(1, int(max_rows))]
+        ]
+        detected = self.detected_chords()
+        if detected:
+            rows.append(
+                FormRow(
+                    label="Heard on the file",
+                    chords=" ".join(detected[:12]),
+                    source=DETECTED,
+                    is_detection_row=True,
+                )
+            )
+        return tuple(rows)
 
     def conductor_line(self) -> str:
         """Return one line of song truth for the conductor, or ``""``."""
@@ -380,6 +461,7 @@ __all__ = [
     "SOURCE_PICKED_FILE",
     "SOURCE_SHARED_TRACK",
     "CatchUp",
+    "FormRow",
     "SharedTrackView",
     "SongWorkbench",
     "UploadDecision",

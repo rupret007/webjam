@@ -122,6 +122,7 @@ class SongToolsCoordinator:
         if overlay is None or not overlay.isVisible():
             return
         self._sync_workbench()
+        overlay.set_sections(self.workbench.section_names())
         overlay.set_song_state(
             catch_up=self.workbench.catch_up(
                 shared_track=self._shared_track_view(),
@@ -129,6 +130,7 @@ class SongToolsCoordinator:
                 is_host=self._is_host(),
             ),
             form_summary=self.workbench.conductor_line(),
+            form_rows=self.workbench.form_overlay(),
             results=tuple(
                 run.summary_line() for run in self.workbench.runs[-2:]
             ),
@@ -161,25 +163,39 @@ class SongToolsCoordinator:
         if overlay is None:
             return
         self._sync_workbench()
+        overlay.set_sections(self.workbench.section_names())
         overlay.set_song_state(
             catch_up=None,
             form_summary=self.workbench.conductor_line(),
+            form_rows=self.workbench.form_overlay(),
             advice=self.workbench.writing_advice(),
             results=tuple(run.summary_line() for run in self.workbench.runs[-2:]),
             sheet_shareable=bool(self.workbench.shareable_sheet()),
         )
 
-    def show_chords(self, role: str = "") -> None:
-        """Suggest changes for a part the song does not have yet."""
+    def show_chords(self, section: str = "") -> None:
+        """Suggest changes for one part of the song, in the context around it.
+
+        A named part is treated as a region to rewrite, and the moves that
+        could follow what it already plays are offered alongside. With no
+        selection, the next part the song is missing is answered instead.
+        """
 
         overlay = self.overlay
         if overlay is None:
             return
         self._sync_workbench()
+        selection = str(section or "")
         overlay.set_song_state(
             catch_up=None,
             form_summary=self.workbench.conductor_line(),
-            chords=self.workbench.chord_advice(str(role or "")),
+            form_rows=self.workbench.form_overlay(),
+            chords=self.workbench.chord_advice(section_name=selection),
+            next_chords=(
+                self.workbench.next_chord_advice(section_name=selection)
+                if selection
+                else None
+            ),
             results=tuple(run.summary_line() for run in self.workbench.runs[-2:]),
             sheet_shareable=bool(self.workbench.shareable_sheet()),
         )

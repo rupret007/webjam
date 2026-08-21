@@ -167,6 +167,73 @@ _NEXT_SECTION: tuple[tuple[frozenset[str], str, str], ...] = (
     ),
 )
 
+# Where a new part conventionally sits when the song does not have one yet.
+_ROLE_WEIGHT: dict[str, int] = {
+    "intro": 0,
+    "verse": 1,
+    "prechorus": 2,
+    "chorus": 3,
+    "solo": 4,
+    "bridge": 5,
+    "breakdown": 6,
+    "part": 7,
+    "outro": 8,
+}
+
+# Where each diatonic chord usually goes next, and why. Ordinary functional
+# harmony, kept as data so the explanation ships with the suggestion.
+_MAJOR_NEXT: dict[int, tuple[tuple[int, str], ...]] = {
+    1: (
+        (4, "IV opens it up without leaving home."),
+        (5, "V sets up a return to the tonic."),
+        (6, "vi darkens it while staying in the key."),
+    ),
+    2: (
+        (5, "ii into V is the strongest pull in the key."),
+        (1, "Back to I if the phrase is ending."),
+    ),
+    3: (
+        (6, "iii to vi keeps the line falling."),
+        (4, "iii to IV lifts it again."),
+    ),
+    4: (
+        (1, "IV back to I is a plagal landing — an ending without a question."),
+        (5, "IV to V builds toward a resolution."),
+    ),
+    5: (
+        (1, "V to I is the resolution the ear is waiting for."),
+        (6, "V to vi is the deceptive move — it delays the landing."),
+    ),
+    6: (
+        (4, "vi to IV is the most common turn in pop."),
+        (2, "vi to ii keeps the harmony moving downward."),
+    ),
+    7: ((1, "vii° resolves up to I."),),
+}
+
+_MINOR_NEXT: dict[int, tuple[tuple[int, str], ...]] = {
+    1: (
+        (6, "VI opens it out from the tonic minor."),
+        (7, "VII is the modal step that keeps it from sounding classical."),
+        (4, "iv darkens it further."),
+    ),
+    2: ((5, "ii° into v, the minor-key set-up."),),
+    3: (
+        (7, "III to VII keeps the brighter colour going."),
+        (6, "III to VI steps back toward the minor."),
+    ),
+    4: (
+        (1, "iv back to i closes the phrase."),
+        (5, "iv to v builds toward the tonic."),
+    ),
+    5: ((1, "v to i resolves, more gently than a major V."),),
+    6: (
+        (7, "VI to VII steps up into the tonic."),
+        (3, "VI to III brightens it."),
+    ),
+    7: ((1, "VII back to i is the modal resolution."),),
+}
+
 _STOPWORDS = frozenset(
     """
     a an and are as at be been but by can did do for from get got had has have
@@ -183,6 +250,33 @@ _MAX_OPTIONS = 3
 
 
 @dataclass(frozen=True, slots=True)
+class SectionNeighbours:
+    """What sits on either side of the part being written.
+
+    A suggestion for a bridge is only useful if it knows what the chorus
+    before it did. This is the difference between filling in a region of an
+    existing song and generating an unrelated one.
+    """
+
+    previous_label: str = ""
+    previous_last_chord: str = ""
+    following_label: str = ""
+    following_first_chord: str = ""
+
+    @property
+    def has_context(self) -> bool:
+        return bool(self.previous_label or self.following_label)
+
+    def describe(self) -> str:
+        parts = []
+        if self.previous_label:
+            parts.append(f"after {self.previous_label}")
+        if self.following_label:
+            parts.append(f"before {self.following_label}")
+        return " ".join(parts)
+
+
+@dataclass(frozen=True, slots=True)
 class ChordSuggestion:
     """One suggested progression, in the room's key, with its reasoning."""
 
@@ -193,6 +287,7 @@ class ChordSuggestion:
     reason: str
     key: str
     key_basis: str
+    context: str = ""
 
     @property
     def chord_line(self) -> str:
@@ -203,29 +298,76 @@ class ChordSuggestion:
         return " ".join(self.numerals)
 
     def describe(self) -> str:
-        return f"{self.chord_line}  ({self.numeral_line}) — {self.reason}"
+        reason = f"{self.reason} {self.context}".strip()
+        return f"{self.chord_line}  ({self.numeral_line}) — {reason}"
 
 
 @dataclass(frozen=True, slots=True)
 class ChordAdvice:
-    """The answer to "give me changes for a different part"."""
+    """The answer to "give me changes for this part of the song"."""
 
     section_label: str
     key: str
     key_basis: str
     suggestions: tuple[ChordSuggestion, ...] = ()
     blocked_reason: str = ""
+    neighbours: SectionNeighbours = SectionNeighbours()
+    existing_chords: tuple[str, ...] = ()
 
     @property
     def available(self) -> bool:
         return bool(self.suggestions)
 
+    @property
+    def rewrites_existing(self) -> bool:
+        """Whether this part already has changes the suggestions would replace."""
+
+        return bool(self.existing_chords)
+
     def headline(self) -> str:
         if not self.available:
             return self.blocked_reason or "No chord suggestion is available."
+        where = self.neighbours.describe()
+        placement = f", {where}" if where else ""
         return (
             f"Suggestions for {self.section_label} in {self.key} "
-            f"(key {self.key_basis})"
+            f"(key {self.key_basis}){placement}"
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class NextChord:
+    """One chord that could follow what a section already has."""
+
+    chord: str
+    numeral: str
+    reason: str
+
+    def describe(self) -> str:
+        return f"{self.chord} ({self.numeral}) — {self.reason}"
+
+
+@dataclass(frozen=True, slots=True)
+class NextChordAdvice:
+    """The answer to "we're on this — what comes next?"."""
+
+    section_label: str
+    key: str
+    key_basis: str
+    from_chords: tuple[str, ...] = ()
+    candidates: tuple[NextChord, ...] = ()
+    blocked_reason: str = ""
+
+    @property
+    def available(self) -> bool:
+        return bool(self.candidates)
+
+    def headline(self) -> str:
+        if not self.available:
+            return self.blocked_reason or "No next chord is available."
+        return (
+            f"After {' '.join(self.from_chords)} in {self.section_label}, "
+            f"try:"
         )
 
 
@@ -255,17 +397,22 @@ def suggest_chords(
     form: SongForm,
     *,
     role: str = "",
+    section_name: str = "",
     limit: int = _MAX_OPTIONS,
 ) -> ChordAdvice:
-    """Suggest changes for a part the song does not have yet.
+    """Suggest changes for one part of the song the room already has.
 
-    ``role`` names the part being written. When it is empty the next missing
-    part in a common song form is chosen, which is what "a progression for a
-    different part" usually means mid-jam.
+    ``section_name`` selects a written part by name; ``role`` selects one by
+    kind. With neither, the next missing part in a common song form is chosen,
+    which is what "a progression for a different part" usually means mid-jam.
+
+    Suggestions are scored against the parts on either side, so a bridge is
+    offered because of what the chorus before it did — not in isolation. This
+    fills a region of an existing song rather than producing an unrelated one.
     """
 
-    target_role = role or _next_missing_role(form)
-    label = _role_label(form, target_role)
+    target = _resolve_target(form, role=role, section_name=section_name)
+    label = target.label
     key_name, key_basis = resolve_key(form)
     if not key_name:
         return ChordAdvice(
@@ -281,39 +428,116 @@ def suggest_chords(
 
     tonic, is_minor = _split_key(key_name)
     moves = (_MINOR_MOVES if is_minor else _MAJOR_MOVES).get(
-        target_role,
+        target.role,
         (_MINOR_MOVES if is_minor else _MAJOR_MOVES)["part"],
     )
-    used = _existing_chord_sets(form)
-    suggestions: list[ChordSuggestion] = []
-    fallback: list[ChordSuggestion] = []
+    used = _existing_chord_sets(form, excluding=target.name)
+    scored: list[tuple[int, ChordSuggestion]] = []
     for degrees, reason in moves:
         chords = tuple(
             _degree_chord(tonic, degree, is_minor) for degree in degrees
         )
         numerals = tuple(_degree_numeral(degree, is_minor) for degree in degrees)
-        suggestion = ChordSuggestion(
-            role=target_role,
-            label=label,
-            chords=chords,
-            numerals=numerals,
-            reason=reason,
-            key=key_name,
-            key_basis=key_basis,
-        )
+        score, context = _seam_fit(chords, degrees, target.neighbours, is_minor)
         # "A different part" has to actually sound different, so a progression
-        # the song already uses somewhere else is demoted rather than offered.
+        # the song already uses elsewhere is demoted rather than offered.
         if frozenset(chords) in used:
-            fallback.append(suggestion)
-        else:
-            suggestions.append(suggestion)
+            score -= 10
+        scored.append(
+            (
+                score,
+                ChordSuggestion(
+                    role=target.role,
+                    label=label,
+                    chords=chords,
+                    numerals=numerals,
+                    reason=reason,
+                    key=key_name,
+                    key_basis=key_basis,
+                    context=context,
+                ),
+            )
+        )
 
-    ordered = (suggestions + fallback)[: max(1, int(limit))]
+    scored.sort(key=lambda item: -item[0])
+    ordered = [suggestion for _score, suggestion in scored][: max(1, int(limit))]
     return ChordAdvice(
         section_label=label,
         key=key_name,
         key_basis=key_basis,
         suggestions=tuple(ordered),
+        neighbours=target.neighbours,
+        existing_chords=target.existing_chords,
+    )
+
+
+def suggest_next_chords(
+    form: SongForm,
+    *,
+    section_name: str = "",
+    role: str = "",
+    limit: int = _MAX_OPTIONS,
+) -> NextChordAdvice:
+    """Answer "we're on this — what comes next?" for a part that has chords.
+
+    This is ordinary functional harmony, explained. It reads the chord the
+    section currently ends on and offers the moves that chord usually makes in
+    this key, so a musician can see why rather than just what.
+    """
+
+    target = _resolve_target(form, role=role, section_name=section_name)
+    key_name, key_basis = resolve_key(form)
+    if not key_name:
+        return NextChordAdvice(
+            section_label=target.label,
+            key="",
+            key_basis="",
+            blocked_reason=(
+                "WebJam does not know this song's key yet. Write a line like "
+                "\"Key: G major\" in the notes first."
+            ),
+        )
+    if not target.existing_chords:
+        return NextChordAdvice(
+            section_label=target.label,
+            key=key_name,
+            key_basis=key_basis,
+            blocked_reason=(
+                f"{target.label} has no chords written under it yet. Add one "
+                "and this will suggest where it goes."
+            ),
+        )
+
+    tonic, is_minor = _split_key(key_name)
+    last = target.existing_chords[-1]
+    degree = _degree_of(last, tonic, is_minor)
+    if degree is None:
+        return NextChordAdvice(
+            section_label=target.label,
+            key=key_name,
+            key_basis=key_basis,
+            from_chords=target.existing_chords,
+            blocked_reason=(
+                f"{last} is outside {key_name}, so WebJam will not guess what "
+                "follows it."
+            ),
+        )
+
+    table = _MINOR_NEXT if is_minor else _MAJOR_NEXT
+    candidates = [
+        NextChord(
+            chord=_degree_chord(tonic, next_degree, is_minor),
+            numeral=_degree_numeral(next_degree, is_minor),
+            reason=reason,
+        )
+        for next_degree, reason in table.get(degree, ())
+    ]
+    return NextChordAdvice(
+        section_label=target.label,
+        key=key_name,
+        key_basis=key_basis,
+        from_chords=target.existing_chords,
+        candidates=tuple(candidates[: max(1, int(limit))]),
     )
 
 
@@ -413,6 +637,159 @@ def infer_key_from_chords(chords: tuple[str, ...]) -> str:
                 spelling = _spell(tonic_class, prefer_flat=not is_minor)
                 best_name = f"{spelling} {'minor' if is_minor else 'major'}"
     return best_name
+
+
+@dataclass(frozen=True, slots=True)
+class _Target:
+    """The part being written, and what surrounds it."""
+
+    role: str
+    name: str
+    label: str
+    neighbours: SectionNeighbours
+    existing_chords: tuple[str, ...] = ()
+
+
+def _resolve_target(
+    form: SongForm,
+    *,
+    role: str = "",
+    section_name: str = "",
+) -> _Target:
+    """Locate the part being written and read the parts on either side."""
+
+    sections = list(form.sections)
+    index: int | None = None
+
+    wanted = " ".join(str(section_name or "").split()).lower()
+    if wanted:
+        for position, section in enumerate(sections):
+            if section.name.lower() == wanted:
+                index = position
+                break
+    if index is None and role:
+        for position, section in enumerate(sections):
+            if section.role == role:
+                index = position
+                break
+
+    if index is not None:
+        section = sections[index]
+        return _Target(
+            role=section.role,
+            name=section.name,
+            label=section.label,
+            neighbours=_neighbours(sections, index, replacing=True),
+            existing_chords=section.chords,
+        )
+
+    target_role = role or _next_missing_role(form)
+    insert_at = _insertion_point(sections, target_role)
+    return _Target(
+        role=target_role,
+        name="",
+        label=_role_label(form, target_role),
+        neighbours=_neighbours(sections, insert_at, replacing=False),
+    )
+
+
+def _neighbours(
+    sections: list[SongSection],
+    index: int,
+    *,
+    replacing: bool,
+) -> SectionNeighbours:
+    previous = sections[index - 1] if index > 0 else None
+    following_index = index + 1 if replacing else index
+    following = (
+        sections[following_index] if 0 <= following_index < len(sections) else None
+    )
+    return SectionNeighbours(
+        previous_label=previous.label if previous is not None else "",
+        previous_last_chord=(
+            previous.chords[-1] if previous is not None and previous.chords else ""
+        ),
+        following_label=following.label if following is not None else "",
+        following_first_chord=(
+            following.chords[0] if following is not None and following.chords else ""
+        ),
+    )
+
+
+def _insertion_point(sections: list[SongSection], role: str) -> int:
+    """Return where a new part of ``role`` conventionally sits in the form."""
+
+    weight = _ROLE_WEIGHT.get(role, len(_ROLE_WEIGHT))
+    for position, section in enumerate(sections):
+        if _ROLE_WEIGHT.get(section.role, len(_ROLE_WEIGHT)) > weight:
+            return position
+    return len(sections)
+
+
+def _seam_fit(
+    chords: tuple[str, ...],
+    degrees: tuple[int, ...],
+    neighbours: SectionNeighbours,
+    is_minor: bool,
+) -> tuple[int, str]:
+    """Score how well a progression joins the parts around it, and say why."""
+
+    if not chords or not neighbours.has_context:
+        return 0, ""
+
+    score = 0
+    notes: list[str] = []
+
+    previous = neighbours.previous_last_chord
+    if previous:
+        if chords[0] != previous:
+            score += 2
+            notes.append(
+                f"{neighbours.previous_label} ends on {previous}, so starting "
+                f"on {chords[0]} moves off it."
+            )
+        else:
+            score -= 2
+            notes.append(
+                f"Starts on {chords[0]}, the same chord {neighbours.previous_label} "
+                "ends on."
+            )
+
+    following = neighbours.following_first_chord
+    if following:
+        dominant_degree = 5
+        if degrees[-1] == dominant_degree:
+            score += 3
+            notes.append(
+                f"Ending on {chords[-1]} leads back into {neighbours.following_label}."
+            )
+        elif chords[-1] == following:
+            score -= 1
+            notes.append(
+                f"Ends on {chords[-1]}, which {neighbours.following_label} also "
+                "starts on."
+            )
+    del is_minor
+    return score, " ".join(notes)
+
+
+def _degree_of(chord: str, tonic: int, is_minor: bool) -> int | None:
+    """Return the 1-indexed scale degree of ``chord``, or ``None`` if outside."""
+
+    parsed = _parse_chord(chord)
+    if parsed is None:
+        return None
+    pitch, minor_quality = parsed
+    steps = _MINOR_STEPS if is_minor else _MAJOR_STEPS
+    qualities = _MINOR_QUALITIES if is_minor else _MAJOR_QUALITIES
+    for index, step in enumerate(steps):
+        if (tonic + step) % 12 != pitch:
+            continue
+        if qualities[index] == "dim":
+            continue
+        if (qualities[index] == "m") == minor_quality:
+            return index + 1
+    return None
 
 
 def _next_missing_role(form: SongForm) -> str:
@@ -564,11 +941,18 @@ def _keywords(lines: list[str]) -> list[str]:
     return repeated
 
 
-def _existing_chord_sets(form: SongForm) -> set[frozenset[str]]:
+def _existing_chord_sets(
+    form: SongForm,
+    *,
+    excluding: str = "",
+) -> set[frozenset[str]]:
+    """Return progressions already in use, ignoring the part being rewritten."""
+
+    skip = str(excluding or "").lower()
     return {
         frozenset(section.chords)
         for section in form.sections
-        if len(section.chords) > 1
+        if len(section.chords) > 1 and section.name.lower() != skip
     }
 
 
@@ -659,11 +1043,15 @@ def detected_sections(labels: tuple[str, ...], detail: str) -> tuple[SongSection
 __all__ = [
     "ChordAdvice",
     "ChordSuggestion",
+    "NextChord",
+    "NextChordAdvice",
+    "SectionNeighbours",
     "WritingAdvice",
     "WritingIdea",
     "detected_sections",
     "infer_key_from_chords",
     "resolve_key",
     "suggest_chords",
+    "suggest_next_chords",
     "suggest_writing",
 ]

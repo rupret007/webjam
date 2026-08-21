@@ -354,3 +354,67 @@ def test_a_shared_sheet_pasted_back_into_notes_is_idempotent():
         notes=original.shareable_sheet() + "\n" + original.shareable_sheet()
     )
     assert doubled.form.section_for_role("verse").chords == ("Am", "F", "C", "G")
+
+
+# ----------------------------------------------------------------------
+# Chord overlay on the form (the Chordify pattern, without the scrape)
+# ----------------------------------------------------------------------
+def test_the_form_overlay_shows_the_shape_with_its_changes():
+    rows = SongWorkbench(title="Tuesday", notes=SHEET).form_overlay()
+
+    assert [row.label for row in rows] == ["Verse", "Chorus"]
+    assert rows[0].chords == "Am F C G"
+    assert rows[0].describe() == "Verse: Am F C G"
+    assert not any(row.detected for row in rows)
+
+
+def test_a_section_without_chords_still_appears_in_the_form():
+    rows = SongWorkbench(notes="[Verse]\nAm F\n[Bridge]\n").form_overlay()
+    assert rows[-1].describe() == "Bridge:"
+
+
+def test_detected_chords_get_their_own_row_rather_than_being_spread_around():
+    """Music AI returns chords for a whole file, not per section."""
+
+    workbench = SongWorkbench(notes=SHEET)
+    workbench.attach_run(
+        SongToolRun(
+            verb_key="chords",
+            label="Chords & key",
+            workflow_slug="chords",
+            job_id="j9",
+            source_name="mix.wav",
+            chord_symbols=("Am", "F", "C", "G", "Dm"),
+        )
+    )
+    rows = workbench.form_overlay()
+    detection = rows[-1]
+
+    assert detection.is_detection_row
+    assert detection.detected
+    assert detection.label == "Heard on the file"
+    assert "·detected" in detection.describe()
+    assert [row.label for row in rows[:-1]] == ["Verse", "Chorus"]
+    assert not any(row.detected for row in rows[:-1])
+
+
+def test_the_overlay_is_bounded_for_a_long_song():
+    notes = "\n".join(f"[Part {index}]\nC G" for index in range(20))
+    assert len(SongWorkbench(notes=notes).form_overlay(max_rows=6)) == 6
+
+
+def test_the_parts_a_musician_can_pick_are_the_songs_own():
+    assert SongWorkbench(notes=SHEET).section_names() == ("Verse", "Chorus")
+    assert SongWorkbench().section_names() == ()
+
+
+def test_the_workbench_answers_next_chord_for_a_named_part():
+    advice = SongWorkbench(notes=SHEET).next_chord_advice(section_name="Verse")
+    assert advice.available
+    assert advice.from_chords == ("Am", "F", "C", "G")
+
+
+def test_the_workbench_scopes_chord_help_to_a_named_part():
+    advice = SongWorkbench(notes=SHEET).chord_advice(section_name="Chorus")
+    assert advice.section_label == "Chorus"
+    assert advice.neighbours.previous_label == "Verse"

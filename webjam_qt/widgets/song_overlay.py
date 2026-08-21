@@ -18,6 +18,7 @@ from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -31,8 +32,8 @@ from PySide6.QtWidgets import (
 from core.creative_modes import CreatorProfile
 from core.meeting_companion import MuteSurface
 from core.music_ai_catalog import UNSUPPORTED_MOISES_FEATURES, SongToolCatalog
-from core.song_help import ChordAdvice, WritingAdvice
-from core.song_workbench import CatchUp
+from core.song_help import ChordAdvice, NextChordAdvice, WritingAdvice
+from core.song_workbench import CatchUp, FormRow
 from webjam_qt.theme.tokens import Space
 
 PAGE_SONG = "song"
@@ -130,6 +131,20 @@ class SongOverlay(QFrame):
         self._catch_up_headline = _body_label("", object_name="SongOverlayHeadline")
         self._catch_up_lines = _body_label("")
         self._form_summary = _body_label("No key, tempo, or sections captured yet.")
+        # The song's shape with its changes written against it, the way a
+        # musician reads a chart while playing.
+        self._form_rows = _body_label("")
+        self._form_rows.setObjectName("SongOverlayForm")
+
+        # Help is asked for one part of the song, not for a song in general.
+        self._section_picker = QComboBox()
+        self._section_picker.setObjectName("SongOverlaySection")
+        self._section_picker.setAccessibleName("Part of the song to work on")
+        self._section_picker.setToolTip(
+            "Which part to write. Suggestions are made against the parts "
+            "either side of it."
+        )
+        self._section_picker.addItem("Next part", "")
 
         self._write_button = QPushButton("Help write")
         self._write_button.setObjectName("GhostButton")
@@ -147,7 +162,9 @@ class SongOverlay(QFrame):
             "Suggests changes for a part the song does not have yet, in its "
             "key. Nothing is uploaded."
         )
-        self._chords_button.clicked.connect(lambda: self.chords_requested.emit(""))
+        self._chords_button.clicked.connect(
+            lambda: self.chords_requested.emit(self.selected_section())
+        )
 
         buttons = QHBoxLayout()
         buttons.setSpacing(Space.XS)
@@ -170,6 +187,8 @@ class SongOverlay(QFrame):
         layout.addWidget(self._catch_up_headline)
         layout.addWidget(self._catch_up_lines)
         layout.addWidget(self._form_summary)
+        layout.addWidget(self._form_rows)
+        layout.addWidget(self._section_picker)
         layout.addLayout(buttons)
         layout.addWidget(self._advice)
         layout.addWidget(self._results)
@@ -264,13 +283,34 @@ class SongOverlay(QFrame):
             "Suggestions are generated on this computer."
         )
 
+    def selected_section(self) -> str:
+        """Return the part help was asked for; ``""`` means the next one."""
+
+        return str(self._section_picker.currentData() or "")
+
+    def set_sections(self, names: tuple[str, ...]) -> None:
+        """Offer the song's own parts, keeping the current choice if it lives."""
+
+        previous = self.selected_section()
+        self._section_picker.blockSignals(True)
+        self._section_picker.clear()
+        self._section_picker.addItem("Next part", "")
+        for name in names:
+            self._section_picker.addItem(name, name)
+        index = self._section_picker.findData(previous)
+        self._section_picker.setCurrentIndex(max(0, index))
+        self._section_picker.blockSignals(False)
+        self._section_picker.setEnabled(bool(names))
+
     def set_song_state(
         self,
         *,
         catch_up: CatchUp | None = None,
         form_summary: str = "",
+        form_rows: tuple[FormRow, ...] = (),
         advice: WritingAdvice | None = None,
         chords: ChordAdvice | None = None,
+        next_chords: NextChordAdvice | None = None,
         results: tuple[str, ...] = (),
         sheet_shareable: bool = False,
     ) -> None:
@@ -291,7 +331,9 @@ class SongOverlay(QFrame):
         # The catch-up already leads with the song line for a late arrival;
         # repeating it directly underneath just costs height in a narrow pane.
         self._form_summary.setVisible(summary not in catch_up_lines)
-        self._advice.setText(_advice_text(advice, chords))
+        self._form_rows.setText("\n".join(row.describe() for row in form_rows))
+        self._form_rows.setVisible(bool(form_rows))
+        self._advice.setText(_advice_text(advice, chords, next_chords))
         self._advice.setVisible(bool(self._advice.text()))
         self._results.setText("\n".join(results[:_MAX_LIST_ROWS]))
         self._results.setVisible(bool(results))
@@ -424,13 +466,24 @@ def _body_label(text: str, *, object_name: str = "SongOverlayBody") -> QLabel:
 def _advice_text(
     advice: WritingAdvice | None,
     chords: ChordAdvice | None,
+    next_chords: NextChordAdvice | None = None,
 ) -> str:
     lines: list[str] = []
     if chords is not None:
+        if chords.rewrites_existing:
+            lines.append(
+                f"{chords.section_label} already plays "
+                f"{' '.join(chords.existing_chords)}. Instead:"
+            )
         lines.append(chords.headline())
         for suggestion in chords.suggestions[:_MAX_LIST_ROWS]:
             lines.append(f"  {suggestion.chord_line}   {suggestion.numeral_line}")
-            lines.append(f"  {suggestion.reason}")
+            detail = f"{suggestion.reason} {suggestion.context}".strip()
+            lines.append(f"  {detail}")
+    if next_chords is not None:
+        lines.append(next_chords.headline())
+        for candidate in next_chords.candidates[:_MAX_LIST_ROWS]:
+            lines.append(f"  {candidate.describe()}")
     if advice is not None:
         for idea in advice.ideas[:_MAX_LIST_ROWS]:
             lines.append(f"{idea.headline}: {idea.detail}")
