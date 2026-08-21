@@ -51,6 +51,12 @@ class QtReferenceVideoPlayer:
 
         self._player = QMediaPlayer(parent)
         self._audio = QAudioOutput(parent)
+        # Silent from the first frame. A reference video is a picture: the
+        # music comes through Jamulus and the voices through whatever meeting
+        # app the room is using, and this file is not routed anywhere, so
+        # every computer would otherwise play its own copy of the soundtrack
+        # over the conversation.
+        self._audio.setMuted(True)
         self._player.setAudioOutput(self._audio)
         self._surface = QVideoWidget(parent)
         self._player.setVideoOutput(self._surface)
@@ -66,6 +72,10 @@ class QtReferenceVideoPlayer:
     @property
     def media_player(self):
         return self._player
+
+    @property
+    def muted(self) -> bool:
+        return bool(self._audio.isMuted())
 
     def set_muted(self, muted: bool) -> None:
         """Mute locally so a reference video never fights the conversation."""

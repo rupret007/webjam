@@ -45,7 +45,9 @@ _GUEST_HINT = (
 )
 _SYNC_HONESTY = (
     "Position follows the host to within about a second. This is not "
-    "frame-accurate review and carries no timecode."
+    "frame-accurate review and carries no timecode. The video is silent, so "
+    "it never talks over the room; the sound stays with your live audio and "
+    "your meeting app."
 )
 
 

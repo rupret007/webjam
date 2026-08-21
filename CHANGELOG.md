@@ -51,6 +51,28 @@ All notable improvements and features for the WebJam creator collaboration platf
     because a Drawpile session password has no business surviving in the
     durable recording journal. A restarted host offers no canvas until its
     owner shares one again.
+- **Art runs beside the meeting window, and now provably so.** Webex is the
+  primary meeting platform with other providers still supported, and Art keeps
+  the same `meeting_handoff` as every other profile rather than growing faces
+  of its own.
+  - A reference video is now **silent from its first frame**. It is never
+    routed anywhere, so every computer holds its own copy, and an unmuted one
+    laid a second soundtrack over the conversation on every machine at once.
+    The player already had the mute and the stated intent; nothing had ever
+    called it. The live audio path and the meeting app own sound; the video is
+    the picture.
+  - Only the existing Webex Controls and Show Webex App may focus or launch the
+    meeting app. No Art snapshot handler, tick, or notice raises a window, and
+    that is checked structurally rather than by review.
+  - Nothing in Art reads or writes the saved meeting URL, imports the
+    meeting-app service, selects an audio device, or captures screen, browser,
+    or system output. Nor does it embed a meeting, add OAuth, or send a blind
+    mute shortcut.
+  - Every Art panel is non-modal and narrow enough to leave a conversation
+    beside it, and a talk-only room leaves nothing on screen at all.
+  - Art's copy never claims WebJam joined, muted, or can hear anything.
+  - Non-Webex links keep the identical handoff. Webex is primary in copy and
+    control labels, not the only accepted host.
 - Added a **room clock**: one named pulse the whole room can read, whatever
   kind of maker you are. This is the piece that makes a shared canvas and a
   live song one product rather than two windows -- a painter working on the

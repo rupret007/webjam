@@ -252,6 +252,27 @@ The shared canvas is never fed to a model. WebJam does not read it, and any
 future choice to do so would be an explicit, separate decision rather than a
 side effect of this action.
 
+### Beside the meeting window
+
+Art keeps `meeting_handoff` like every other profile. The conversation and the
+faces belong to a meeting app -- Webex primarily, any accepted provider
+otherwise -- and Art runs beside that window rather than replacing it.
+
+- Every Art panel is non-modal and narrow, and none opens on anyone's behalf.
+- A reference video is **silent**. It is never routed anywhere, so each
+  computer holds its own copy, and an unmuted one would lay a second
+  soundtrack over the conversation on every machine. The live audio path and
+  the meeting app own sound; the video is the picture.
+- Only the existing meeting controls may focus or launch the meeting app. No
+  Art tick, snapshot, or notice raises a window.
+- Nothing in Art reads or writes the saved meeting URL, imports the
+  meeting-app service, selects an audio device, or captures screen, browser,
+  or system output. Tests enforce this structurally.
+- Hiding the video is local to one artist's player, so it costs them neither
+  the live audio nor the meeting faces.
+
+See ADR 0004 for the full boundary.
+
 ### In-session chrome
 
 Few controls. Talk is already there. The reference video adds host transport
