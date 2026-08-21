@@ -82,8 +82,9 @@ What Art added has to be true *beside* that window:
   audio; the video is the picture. No Art surface selects an audio device.
 - **The conversation keeps its focus.** Only the existing Webex Controls and
   Show Webex App may focus or launch the meeting app. No Art snapshot handler,
-  tick, or notice raises a window, and a chosen start card tells the host where
-  its control is rather than opening one at them.
+  tick, or notice raises a window. A chosen start card offers the host a
+  control in the room chrome rather than opening a panel at them, and pressing
+  it is their decision.
 - **The handoff is never rewritten.** Nothing in Art reads or writes the saved
   meeting URL, and no Art module imports the meeting-app service. This is
   enforced structurally rather than by review.

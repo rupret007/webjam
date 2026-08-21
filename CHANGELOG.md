@@ -25,6 +25,34 @@ All notable improvements and features for the WebJam creator collaboration platf
   decision instead of a grid of cards, and any profile offering starts must
   keep the talk-only door open so an add-on can never look required. Joining
   re-picks nothing: one pasted invitation carries whatever the host started.
+- The room now carries **one honest line about its canvas or its video**, in
+  the session strip beside the other room controls. A host who chose "Paint
+  together" used to press Host and land in a room that said nothing about a
+  canvas; the only mention was a nine-second message reading "open More →
+  Shared Canvas", which is a user interface explaining how to navigate itself.
+  - It answers one question — what does this room need from me right now — so
+    a missing painting program or a video this computer cannot follow comes
+    before a canvas that is simply fine, and there is never more than one line.
+  - It is the way in while a host has not set their chosen layer up ("Set up
+    shared canvas"), the room's status once they have ("Shared canvas"), a
+    recovery when something is absent ("Install Drawpile"), and the only route
+    back from a hidden video.
+  - **A talk-only room shows nothing at all**, and neither does any other
+    profile — not a greyed-out slot, but absent. Someone who chose to just talk
+    and work has a finished room, and the chrome agrees.
+  - The **image action is deliberately not in it.** It is personal to whoever
+    runs it rather than a thing the room has, and including it would make the
+    line permanent in every Art room.
+  - Neither tone is filled: the strip already has one loud control, so a
+    request carries an accent edge and a description carries no accent at all.
+    Pinned by rendering the chip at rest and counting accent pixels.
+  - Rendered from the same projection a paired companion panel reads, so the
+    room and a meeting-window panel cannot disagree about what is happening.
+    Reading that state is not depending on a companion, and the line is drawn
+    where it belongs: the room may share the state vocabulary, and may never
+    touch the command contract or ask whether anything is paired.
+  - Pressing it opens nothing by itself. The chip asks, the controller decides,
+    and the existing rule against taking focus from the meeting window holds.
 - Added an **optional shared canvas, painted by Drawpile**. Real-time
   collaborative painting is a solved open-source problem, so WebJam does for
   Drawpile exactly what it does for Jamulus: it finds the real program,

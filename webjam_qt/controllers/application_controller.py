@@ -1668,7 +1668,7 @@ class ApplicationController(QObject):
         if not (self._shared_canvas_supported() or self._reference_video_supported()):
             strip.set_art_room_presence(ABSENT)
             return
-        projection = self.art_companion_projection()
+        projection = self.art_room_state()
         start = self.creator_start
         # Only a host chose a card. A guest's saved start says nothing about
         # the room they joined, so what the host shared is the only fact.
@@ -11343,9 +11343,78 @@ class ApplicationController(QObject):
             hosting=hosting,
             canvas_snapshot=canvas_snapshot,
             video_snapshot=video_snapshot,
-            ai_snapshot=getattr(ai, "snapshot", None),
+            ai_snapshot=self._ai_companion_snapshot(ai),
         )
         return self._advance_art_companion_revision(projection)
+
+    #: Reading the AI snapshot probes the filesystem and asks a local backend
+    #: over HTTP, so a poller cannot be allowed to trigger it on every read.
+    _AI_PROBE_INTERVAL_S = 5.0
+
+    def _ai_companion_snapshot(self, controller: object):
+        """Return the AI state, probing at most every few seconds.
+
+        The panel reads the controller directly and is always fresh, because
+        opening it is something a person did. This path exists for whatever
+        polls the projection, where an unthrottled read would mean a
+        filesystem walk and a loopback request on every poll, forever.
+        """
+
+        if controller is None:
+            self._ai_companion_cached = None
+            return None
+        now = time.monotonic()
+        cached = getattr(self, "_ai_companion_cached", None)
+        if cached is not None:
+            since = now - float(getattr(self, "_ai_companion_probed_at", 0.0))
+            if 0.0 <= since < self._AI_PROBE_INTERVAL_S:
+                return cached
+        snapshot = getattr(controller, "snapshot", None)
+        self._ai_companion_cached = snapshot
+        self._ai_companion_probed_at = now
+        return snapshot
+
+    def art_room_state(self) -> "ArtCompanionProjection":
+        """Return only the facts that belong to the room: canvas and video.
+
+        The image action is personal to whoever runs it, so the room's own
+        chrome never shows it -- and asking for it would probe a filesystem
+        and a local backend once a second for the whole session, on behalf of
+        something that would not display the answer.
+        """
+
+        from core.art_companion import ArtCompanionProjection
+        from webjam_qt.controllers.art_companion_projection import (
+            build_art_companion_projection,
+        )
+
+        if getattr(self, "_shutdown", False):
+            return ArtCompanionProjection()
+        video = self._reference_video_coordinator()
+        canvas = self._shared_canvas_coordinator()
+        if video is None and canvas is None:
+            return ArtCompanionProjection()
+        hosting = bool(
+            getattr(video, "hosting", False) or getattr(canvas, "hosting", False)
+        )
+        video_snapshot = None
+        if video is not None:
+            video_snapshot = (
+                video.host_snapshot if video.hosting else video.follow_snapshot
+            )
+        canvas_snapshot = None
+        if canvas is not None:
+            canvas_snapshot = (
+                canvas.host_snapshot if canvas.hosting else canvas.follow_snapshot
+            )
+        return build_art_companion_projection(
+            generation=0,
+            revision=0,
+            in_room=True,
+            hosting=hosting,
+            canvas_snapshot=canvas_snapshot,
+            video_snapshot=video_snapshot,
+        )
 
     def _art_companion_generation_for(self, in_room: bool) -> int:
         """Return a generation that changes whenever the room does.

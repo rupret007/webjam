@@ -409,6 +409,87 @@ def test_a_real_room_with_nothing_shared_projects_a_talk_only_state(
     assert projection.ai is AiCompanionState.UNAVAILABLE
 
 
+class _CountingAi:
+    """An AI controller that records every time its state is read."""
+
+    def __init__(self) -> None:
+        self.reads = 0
+
+    @property
+    def snapshot(self):
+        from core.ai_image import AiImageSnapshot, AiImageState
+
+        self.reads += 1
+        return AiImageSnapshot(state=AiImageState.READY, message="Ready.")
+
+
+def test_the_rooms_own_state_never_asks_the_image_generator_anything():
+    """Reading the AI state probes a filesystem and a loopback backend.
+
+    The room chip is refreshed on a timer and never displays that state, so
+    asking for it would mean a walk and an HTTP request every second for the
+    whole session, on behalf of something that would not show the answer.
+    """
+
+    controller = _controller()
+    _in_a_room(controller, hosting=True)
+    counting = _CountingAi()
+    controller._ai_image = counting
+
+    for _ in range(5):
+        controller.art_room_state()
+
+    assert counting.reads == 0
+
+
+def test_a_polling_companion_cannot_cause_a_probe_on_every_poll():
+    """The projection does carry the AI state, so this path is throttled
+    rather than absent."""
+
+    controller = _controller()
+    _in_a_room(controller, hosting=True)
+    counting = _CountingAi()
+    controller._ai_image = counting
+
+    for _ in range(10):
+        controller.art_companion_projection()
+
+    assert counting.reads == 1
+
+
+def test_the_throttle_expires_so_installing_krita_is_eventually_noticed():
+    controller = _controller()
+    _in_a_room(controller, hosting=True)
+    counting = _CountingAi()
+    controller._ai_image = counting
+
+    controller.art_companion_projection()
+    # Pretend the interval passed rather than sleeping through it.
+    controller._ai_companion_probed_at -= (
+        ApplicationController._AI_PROBE_INTERVAL_S + 1.0
+    )
+    controller.art_companion_projection()
+
+    assert counting.reads == 2
+
+
+def test_leaving_a_room_forgets_the_cached_generator_state(no_real_programs):
+    """A stale AI answer must not survive into the next room."""
+
+    controller = _controller()
+    _in_a_room(controller, hosting=True)
+    controller._ai_image = _CountingAi()
+    controller.art_companion_projection()
+    assert controller._ai_companion_cached is not None
+
+    controller.host_peer = SimpleNamespace(active=False, credentials=None)
+    controller.guest_peer = None
+    controller._ai_image = None
+    controller.art_companion_projection()
+
+    assert controller._ai_companion_cached is None
+
+
 def test_switching_from_host_to_guest_moves_the_generation(no_real_programs):
     controller = _controller()
     _in_a_room(controller, hosting=True)
