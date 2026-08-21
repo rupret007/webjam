@@ -26,8 +26,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from core.webex_url import is_allowed_webex_url, webex_site_hostname
+from core.meeting_link import (
+    GENERIC_MEETING_SERVICE_KEY,
+    identify_meeting_service,
+    is_allowed_meeting_link,
+    meeting_link_hostname,
+    meeting_service_label,
+)
 
+# Webex is the primary meeting platform, so it is the name musician-facing
+# copy uses when no link says otherwise. Zoom, Teams, Google Meet, FaceTime,
+# and a neutral generic HTTPS host all remain valid through
+# :mod:`core.meeting_link`, and a configured link names itself.
 DEFAULT_MEETING_SERVICE = "Webex"
 
 # WebJam's own mute sets the local monitor mix. Jamulus owns the signal your
@@ -104,6 +114,25 @@ class InviteMessage:
     @property
     def line_count(self) -> int:
         return len(self.text.splitlines())
+
+
+def service_name_for_link(meeting_url: str = "") -> str:
+    """Return what to call the meeting in copy: its own name, or Webex.
+
+    A configured link identifies itself, so a Zoom user reads "Zoom". With no
+    link, or an unusable one, copy falls back to the primary platform rather
+    than inventing a neutral phrase nobody says out loud.
+    """
+
+    candidate = str(meeting_url or "").strip()
+    if not candidate or not is_allowed_meeting_link(candidate):
+        return DEFAULT_MEETING_SERVICE
+    service = identify_meeting_service(candidate)
+    if service and service != GENERIC_MEETING_SERVICE_KEY:
+        return meeting_service_label(service)
+    # An unbranded host has no name to use, and "Meeting service mute" reads
+    # like a placeholder. The host the musician typed is what they recognise.
+    return meeting_link_hostname(candidate) or DEFAULT_MEETING_SERVICE
 
 
 def music_features_require_meeting() -> bool:
@@ -252,9 +281,10 @@ def build_invite_message(
 
     lines = [headline, link]
     candidate = str(meeting_url or "").strip()
-    includes_meeting = bool(candidate) and is_allowed_webex_url(candidate)
+    # Any meeting link the rest of WebJam accepts is carried, not just Webex.
+    includes_meeting = bool(candidate) and is_allowed_meeting_link(candidate)
     if includes_meeting:
-        site = webex_site_hostname(candidate) or "the meeting"
+        site = meeting_link_hostname(candidate) or "the meeting"
         lines.extend(
             [
                 "",
@@ -285,6 +315,7 @@ __all__ = [
     "MuteSurface",
     "WEBJAM_MUTE_SCOPE",
     "build_invite_message",
+    "service_name_for_link",
     "describe_mutes",
     "end_session_prompt",
     "meeting_departure_note",

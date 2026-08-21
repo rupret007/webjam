@@ -76,6 +76,38 @@ Song panel obeys that literally:
 Song tools are creative and opt-in throughout: the panel never opens itself,
 and a suggestion is text until a musician acts on it.
 
+### Coexisting with the meeting window (ADR 0004)
+
+Jamulus carries performance audio, Shared Track is the song clock, and the
+meeting is optional faces in its own application. Song tools sit entirely on
+the WebJam side of that line:
+
+- Nothing embeds a meeting, taps its output, or captures it. No WebEngine, no
+  new OAuth, no screen share — asserted across every song module.
+- No stem, chord, lyric, or clock value is ever sent into a meeting.
+  `core/music_ai_results.py` contains no meeting concept at all.
+- Opening the panel, running a job, and asking for write-help touch none of
+  the meeting handoff. Join / Open Meeting, Show Webex App, and the
+  Conversation panel keep working exactly as before, asserted at runtime by
+  driving each path against a mocked meeting surface and checking it was never
+  called.
+- A job in flight is one word on the session strip, a `QLabel` that can never
+  cover or disable Conversation. The missing-key line lives in the panel.
+- The only upload sources that exist are a file the user picked and the Shared
+  Track they loaded. A meeting recording or system capture is not one of them,
+  and the live Jamulus mix is a named permanent refusal.
+
+**Webex is primary in copy**, and other services stay valid. The service name
+comes from the configured link through `core.meeting_link`, so a Zoom user
+reads "Zoom" and a Teams user reads "Microsoft Teams"; with no link, or an
+unusable one, copy says Webex. An unbranded public host is named by its own
+hostname, because "Meeting service mute" reads like a placeholder. The invite
+carries any link `core.meeting_link` accepts rather than re-implementing a
+Webex-only policy — an earlier revision used the Webex-only validator and would
+have silently dropped a valid Zoom or Meet link.
+
+No copy anywhere claims WebJam joined, muted, or verified a meeting.
+
 ### Suggestions are kept, not applied
 
 Every suggested progression is drawn with the word **Suggestion**, its

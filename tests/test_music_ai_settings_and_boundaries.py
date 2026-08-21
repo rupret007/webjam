@@ -517,3 +517,142 @@ def test_the_missing_key_line_never_reaches_the_hud():
     ).read_text()
     assert "missing_key_message" not in controller
     assert "music_ai_api_key" not in controller
+
+
+# ----------------------------------------------------------------------
+# Webex coexistence (ADR 0004): a second window, never touched
+# ----------------------------------------------------------------------
+SONG_MODULES = (
+    "core/song_form.py",
+    "core/song_help.py",
+    "core/song_sections.py",
+    "core/song_clock.py",
+    "core/song_workbench.py",
+    "core/stem_bench.py",
+    "core/music_ai_client.py",
+    "core/music_ai_catalog.py",
+    "core/music_ai_results.py",
+    "webjam_qt/widgets/song_overlay.py",
+    "webjam_qt/controllers/song_tools_coordinator.py",
+)
+
+
+def test_song_tools_never_reach_into_the_meeting_app():
+    """No embed, no output tap, no mute/mic/speaker, no screen share."""
+
+    # Deliberately unambiguous terms: the stem bench has its own mute and solo,
+    # which are faders on a reference file and nothing to do with a meeting.
+    for relative in SONG_MODULES:
+        source = (REPO_ROOT / relative).read_text().lower()
+        for forbidden in (
+            "webengine",
+            "qwebengineview",
+            "screen_share",
+            "screenshare",
+            "start_share",
+            "meeting_mute",
+            "webex_mute",
+            "set_microphone",
+            "set_speaker",
+            "meeting_capture",
+            "meeting_recording",
+            "meeting_output",
+            "oauth",
+        ):
+            assert forbidden not in source, f"{relative}: {forbidden}"
+
+
+def test_song_tools_do_not_drive_the_meeting_handoff():
+    """Join / Open Meeting and Show Webex App stay owned by Conversation."""
+
+    source = (
+        REPO_ROOT / "webjam_qt" / "controllers" / "song_tools_coordinator.py"
+    ).read_text()
+    for owned_elsewhere in (
+        "_on_join_video",
+        "_show_webex_app",
+        "_show_webex_conversation",
+        "_focus_webex_mute",
+        "_leave_video",
+        "join_meeting_url",
+        "webbrowser",
+    ):
+        assert owned_elsewhere not in source, owned_elsewhere
+
+
+def test_no_song_result_is_ever_sent_to_the_meeting():
+    """Stems, chords, and lyrics land locally; nothing is pushed into a call."""
+
+    source = (
+        REPO_ROOT / "core" / "music_ai_results.py"
+    ).read_text().lower()
+    for forbidden in ("webex", "meeting", "share_to", "broadcast"):
+        assert forbidden not in source, forbidden
+
+
+def test_the_upload_source_can_never_be_a_meeting_or_the_live_mix():
+    from core.music_ai_catalog import resolve_song_tools
+    from core.music_ai_client import MusicAIWorkflow
+    from core.song_workbench import (
+        LIVE_MIX_SOURCE,
+        SOURCE_PICKED_FILE,
+        SOURCE_SHARED_TRACK,
+        evaluate_upload,
+    )
+
+    catalog = resolve_song_tools(
+        [MusicAIWorkflow("1", "Stem Separation", "stems", "isolate")]
+    )
+    capability = catalog.capability("stems")
+
+    # Only two sources exist, and neither can be a meeting capture: one is a
+    # file the user picked, the other is the Shared Track they loaded.
+    for source_kind in ("webex_recording", "meeting_capture", "system_audio", ""):
+        assert evaluate_upload(
+            capability=capability,
+            source_kind=source_kind,
+            path="/tmp/whatever.wav",
+            is_host=True,
+            has_api_key=True,
+        ).blocked
+
+    assert {SOURCE_PICKED_FILE, SOURCE_SHARED_TRACK, LIVE_MIX_SOURCE} == {
+        "picked_file",
+        "shared_track",
+        "<live-jamulus-mix>",
+    }
+
+
+def test_an_in_flight_job_never_covers_or_disables_the_meeting_controls():
+    """A running job is one word on the strip; Conversation stays reachable."""
+
+    import ast
+    import inspect
+
+    from webjam_qt.controllers.song_tools_coordinator import SongToolsCoordinator
+
+    for method in (
+        SongToolsCoordinator.run_song_tool,
+        SongToolsCoordinator._finish_tool,
+        SongToolsCoordinator._render_song_line,
+    ):
+        tree = ast.parse(inspect.getsource(method).lstrip())
+        touched = {
+            node.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+        }
+        for forbidden in (
+            "webex_embed",
+            "set_video_state",
+            "_video_button",
+            "setEnabled",
+        ):
+            assert forbidden not in touched, f"{method.__name__}: {forbidden}"
+
+
+def test_no_new_oauth_or_web_runtime_is_introduced():
+    for relative in SONG_MODULES:
+        source = (REPO_ROOT / relative).read_text().lower()
+        for forbidden in ("oauth", "pkce", "client_secret", "webengine", "webview"):
+            assert forbidden not in source, f"{relative}: {forbidden}"

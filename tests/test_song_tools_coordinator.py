@@ -21,6 +21,7 @@ from core.music_ai_results import SongArtifact, SongToolRun
 from core.song_workbench import SongWorkbench
 from core.stem_bench import StemBenchError
 from webjam_qt.controllers.song_tools_coordinator import SongToolsCoordinator
+from webjam_qt.windows.conductor_window import ConductorWindow
 from webjam_qt.widgets.song_overlay import SongOverlay
 
 SHEET = "Key: A minor\nTempo: 104\n[Verse]\nAm F C G\nDriving through town\n"
@@ -49,7 +50,9 @@ def _controller(app, *, is_host=True, api_key="k", webex_url="", notes=SHEET):
     overlay = SongOverlay()
     window = SimpleNamespace(
         song_overlay=overlay,
-        session_canvas=SimpleNamespace(current_notes=lambda: notes),
+        session_canvas=SimpleNamespace(
+            current_notes=lambda: notes, set_notes=MagicMock()
+        ),
         session_strip=SimpleNamespace(
             current_title=lambda: "Tuesday Jam",
             _elapsed_seconds=1320,
@@ -1053,3 +1056,126 @@ def test_a_loaded_shared_track_is_the_subject_without_an_extra_dialog(app, tmp_p
     # Exactly one dialog: the host confirmation, which names the file.
     assert confirm.call_count == 1
     assert "backing.wav" in confirm.call_args.args[2]
+
+
+# ----------------------------------------------------------------------
+# Webex coexistence: a second window that Song tools never touch
+# ----------------------------------------------------------------------
+def _meeting_controller(app, **kwargs):
+    coordinator = _coordinator(app, **kwargs)
+    embed = SimpleNamespace(
+        set_launch_status=MagicMock(),
+        set_app_status=MagicMock(),
+        focus_primary_action=MagicMock(),
+        setVisible=MagicMock(),
+    )
+    coordinator._c.window.webex_embed = embed
+    coordinator._c._show_webex_app = MagicMock()
+    coordinator._c._on_join_video = MagicMock()
+    coordinator._c._focus_webex_mute = MagicMock()
+    return coordinator, embed
+
+
+def test_opening_song_tools_leaves_the_meeting_handoff_alone(app):
+    coordinator, embed = _meeting_controller(app)
+
+    with patch.object(coordinator, "discover_workflows"):
+        coordinator.toggle_panel()
+
+    embed.setVisible.assert_not_called()
+    embed.focus_primary_action.assert_not_called()
+    embed.set_launch_status.assert_not_called()
+    coordinator._c._show_webex_app.assert_not_called()
+    coordinator._c._on_join_video.assert_not_called()
+    coordinator._c._focus_webex_mute.assert_not_called()
+
+
+def test_write_help_leaves_the_meeting_handoff_alone(app):
+    coordinator, embed = _meeting_controller(app)
+
+    coordinator.show_writing_help()
+    coordinator.show_chords("Verse")
+    coordinator.keep_suggestion("Verse", "F G Am Am")
+
+    embed.setVisible.assert_not_called()
+    coordinator._c._show_webex_app.assert_not_called()
+    coordinator._c._on_join_video.assert_not_called()
+
+
+def test_a_running_job_leaves_the_meeting_handoff_alone(app, tmp_path):
+    source = tmp_path / "mix.wav"
+    source.write_bytes(b"RIFF" + b"0" * 4096)
+    coordinator, embed = _meeting_controller(app)
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+
+    class InlineThread:
+        def __init__(self, target=None, **_kwargs):
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.QFileDialog.getOpenFileName",
+        return_value=(str(source), ""),
+    ), patch(
+        "webjam_qt.controllers.song_tools_coordinator.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.Yes,
+    ), patch(
+        "webjam_qt.controllers.song_tools_coordinator.MusicAIClient",
+        side_effect=RuntimeError("offline"),
+    ), patch(
+        "webjam_qt.controllers.song_tools_coordinator.threading.Thread", InlineThread
+    ):
+        coordinator.run_song_tool("stems")
+
+    embed.setVisible.assert_not_called()
+    embed.set_launch_status.assert_not_called()
+    coordinator._c._show_webex_app.assert_not_called()
+
+
+def test_the_in_flight_line_is_a_label_not_a_control(app):
+    """It reports; it never grows into a button that could cover Conversation."""
+
+    from PySide6.QtWidgets import QLabel, QPushButton
+
+    strip_widget = ConductorWindow(
+        mode_entries=[("music", "Music")],
+        initial_mode_key="music",
+        initial_title="Tuesday",
+    )
+    try:
+        strip = strip_widget.session_strip
+        strip.set_song_line("Chords & key…")
+
+        assert isinstance(strip._song_line, QLabel)
+        assert not isinstance(strip._song_line, QPushButton)
+        assert strip.current_song_line() == "Chords & key…"
+        # Conversation and Studio remain exactly as reachable as before.
+        assert strip._video_button.isEnabled()
+        assert strip._tools_button.isEnabled()
+    finally:
+        strip_widget.deleteLater()
+
+
+def test_the_missing_key_line_lives_in_the_panel_not_over_conversation(app):
+    coordinator, embed = _meeting_controller(app, api_key="")
+    coordinator.overlay.setVisible(True)
+
+    coordinator.refresh()
+
+    assert "MUSIC_AI_API_KEY" in coordinator.overlay._tools_status.text()
+    embed.setVisible.assert_not_called()
+    embed.set_launch_status.assert_not_called()
+
+
+def test_the_panel_copy_follows_whichever_meeting_service_is_configured(app):
+    coordinator, _embed = _meeting_controller(
+        app, webex_url="https://zoom.us/j/123456"
+    )
+    coordinator.overlay.setVisible(True)
+
+    coordinator.refresh()
+
+    assert "Zoom mute" in coordinator.overlay._mute_lines.text()
+    assert "Zoom" in coordinator.overlay._end_note.text()

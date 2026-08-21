@@ -283,3 +283,111 @@ def test_the_end_session_dialog_claims_nothing_when_no_meeting_is_set():
     title, body = question.call_args.args[1:3]
     assert title == "Leave Jam?"
     assert "webex" not in body.lower()
+
+
+# ----------------------------------------------------------------------
+# Webex is primary; other services stay valid (ADR 0004 + core/meeting_link)
+# ----------------------------------------------------------------------
+@pytest.mark.parametrize(
+    ("meeting_url", "expected"),
+    [
+        ("https://band.webex.com/meet/jeff", "Webex"),
+        ("https://zoom.us/j/123456", "Zoom"),
+        ("https://meet.google.com/abc-defg-hij", "Google Meet"),
+        ("https://teams.microsoft.com/l/meetup-join/x", "Microsoft Teams"),
+        # An unbranded public host has no product name, so the host itself is
+        # what a musician recognises.
+        ("https://video.acme.co.uk/r/1", "video.acme.co.uk"),
+    ],
+)
+def test_a_configured_link_names_its_own_service(meeting_url, expected):
+    from core.meeting_companion import service_name_for_link
+
+    assert service_name_for_link(meeting_url) == expected
+
+
+@pytest.mark.parametrize(
+    "meeting_url",
+    ["", "   ", "http://band.webex.com/meet/jeff", "https://evil.example.com/../x"],
+)
+def test_webex_is_the_default_name_when_no_link_says_otherwise(meeting_url):
+    """Webex is the primary platform, so it is what unlabelled copy says."""
+
+    from core.meeting_companion import service_name_for_link
+
+    assert service_name_for_link(meeting_url) == DEFAULT_MEETING_SERVICE
+
+
+@pytest.mark.parametrize(
+    "meeting_url",
+    [
+        "https://band.webex.com/meet/jeff",
+        "https://zoom.us/j/123456",
+        "https://meet.google.com/abc-defg-hij",
+        "https://video.acme.co.uk/r/1",
+    ],
+)
+def test_one_invite_carries_any_supported_meeting_service(meeting_url):
+    """core/meeting_link.py decides; the invite does not re-implement policy."""
+
+    message = build_invite_message(join_link=JOIN_LINK, meeting_url=meeting_url)
+
+    assert message.includes_meeting
+    assert meeting_url in message.text
+    assert "does not run it" in message.text
+
+
+def test_the_invite_link_policy_is_the_shared_one():
+    """A link WebJam accepts elsewhere must not be dropped from an invite."""
+
+    from core.meeting_link import is_allowed_meeting_link
+
+    for candidate in (
+        "https://zoom.us/j/1",
+        "https://meet.google.com/a-b-c",
+        "https://teams.microsoft.com/l/meetup-join/x",
+    ):
+        assert is_allowed_meeting_link(candidate)
+        assert build_invite_message(
+            join_link=JOIN_LINK, meeting_url=candidate
+        ).includes_meeting
+
+
+def test_mute_and_end_copy_follow_the_configured_service():
+    from core.meeting_companion import service_name_for_link
+
+    zoom = service_name_for_link("https://zoom.us/j/1")
+    surface = describe_mutes(meeting_configured=True, meeting_service=zoom)
+
+    assert surface.meeting.name == "Zoom"
+    assert "Open Zoom to mute" == surface.meeting.action_label
+    assert "Zoom" in end_session_prompt(
+        hosting=True, meeting_configured=True, meeting_service=zoom
+    ).meeting_note
+
+
+def test_no_copy_claims_webjam_joined_or_muted_a_meeting():
+    """ADR 0004: WebJam never joins, controls, or verifies a meeting."""
+
+    surface = describe_mutes(meeting_configured=True)
+    text = " ".join(
+        [
+            surface.meeting.state_text,
+            surface.meeting.hint,
+            surface.caution(),
+            end_session_prompt(hosting=True, meeting_configured=True).meeting_note,
+            build_invite_message(
+                join_link=JOIN_LINK, meeting_url=MEETING_URL
+            ).text,
+        ]
+    ).lower()
+
+    for claim in (
+        "webjam muted",
+        "webjam joined",
+        "muted you in",
+        "joined the meeting",
+        "you are muted in",
+    ):
+        assert claim not in text
+    assert "does not change or verify" in surface.meeting.hint

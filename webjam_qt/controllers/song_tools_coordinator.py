@@ -26,9 +26,9 @@ from typing import Any
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from core.meeting_companion import (
-    DEFAULT_MEETING_SERVICE,
     describe_mutes,
     end_session_prompt,
+    service_name_for_link,
 )
 from core.music_ai_catalog import SongToolCatalog, failed_catalog, resolve_song_tools
 from core.music_ai_client import (
@@ -156,16 +156,18 @@ class SongToolsCoordinator:
         )
         self._render_stems()
         self._render_song_line()
+        service = service_name_for_link(self._meeting_url())
         overlay.set_meeting_state(
             mutes=describe_mutes(
                 webjam_muted_participants=self._muted_count(),
                 participant_count=self._participant_count(),
                 meeting_configured=self._meeting_configured(),
-                meeting_service=DEFAULT_MEETING_SERVICE,
+                meeting_service=service,
             ),
             end_note=end_session_prompt(
                 hosting=self._is_host(),
                 meeting_configured=self._meeting_configured(),
+                meeting_service=service,
             ).meeting_note,
             meeting_configured=self._meeting_configured(),
         )
@@ -456,7 +458,8 @@ class SongToolsCoordinator:
         """
 
         canvas = getattr(self._c.window, "session_canvas", None)
-        if canvas is None:
+        writer = getattr(canvas, "set_notes", None)
+        if writer is None:
             return
         self._sync_workbench()
         chords = tuple(str(chord_line or "").split())
@@ -466,7 +469,7 @@ class SongToolsCoordinator:
         if updated == self.workbench._notes:
             self._flash("Nothing to keep.")
             return
-        canvas.set_notes(updated)
+        writer(updated)
         self.workbench.set_notes(updated)
         overlay = self.overlay
         if overlay is not None:
@@ -761,8 +764,13 @@ class SongToolsCoordinator:
         except Exception:  # noqa: BLE001 - a role check must never break the UI
             return False
 
+    def _meeting_url(self) -> str:
+        """The saved meeting link, whichever service it points at."""
+
+        return str(getattr(self._c.settings, "webex_url", "") or "").strip()
+
     def _meeting_configured(self) -> bool:
-        return bool(str(getattr(self._c.settings, "webex_url", "") or "").strip())
+        return bool(self._meeting_url())
 
     def _session_title(self) -> str:
         strip = getattr(self._c.window, "session_strip", None)
