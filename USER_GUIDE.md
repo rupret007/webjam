@@ -21,22 +21,63 @@ WebJam's operational status. For example, typing “recording finished” cannot
 create a take or unlock export.
 
 At launch, choose **Music** (GA), **Podcast & Voice** (GA), **Review &
-Rehearsal** (Preview), or **Studio Visit** (Preview). The profile follows the
+Rehearsal** (Preview), or **Art** (Preview). The profile follows the
 launch, live session, recording, Studio, local session metadata, and new
 standalone projects. Legacy content without a saved profile opens as Music.
 Review & Rehearsal allows live WebJam-audio Host/Join, Record Session, local
 notes, and playback/read-only review of completed session takes. It blocks
 standalone projects, take editing/comp/mix mutation, track export, shared
-notes, visual sync, and media timecode. Studio Visit is a room for artists in
-any medium; see [Studio Visit](#studio-visit) below. No profile directly or
-automatically taps a meeting app, browser, or system output.
+notes, visual sync, and media timecode. Art is a room for artists in any
+medium; see [Art](#art) below. No profile directly or automatically taps a
+meeting app, browser, or system output.
 
-## Studio Visit
+## Art
 
-Studio Visit (Preview) opens a room where you talk while you work — painting,
-drawing, sculpting, anything at a table. Hosting and joining work exactly as
-they do in the other profiles, and **a room with no video is a completely
-normal room**. Nothing asks you to share anything.
+Art (Preview) opens a room where you talk while you work — painting, drawing,
+sculpting, anything at a table. When you choose Art at launch, you pick one of
+three ways to start, and nothing more:
+
+- **Talk & make** — the room and live audio. Work on paper, in clay, or in any
+  application you already have. This is a completely normal room; nothing asks
+  you to share anything.
+- **Paint together** — the room plus one shared canvas, painted in Drawpile.
+- **Paint along** — the room plus one video the host plays for everyone.
+
+Then **Host** or **Join** as in every other profile. Joining is one pasted
+invitation: it carries whatever the host started, so there is nothing else for
+a guest to choose. The host can add the other option later from inside the
+room, so you never have to pick both up front.
+
+### Painting together
+
+WebJam does not paint. Drawpile does — it is the open-source collaborative
+painting program, with its own brushes, layers, and export. WebJam finds it,
+opens it, and carries the invitation so nobody has to be sent a second link.
+
+1. Everyone installs [Drawpile](https://drawpile.net/download/). WebJam does
+   not install it for you, and it will say plainly when it cannot find it.
+2. The host chooses **More ▾ → Shared Canvas…**, then **Host in Drawpile**.
+   Drawpile opens on its own Host page. Leave the session set to **Personal**
+   so only people with your invitation can join.
+3. Once the canvas is up, the host copies Drawpile's invitation
+   (**Session → Invite**) and pastes it into WebJam's **Share with the room**
+   field. Include the password when Drawpile offers to.
+4. Everyone else opens the same panel and chooses **Open shared canvas**.
+   Drawpile opens on the host's canvas. Someone who joins the room later gets
+   the same canvas automatically.
+
+Things worth knowing:
+
+- **Only the host chooses the canvas.** A guest can open it, and nothing more.
+- **WebJam cannot see the canvas.** Drawpile shows who is actually painting;
+  WebJam will never claim to know.
+- **Brushes, colours, and layers live in Drawpile.** WebJam deliberately has
+  none of them.
+- **Leaving the WebJam room does not close Drawpile.** It is your own program.
+- If WebJam cannot find Drawpile, or cannot read the invitation it was given,
+  it says so and opens nothing rather than showing you an empty window.
+
+### Painting along to a video
 
 If you want a reference to work from, the host can share one video file:
 
@@ -62,11 +103,20 @@ Things worth knowing:
 - **If WebJam loses track of the host's position**, it holds rather than
   guessing. Playback resumes when the host is heard from again.
 - **This is not frame-accurate review.** Everyone stays within about a second
-  of the host. There is no timecode, and Studio Visit is not a video review
-  tool.
-- Studio Visit has **no shared drawing canvas**, no camera feed, and **does not
-  record the session**, so there is no take to review afterwards. Your notes
-  stay local to your own computer as in every other profile.
+  of the host. There is no timecode, and Art is not a video review tool.
+
+### What Art does not do
+
+Art has no camera feed and **does not record the session**, so there is no take
+to review afterwards. Your notes stay local to your own computer as in every
+other profile. There is no standalone Art project in this Preview.
+
+Art is also the whole product on your desktop. If you want to see faces, use
+the Conversation card's **Show Webex App** and **Join / Open Meeting** as in
+every other profile: a free or personal Webex account is enough, and Webex is a
+second window beside WebJam rather than something WebJam runs. Remember that
+WebJam's mute and Webex's mute are separate controls, and that leaving a WebJam
+room does not leave your meeting.
 
 Each profile has a separate local scratchpad on this computer. Switching
 profiles safely saves and loads the matching private file; reads refuse links
@@ -432,7 +482,7 @@ deliberately does not integrate with or control Logic or another editor.
 The editing, arrangement, comping, mix-mutation, and export steps below apply
 only to Music and Podcast & Voice. Review & Rehearsal Preview can play, scrub,
 and inspect a completed take and its sources, but it cannot mutate the take's
-arrangement or mix, create a Studio sidecar, or export tracks. Studio Visit
+arrangement or mix, create a Studio sidecar, or export tracks. Art
 does not record a session at all, so it has no take and no Studio.
 
 - Drag a region to move it or drag an edge to trim it. The selected region can

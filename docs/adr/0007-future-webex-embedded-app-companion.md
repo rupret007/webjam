@@ -1,14 +1,38 @@
 # ADR 0007: Future Webex Embedded App companion
 
-- Status: Proposed; not implemented
-- Date: 2026-07-28
+- Status: **Rejected** for the shipping product; superseded by ADR 0004
+- Date: 2026-07-28; rejected 2026-08-21
 - Scope: Optional in-meeting companion surface
 
 > **v0.22.4 published boundary:** the current desktop labels and activation
 > behavior are included in the immutable published v0.22.4 private test
 > candidate.
 
-## Context
+## Rejection
+
+This proposal is closed. It never shipped, and no code for it exists.
+
+The proposal assumed the musician could load a custom embedded app into their
+own Webex. They usually cannot. Creating or loading a custom Embedded App
+requires a licensed organization and Control Hub administrator approval, and
+WebJam's actual user is a musician or artist on a **free or personal Webex
+account** with a Personal Room link and no organization to administer. An
+add-on that most users cannot install is not a feature; building it would take
+effort away from the product they can install.
+
+The decision therefore stands at **ADR 0004** and is not deferred: the desktop
+application is the whole product, and Webex is a second window beside it,
+reached through **Show Webex App**, **Join / Open Meeting**, and **Webex
+Controls**. WebJam's chrome stays compact so meeting faces can sit next to it,
+and it never takes focus except when the user asks for Webex Controls. Two
+mutes stay two mutes, and leaving a WebJam room is not leaving a meeting.
+
+Nothing below is planned work. It is retained only as the record of what was
+considered and why it was not built. If account-backed Webex capability is ever
+revisited, ADR 0004's Connect Webex section is the live entry point, and any
+new proposal must start from what a free account can actually do.
+
+## Context (historical)
 
 WebJam currently opens a musician-supplied Webex Meeting or Personal Room link
 externally. Webex owns sign-in, membership, camera, microphone, speakers, and
@@ -19,7 +43,7 @@ A future Webex Embedded App could give participants a small shared WebJam
 surface inside an existing Webex meeting. It must complement the desktop
 conductor, not recreate WebJam or move music processing into Webex.
 
-## Proposed decision
+## Proposed decision (historical, not built)
 
 Limit the embedded surface to focused collaboration:
 
@@ -75,7 +99,7 @@ token, Jamulus RPC secret, private endpoint, filesystem path, raw diagnostic,
 audio, video, waveform, take, or song media. Shared text is bounded, escaped,
 retention-defined, and omitted from public diagnostics.
 
-## Delivery phases
+## Delivery phases (historical, not built)
 
 1. **Sandbox proof:** host a minimal HTTPS 2.x Embedded App with the trinity
    identity. Prove sidebar and in-meeting contexts, theme/accessibility,

@@ -9,18 +9,52 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the immutable v0.26.0 release boundary belongs here. Every
 > published tag, release, and asset remains immutable historical evidence.
 
-### Studio Visit creator profile (Preview)
+### Art creator profile (Preview)
 
-- Added **Studio Visit**, a Preview creator profile for artists working in any
-  medium — painting, drawing, sculpture, anything at a table. It reuses the
-  existing session conductor, invite, roster, and meeting-handoff rules
-  unchanged, and speaks to *artists* rather than musicians throughout: launch,
-  conductor, session pulse, and menu copy. Registry validation refuses to load
-  a Studio Visit profile whose vocabulary addresses a band.
-- Added an **optional host-clocked reference video**. A room with no video is
-  the first-class path; nothing requires anyone to share anything. When the
-  host does share, everyone watches their own local copy of the same file under
-  the host's play, pause, stop, and position control.
+- Added **Art**, a Preview creator profile for artists working in any medium —
+  painting, drawing, sculpture, anything at a table. It reuses the existing
+  session conductor, invite, roster, and meeting-handoff rules unchanged, and
+  speaks to *artists* rather than musicians throughout: launch, conductor,
+  session pulse, and menu copy. Registry validation refuses to load an Art
+  profile whose vocabulary addresses a band.
+- Launch renders **start cards from the registry** rather than hardcoding them.
+  Art has exactly three, in a fixed order, and the registry refuses a fourth:
+  **Talk & make** opens a room and nothing else, **Paint together** adds a
+  shared Drawpile canvas, and **Paint along** adds the host-clocked reference
+  video. A start carries at most one add-on, so combining them is an in-room
+  decision instead of a grid of cards, and any profile offering starts must
+  keep the talk-only door open so an add-on can never look required. Joining
+  re-picks nothing: one pasted invitation carries whatever the host started.
+- Added an **optional shared canvas, painted by Drawpile**. Real-time
+  collaborative painting is a solved open-source problem, so WebJam does for
+  Drawpile exactly what it does for Jamulus: it finds the real program,
+  launches it, and carries the one piece of joining information a guest would
+  otherwise be sent separately. WebJam draws no strokes, runs no Drawpile
+  server, holds no Drawpile account, and cannot see the canvas.
+  - Hosting opens Drawpile's own Host page rather than guessing at its dialog,
+    and the copy points at a **Personal** (password-protected) session rather
+    than a public listed one.
+  - Both invitation forms Drawpile hands a person are accepted: the
+    `drawpile://` (or `ws`/`wss`) session URL and the `https://…/invites/…`
+    link its Invite dialog copies. The web form is normalized into the session
+    form exactly as Drawpile's own Join page normalizes it, password fragment
+    included, because `--join` skips that rewrite.
+  - Discovery checks a fixed list of absolute install locations with **no PATH
+    search and no glob**. A wildcard would let any executable named `drawpile`
+    inherit an affordance the artist thinks they granted to Drawpile.
+    `WEBJAM_DRAWPILE_CANDIDATES` overrides the list for an unusual install.
+  - Every failure is closed: no Drawpile means an install path and an honest
+    status, never a blank surface implying a canvas is open; a projection this
+    computer cannot parse stops before a launcher rather than becoming a URL
+    from another machine; and a guest has no share and no withdraw at all.
+  - The canvas address is **memory-only**, like the reference video's position,
+    because a Drawpile session password has no business surviving in the
+    durable recording journal. A restarted host offers no canvas until its
+    owner shares one again.
+- Added an **optional host-clocked reference video**. A room with neither
+  add-on is the first-class path; nothing requires anyone to share anything.
+  When the host does share, everyone watches their own local copy of the same
+  file under the host's play, pause, stop, and position control.
 - The reference video is **not routed through Jamulus**. Unlike Shared Track,
   which sends decoded audio to guests, each computer plays its own file, so
   same-file identity must be provable across machines. The host hashes its
@@ -29,39 +63,73 @@ All notable improvements and features for the WebJam creator collaboration platf
   they opened the host's exact file, while the published digest is meaningless
   outside the room and cannot be matched against a known media library. A
   digest captured in one room never matches in another.
-- Every failure path is closed. A computer that has not opened a copy, opened a
-  different file, or whose copy later moved, changed, or became unreadable does
-  not play, and says which of those happened. A guest arriving mid-play lands on
-  the host's position advanced by the locally measured age of that projection,
-  so no clock synchronization between machines is needed or claimed. If the
-  host's position becomes too old to trust, followers hold rather than drifting
-  while claiming to be in sync.
-- Guests have **no transport at all**: the follower type and the follower's
-  panel expose no play, pause, stop, or seek control. Hiding the video is
-  always available, before or after opening a file, and keeps the artist fully
-  in the room. A computer that cannot play video says so and stays in the room.
-- Studio Visit **does not record a session**. Its reference video is not bound
-  into the recording plan's source identity, so rather than fake a take whose
-  sources cannot be proven, the profile disables session recording and
-  therefore take review, editing, and export. Its conductor offers no Record
-  action, and there is no second session truth.
-- The profile projection travels beside Shared Track on the private peer plane
-  with the same rules: path-free, memory-only, monotonic generation, and a
-  separate playback generation per play attempt. A restarted host shares
-  nothing until it republishes.
+- Every reference video failure path is closed. A computer that has not opened
+  a copy, opened a different file, or whose copy later moved, changed, or
+  became unreadable does not play, and says which of those happened. A guest
+  arriving mid-play lands on the host's position advanced by the locally
+  measured age of that projection, so no clock synchronization between machines
+  is needed or claimed. If the host's position becomes too old to trust,
+  followers hold rather than drifting while claiming to be in sync.
+- Guests **drive neither add-on**. The reference-video follower type and its
+  panel expose no play, pause, stop, or seek control, and the canvas follower
+  exposes no share or withdraw. What a guest still owns is local: hiding the
+  video, and opening the canvas in their own Drawpile.
+- Art **does not record a session**. Its reference video is not bound into the
+  recording plan's source identity, so rather than fake a take whose sources
+  cannot be proven, the profile disables session recording and therefore take
+  review, editing, and export. Its conductor offers no Record action, and there
+  is no second session truth.
+- Both projections travel beside Shared Track on the private peer plane with
+  the same rules: bounded, memory-only, and monotonic. A late joiner's first
+  poll already carries whatever the host shared, so nobody has to wait for the
+  host to touch something.
 - Sync is host transport plus a position corrected on a tolerance bounded by
   the peer poll interval — the same honesty bar as Shared Track. It is **not**
   frame-accurate review and carries **no media timecode**; the registry refuses
-  a Studio Visit profile that claims otherwise. There is no shared canvas, no
-  camera feed, and no shipped, downloaded, or ingested video catalog.
-- `studio_visit` is a new canonical profile key, not an alias target. The legacy
-  `visual_studio` mode still migrates to Review & Rehearsal, unknown keys still
-  fail safely to Music, and Music, Podcast & Voice, and Review & Rehearsal are
-  unchanged. Launch copy and a private scratchpad path are now required for
-  every registered profile, so a future profile fails at import instead of as a
+  an Art profile that claims otherwise. There is no camera feed, no canvas
+  surface inside WebJam, and no shipped, downloaded, or ingested video catalog.
+- Art ships **no Webex Embedded App, companion projection, or in-meeting
+  surface**. A free or personal Webex account cannot create or load a custom
+  embedded app, so the desktop application is the whole product and Webex stays
+  the second window described in ADR 0004: Show Webex App, Join / Open Meeting,
+  and Webex Controls. WebJam's mute and Webex's mute remain separate controls,
+  and leaving a WebJam room does not leave a meeting.
+- `art` is the canonical profile key. `studio_visit` — the key the Preview
+  briefly used — is now a **migrate-from alias only**, so a saved choice
+  survives the rename. The legacy `visual_studio` mode still migrates to
+  Review & Rehearsal, because a session recorded under it must stay reviewable
+  and Art records nothing. Unknown keys still fail safely to Music, and Music,
+  Podcast & Voice, and Review & Rehearsal are unchanged. The saved start key is
+  re-validated against the resolved profile on every load and save, so a stale
+  or foreign key falls back to talk-only rather than arming a capability the
+  profile no longer has.
+- Launch copy and a private scratchpad path remain required for every
+  registered profile, so a future profile fails at import instead of as a
   KeyError mid-selection.
 - Two-computer behavior is **NOT RUN**: this profile is covered by automated
-  tests only and has no release or physical evidence.
+  tests only and has no release or physical evidence. The Drawpile handoff in
+  particular has not been exercised against a real Drawpile install on two
+  machines.
+
+### Test reliability
+
+- Fixed a suite-wide ordering hazard: some startup tests ran the real
+  application bootstrap against the shared `QApplication`, which installed
+  WebJam's bundled font and its whole stylesheet and left both in place. Two
+  layout tests in another file then measured text elision and minimum button
+  widths against an appearance their own setup never chose, so whether they
+  passed depended on file order. Restoring both also cut the suite's runtime
+  roughly in half, because later widget tests no longer re-style against a
+  stylesheet nothing asked for.
+- Fixed a Band Check dialog test helper that could return before its
+  background scan thread had reported, leaving that thread to run the real scan
+  after its patch was torn down and to emit into a dialog the finished test no
+  longer held.
+- Pinned the Jamulus component-update tests to a fixed clock inside their
+  signed catalog's validity window. The fixture is issued at a fixed date and
+  valid for twenty days, so a service left on the real wall clock accepted it
+  and then began rejecting it as `catalog-authorization-stale`, turning the
+  file red on a calendar date with no code change.
 
 ## [0.26.0] — Demo-proven creator multitrack private test release (2026-08-16)
 

@@ -6,13 +6,15 @@
 
 | Need | Use |
 | --- | --- |
-| Choose a creator workflow | Launch → **What are you creating?** → Music (GA), Podcast & Voice (GA), Review & Rehearsal (Preview), or Studio Visit (Preview) |
-| Start a live session | Choose a profile → **Host**, **Host Remote Recording**, **Host Review**, or **Host Studio Visit** |
-| Join a live session | Choose a profile → **Join**, **Join Recording**, **Join Review**, or **Join Studio Visit** → paste one invite |
-| Talk while making art | Studio Visit → **Host Studio Visit** or **Join Studio Visit**; a room with no video is normal and needs no setup |
-| Share a reference video | Studio Visit host → **More → Reference Video… → Share Video…** and pick one local file you have the right to play; WebJam ships and downloads none |
-| Follow the host's video | Studio Visit guest → **More → Reference Video… → Open My Copy…** and pick your own copy of the host's exact file; a different file is refused rather than played |
-| Ignore a shared video | Studio Visit → **Reference Video… → Hide Video**; you stay in the room and in the conversation |
+| Choose a creator workflow | Launch → **What are you creating?** → Music (GA), Podcast & Voice (GA), Review & Rehearsal (Preview), or Art (Preview) |
+| Start a live session | Choose a profile → **Host**, **Host Remote Recording**, or **Host Review**; Art adds three start cards first |
+| Join a live session | Choose a profile → **Join**, **Join Recording**, or **Join Review** → paste one invite; the invite carries whatever the host started |
+| Talk while making art | Art → **Talk & make** → **Host** or **Join**; a room with no canvas and no video is normal and needs no setup |
+| Paint on one shared canvas | Art → **Paint together** → **Host**, then **More → Shared Canvas… → Host in Drawpile**; keep the Drawpile session **Personal** and paste its invitation back into WebJam |
+| Join the shared canvas | Art guest → **More → Shared Canvas… → Open shared canvas**; Drawpile must be installed, and WebJam says so plainly when it is not |
+| Share a reference video | Art host → **More → Reference Video… → Share Video…** and pick one local file you have the right to play; WebJam ships and downloads none |
+| Follow the host's video | Art guest → **More → Reference Video… → Open My Copy…** and pick your own copy of the host's exact file; a different file is refused rather than played |
+| Ignore a shared video | Art → **Reference Video… → Hide Video**; you stay in the room and in the conversation |
 | Start a supported local project | Music → **New Music Project** or Podcast & Voice → **New Local Recording** |
 | Change live sound | **More → Audio Settings in Jamulus** |
 | Invite a collaborator | Host setup → **Copy Invite** |

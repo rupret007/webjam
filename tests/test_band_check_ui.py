@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import time  # noqa: E402
 from types import SimpleNamespace  # noqa: E402
 from unittest import mock  # noqa: E402
 
@@ -34,6 +35,21 @@ from webjam_qt.theme import load_stylesheet  # noqa: E402
 
 
 APP = QApplication.instance() or QApplication([])
+
+#: Dialogs built by ``_dialog`` live until the module is torn down. Each one
+#: owns a worker thread that emits back into it, so dropping the last Python
+#: reference mid-suite would leave that thread emitting into a freed object.
+_DIALOGS: list[BandCheckDialog] = []
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _close_dialogs():
+    yield
+    while _DIALOGS:
+        dialog = _DIALOGS.pop()
+        dialog.close()
+        dialog.deleteLater()
+    APP.processEvents()
 
 
 def _settings():
@@ -83,16 +99,28 @@ def _session(mode: BandCheckMode = BandCheckMode.PRE_SESSION) -> BandCheckSessio
 
 
 def _dialog(session: BandCheckSession) -> BandCheckDialog:
+    """Build a dialog and wait for its background scan to actually land.
+
+    The dialog scans on a daemon thread and reports back through a signal.
+    Spinning the event loop a fixed number of times could return before that
+    thread ran, leaving it to call the *real* scan after this patch was torn
+    down and to emit into a dialog the finished test no longer holds. Waiting
+    on a deadline that yields keeps the whole scan inside the patch.
+    """
+
     with mock.patch(
         "webjam_qt.windows.ready_check.build_band_check_session",
         return_value=session,
     ):
         dialog = BandCheckDialog(lambda: _settings(), mode=session.mode)
+        _DIALOGS.append(dialog)
         dialog.show()
-        for _ in range(30):
+        deadline = time.monotonic() + 5.0
+        while dialog._session is None and time.monotonic() < deadline:
             APP.processEvents()
-            if dialog._session is not None:
-                break
+            time.sleep(0.002)
+        APP.processEvents()
+        assert dialog._session is not None, "the Band Check scan never reported"
     return dialog
 
 
