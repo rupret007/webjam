@@ -283,7 +283,7 @@ def test_the_panel_embeds_and_releases_a_player_surface(host_dialog, qapp):
     surface.deleteLater()
 
 
-def test_only_studio_visit_exposes_the_reference_video_entry_point(qapp):
+def test_only_art_exposes_the_reference_video_entry_point(qapp):
     from core.creative_modes import CREATIVE_MODES
     from webjam_qt.widgets.session_strip import SessionStrip
 
@@ -291,7 +291,7 @@ def test_only_studio_visit_exposes_the_reference_video_entry_point(qapp):
     strip = SessionStrip(
         mode_entries=entries,
         initial_mode_key=entries[0][0],
-        initial_title="Studio Visit",
+        initial_title="Art",
     )
     try:
         for profile in CREATOR_PROFILES:
@@ -299,13 +299,13 @@ def test_only_studio_visit_exposes_the_reference_video_entry_point(qapp):
             expected = profile.capabilities.shared_reference_video
             assert strip._reference_video_action.isVisible() is expected, profile.key
             assert strip._reference_video_action.isEnabled() is expected, profile.key
-        strip.set_creator_profile(get_creator_profile_by_key("studio_visit"))
+        strip.set_creator_profile(get_creator_profile_by_key("art"))
         assert strip._reference_video_action.text() == "Reference Video…"
     finally:
         strip.deleteLater()
 
 
-def test_the_launch_dialog_offers_studio_visit_without_a_local_project(qapp, tmp_path):
+def test_the_launch_dialog_offers_art_without_a_local_project(qapp, tmp_path):
     from unittest.mock import patch
 
     from core.settings import AppSettings
@@ -317,24 +317,30 @@ def test_the_launch_dialog_offers_studio_visit_without_a_local_project(qapp, tmp
         )
     try:
         selector = dialog._creator_profile_selector
-        index = selector.findData("studio_visit")
+        index = selector.findData("art")
         assert index >= 0
         selector.setCurrentIndex(index)
-        assert dialog.selected_creator_profile_key == "studio_visit"
-        assert dialog._host_button.text() == "Host Studio Visit"
-        assert dialog._join_button.text() == "Join Studio Visit"
-        # Studio Visit has no standalone project, so that path stays hidden.
+        assert dialog.selected_creator_profile_key == "art"
+        assert dialog._host_button.text() == "Host"
+        assert dialog._join_button.text() == "Join"
+        # Art has no standalone project, so that path stays hidden.
         assert dialog._studio_button.isEnabled() is False
         assert dialog._studio_button.isHidden() is True
+        # The reference video's honesty now lives on the card that offers it,
+        # which is where a person decides whether they want it at all.
+        cards = {card.start_key: card for card in dialog._visible_start_cards()}
+        paint_along = cards["paint_along"].accessibleDescription().casefold()
+        assert "right to play" in paint_along
+        assert "own copy" in paint_along
+        assert "ships and downloads no video" in paint_along
         described = " ".join(
             (
                 dialog._host_button.accessibleDescription(),
                 dialog._join_button.accessibleDescription(),
             )
         ).casefold()
-        assert "right to play" in described
-        assert "no shared canvas" in described
-        assert "hide it and stay in the room" in described
+        assert "no recorded take" in described
+        assert "no frame-accurate review" in described
     finally:
         dialog.deleteLater()
 

@@ -234,7 +234,7 @@ class TestCreatorProfileSettings(unittest.TestCase):
     def test_every_legacy_profile_key_is_canonicalized_on_load(self):
         expected = {
             "music_jam": "music",
-            "visual_studio": "studio_visit",
+            "visual_studio": "review_rehearsal",
             "writers_room": "review_rehearsal",
             "design_critique": "review_rehearsal",
             "storyboard_film_room": "review_rehearsal",

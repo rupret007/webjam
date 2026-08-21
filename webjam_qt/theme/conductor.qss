@@ -720,6 +720,63 @@ QPushButton#LaunchSecondary:focus {
     border: 2px solid ${COLOR_BORDER_FOCUS};
 }
 
+QCommandLinkButton#LaunchStartCard {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+    text-align: left;
+    padding: ${SPACE_XS}px ${SPACE_MD}px;
+    /* The control already sets its own title/description hierarchy. Forcing a
+       weight or size here would flatten the two lines into one block. */
+}
+
+QCommandLinkButton#LaunchStartCard:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    border-color: ${COLOR_BORDER_STRONG};
+}
+
+QCommandLinkButton#LaunchStartCard:checked {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    border: 2px solid ${COLOR_ACCENT_PRIMARY};
+}
+
+QCommandLinkButton#LaunchStartCard:focus {
+    border: 2px solid ${COLOR_BORDER_FOCUS};
+}
+
+QCommandLinkButton#LaunchStartCard:disabled {
+    background-color: ${COLOR_BG_PANEL};
+    color: ${COLOR_TEXT_MUTED};
+    border-color: ${COLOR_BORDER_SUBTLE};
+}
+
+/* -------------------------------------------------------------------------
+ * Art shared canvas panel
+ * ---------------------------------------------------------------------- */
+
+#SharedCanvasHeadline {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#SharedCanvasStatus {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_BASE}px;
+}
+
+#SharedCanvasHint {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+    padding-top: ${SPACE_XS}px;
+}
+
+#SharedCanvasInviteInput {
+    min-height: 32px;
+    padding: 0 ${SPACE_SM}px;
+}
+
 #LaunchInviteInput {
     min-height: 46px;
     padding: 0 ${SPACE_LG}px;

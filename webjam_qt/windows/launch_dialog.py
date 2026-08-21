@@ -17,10 +17,12 @@ from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAccessible, QAccessibleEvent
+from PySide6.QtCore import QSize, QTimer, Qt
+from PySide6.QtGui import QAccessible, QAccessibleEvent, QIcon
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QComboBox,
+    QCommandLinkButton,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -34,6 +36,7 @@ from PySide6.QtWidgets import (
 from core.creative_modes import (
     CREATOR_PROFILES,
     CreatorProfile,
+    CreatorStart,
     get_creator_profile_by_key_or_default,
 )
 from core.jamulus_endpoint import DEFAULT_JAMULUS_PORT
@@ -140,33 +143,27 @@ _CREATOR_LAUNCH_COPY = {
         join_title="Join Review.",
         join_subtitle="Paste the WebJam review invitation your host sent you.",
     ),
-    "studio_visit": _CreatorLaunchCopy(
-        host="Host Studio Visit",
-        join="Join Studio Visit",
-        local="Standalone Studio Visit Unavailable",
+    "art": _CreatorLaunchCopy(
+        host="Host",
+        join="Join",
+        local="Standalone Art Unavailable",
         host_description=(
-            "Open a room where artists talk and work, and create an invitation "
-            "link. You may optionally share one local video file you have the "
-            "right to play; everyone watches their own copy under your "
-            "transport. This Preview has no shared canvas, no camera feed, no "
-            "recorded take, and no frame-accurate review. "
-            f"{MEETING_DIRECT_CAPTURE_BOUNDARY}"
+            "Open a room where artists talk and work, and create one "
+            "invitation link that carries whatever you started. This Preview "
+            "has no camera feed, no recorded take, and no frame-accurate "
+            f"review. {MEETING_DIRECT_CAPTURE_BOUNDARY}"
         ),
         join_description=(
-            "Join a studio visit using one WebJam invitation link. To follow a "
-            "shared video you need your own copy of the host's exact file; you "
-            "can also hide it and stay in the room. "
-            f"{MEETING_DIRECT_CAPTURE_BOUNDARY}"
+            "Join an art session with one WebJam invitation. The invitation "
+            "carries whatever the host started, so there is nothing else to "
+            f"choose here. {MEETING_DIRECT_CAPTURE_BOUNDARY}"
         ),
         local_description=(
-            "Standalone Studio Visit projects are not available in this Preview."
+            "Standalone Art projects are not available in this Preview."
         ),
-        helper=(
-            "Preview: host or join a room to talk and make art. An optional "
-            "reference video follows the host."
-        ),
-        join_title="Join Studio Visit.",
-        join_subtitle="Paste the WebJam studio invitation your host sent you.",
+        helper="Preview: talk and make art together.",
+        join_title="Join the room.",
+        join_subtitle="Paste the WebJam invitation your host sent you.",
     ),
 }
 
@@ -174,6 +171,45 @@ if set(_CREATOR_LAUNCH_COPY) != {profile.key for profile in CREATOR_PROFILES}:
     # Launch is the first thing a person touches. Catch a profile added
     # without copy at import time instead of as a KeyError mid-selection.
     raise RuntimeError("Every creator profile requires launch copy.")
+
+
+class StartCard(QCommandLinkButton):
+    """One large, checkable card describing a way to begin.
+
+    A card is a whole clickable rectangle rather than a radio row because the
+    point of the Art start pass is that a person reads three short lines and
+    hits one big thing, not that they aim at a small dot beside a paragraph.
+    ``QCommandLinkButton`` is the stock control for a title plus a line of
+    description, so it reports an honest size hint instead of needing labels
+    nested inside a button that cannot measure them.
+    """
+
+    def __init__(self, start: CreatorStart, parent: Optional[QWidget] = None) -> None:
+        # Qt reads "&" in button text as a mnemonic marker, which would render
+        # "Talk & make" as "Talk _make". The label is product copy, so it is
+        # escaped rather than reworded.
+        super().__init__(start.label.replace("&", "&&"), start.summary, parent)
+        self.start_key = start.key
+        self.setObjectName("LaunchStartCard")
+        self.setCheckable(True)
+        # A card chooses; it never submits the dialog. Leaving autoDefault on
+        # would let Return or focus hand the dialog's default action to a card
+        # and away from Host.
+        self.setAutoDefault(False)
+        self.setDefault(False)
+        # The stock control ships a decorative arrow. The card is already
+        # obviously pressable, and the glyph only competes with the words.
+        self.setIcon(QIcon())
+        self.setIconSize(QSize(0, 0))
+        # The stock hint assumes a wrapped description and comes out tall
+        # enough to push Host and Join off a supported window. Bounding the
+        # height keeps three cards, Host, and Join all on screen at the
+        # 760x600 floor while staying a large target.
+        self.setMinimumHeight(54)
+        self.setMaximumHeight(64)
+        self.setAccessibleName(start.label)
+        self.setAccessibleDescription(f"{start.summary} {start.detail}")
+        self.setToolTip(start.detail)
 
 
 def default_musician_name(settings: AppSettings) -> str:
@@ -375,7 +411,14 @@ class LaunchDialog(QDialog):
         self._pages.addWidget(self._join_page)
         root.addWidget(self._pages, 1)
         self.setTabOrder(self._name_input, self._creator_profile_selector)
-        self.setTabOrder(self._creator_profile_selector, self._host_button)
+        previous: QWidget = self._creator_profile_selector
+        # Hidden cards are skipped by Qt, so chaining every profile's cards
+        # keeps one correct order without rebuilding it on each selection.
+        for cards in self._start_cards.values():
+            for card in cards:
+                self.setTabOrder(previous, card)
+                previous = card
+        self.setTabOrder(previous, self._host_button)
         self.setTabOrder(self._host_button, self._join_button)
         self.setTabOrder(self._join_button, self._studio_button)
         self.setTabOrder(self._studio_button, self._install_jamulus_button)
@@ -409,15 +452,18 @@ class LaunchDialog(QDialog):
         # the optional Windows installer without squeezing role buttons.
         layout.setSpacing(Space.XS)
 
-        title = QLabel("Create together.")
+        self._choice_title = QLabel("Create together.")
+        title = self._choice_title
         title.setObjectName("LaunchTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        subtitle = QLabel("Choose a workflow, then start with one clear action.")
-        subtitle.setObjectName("LaunchSubtitle")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        subtitle.setWordWrap(True)
+        self._choice_subtitle = QLabel(
+            "Choose a workflow, then start with one clear action."
+        )
+        self._choice_subtitle.setObjectName("LaunchSubtitle")
+        self._choice_subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._choice_subtitle.setWordWrap(True)
         layout.addWidget(title)
-        layout.addWidget(subtitle)
+        layout.addWidget(self._choice_subtitle)
 
         creator_row = QHBoxLayout()
         creator_row.setContentsMargins(0, 0, 0, 0)
@@ -428,8 +474,8 @@ class LaunchDialog(QDialog):
         self._creator_profile_selector.setObjectName("LaunchCreatorProfileSelector")
         self._creator_profile_selector.setAccessibleName("What are you creating?")
         self._creator_profile_selector.setAccessibleDescription(
-            "Choose Music, Podcast and Voice, or Review and Rehearsal. Each option "
-            "states whether it is Ready or Preview."
+            "Choose Music, Podcast and Voice, Review and Rehearsal, or Art. "
+            "Each option states whether it is Ready or Preview."
         )
         self._creator_profile_label.setBuddy(self._creator_profile_selector)
         for profile in CREATOR_PROFILES:
@@ -450,6 +496,7 @@ class LaunchDialog(QDialog):
         creator_row.addWidget(self._creator_profile_selector, 1)
         layout.addLayout(creator_row)
         layout.addStretch(1)
+        layout.addWidget(self._build_start_cards())
 
         self._host_button = QPushButton()
         self._host_button.setObjectName("LaunchPrimary")
@@ -494,6 +541,111 @@ class LaunchDialog(QDialog):
         layout.addStretch(1)
         self._apply_creator_profile_presentation()
         return page
+
+    def _build_start_cards(self) -> QWidget:
+        """Build one card group per profile that offers starts.
+
+        Every profile's cards are built once and hidden, rather than rebuilt
+        on each selection, so switching profiles cannot momentarily show a
+        card belonging to the profile a person just left.
+        """
+
+        container = QWidget()
+        container.setObjectName("LaunchStartCards")
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(Space.XS)
+
+        self._start_cards: dict[str, list[StartCard]] = {}
+        self._start_groups: dict[str, QButtonGroup] = {}
+        self._start_container = container
+        for profile in CREATOR_PROFILES:
+            if not profile.starts:
+                continue
+            group = QButtonGroup(self)
+            group.setExclusive(True)
+            cards: list[StartCard] = []
+            for start in profile.starts:
+                card = StartCard(start, container)
+                card.setVisible(False)
+                card.toggled.connect(self._on_start_card_toggled)
+                group.addButton(card)
+                layout.addWidget(card)
+                cards.append(card)
+            self._start_cards[profile.key] = cards
+            self._start_groups[profile.key] = group
+        return container
+
+    def _on_start_card_toggled(self, checked: bool) -> None:
+        if checked:
+            self._refresh_start_presentation()
+
+    def _visible_start_cards(self) -> list[StartCard]:
+        return self._start_cards.get(self._selected_creator_profile.key, [])
+
+    def _apply_start_card_visibility(self) -> None:
+        """Show only the selected profile's cards, with one already chosen."""
+
+        selected_key = self._selected_creator_profile.key
+        for profile_key, cards in self._start_cards.items():
+            visible = profile_key == selected_key
+            for card in cards:
+                card.setVisible(visible)
+                card.setEnabled(visible and not self._submitting)
+        self._start_container.setVisible(bool(self._visible_start_cards()))
+
+        cards = self._visible_start_cards()
+        if not cards:
+            return
+        if not any(card.isChecked() for card in cards):
+            remembered = str(
+                getattr(self._settings, "last_creator_start_key", "") or ""
+            )
+            chosen = next(
+                (card for card in cards if card.start_key == remembered), cards[0]
+            )
+            # Blocking signals keeps restoring a remembered choice from being
+            # mistaken for the artist making one.
+            was_blocked = chosen.blockSignals(True)
+            chosen.setChecked(True)
+            chosen.blockSignals(was_blocked)
+
+    @property
+    def selected_start_key(self) -> str:
+        """The start the artist chose, or "" for a profile without starts."""
+
+        profile = self._selected_creator_profile
+        for card in self._start_cards.get(profile.key, []):
+            if card.isChecked():
+                return card.start_key
+        default = profile.default_start
+        return default.key if default is not None else ""
+
+    @property
+    def selected_start(self) -> CreatorStart | None:
+        return self._selected_creator_profile.start_or_default(
+            self.selected_start_key
+        )
+
+    def _refresh_start_presentation(self) -> None:
+        """Bind Host to the chosen card without repeating the card's words.
+
+        The card already states what it does, so the helper line below only
+        carries what the card cannot: whether hosting is possible here at all.
+        Saying the same sentence twice on one screen is noise, not clarity.
+        """
+
+        start = self.selected_start
+        if start is None:
+            return
+        copy = _CREATOR_LAUNCH_COPY[self._selected_creator_profile.key]
+        self._choice_helper.setText(
+            "" if self._host_available else "Hosting is available in the macOS app."
+        )
+        self._host_button.setAccessibleDescription(
+            f"Start {start.label} as the host. {start.detail} "
+            f"{copy.host_description}"
+        )
 
     def _install_jamulus(self) -> None:
         """Open only the checksum-pinned installer shipped in this package."""
@@ -627,6 +779,16 @@ class LaunchDialog(QDialog):
         if not self._host_available:
             helper += " Hosting is available in the macOS app."
         self._choice_helper.setText(helper)
+        if hasattr(self, "_start_cards"):
+            self._apply_start_card_visibility()
+            # Three cards say "choose a workflow, then start with one clear
+            # action" better than a headline and a line of prose above them
+            # do, and they need the room those two were using. The wordmark at
+            # the top already carries the identity.
+            has_cards = bool(self._visible_start_cards())
+            self._choice_title.setVisible(not has_cards)
+            self._choice_subtitle.setVisible(not has_cards)
+            self._refresh_start_presentation()
         if hasattr(self, "_join_title"):
             self._join_title.setText(copy.join_title)
             self._join_subtitle.setText(copy.join_subtitle)
@@ -650,6 +812,7 @@ class LaunchDialog(QDialog):
         """Commit the non-audio role intent before starting the main journey."""
 
         candidate.last_creator_profile_key = self.selected_creator_profile_key
+        candidate.last_creator_start_key = self.selected_start_key
         try:
             save_settings(candidate)
         except OSError:
@@ -817,6 +980,9 @@ class LaunchDialog(QDialog):
         self._studio_button.setEnabled(False)
         self._join_button_primary.setEnabled(False)
         self._creator_profile_selector.setEnabled(False)
+        for cards in self._start_cards.values():
+            for card in cards:
+                card.setEnabled(False)
         self._name_input.setEnabled(False)
         button.setText(label)
         button.setAccessibleName(label)

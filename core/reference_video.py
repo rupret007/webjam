@@ -1,6 +1,6 @@
-"""Host-clocked reference video for the Studio Visit creator profile.
+"""Host-clocked reference video for the Art creator profile.
 
-Studio Visit is a shared room where artists talk and work at their own tables.
+Art is a shared room where artists talk and work at their own tables.
 An optional reference video is the visual analog of Shared Track: the host owns
 the transport, everyone else follows.  The two features deliberately differ in
 one respect, and that difference drives this whole module.

@@ -111,7 +111,7 @@ def _peer_state(reference_video: ReferenceVideoSessionSnapshot):
         session_id=SESSION_ID,
         generation=3,
         signal=RecordingSignal.IDLE,
-        creator_profile_key="studio_visit",
+        creator_profile_key="art",
         reference_video=reference_video,
     )
 
@@ -167,12 +167,12 @@ def test_a_profile_without_the_capability_refuses_to_open_the_panel():
     controller._open_reference_video()
 
     message = controller.window.flash_message.call_args.args[0]
-    assert "Studio Visit" in message
+    assert "Art" in message
     assert controller._reference_video_dialog is None
 
 
-def test_studio_visit_without_a_started_room_owns_nothing():
-    controller = _controller("studio_visit")
+def test_art_without_a_started_room_owns_nothing():
+    controller = _controller("art")
     controller.host_peer = SimpleNamespace(active=False, credentials=None)
     controller.guest_peer = None
 
@@ -181,11 +181,11 @@ def test_studio_visit_without_a_started_room_owns_nothing():
 
     controller._open_reference_video()
     message = controller.window.flash_message.call_args.args[0]
-    assert "Start or join a studio visit" in message
+    assert "Start or join an art session" in message
 
 
 def test_an_invite_without_a_peer_plane_is_not_a_room():
-    controller = _controller("studio_visit")
+    controller = _controller("art")
     controller.host_peer = SimpleNamespace(active=False, credentials=None)
     controller.guest_peer = SimpleNamespace(
         invite=SimpleNamespace(
@@ -202,17 +202,17 @@ def test_an_invite_without_a_peer_plane_is_not_a_room():
 
 
 def test_a_host_and_a_guest_bind_to_their_own_roles():
-    host = _controller("studio_visit")
+    host = _controller("art")
     _as_host(host)
     assert host._reference_video_coordinator().hosting is True
 
-    guest = _controller("studio_visit")
+    guest = _controller("art")
     _as_guest(guest)
     assert guest._reference_video_coordinator().following is True
 
 
 def test_one_room_reuses_one_coordinator():
-    controller = _controller("studio_visit")
+    controller = _controller("art")
     _as_guest(controller)
 
     first = controller._reference_video_coordinator()
@@ -220,7 +220,7 @@ def test_one_room_reuses_one_coordinator():
 
 
 def test_a_new_session_rebuilds_the_coordinator():
-    controller = _controller("studio_visit")
+    controller = _controller("art")
     _as_guest(controller)
     first = controller._reference_video_coordinator()
 
@@ -235,8 +235,8 @@ def test_a_new_session_rebuilds_the_coordinator():
     assert first.role == ""
 
 
-def test_switching_away_from_studio_visit_releases_the_reference_video():
-    controller = _controller("studio_visit")
+def test_switching_away_from_art_releases_the_reference_video():
+    controller = _controller("art")
     _as_guest(controller)
     coordinator = controller._reference_video_coordinator()
 
@@ -253,7 +253,7 @@ def test_switching_away_from_studio_visit_releases_the_reference_video():
 
 
 def test_a_guest_render_feeds_the_follower_the_hosts_video(tmp_path, fake_players):
-    controller = _controller("studio_visit")
+    controller = _controller("art")
     _as_guest(controller)
     digest = _digest(tmp_path)
     controller.guest_peer.last_state = _peer_state(_shared_video(digest))
@@ -274,7 +274,7 @@ def test_a_guest_render_feeds_the_follower_the_hosts_video(tmp_path, fake_player
 
 
 def test_a_guest_render_in_a_room_with_no_video_stays_quiet():
-    controller = _controller("studio_visit")
+    controller = _controller("art")
     _as_guest(controller)
     controller.guest_peer.last_state = _peer_state(ReferenceVideoSessionSnapshot())
 
@@ -284,7 +284,7 @@ def test_a_guest_render_in_a_room_with_no_video_stays_quiet():
     assert coordinator.follow_snapshot.state is ReferenceVideoFollowState.NO_VIDEO
 
 
-def test_a_guest_render_never_disturbs_a_non_studio_visit_profile():
+def test_a_guest_render_never_disturbs_a_profile_without_the_capability():
     controller = _controller("music")
     _as_guest(controller)
     controller.guest_peer.last_state = SessionStateSnapshot(
@@ -300,7 +300,7 @@ def test_a_guest_render_never_disturbs_a_non_studio_visit_profile():
     controller.window.session_strip.set_recording_phase.assert_called_once_with("idle")
 
 
-def test_a_studio_visit_host_owns_the_profile_a_guest_renders():
+def test_an_art_host_owns_the_profile_a_guest_renders():
     """The host's profile wins on join, which is what turns the video on."""
 
     controller = _controller("music")
@@ -314,7 +314,7 @@ def test_a_studio_visit_host_owns_the_profile_a_guest_renders():
 
     controller._render_guest_peer_state()
 
-    assert controller._active_creator_profile_key == "studio_visit"
+    assert controller._active_creator_profile_key == "art"
     assert controller._reference_video is not None
 
 
@@ -326,7 +326,7 @@ def test_a_studio_visit_host_owns_the_profile_a_guest_renders():
 def test_a_host_share_reaches_the_peer_plane_through_the_controller(
     tmp_path, fake_players
 ):
-    controller = _controller("studio_visit")
+    controller = _controller("art")
     _as_host(controller)
     coordinator = controller._reference_video_coordinator()
 
@@ -342,7 +342,7 @@ def test_a_host_share_reaches_the_peer_plane_through_the_controller(
 def test_releasing_a_room_publishes_nothing_shared_and_forgets_the_binding(
     tmp_path, fake_players
 ):
-    controller = _controller("studio_visit")
+    controller = _controller("art")
     _as_host(controller)
     coordinator = controller._reference_video_coordinator()
     coordinator.share(str(_write(tmp_path / "lesson.mp4")))
@@ -357,7 +357,7 @@ def test_releasing_a_room_publishes_nothing_shared_and_forgets_the_binding(
 
 
 def test_a_failing_intent_shows_bounded_text_and_keeps_the_room(tmp_path):
-    controller = _controller("studio_visit")
+    controller = _controller("art")
     _as_host(controller)
     coordinator = controller._reference_video_coordinator()
 
@@ -377,7 +377,7 @@ def test_a_failing_intent_shows_bounded_text_and_keeps_the_room(tmp_path):
 
 
 def test_an_unexpected_intent_failure_never_leaks_a_raw_exception():
-    controller = _controller("studio_visit")
+    controller = _controller("art")
     _as_host(controller)
     controller._reference_video_coordinator()
 
@@ -400,7 +400,7 @@ def _follow(state):
 def test_an_artist_is_told_once_when_the_host_starts_sharing():
     """A guest who never opens the panel still has to learn a video exists."""
 
-    controller = _controller("studio_visit")
+    controller = _controller("art")
     _as_guest(controller)
 
     controller._on_reference_video_follow_snapshot(
@@ -431,7 +431,7 @@ def test_an_artist_is_told_once_when_the_host_starts_sharing():
     ],
 )
 def test_an_artist_is_told_when_their_copy_stops_matching(state, marker):
-    controller = _controller("studio_visit")
+    controller = _controller("art")
     _as_guest(controller)
     controller._on_reference_video_follow_snapshot(
         _follow(ReferenceVideoFollowState.FOLLOWING)
@@ -454,7 +454,7 @@ def test_an_artist_is_told_when_their_copy_stops_matching(state, marker):
     ],
 )
 def test_states_an_artist_chose_or_cannot_act_on_stay_quiet(state):
-    controller = _controller("studio_visit")
+    controller = _controller("art")
     _as_guest(controller)
 
     controller._on_reference_video_follow_snapshot(_follow(state))
@@ -463,7 +463,7 @@ def test_states_an_artist_chose_or_cannot_act_on_stay_quiet(state):
 
 
 def test_leaving_a_room_lets_the_next_one_speak_again():
-    controller = _controller("studio_visit")
+    controller = _controller("art")
     _as_guest(controller)
     controller._on_reference_video_follow_snapshot(
         _follow(ReferenceVideoFollowState.NEEDS_FILE)
@@ -479,7 +479,7 @@ def test_leaving_a_room_lets_the_next_one_speak_again():
 
 
 def test_the_profile_capability_is_the_only_gate_on_the_menu_entry():
-    for profile in ("music", "podcast_voice", "review_rehearsal", "studio_visit"):
+    for profile in ("music", "podcast_voice", "review_rehearsal", "art"):
         controller = _controller(profile)
         expected = get_creator_profile_by_key(
             profile

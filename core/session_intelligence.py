@@ -113,11 +113,11 @@ _CREATOR_CHECKPOINT_TEMPLATES: dict[str, tuple[str, ...]] = {
         "{section} feedback",
         "handoff",
     ),
-    "studio_visit": (
+    "art": (
         "set up the table",
         "block in",
         "{section} check",
-        "next visit",
+        "next session",
     ),
 }
 

@@ -1,4 +1,4 @@
-"""Studio Visit's reference video panel for hosts and for followers.
+"""Art's reference video panel for hosts and for followers.
 
 The dialog renders immutable snapshots and emits semantic intent. It decides
 nothing: whether a file matches, who may press play, and where the position

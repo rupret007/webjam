@@ -1,4 +1,4 @@
-"""Qt rendering surface for the Studio Visit reference video.
+"""Qt rendering surface for Art's reference video.
 
 This is the only place that touches QtMultimedia. It implements the
 :class:`core.reference_video.ReferenceVideoPlayer` seam so every transport,
