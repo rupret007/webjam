@@ -283,7 +283,7 @@ def test_the_panel_embeds_and_releases_a_player_surface(host_dialog, qapp):
     surface.deleteLater()
 
 
-def test_only_studio_visit_exposes_the_reference_video_entry_point(qapp):
+def test_only_art_exposes_the_reference_video_entry_point(qapp):
     from core.creative_modes import CREATIVE_MODES
     from webjam_qt.widgets.session_strip import SessionStrip
 
@@ -291,7 +291,7 @@ def test_only_studio_visit_exposes_the_reference_video_entry_point(qapp):
     strip = SessionStrip(
         mode_entries=entries,
         initial_mode_key=entries[0][0],
-        initial_title="Studio Visit",
+        initial_title="Art",
     )
     try:
         for profile in CREATOR_PROFILES:
@@ -299,13 +299,13 @@ def test_only_studio_visit_exposes_the_reference_video_entry_point(qapp):
             expected = profile.capabilities.shared_reference_video
             assert strip._reference_video_action.isVisible() is expected, profile.key
             assert strip._reference_video_action.isEnabled() is expected, profile.key
-        strip.set_creator_profile(get_creator_profile_by_key("studio_visit"))
+        strip.set_creator_profile(get_creator_profile_by_key("art"))
         assert strip._reference_video_action.text() == "Reference Video…"
     finally:
         strip.deleteLater()
 
 
-def test_the_launch_dialog_offers_studio_visit_without_a_local_project(qapp, tmp_path):
+def test_the_launch_dialog_offers_art_without_a_local_project(qapp, tmp_path):
     from unittest.mock import patch
 
     from core.settings import AppSettings
@@ -317,25 +317,145 @@ def test_the_launch_dialog_offers_studio_visit_without_a_local_project(qapp, tmp
         )
     try:
         selector = dialog._creator_profile_selector
-        index = selector.findData("studio_visit")
+        index = selector.findData("art")
         assert index >= 0
         selector.setCurrentIndex(index)
-        assert dialog.selected_creator_profile_key == "studio_visit"
-        assert dialog._host_button.text() == "Host Studio Visit"
-        assert dialog._join_button.text() == "Join Studio Visit"
-        # Studio Visit has no standalone project, so that path stays hidden.
+        assert dialog.selected_creator_profile_key == "art"
+        assert dialog._host_button.text() == "Host"
+        assert dialog._join_button.text() == "Join"
+        # Art has no standalone project, so that path stays hidden.
         assert dialog._studio_button.isEnabled() is False
         assert dialog._studio_button.isHidden() is True
-        described = " ".join(
-            (
-                dialog._host_button.accessibleDescription(),
-                dialog._join_button.accessibleDescription(),
-            )
-        ).casefold()
-        assert "right to play" in described
-        assert "no shared canvas" in described
-        assert "hide it and stay in the room" in described
+        # The video's honesty lives on the card that offers it, in words a
+        # person can read in ten seconds. The component that plays it, and
+        # every caveat, waits until they are in the room.
+        cards = {card.start_key: card for card in dialog._visible_start_cards()}
+        paint_along = cards["paint_along"].accessibleDescription().casefold()
+        assert "already own" in paint_along
+        assert "own copy of the same file" in paint_along
+        assert "only one able to move it" in paint_along
+        assert "brings no videos of its own" in paint_along
     finally:
+        dialog.deleteLater()
+
+
+def test_a_room_with_no_video_shows_no_empty_picture_frame(qapp):
+    """An empty box where a picture might go makes a room look unfinished.
+
+    Talk-only is a state someone chose, so the panel reads as finished: no
+    ghosted surface, and no transport greyed out beside it.
+    """
+
+    from webjam_qt.windows.reference_video import ReferenceVideoDialog
+
+    dialog = ReferenceVideoDialog(hosting=True)
+    try:
+        dialog.set_host_snapshot(ReferenceVideoSnapshot())
+
+        assert dialog._surface_holder.isHidden() is True
+        assert dialog._position.isHidden() is True
+        assert dialog._clock.isHidden() is True
+        # One verb: choose a video. The transport is absent, not disabled.
+        assert dialog._share_button.isHidden() is False
+        for button in (
+            dialog._play_button,
+            dialog._pause_button,
+            dialog._stop_button,
+            dialog._withdraw_button,
+        ):
+            assert button.isHidden() is True
+    finally:
+        dialog.deleteLater()
+
+
+def test_a_guest_in_a_room_with_no_video_is_offered_nothing(qapp):
+    from webjam_qt.windows.reference_video import ReferenceVideoDialog
+
+    dialog = ReferenceVideoDialog(hosting=False)
+    try:
+        dialog.set_follow_snapshot(ReferenceVideoFollowSnapshot())
+
+        assert dialog._surface_holder.isHidden() is True
+        for button in (
+            dialog._open_button,
+            dialog._close_button,
+            dialog._hide_button,
+        ):
+            assert button.isHidden() is True
+    finally:
+        dialog.deleteLater()
+
+
+def test_the_host_transport_appears_only_once_something_is_shared(qapp):
+    from webjam_qt.windows.reference_video import ReferenceVideoDialog
+
+    dialog = ReferenceVideoDialog(hosting=True)
+    try:
+        dialog.set_host_snapshot(
+            ReferenceVideoSnapshot(
+                state=ReferenceVideoState.READY,
+                shared=True,
+                source_display_name="lesson.mp4",
+                identity_digest="a" * 64,
+                duration_s=600.0,
+            )
+        )
+
+        assert dialog._share_button.isHidden() is True
+        assert dialog._play_button.isHidden() is False
+        assert dialog._pause_button.isHidden() is True
+        assert dialog._position.isHidden() is False
+    finally:
+        dialog.deleteLater()
+
+
+def test_play_and_pause_are_never_both_offered(qapp):
+    """Two transport buttons for one state would be two ways to say now."""
+
+    from webjam_qt.windows.reference_video import ReferenceVideoDialog
+
+    dialog = ReferenceVideoDialog(hosting=True)
+    try:
+        for state in (
+            ReferenceVideoState.READY,
+            ReferenceVideoState.PLAYING,
+            ReferenceVideoState.PAUSED,
+        ):
+            dialog.set_host_snapshot(
+                ReferenceVideoSnapshot(
+                    state=state,
+                    shared=True,
+                    source_display_name="lesson.mp4",
+                    identity_digest="a" * 64,
+                    duration_s=600.0,
+                )
+            )
+            offered = [
+                not dialog._play_button.isHidden(),
+                not dialog._pause_button.isHidden(),
+            ]
+            assert offered.count(True) == 1, state
+    finally:
+        dialog.deleteLater()
+
+
+def test_the_surface_appears_only_when_a_player_is_attached(qapp):
+    from PySide6.QtWidgets import QWidget
+
+    from webjam_qt.windows.reference_video import ReferenceVideoDialog
+
+    dialog = ReferenceVideoDialog(hosting=True)
+    surface = QWidget()
+    try:
+        assert dialog._surface_holder.isHidden() is True
+
+        dialog.attach_surface(surface)
+        assert dialog._surface_holder.isHidden() is False
+
+        dialog.attach_surface(None)
+        assert dialog._surface_holder.isHidden() is True
+    finally:
+        surface.deleteLater()
         dialog.deleteLater()
 
 

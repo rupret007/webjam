@@ -15,8 +15,12 @@ meeting services reached through hardened external links. The boundary is delibe
 | Layer | Responsibility |
 | --- | --- |
 | `webjam_qt` | Host/Join launch, Session HUD, live Shared Track deck/transport, Record Session and session-Studio UI, standalone Reference Studio, recovery messages |
-| `core/creative_modes.py` | Canonical Music and Podcast & Voice GA profiles, Review & Rehearsal and Studio Visit Preview profiles, safe defaults, legacy aliases, and cross-surface presentation vocabulary |
-| `core/reference_video.py` | Studio Visit's host-clocked reference video: descriptor-bound content hashing, session-scoped same-file identity, host-only transport, and a fail-closed follower |
+| `core/creative_modes.py` | Canonical Music and Podcast & Voice GA profiles, Review & Rehearsal and Art Preview profiles, Art's three bounded start cards, safe defaults, legacy aliases, and cross-surface presentation vocabulary |
+| `core/reference_video.py` | Art's host-clocked reference video: descriptor-bound content hashing, session-scoped same-file identity, host-only transport, and a fail-closed follower |
+| `core/drawpile.py`, `core/shared_canvas.py`, `services/drawpile_service.py` | Art's shared canvas as a Drawpile handoff: explicit install-location discovery with no PATH search, documented invitation parsing and normalization, host-only canvas choice, and a fail-closed follower that never launches an unparseable address |
+| `core/krita_ai.py`, `core/ai_image.py`, `services/krita_ai_service.py` | Art's in-session AI image action as a Krita handoff: Krita and AI-plugin discovery, a single loopback-only backend boundary, two local verbs (Make and Edit), and no prompt, model, publisher, or wire projection of any kind |
+| `core/room_clock.py`, `webjam_qt/controllers/room_clock_coordinator.py` | One named pulse for the whole room: a schema that refuses to call a file offset a bar, elapsed-time-only extrapolation on a locally measured age, source precedence (a song outranks a video), and the published seam a music surface owns later |
+| `core/external_program.py` | The one implementation of the honesty rules for a program WebJam did not ship: explicit absolute locations, no PATH search, no glob, and a resolved real executable file |
 | `core/song_*`, `core/project_*`, schema-3 Studio | Portable Reference Studio project/media ownership, local playback/recording, non-destructive arrangement/mix, and bounce |
 | `services/bridge_service.py` | Direct owned-process launch/stop, hosted-server supervision, authenticated Jamulus RPC, and verified managed/embedded/explicit/system component resolution |
 | `core/jamulus_profile.py` | Dedicated Jamulus profile launch contract and private, allowlisted restart records |
@@ -37,11 +41,18 @@ to Music. Review & Rehearsal is always visibly Preview: it allows live
 WebJam-audio Host/Join, session recording, and playback/read-only completed-take
 review, while refusing standalone project create/open, take editing/comp/mix
 mutation, track export, shared notes, visual sync, and media-timecode behavior.
-Studio Visit is also visibly Preview: it allows live WebJam-audio Host/Join,
-local notes, and one optional host-clocked reference video that each computer
-plays from its own copy of the same local file. It refuses standalone projects,
-session recording, take review/editing/export, a Jamulus reference-audio route,
-a shared canvas, and any frame-accurate or media-timecode behavior.
+Art is also visibly Preview. It offers exactly three starts -- a room alone, a
+room plus one shared Drawpile canvas, or a room plus one host-clocked reference
+video that each computer plays from its own copy of the same local file -- and
+the registry refuses a fourth. An in-session AI image action opens Krita's own
+AI plugin against a loopback backend; it is deliberately not a start, publishes
+nothing to the room, and cannot reach off the machine. A room clock projection,
+deliberately ungated by profile, lets a painter read the bar a band is on
+without Art owning a song engine. It refuses standalone projects, session
+recording, take review/editing/export, a Jamulus reference-audio route, any
+canvas surface of its own, and any frame-accurate or media-timecode behavior.
+WebJam brokers the canvas invitation and never draws a stroke; Drawpile owns
+the painting, and WebJam cannot see it.
 No profile directly or automatically taps a meeting app, browser, or system
 output.
 
@@ -204,12 +215,24 @@ Machine-derived route authority is not physical audibility, direct-monitor,
 independent-mix, or long-session proof; those acceptance gates remain **NOT
 RUN**.
 
-A future Webex Embedded App is described in
+A Webex Embedded App companion is described in
 [ADR 0007](docs/adr/0007-future-webex-embedded-app-companion.md). It is a
 separate hosted and authorized product surface, not a hidden desktop webview.
 It may expose focused status and approved controls through a secure
 synchronization boundary, while the desktop remains the authoritative
 audio/session engine.
+
+Art's side of that boundary is settled in
+[ADR 0013](docs/adr/0013-art-companion-projection-and-commands.md):
+`core/art_companion.py` defines an allowlisted status projection and a closed
+command contract, and
+`webjam_qt/controllers/art_companion_projection.py` derives the projection
+from the coordinators that already own each fact. The projection has no field
+for a path, file name, canvas address, digest, token, position, or prompt;
+host-only transport is refused to a guest's panel from the desktop's own role;
+and any command that would start Drawpile or Krita waits for a local
+confirmation. No Art surface imports the contract, so the no-companion path
+stays the only path Art has.
 
 ## Unified creator guidance
 

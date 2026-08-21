@@ -40,7 +40,10 @@ from core.session_transfer import (
     SessionPeerClient,
     SessionPeerServer,
     SessionStateSnapshot,
+    RoomClockSessionSnapshot,
+    RoomClockSourceValue,
     SessionTransferError,
+    SharedCanvasSessionSnapshot,
     SharedTrackPlaybackState,
     SharedTrackSessionSnapshot,
     TransferConflictError,
@@ -1717,6 +1720,70 @@ class HostPeerSession:
             playback_generation=playback_generation,
         )
 
+    def publish_shared_canvas_state(
+        self,
+        *,
+        shared: bool,
+        join_url: str = "",
+        server_label: str = "",
+        session_label: str = "",
+    ) -> SharedCanvasSessionSnapshot | None:
+        """Offer authenticated peers the host's Drawpile invitation.
+
+        The projection is an address, not authority: WebJam cannot see the
+        canvas and never reports that anyone else opened it.  Drawpile still
+        applies its own session password and account rules on join.
+        """
+
+        if self.control is None:
+            return None
+        return self.control.publish_shared_canvas(
+            shared=shared,
+            join_url=join_url,
+            server_label=server_label,
+            session_label=session_label,
+        )
+
+    def publish_room_clock_state(
+        self,
+        *,
+        source: RoomClockSourceValue | str,
+        running: bool = False,
+        position_s: float = 0.0,
+        duration_s: float = 0.0,
+        bar: int = 0,
+        beat: int = 0,
+        section_label: str = "",
+        tempo_bpm: float = 0.0,
+        meter_numerator: int = 0,
+        meter_denominator: int = 0,
+    ) -> RoomClockSessionSnapshot | None:
+        """Offer authenticated peers one pulse for the whole room.
+
+        This is the published seam. Art calls it with a reference video
+        position; a music surface calls it with a bar, a beat, a section, and
+        optionally a tempo and meter. Neither has to know the other exists,
+        and a room with no owner simply has no clock.
+
+        The projection grants no authority: it says where the room is, not who
+        may move it.
+        """
+
+        if self.control is None:
+            return None
+        return self.control.publish_room_clock(
+            source=source,
+            running=running,
+            position_s=position_s,
+            duration_s=duration_s,
+            bar=bar,
+            beat=beat,
+            section_label=section_label,
+            tempo_bpm=tempo_bpm,
+            meter_numerator=meter_numerator,
+            meter_denominator=meter_denominator,
+        )
+
     def finish_take(
         self,
         take_id: str,
@@ -2945,9 +3012,12 @@ class GuestPeerSession:
                     state.signal is not RecordingSignal.IDLE
                     or state.shared_track.generation > 0
                     # A first poll into a room where the host is already
-                    # playing must notify, or a late joiner would sit on the
-                    # default projection until the host next touched anything.
+                    # playing or already painting must notify, or a late
+                    # joiner would sit on the default projection until the
+                    # host next touched anything.
                     or state.reference_video.generation > 0
+                    or state.shared_canvas.generation > 0
+                    or state.room_clock.generation > 0
                     or state.capture_arm is not None
                 )
             )

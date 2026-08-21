@@ -1,4 +1,4 @@
-"""Session-scoped ownership of the Studio Visit reference video.
+"""Session-scoped ownership of Art's reference video.
 
 The coordinator is the seam between three things that must not know about each
 other: the host transport in :mod:`core.reference_video`, the private peer
@@ -318,6 +318,17 @@ class ReferenceVideoCoordinator:
             raise
         except Exception as exc:
             raise ReferenceVideoError(PLAYER_UNAVAILABLE_MESSAGE) from exc
+        # Policy, stated where policy lives: the room's sound belongs to the
+        # live audio path and to whatever meeting app is carrying the voices.
+        # A reference video is the picture. Because the file is never routed
+        # anywhere, every computer holds its own copy, so an unmuted one would
+        # put a second soundtrack on top of the conversation on every machine.
+        mute = getattr(player, "set_muted", None)
+        if callable(mute):
+            try:
+                mute(True)
+            except Exception:  # noqa: BLE001 - a silent player is the default
+                LOGGER.debug("Reference video mute failed", exc_info=True)
         self._player = player
         return player
 

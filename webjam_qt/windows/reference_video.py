@@ -1,4 +1,4 @@
-"""Studio Visit's reference video panel for hosts and for followers.
+"""Art's reference video panel for hosts and for followers.
 
 The dialog renders immutable snapshots and emits semantic intent. It decides
 nothing: whether a file matches, who may press play, and where the position
@@ -45,7 +45,9 @@ _GUEST_HINT = (
 )
 _SYNC_HONESTY = (
     "Position follows the host to within about a second. This is not "
-    "frame-accurate review and carries no timecode."
+    "frame-accurate review and carries no timecode. The video is silent, so "
+    "it never talks over the room; the sound stays with your live audio and "
+    "your meeting app."
 )
 
 
@@ -98,12 +100,15 @@ class ReferenceVideoDialog(QDialog):
 
         self._surface_holder = QFrame()
         self._surface_holder.setObjectName("ReferenceVideoSurface")
-        self._surface_holder.setMinimumHeight(240)
+        self._surface_holder.setMinimumHeight(200)
         self._surface_holder.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
         self._surface_layout = QVBoxLayout(self._surface_holder)
         self._surface_layout.setContentsMargins(0, 0, 0, 0)
+        # An empty box where a picture might one day go is a room that looks
+        # unfinished. It appears when there is something in it.
+        self._surface_holder.setVisible(False)
         layout.addWidget(self._surface_holder, stretch=1)
 
         self._position = QSlider(Qt.Orientation.Horizontal)
@@ -200,6 +205,7 @@ class ReferenceVideoDialog(QDialog):
                 existing.setParent(None)
         if widget is not None:
             self._surface_layout.addWidget(widget)
+        self._surface_holder.setVisible(widget is not None)
 
     # -- user intent ---------------------------------------------------
 
@@ -261,11 +267,23 @@ class ReferenceVideoDialog(QDialog):
                 }.get(state, "Shared.")
             )
         self._render_position(snapshot.position_s, self._duration_s)
-        self._play_button.setEnabled(shared and state is not ReferenceVideoState.PLAYING)
-        self._pause_button.setEnabled(state is ReferenceVideoState.PLAYING)
+        # Transport that cannot act on anything is hidden rather than greyed
+        # out: a disabled row of buttons is a small taunt repeated every time
+        # someone looks at the panel, and a room with no video is a finished
+        # state rather than a broken one.
+        playing = state is ReferenceVideoState.PLAYING
+        self._share_button.setVisible(not shared)
+        self._play_button.setVisible(shared and not playing)
+        self._pause_button.setVisible(playing)
+        self._stop_button.setVisible(shared)
+        self._withdraw_button.setVisible(shared)
+        self._play_button.setEnabled(shared and not playing)
+        self._pause_button.setEnabled(playing)
         self._stop_button.setEnabled(shared)
         self._withdraw_button.setEnabled(shared)
+        self._position.setVisible(shared)
         self._position.setEnabled(shared)
+        self._clock.setVisible(shared)
 
     def set_follow_snapshot(self, snapshot: ReferenceVideoFollowSnapshot) -> None:
         """Render exactly what this computer may honestly claim right now."""
@@ -282,18 +300,23 @@ class ReferenceVideoDialog(QDialog):
         self._status.setText(snapshot.message)
         self._render_position(snapshot.target_position_s, self._duration_s)
         self._position.setEnabled(False)
+        # A guest in a room with no video has nothing to open, close, or hide,
+        # so none of it is offered.
+        holds_copy = state in {
+            ReferenceVideoFollowState.FOLLOWING,
+            ReferenceVideoFollowState.MISMATCHED_FILE,
+            ReferenceVideoFollowState.FILE_UNAVAILABLE,
+            ReferenceVideoFollowState.STALLED,
+        }
+        self._open_button.setVisible(sharing and not self._hidden)
         self._open_button.setEnabled(sharing and not self._hidden)
-        self._close_button.setEnabled(
-            state
-            in {
-                ReferenceVideoFollowState.FOLLOWING,
-                ReferenceVideoFollowState.MISMATCHED_FILE,
-                ReferenceVideoFollowState.FILE_UNAVAILABLE,
-                ReferenceVideoFollowState.STALLED,
-            }
-        )
+        self._close_button.setVisible(holds_copy)
+        self._close_button.setEnabled(holds_copy)
+        self._hide_button.setVisible(sharing)
         self._hide_button.setEnabled(sharing)
         self._hide_button.setText("Show Video" if self._hidden else "Hide Video")
+        self._position.setVisible(sharing)
+        self._clock.setVisible(sharing)
 
     def _render_position(self, position_s: float, duration_s: float) -> None:
         bounded_duration = max(0, int(duration_s or 0.0))

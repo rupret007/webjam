@@ -154,7 +154,7 @@ class SessionPrimaryAction(str, Enum):
                 SessionPrimaryAction.RUN_BAND_CHECK: "Run Session Check",
                 SessionPrimaryAction.ENTER_JAM: "Enter Review",
             }.get(self, self.label)
-        if resolved.key == "studio_visit":
+        if resolved.key == "art":
             return {
                 SessionPrimaryAction.RUN_BAND_CHECK: "Run Session Check",
                 SessionPrimaryAction.ENTER_JAM: "Enter Studio",
@@ -651,18 +651,21 @@ def _presentation(
         *,
         retry_safe: bool = False,
     ) -> SessionConductorPresentation:
-        if profile.key == "studio_visit":
+        if profile.key == "art":
             title = f"{title} · Preview"
-            # Studio Visit does synchronize one host-clocked video, so it must
-            # not borrow Review's "visual media is not synchronized" line. It
-            # states the narrower truth instead: host transport only, and no
-            # take to review afterwards.
+            # Art does synchronize one host-clocked video and does point the
+            # room at one shared canvas, so it must not borrow Review's
+            # "visual media is not synchronized" line. It states the narrower
+            # truth instead: host transport only, a canvas WebJam brokers but
+            # does not draw, and no take to review afterwards.
             policy_limit = (
                 f"{MEETING_DIRECT_CAPTURE_BOUNDARY} Notes stay local and are "
                 "not shared. An optional reference video follows the host's "
                 "play, pause, stop, and position on each artist's own copy of "
                 "the same file; that is not frame-accurate or timecoded "
-                "review. This session is not recorded."
+                "review. An optional shared canvas is painted in Drawpile, "
+                "not in WebJam, and WebJam cannot see it. This session is not "
+                "recorded."
             )
             evidence_limit = f"{evidence_limit} {policy_limit}".strip()
         elif profile.is_preview:
@@ -840,7 +843,7 @@ def _presentation(
             evidence = (
                 "Only speakers can confirm two-way audibility; meters do not prove it."
             )
-        elif profile.key == "studio_visit":
+        elif profile.key == "art":
             title = "Artists connected"
             message = (
                 "The artists are connected through WebJam. Confirm everyone can "

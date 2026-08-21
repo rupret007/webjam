@@ -4,7 +4,7 @@ What someone is making is chosen once, at launch, from the creator profiles.
 The legacy creative-mode keys still exist because session metadata records
 them, but offering them again beside the profile would be a second,
 contradictory choice -- and would put "Visual Studio" back in front of an
-artist who already picked Studio Visit.
+artist who already picked Art.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ def strip(qapp):
     widget = SessionStrip(
         mode_entries=ApplicationController.mode_entries(),
         initial_mode_key="music_jam",
-        initial_title="Studio Visit",
+        initial_title="Art",
     )
     yield widget
     widget.deleteLater()
@@ -111,7 +111,13 @@ def test_the_only_visible_workflow_choice_is_the_creator_profile(qapp, tmp_path)
         dialog.deleteLater()
 
 
-def test_an_artist_who_saved_visual_studio_opens_in_studio_visit():
-    """The retired label is gone, but the person it described is not."""
+def test_the_retired_visual_label_still_migrates_where_takes_stay_reviewable():
+    """The label is gone; the guarantee about its recordings is not.
 
-    assert canonical_creator_profile_key("visual_studio") == "studio_visit"
+    Art is the room that mode was describing, but Art records nothing and
+    reviews nothing, so a session recorded under ``visual_studio`` keeps
+    resolving to the profile that can play it back.
+    """
+
+    assert canonical_creator_profile_key("visual_studio") == "review_rehearsal"
+    assert canonical_creator_profile_key("studio_visit") == "art"

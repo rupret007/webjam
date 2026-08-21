@@ -242,7 +242,7 @@ class TestSessionPersistence(unittest.TestCase):
                 creator_profile_key="visual_studio",
             )
             try:
-                self.assertEqual(persistence.profile_key, "studio_visit")
+                self.assertEqual(persistence.profile_key, "review_rehearsal")
                 self.assertEqual(
                     persistence.set_profile_key("unsupported_profile"),
                     "music",
