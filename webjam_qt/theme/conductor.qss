@@ -720,6 +720,46 @@ QPushButton#LaunchSecondary:focus {
     border: 2px solid ${COLOR_BORDER_FOCUS};
 }
 
+QPushButton#LaunchStartCard {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+    text-align: left;
+    padding: 0;
+}
+
+QPushButton#LaunchStartCard:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    border-color: ${COLOR_BORDER_STRONG};
+}
+
+QPushButton#LaunchStartCard:checked {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    border: 2px solid ${COLOR_ACCENT_PRIMARY};
+}
+
+QPushButton#LaunchStartCard:focus {
+    border: 2px solid ${COLOR_BORDER_FOCUS};
+}
+
+QPushButton#LaunchStartCard:disabled {
+    background-color: ${COLOR_BG_PANEL};
+    border-color: ${COLOR_BORDER_SUBTLE};
+}
+
+#LaunchStartCardTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+    background: transparent;
+}
+
+#LaunchStartCardSummary {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+    background: transparent;
+}
+
 #LaunchInviteInput {
     min-height: 46px;
     padding: 0 ${SPACE_LG}px;

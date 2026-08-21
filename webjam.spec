@@ -307,7 +307,7 @@ a = Analysis(
         "services.reference_track_backend",
         "webjam_qt.windows.pocket_stage_pairing",
         "webjam_qt.windows.reference_track",
-        # Studio Visit's reference video is reached only through
+        # Art's reference video is reached only through
         # function-local imports from the application controller, and its Qt
         # player pulls QtMultimedia. Keep the whole path explicit so a frozen
         # candidate cannot omit the profile's one real capability.
@@ -315,6 +315,14 @@ a = Analysis(
         "webjam_qt.controllers.reference_video_coordinator",
         "webjam_qt.widgets.reference_video_player",
         "webjam_qt.windows.reference_video",
+        # Art's shared canvas is reached the same way: function-local imports
+        # from the application controller, so a frozen candidate would
+        # silently lose the Drawpile handoff without these.
+        "core.drawpile",
+        "core.shared_canvas",
+        "services.drawpile_service",
+        "webjam_qt.controllers.shared_canvas_coordinator",
+        "webjam_qt.windows.shared_canvas",
         "PySide6.QtMultimedia",
         "PySide6.QtMultimediaWidgets",
         "soundfile",

@@ -7,7 +7,11 @@ import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from core.creative_modes import canonical_creator_profile_key
+from core.creative_modes import (
+    canonical_creator_profile_key,
+    get_creator_profile_by_key_or_default,
+)
+from core.drawpile import DEFAULT_DRAWPILE_CANDIDATES
 from core.jamulus_name import (
     recover_jamulus_name,
     validate_jamulus_name,
@@ -43,6 +47,21 @@ def _coerce_creator_profile_key(value: object) -> str:
         _logger.debug("Invalid creator profile preference; using default")
         return _DEFAULT_CREATOR_PROFILE_KEY
     return canonical
+
+
+def _coerce_creator_start_key(profile_key: object, value: object) -> str:
+    """Return a start key the resolved profile actually offers, or ``""``.
+
+    A stale key from an older build, or one copied from another profile, must
+    never survive: the start decides whether a canvas or a reference video is
+    armed, so an unrecognized value falls back to the plain talk-only door.
+    """
+
+    profile = get_creator_profile_by_key_or_default(profile_key)
+    if not profile.starts:
+        return ""
+    start = profile.start_or_default(value)
+    return start.key if start is not None else ""
 
 
 def _coerce_input_maps(value: object) -> list:
@@ -124,14 +143,20 @@ def _coerce_settings_data(data: dict) -> None:
         data["last_creator_profile_key"] = _coerce_creator_profile_key(
             data["last_creator_profile_key"]
         )
-    # List of strings
-    if "jamulus_candidates" in data:
-        v = data["jamulus_candidates"]
+    data["last_creator_start_key"] = _coerce_creator_start_key(
+        data.get("last_creator_profile_key", defaults["last_creator_profile_key"]),
+        data.get("last_creator_start_key", ""),
+    )
+    # Lists of strings
+    for key in ("jamulus_candidates", "drawpile_candidates"):
+        if key not in data:
+            continue
+        v = data[key]
         if isinstance(v, list) and all(isinstance(x, str) for x in v):
             candidates = [s.strip() for s in v if s and str(s).strip()]
         else:
             candidates = []
-        data["jamulus_candidates"] = candidates if candidates else defaults["jamulus_candidates"]
+        data[key] = candidates if candidates else defaults[key]
     # Structured input maps: strict per-entry validation; fail-safe to [].
     if "input_maps" in data:
         raw_input_maps = data["input_maps"]
@@ -214,6 +239,16 @@ class AppSettings:
     # Canonical launch preference only. A host/session/project profile will
     # have its own authority when those boundaries adopt creator profiles.
     last_creator_profile_key: str = _DEFAULT_CREATOR_PROFILE_KEY
+    # Which start card was chosen last, for the profiles that offer them.
+    # Unknown or stale values fall back to the profile's talk-only start, so
+    # a saved choice can never arm a capability the profile no longer has.
+    last_creator_start_key: str = ""
+    # Where an installed Drawpile lives. WebJam ships none and searches no
+    # PATH; this list is the whole search, so an artist with an unusual
+    # install names it here or through WEBJAM_DRAWPILE_CANDIDATES.
+    drawpile_candidates: list[str] = field(
+        default_factory=lambda: list(DEFAULT_DRAWPILE_CANDIDATES)
+    )
     # Companion API — optional localhost HTTP bridge for DAWs/editors/scripts.
     # Opt-in: starts on launch only when enabled and fastapi/uvicorn exist.
     companion_api_enabled: bool = False
@@ -286,6 +321,7 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         "WEBJAM_WEBEX_URL": "webex_url",
         "WEBJAM_MUSICIAN_NAME": "musician_name",
         "WEBJAM_JAMULUS_CANDIDATES": "jamulus_candidates",
+        "WEBJAM_DRAWPILE_CANDIDATES": "drawpile_candidates",
         "WEBJAM_AUDIO_BLOCKSIZE": "audio_blocksize",
         "WEBJAM_AUDIO_SAMPLERATE": "audio_samplerate",
         "WEBJAM_AUDIO_LATENCY": "audio_latency",
@@ -330,7 +366,7 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
             "host_server_enabled",
         }:
             data[key] = _as_bool(raw)
-        elif key == "jamulus_candidates":
+        elif key in {"jamulus_candidates", "drawpile_candidates"}:
             data[key] = [item.strip() for item in raw.split(";") if item.strip()]
         else:
             data[key] = raw
@@ -477,6 +513,9 @@ def save_settings(settings: AppSettings) -> None:
     ).value
     payload["last_creator_profile_key"] = _coerce_creator_profile_key(
         settings.last_creator_profile_key
+    )
+    payload["last_creator_start_key"] = _coerce_creator_start_key(
+        payload["last_creator_profile_key"], settings.last_creator_start_key
     )
     payload.pop("webex_audio_mode", None)
     atomic_write_text(path, json.dumps(payload, indent=2), mode=0o600)

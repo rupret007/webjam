@@ -573,6 +573,10 @@ class ApplicationController(QObject):
         self._reference_video_dialog = None
         self._reference_video_binding: tuple[str, str] | tuple[()] = ()
         self._reference_video_notified_state = ""
+        self._shared_canvas = None
+        self._shared_canvas_dialog = None
+        self._shared_canvas_binding: tuple[str, str] | tuple[()] = ()
+        self._shared_canvas_notified_state = ""
         self._reference_track_operation_lock = threading.RLock()
         self._reference_track_worker_state_lock = threading.Lock()
         self._reference_track_operation_inflight = False
@@ -672,7 +676,7 @@ class ApplicationController(QObject):
         self._reference_track_timer.setInterval(250)
         self._reference_track_timer.timeout.connect(self._refresh_reference_track_ui)
 
-        # Studio Visit's reference video is corrected toward the host on a
+        # Art's reference video is corrected toward the host on a
         # slower cadence than audio meters: the peer plane only publishes new
         # host truth about once a second, so a faster tick would chase noise.
         self._reference_video_timer = QTimer(self)
@@ -955,7 +959,10 @@ class ApplicationController(QObject):
         )
         # A reference video owns only a local player and a memory-only peer
         # projection, so it can be released before the audio path unwinds.
+        # The shared canvas owns even less: a pointer to someone else's
+        # Drawpile, which keeps running.
         self._release_reference_video()
+        self._release_shared_canvas()
         reference_track = getattr(self, "_reference_track", None)
         if reference_track is not None:
             reference_closed = False
@@ -1161,6 +1168,7 @@ class ApplicationController(QObject):
         if reference_track_timer is not None:
             reference_track_timer.stop()
         self._release_reference_video()
+        self._release_shared_canvas()
         self._connection_timer.stop()
         jamulus_update_dialog = getattr(self, "_jamulus_update_dialog", None)
         if jamulus_update_dialog is not None:
@@ -1502,6 +1510,12 @@ class ApplicationController(QObject):
         coordinator = self._reference_video_coordinator()
         if coordinator is not None:
             coordinator.observe_host_state(state)
+        try:
+            canvas = self._shared_canvas_coordinator()
+            if canvas is not None:
+                canvas.observe_host_state(state)
+        except Exception:  # noqa: BLE001 - an add-on never breaks the room
+            LOGGER.debug("Shared canvas observation failed safely", exc_info=True)
 
         if shared is None or int(getattr(shared, "generation", 0) or 0) <= 0:
             return
@@ -11045,6 +11059,8 @@ class ApplicationController(QObject):
             self._open_reference_track()
         elif key == "reference_video":
             self._open_reference_video()
+        elif key == "shared_canvas":
+            self._open_shared_canvas()
         elif key == "jamulus_updates":
             self._open_jamulus_updates()
         elif key == "pocket_stage":
@@ -11127,7 +11143,7 @@ class ApplicationController(QObject):
         return role is SessionRole.HOST
 
     # ------------------------------------------------------------------
-    # Studio Visit reference video
+    # Art reference video
     # ------------------------------------------------------------------
 
     def _reference_video_supported(self) -> bool:
@@ -11229,14 +11245,14 @@ class ApplicationController(QObject):
             return
         if not self._reference_video_supported():
             self.window.flash_message(
-                "A shared reference video is part of Studio Visit.",
+                "A shared reference video is part of Art.",
                 ms=6000,
             )
             return
         coordinator = self._reference_video_coordinator()
         if coordinator is None:
             self.window.flash_message(
-                "Start or join a studio visit before sharing a reference video.",
+                "Start or join an art session before sharing a reference video.",
                 ms=6000,
             )
             return
@@ -11366,6 +11382,210 @@ class ApplicationController(QObject):
             return
         self._reference_video_notified_state = state
         notice = self._REFERENCE_VIDEO_NOTICES.get(state)
+        if notice and not getattr(self, "_shutdown", False):
+            self.window.flash_message(notice, ms=9000)
+
+    # ------------------------------------------------------------------
+    # Art shared canvas
+    # ------------------------------------------------------------------
+
+    def _shared_canvas_supported(self) -> bool:
+        """Only the profile whose contract includes it may share a canvas."""
+
+        return bool(self.creator_profile.capabilities.shared_canvas)
+
+    def _shared_canvas_coordinator(self):
+        """Return a coordinator bound to the current room, or ``None``.
+
+        Binding follows the same rule the reference video uses: it is derived
+        from whichever peer session actually exists, so a profile switch, a
+        new invite, or a role change rebuilds it from scratch.
+        """
+
+        if getattr(self, "_shutdown", False) or not self._shared_canvas_supported():
+            self._release_shared_canvas()
+            return None
+        role, session_id, session_key = self._reference_video_identity()
+        if not role or not session_id or not session_key:
+            self._release_shared_canvas()
+            return None
+        binding = (role, session_id)
+        coordinator = getattr(self, "_shared_canvas", None)
+        if coordinator is not None:
+            if getattr(self, "_shared_canvas_binding", ()) == binding:
+                return coordinator
+            self._release_shared_canvas()
+
+        from webjam_qt.controllers.shared_canvas_coordinator import (
+            SharedCanvasCoordinator,
+        )
+
+        def build_launcher():
+            from services.drawpile_service import create_canvas_launcher
+
+            return create_canvas_launcher(self.settings)
+
+        coordinator = SharedCanvasCoordinator(
+            launcher_factory=build_launcher,
+            host_peer_provider=lambda: getattr(self, "host_peer", None),
+            on_host_snapshot=self._on_shared_canvas_host_snapshot,
+            on_follow_snapshot=self._on_shared_canvas_follow_snapshot,
+        )
+        if role == "host":
+            coordinator.begin_host()
+        else:
+            coordinator.begin_guest()
+        self._shared_canvas = coordinator
+        self._shared_canvas_binding = binding
+        return coordinator
+
+    def _release_shared_canvas(self) -> None:
+        """Return this computer to the no-canvas path.
+
+        Drawpile is the artist's own program. Leaving a WebJam room releases
+        WebJam's pointer to the canvas and closes nothing they are painting.
+        """
+
+        dialog = getattr(self, "_shared_canvas_dialog", None)
+        if dialog is not None:
+            dialog.close()
+            dialog.deleteLater()
+            self._shared_canvas_dialog = None
+        coordinator = getattr(self, "_shared_canvas", None)
+        if coordinator is not None:
+            coordinator.end()
+        self._shared_canvas = None
+        self._shared_canvas_binding = ()
+        self._shared_canvas_notified_state = ""
+
+    def _open_shared_canvas(self) -> None:
+        """Open the canvas panel for whichever role this computer has."""
+
+        if self._shutdown or self._shutdown_cleanup_blocks_action():
+            return
+        if not self._shared_canvas_supported():
+            self.window.flash_message("A shared canvas is part of Art.", ms=6000)
+            return
+        coordinator = self._shared_canvas_coordinator()
+        if coordinator is None:
+            self.window.flash_message(
+                "Start or join an art session before sharing a canvas.",
+                ms=6000,
+            )
+            return
+        dialog = getattr(self, "_shared_canvas_dialog", None)
+        if dialog is None:
+            from webjam_qt.windows.shared_canvas import SharedCanvasDialog
+
+            dialog = SharedCanvasDialog(
+                hosting=coordinator.hosting, parent=self.window
+            )
+            dialog.install_drawpile_requested.connect(self._open_drawpile_download)
+            if coordinator.hosting:
+                dialog.host_in_drawpile_requested.connect(
+                    lambda: self._run_shared_canvas(
+                        coordinator.open_drawpile_to_host
+                    )
+                )
+                dialog.share_requested.connect(
+                    lambda text: self._run_shared_canvas(
+                        lambda: coordinator.share(text)
+                    )
+                )
+                dialog.withdraw_requested.connect(
+                    lambda: self._run_shared_canvas(coordinator.withdraw)
+                )
+                dialog.open_canvas_requested.connect(
+                    lambda: self._run_shared_canvas(coordinator.open_canvas_as_host)
+                )
+            else:
+                dialog.open_canvas_requested.connect(
+                    lambda: self._run_shared_canvas(coordinator.open_canvas)
+                )
+            self._shared_canvas_dialog = dialog
+        if coordinator.hosting:
+            dialog.set_host_snapshot(coordinator.host_snapshot)
+        else:
+            dialog.set_follow_snapshot(coordinator.follow_snapshot)
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _open_drawpile_download(self) -> None:
+        """Hand the artist to Drawpile's own download page, once, on request."""
+
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+
+        from core.drawpile import drawpile_download_url
+
+        QDesktopServices.openUrl(QUrl(drawpile_download_url()))
+
+    def _run_shared_canvas(self, operation) -> None:
+        """Run one canvas intent, surfacing bounded failure text."""
+
+        from core.drawpile import DrawpileError
+        from core.shared_canvas import SharedCanvasError
+
+        try:
+            operation()
+        except (DrawpileError, SharedCanvasError) as exc:
+            self.window.flash_message(str(exc), ms=8000)
+        except Exception:  # noqa: BLE001 - never let a panel kill the room
+            LOGGER.exception("A shared canvas operation failed safely")
+            self.window.flash_message(
+                "WebJam couldn't complete that shared canvas request. The "
+                "room is still running.",
+                ms=8000,
+            )
+        dialog = getattr(self, "_shared_canvas_dialog", None)
+        coordinator = getattr(self, "_shared_canvas", None)
+        if dialog is not None and coordinator is not None:
+            if coordinator.hosting:
+                dialog.set_host_snapshot(coordinator.host_snapshot)
+            else:
+                dialog.set_follow_snapshot(coordinator.follow_snapshot)
+
+    def _on_shared_canvas_host_snapshot(self, snapshot) -> None:
+        dialog = getattr(self, "_shared_canvas_dialog", None)
+        if dialog is not None:
+            dialog.set_host_snapshot(snapshot)
+
+    def _on_shared_canvas_follow_snapshot(self, snapshot) -> None:
+        dialog = getattr(self, "_shared_canvas_dialog", None)
+        if dialog is not None:
+            dialog.set_follow_snapshot(snapshot)
+        self._announce_shared_canvas_follow_state(snapshot)
+
+    #: Canvas states worth interrupting an artist for, and what to say. A
+    #: state they already acted on stays quiet.
+    _SHARED_CANVAS_NOTICES = {
+        "ready": (
+            "The host shared a canvas. Open it from More → Shared Canvas, or "
+            "ignore it and keep working."
+        ),
+        "needs_drawpile": (
+            "The host shared a Drawpile canvas, but Drawpile is not installed "
+            "here. Install it from More → Shared Canvas, or just talk."
+        ),
+        "unreadable": (
+            "The host shared a canvas WebJam could not read, so it will not "
+            "open anything. Ask them to share the Drawpile invitation again."
+        ),
+    }
+
+    def _announce_shared_canvas_follow_state(self, snapshot) -> None:
+        """Tell an artist once when a canvas appears or cannot be opened.
+
+        Without this, a guest who never opens the panel would never learn a
+        canvas exists. Only transitions speak, so a steady state stays quiet.
+        """
+
+        state = str(getattr(getattr(snapshot, "state", None), "value", "") or "")
+        if state == getattr(self, "_shared_canvas_notified_state", ""):
+            return
+        self._shared_canvas_notified_state = state
+        notice = self._SHARED_CANVAS_NOTICES.get(state)
         if notice and not getattr(self, "_shutdown", False):
             self.window.flash_message(notice, ms=9000)
 

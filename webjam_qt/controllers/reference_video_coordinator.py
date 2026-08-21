@@ -1,4 +1,4 @@
-"""Session-scoped ownership of the Studio Visit reference video.
+"""Session-scoped ownership of Art's reference video.
 
 The coordinator is the seam between three things that must not know about each
 other: the host transport in :mod:`core.reference_video`, the private peer

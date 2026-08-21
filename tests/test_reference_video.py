@@ -1,4 +1,4 @@
-"""Studio Visit reference video: identity, host transport, and following.
+"""Art reference video: identity, host transport, and following.
 
 Fixtures are tiny byte blobs with video suffixes. The core primitive only
 hashes bytes and drives an injected player seam, so no real media -- and no
@@ -37,7 +37,7 @@ OTHER_SESSION_ID = "0d9a7bd0-8d0f-4b4a-8f3e-6c1f0b1c2d3e"
 SESSION_KEY = "invite-token-for-tests-0123456789abcdef"
 
 
-def write_video(path: Path, payload: bytes = b"studio-visit-reference-bytes") -> Path:
+def write_video(path: Path, payload: bytes = b"art-session-reference-bytes") -> Path:
     path.write_bytes(payload)
     return path
 

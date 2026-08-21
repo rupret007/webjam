@@ -30,7 +30,7 @@ _PROFILE_NOTES_FILES = {
     "music": _NOTES_FILE,
     "podcast_voice": ".webjam_notes.podcast_voice.md",
     "review_rehearsal": ".webjam_notes.review_rehearsal.md",
-    "studio_visit": ".webjam_notes.studio_visit.md",
+    "art": ".webjam_notes.art.md",
 }
 _SESSION_FILE = ".webjam_session.json"
 _SESSION_SCHEMA_VERSION = 2

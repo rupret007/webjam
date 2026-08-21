@@ -116,7 +116,7 @@ def test_projection_never_carries_a_path_or_the_private_content_hash(
     tmp_path: Path,
 ) -> None:
     video = tmp_path / "lesson.mp4"
-    video.write_bytes(b"studio visit reference bytes")
+    video.write_bytes(b"art session reference bytes")
     source = load_reference_video_source(video)
     signer = session_identity_signer(session_id=_id(), session_key="invite-token")
 
@@ -353,7 +353,7 @@ def test_authenticated_guest_receives_the_host_reference_video_projection(
 ) -> None:
     credentials = SessionCredentials.create()
     control = SessionControlState(
-        tmp_path, credentials.session_id, creator_profile_key="studio_visit"
+        tmp_path, credentials.session_id, creator_profile_key="art"
     )
     expected = control.publish_reference_video(
         **_shared_projection(
@@ -373,7 +373,7 @@ def test_authenticated_guest_receives_the_host_reference_video_projection(
     assert observed.reference_video == expected
     assert observed.reference_video.position_s == pytest.approx(612.5)
     assert observed.reference_video.identity_digest == DIGEST
-    assert observed.creator_profile_key == "studio_visit"
+    assert observed.creator_profile_key == "art"
 
 
 def test_a_late_joining_artist_lands_on_the_hosts_current_position(
@@ -395,7 +395,7 @@ def test_a_late_joining_artist_lands_on_the_hosts_current_position(
         session_key=credentials.invite_token,
     )
     control = SessionControlState(
-        tmp_path, credentials.session_id, creator_profile_key="studio_visit"
+        tmp_path, credentials.session_id, creator_profile_key="art"
     )
 
     host_player = FakePlayer(duration_s=1_800.0)
@@ -464,7 +464,7 @@ def test_an_artist_without_the_hosts_file_stays_in_the_room_without_playing(
         session_key=credentials.invite_token,
     )
     control = SessionControlState(
-        tmp_path, credentials.session_id, creator_profile_key="studio_visit"
+        tmp_path, credentials.session_id, creator_profile_key="art"
     )
     host = ReferenceVideoHostController(
         FakePlayer(), identity_signer=signer, is_host=lambda: True

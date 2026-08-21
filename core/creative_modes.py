@@ -67,6 +67,11 @@ class CreatorCapabilities:
     # decoded audio through Jamulus, and from ``media_timecode``, which this
     # capability never implies.
     shared_reference_video: bool = False
+    # A real-time collaborative drawing surface, hosted and rendered by an
+    # external open-source painting program (Drawpile) that the artists
+    # install themselves.  WebJam brokers the invitation and never draws a
+    # stroke, so this capability claims a handoff, not a canvas widget.
+    shared_canvas: bool = False
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -80,6 +85,7 @@ class CreatorCapabilities:
             "take_editing",
             "track_export",
             "shared_reference_video",
+            "shared_canvas",
         ):
             if type(getattr(self, field_name)) is not bool:
                 raise ValueError(f"{field_name} must be a boolean.")
@@ -89,6 +95,8 @@ class CreatorCapabilities:
             raise ValueError("track_export requires take_review.")
         if self.shared_reference_video and not self.live_session:
             raise ValueError("shared_reference_video requires live_session.")
+        if self.shared_canvas and not self.live_session:
+            raise ValueError("shared_canvas requires live_session.")
 
 
 @dataclass(frozen=True)
@@ -118,6 +126,48 @@ class CreatorVocabulary:
                 field_name,
                 _text(getattr(self, field_name), field_name, maximum=64),
             )
+
+
+@dataclass(frozen=True)
+class CreatorStart:
+    """One bounded way to begin a session, shown before Host or Join.
+
+    A start is the whole first decision after choosing what you are making.
+    It carries at most one optional add-on so the launch screen stays a short
+    list of real differences rather than a grid of combinations; a host adds
+    the other one from inside the room.
+    """
+
+    key: str
+    label: str
+    summary: str
+    detail: str
+    shared_canvas: bool = False
+    reference_video: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "key", _key(self.key, "start key"))
+        object.__setattr__(self, "label", _text(self.label, "start label", maximum=32))
+        object.__setattr__(
+            self, "summary", _text(self.summary, "start summary", maximum=120)
+        )
+        object.__setattr__(
+            self, "detail", _text(self.detail, "start detail", maximum=600)
+        )
+        for field_name in ("shared_canvas", "reference_video"):
+            if type(getattr(self, field_name)) is not bool:
+                raise ValueError(f"{field_name} must be a boolean.")
+        if self.shared_canvas and self.reference_video:
+            raise ValueError(
+                "A start offers at most one optional add-on; combining them "
+                "happens inside the room."
+            )
+
+    @property
+    def talk_only(self) -> bool:
+        """Whether this start opens a room and nothing else."""
+
+        return not self.shared_canvas and not self.reference_video
 
 
 @dataclass(frozen=True)
@@ -176,6 +226,7 @@ class CreatorProfile:
     capabilities: CreatorCapabilities
     vocabulary: CreatorVocabulary
     studio_presets: tuple[StudioPreset, ...] = ()
+    starts: tuple[CreatorStart, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "key", _key(self.key, "profile key"))
@@ -223,6 +274,39 @@ class CreatorProfile:
                 "local_multitrack capability and Studio presets must agree."
             )
         object.__setattr__(self, "studio_presets", presets)
+        if isinstance(self.starts, (str, bytes)):
+            raise TypeError("starts must be a sequence of CreatorStart values.")
+        try:
+            starts = tuple(self.starts)
+        except TypeError as exc:
+            raise TypeError(
+                "starts must be a sequence of CreatorStart values."
+            ) from exc
+        if any(not isinstance(item, CreatorStart) for item in starts):
+            raise TypeError("starts may contain only CreatorStart values.")
+        if len({item.key for item in starts}) != len(starts):
+            raise ValueError("Start keys must be unique within a profile.")
+        if len({item.label.casefold() for item in starts}) != len(starts):
+            raise ValueError("Start labels must be unique within a profile.")
+        # A start card may only promise what the profile can actually deliver.
+        # Catching this here means a copy edit can never advertise a canvas or
+        # a reference video that the capability gate will refuse at runtime.
+        for start in starts:
+            if start.shared_canvas and not self.capabilities.shared_canvas:
+                raise ValueError(
+                    f"Start '{start.key}' offers a shared canvas this profile "
+                    "does not have."
+                )
+            if start.reference_video and not self.capabilities.shared_reference_video:
+                raise ValueError(
+                    f"Start '{start.key}' offers a reference video this "
+                    "profile does not have."
+                )
+        if starts and not any(start.talk_only for start in starts):
+            # Talk-only is first class.  Without it a profile could make a
+            # canvas or a video look mandatory just by omitting the plain door.
+            raise ValueError("A profile offering starts must offer a talk-only one.")
+        object.__setattr__(self, "starts", starts)
 
     @property
     def is_preview(self) -> bool:
@@ -231,6 +315,25 @@ class CreatorProfile:
     @property
     def default_studio_preset(self) -> StudioPreset | None:
         return self.studio_presets[0] if self.studio_presets else None
+
+    @property
+    def default_start(self) -> CreatorStart | None:
+        return self.starts[0] if self.starts else None
+
+    def get_start(self, start_key: object) -> CreatorStart | None:
+        """Return one of this profile's starts by key, or ``None``."""
+
+        if not isinstance(start_key, str):
+            return None
+        for start in self.starts:
+            if start.key == start_key:
+                return start
+        return None
+
+    def start_or_default(self, start_key: object) -> CreatorStart | None:
+        """Resolve a start key, falling back to the plain talk-only door."""
+
+        return self.get_start(start_key) or self.default_start
 
 
 _MUSIC_CAPABILITIES = CreatorCapabilities(
@@ -266,11 +369,12 @@ _REVIEW_CAPABILITIES = CreatorCapabilities(
     take_editing=False,
     track_export=False,
 )
-# Studio Visit is a room for making things at a table.  It carries live
-# conversation and an optional host-clocked reference video, and it claims
-# nothing else: no Jamulus reference-audio route, no recorded take, and
-# therefore no review, editing, or export contract to honor afterwards.
-_STUDIO_VISIT_CAPABILITIES = CreatorCapabilities(
+# Art is a room for making things at a table.  It carries live conversation,
+# an optional shared Drawpile canvas, and an optional host-clocked reference
+# video.  It claims nothing else: no Jamulus reference-audio route, no
+# recorded take, and therefore no review, editing, or export contract to
+# honor afterwards.
+_ART_CAPABILITIES = CreatorCapabilities(
     live_session=True,
     local_multitrack=False,
     shared_reference_audio=False,
@@ -281,6 +385,48 @@ _STUDIO_VISIT_CAPABILITIES = CreatorCapabilities(
     take_editing=False,
     track_export=False,
     shared_reference_video=True,
+    shared_canvas=True,
+)
+
+# Exactly three ways to begin: a room, a room plus a canvas, a room plus a
+# reference video.  There is deliberately no fourth card for "both" and no
+# tool picker; a host adds the other option from inside the room.
+_ART_STARTS = (
+    CreatorStart(
+        key="talk_and_make",
+        label="Talk & make",
+        summary="A room and live audio. Work on paper, clay, or your own app.",
+        detail=(
+            "Opens a room with WebJam's live audio and nothing else. Paint, "
+            "draw, sculpt, or use any application you already have, and talk "
+            "while you work. No shared canvas and no video are needed."
+        ),
+    ),
+    CreatorStart(
+        key="paint_together",
+        label="Paint together",
+        summary="The room plus one shared canvas, painted in Drawpile.",
+        detail=(
+            "Opens the room and hands the canvas to Drawpile, the open-source "
+            "collaborative painting program. WebJam does not paint the "
+            "strokes; Drawpile does, with its own brushes and layers. Every "
+            "artist needs Drawpile installed, and the host shares one canvas "
+            "invitation with the room."
+        ),
+        shared_canvas=True,
+    ),
+    CreatorStart(
+        key="paint_along",
+        label="Paint along",
+        summary="The room plus one host-clocked video played on each computer.",
+        detail=(
+            "Opens the room and lets the host share one local video file they "
+            "already have the right to play. Each artist opens their own copy "
+            "of that exact file and it follows the host's play, pause, stop, "
+            "and position. WebJam ships and downloads no video."
+        ),
+        reference_video=True,
+    ),
 )
 
 
@@ -392,36 +538,37 @@ CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
         ),
     ),
     CreatorProfile(
-        key="studio_visit",
-        label="Studio Visit",
+        key="art",
+        label="Art",
         release_tier=RELEASE_TIER_PREVIEW,
-        default_template="Studio Visit (Preview)",
+        default_template="Art (Preview)",
         default_goal="Share a table, talk, and move one piece forward.",
         quick_help=(
             "Preview opens a room for artists in any medium: talk while you "
-            "paint, draw, sculpt, or build. The host may optionally share one "
-            "local video file they already have the right to play, and "
-            "everyone watches their own copy of that exact file under the "
-            "host's play, pause, stop, and position control. WebJam ships and "
-            "downloads no video, and follows nothing it cannot prove is the "
-            "same file. There is no shared canvas, no camera feed, no "
-            "recorded take, and no frame-accurate or timecoded review. "
-            f"{MEETING_DIRECT_CAPTURE_BOUNDARY}"
+            "paint, draw, sculpt, or build. The host may add a shared canvas, "
+            "painted by Drawpile and only brokered by WebJam, and one local "
+            "video file they have the right to play, which each artist opens "
+            "their own copy of and which follows the host's transport. WebJam "
+            "draws no strokes, ships and downloads no video, and follows "
+            "nothing it cannot prove is the same file. There is no camera "
+            "feed, no recorded take, and no frame-accurate or timecoded "
+            f"review. {MEETING_DIRECT_CAPTURE_BOUNDARY}"
         ),
         review_prompts=(
             "What did this piece need that you could not see alone?",
-            "Which part is worth another pass before the next visit?",
+            "Which part is worth another pass before the next session?",
             "What material or step should be ready next time?",
         ),
-        capabilities=_STUDIO_VISIT_CAPABILITIES,
+        capabilities=_ART_CAPABILITIES,
         vocabulary=CreatorVocabulary(
             participant_singular="artist",
             participant_plural="artists",
-            session_noun="studio visit",
+            session_noun="art session",
             reference_audio_noun="reference audio",
             section_noun="stage",
             reference_video_noun="reference video",
         ),
+        starts=_ART_STARTS,
     ),
 )
 
@@ -435,6 +582,11 @@ LEGACY_MODE_KEY_ALIASES: Mapping[str, str] = MappingProxyType(
         "writers_room": "review_rehearsal",
         "design_critique": "review_rehearsal",
         "storyboard_film_room": "review_rehearsal",
+        # Art shipped its Preview under the name "Studio Visit" before the
+        # room was named for what people make in it.  The old key migrates so
+        # a saved choice survives; ``visual_studio`` deliberately does not
+        # move here, because takes recorded under it must stay reviewable.
+        "studio_visit": "art",
     }
 )
 
@@ -444,7 +596,7 @@ def _validate_creator_registry() -> None:
         "music",
         "podcast_voice",
         "review_rehearsal",
-        "studio_visit",
+        "art",
     ):
         raise RuntimeError("Creator profiles must remain the bounded shipped set.")
     keys = tuple(item.key for item in CREATOR_PROFILES)
@@ -496,51 +648,77 @@ def _validate_creator_registry() -> None:
     if review.capabilities.local_multitrack or review.studio_presets:
         raise RuntimeError("Review & Rehearsal has no local Studio contract yet.")
 
-    studio_visit = by_key["studio_visit"]
-    if studio_visit.release_tier != RELEASE_TIER_PREVIEW or not studio_visit.is_preview:
-        raise RuntimeError("Studio Visit must remain a Preview.")
-    if not studio_visit.capabilities.shared_reference_video:
-        raise RuntimeError("Studio Visit requires host-clocked reference video.")
-    if studio_visit.capabilities.media_timecode:
+    art = by_key["art"]
+    if art.release_tier != RELEASE_TIER_PREVIEW or not art.is_preview:
+        raise RuntimeError("Art must remain a Preview.")
+    if not art.capabilities.shared_reference_video:
+        raise RuntimeError("Art requires host-clocked reference video.")
+    if not art.capabilities.shared_canvas:
+        raise RuntimeError("Art requires the shared-canvas handoff.")
+    if art.capabilities.media_timecode:
         raise RuntimeError(
-            "Studio Visit is host transport sync, not frame-accurate review, "
-            "so it cannot claim media timecode."
+            "Art is host transport sync, not frame-accurate review, so it "
+            "cannot claim media timecode."
         )
-    if studio_visit.capabilities.shared_reference_audio:
-        raise RuntimeError(
-            "Studio Visit has no Jamulus reference-audio route to offer."
-        )
+    if art.capabilities.shared_reference_audio:
+        raise RuntimeError("Art has no Jamulus reference-audio route to offer.")
     if (
-        studio_visit.capabilities.session_recording
-        or studio_visit.capabilities.take_review
-        or studio_visit.capabilities.take_editing
-        or studio_visit.capabilities.track_export
+        art.capabilities.session_recording
+        or art.capabilities.take_review
+        or art.capabilities.take_editing
+        or art.capabilities.track_export
     ):
         raise RuntimeError(
-            "Studio Visit cannot record a take, so it must not offer recording, "
+            "Art cannot record a take, so it must not offer recording, "
             "review, editing, or export."
         )
-    if studio_visit.capabilities.local_multitrack or studio_visit.studio_presets:
-        raise RuntimeError("Studio Visit has no local Studio contract.")
+    if art.capabilities.local_multitrack or art.studio_presets:
+        raise RuntimeError("Art has no local Studio contract.")
     if any(
         term in phrase.casefold()
-        for term in ("musician", "track", "song", "band")
+        for term in ("musician", "track", "song", "band", "studio visit")
         for phrase in (
-            studio_visit.vocabulary.participant_singular,
-            studio_visit.vocabulary.participant_plural,
-            studio_visit.vocabulary.session_noun,
-            studio_visit.vocabulary.section_noun,
+            art.vocabulary.participant_singular,
+            art.vocabulary.participant_plural,
+            art.vocabulary.session_noun,
+            art.vocabulary.section_noun,
         )
     ):
-        raise RuntimeError("Studio Visit speaks to artists, not to a band.")
+        raise RuntimeError("Art speaks to artists, not to a band or a studio visit.")
     if any(
         profile.capabilities.shared_reference_video
         for profile in CREATOR_PROFILES
-        if profile.key != "studio_visit"
+        if profile.key != "art"
     ):
         raise RuntimeError(
-            "Only Studio Visit ships the host-clocked reference video contract."
+            "Only Art ships the host-clocked reference video contract."
         )
+    if any(
+        profile.capabilities.shared_canvas
+        for profile in CREATOR_PROFILES
+        if profile.key != "art"
+    ):
+        raise RuntimeError("Only Art ships the shared-canvas contract.")
+    if LEGACY_MODE_KEY_ALIASES.get("studio_visit") != "art":
+        raise RuntimeError("The Studio Visit Preview key must migrate to Art.")
+
+    # Launch shows exactly these three doors, in this order, and no other
+    # profile shows any.  The whole point of the Art start pass is that a
+    # person picks once from a short list, so a fourth card is a regression.
+    if tuple(start.key for start in art.starts) != (
+        "talk_and_make",
+        "paint_together",
+        "paint_along",
+    ):
+        raise RuntimeError("Art offers exactly three starts, in a fixed order.")
+    if sum(1 for start in art.starts if start.talk_only) != 1:
+        raise RuntimeError("Art offers exactly one talk-only start.")
+    if sum(1 for start in art.starts if start.shared_canvas) != 1:
+        raise RuntimeError("Art offers exactly one shared-canvas start.")
+    if sum(1 for start in art.starts if start.reference_video) != 1:
+        raise RuntimeError("Art offers exactly one reference-video start.")
+    if any(profile.starts for profile in CREATOR_PROFILES if profile.key != "art"):
+        raise RuntimeError("Only Art offers start cards.")
 
 
 _validate_creator_registry()
@@ -714,6 +892,7 @@ __all__ = [
     "CreativeMode",
     "CreatorCapabilities",
     "CreatorProfile",
+    "CreatorStart",
     "CreatorVocabulary",
     "StudioPreset",
     "canonical_creator_profile_key",

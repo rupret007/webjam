@@ -2141,10 +2141,10 @@ class SharedTrackSessionSnapshot:
 class ReferenceVideoPlaybackState(str, Enum):
     """Bounded host-owned reference video truth that followers may render.
 
-    Studio Visit's reference video is watched locally on every computer and
-    clocked by the host, so unlike Shared Track there is no route to bring up
-    and no routing state.  ``stop`` returns to ``READY`` with the file still
-    shared; ``IDLE`` means the host is sharing nothing at all.
+    Art's reference video is watched locally on every computer and clocked by
+    the host, so unlike Shared Track there is no route to bring up and no
+    routing state.  ``stop`` returns to ``READY`` with the file still shared;
+    ``IDLE`` means the host is sharing nothing at all.
     """
 
     IDLE = "idle"
@@ -2325,6 +2325,118 @@ class ReferenceVideoSessionSnapshot:
         }
 
 
+_SHARED_CANVAS_SCHEMA = 1
+_MAX_SHARED_CANVAS_GENERATION = (1 << 63) - 1
+
+
+def _shared_canvas_join_url(value: object) -> str:
+    """Validate the Drawpile invitation exactly as the domain layer would.
+
+    Parsing here rather than trusting a string means a projection from
+    another computer can never reach a process launcher unless it is a real,
+    bounded Drawpile session URL.
+    """
+
+    if type(value) is not str:
+        raise ValueError("join_url must be text.")
+    if not value:
+        return ""
+    from core.drawpile import DrawpileError, parse_canvas_invite
+
+    try:
+        return parse_canvas_invite(value).join_url
+    except DrawpileError as exc:
+        raise ValueError("join_url is not a supported canvas invitation.") from exc
+
+
+def _shared_canvas_label(value: object, label: str) -> str:
+    if type(value) is not str:
+        raise ValueError(f"{label} must be text.")
+    if any(not character.isprintable() for character in value):
+        raise ValueError(f"{label} contains unsupported characters.")
+    normalized = " ".join(value.split())
+    if len(normalized) > 80:
+        raise ValueError(f"{label} is too long.")
+    return normalized
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class SharedCanvasSessionSnapshot:
+    """The Drawpile invitation Art's host offers the room.
+
+    This is the one projection that deliberately carries a joinable address:
+    a guest who received one WebJam invitation must not have to be sent a
+    second link through a second product, and a late joiner must land on the
+    same canvas as everyone else.  The URL can embed a Drawpile session
+    password, so it is kept out of ``__repr__``, and
+    :meth:`SessionControlState.publish_shared_canvas` keeps it out of the
+    durable recording journal.
+    """
+
+    generation: int = 0
+    shared: bool = False
+    join_url: str = ""
+    server_label: str = ""
+    session_label: str = ""
+
+    def __post_init__(self) -> None:
+        generation = self.generation
+        if (
+            type(generation) is not int
+            or not 0 <= generation <= _MAX_SHARED_CANVAS_GENERATION
+        ):
+            raise ValueError("generation is outside the supported range.")
+        if type(self.shared) is not bool:
+            raise ValueError("shared must be a boolean.")
+        join_url = _shared_canvas_join_url(self.join_url)
+        server_label = _shared_canvas_label(self.server_label, "server_label")
+        session_label = _shared_canvas_label(self.session_label, "session_label")
+
+        if not self.shared:
+            if join_url or server_label or session_label:
+                raise ValueError("An unshared canvas cannot expose canvas facts.")
+        elif not join_url:
+            raise ValueError("A shared canvas requires a join address.")
+
+        object.__setattr__(self, "generation", generation)
+        object.__setattr__(self, "join_url", join_url)
+        object.__setattr__(self, "server_label", server_label)
+        object.__setattr__(self, "session_label", session_label)
+
+    def __repr__(self) -> str:
+        return (
+            "SharedCanvasSessionSnapshot("
+            f"generation={self.generation}, shared={self.shared}, "
+            f"server_label={self.server_label!r}, "
+            f"session_label={self.session_label!r}, url=[redacted])"
+        )
+
+    @classmethod
+    def from_mapping(cls, value: object) -> "SharedCanvasSessionSnapshot":
+        """Parse a peer payload, treating absence as a host sharing nothing."""
+
+        if value is None:
+            return cls()
+        if not isinstance(value, Mapping):
+            raise ValueError("shared_canvas must be an object.")
+        if value.get("schema") != _SHARED_CANVAS_SCHEMA:
+            raise ValueError("shared_canvas schema is not supported.")
+        required = {"generation", "shared", "join_url", "server_label", "session_label"}
+        if not required.issubset(value):
+            raise ValueError("shared_canvas is incomplete.")
+        return cls(**{key: value[key] for key in required})
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "schema": _SHARED_CANVAS_SCHEMA,
+            "generation": self.generation,
+            "shared": self.shared,
+            "join_url": self.join_url,
+            "server_label": self.server_label,
+            "session_label": self.session_label,
+        }
+
+
 @dataclass(frozen=True)
 class SessionStateSnapshot:
     session_id: str
@@ -2339,6 +2451,9 @@ class SessionStateSnapshot:
     )
     reference_video: ReferenceVideoSessionSnapshot = field(
         default_factory=ReferenceVideoSessionSnapshot
+    )
+    shared_canvas: SharedCanvasSessionSnapshot = field(
+        default_factory=SharedCanvasSessionSnapshot
     )
     creator_profile_key: str = "music"
     capture_arm: CaptureArmSnapshot | None = None
@@ -2383,6 +2498,12 @@ class SessionStateSnapshot:
                 "reference_video must be a ReferenceVideoSessionSnapshot."
             )
         object.__setattr__(self, "reference_video", reference_video)
+        shared_canvas = self.shared_canvas
+        if isinstance(shared_canvas, Mapping):
+            shared_canvas = SharedCanvasSessionSnapshot.from_mapping(shared_canvas)
+        if not isinstance(shared_canvas, SharedCanvasSessionSnapshot):
+            raise ValueError("shared_canvas must be a SharedCanvasSessionSnapshot.")
+        object.__setattr__(self, "shared_canvas", shared_canvas)
         capture_arm = self.capture_arm
         if isinstance(capture_arm, Mapping):
             capture_arm = CaptureArmSnapshot.from_mapping(capture_arm)
@@ -2454,10 +2575,13 @@ def _session_state_mapping(
         "creator_profile_key": snapshot.creator_profile_key,
     }
     if include_shared_track:
-        # Both live media projections share this flag: they are memory-only
+        # Every live media projection shares this flag: they are memory-only
         # guest rendering state, never part of the durable recording journal.
+        # The canvas address especially, since it can embed a Drawpile
+        # session password that has no business surviving on disk.
         payload["shared_track"] = snapshot.shared_track.to_mapping()
         payload["reference_video"] = snapshot.reference_video.to_mapping()
+        payload["shared_canvas"] = snapshot.shared_canvas.to_mapping()
     if include_capture_arm and (
         snapshot.capture_arm is not None
         or snapshot.arm_handshake_required
@@ -3097,6 +3221,37 @@ class SessionControlState:
                 return current
             candidate = replace(candidate, generation=current.generation + 1)
             self._snapshot = replace(self._snapshot, reference_video=candidate)
+            return candidate
+
+    def publish_shared_canvas(
+        self,
+        *,
+        shared: bool,
+        join_url: str = "",
+        server_label: str = "",
+        session_label: str = "",
+    ) -> SharedCanvasSessionSnapshot:
+        """Publish one idempotent, memory-only canvas invitation.
+
+        Like the reference video projection this is never fsynced into the
+        durable recording-state journal, so a restarted host offers no canvas
+        until its owner shares one again.  That also keeps a Drawpile session
+        password out of every file WebJam writes.
+        """
+
+        with self._lock:
+            current = self._snapshot.shared_canvas
+            candidate = SharedCanvasSessionSnapshot(
+                generation=current.generation,
+                shared=shared,
+                join_url=join_url,
+                server_label=server_label,
+                session_label=session_label,
+            )
+            if candidate == current:
+                return current
+            candidate = replace(candidate, generation=current.generation + 1)
+            self._snapshot = replace(self._snapshot, shared_canvas=candidate)
             return candidate
 
     def finish(
@@ -4324,6 +4479,9 @@ class SessionPeerClient:
             ),
             reference_video=ReferenceVideoSessionSnapshot.from_mapping(
                 payload.get("reference_video")
+            ),
+            shared_canvas=SharedCanvasSessionSnapshot.from_mapping(
+                payload.get("shared_canvas")
             ),
             creator_profile_key=payload.get("creator_profile_key", "music"),
             capture_arm=(
