@@ -45,6 +45,7 @@ from core.song_workbench import (
     SongWorkbench,
     evaluate_upload,
 )
+from core.stem_bench import StemBenchError, bounce_stems
 
 LOGGER = logging.getLogger("webjam.qt.song_tools")
 
@@ -64,6 +65,7 @@ class SongToolsCoordinator:
         self._discovering = False
         self._running_verb = ""
         self._cancelled = threading.Event()
+        self._tick_timer = None
 
     # ------------------------------------------------------------------
     # Panel lifecycle
@@ -110,7 +112,13 @@ class SongToolsCoordinator:
         overlay.api_key_requested.connect(self._open_settings)
         overlay.mute_help_requested.connect(self._open_meeting_mute)
         overlay.invite_requested.connect(self._copy_invite)
-        overlay.closed.connect(lambda: None)
+        overlay.clock_toggled.connect(self.toggle_clock)
+        overlay.section_located.connect(self.locate_section)
+        overlay.stem_mute_toggled.connect(self.toggle_stem_mute)
+        overlay.stem_solo_toggled.connect(self.toggle_stem_solo)
+        overlay.sing_this_one_requested.connect(self.sing_this_one)
+        overlay.send_stems_to_jam_requested.connect(self.send_stems_to_jam)
+        overlay.closed.connect(self._on_panel_closed)
 
     # ------------------------------------------------------------------
     # Rendering
@@ -131,6 +139,7 @@ class SongToolsCoordinator:
             ),
             form_summary=self.workbench.conductor_line(),
             form_rows=self.workbench.form_overlay(),
+            clock=self.workbench.clock_snapshot(),
             results=tuple(
                 run.summary_line() for run in self.workbench.runs[-2:]
             ),
@@ -142,6 +151,7 @@ class SongToolsCoordinator:
             is_host=self._is_host(),
             missing_key_text=missing_key_message(),
         )
+        self._render_stems()
         overlay.set_meeting_state(
             mutes=describe_mutes(
                 webjam_muted_participants=self._muted_count(),
@@ -156,6 +166,168 @@ class SongToolsCoordinator:
             meeting_configured=self._meeting_configured(),
         )
 
+    # ------------------------------------------------------------------
+    # The shared clock
+    # ------------------------------------------------------------------
+    def toggle_clock(self) -> None:
+        """Start or stop the room's shared bar and section count."""
+
+        self._sync_workbench()
+        clock = self.workbench.clock
+        if clock.snapshot().running:
+            clock.stop()
+            self._stop_ticking()
+            self._flash("Song clock stopped.")
+        elif clock.start():
+            self._start_ticking()
+            self._flash(
+                "Song clock running. It counts from your tempo; it does not "
+                "follow the band."
+            )
+        else:
+            self._flash(
+                "Write a tempo and one section header, then start the clock.",
+                ms=7000,
+            )
+        self.workbench.clock_publisher.publish(force=True)
+        self.refresh()
+
+    def locate_section(self, section: str) -> None:
+        """Move the clock to the top of a chosen part."""
+
+        name = str(section or "")
+        if not name:
+            self.workbench.clock.stop()
+        elif not self.workbench.clock.locate_section(name):
+            self._flash(f"{name} is not in this song's form.")
+            return
+        self.workbench.clock_publisher.publish(force=True)
+        self.refresh()
+
+    def _start_ticking(self) -> None:
+        if self._tick_timer is None:
+            from PySide6.QtCore import QTimer
+
+            timer = QTimer(self._c.window)
+            timer.setInterval(250)
+            timer.timeout.connect(self._on_tick)
+            self._tick_timer = timer
+        self._tick_timer.start()
+
+    def _stop_ticking(self) -> None:
+        if self._tick_timer is not None:
+            self._tick_timer.stop()
+
+    def _on_tick(self) -> None:
+        """Repaint the position and publish it. Never takes focus."""
+
+        overlay = self.overlay
+        snapshot = self.workbench.clock_publisher.publish()
+        if overlay is None or not overlay.isVisible():
+            if not snapshot.running:
+                self._stop_ticking()
+            return
+        overlay.set_clock(snapshot)
+        if not snapshot.running:
+            self._stop_ticking()
+
+    def _on_panel_closed(self) -> None:
+        # The clock belongs to the room, not the panel, so closing the panel
+        # stops the repaint but never the count.
+        if not self.workbench.clock.snapshot().running:
+            self._stop_ticking()
+
+    # ------------------------------------------------------------------
+    # Stems beside the jam
+    # ------------------------------------------------------------------
+    def toggle_stem_mute(self, name: str) -> None:
+        self.workbench.stem_bench.toggle_mute(str(name or ""))
+        self._render_stems()
+
+    def toggle_stem_solo(self, name: str) -> None:
+        self.workbench.stem_bench.toggle_solo(str(name or ""))
+        self._render_stems()
+
+    def sing_this_one(self) -> None:
+        """Mute the record's vocal so the room sings it."""
+
+        if not self.workbench.stem_bench.sing_this_one():
+            self._flash(
+                "These stems have no separate vocal to mute.",
+                ms=7000,
+            )
+            return
+        self._render_stems()
+        self._flash("Vocal muted. Sing it.")
+
+    def send_stems_to_jam(self) -> None:
+        """Route what you can hear into the jam through the Shared Track."""
+
+        if not self._is_host():
+            self._flash("Only the host can send a track into the jam.")
+            return
+        bench = self.workbench.stem_bench
+        path, note = bench.shared_track_plan()
+        if path:
+            self._load_shared_track(path, note)
+            return
+        mix = bench.mix()
+        if len(mix.audible) < 2:
+            self._flash(note, ms=8000)
+            return
+
+        destination = self._results_directory() / bench.bounce_name()
+        audible = list(mix.audible)
+        self._flash("Mixing stems for the jam…")
+
+        def work() -> None:
+            try:
+                mixed = bounce_stems(audible, destination)
+            except StemBenchError as exc:
+                message = str(exc)
+                self._on_ui(lambda: self._flash(message, ms=9000))
+                return
+            except Exception:  # noqa: BLE001 - a worker must never escape
+                LOGGER.warning("Stem bounce failed", exc_info=True)
+                self._on_ui(
+                    lambda: self._flash("WebJam could not mix those stems.", ms=9000)
+                )
+                return
+            self._on_ui(
+                lambda: self._load_shared_track(
+                    mixed, f"Sending {len(audible)} stems."
+                )
+            )
+
+        threading.Thread(target=work, daemon=True, name="stem-bounce").start()
+
+    def _load_shared_track(self, path: str, note: str) -> None:
+        loader = getattr(self._c, "_load_reference_track", None)
+        if loader is None:
+            self._flash("Shared Track is unavailable in this session.")
+            return
+        try:
+            loader(path)
+        except Exception:  # noqa: BLE001 - a failed load must not end the jam
+            LOGGER.warning("Sending stems to the jam failed", exc_info=True)
+            self._flash("WebJam could not load that into the jam.", ms=9000)
+            return
+        self._flash(f"{note} Playback stays under host control.", ms=8000)
+
+    def _render_stems(self) -> None:
+        overlay = self.overlay
+        if overlay is None:
+            return
+        bench = self.workbench.stem_bench
+        path, note = bench.shared_track_plan()
+        can_send = bool(path) or len(bench.mix().audible) > 1
+        overlay.set_stems(
+            stems=bench.stems,
+            mix=bench.mix() if bench.loaded else None,
+            note="" if not bench.loaded else note,
+            can_send=can_send and self._is_host(),
+        )
+
     def show_writing_help(self) -> None:
         """Answer "help me write" from the room's own song. Nothing leaves."""
 
@@ -168,6 +340,7 @@ class SongToolsCoordinator:
             catch_up=None,
             form_summary=self.workbench.conductor_line(),
             form_rows=self.workbench.form_overlay(),
+            clock=self.workbench.clock_snapshot(),
             advice=self.workbench.writing_advice(),
             results=tuple(run.summary_line() for run in self.workbench.runs[-2:]),
             sheet_shareable=bool(self.workbench.shareable_sheet()),
@@ -190,6 +363,7 @@ class SongToolsCoordinator:
             catch_up=None,
             form_summary=self.workbench.conductor_line(),
             form_rows=self.workbench.form_overlay(),
+            clock=self.workbench.clock_snapshot(),
             chords=self.workbench.chord_advice(section_name=selection),
             next_chords=(
                 self.workbench.next_chord_advice(section_name=selection)

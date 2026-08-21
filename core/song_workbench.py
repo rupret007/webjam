@@ -24,10 +24,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Callable
 
 from core.music_ai_catalog import SongToolCapability, SongToolCatalog
 from core.music_ai_client import missing_key_message
-from core.music_ai_results import SongToolRun
+from core.music_ai_results import ARTIFACT_AUDIO, SongToolRun
+from core.song_clock import SongClock, SongClockPublisher, SongClockSnapshot
+from core.stem_bench import StemBench
 from core.song_form import (
     DETECTED,
     STATED,
@@ -220,17 +223,31 @@ def evaluate_upload(
 class SongWorkbench:
     """The song this session is working on, plus anything it has detected."""
 
-    def __init__(self, *, title: str = "", notes: str = "") -> None:
+    def __init__(
+        self,
+        *,
+        title: str = "",
+        notes: str = "",
+        monotonic: Callable[[], float] | None = None,
+    ) -> None:
         self._title = str(title or "")
         self._notes = str(notes or "")
         self._runs: list[SongToolRun] = []
         self._catalog: SongToolCatalog | None = None
+        self._clock = (
+            SongClock(monotonic=monotonic) if monotonic is not None else SongClock()
+        )
+        self._clock_publisher = SongClockPublisher(self._clock)
+        self._stems = StemBench()
+        self._form_signature = ""
+        self.sync_clock()
 
     # ------------------------------------------------------------------
     # Inputs
     # ------------------------------------------------------------------
     def set_notes(self, notes: str) -> None:
         self._notes = str(notes or "")
+        self.sync_clock()
 
     def set_title(self, title: str) -> None:
         self._title = str(title or "")
@@ -246,9 +263,52 @@ class SongWorkbench:
         self._runs = [item for item in self._runs if item.job_id != run.job_id]
         self._runs.append(run)
         del self._runs[:-_MAX_RUNS]
+        if run.verb_key == "stems":
+            # Separated audio becomes faders beside the jam immediately; that
+            # is the reason anyone ran it.
+            entries = [
+                (artifact.name, artifact.local_path)
+                for artifact in run.artifacts
+                if artifact.kind == ARTIFACT_AUDIO and artifact.local_path
+            ]
+            if entries:
+                self._stems.load(entries, source_name=run.source_name)
+        self.sync_clock()
 
     def clear_runs(self) -> None:
         self._runs = []
+        self._stems.clear()
+        self.sync_clock()
+
+    # ------------------------------------------------------------------
+    # The shared clock
+    # ------------------------------------------------------------------
+    @property
+    def clock(self) -> SongClock:
+        return self._clock
+
+    @property
+    def clock_publisher(self) -> SongClockPublisher:
+        """The cross-profile publisher other creator profiles subscribe to."""
+
+        return self._clock_publisher
+
+    @property
+    def stem_bench(self) -> StemBench:
+        return self._stems
+
+    def sync_clock(self) -> None:
+        """Push the current song into the clock when its shape has changed."""
+
+        form = self.form
+        signature = _form_signature(form)
+        if signature == self._form_signature:
+            return
+        self._form_signature = signature
+        self._clock.set_form(form)
+
+    def clock_snapshot(self) -> SongClockSnapshot:
+        return self._clock.snapshot()
 
     # ------------------------------------------------------------------
     # Derived state
@@ -356,11 +416,18 @@ class SongWorkbench:
         return tuple(rows)
 
     def conductor_line(self) -> str:
-        """Return one line of song truth for the conductor, or ``""``."""
+        """Return one line of song truth for the conductor, or ``""``.
+
+        Once the clock is running it leads, because where the room is matters
+        more mid-take than what the song is.
+        """
 
         form = self.form
         if not form.has_content:
             return ""
+        snapshot = self._clock.snapshot()
+        if snapshot.running and snapshot.position_label:
+            return snapshot.describe()
         return form.summary_line()
 
     # ------------------------------------------------------------------
@@ -435,6 +502,19 @@ class SongWorkbench:
             else:
                 lines.append(f"{section.label}:")
         return "\n".join(lines)[:_MAX_SHEET_CHARS]
+
+
+def _form_signature(form: SongForm) -> str:
+    """Return a cheap identity for the parts of the song the clock cares about."""
+
+    key = form.key.value if form.key is not None else ""
+    tempo = form.tempo.value if form.tempo is not None else ""
+    meter = form.meter.value if form.meter is not None else ""
+    shape = ";".join(
+        f"{section.label}:{section.bars}:{section.chord_line}"
+        for section in form.sections
+    )
+    return f"{key}|{tempo}|{meter}|{shape}"
 
 
 def _clock(seconds: float) -> str:

@@ -97,6 +97,12 @@ _TEMPO_RE = re.compile(
     re.IGNORECASE,
 )
 _TRAILING_TEMPO_RE = re.compile(r"\b(\d{2,3})\s*bpm\b", re.IGNORECASE)
+_METER_RE = re.compile(
+    r"^(?:time|meter)\s*[:\-]?\s*(\d{1,2})\s*/\s*(1|2|4|8|16)\s*$",
+    re.IGNORECASE,
+)
+# "[Verse x8]", "[Verse 8]", "[Chorus x16]" -- how long a part runs.
+_SECTION_BARS_RE = re.compile(r"^(.*?)\s*[x×]?\s*(\d{1,3})\s*$", re.IGNORECASE)
 _TIMESTAMP_RE = re.compile(r"^#{1,6}\s+\d{1,2}:\d{2}(?::\d{2})?\b")
 # Lines that belong to the session pulse in ``core.session_intelligence``.
 # They share the notes field with the song sheet but are not lyrics, so this
@@ -158,6 +164,10 @@ class SongSection:
     chords: tuple[str, ...] = ()
     source: str = STATED
     detail: str = ""
+    # Written as ``[Verse x8]`` when the room has decided how long a part is.
+    # Zero means nobody said, and the clock uses its documented default rather
+    # than pretending to know.
+    bars: int = 0
 
     @property
     def label(self) -> str:
@@ -167,6 +177,10 @@ class SongSection:
     def chord_line(self) -> str:
         return " ".join(self.chords)
 
+    @property
+    def bars_stated(self) -> bool:
+        return self.bars > 0
+
 
 @dataclass(frozen=True, slots=True)
 class SongForm:
@@ -175,12 +189,22 @@ class SongForm:
     title: str = ""
     key: SongFact | None = None
     tempo: SongFact | None = None
+    meter: SongFact | None = None
     sections: tuple[SongSection, ...] = ()
     lyric_lines: tuple[str, ...] = ()
 
     @property
     def has_content(self) -> bool:
         return bool(self.key or self.tempo or self.sections or self.lyric_lines)
+
+    @property
+    def beats_per_bar(self) -> int:
+        """Return the stated top number of the time signature, or four."""
+
+        if self.meter is None:
+            return 4
+        top = self.meter.value.split("/")[0].strip()
+        return int(top) if top.isdigit() and 1 <= int(top) <= 16 else 4
 
     @property
     def roles(self) -> tuple[str, ...]:
@@ -257,6 +281,7 @@ def parse_song_form(notes: str, *, title: str = "") -> SongForm:
 
     key: SongFact | None = None
     tempo: SongFact | None = None
+    meter: SongFact | None = None
     sections: list[SongSection] = []
     lyric_lines: list[str] = []
     current: str | None = None
@@ -277,6 +302,14 @@ def parse_song_form(notes: str, *, title: str = "") -> SongForm:
             if tempo is None:
                 tempo = SongFact(tempo_match.group(1), STATED)
             continue
+
+        meter_match = _METER_RE.match(line)
+        if meter_match is not None:
+            if meter is None:
+                meter = SongFact(
+                    f"{meter_match.group(1)}/{meter_match.group(2)}", STATED
+                )
+            continue
         if tempo is None:
             trailing = _TRAILING_TEMPO_RE.search(line)
             if trailing is not None:
@@ -295,6 +328,7 @@ def parse_song_form(notes: str, *, title: str = "") -> SongForm:
         title=" ".join(str(title or "").split()),
         key=key,
         tempo=tempo,
+        meter=meter,
         sections=tuple(sections[:_MAX_SECTIONS]),
         lyric_lines=tuple(lyric_lines[:_MAX_LYRIC_LINES]),
     )
@@ -361,13 +395,36 @@ def _split_section_heading(line: str) -> tuple[str | None, str]:
     return None, ""
 
 
+def split_section_bars(label: str) -> tuple[str, int]:
+    """Split ``"Verse x8"`` into its name and its stated length in bars."""
+
+    cleaned = " ".join(str(label or "").split())[:44]
+    match = _SECTION_BARS_RE.match(cleaned)
+    if match is None:
+        return cleaned, 0
+    name, count = match.group(1).strip(), int(match.group(2))
+    # "Verse 2" is a second verse, not a two-bar one. Only an explicit "x"
+    # or a plausible bar count on a bare role name is read as a length.
+    explicit = "x" in cleaned.lower().rsplit(str(count), 1)[0][-2:]
+    if not name:
+        return cleaned, 0
+    if not explicit and not (count >= 4 and count % 2 == 0):
+        return cleaned, 0
+    if not 1 <= count <= 512:
+        return name, 0
+    return name, count
+
+
 def _add_section(sections: list[SongSection], label: str) -> str:
-    name = " ".join(str(label).split())[:40]
+    name, bars = split_section_bars(label)
+    name = name[:40]
     for section in sections:
         if section.name.lower() == name.lower():
             return section.name
     if len(sections) < _MAX_SECTIONS:
-        sections.append(SongSection(name=name, role=normalize_role(name)))
+        sections.append(
+            SongSection(name=name, role=normalize_role(name), bars=bars)
+        )
     return name
 
 

@@ -32,16 +32,24 @@ from PySide6.QtWidgets import (
 from core.creative_modes import CreatorProfile
 from core.meeting_companion import MuteSurface
 from core.music_ai_catalog import UNSUPPORTED_MOISES_FEATURES, SongToolCatalog
+from core.song_clock import SongClockSnapshot
 from core.song_help import ChordAdvice, NextChordAdvice, WritingAdvice
 from core.song_workbench import CatchUp, FormRow
+from core.stem_bench import StemMix, StemTarget
 from webjam_qt.theme.tokens import Space
 
 PAGE_SONG = "song"
+PAGE_STEMS = "stems"
 PAGE_TOOLS = "tools"
 PAGE_MEETING = "meeting"
 
-_PAGES = (PAGE_SONG, PAGE_TOOLS, PAGE_MEETING)
-_PAGE_LABELS = {PAGE_SONG: "Song", PAGE_TOOLS: "Tools", PAGE_MEETING: "Meeting"}
+_PAGES = (PAGE_SONG, PAGE_STEMS, PAGE_TOOLS, PAGE_MEETING)
+_PAGE_LABELS = {
+    PAGE_SONG: "Song",
+    PAGE_STEMS: "Stems",
+    PAGE_TOOLS: "Tools",
+    PAGE_MEETING: "Meeting",
+}
 
 # Narrow enough to sit beside a meeting on a laptop, wide enough to read a
 # four-chord line without wrapping it mid-progression.
@@ -55,11 +63,17 @@ class SongOverlay(QFrame):
     closed = Signal()
     song_tool_requested = Signal(str)     # Music AI verb key
     write_help_requested = Signal()
-    chords_requested = Signal(str)        # section role; "" means next missing
+    chords_requested = Signal(str)        # section name; "" means next missing
     share_sheet_requested = Signal()
     api_key_requested = Signal()
     mute_help_requested = Signal()
     invite_requested = Signal()
+    clock_toggled = Signal()
+    section_located = Signal(str)
+    stem_mute_toggled = Signal(str)
+    stem_solo_toggled = Signal(str)
+    sing_this_one_requested = Signal()
+    send_stems_to_jam_requested = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -84,6 +98,7 @@ class SongOverlay(QFrame):
 
         self._stack = QStackedWidget()
         self._stack.addWidget(self._build_song_page())
+        self._stack.addWidget(self._build_stems_page())
         self._stack.addWidget(self._build_tools_page())
         self._stack.addWidget(self._build_meeting_page())
         root.addWidget(self._stack, 1)
@@ -135,6 +150,34 @@ class SongOverlay(QFrame):
         # musician reads a chart while playing.
         self._form_rows = _body_label("")
         self._form_rows.setObjectName("SongOverlayForm")
+
+        # One shared position for the whole room. The clock is a reference the
+        # host runs; it does not listen to the band, and the copy says so.
+        self._clock_line = _body_label("")
+        self._clock_line.setObjectName("SongOverlayClock")
+        self._clock_button = QPushButton("▶")
+        self._clock_button.setObjectName("GhostButton")
+        self._clock_button.setFixedSize(28, 24)
+        self._clock_button.setAccessibleName("Start the shared song clock")
+        self._clock_button.setToolTip(
+            "Start the room's shared bar and section count. It runs from your "
+            "tempo; it does not follow what the band plays."
+        )
+        self._clock_button.clicked.connect(self.clock_toggled.emit)
+        self._locate_button = QPushButton("⤒")
+        self._locate_button.setObjectName("GhostButton")
+        self._locate_button.setFixedSize(28, 24)
+        self._locate_button.setAccessibleName("Move the clock to the chosen part")
+        self._locate_button.setToolTip("Move the clock to the part chosen below.")
+        self._locate_button.clicked.connect(
+            lambda: self.section_located.emit(self.selected_section())
+        )
+
+        clock_row = QHBoxLayout()
+        clock_row.setSpacing(Space.XS)
+        clock_row.addWidget(self._clock_button)
+        clock_row.addWidget(self._locate_button)
+        clock_row.addWidget(self._clock_line, 1)
 
         # Help is asked for one part of the song, not for a song in general.
         self._section_picker = QComboBox()
@@ -188,12 +231,58 @@ class SongOverlay(QFrame):
         layout.addWidget(self._catch_up_lines)
         layout.addWidget(self._form_summary)
         layout.addWidget(self._form_rows)
+        layout.addLayout(clock_row)
         layout.addWidget(self._section_picker)
         layout.addLayout(buttons)
         layout.addWidget(self._advice)
         layout.addWidget(self._results)
         layout.addStretch(1)
         layout.addWidget(self._share_button)
+        return page
+
+    def _build_stems_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(Space.XS)
+
+        self._stem_status = _body_label(
+            "No stems yet. Run Split stems on a file you own."
+        )
+        self._stem_container = QWidget()
+        self._stem_layout = QVBoxLayout(self._stem_container)
+        self._stem_layout.setContentsMargins(0, 0, 0, 0)
+        self._stem_layout.setSpacing(Space.XS)
+        self._stem_rows: list[QWidget] = []
+
+        self._sing_button = QPushButton("Sing this one")
+        self._sing_button.setObjectName("GhostButton")
+        self._sing_button.setAccessibleName("Mute the vocal stems")
+        self._sing_button.setToolTip(
+            "Mutes the record's vocal so the room sings it."
+        )
+        self._sing_button.clicked.connect(self.sing_this_one_requested.emit)
+        self._sing_button.setEnabled(False)
+
+        self._send_stems_button = QPushButton("Send to jam")
+        self._send_stems_button.setObjectName("GhostButton")
+        self._send_stems_button.setAccessibleName(
+            "Send what you can hear into the jam as the Shared Track"
+        )
+        self._send_stems_button.clicked.connect(
+            self.send_stems_to_jam_requested.emit
+        )
+        self._send_stems_button.setEnabled(False)
+
+        self._stem_note = _body_label("")
+        self._stem_note.setObjectName("SongOverlayMuted")
+
+        layout.addWidget(self._stem_status)
+        layout.addWidget(self._stem_container)
+        layout.addStretch(1)
+        layout.addWidget(self._sing_button)
+        layout.addWidget(self._send_stems_button)
+        layout.addWidget(self._stem_note)
         return page
 
     def _build_tools_page(self) -> QWidget:
@@ -311,6 +400,7 @@ class SongOverlay(QFrame):
         advice: WritingAdvice | None = None,
         chords: ChordAdvice | None = None,
         next_chords: NextChordAdvice | None = None,
+        clock: SongClockSnapshot | None = None,
         results: tuple[str, ...] = (),
         sheet_shareable: bool = False,
     ) -> None:
@@ -326,12 +416,22 @@ class SongOverlay(QFrame):
             self._catch_up_headline.setVisible(False)
             self._catch_up_lines.setVisible(False)
 
+        if clock is not None:
+            self.set_clock(clock)
         summary = form_summary or "No key, tempo, or sections captured yet."
         self._form_summary.setText(summary)
         # The catch-up already leads with the song line for a late arrival;
         # repeating it directly underneath just costs height in a narrow pane.
         self._form_summary.setVisible(summary not in catch_up_lines)
-        self._form_rows.setText("\n".join(row.describe() for row in form_rows))
+        here = clock.section_label if clock is not None else ""
+        self._form_rows.setText(
+            "\n".join(
+                # The playhead marks where the room is, so the form reads like
+                # a chart being followed rather than a list.
+                f"{'▸ ' if row.label == here and here else '  '}{row.describe()}"
+                for row in form_rows
+            )
+        )
         self._form_rows.setVisible(bool(form_rows))
         self._advice.setText(_advice_text(advice, chords, next_chords))
         self._advice.setVisible(bool(self._advice.text()))
@@ -344,6 +444,95 @@ class SongOverlay(QFrame):
             if sheet_shareable
             else "Write a key, tempo, or section in the notes first."
         )
+
+    def set_clock(self, snapshot: SongClockSnapshot) -> None:
+        """Render the shared position, and never imply it follows the band."""
+
+        running = snapshot.running
+        self._clock_button.setText("■" if running else "▶")
+        self._clock_button.setAccessibleName(
+            "Stop the shared song clock" if running else "Start the shared song clock"
+        )
+        self._clock_button.setEnabled(snapshot.has_form and snapshot.tempo_bpm > 0)
+        self._locate_button.setEnabled(snapshot.has_form)
+
+        if not snapshot.has_form:
+            self._clock_line.setText("Write a section header to start the clock.")
+            return
+        if snapshot.tempo_bpm <= 0:
+            self._clock_line.setText("Write a tempo to start the clock.")
+            return
+        line = snapshot.position_label or "Not started"
+        if snapshot.section_lengths_assumed:
+            line = f"{line} · lengths assumed"
+        self._clock_line.setText(line)
+        self._clock_line.setToolTip(
+            "A shared reference the host runs. WebJam does not follow the "
+            "live audio, so this will not correct if the band drifts. Write "
+            "\"[Verse x8]\" to state a part's length."
+        )
+
+    def set_stems(
+        self,
+        *,
+        stems: tuple[StemTarget, ...],
+        mix: StemMix | None,
+        note: str = "",
+        can_send: bool = False,
+    ) -> None:
+        """Render separated stems as faders sitting beside the live mix."""
+
+        for row in self._stem_rows:
+            self._stem_layout.removeWidget(row)
+            row.setParent(None)
+            row.deleteLater()
+        self._stem_rows = []
+
+        audible = {item.name for item in (mix.audible if mix is not None else ())}
+        for stem in stems:
+            row = QWidget()
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(Space.XS)
+            name = QLabel(stem.label)
+            name.setObjectName("SongOverlayBody")
+            name.setToolTip(stem.hint or stem.label)
+            row_layout.addWidget(name, 1)
+            for text, signal, active, description in (
+                ("M", self.stem_mute_toggled, stem.muted, "Mute"),
+                ("S", self.stem_solo_toggled, stem.solo, "Solo"),
+            ):
+                button = QPushButton(text)
+                button.setObjectName("GhostButton")
+                button.setFixedSize(26, 22)
+                button.setCheckable(True)
+                button.setChecked(bool(active))
+                button.setAccessibleName(f"{description} {stem.label}")
+                button.setToolTip(f"{description} {stem.label}")
+                button.clicked.connect(
+                    lambda _checked=False, key=stem.name, emit=signal: emit.emit(key)
+                )
+                row_layout.addWidget(button)
+            heard = QLabel("·" if stem.name in audible else " ")
+            heard.setObjectName("SongOverlayMuted")
+            heard.setAccessibleName(
+                f"{stem.label} is audible"
+                if stem.name in audible
+                else f"{stem.label} is silent"
+            )
+            row_layout.addWidget(heard)
+            self._stem_layout.addWidget(row)
+            self._stem_rows.append(row)
+
+        self._stem_status.setText(
+            mix.describe()
+            if mix is not None
+            else "No stems yet. Run Split stems on a file you own."
+        )
+        self._sing_button.setEnabled(bool(stems))
+        self._send_stems_button.setEnabled(bool(can_send))
+        self._stem_note.setText(note)
+        self._stem_note.setVisible(bool(note))
 
     def set_tools_state(
         self,
@@ -508,4 +697,11 @@ def _unsupported_text(catalog: SongToolCatalog | None) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["OVERLAY_WIDTH", "PAGE_MEETING", "PAGE_SONG", "PAGE_TOOLS", "SongOverlay"]
+__all__ = [
+    "OVERLAY_WIDTH",
+    "PAGE_MEETING",
+    "PAGE_SONG",
+    "PAGE_STEMS",
+    "PAGE_TOOLS",
+    "SongOverlay",
+]

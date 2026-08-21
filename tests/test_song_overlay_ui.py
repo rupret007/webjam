@@ -550,16 +550,28 @@ def test_next_chord_candidates_render_with_their_reasons(overlay):
     assert "—" in text
 
 
-def test_the_song_page_stays_to_two_actions_and_one_picker(overlay):
-    """Few controls: help for a part, chords for a part, and which part."""
+def test_the_song_page_keeps_to_its_control_budget(overlay):
+    """Few words: three worded actions, two transport glyphs, one picker.
+
+    The budget is split because a 28px transport glyph does not cost a
+    musician the same attention as another labelled button. Anything that adds
+    a fourth worded action to this page should have to change this test.
+    """
 
     from PySide6.QtWidgets import QComboBox
 
     page = overlay._stack.widget(0)
     buttons = [
-        child
-        for child in page.findChildren(QPushButton)
-        if not child.isHidden()
+        child for child in page.findChildren(QPushButton) if not child.isHidden()
     ]
-    assert len(buttons) <= 3  # Help write, Suggest chords, Share sheet
+    worded = [button for button in buttons if len(button.text()) > 2]
+    glyphs = [button for button in buttons if len(button.text()) <= 2]
+
+    assert sorted(button.text() for button in worded) == [
+        "Help write",
+        "Share sheet to chat",
+        "Suggest chords",
+    ]
+    assert len(glyphs) == 2
+    assert all(button.width() <= 32 for button in glyphs)
     assert len(page.findChildren(QComboBox)) == 1
