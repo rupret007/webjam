@@ -209,6 +209,7 @@ class BridgeService:
         
         self.jamulus_reconnect_attempts = 0
         self.jamulus_next_reconnect_at = 0.0
+        self._jamulus_launch_watchdog_started_at = 0.0
         
         self.jamulus_reconnect_inflight = False
         self._reconnect_lock = threading.Lock()
@@ -504,7 +505,10 @@ class BridgeService:
         if self.shutdown_requested():
             self.jamulus_reconnect_inflight = False
             return False
-            
+
+        with self._reconnect_lock:
+            self._jamulus_launch_watchdog_started_at = 0.0
+             
         with self._jamulus_launch_control_lock:
             previous_launch = self._pending_jamulus_launch_cancel
             if previous_launch is not None:
@@ -675,6 +679,7 @@ class BridgeService:
                         self._set_live_audio_route_owned(False)
                         with self._reconnect_lock:
                             self.jamulus_reconnect_inflight = False
+                            self._jamulus_launch_watchdog_started_at = 0.0
                         return True
 
                     # A second click/deep-link can queue another launch while
@@ -683,6 +688,10 @@ class BridgeService:
                     # spawned and one silently lose process ownership.
                     if cancelled():
                         return
+
+                    with self._reconnect_lock:
+                        self._jamulus_launch_watchdog_started_at = time.monotonic()
+
                     if (
                         self.jamulus_process is not None
                         and self.jamulus_process.poll() is None
@@ -709,6 +718,7 @@ class BridgeService:
                             self._set_jamulus_state(JamulusState.ALREADY)
                             with self._reconnect_lock:
                                 self.jamulus_reconnect_inflight = False
+                                self._jamulus_launch_watchdog_started_at = 0.0
                             self.schedule_ui_callback(self.refresh_readiness)
                             return
                     if cancelled():
@@ -747,6 +757,7 @@ class BridgeService:
                             self._set_jamulus_state(JamulusState.STOPPED)
                             with self._reconnect_lock:
                                 self.jamulus_reconnect_inflight = False
+                                self._jamulus_launch_watchdog_started_at = 0.0
                             self.schedule_ui_callback(
                                 lambda: self.show_actionable_error(
                                     "This jam couldn’t start",
@@ -929,6 +940,7 @@ class BridgeService:
                     )
                     with self._reconnect_lock:
                         self.jamulus_reconnect_inflight = False
+                        self._jamulus_launch_watchdog_started_at = 0.0
                     if reconnect:
                         # A reconnect must never rewrite a musician's native
                         # Jamulus setup behind their back.
@@ -970,6 +982,7 @@ class BridgeService:
                     )
                     with self._reconnect_lock:
                         self.jamulus_reconnect_inflight = False
+                        self._jamulus_launch_watchdog_started_at = 0.0
 
                     if reconnect:
                         self.metrics_service.increment("metric_jamulus_reconnect_failed")
@@ -1903,14 +1916,42 @@ class BridgeService:
             return None
         return float(age)
 
+    def _jamulus_launch_watchdog_age(self) -> float | None:
+        """Return how long the current launch attempt has been alive.
+
+        ``None`` means no active launch watch is running.
+        """
+        with self._reconnect_lock:
+            started_at = self._jamulus_launch_watchdog_started_at
+        if not started_at:
+            return None
+        age = time.monotonic() - started_at
+        return age if age >= 0.0 else 0.0
+
+    def _set_jamulus_launch_watchdog(self, started_at: float | None) -> None:
+        """Set or clear the launch-watchdog start marker.
+
+        Intended for internal recovery paths and fault-injection tests.
+        """
+        with self._reconnect_lock:
+            self._jamulus_launch_watchdog_started_at = (
+                float(started_at) if started_at else 0.0
+            )
+
     def _jamulus_process_is_stalled(self) -> bool:
         """Return True when Jamulus is alive but RPC heartbeat appears stuck."""
         proc = self.jamulus_process
         if proc is None or proc.poll() is not None:
+            self._set_jamulus_launch_watchdog(None)
             return False
         age = self._jamulus_rpc_activity_age()
         if age is None:
-            return False
+            launch_watchdog_age = self._jamulus_launch_watchdog_age()
+            if launch_watchdog_age is None:
+                return False
+            return launch_watchdog_age >= RECONNECT_HANG_THRESHOLD_SECONDS
+
+        self._set_jamulus_launch_watchdog(None)
         return age >= RECONNECT_HANG_THRESHOLD_SECONDS
 
     def attempt_auto_reconnects(self):
@@ -1957,21 +1998,26 @@ class BridgeService:
                 self.jamulus_process is not None
                 and self.jamulus_process.poll() is None
             )
-            is_stalled = self._jamulus_process_is_stalled()
+            in_flight = self.jamulus_reconnect_inflight
+            attempts = self.jamulus_reconnect_attempts
+            next_reconnect_at = self.jamulus_next_reconnect_at
 
+        is_stalled = self._jamulus_process_is_stalled() if is_running else False
+
+        with self._reconnect_lock:
             if is_running and not is_stalled:
                 self.jamulus_reconnect_attempts = 0
                 self.jamulus_next_reconnect_at = 0.0
                 self.jamulus_reconnect_inflight = False
                 return
 
-            if self.jamulus_reconnect_inflight:
+            if in_flight:
                 return
 
-            if self.jamulus_reconnect_attempts >= RECONNECT_MAX_ATTEMPTS:
+            if attempts >= RECONNECT_MAX_ATTEMPTS:
                 return
 
-            if now < self.jamulus_next_reconnect_at:
+            if now < next_reconnect_at:
                 return
 
             self.jamulus_reconnect_attempts += 1

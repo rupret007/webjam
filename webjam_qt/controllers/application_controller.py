@@ -5568,13 +5568,19 @@ class ApplicationController(QObject):
         # fired in a while.  Distinct from a crash (proc.poll != None) — here
         # the process is still alive but unresponsive.
         if self._jamulus_connected and proc is not None and proc.poll() is None:
+            rpc_age = None
             try:
                 age = self.jamulus.rpc_client.last_activity_age()
-            except AttributeError:
-                age = 0.0
-            if age > self._RPC_HANG_THRESHOLD_S and not self._rpc_hang_banner_shown:
+            except Exception:  # noqa: BLE001
+                age = None
+            if isinstance(age, (int, float)) and age >= 0.0 and age != float("inf"):
+                rpc_age = float(age)
+
+            is_stalled = self.bridge._jamulus_process_is_stalled()
+
+            if rpc_age is not None and rpc_age > self._RPC_HANG_THRESHOLD_S and not self._rpc_hang_banner_shown:
                 self.window.flash_message(
-                    f"The music engine stopped responding ({int(age)}s of silence). "
+                    f"The music engine stopped responding ({int(rpc_age)}s of silence). "
                     "WebJam is preparing a safe retry.",
                     ms=8000,
                 )
@@ -5602,7 +5608,44 @@ class ApplicationController(QObject):
                     self.metrics.increment("metric_jamulus_hang_detected")
                 except Exception:  # noqa: BLE001
                     LOGGER.debug("hang metric failed", exc_info=True)
-            elif age <= self._RPC_HANG_THRESHOLD_S and self._rpc_hang_banner_shown:
+            elif rpc_age is not None and rpc_age <= self._RPC_HANG_THRESHOLD_S and self._rpc_hang_banner_shown:
+                self._rpc_hang_banner_shown = False
+                self._reconnect_gave_up = False
+                self.audio.recovering = False
+                self.window.flash_message(
+                    "The music engine is responding again.", ms=3000
+                )
+            elif rpc_age is None and is_stalled and not self._rpc_hang_banner_shown:
+                self.window.flash_message(
+                    "The music engine stopped responding (RPC heartbeat missing). "
+                    "WebJam is preparing a safe retry.",
+                    ms=8000,
+                )
+                self.window.set_status_audio("Not responding")
+                self._rpc_hang_banner_shown = True
+                self.audio.connected = False
+                self.audio.recovering = True
+                self._local_audio_seen = False
+                self._remote_audio_seen = False
+                self.participants.clear()
+                self._push_participants_to_grid()
+                self.window.participant_grid.set_session_state(
+                    SessionUiState.reconnecting()
+                )
+                self._transition_lifecycle(
+                    SessionLifecyclePhase.DEGRADED,
+                    "The music engine stopped responding",
+                )
+                self.window.session_hud.set_state(
+                    "Connection interrupted",
+                    "The music engine stopped responding. WebJam is preparing a safe retry.",
+                )
+                self._connection_timer.start()
+                try:
+                    self.metrics.increment("metric_jamulus_hang_detected")
+                except Exception:  # noqa: BLE001
+                    LOGGER.debug("hang metric failed", exc_info=True)
+            elif rpc_age is None and not is_stalled and self._rpc_hang_banner_shown:
                 self._rpc_hang_banner_shown = False
                 self._reconnect_gave_up = False
                 self.audio.recovering = False

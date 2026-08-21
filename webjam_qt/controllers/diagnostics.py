@@ -114,6 +114,24 @@ class DiagnosticsExporter:
             age = None
         if isinstance(age, (int, float)) and not isinstance(age, bool):
             engine_capabilities["rpc_last_activity_age_s"] = max(0.0, float(age))
+            engine_capabilities["rpc_last_activity_age_known"] = True
+        else:
+            engine_capabilities["rpc_last_activity_age_known"] = False
+            try:
+                launch_watchdog_age = self.bridge._jamulus_launch_watchdog_age()
+                if isinstance(launch_watchdog_age, (int, float)):
+                    engine_capabilities["jamulus_launch_watchdog_age_s"] = (
+                        max(0.0, float(launch_watchdog_age))
+                    )
+            except Exception:  # noqa: BLE001 - diagnostics remains best effort
+                pass
+
+        try:
+            is_stalled = self.bridge._jamulus_process_is_stalled()
+            if isinstance(is_stalled, bool):
+                engine_capabilities["jamulus_process_stalled"] = is_stalled
+        except Exception:  # noqa: BLE001 - diagnostics must remain best effort
+            pass
 
         sample_rate = _plain_value(getattr(diagnostics, "samplerate", None))
         reconnect_attempts = _plain_value(
