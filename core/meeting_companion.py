@@ -243,6 +243,26 @@ def end_session_prompt(
     return EndSessionPrompt(title=title, question=question, meeting_note=note)
 
 
+def meeting_recording_note(
+    *,
+    meeting_service: str = DEFAULT_MEETING_SERVICE,
+) -> str:
+    """State that a meeting recording is not a WebJam take.
+
+    They are different files, made by different applications, from different
+    audio. Someone who assumes otherwise finds out after the session, when the
+    take they wanted does not exist.
+    """
+
+    service = str(meeting_service or DEFAULT_MEETING_SERVICE).strip() or (
+        DEFAULT_MEETING_SERVICE
+    )
+    return (
+        f"A {service} recording is not a WebJam take. WebJam records the jam "
+        f"here; {service} records its own call. Neither becomes the other."
+    )
+
+
 def meeting_departure_note(
     *,
     meeting_service: str = DEFAULT_MEETING_SERVICE,
@@ -264,6 +284,7 @@ def build_invite_message(
     session_name: str = "",
     meeting_url: str = "",
     participant_noun: str = "musician",
+    song_line: str = "",
 ) -> InviteMessage:
     """Return one paste that carries the jam link and, if set, the meeting.
 
@@ -283,6 +304,11 @@ def build_invite_message(
     headline = f"Join {name} on WebJam:" if name else "Join this jam on WebJam:"
 
     lines = [headline, link]
+    # When the room has already chosen a song, say so. A joiner arrives
+    # knowing what they are playing instead of being asked to pick something.
+    song = " ".join(str(song_line or "").split())[:120]
+    if song:
+        lines.extend(["", f"Song: {song}"])
     candidate = str(meeting_url or "").strip()
     # Any meeting link the rest of WebJam accepts is carried, not just Webex.
     includes_meeting = bool(candidate) and is_allowed_meeting_link(candidate)
@@ -322,5 +348,6 @@ __all__ = [
     "describe_mutes",
     "end_session_prompt",
     "meeting_departure_note",
+    "meeting_recording_note",
     "music_features_require_meeting",
 ]

@@ -27,6 +27,7 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from core.meeting_companion import (
     describe_mutes,
+    meeting_recording_note,
     end_session_prompt,
     service_name_for_link,
 )
@@ -61,6 +62,9 @@ AUDIO_FILTER = (
     "Audio (*.wav *.mp3 *.flac *.m4a *.aif *.aiff *.ogg);;All files (*)"
 )
 _RESULTS_DIRNAME = "WebJam Song Tools"
+# A path that cannot exist, used only to reach the file-independent refusals
+# in evaluate_upload before any dialog is opened.
+_PRECHECK_PATH = "\x00precheck"
 
 
 class SongToolsCoordinator:
@@ -77,6 +81,10 @@ class SongToolsCoordinator:
         self._last_suggestion = None
         self._last_suggestion_section = ""
         self._companion_revision = 0
+        # A job WebJam stopped waiting for -- usually because the machine
+        # slept -- is still running at Music AI. It is remembered so the
+        # status can be reported honestly instead of silently restarted.
+        self._unfinished_job = ""
 
     # ------------------------------------------------------------------
     # Panel lifecycle
@@ -181,12 +189,40 @@ class SongToolsCoordinator:
                 meeting_configured=self._meeting_configured(),
                 meeting_service=service,
             ).meeting_note,
+            recording_note=(
+                meeting_recording_note(meeting_service=service)
+                if self._meeting_configured()
+                else ""
+            ),
             meeting_configured=self._meeting_configured(),
         )
 
     # ------------------------------------------------------------------
     # Companion surface (see core.music_companion)
     # ------------------------------------------------------------------
+    def invite_song_line(self) -> str:
+        """Return the song a joiner is joining, or ``""``.
+
+        Key, tempo, and shape only. No file path travels in an invite, and a
+        joiner is never asked to pick a song the room has already chosen.
+        """
+
+        if not self.is_available():
+            return ""
+        self._sync_workbench()
+        form = self.workbench.form
+        if not form.has_content:
+            return ""
+        parts = [part for part in (form.title,) if part]
+        if form.key is not None:
+            parts.append(f"Key {form.key.value}")
+        if form.tempo is not None:
+            parts.append(f"{form.tempo.value} BPM")
+        sections = " → ".join(section.label for section in form.sections[:4])
+        if sections:
+            parts.append(sections)
+        return " · ".join(parts)
+
     def companion_snapshot(self) -> MusicCompanionSnapshot:
         """Return what a companion may know about this Music session.
 
@@ -338,7 +374,11 @@ class SongToolsCoordinator:
         self._render_song_line()
         if overlay is not None and overlay.isVisible():
             overlay.set_clock(snapshot)
-        if not snapshot.running and not self._running_verb:
+        if (
+            not snapshot.running
+            and not self._running_verb
+            and not snapshot.follows_shared_track
+        ):
             self._stop_ticking()
 
     def _on_panel_closed(self) -> None:
@@ -371,6 +411,17 @@ class SongToolsCoordinator:
                 description=(
                     f"{label} is running on a file you chose. The jam is not "
                     "affected and nothing is uploaded from the live mix."
+                ),
+            )
+            return
+
+        if self._unfinished_job:
+            setter(
+                f"{self._unfinished_job} — still at Music AI",
+                description=(
+                    f"WebJam stopped waiting for {self._unfinished_job}, but "
+                    "Music AI is still working on it. Nothing was cancelled "
+                    "and nothing was restarted. Check the Music AI dashboard."
                 ),
             )
             return
@@ -660,6 +711,20 @@ class SongToolsCoordinator:
         )
         api_key = self._api_key()
 
+        # Refuse on everything that does not need a file before opening a
+        # dialog. A guest, or a session with no key, should never be shown a
+        # picker only to be told no once they have chosen something.
+        precheck = evaluate_upload(
+            capability=capability,
+            source_kind=SOURCE_PICKED_FILE,
+            path=_PRECHECK_PATH,
+            is_host=self._is_host(),
+            has_api_key=bool(api_key),
+        )
+        if precheck.blocked and not precheck.reason.startswith("WebJam cannot read"):
+            self._flash(precheck.reason, ms=9000)
+            return
+
         source_kind, path = self._choose_source(
             capability, from_companion=from_companion
         )
@@ -687,6 +752,7 @@ class SongToolsCoordinator:
 
         assert capability is not None  # evaluate_upload rejects None
         self._running_verb = key
+        self._unfinished_job = ""
         self._cancelled.clear()
         overlay = self.overlay
         if overlay is not None:
@@ -720,7 +786,18 @@ class SongToolsCoordinator:
                 # ends, so a lambda closing over it would raise on the UI
                 # thread instead of reporting the failure.
                 message = str(exc)
-                self._on_ui(lambda: self._finish_tool(None, message))
+                # A timeout means WebJam stopped waiting, not that Music AI
+                # stopped working. Sleeping a laptop mid-job lands here, and
+                # restarting it would spend the account's credits twice.
+                left_running = getattr(exc, "code", "") == "TIMEOUT"
+                label = capability.label
+                self._on_ui(
+                    lambda: self._finish_tool(
+                        None,
+                        message,
+                        unfinished=label if left_running else "",
+                    )
+                )
                 return
             except Exception:  # noqa: BLE001 - a worker must never escape
                 LOGGER.warning("Song tool run failed", exc_info=True)
@@ -748,8 +825,9 @@ class SongToolsCoordinator:
         self.workbench.set_catalog(catalog)
         self.refresh()
 
-    def _finish_tool(self, run: Any, error: str) -> None:
+    def _finish_tool(self, run: Any, error: str, *, unfinished: str = "") -> None:
         self._running_verb = ""
+        self._unfinished_job = str(unfinished or "")
         self._render_song_line()
         overlay = self.overlay
         if overlay is not None:
@@ -850,6 +928,11 @@ class SongToolsCoordinator:
             position_s=view.position_s,
             playing=view.playing,
         )
+        # A musician who joined late is watching a song that is already
+        # moving. Nobody pressed start here, so nothing would repaint their
+        # overlay unless the Shared Track itself starts the tick.
+        if view.loaded and view.playing:
+            self._start_ticking()
 
     def _shared_track_path(self) -> str:
         """Return a readable Shared Track path, or ``""``.

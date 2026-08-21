@@ -203,20 +203,21 @@ def evaluate_upload(
     if size <= 0:
         return UploadDecision(allowed=False, reason="That file is empty.")
 
-    origin = (
-        "the session's Shared Track"
+    # Lead with what actually happens, naming the file the host already chose,
+    # so consent is about this upload rather than about Song tools in general.
+    lead = (
+        "This uploads the Shared Track file you already chose to Music AI."
         if source_kind == SOURCE_SHARED_TRACK
-        else "a file you picked"
+        else "This uploads the file you picked to Music AI."
     )
     return UploadDecision(
         allowed=True,
-        confirmation_title="Send this file to Music AI?",
+        confirmation_title=f"Run {capability.label}?",
         confirmation_body=(
-            f"{resolved.name} ({_megabytes(size)}) will be uploaded to Music AI "
-            f"to run {capability.label}.\n\n"
-            f"Source: {origin}. The live jam is never uploaded.\n"
-            "The file leaves this computer. Only send music you have the "
-            "rights to."
+            f"{lead}\n\n"
+            f"{resolved.name} · {_megabytes(size)} · {capability.label}\n\n"
+            "The live jam is never uploaded, and neither is a meeting or its "
+            "recording. Only send music you have the rights to."
         ),
     )
 

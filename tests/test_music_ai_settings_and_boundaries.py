@@ -159,11 +159,25 @@ def test_no_music_module_imports_a_meeting_dependency():
 
 
 def test_song_tools_never_check_a_meeting_before_running():
-    """No add-on gate: the upload decision must not consult Webex at all."""
+    """No add-on gate: the upload decision must not consult a meeting at all.
 
-    source = (REPO_ROOT / "core" / "song_workbench.py").read_text()
-    assert "webex" not in source.lower()
-    assert "meeting" not in source.lower()
+    Checked on identifiers, because the confirmation copy legitimately says a
+    meeting and its recording are never uploaded.
+    """
+
+    import ast
+
+    tree = ast.parse((REPO_ROOT / "core" / "song_workbench.py").read_text())
+    names = {
+        node.id for node in ast.walk(tree) if isinstance(node, ast.Name)
+    } | {
+        node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
+    } | {
+        node.module or "" for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+    }
+    for forbidden in ("webex", "meeting", "webex_url", "meeting_link"):
+        assert not any(forbidden in name.lower() for name in names), forbidden
 
 
 def test_the_music_ai_client_talks_only_to_published_hosts():
@@ -555,7 +569,10 @@ def test_song_tools_never_reach_into_the_meeting_app():
             "set_microphone",
             "set_speaker",
             "meeting_capture",
-            "meeting_recording",
+            # meeting_recording_note() is honest copy saying a recording is
+            # *not* a take, so ban the capture-shaped forms specifically.
+            "meeting_recording_path",
+            "capture_meeting",
             "meeting_output",
             "oauth",
         ):
@@ -656,3 +673,120 @@ def test_no_new_oauth_or_web_runtime_is_introduced():
         source = (REPO_ROOT / relative).read_text().lower()
         for forbidden in ("oauth", "pkce", "client_secret", "webengine", "webview"):
             assert forbidden not in source, f"{relative}: {forbidden}"
+
+
+# ----------------------------------------------------------------------
+# Left-out rules: things Song tools must never do
+# ----------------------------------------------------------------------
+def test_stem_chips_never_touch_a_jamulus_channel_or_a_meeting_mute():
+    """Two mutes stay two. A stem chip is neither of them."""
+
+    import ast
+
+    tree = ast.parse((REPO_ROOT / "core" / "stem_bench.py").read_text())
+    names = {
+        node.id for node in ast.walk(tree) if isinstance(node, ast.Name)
+    } | {
+        node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
+    }
+    # The bench owns set_muted/set_solo on its own stems; what it must never
+    # reach is a Jamulus channel or a meeting.
+    for forbidden in (
+        "jamulus",
+        "channel_id",
+        "set_channel_gain",
+        "set_self_muted",
+        "webex",
+        "meeting",
+    ):
+        assert not any(forbidden in name.lower() for name in names), forbidden
+
+    panel = (REPO_ROOT / "webjam_qt" / "widgets" / "song_overlay.py").read_text()
+    assert "Musicians and the meeting are unaffected." in panel
+    assert "stem of the reference file" in panel
+
+
+def test_song_tools_never_re_route_an_audio_device():
+    """Dual audio: picking a file must not move Webex or Jamulus devices."""
+
+    for relative in SONG_MODULES:
+        source = (REPO_ROOT / relative).read_text().lower()
+        for forbidden in (
+            "sounddevice",
+            "set_input_device",
+            "set_output_device",
+            "audio_route",
+            "coreaudio",
+            "blackhole",
+            "default_device",
+        ):
+            assert forbidden not in source, f"{relative}: {forbidden}"
+
+
+def test_song_tools_never_mirror_chat_into_a_meeting_or_rename_anyone():
+    """The sheet goes to band chat. Nothing goes to a meeting; no name moves."""
+
+    source = (
+        REPO_ROOT / "webjam_qt" / "controllers" / "song_tools_coordinator.py"
+    ).read_text()
+    assert "send_chat" in source          # Jamulus band chat, the existing path
+    for forbidden in ("set_name", "musician_name", "webex_chat", "post_message"):
+        assert forbidden not in source, forbidden
+
+
+def test_a_meeting_recording_is_never_treated_as_a_take():
+    from core.meeting_companion import meeting_recording_note
+
+    note = meeting_recording_note()
+    assert "is not a WebJam take" in note
+    assert "Neither becomes the other" in note
+
+    # The upload confirmation says the same thing where it matters most.
+    from core.music_ai_catalog import resolve_song_tools
+    from core.music_ai_client import MusicAIWorkflow
+    from core.song_workbench import SOURCE_SHARED_TRACK, evaluate_upload
+
+    catalog = resolve_song_tools(
+        [MusicAIWorkflow("1", "Stem Separation", "stems", "isolate")]
+    )
+    decision = evaluate_upload(
+        capability=catalog.capability("stems"),
+        source_kind=SOURCE_SHARED_TRACK,
+        path=str(REPO_ROOT / "pytest.ini"),
+        is_host=True,
+        has_api_key=True,
+    )
+    assert "neither is a meeting or its recording" in decision.confirmation_body
+
+
+def test_write_help_never_writes_the_arrangement():
+    """Jeff keeps the set list and the feel. Keep writes notes, nothing else."""
+
+    source = (REPO_ROOT / "core" / "song_workbench.py").read_text()
+    assert "keep_progression" in source
+    # No Studio document, marker, or arrangement type is reachable from here.
+    for forbidden in ("StudioDocument", "StudioMarker", "reorder_section"):
+        assert forbidden not in source, forbidden
+
+
+def test_a_job_left_running_is_reported_not_restarted():
+    """Sleeping a laptop mid-job must not spend the account's credits twice."""
+
+    import ast
+    import inspect
+
+    from webjam_qt.controllers.song_tools_coordinator import SongToolsCoordinator
+
+    source = inspect.getsource(SongToolsCoordinator)
+    assert "_unfinished_job" in source
+    assert "still at Music AI" in source
+
+    finish = ast.parse(inspect.getsource(SongToolsCoordinator._finish_tool).lstrip())
+    called = {
+        node.func.attr
+        for node in ast.walk(finish)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    # Nothing in the failure path starts another job.
+    assert "run_song_tool" not in called
+    assert "run_file_workflow" not in called

@@ -54,10 +54,39 @@ def test_the_host_may_send_a_file_they_chose_after_confirming_it(audio_file):
     )
 
     assert decision.allowed
+    # Leads with what happens, then the file, then the boundaries.
+    assert decision.confirmation_body.startswith(
+        "This uploads the file you picked to Music AI."
+    )
     assert "mix.wav" in decision.confirmation_body
-    assert "leaves this computer" in decision.confirmation_body
     assert "rights to" in decision.confirmation_body
     assert "live jam is never uploaded" in decision.confirmation_body
+    assert "neither is a meeting or its recording" in decision.confirmation_body
+
+
+def test_the_shared_track_confirmation_names_the_track_the_host_chose():
+    """Jeff's wording: consent is about this file, not Song tools in general."""
+
+    import tempfile
+    from pathlib import Path as _Path
+
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as handle:
+        handle.write(b"RIFF" + b"0" * 4096)
+        path = handle.name
+    try:
+        decision = evaluate_upload(
+            capability=STEMS,
+            source_kind=SOURCE_SHARED_TRACK,
+            path=path,
+            is_host=True,
+            has_api_key=True,
+        )
+        assert decision.confirmation_body.startswith(
+            "This uploads the Shared Track file you already chose to Music AI."
+        )
+        assert decision.confirmation_title == "Run Split stems?"
+    finally:
+        _Path(path).unlink()
 
 
 def test_no_api_key_means_nothing_is_attempted(audio_file):

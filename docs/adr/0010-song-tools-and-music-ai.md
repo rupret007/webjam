@@ -108,6 +108,47 @@ have silently dropped a valid Zoom or Meet link.
 
 No copy anywhere claims WebJam joined, muted, or verified a meeting.
 
+### The rules that are easy to leave out
+
+Each of these is a place where a plausible implementation would have been
+wrong, so each is pinned by a test rather than by intent.
+
+- **Two mutes stay two.** A stem chip is one stem of a reference file. It never
+  reaches a Jamulus channel or a meeting, it is named
+  "Mute the Vocals stem of the reference file", and the page says musicians and
+  the meeting are unaffected.
+- **Ending the meeting does not end the jam**, and a Music AI job that finishes
+  afterwards still lands locally, because a result is a file on disk and a
+  meeting has nothing to do with it.
+- **One invite carries the binding.** When the room has chosen a song, the
+  invite names it — key, tempo, and shape — so a joiner arrives knowing what
+  they are playing instead of meeting a second picker. No path travels in an
+  invite, and a guest is never shown a file dialog at all.
+- **Late join starts where the room is.** A playing Shared Track starts the
+  repaint by itself, because nobody pressed start on the joiner's machine and
+  an overlay frozen at bar one is worse than none. A stopped clock announces
+  nothing rather than claiming 0:00.
+- **Refusals come before dialogs.** Missing key, wrong role, or an unavailable
+  verb are answered before any picker opens. Being shown a file chooser and
+  then told no is worse than being told no.
+- **The confirmation names the file.** "This uploads the Shared Track file you
+  already chose to Music AI", then the file, size, and tool, then the
+  boundaries: never the live jam, never a meeting or its recording.
+- **A meeting recording is not a WebJam take.** Different applications,
+  different audio, stated on the meeting page.
+- **No chat mirror, no rename.** The song sheet goes to Jamulus band chat, the
+  path a session already has. Nothing is posted to a meeting and no musician
+  name is ever set.
+- **No device is re-routed.** Picking a file or running a job touches no audio
+  device, so neither Jamulus nor the meeting moves.
+- **Readable at jam distance.** The chord the room is on is drawn large and
+  alone above everything else, with the next chord beside it, and only while
+  the position is actually known — a big chord that is a guess would be the
+  most confident wrong thing on the screen.
+- **Sleep does not restart work.** When WebJam stops waiting for a job it says
+  so ("Split stems — still at Music AI") and never runs it again, because a
+  blind retry spends the account's credits twice for one answer.
+
 ### Suggestions are kept, not applied
 
 Every suggested progression is drawn with the word **Suggestion**, its

@@ -1367,3 +1367,223 @@ def test_the_native_strip_still_shows_the_song_with_no_companion(app):
 
     assert "Verse · bar 2 of 8" in _song_line(coordinator)
     assert coordinator.overlay._clock_line.text() == "Verse · bar 2 of 8"
+
+
+# ----------------------------------------------------------------------
+# Late join: overlays start where the room is, not at 0:00
+# ----------------------------------------------------------------------
+def test_a_late_joiner_sees_the_current_section_not_the_top(app):
+    """Nobody pressed start here; the Shared Track is already 34 seconds in."""
+
+    coordinator, _now = _clock_coordinator(app)
+    coordinator.overlay.setVisible(True)
+    _with_shared_track(coordinator, position=34.0)
+
+    coordinator.refresh()
+
+    snapshot = coordinator.workbench.clock_snapshot()
+    assert snapshot.section_label == "Verse"
+    assert snapshot.bar_in_section > 1
+    assert "Verse · bar" in coordinator.overlay._clock_line.text()
+
+
+def test_a_playing_shared_track_starts_the_repaint_on_its_own(app):
+    """Otherwise a guest's overlay would freeze at whatever it first drew."""
+
+    coordinator, _now = _clock_coordinator(app)
+    coordinator.overlay.setVisible(True)
+    assert coordinator._tick_timer is None
+
+    _with_shared_track(coordinator, position=10.0)
+    coordinator.refresh()
+
+    assert coordinator._tick_timer is not None
+    assert coordinator._tick_timer.isActive()
+
+
+def test_a_paused_shared_track_does_not_keep_repainting(app):
+    coordinator, _now = _clock_coordinator(app)
+    coordinator.overlay.setVisible(True)
+    _with_shared_track(coordinator, position=10.0, state="paused")
+
+    coordinator.refresh()
+    coordinator._on_tick()
+
+    assert coordinator._tick_timer is None or not coordinator._tick_timer.isActive()
+
+
+def test_with_no_track_and_no_clock_nothing_claims_a_position(app):
+    """A stopped clock sits at the top of the form but announces nothing."""
+
+    coordinator = _coordinator(app)
+    coordinator.overlay.setVisible(True)
+    coordinator.refresh()
+
+    snapshot = coordinator.workbench.clock_snapshot()
+    assert not snapshot.running
+    assert not snapshot.follows_shared_track
+    # Nothing reaches the jam surface, and no large chord is drawn.
+    assert _song_line(coordinator) == ""
+    assert coordinator.overlay._now_chord.isHidden()
+
+
+# ----------------------------------------------------------------------
+# End meeting is not end jam
+# ----------------------------------------------------------------------
+def test_a_job_finishing_after_someone_left_the_meeting_still_lands(app, tmp_path):
+    """Music AI results are local files; a meeting has nothing to do with them."""
+
+    source = tmp_path / "mix.wav"
+    source.write_bytes(b"RIFF" + b"0" * 4096)
+    coordinator = _coordinator(app, webex_url="")   # meeting gone or never set
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+    coordinator._c.settings.takes_directory = str(tmp_path / "takes")
+
+    transport = FakeTransport(
+        {
+            ("GET", f"{API_BASE_URL}/upload"): MusicAIResponse(
+                200,
+                json.dumps(
+                    {
+                        "uploadUrl": "https://storage.googleapis.com/upload/a",
+                        "downloadUrl": "https://storage.googleapis.com/download/a",
+                    }
+                ).encode(),
+            ),
+            ("PUT", "https://storage.googleapis.com/upload/a"): MusicAIResponse(
+                200, b""
+            ),
+            ("POST", f"{API_BASE_URL}/job"): MusicAIResponse(
+                200, json.dumps({"id": "job-9"}).encode()
+            ),
+            ("GET", f"{API_BASE_URL}/job/job-9"): MusicAIResponse(
+                200,
+                json.dumps(
+                    {
+                        "id": "job-9",
+                        "status": "SUCCEEDED",
+                        "result": {"vocals": "https://cdn.music.ai/a/vocals.wav"},
+                    }
+                ).encode(),
+            ),
+            ("GET", "https://cdn.music.ai/a/"): MusicAIResponse(200, b"RIFFaudio"),
+        }
+    )
+
+    def build_client(api_key, **_kwargs):
+        from core.music_ai_client import MusicAIClient
+
+        return MusicAIClient(api_key, transport=transport, sleep=lambda _s: None)
+
+    class InlineThread:
+        def __init__(self, target=None, **_kwargs):
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.QFileDialog.getOpenFileName",
+        return_value=(str(source), ""),
+    ), patch(
+        "webjam_qt.controllers.song_tools_coordinator.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.Yes,
+    ), patch(
+        "webjam_qt.controllers.song_tools_coordinator.MusicAIClient",
+        side_effect=build_client,
+    ), patch(
+        "webjam_qt.controllers.song_tools_coordinator.threading.Thread", InlineThread
+    ):
+        coordinator.run_song_tool("stems")
+
+    assert len(coordinator.workbench.runs) == 1
+    assert coordinator.workbench.stems()
+
+
+# ----------------------------------------------------------------------
+# Sleep and reconnect: report, never restart
+# ----------------------------------------------------------------------
+def test_a_job_wehjam_stopped_waiting_for_is_reported_not_restarted(app):
+    from core.music_ai_client import MusicAIJobError
+
+    coordinator = _coordinator(app)
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+    coordinator._running_verb = "stems"
+
+    coordinator._finish_tool(
+        None,
+        str(MusicAIJobError("still working", code="TIMEOUT")),
+        unfinished="Split stems",
+    )
+
+    assert coordinator._running_verb == ""
+    assert coordinator._unfinished_job == "Split stems"
+    assert "still at Music AI" in _song_line(coordinator)
+
+
+def test_starting_a_new_job_clears_the_stale_note(app, tmp_path):
+    source = tmp_path / "mix.wav"
+    source.write_bytes(b"RIFF" + b"0" * 4096)
+    coordinator = _coordinator(app)
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+    coordinator._unfinished_job = "Split stems"
+
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.QFileDialog.getOpenFileName",
+        return_value=(str(source), ""),
+    ), patch(
+        "webjam_qt.controllers.song_tools_coordinator.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.Yes,
+    ), patch(
+        "webjam_qt.controllers.song_tools_coordinator.MusicAIClient",
+        side_effect=RuntimeError("offline"),
+    ), patch(
+        "webjam_qt.controllers.song_tools_coordinator.threading.Thread"
+    ):
+        coordinator.run_song_tool("stems")
+
+    assert coordinator._unfinished_job == ""
+
+
+# ----------------------------------------------------------------------
+# One invite carries the song the room already chose
+# ----------------------------------------------------------------------
+def test_the_invite_song_line_names_what_a_joiner_is_joining(app):
+    coordinator, _now = _clock_coordinator(app)
+
+    line = coordinator.invite_song_line()
+
+    assert "Key G major" in line
+    assert "120 BPM" in line
+    assert "Intro → Verse" in line
+    assert "/" not in line
+
+
+def test_a_session_with_no_song_adds_nothing_to_the_invite(app):
+    coordinator = _coordinator(app, notes="")
+    assert coordinator.invite_song_line() == ""
+
+
+def test_a_non_music_session_adds_nothing_to_the_invite(app):
+    coordinator = _coordinator(app)
+    coordinator._c.creator_profile = get_creator_profile_by_key_or_default(
+        "podcast_voice"
+    )
+    assert coordinator.invite_song_line() == ""
+
+
+def test_a_guest_is_never_offered_a_file_picker(app):
+    """Joiners get the room's binding, not a second picker."""
+
+    coordinator = _coordinator(app, is_host=False)
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.QFileDialog.getOpenFileName"
+    ) as picker:
+        coordinator.run_song_tool("stems")
+        coordinator.handle_companion_command(
+            {"command": "run_song_tool", "verb": "stems"}
+        )
+
+    picker.assert_not_called()

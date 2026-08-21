@@ -36,7 +36,7 @@ from core.song_clock import SongClockSnapshot
 from core.song_help import ChordAdvice, NextChordAdvice, WritingAdvice
 from core.song_workbench import CatchUp, FormRow
 from core.stem_bench import StemMix, StemTarget
-from webjam_qt.theme.tokens import Space
+from webjam_qt.theme.tokens import Color, Font, Space
 
 PAGE_SONG = "song"
 PAGE_STEMS = "stems"
@@ -143,6 +143,28 @@ class SongOverlay(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(Space.XS)
 
+        # Read at jam distance: the chord the room is on, large and plain,
+        # above everything else. A musician glancing up mid-take gets one
+        # answer, not a paragraph.
+        self._now_chord = QLabel("")
+        self._now_chord.setObjectName("SongOverlayNowChord")
+        self._now_chord.setTextFormat(Qt.TextFormat.PlainText)
+        self._now_chord.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._now_chord.setStyleSheet(
+            f"color: {Color.TEXT_PRIMARY};"
+            f" font-size: {Font.SIZE_DISPLAY}px;"
+            f" font-weight: {Font.WEIGHT_SEMIBOLD};"
+        )
+        self._now_chord.setVisible(False)
+        self._now_next = QLabel("")
+        self._now_next.setObjectName("SongOverlayNowNext")
+        self._now_next.setTextFormat(Qt.TextFormat.PlainText)
+        self._now_next.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._now_next.setStyleSheet(
+            f"color: {Color.TEXT_SECONDARY}; font-size: {Font.SIZE_MD}px;"
+        )
+        self._now_next.setVisible(False)
+
         self._catch_up_headline = _body_label("", object_name="SongOverlayHeadline")
         self._catch_up_lines = _body_label("")
         self._form_summary = _body_label("No key, tempo, or sections captured yet.")
@@ -244,6 +266,8 @@ class SongOverlay(QFrame):
         self._share_button.clicked.connect(self.share_sheet_requested.emit)
         self._share_button.setEnabled(False)
 
+        layout.addWidget(self._now_chord)
+        layout.addWidget(self._now_next)
         layout.addWidget(self._catch_up_headline)
         layout.addWidget(self._catch_up_lines)
         layout.addWidget(self._form_summary)
@@ -355,12 +379,15 @@ class SongOverlay(QFrame):
         self._mute_caution.setObjectName("SongOverlayMuted")
         self._meeting_owner = _body_label("")
         self._meeting_owner.setObjectName("SongOverlayMuted")
+        self._recording_note = _body_label("")
+        self._recording_note.setObjectName("SongOverlayMuted")
         self._end_note = _body_label("")
         self._end_note.setObjectName("SongOverlayMuted")
 
         layout.addWidget(self._mute_lines)
         layout.addWidget(self._mute_caution)
         layout.addWidget(self._meeting_owner)
+        layout.addWidget(self._recording_note)
         layout.addStretch(1)
         layout.addWidget(self._end_note)
         return page
@@ -446,6 +473,7 @@ class SongOverlay(QFrame):
 
         if clock is not None:
             self.set_clock(clock)
+        self._render_now_chord(clock)
         summary = form_summary or "No key, tempo, or sections captured yet."
         self._form_summary.setText(summary)
         # The catch-up already leads with the song line for a late arrival;
@@ -473,6 +501,40 @@ class SongOverlay(QFrame):
             if sheet_shareable
             else "Write a key, tempo, or section in the notes first."
         )
+
+    def _render_now_chord(self, clock: SongClockSnapshot | None) -> None:
+        """Show the chord the room is on, or nothing.
+
+        Only shown while the position is actually known. A large chord that is
+        a guess would be the most confident wrong thing on the screen.
+        """
+
+        if (
+            clock is None
+            or not clock.running
+            or not clock.section_label
+            or not clock.chords_now
+        ):
+            self._now_chord.setVisible(False)
+            self._now_next.setVisible(False)
+            return
+
+        chords = clock.chords_now
+        # Which chord of the part, from the bar. The room writes one chord per
+        # bar in the common case; anything else falls back to the first.
+        index = (max(1, clock.bar_in_section) - 1) % len(chords)
+        current = chords[index]
+        following = chords[(index + 1) % len(chords)] if len(chords) > 1 else ""
+
+        self._now_chord.setText(current)
+        self._now_chord.setAccessibleName(f"Now playing {current}")
+        self._now_chord.setVisible(True)
+        self._now_next.setText(
+            f"{clock.section_label} · next {following}"
+            if following
+            else clock.section_label
+        )
+        self._now_next.setVisible(True)
 
     def _render_suggestions(self, chords: ChordAdvice | None) -> None:
         """Draw each suggestion with the one tap that would keep it."""
@@ -629,8 +691,15 @@ class SongOverlay(QFrame):
                 button.setFixedSize(26, 22)
                 button.setCheckable(True)
                 button.setChecked(bool(active))
-                button.setAccessibleName(f"{description} {stem.label}")
-                button.setToolTip(f"{description} {stem.label}")
+                # Named so nobody can mistake this for a band fader or a
+                # meeting mute. It is one stem of a reference file.
+                button.setAccessibleName(
+                    f"{description} the {stem.label} stem of the reference file"
+                )
+                button.setToolTip(
+                    f"{description} {stem.label} in the reference. "
+                    "Musicians and the meeting are unaffected."
+                )
                 button.clicked.connect(
                     lambda _checked=False, key=stem.name, emit=signal: emit.emit(key)
                 )
@@ -715,6 +784,7 @@ class SongOverlay(QFrame):
         *,
         mutes: MuteSurface | None,
         end_note: str = "",
+        recording_note: str = "",
         meeting_configured: bool = False,
     ) -> None:
         """Render both mutes and what ending the jam will not end."""
@@ -735,6 +805,8 @@ class SongOverlay(QFrame):
                 else ""
             )
         self._meeting_owner.setVisible(bool(self._meeting_owner.text()))
+        self._recording_note.setText(recording_note)
+        self._recording_note.setVisible(bool(recording_note))
         # Two separate facts, both worth saying, neither of them a button:
         # ending the jam does not end the meeting, and the invite lives on the
         # session bar.

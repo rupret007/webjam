@@ -916,3 +916,82 @@ def test_the_stems_page_says_the_live_mix_is_untouched(overlay):
     boundary = overlay._stem_boundary.text()
     assert "not the band" in boundary
     assert "Musician faders are unchanged" in boundary
+
+
+# ----------------------------------------------------------------------
+# Readable at jam distance
+# ----------------------------------------------------------------------
+def test_the_current_chord_is_the_biggest_thing_on_screen(overlay):
+    now = {"value": 0.0}
+    workbench = _clocked(lambda: now["value"])
+    workbench.clock.start()
+    now["value"] = 2.0
+
+    overlay.set_song_state(clock=workbench.clock_snapshot())
+
+    assert not overlay._now_chord.isHidden()
+    assert overlay._now_chord.text() == "D"
+    style = overlay._now_chord.styleSheet()
+    assert "32px" in style
+    # Larger than the ordinary body text beside it.
+    assert "15px" in overlay._now_next.styleSheet()
+
+
+def test_the_current_chord_walks_the_progression_bar_by_bar(overlay):
+    now = {"value": 0.0}
+    workbench = _clocked(lambda: now["value"])
+    workbench.clock.start()
+    workbench.clock.locate_section("Verse")
+
+    seen = []
+    for offset in (0.0, 2.0, 4.0, 6.0):
+        now["value"] = offset
+        overlay.set_song_state(clock=workbench.clock_snapshot())
+        seen.append(overlay._now_chord.text())
+
+    assert seen == ["G", "D", "Em", "C"]
+
+
+def test_the_next_chord_is_named_beside_it(overlay):
+    now = {"value": 0.0}
+    workbench = _clocked(lambda: now["value"])
+    workbench.clock.start()
+
+    overlay.set_song_state(clock=workbench.clock_snapshot())
+
+    assert "next" in overlay._now_next.text()
+    assert overlay._now_next.text().startswith("Intro")
+
+
+def test_no_chord_is_shown_when_the_position_is_unknown(overlay):
+    """A large chord that is a guess is the most confident wrong thing here."""
+
+    workbench = _clocked(lambda: 0.0)
+    overlay.set_song_state(clock=workbench.clock_snapshot())
+    assert overlay._now_chord.isHidden()
+
+    overlay.set_song_state(clock=None)
+    assert overlay._now_chord.isHidden()
+
+
+def test_a_stem_chip_never_reads_as_a_band_or_meeting_mute(overlay):
+    workbench = _bench_workbench()
+    bench = workbench.stem_bench
+    overlay.set_stems(stems=bench.stems, mix=bench.mix())
+
+    mute = overlay._stem_rows[0].findChildren(QPushButton)[0]
+    assert "stem of the reference file" in mute.accessibleName()
+    assert "Musicians and the meeting are unaffected." in mute.toolTip()
+
+
+def test_the_meeting_page_says_a_recording_is_not_a_take(overlay):
+    from core.meeting_companion import meeting_recording_note
+
+    overlay.set_meeting_state(
+        mutes=describe_mutes(meeting_configured=True),
+        recording_note=meeting_recording_note(),
+        meeting_configured=True,
+    )
+
+    assert "is not a WebJam take" in overlay._recording_note.text()
+    assert not overlay._recording_note.isHidden()
