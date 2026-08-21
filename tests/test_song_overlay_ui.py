@@ -165,9 +165,9 @@ def test_song_tools_are_offered_only_in_a_music_session(app, profile_key, expect
         window.session_strip.set_creator_profile(
             get_creator_profile_by_key_or_default(profile_key)
         )
-        action = window.session_strip._song_tools_action
-        assert action.isVisible() is expected
-        assert action.isEnabled() is expected
+        button = window.session_strip._song_button
+        assert (not button.isHidden()) is expected
+        assert button.isEnabled() is expected
     finally:
         window.deleteLater()
 
@@ -995,3 +995,109 @@ def test_the_meeting_page_says_a_recording_is_not_a_take(overlay):
 
     assert "is not a WebJam take" in overlay._recording_note.text()
     assert not overlay._recording_note.isHidden()
+
+
+# ----------------------------------------------------------------------
+# Song is a first-class surface on the strip, like Studio
+# ----------------------------------------------------------------------
+def test_song_sits_beside_studio_on_the_session_bar(app):
+    """Not buried in a menu: it is where a musician already looks."""
+
+    window = ConductorWindow(
+        mode_entries=[("music", "Music")],
+        initial_mode_key="music",
+        initial_title="Tuesday",
+    )
+    try:
+        strip = window.session_strip
+        strip.set_creator_profile(get_creator_profile_by_key_or_default("music"))
+
+        assert strip._song_button.text() == "Song"
+        assert not strip._song_button.isHidden()
+        # Same class of control as Studio, and drawn immediately before it on
+        # the session control bar, where Studio actually lives.
+        assert strip._song_button.objectName() == strip._studio_button.objectName()
+        bar = window.session_controls.layout()
+        order = [
+            bar.itemAt(index).widget() for index in range(bar.count())
+        ]
+        assert order.index(strip._song_button) == order.index(
+            strip._studio_button
+        ) - 1
+    finally:
+        window.deleteLater()
+
+
+def test_song_is_one_affordance_not_two(app):
+    """The More menu does not repeat it, exactly as it does not repeat Studio."""
+
+    window = ConductorWindow(
+        mode_entries=[("music", "Music")],
+        initial_mode_key="music",
+        initial_title="Tuesday",
+    )
+    try:
+        strip = window.session_strip
+        labels = [
+            action.text()
+            for action in strip._tools_button.menu().actions()
+            if not action.isSeparator()
+        ]
+        assert not any("Song" in label for label in labels)
+        assert not any("Studio" in label for label in labels)
+    finally:
+        window.deleteLater()
+
+
+def test_the_song_button_asks_for_the_panel_and_nothing_else(app):
+    window = ConductorWindow(
+        mode_entries=[("music", "Music")],
+        initial_mode_key="music",
+        initial_title="Tuesday",
+    )
+    try:
+        strip = window.session_strip
+        strip.set_creator_profile(get_creator_profile_by_key_or_default("music"))
+        seen: list[str] = []
+        strip.tool_requested.connect(seen.append)
+        strip._song_button.click()
+
+        assert seen == ["song_tools"]
+    finally:
+        window.deleteLater()
+
+
+def test_the_song_button_is_not_a_primary_action(app):
+    """ADR 0002: the HUD keeps the primary action; Song is a surface."""
+
+    window = ConductorWindow(
+        mode_entries=[("music", "Music")],
+        initial_mode_key="music",
+        initial_title="Tuesday",
+    )
+    try:
+        strip = window.session_strip
+        assert strip._song_button.objectName() == "GhostButton"
+        assert strip._song_button.objectName() != "PrimaryButton"
+        assert "Song" not in window.session_hud._action.text()
+    finally:
+        window.deleteLater()
+
+
+def test_the_song_button_follows_the_other_session_tools_when_disabled(app):
+    window = ConductorWindow(
+        mode_entries=[("music", "Music")],
+        initial_mode_key="music",
+        initial_title="Tuesday",
+    )
+    try:
+        strip = window.session_strip
+        strip.set_creator_profile(get_creator_profile_by_key_or_default("music"))
+        strip.set_tools_enabled(False)
+        assert not strip._song_button.isEnabled()
+        assert not strip._studio_button.isEnabled()
+
+        strip.set_tools_enabled(True)
+        assert strip._song_button.isEnabled()
+    finally:
+        window.deleteLater()

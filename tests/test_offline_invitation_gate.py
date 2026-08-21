@@ -310,10 +310,9 @@ def test_every_live_more_menu_action_emits_an_explicit_semantic_command() -> Non
         action.trigger()
 
     # Grouped by intent: sound, then meeting, then this session, then the
-    # app itself. "tool:takes" is absent because Studio is a first-class
-    # button on the session bar rather than a duplicated menu entry.
-    # "tool:song_tools" sits with the session group; it is Music-only and is
-    # forced visible above along with every other conditional entry.
+    # app itself. "tool:takes" and "tool:song_tools" are absent because Studio
+    # and Song are first-class buttons on the session bar rather than
+    # duplicated menu entries.
     assert events == [
         "tool:audio_settings",
         "tool:diagnostics",
@@ -324,7 +323,6 @@ def test_every_live_more_menu_action_emits_an_explicit_semantic_command() -> Non
         "tool:shared_canvas",
         "tool:ai_image",
         "tool:canvas",
-        "tool:song_tools",
         "tool:pocket_stage",
         "reset_invite",
         "tool:settings",

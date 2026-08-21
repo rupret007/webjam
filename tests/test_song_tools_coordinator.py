@@ -1587,3 +1587,166 @@ def test_a_guest_is_never_offered_a_file_picker(app):
         )
 
     picker.assert_not_called()
+
+
+# ----------------------------------------------------------------------
+# Fail closed: every refusal, proven to upload nothing and open nothing
+# ----------------------------------------------------------------------
+class _RefusalCase(SimpleNamespace):
+    pass
+
+
+REFUSALS = (
+    _RefusalCase(
+        name="no api key",
+        setup=dict(api_key=""),
+        catalog=ACCOUNT,
+        verb="stems",
+        fragment="MUSIC_AI_API_KEY",
+    ),
+    _RefusalCase(
+        name="guest",
+        setup=dict(is_host=False),
+        catalog=ACCOUNT,
+        verb="stems",
+        fragment="Only the host",
+    ),
+    _RefusalCase(
+        name="workflows never discovered",
+        setup={},
+        catalog=None,
+        verb="stems",
+        fragment="not available",
+    ),
+    _RefusalCase(
+        name="account cannot run the verb",
+        setup={},
+        catalog=ACCOUNT,
+        verb="sections",
+        fragment="section",
+    ),
+    _RefusalCase(
+        name="unknown verb",
+        setup={},
+        catalog=ACCOUNT,
+        verb="teleport",
+        fragment="not available",
+    ),
+    _RefusalCase(
+        name="not a music session",
+        setup={},
+        catalog=ACCOUNT,
+        verb="stems",
+        profile="podcast_voice",
+        fragment="part of a Music session",
+    ),
+)
+
+
+@pytest.mark.parametrize("case", REFUSALS, ids=lambda case: case.name)
+def test_every_refusal_uploads_nothing_and_opens_nothing(app, case):
+    """The fail-closed matrix: no client, no picker, no confirmation, no job."""
+
+    coordinator = _coordinator(app, **case.setup)
+    coordinator._catalog = (
+        resolve_song_tools(case.catalog) if case.catalog is not None else None
+    )
+    if getattr(case, "profile", ""):
+        coordinator._c.creator_profile = get_creator_profile_by_key_or_default(
+            case.profile
+        )
+
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.QFileDialog.getOpenFileName"
+    ) as picker, patch(
+        "webjam_qt.controllers.song_tools_coordinator.QMessageBox.question"
+    ) as confirm, patch(
+        "webjam_qt.controllers.song_tools_coordinator.MusicAIClient"
+    ) as client, patch(
+        "webjam_qt.controllers.song_tools_coordinator.threading.Thread"
+    ) as thread:
+        coordinator.run_song_tool(case.verb)
+
+    picker.assert_not_called()
+    confirm.assert_not_called()
+    client.assert_not_called()
+    thread.assert_not_called()
+    assert coordinator.workbench.runs == ()
+    assert coordinator._running_verb == ""
+    if case.fragment:
+        assert any(case.fragment in message for message in _flashes(coordinator))
+
+
+@pytest.mark.parametrize("case", REFUSALS, ids=lambda case: case.name)
+def test_every_refusal_holds_for_a_companion_request_too(app, case):
+    """The same matrix, arriving from outside the desktop window."""
+
+    coordinator = _coordinator(app, **case.setup)
+    coordinator._catalog = (
+        resolve_song_tools(case.catalog) if case.catalog is not None else None
+    )
+    if getattr(case, "profile", ""):
+        coordinator._c.creator_profile = get_creator_profile_by_key_or_default(
+            case.profile
+        )
+
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.QFileDialog.getOpenFileName"
+    ) as picker, patch(
+        "webjam_qt.controllers.song_tools_coordinator.QMessageBox.question"
+    ) as confirm, patch(
+        "webjam_qt.controllers.song_tools_coordinator.MusicAIClient"
+    ) as client:
+        decision = coordinator.handle_companion_command(
+            {"command": "run_song_tool", "verb": case.verb}
+        )
+
+    assert not decision.accepted
+    picker.assert_not_called()
+    confirm.assert_not_called()
+    client.assert_not_called()
+    assert coordinator.workbench.runs == ()
+
+
+def test_declining_the_confirmation_uploads_nothing_even_with_everything_ready(
+    app, tmp_path
+):
+    """The last gate: everything is in order and the host still says no."""
+
+    source = tmp_path / "mix.wav"
+    source.write_bytes(b"RIFF" + b"0" * 4096)
+    coordinator = _coordinator(app)
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.QFileDialog.getOpenFileName",
+        return_value=(str(source), ""),
+    ), patch(
+        "webjam_qt.controllers.song_tools_coordinator.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.No,
+    ), patch(
+        "webjam_qt.controllers.song_tools_coordinator.MusicAIClient"
+    ) as client, patch(
+        "webjam_qt.controllers.song_tools_coordinator.threading.Thread"
+    ) as thread:
+        coordinator.run_song_tool("stems")
+
+    client.assert_not_called()
+    thread.assert_not_called()
+    assert coordinator.workbench.runs == ()
+
+
+def test_a_refusal_before_the_picker_is_not_an_accident_of_wording(app):
+    """The precondition gate is structural, not a string match on a reason."""
+
+    import inspect
+
+    from webjam_qt.controllers.song_tools_coordinator import SongToolsCoordinator
+
+    source = inspect.getsource(SongToolsCoordinator.run_song_tool)
+    assert "evaluate_upload_preconditions" in source
+    assert "startswith" not in source
+    # The precondition check must come before any file is chosen.
+    assert source.index("evaluate_upload_preconditions") < source.index(
+        "_choose_source"
+    )

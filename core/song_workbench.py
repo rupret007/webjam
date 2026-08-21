@@ -135,6 +135,41 @@ class CatchUp:
         return bool(self.lines)
 
 
+def evaluate_upload_preconditions(
+    *,
+    capability: SongToolCapability | None,
+    is_host: bool,
+    has_api_key: bool,
+) -> UploadDecision:
+    """Answer everything that does not depend on which file was chosen.
+
+    Split out so a caller can refuse before opening a file dialog. Being shown
+    a picker and then told no is worse than being told no, and the ordering is
+    the same as :func:`evaluate_upload` so the two never disagree.
+    """
+
+    if not has_api_key:
+        return UploadDecision(allowed=False, reason=missing_key_message())
+    if capability is None:
+        return UploadDecision(
+            allowed=False, reason="That Song tool is not available."
+        )
+    if not capability.supported:
+        return UploadDecision(
+            allowed=False,
+            reason=capability.reason or f"{capability.label} is unavailable.",
+        )
+    if not is_host:
+        return UploadDecision(
+            allowed=False,
+            reason=(
+                "Only the host can send a file to Music AI. Ask the host to "
+                f"run {capability.label} for the room."
+            ),
+        )
+    return UploadDecision(allowed=True)
+
+
 def evaluate_upload(
     *,
     capability: SongToolCapability | None,
@@ -607,4 +642,5 @@ __all__ = [
     "SongWorkbench",
     "UploadDecision",
     "evaluate_upload",
+    "evaluate_upload_preconditions",
 ]

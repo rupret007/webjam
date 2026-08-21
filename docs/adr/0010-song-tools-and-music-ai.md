@@ -51,8 +51,16 @@ the narrow pane beside a free Webex window (ADR 0004,
 musician's own click. Music launch is unchanged: Host / Join / New Music
 Project, with no fourth start card.
 
+**Song** is a first-class button on the session control bar, between
+Conversation and Studio, because it is the same class of thing: an in-session
+surface a musician reaches for while playing, not a setting. It follows the
+Studio precedent exactly, including that the More menu does not repeat it.
+
+It is not a primary action. ADR 0002 keeps those in the HUD, and the button is
+a ghost control beside the other session surfaces.
+
 Song tools are Music-only. Podcast & Voice, Review & Rehearsal, and Studio
-Visit have no song form, so the entry is absent there rather than present and
+Visit have no song form, so the button is absent there rather than present and
 inert.
 
 ### The panel explains; the HUD acts (ADR 0002)

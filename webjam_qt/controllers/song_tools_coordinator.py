@@ -53,6 +53,7 @@ from core.song_workbench import (
     SharedTrackView,
     SongWorkbench,
     evaluate_upload,
+    evaluate_upload_preconditions,
 )
 from core.stem_bench import StemBenchError, bounce_stems
 
@@ -62,9 +63,6 @@ AUDIO_FILTER = (
     "Audio (*.wav *.mp3 *.flac *.m4a *.aif *.aiff *.ogg);;All files (*)"
 )
 _RESULTS_DIRNAME = "WebJam Song Tools"
-# A path that cannot exist, used only to reach the file-independent refusals
-# in evaluate_upload before any dialog is opened.
-_PRECHECK_PATH = "\x00precheck"
 
 
 class SongToolsCoordinator:
@@ -703,6 +701,12 @@ class SongToolsCoordinator:
         """
 
         key = str(verb_key or "")
+        # Song tools exist where a song form does. Every caller checks this
+        # already, which is exactly why it is checked here too: the gate
+        # belongs with the thing it guards, not with each way in.
+        if not self.is_available():
+            self._flash("Song tools are part of a Music session.", ms=6000)
+            return
         if self._running_verb:
             self._flash("One Song tool is already running.")
             return
@@ -714,14 +718,12 @@ class SongToolsCoordinator:
         # Refuse on everything that does not need a file before opening a
         # dialog. A guest, or a session with no key, should never be shown a
         # picker only to be told no once they have chosen something.
-        precheck = evaluate_upload(
+        precheck = evaluate_upload_preconditions(
             capability=capability,
-            source_kind=SOURCE_PICKED_FILE,
-            path=_PRECHECK_PATH,
             is_host=self._is_host(),
             has_api_key=bool(api_key),
         )
-        if precheck.blocked and not precheck.reason.startswith("WebJam cannot read"):
+        if precheck.blocked:
             self._flash(precheck.reason, ms=9000)
             return
 

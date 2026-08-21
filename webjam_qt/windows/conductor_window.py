@@ -151,6 +151,9 @@ class ConductorWindow(QMainWindow):
         controls_layout.addWidget(self.session_strip._record_elapsed)
         controls_layout.addWidget(self.session_strip._record_button)
         controls_layout.addWidget(self.session_strip._video_button)
+        # Song sits beside Studio: the same class of in-session surface, on
+        # the bar a musician already uses, rather than inside a menu.
+        controls_layout.addWidget(self.session_strip._song_button)
         controls_layout.addWidget(self.session_strip._studio_button)
         self.session_strip._tools_button.setText("More ▾")
         self.session_strip._tools_button.setAccessibleName("More session options")

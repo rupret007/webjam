@@ -217,6 +217,25 @@ class SessionStrip(QFrame):
             lambda: self.tool_requested.emit("conversation")
         )
 
+        # Song sits beside Studio because it is the same kind of thing: a
+        # first-class in-session surface, not a setting buried in a menu. It
+        # is not a primary action -- the HUD keeps those -- and it exists only
+        # where a song form does.
+        self._song_button = QPushButton("Song")
+        self._song_button.setObjectName("GhostButton")
+        self._song_button.setAccessibleName("Open Song tools")
+        self._song_button.setAccessibleDescription(
+            "Chords, lyrics, stems, and writing help for the song in this "
+            "session. Suggestions are made on this computer."
+        )
+        self._song_button.setToolTip(
+            "Chords, lyrics, and writing help for this song."
+        )
+        self._song_button.clicked.connect(
+            lambda: self.tool_requested.emit("song_tools")
+        )
+        self._song_button.setVisible(False)
+
         self._studio_button = QPushButton("Studio")
         self._studio_button.setObjectName("GhostButton")
         self._studio_button.setAccessibleName("Open Studio")
@@ -397,16 +416,6 @@ class SessionStrip(QFrame):
         self._notes_action.triggered.connect(
             lambda: self.tool_requested.emit("canvas")
         )
-        # Song tools open a compact panel beside the jam rather than a window,
-        # so the musician never leaves the session to look at their own song.
-        # Music only: the other creator profiles have no song form.
-        self._song_tools_action = QAction("Song Tools", tools_menu)
-        self._song_tools_action.setToolTip(
-            "Chords, lyrics, and writing help for the song in this session."
-        )
-        self._song_tools_action.triggered.connect(
-            lambda: self.tool_requested.emit("song_tools")
-        )
         self._pocket_stage_action = QAction("Use iPhone as Pocket Stage…", tools_menu)
         self._pocket_stage_action.setToolTip(
             "Pair an iPhone as a secure instrument-side session remote."
@@ -428,8 +437,8 @@ class SessionStrip(QFrame):
         about_action.triggered.connect(lambda: self.tool_requested.emit("about"))
 
         # Grouped by what the musician is trying to do, not by which
-        # component implements it. Studio is not repeated here because it is
-        # already a first-class button on the session bar.
+        # component implements it. Studio and Song are not repeated here
+        # because both are already first-class buttons on the session bar.
         # Sound
         tools_menu.addAction(self._audio_settings_action)
         tools_menu.addAction(self._diagnostics_action)
@@ -444,7 +453,6 @@ class SessionStrip(QFrame):
         tools_menu.addAction(self._shared_canvas_action)
         tools_menu.addAction(self._ai_image_action)
         tools_menu.addAction(self._notes_action)
-        tools_menu.addAction(self._song_tools_action)
         tools_menu.addAction(self._pocket_stage_action)
         # Resetting the invite acts on this session, so it belongs with the
         # session group rather than trailing the About item.
@@ -505,6 +513,7 @@ class SessionStrip(QFrame):
         layout.addWidget(self._shared_track_surface)
         layout.addWidget(self._art_room_chip)
         layout.addWidget(self._song_line)
+        layout.addWidget(self._song_button)
         layout.addWidget(self._studio_button)
         layout.addWidget(self._tools_button)
 
@@ -742,8 +751,8 @@ class SessionStrip(QFrame):
         # and Review sessions have none, so the entry is absent there rather
         # than present and inert.
         song_tools_available = profile_key == "music"
-        self._song_tools_action.setVisible(song_tools_available)
-        self._song_tools_action.setEnabled(song_tools_available)
+        self._song_button.setVisible(song_tools_available)
+        self._song_button.setEnabled(song_tools_available and self._tools_enabled)
         self._tools_button.setAccessibleDescription(
             f"Open sound settings, {check_label}, conversation, recording, Shared "
             "Track, local notes, and WebJam support options."
@@ -934,6 +943,9 @@ class SessionStrip(QFrame):
             self._tools_enabled and self._shared_track_stop_enabled
         )
         self._studio_button.setEnabled(self._tools_enabled)
+        self._song_button.setEnabled(
+            self._tools_enabled and self._creator_profile_key == "music"
+        )
         self._video_action.setEnabled(self._tools_enabled)
 
     def set_recording_phase(self, phase: str, detail: str = "") -> None:
