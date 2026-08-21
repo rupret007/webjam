@@ -92,6 +92,11 @@ One docs-only pass over `USER_GUIDE.md`, `README.md`, `QUICK_HELP_MAP.md`,
 5. `CHANGELOG.md` gets one `Unreleased` entry per landed PR. Never edit a
    released section.
 
+A rename that stops at those five files leaves the rest inconsistent. #15 also
+changes `ARCHITECTURE.md`, `CREATIVE_MODES_MVP_SPEC.md`, and
+`docs/PROJECT_BRIEF.md`, and #17 brings its own decision records, so apply the
+same naming and KISS rules wherever those PRs touched a musician-visible name.
+
 ## 5. Who merges
 
 Jeff presses merge, one PR at a time, and only when that step's gate in
