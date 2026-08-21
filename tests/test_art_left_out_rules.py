@@ -67,9 +67,25 @@ from webjam_qt.windows.shared_canvas import SharedCanvasDialog  # noqa: E402
 
 @pytest.fixture(scope="module", autouse=True)
 def qapp():
+    """Style the shared application for this file, then put it back.
+
+    These tests need WebJam's real stylesheet, because the light/dark and
+    hit-size checks are about what the stylesheet actually does. Both the
+    stylesheet and the palette are process-wide, though, so leaving either
+    one installed would decide font metrics and layout for every file that
+    runs afterwards -- the same order-dependence `test_first_run_setup`
+    already had to undo.
+    """
+
     app = QApplication.instance() or QApplication([])
+    stylesheet = app.styleSheet()
+    palette = QPalette(app.palette())
     app.setStyleSheet(load_stylesheet())
-    return app
+    try:
+        yield app
+    finally:
+        app.setStyleSheet(stylesheet)
+        app.setPalette(palette)
 
 
 #: Every Art module. The audio and meeting rules are absence properties, so

@@ -92,6 +92,27 @@ What Art added has to be true *beside* that window:
   meeting, browser, or system output.
 - **Art never claims to be in the meeting.** Its copy states what this computer
   did and nothing about membership, mute, or who can hear whom.
+- **Two mutes stay two mutes.** No Art surface offers a control whose label
+  contains "mute", so Art cannot add a third thing a person might mistake for
+  either one. The reference video's silence is explained as a fact about the
+  video, never as control of the call.
+- **Advice is a claim.** Native activation is disabled on Windows and Linux
+  because their detection does not establish publisher proof, so nothing there
+  may *point at* Show Webex App either. The suggestion appears only where the
+  publisher is verified, and disappears with the capability rather than
+  outliving it.
+- **Ending one thing never ends another.** No Art panel intercepts its own
+  close, so dismissing a window cannot withdraw a share or leave a room.
+  Closing Drawpile ends no session, hiding the video leaves nobody, and no Art
+  surface offers to end, leave, or disconnect anything.
+- **Opening a painting program takes nobody's microphone.** Neither the
+  Drawpile nor the Krita launch vector carries an audio, device, or mic flag,
+  and no Art module imports an audio library or the mixer. The live audio path
+  and the meeting app own every device between them.
+- **A hosted canvas is personal.** WebJam lands the artist on Drawpile's own
+  Host page and recommends a password-protected Personal session. It never
+  requests a public listing or an adult-content flag, and it says so when a
+  pasted invitation carries no password.
 
 Hiding the reference video is local to that artist's own player, so it costs
 them neither the live audio nor the meeting faces.
@@ -100,7 +121,10 @@ Non-Webex links keep the identical handoff through `core.meeting_link`. Webex is
 primary in copy and in control labels; it is not the only accepted host.
 
 This section adds no OAuth, no embedded web runtime, and no blind mute
-shortcut, and it does not reopen ADR 0007, which is rejected.
+shortcut. A companion panel is now being built on a separate track (ADR 0007,
+reopened); Art's read-and-request seam is ADR 0013, and every rule above holds
+on it too — the projection has no field for a mute or a meeting, and the
+command contract has no verb for ending, leaving, or withdrawing anything.
 
 ## Future Connect Webex decision
 

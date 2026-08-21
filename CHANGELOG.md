@@ -213,6 +213,42 @@ All notable improvements and features for the WebJam creator collaboration platf
   faces someone is talking to would be the focus-stealing ADR 0004 rules out.
   A free or personal Webex account still cannot load a custom embedded app,
   which is why the fallback is the product rather than a gap in it.
+- Fixed the **Join / Open Meeting** tooltip, which told every platform to "use
+  Show Webex App to bring Webex forward". ADR 0004 keeps native activation
+  disabled on Windows and Linux because their detection does not establish
+  publisher proof, and the button was correctly disabled there — but the advice
+  was not, so it pointed at a control that could not do what the sentence said.
+  The suggestion now appears only where the publisher is verified, and
+  detection re-renders it rather than leaving the previous platform's answer in
+  place.
+- Raised the quiet secondary action from a 30px to a **44px hit target**. Quiet
+  is about weight, not size: the fill is still absent, the colour still muted
+  and the type still small, but a secondary action should be easy to press and
+  hard to mistake for the primary one, which are different problems.
+- Pinned the rules that are easy to state and easy to lose, on the desktop and
+  on the projection alike. Each was already true; none of them would have been
+  noticed breaking until somebody in a real session got a wrong answer.
+  - **Two mutes stay two mutes.** No Art panel offers a control whose label
+    contains "mute", and none of their copy mentions a microphone or claims to
+    reach the call. The projection has no field for a mute and the command
+    contract has no verb for one.
+  - **Ending one thing never ends another.** No Art panel intercepts its own
+    close, so dismissing a window cannot withdraw a share or leave a room.
+    Closing Drawpile ends no session, hiding the video leaves nobody, and no
+    Art surface — or companion command — offers to end, leave, or disconnect.
+  - **Opening a painting program takes nobody's microphone.** Neither launch
+    vector carries an audio, device, or mic flag, and no Art module imports an
+    audio library or the mixer.
+  - **A hosted canvas is personal.** The host command is exactly
+    `--start-page host`: never a public listing, never an adult-content flag.
+  - **Fail-closed copy is a recovery on one line** — bounded, path-free, at
+    most two sentences, and never containing "error", "failed", "exception",
+    "traceback", or "capability".
+  - **One theme, applied completely.** Each Art panel renders pixel-identically
+    under a light and a dark OS palette. WebJam sets a stylesheet but no
+    palette, so a widget whose background came from the stylesheet while its
+    text colour fell through to the system would be unreadable on exactly one
+    kind of machine — and whoever wrote it would never see the broken one.
 - `art` is the canonical profile key. `studio_visit` — the key the Preview
   briefly used — is now a **migrate-from alias only**, so a saved choice
   survives the rename. The legacy `visual_studio` mode still migrates to
