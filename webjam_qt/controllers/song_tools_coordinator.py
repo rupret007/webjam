@@ -27,7 +27,6 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from core.meeting_companion import (
     DEFAULT_MEETING_SERVICE,
-    build_invite_message,
     describe_mutes,
     end_session_prompt,
 )
@@ -110,8 +109,8 @@ class SongToolsCoordinator:
         overlay.song_tool_requested.connect(self.run_song_tool)
         overlay.share_sheet_requested.connect(self.share_sheet_to_chat)
         overlay.api_key_requested.connect(self._open_settings)
-        overlay.mute_help_requested.connect(self._open_meeting_mute)
-        overlay.invite_requested.connect(self._copy_invite)
+        overlay.suggestion_kept.connect(self.keep_suggestion)
+        overlay.suggestions_dismissed.connect(self.dismiss_suggestions)
         overlay.clock_toggled.connect(self.toggle_clock)
         overlay.section_located.connect(self.locate_section)
         overlay.stem_mute_toggled.connect(self.toggle_stem_mute)
@@ -131,7 +130,10 @@ class SongToolsCoordinator:
             return
         self._sync_workbench()
         self._sync_clock_to_shared_track()
-        overlay.set_sections(self.workbench.section_names())
+        overlay.set_sections(
+            self.workbench.section_names(),
+            current=self.workbench.clock_snapshot().section_label,
+        )
         overlay.set_song_state(
             catch_up=self.workbench.catch_up(
                 shared_track=self._shared_track_view(),
@@ -153,6 +155,7 @@ class SongToolsCoordinator:
             missing_key_text=missing_key_message(),
         )
         self._render_stems()
+        self._render_song_line()
         overlay.set_meeting_state(
             mutes=describe_mutes(
                 webjam_muted_participants=self._muted_count(),
@@ -237,19 +240,73 @@ class SongToolsCoordinator:
         overlay = self.overlay
         self._sync_clock_to_shared_track()
         snapshot = self.workbench.clock_publisher.publish()
-        if overlay is None or not overlay.isVisible():
-            if not snapshot.running:
-                self._stop_ticking()
-            return
-        overlay.set_clock(snapshot)
-        if not snapshot.running:
+        # The strip keeps reporting whether or not the panel is open, so a
+        # closed panel still shows the part you are on and the job you started.
+        self._render_song_line()
+        if overlay is not None and overlay.isVisible():
+            overlay.set_clock(snapshot)
+        if not snapshot.running and not self._running_verb:
             self._stop_ticking()
 
     def _on_panel_closed(self) -> None:
         # The clock belongs to the room, not the panel, so closing the panel
-        # stops the repaint but never the count.
+        # stops the repaint but never the count -- and the strip keeps showing
+        # whatever the musician turned on.
+        self._render_song_line()
         if not self.workbench.clock.snapshot().running:
             self._stop_ticking()
+
+    def _render_song_line(self) -> None:
+        """Put the song's one quiet line on the strip, or clear it.
+
+        Priority is what a musician needs mid-take: a job they started, then
+        where the song is, then nothing. Never a control, never a spinner.
+        """
+
+        strip = getattr(self._c.window, "session_strip", None)
+        setter = getattr(strip, "set_song_line", None)
+        if setter is None:
+            return
+        if not self.is_available():
+            setter("")
+            return
+
+        if self._running_verb:
+            label = self._verb_label(self._running_verb)
+            setter(
+                f"{label}…",
+                description=(
+                    f"{label} is running on a file you chose. The jam is not "
+                    "affected and nothing is uploaded from the live mix."
+                ),
+            )
+            return
+
+        snapshot = self.workbench.clock_snapshot()
+        if snapshot.running and snapshot.position_label:
+            chords = " ".join(snapshot.chords_now[:4])
+            line = snapshot.position_label
+            setter(
+                f"{line} · {chords}" if chords else line,
+                description=(
+                    "Where the song is. "
+                    + (
+                        "Counting with the Shared Track."
+                        if snapshot.follows_shared_track
+                        else "A shared reference the host runs; it does not "
+                        "follow the band."
+                    )
+                ),
+            )
+            return
+
+        setter("")
+
+    def _verb_label(self, verb_key: str) -> str:
+        capability = (
+            self._catalog.capability(verb_key) if self._catalog is not None else None
+        )
+        return capability.label if capability is not None else "Song tools"
 
     # ------------------------------------------------------------------
     # Stems beside the jam
@@ -349,7 +406,10 @@ class SongToolsCoordinator:
         if overlay is None:
             return
         self._sync_workbench()
-        overlay.set_sections(self.workbench.section_names())
+        overlay.set_sections(
+            self.workbench.section_names(),
+            current=self.workbench.clock_snapshot().section_label,
+        )
         overlay.set_song_state(
             catch_up=None,
             form_summary=self.workbench.conductor_line(),
@@ -387,6 +447,39 @@ class SongToolsCoordinator:
             results=tuple(run.summary_line() for run in self.workbench.runs[-2:]),
             sheet_shareable=bool(self.workbench.shareable_sheet()),
         )
+
+    def keep_suggestion(self, section_label: str, chord_line: str) -> None:
+        """Write one accepted suggestion into the song sheet, on request.
+
+        Nothing reaches the notes until this runs, and it only ever touches
+        the musician's own notes -- the Studio arrangement stays theirs.
+        """
+
+        canvas = getattr(self._c.window, "session_canvas", None)
+        if canvas is None:
+            return
+        self._sync_workbench()
+        chords = tuple(str(chord_line or "").split())
+        updated = self.workbench.keep_progression(
+            section_label=str(section_label or ""), chords=chords
+        )
+        if updated == self.workbench._notes:
+            self._flash("Nothing to keep.")
+            return
+        canvas.set_notes(updated)
+        self.workbench.set_notes(updated)
+        overlay = self.overlay
+        if overlay is not None:
+            overlay.clear_suggestions()
+        self._flash(f"Kept {chord_line} under {section_label}.")
+        self.refresh()
+
+    def dismiss_suggestions(self) -> None:
+        """Clear the suggestions on screen. Nothing was written, so nothing undoes."""
+
+        overlay = self.overlay
+        if overlay is not None:
+            overlay.clear_suggestions()
 
     def share_sheet_to_chat(self) -> None:
         """Post the song sheet into band chat so a late arrival can catch up."""
@@ -478,10 +571,12 @@ class SongToolsCoordinator:
         overlay = self.overlay
         if overlay is not None:
             overlay.set_busy(key, f"Running {capability.label}…")
+        self._render_song_line()
         self._flash(f"{capability.label} started. The jam keeps running.")
 
         results_dir = self._results_directory()
         session_name = self._session_title()
+        self._start_ticking()
 
         def work() -> None:
             try:
@@ -535,6 +630,7 @@ class SongToolsCoordinator:
 
     def _finish_tool(self, run: Any, error: str) -> None:
         self._running_verb = ""
+        self._render_song_line()
         overlay = self.overlay
         if overlay is not None:
             overlay.set_busy("", "")
@@ -554,20 +650,12 @@ class SongToolsCoordinator:
             # that decides, rather than two that can disagree.
             return SOURCE_PICKED_FILE, "unavailable"
 
+        # One dialog, not two. When the session already holds a Shared Track
+        # that is the obvious subject, and the confirmation names it, so an
+        # extra "which file?" box would only add a modal over the jam.
         shared = self._shared_track_path()
         if shared:
-            answer = QMessageBox.question(
-                self._c.window,
-                "Which file?",
-                (
-                    "Use the session's Shared Track, or pick another file?\n\n"
-                    f"Shared Track: {Path(shared).name}"
-                ),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes,
-            )
-            if answer == QMessageBox.StandardButton.Yes:
-                return SOURCE_SHARED_TRACK, shared
+            return SOURCE_SHARED_TRACK, shared
 
         path, _filter = QFileDialog.getOpenFileName(
             self._c.window,
@@ -706,36 +794,6 @@ class SongToolsCoordinator:
         opener = getattr(self._c, "_open_settings_wizard", None)
         if opener is not None:
             opener()
-
-    def _open_meeting_mute(self) -> None:
-        opener = getattr(self._c, "_focus_webex_mute", None)
-        if opener is not None:
-            opener()
-
-    def _copy_invite(self) -> None:
-        """Copy one message carrying the jam link and the meeting link."""
-
-        from PySide6.QtWidgets import QApplication
-
-        readiness = self._c._host_share_readiness()
-        join_link = self._c._current_invite_url(readiness=readiness)
-        if not join_link:
-            self._flash("Connect this Mac to Wi-Fi, then try again.")
-            return
-        message = build_invite_message(
-            join_link=join_link,
-            session_name=self._session_title(),
-            meeting_url=str(getattr(self._c.settings, "webex_url", "") or ""),
-            participant_noun=(
-                self._c.creator_profile.vocabulary.participant_singular
-            ),
-        )
-        QApplication.clipboard().setText(message.text)
-        self._flash(
-            "One invite copied — jam link and meeting link."
-            if message.includes_meeting
-            else "Invite copied. Add a meeting link in Settings to include it."
-        )
 
     def _flash(self, message: str, *, ms: int = 6000) -> None:
         window = getattr(self._c, "window", None)

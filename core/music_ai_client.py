@@ -43,6 +43,7 @@ from urllib.parse import urlsplit
 
 API_BASE_URL = "https://api.music.ai/v1"
 API_KEY_CONSOLE_URL = "https://music.ai/dash"
+API_KEY_ENV_VAR = "MUSIC_AI_API_KEY"
 
 # The one workflow slug the public docs name as available to every account.
 DOCUMENTED_STEMS_WORKFLOW = "music-ai/stems-vocals-accompaniment"
@@ -582,12 +583,17 @@ class MusicAIClient:
 
 
 def missing_key_message() -> str:
-    """Return the one piece of copy shown whenever no key is configured."""
+    """Return the one line shown whenever no key is configured.
+
+    One sentence, and it names the two places a key can live. This never
+    appears in the HUD: an absent optional credential is not the session's
+    next action.
+    """
 
     return (
-        "Add a Music AI API key to use Song tools. Create one at "
-        f"{API_KEY_CONSOLE_URL} and paste it into Settings. A Moises app "
-        "login is a different account and will not work here."
+        f"Song tools need a Music AI key from {API_KEY_CONSOLE_URL}. "
+        f"Put it in Settings or set {API_KEY_ENV_VAR}. "
+        "A Moises app login is a different account."
     )
 
 
@@ -640,6 +646,7 @@ def _workflow_entries(payload: Any) -> list[Mapping[str, Any]]:
 __all__ = [
     "API_BASE_URL",
     "API_KEY_CONSOLE_URL",
+    "API_KEY_ENV_VAR",
     "DOCUMENTED_STEMS_WORKFLOW",
     "MusicAIApplication",
     "MusicAIAuthError",

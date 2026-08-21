@@ -66,10 +66,10 @@ class SongOverlay(QFrame):
     chords_requested = Signal(str)        # section name; "" means next missing
     share_sheet_requested = Signal()
     api_key_requested = Signal()
-    mute_help_requested = Signal()
-    invite_requested = Signal()
     clock_toggled = Signal()
     section_located = Signal(str)
+    suggestion_kept = Signal(str, str)   # section label, chord line
+    suggestions_dismissed = Signal()
     stem_mute_toggled = Signal(str)
     stem_solo_toggled = Signal(str)
     sing_this_one_requested = Signal()
@@ -215,6 +215,23 @@ class SongOverlay(QFrame):
         buttons.addWidget(self._chords_button)
 
         self._advice = _body_label("")
+        self._suggestion_headline = _body_label("")
+        # Suggestions are never written anywhere until a musician says so, so
+        # each one carries its own Keep. Dismiss clears the panel; it changes
+        # nothing, because nothing was changed.
+        self._suggestion_container = QWidget()
+        self._suggestion_layout = QVBoxLayout(self._suggestion_container)
+        self._suggestion_layout.setContentsMargins(0, 0, 0, 0)
+        self._suggestion_layout.setSpacing(Space.XS)
+        self._suggestion_rows: list[QWidget] = []
+
+        self._dismiss_button = QPushButton("Dismiss")
+        self._dismiss_button.setObjectName("GhostButton")
+        self._dismiss_button.setAccessibleName("Dismiss these suggestions")
+        self._dismiss_button.setToolTip("Clear these suggestions. Nothing changes.")
+        self._dismiss_button.clicked.connect(self.suggestions_dismissed.emit)
+        self._dismiss_button.setVisible(False)
+
         self._results = _body_label("")
 
         self._share_button = QPushButton("Share sheet to chat")
@@ -235,6 +252,9 @@ class SongOverlay(QFrame):
         layout.addWidget(self._section_picker)
         layout.addLayout(buttons)
         layout.addWidget(self._advice)
+        layout.addWidget(self._suggestion_headline)
+        layout.addWidget(self._suggestion_container)
+        layout.addWidget(self._dismiss_button)
         layout.addWidget(self._results)
         layout.addStretch(1)
         layout.addWidget(self._share_button)
@@ -249,6 +269,12 @@ class SongOverlay(QFrame):
         self._stem_status = _body_label(
             "No stems yet. Run Split stems on a file you own."
         )
+        # These chips sit beside the reference; the musicians' faders are a
+        # different mix and nothing here moves them.
+        self._stem_boundary = _body_label(
+            "These are the reference, not the band. Musician faders are unchanged."
+        )
+        self._stem_boundary.setObjectName("SongOverlayMuted")
         self._stem_container = QWidget()
         self._stem_layout = QVBoxLayout(self._stem_container)
         self._stem_layout.setContentsMargins(0, 0, 0, 0)
@@ -278,6 +304,7 @@ class SongOverlay(QFrame):
         self._stem_note.setObjectName("SongOverlayMuted")
 
         layout.addWidget(self._stem_status)
+        layout.addWidget(self._stem_boundary)
         layout.addWidget(self._stem_container)
         layout.addStretch(1)
         layout.addWidget(self._sing_button)
@@ -319,31 +346,21 @@ class SongOverlay(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(Space.XS)
 
+        # ADR 0002: this page explains; it never adds a second button for an
+        # action something else already owns. Copy Invite is a HUD primary
+        # action and the meeting mute handoff belongs to Conversation, so
+        # neither is duplicated here.
         self._mute_lines = _body_label("")
         self._mute_caution = _body_label("")
         self._mute_caution.setObjectName("SongOverlayMuted")
-
-        self._mute_button = QPushButton("Open meeting to mute")
-        self._mute_button.setObjectName("GhostButton")
-        self._mute_button.setAccessibleName("Open the meeting app to mute")
-        self._mute_button.clicked.connect(self.mute_help_requested.emit)
-        self._mute_button.setVisible(False)
-
-        self._invite_button = QPushButton("Copy one invite")
-        self._invite_button.setObjectName("GhostButton")
-        self._invite_button.setAccessibleName("Copy one invite for jam and meeting")
-        self._invite_button.setToolTip(
-            "Copies one message with the jam link and, if set, the meeting link."
-        )
-        self._invite_button.clicked.connect(self.invite_requested.emit)
-
+        self._meeting_owner = _body_label("")
+        self._meeting_owner.setObjectName("SongOverlayMuted")
         self._end_note = _body_label("")
         self._end_note.setObjectName("SongOverlayMuted")
 
         layout.addWidget(self._mute_lines)
         layout.addWidget(self._mute_caution)
-        layout.addWidget(self._mute_button)
-        layout.addWidget(self._invite_button)
+        layout.addWidget(self._meeting_owner)
         layout.addStretch(1)
         layout.addWidget(self._end_note)
         return page
@@ -377,8 +394,18 @@ class SongOverlay(QFrame):
 
         return str(self._section_picker.currentData() or "")
 
-    def set_sections(self, names: tuple[str, ...]) -> None:
-        """Offer the song's own parts, keeping the current choice if it lives."""
+    def set_sections(
+        self,
+        names: tuple[str, ...],
+        *,
+        current: str = "",
+    ) -> None:
+        """Offer the song's own parts, keeping the current choice if it lives.
+
+        ``current`` is the part the clock is on. While the room is playing,
+        "chords for the bridge" almost always means the part they are in or
+        heading into, so that becomes the default instead of a generic guess.
+        """
 
         previous = self.selected_section()
         self._section_picker.blockSignals(True)
@@ -386,7 +413,8 @@ class SongOverlay(QFrame):
         self._section_picker.addItem("Next part", "")
         for name in names:
             self._section_picker.addItem(name, name)
-        index = self._section_picker.findData(previous)
+        wanted = previous or str(current or "")
+        index = self._section_picker.findData(wanted)
         self._section_picker.setCurrentIndex(max(0, index))
         self._section_picker.blockSignals(False)
         self._section_picker.setEnabled(bool(names))
@@ -433,8 +461,9 @@ class SongOverlay(QFrame):
             )
         )
         self._form_rows.setVisible(bool(form_rows))
-        self._advice.setText(_advice_text(advice, chords, next_chords))
+        self._advice.setText(_advice_text(advice, next_chords))
         self._advice.setVisible(bool(self._advice.text()))
+        self._render_suggestions(chords)
         self._results.setText("\n".join(results[:_MAX_LIST_ROWS]))
         self._results.setVisible(bool(results))
         self._share_button.setEnabled(bool(sheet_shareable))
@@ -444,6 +473,87 @@ class SongOverlay(QFrame):
             if sheet_shareable
             else "Write a key, tempo, or section in the notes first."
         )
+
+    def _render_suggestions(self, chords: ChordAdvice | None) -> None:
+        """Draw each suggestion with the one tap that would keep it."""
+
+        for row in self._suggestion_rows:
+            self._suggestion_layout.removeWidget(row)
+            row.setParent(None)
+            row.deleteLater()
+        self._suggestion_rows = []
+
+        if chords is None:
+            self._suggestion_headline.setText("")
+            self._suggestion_headline.setVisible(False)
+            self._dismiss_button.setVisible(False)
+            return
+
+        if not chords.available:
+            # The refusal is the answer: say what is missing and offer nothing.
+            self._suggestion_headline.setText(chords.headline())
+            self._suggestion_headline.setVisible(True)
+            self._dismiss_button.setVisible(True)
+            return
+
+        headline = chords.headline()
+        if chords.rewrites_existing:
+            headline = (
+                f"{chords.section_label} already plays "
+                f"{' '.join(chords.existing_chords)}. Instead:\n{headline}"
+            )
+        self._suggestion_headline.setText(headline)
+        self._suggestion_headline.setVisible(True)
+
+        for suggestion in chords.suggestions[:_MAX_LIST_ROWS]:
+            row = QWidget()
+            row_layout = QVBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(1)
+
+            headline = QHBoxLayout()
+            headline.setSpacing(Space.XS)
+            text = _body_label(
+                f"Suggestion · {suggestion.chord_line}   {suggestion.numeral_line}"
+            )
+            headline.addWidget(text, 1)
+            keep = QPushButton("Keep")
+            keep.setObjectName("GhostButton")
+            keep.setFixedHeight(22)
+            keep.setAccessibleName(
+                f"Keep {suggestion.chord_line} for {chords.section_label}"
+            )
+            keep.setToolTip(
+                f"Write {suggestion.chord_line} under {chords.section_label} in "
+                "your notes. The Studio arrangement is not touched."
+            )
+            keep.clicked.connect(
+                lambda _checked=False,
+                label=chords.section_label,
+                line=suggestion.chord_line: self.suggestion_kept.emit(label, line)
+            )
+            headline.addWidget(keep)
+            row_layout.addLayout(headline)
+
+            reason = _body_label(
+                f"{suggestion.reason} {suggestion.context}".strip()
+            )
+            reason.setObjectName("SongOverlayMuted")
+            row_layout.addWidget(reason)
+
+            self._suggestion_layout.addWidget(row)
+            self._suggestion_rows.append(row)
+
+        self._dismiss_button.setVisible(True)
+
+    def clear_suggestions(self) -> None:
+        """Drop the suggestions on screen. Nothing else changes."""
+
+        self._render_suggestions(None)
+        self._advice.setText("")
+        self._advice.setVisible(False)
+        self._suggestion_headline.setText("")
+        self._suggestion_headline.setVisible(False)
 
     def set_clock(self, snapshot: SongClockSnapshot) -> None:
         """Render the shared position, and never imply it follows the band."""
@@ -612,25 +722,29 @@ class SongOverlay(QFrame):
         if mutes is None:
             self._mute_lines.setText("")
             self._mute_caution.setText("")
-            self._mute_button.setVisible(False)
+            self._meeting_owner.setText("")
         else:
             self._mute_lines.setText(
                 "\n".join(control.describe() for control in mutes.controls)
             )
             self._mute_caution.setText(mutes.caution())
             meeting = mutes.meeting
-            self._mute_button.setVisible(meeting is not None)
-            if meeting is not None:
-                self._mute_button.setText(meeting.action_label)
-                self._mute_button.setToolTip(meeting.hint)
-        self._end_note.setText(end_note)
-        self._end_note.setVisible(bool(end_note))
-        self._invite_button.setToolTip(
-            "Copies one message with the jam link and the meeting link."
-            if meeting_configured
-            else "Copies the jam link. Add a meeting link in Settings to "
-            "include it in the same invite."
+            self._meeting_owner.setText(
+                f"{meeting.action_label} from Conversation. {meeting.hint}"
+                if meeting is not None
+                else ""
+            )
+        self._meeting_owner.setVisible(bool(self._meeting_owner.text()))
+        # Two separate facts, both worth saying, neither of them a button:
+        # ending the jam does not end the meeting, and the invite lives on the
+        # session bar.
+        invite_note = "Copy Invite on the session bar sends the jam link" + (
+            " and the meeting link." if meeting_configured else "."
         )
+        self._end_note.setText(
+            f"{end_note}\n{invite_note}" if end_note else invite_note
+        )
+        self._end_note.setVisible(True)
 
     def set_busy(self, verb_key: str, message: str = "") -> None:
         """Show that one tool is running without blocking the session."""
@@ -666,21 +780,9 @@ def _body_label(text: str, *, object_name: str = "SongOverlayBody") -> QLabel:
 
 def _advice_text(
     advice: WritingAdvice | None,
-    chords: ChordAdvice | None,
     next_chords: NextChordAdvice | None = None,
 ) -> str:
     lines: list[str] = []
-    if chords is not None:
-        if chords.rewrites_existing:
-            lines.append(
-                f"{chords.section_label} already plays "
-                f"{' '.join(chords.existing_chords)}. Instead:"
-            )
-        lines.append(chords.headline())
-        for suggestion in chords.suggestions[:_MAX_LIST_ROWS]:
-            lines.append(f"  {suggestion.chord_line}   {suggestion.numeral_line}")
-            detail = f"{suggestion.reason} {suggestion.context}".strip()
-            lines.append(f"  {detail}")
     if next_chords is not None:
         lines.append(next_chords.headline())
         for candidate in next_chords.candidates[:_MAX_LIST_ROWS]:

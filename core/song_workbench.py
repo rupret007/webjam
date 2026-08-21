@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Sequence
 
 from core.music_ai_catalog import SongToolCapability, SongToolCatalog
 from core.music_ai_client import missing_key_message
@@ -106,6 +106,7 @@ class FormRow:
 
     label: str
     chords: str
+    lyric: str = ""
     source: str = STATED
     is_detection_row: bool = False
 
@@ -115,9 +116,9 @@ class FormRow:
 
     def describe(self) -> str:
         marker = " ·detected" if self.detected else ""
-        if not self.chords:
-            return f"{self.label}:{marker}"
-        return f"{self.label}: {self.chords}{marker}"
+        head = f"{self.label}: {self.chords}" if self.chords else f"{self.label}:"
+        line = f"{head}{marker}"
+        return f"{line}\n    {self.lyric}" if self.lyric else line
 
 
 @dataclass(frozen=True, slots=True)
@@ -399,6 +400,7 @@ class SongWorkbench:
             FormRow(
                 label=section.label,
                 chords=section.chord_line,
+                lyric=section.lyrics[0] if section.lyrics else "",
                 source=section.source,
             )
             for section in self.form.sections[: max(1, int(max_rows))]
@@ -475,6 +477,32 @@ class SongWorkbench:
             sheet_available=form.has_content,
         )
 
+    def keep_progression(
+        self,
+        *,
+        section_label: str,
+        chords: Sequence[str],
+    ) -> str:
+        """Return notes with a kept suggestion written under its part.
+
+        Nothing is written anywhere until a musician taps Keep, and what gets
+        written is the song sheet in their own notes -- never the Studio
+        arrangement, which stays theirs to edit. The caller owns putting the
+        returned text back on the canvas, so this stays pure and testable.
+        """
+
+        line = " ".join(str(chord).strip() for chord in chords if str(chord).strip())
+        label = " ".join(str(section_label or "").split())
+        if not line or not label:
+            return self._notes
+
+        notes = self._notes
+        header = f"[{label}]"
+        if _has_section_header(notes, label):
+            return _insert_after_header(notes, label, line)
+        separator = "" if not notes or notes.endswith("\n") else "\n"
+        return f"{notes}{separator}{header}\n{line}\n"
+
     def shareable_sheet(self) -> str:
         """Return a compact song sheet the host can paste into band chat.
 
@@ -502,6 +530,38 @@ class SongWorkbench:
             else:
                 lines.append(f"{section.label}:")
         return "\n".join(lines)[:_MAX_SHEET_CHARS]
+
+
+def _section_header_index(notes: str, label: str) -> int:
+    """Return the line index of ``label``'s header, or ``-1``."""
+
+    wanted = label.strip().lower()
+    for index, raw in enumerate(notes.splitlines()):
+        line = raw.strip()
+        if not line:
+            continue
+        stripped = line.strip("[]()#").strip().rstrip(":").strip()
+        if stripped.lower() == wanted:
+            return index
+        if ":" in line and line.split(":", 1)[0].strip().lower() == wanted:
+            return index
+    return -1
+
+
+def _has_section_header(notes: str, label: str) -> bool:
+    return _section_header_index(notes, label) >= 0
+
+
+def _insert_after_header(notes: str, label: str, line: str) -> str:
+    """Put a kept progression directly under a part that already exists."""
+
+    lines = notes.splitlines()
+    index = _section_header_index(notes, label)
+    if index < 0:
+        return notes
+    lines.insert(index + 1, line)
+    trailing = "\n" if notes.endswith("\n") else ""
+    return "\n".join(lines) + trailing
 
 
 def _form_signature(form: SongForm) -> str:

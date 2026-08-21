@@ -305,6 +305,17 @@ class SessionStrip(QFrame):
             )
         )
 
+        # Where the song lives on the strip: the current part while the clock
+        # runs, or a quiet word while a Song tools job is working. It sits
+        # beside the Shared Track because that is the song's clock, and it
+        # survives closing the Song tools panel so the overlay you turned on
+        # stays on. It is never a control and never a spinner.
+        self._song_line = QLabel("")
+        self._song_line.setObjectName("SessionStripSongLine")
+        self._song_line.setAccessibleName("Song position")
+        self._song_line.setMaximumWidth(230)
+        self._song_line.setVisible(False)
+
         self._invite_button = QPushButton("Copy Invite")
         self._invite_button.setObjectName("GhostButton")
         self._invite_button.setAccessibleName("Copy band invite")
@@ -493,6 +504,7 @@ class SessionStrip(QFrame):
         layout.addWidget(self._video_button)
         layout.addWidget(self._shared_track_surface)
         layout.addWidget(self._art_room_chip)
+        layout.addWidget(self._song_line)
         layout.addWidget(self._studio_button)
         layout.addWidget(self._tools_button)
 
@@ -1092,6 +1104,23 @@ class SessionStrip(QFrame):
     @property
     def art_room_chip(self) -> ArtRoomChip:
         return self._art_room_chip
+
+    def set_song_line(self, text: str, *, description: str = "") -> None:
+        """Show one quiet line about the song, or nothing at all.
+
+        Read-only by contract: this reports where the song is or that a Song
+        tools job is working. It never becomes a button, so it cannot compete
+        with the HUD's primary action.
+        """
+
+        line = " ".join(str(text or "").split())
+        self._song_line.setText(line)
+        self._song_line.setVisible(bool(line))
+        self._song_line.setToolTip(description or line)
+        self._song_line.setAccessibleDescription(description or line)
+
+    def current_song_line(self) -> str:
+        return self._song_line.text()
 
     def set_shared_track_snapshot(self, snapshot: object) -> None:
         """Render the host-owned source/transport truth in the live mini deck."""

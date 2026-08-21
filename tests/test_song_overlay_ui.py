@@ -54,6 +54,18 @@ def overlay(app):
     widget.deleteLater()
 
 
+def _suggestion_text(widget: SongOverlay) -> str:
+    """Return the visible text of every rendered suggestion row."""
+
+    from PySide6.QtWidgets import QLabel
+
+    return "\n".join(
+        label.text()
+        for row in widget._suggestion_rows
+        for label in row.findChildren(QLabel)
+    )
+
+
 def _tool_labels(widget: SongOverlay) -> list[str]:
     return [button.text() for button in widget._tool_buttons]
 
@@ -365,10 +377,12 @@ def test_writing_help_and_chords_render_with_their_reasoning(overlay):
         chords=workbench.chord_advice(),
     )
 
-    text = overlay._advice.text()
-    assert "Suggestions for" in text
-    assert "from your notes" in text
-    assert any(numeral in text for numeral in ("i", "VI", "VII"))
+    headline = overlay._suggestion_headline.text()
+    assert "Suggestions for" in headline
+    assert "from your notes" in headline
+    rows = _suggestion_text(overlay)
+    assert any(numeral in rows for numeral in ("i", "VI", "VII"))
+    assert "Suggestion ·" in rows
 
 
 def test_help_buttons_say_nothing_is_uploaded(overlay):
@@ -396,7 +410,7 @@ def test_both_mutes_are_shown_on_the_meeting_page(overlay):
     assert "WebJam mute — what you hear" in lines
     assert "Webex mute — your microphone in the meeting" in lines
     assert "Neither stops your instrument" in overlay._mute_caution.text()
-    assert not overlay._mute_button.isHidden()
+    assert "from Conversation" in overlay._meeting_owner.text()
     assert "stays open" in overlay._end_note.text()
 
 
@@ -407,10 +421,11 @@ def test_with_no_meeting_the_page_makes_no_claim_about_one(overlay):
         meeting_configured=False,
     )
 
-    assert not overlay._mute_button.isVisible()
-    assert not overlay._end_note.isVisible()
+    assert overlay._meeting_owner.isHidden()
     assert "monitor mix only" in overlay._mute_caution.text()
-    assert "Add a meeting link" in overlay._invite_button.toolTip()
+    # Explains where the action lives; never offers a second Copy Invite.
+    assert "Copy Invite on the session bar" in overlay._end_note.text()
+    assert "and the meeting link" not in overlay._end_note.text()
 
 
 # ----------------------------------------------------------------------
@@ -530,14 +545,16 @@ def test_rewriting_a_part_says_what_it_already_plays(overlay):
     workbench = SongWorkbench(notes=SHEET)
     overlay.set_song_state(chords=workbench.chord_advice(section_name="Verse"))
 
-    text = overlay._advice.text()
-    assert "Verse already plays Am F C G. Instead:" in text
+    assert (
+        "Verse already plays Am F C G. Instead:"
+        in overlay._suggestion_headline.text()
+    )
 
 
 def test_the_seam_reasoning_reaches_the_musician(overlay):
     workbench = SongWorkbench(notes=SHEET)
     overlay.set_song_state(chords=workbench.chord_advice(section_name="Chorus"))
-    assert "Verse ends on" in overlay._advice.text()
+    assert "Verse ends on" in _suggestion_text(overlay)
 
 
 def test_next_chord_candidates_render_with_their_reasons(overlay):
@@ -790,3 +807,112 @@ def test_the_stems_page_keeps_to_two_worded_actions(overlay):
         "Send to jam",
         "Sing this one",
     ]
+
+
+# ----------------------------------------------------------------------
+# Suggestions are labelled, keepable, dismissable
+# ----------------------------------------------------------------------
+def test_every_suggestion_says_it_is_a_suggestion(overlay):
+    workbench = SongWorkbench(notes=SHEET)
+    overlay.set_song_state(chords=workbench.chord_advice())
+
+    rows = _suggestion_text(overlay)
+    assert rows.count("Suggestion ·") == len(overlay._suggestion_rows)
+
+
+def test_each_suggestion_carries_its_own_keep(overlay):
+    workbench = SongWorkbench(notes=SHEET)
+    overlay.set_song_state(chords=workbench.chord_advice(section_name="Chorus"))
+
+    kept: list[tuple[str, str]] = []
+    overlay.suggestion_kept.connect(lambda label, line: kept.append((label, line)))
+    first = overlay._suggestion_rows[0].findChildren(QPushButton)[0]
+    assert first.text() == "Keep"
+    first.click()
+
+    assert len(kept) == 1
+    assert kept[0][0] == "Chorus"
+    assert kept[0][1].split()
+
+
+def test_keep_says_it_writes_notes_not_the_arrangement(overlay):
+    workbench = SongWorkbench(notes=SHEET)
+    overlay.set_song_state(chords=workbench.chord_advice(section_name="Verse"))
+
+    tip = overlay._suggestion_rows[0].findChildren(QPushButton)[0].toolTip()
+    assert "your notes" in tip
+    assert "Studio arrangement is not touched" in tip
+
+
+def test_dismiss_is_offered_and_clears_everything(overlay):
+    workbench = SongWorkbench(notes=SHEET)
+    overlay.set_song_state(chords=workbench.chord_advice())
+    assert not overlay._dismiss_button.isHidden()
+
+    seen: list[bool] = []
+    overlay.suggestions_dismissed.connect(lambda: seen.append(True))
+    overlay._dismiss_button.click()
+    assert seen == [True]
+
+    overlay.clear_suggestions()
+    assert overlay._suggestion_rows == []
+    assert overlay._suggestion_headline.text() == ""
+
+
+def test_a_refusal_is_shown_without_offering_anything_to_keep(overlay):
+    overlay.set_song_state(
+        chords=SongWorkbench(notes="[Verse]\nla la la\n").chord_advice()
+    )
+
+    assert "does not know this song's key" in overlay._suggestion_headline.text()
+    assert overlay._suggestion_rows == []
+
+
+# ----------------------------------------------------------------------
+# Lyrics ride the form
+# ----------------------------------------------------------------------
+def test_lyrics_appear_under_the_part_they_were_written_for(overlay):
+    workbench = SongWorkbench(
+        notes=(
+            "Key: G major\n[Verse]\nG D Em C\nWalking out the back door again\n"
+            "[Chorus]\nC G D\nHold on to the wheel and steer\n"
+        )
+    )
+    overlay.set_song_state(form_rows=workbench.form_overlay())
+
+    text = overlay._form_rows.text()
+    assert "Walking out the back door again" in text
+    assert text.index("Walking out") > text.index("Verse: G D Em C")
+    assert text.index("Hold on") > text.index("Chorus: C G D")
+
+
+# ----------------------------------------------------------------------
+# The part you are on is the default
+# ----------------------------------------------------------------------
+def test_the_current_part_is_preselected(overlay):
+    overlay.set_sections(("Intro", "Verse", "Chorus"), current="Verse")
+    assert overlay.selected_section() == "Verse"
+
+
+def test_an_explicit_choice_outranks_the_current_part(overlay):
+    overlay.set_sections(("Intro", "Verse", "Chorus"))
+    overlay._section_picker.setCurrentIndex(3)
+    overlay.set_sections(("Intro", "Verse", "Chorus"), current="Verse")
+    assert overlay.selected_section() == "Chorus"
+
+
+# ----------------------------------------------------------------------
+# Nothing here competes with the HUD
+# ----------------------------------------------------------------------
+def test_the_meeting_page_has_no_buttons_at_all(overlay):
+    page = overlay._stack.widget(3)
+    assert page.findChildren(QPushButton) == []
+
+
+def test_the_stems_page_says_the_live_mix_is_untouched(overlay):
+    """Stem chips are the reference; the band's faders are a different mix."""
+
+    assert "record's vocal" in overlay._sing_button.toolTip()
+    boundary = overlay._stem_boundary.text()
+    assert "not the band" in boundary
+    assert "Musician faders are unchanged" in boundary

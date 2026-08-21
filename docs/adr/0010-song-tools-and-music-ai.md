@@ -51,8 +51,55 @@ the narrow pane beside a free Webex window (ADR 0004,
 musician's own click. Music launch is unchanged: Host / Join / New Music
 Project, with no fourth start card.
 
-Song tools are Music-only. Podcast & Voice and Review & Rehearsal sessions have
-no song form, so the entry is absent there rather than present and inert.
+Song tools are Music-only. Podcast & Voice, Review & Rehearsal, and Studio
+Visit have no song form, so the entry is absent there rather than present and
+inert.
+
+### The panel explains; the HUD acts (ADR 0002)
+
+ADR 0002 makes the HUD the only actionable primary control, and Canvas and
+Studio explain the same next action without adding a competing button. The
+Song panel obeys that literally:
+
+- It carries **no button whose label is a HUD primary action**, asserted by
+  parsing the widget's `QPushButton` labels against that set. An earlier
+  revision had a "Copy one invite" button; `Copy Invite` is a HUD primary
+  action, so it is gone and the panel now says where the action lives.
+- The meeting mute handoff belongs to Conversation, so the Meeting page has
+  **no buttons at all** — it states both mutes, says which app owns which, and
+  points at Conversation.
+- Nothing in the coordinator touches conductor phase, the session HUD,
+  musician guidance, the session pulse, or recording, asserted by test.
+- The 250 ms repaint tick updates the position line only. It never rebuilds
+  guidance, asserted against the parsed call graph of `_on_tick`.
+
+Song tools are creative and opt-in throughout: the panel never opens itself,
+and a suggestion is text until a musician acts on it.
+
+### Suggestions are kept, not applied
+
+Every suggested progression is drawn with the word **Suggestion**, its
+reasoning, and one **Keep**. Keep writes that progression under its part in the
+musician's own notes — never into the Studio arrangement, and never
+automatically. **Dismiss** clears the panel and undoes nothing, because nothing
+was done. A refusal (no key yet) is shown in the same place with nothing to
+keep.
+
+### Quiet by construction
+
+While a Song tools job runs, the session strip shows one word — "Chords & key…"
+— and nothing blocks or covers the jam. That same line shows the current part
+and its chords while the clock runs, and it **survives closing the panel**, so
+an overlay a musician turned on stays on when they go back to the jam. It is a
+label, never a control, so it cannot compete with the HUD.
+
+Running a tool takes exactly one dialog: the host confirmation, which names the
+file. When the session already holds a Shared Track that is the subject, and no
+second "which file?" box appears.
+
+A missing key is one sentence naming `music.ai/dash` and `MUSIC_AI_API_KEY`,
+shown inside the panel. It never reaches the HUD: an absent optional credential
+is not the session's next action.
 
 ### One section vocabulary, two honest representations
 

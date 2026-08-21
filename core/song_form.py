@@ -119,6 +119,7 @@ class SongSection:
     name: str
     role: str
     chords: tuple[str, ...] = ()
+    lyrics: tuple[str, ...] = ()
     source: str = STATED
     detail: str = ""
     # Written as ``[Verse x8]`` when the room has decided how long a part is.
@@ -379,6 +380,9 @@ def _extend_section(
             and not _URL_RE.search(line)
         ):
             lyric_lines.append(line[:120])
+            # A lyric belongs to the part it was written under, so it can be
+            # shown against that part instead of as one undifferentiated block.
+            _attach_lyric(sections, current, line[:120])
         return
     if current is None:
         return
@@ -395,6 +399,22 @@ def _extend_section(
                 if len(merged) < _MAX_CHORDS_PER_SECTION:
                     merged.append(chord)
         sections[index] = replace(section, chords=tuple(merged))
+        return
+
+
+def _attach_lyric(
+    sections: list[SongSection],
+    current: str | None,
+    line: str,
+) -> None:
+    if current is None:
+        return
+    for index, section in enumerate(sections):
+        if section.name != current:
+            continue
+        if line in section.lyrics or len(section.lyrics) >= _MAX_LYRIC_LINES:
+            return
+        sections[index] = replace(section, lyrics=(*section.lyrics, line))
         return
 
 

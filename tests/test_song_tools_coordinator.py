@@ -54,6 +54,7 @@ def _controller(app, *, is_host=True, api_key="k", webex_url="", notes=SHEET):
             current_title=lambda: "Tuesday Jam",
             _elapsed_seconds=1320,
             _shared_track_last_snapshot=None,
+            set_song_line=MagicMock(),
         ),
         flash_message=MagicMock(),
     )
@@ -142,9 +143,9 @@ def test_chord_help_answers_for_a_part_the_song_lacks(app):
     coordinator = _coordinator(app)
     coordinator.show_chords("")
 
-    text = coordinator.overlay._advice.text()
-    assert "Suggestions for" in text
-    assert "A minor" in text
+    headline = coordinator.overlay._suggestion_headline.text()
+    assert "Suggestions for" in headline
+    assert "A minor" in headline
 
 
 def test_the_song_sheet_goes_to_band_chat_not_back_into_the_notes(app):
@@ -485,27 +486,31 @@ def test_a_failed_catalog_offers_no_buttons_when_rendered(app):
 # ----------------------------------------------------------------------
 # Meeting actions
 # ----------------------------------------------------------------------
-def test_the_panel_copies_one_invite_with_both_links(app):
+def test_the_panel_never_duplicates_the_huds_primary_action(app):
+    """ADR 0002: Copy Invite is a HUD primary action; the panel explains only."""
+
     coordinator = _coordinator(app, webex_url="https://band.webex.com/meet/jeff")
-    coordinator._c._host_share_readiness = MagicMock(return_value=SimpleNamespace())
-    coordinator._c._current_invite_url = MagicMock(
-        return_value="webjam://join?v=2&host=10.0.0.2&port=22124"
+    coordinator.overlay.setVisible(True)
+    coordinator.refresh()
+
+    assert not hasattr(coordinator.overlay, "_invite_button")
+    assert not hasattr(coordinator, "_copy_invite")
+    assert (
+        "Copy Invite on the session bar"
+        in coordinator.overlay._end_note.text()
     )
-    clipboard = MagicMock()
-
-    with patch("PySide6.QtWidgets.QApplication") as application:
-        application.clipboard.return_value = clipboard
-        coordinator._copy_invite()
-
-    copied = clipboard.setText.call_args.args[0]
-    assert "webjam://join?v=2" in copied
-    assert "https://band.webex.com/meet/jeff" in copied
 
 
-def test_the_mute_action_hands_off_to_the_meeting_app(app):
-    coordinator = _coordinator(app)
-    coordinator._open_meeting_mute()
-    coordinator._c._focus_webex_mute.assert_called_once()
+def test_the_panel_points_at_conversation_for_the_meeting_mute(app):
+    """The meeting mute handoff already has an owner; do not add a second."""
+
+    coordinator = _coordinator(app, webex_url="https://band.webex.com/meet/jeff")
+    coordinator.overlay.setVisible(True)
+    coordinator.refresh()
+
+    assert not hasattr(coordinator.overlay, "_mute_button")
+    assert not hasattr(coordinator, "_open_meeting_mute")
+    assert "from Conversation" in coordinator.overlay._meeting_owner.text()
 
 
 def test_the_key_action_opens_settings(app):
@@ -521,19 +526,20 @@ def test_chord_help_for_a_named_part_also_offers_what_comes_next(app):
     coordinator = _coordinator(app)
     coordinator.show_chords("Verse")
 
-    text = coordinator.overlay._advice.text()
-    assert "Verse already plays Am F C G. Instead:" in text
-    assert "After Am F C G in Verse" in text
+    assert (
+        "Verse already plays Am F C G. Instead:"
+        in coordinator.overlay._suggestion_headline.text()
+    )
+    assert "After Am F C G in Verse" in coordinator.overlay._advice.text()
 
 
 def test_chord_help_with_no_selection_answers_the_next_missing_part(app):
     coordinator = _coordinator(app)
     coordinator.show_chords("")
 
-    text = coordinator.overlay._advice.text()
-    assert "Suggestions for Chorus" in text
+    assert "Suggestions for Chorus" in coordinator.overlay._suggestion_headline.text()
     # Nothing exists to continue from, so no next-chord block is offered.
-    assert "After " not in text
+    assert "After " not in coordinator.overlay._advice.text()
 
 
 def test_the_picker_is_filled_from_the_live_notes(app):
@@ -879,3 +885,171 @@ def test_removing_the_track_returns_the_count_to_the_panel(app):
 
     assert not coordinator.workbench.clock_snapshot().follows_shared_track
     assert coordinator.overlay._clock_button.isEnabled()
+
+
+# ----------------------------------------------------------------------
+# Suggestions: labelled, one tap to keep, one to dismiss, never auto-written
+# ----------------------------------------------------------------------
+def test_a_suggestion_writes_nothing_until_it_is_kept(app):
+    coordinator = _coordinator(app)
+    written: list[str] = []
+    coordinator._c.window.session_canvas.set_notes = written.append
+
+    coordinator.show_chords("Verse")
+
+    assert written == []
+    assert coordinator.overlay._suggestion_rows
+
+
+def test_keeping_a_suggestion_writes_it_under_that_part(app):
+    coordinator = _coordinator(app)
+    written: list[str] = []
+    coordinator._c.window.session_canvas.set_notes = written.append
+
+    coordinator.keep_suggestion("Verse", "F G Am Am")
+
+    assert len(written) == 1
+    assert "F G Am Am" in written[0]
+    lines = written[0].splitlines()
+    assert lines[lines.index("[Verse]") + 1] == "F G Am Am"
+
+
+def test_keeping_a_part_the_sheet_lacks_appends_it(app):
+    coordinator = _coordinator(app)
+    written: list[str] = []
+    coordinator._c.window.session_canvas.set_notes = written.append
+
+    coordinator.keep_suggestion("Bridge", "Dm Am Em Am")
+
+    assert "[Bridge]" in written[0]
+    assert written[0].rstrip().endswith("Dm Am Em Am")
+
+
+def test_keeping_clears_the_suggestions_and_says_what_happened(app):
+    coordinator = _coordinator(app)
+    coordinator._c.window.session_canvas.set_notes = lambda _text: None
+    coordinator.show_chords("Verse")
+
+    coordinator.keep_suggestion("Verse", "F G Am Am")
+
+    assert coordinator.overlay._suggestion_rows == []
+    assert any("Kept F G Am Am under Verse" in m for m in _flashes(coordinator))
+
+
+def test_keeping_nothing_changes_nothing(app):
+    coordinator = _coordinator(app)
+    written: list[str] = []
+    coordinator._c.window.session_canvas.set_notes = written.append
+
+    coordinator.keep_suggestion("Verse", "   ")
+
+    assert written == []
+    assert any("Nothing to keep" in m for m in _flashes(coordinator))
+
+
+def test_dismissing_clears_the_panel_and_writes_nothing(app):
+    coordinator = _coordinator(app)
+    written: list[str] = []
+    coordinator._c.window.session_canvas.set_notes = written.append
+    coordinator.show_chords("Verse")
+
+    coordinator.dismiss_suggestions()
+
+    assert coordinator.overlay._suggestion_rows == []
+    assert written == []
+
+
+def test_the_selected_part_defaults_to_where_the_clock_is(app):
+    coordinator, now = _clock_coordinator(app)
+    coordinator.overlay.setVisible(True)
+    coordinator.workbench.clock.start()
+    now["value"] = 10.0
+
+    coordinator.refresh()
+
+    assert coordinator.overlay.selected_section() == "Verse"
+
+
+# ----------------------------------------------------------------------
+# The quiet line on the strip
+# ----------------------------------------------------------------------
+def _song_line(coordinator) -> str:
+    return coordinator._c.window.session_strip.set_song_line.call_args.args[0]
+
+
+def test_a_running_clock_puts_the_part_on_the_strip(app):
+    coordinator, now = _clock_coordinator(app)
+    coordinator.overlay.setVisible(True)
+    coordinator.workbench.clock.start()
+    now["value"] = 10.0
+
+    coordinator._on_tick()
+
+    assert "Verse · bar 2 of 8" in _song_line(coordinator)
+
+
+def test_the_strip_line_survives_closing_the_panel(app):
+    """Overlays you turned on stay on when you go back to the jam."""
+
+    coordinator, now = _clock_coordinator(app)
+    coordinator.overlay.setVisible(True)
+    coordinator.workbench.clock.start()
+    now["value"] = 10.0
+    coordinator._on_tick()
+
+    coordinator.close_panel()
+    coordinator._on_panel_closed()
+
+    assert not coordinator.overlay.isVisible()
+    assert "Verse" in _song_line(coordinator)
+
+
+def test_a_job_in_flight_reads_as_one_quiet_word(app):
+    coordinator = _coordinator(app)
+    coordinator._catalog = resolve_song_tools(
+        [MusicAIWorkflow("1", "Chord detection", "chords", "detect chords")]
+    )
+    coordinator._running_verb = "chords"
+
+    coordinator._render_song_line()
+
+    assert _song_line(coordinator) == "Chords & key…"
+
+
+def test_the_strip_stays_empty_in_a_quiet_room(app):
+    coordinator = _coordinator(app)
+    coordinator._render_song_line()
+    assert _song_line(coordinator) == ""
+
+
+def test_a_non_music_session_never_gets_a_song_line(app):
+    coordinator = _coordinator(app)
+    coordinator._c.creator_profile = get_creator_profile_by_key_or_default(
+        "podcast_voice"
+    )
+    coordinator._render_song_line()
+    assert _song_line(coordinator) == ""
+
+
+# ----------------------------------------------------------------------
+# One dialog, not two
+# ----------------------------------------------------------------------
+def test_a_loaded_shared_track_is_the_subject_without_an_extra_dialog(app, tmp_path):
+    source = tmp_path / "backing.wav"
+    source.write_bytes(b"RIFF" + b"0" * 4096)
+    coordinator = _coordinator(app)
+    coordinator._catalog = resolve_song_tools(ACCOUNT)
+    coordinator._c._reference_track_load_pending = str(source)
+
+    with patch(
+        "webjam_qt.controllers.song_tools_coordinator.QFileDialog.getOpenFileName"
+    ) as picker, patch(
+        "webjam_qt.controllers.song_tools_coordinator.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.No,
+    ) as confirm:
+        coordinator.run_song_tool("stems")
+
+    picker.assert_not_called()
+    # Exactly one dialog: the host confirmation, which names the file.
+    assert confirm.call_count == 1
+    assert "backing.wav" in confirm.call_args.args[2]

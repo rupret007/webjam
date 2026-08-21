@@ -406,3 +406,114 @@ def test_song_help_is_labelled_a_suggestion_everywhere_it_is_offered():
     ).read_text()
     assert "Suggest chords" in overlay
     assert "Nothing is uploaded" in overlay
+
+
+# ----------------------------------------------------------------------
+# ADR 0002: the panel explains, the HUD acts
+# ----------------------------------------------------------------------
+HUD_PRIMARY_ACTIONS = {
+    "Copy Invite",
+    "Copy New Invite",
+    "Reset Invite",
+    "Enter Jam",
+    "Bring Jamulus Forward",
+    "Fix Audio in Jamulus",
+    "Yes, It Sounds Right",
+    "Add Conversation",
+    "Save Meeting Link",
+    "Try Again",
+}
+
+
+def test_the_song_panel_adds_no_button_for_a_hud_primary_action():
+    """ADR 0002: Canvas and Studio explain the next action, never duplicate it."""
+
+    import ast
+
+    tree = ast.parse(
+        (REPO_ROOT / "webjam_qt" / "widgets" / "song_overlay.py").read_text()
+    )
+    button_labels = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "QPushButton"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            button_labels.add(node.args[0].value)
+
+    assert not (button_labels & HUD_PRIMARY_ACTIONS), sorted(
+        button_labels & HUD_PRIMARY_ACTIONS
+    )
+    for label in button_labels:
+        assert "invite" not in label.lower()
+
+
+def test_the_song_panel_never_touches_conductor_phase_or_recording():
+    """Creative guidance may not alter operational truth."""
+
+    source = (
+        REPO_ROOT / "webjam_qt" / "controllers" / "song_tools_coordinator.py"
+    ).read_text()
+    for forbidden in (
+        "session_conductor",
+        "_render_session_conductor",
+        "_update_session_hud",
+        "_publish_musician_guidance",
+        "_refresh_session_pulse",
+        "recording.",
+        "_on_record_requested",
+        "audio.on_launch_toggle",
+    ):
+        assert forbidden not in source, forbidden
+
+
+def test_the_clock_tick_does_not_rebuild_guidance():
+    """ADR 0002: guidance is not rebuilt from playhead or animation ticks."""
+
+    import ast
+    import inspect
+    import textwrap
+
+    from webjam_qt.controllers.song_tools_coordinator import SongToolsCoordinator
+
+    tick = ast.parse(
+        textwrap.dedent(inspect.getsource(SongToolsCoordinator._on_tick))
+    )
+    called = {
+        node.func.attr
+        for node in ast.walk(tick)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    for forbidden in (
+        "_update_session_hud",
+        "_publish_musician_guidance",
+        "_refresh_session_pulse",
+        "_render_session_conductor",
+        "set_musician_guidance",
+        "set_session_pulse",
+    ):
+        assert forbidden not in called
+
+
+def test_the_missing_key_line_is_one_sentence_and_names_the_env_var():
+    from core.music_ai_client import API_KEY_ENV_VAR, missing_key_message
+
+    message = missing_key_message()
+    assert API_KEY_ENV_VAR in message
+    assert "music.ai/dash" in message
+    assert len(message.split(". ")) <= 3
+    assert "sign up" not in message.lower()
+
+
+def test_the_missing_key_line_never_reaches_the_hud():
+    """An absent optional credential is not the session's next action."""
+
+    controller = (
+        REPO_ROOT / "webjam_qt" / "controllers" / "application_controller.py"
+    ).read_text()
+    assert "missing_key_message" not in controller
+    assert "music_ai_api_key" not in controller

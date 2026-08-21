@@ -374,6 +374,10 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         "WEBJAM_LOG_FILE": "log_file",
         "WEBJAM_COMPANION_API": "companion_api_enabled",
         "WEBJAM_COMPANION_API_PORT": "companion_api_port",
+        # MUSIC_AI_API_KEY is the name Music AI's own docs use, so accept it
+        # directly. The WEBJAM_-prefixed form is listed second and therefore
+        # wins, matching every other override in this map.
+        "MUSIC_AI_API_KEY": "music_ai_api_key",
         "WEBJAM_MUSIC_AI_API_KEY": "music_ai_api_key",
     }
     for env_name, key in env_map.items():
