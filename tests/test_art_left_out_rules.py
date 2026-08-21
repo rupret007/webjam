@@ -570,6 +570,36 @@ def test_no_fail_closed_message_leaks_a_path(message):
     assert "C:" not in message
 
 
+def test_no_art_copy_tells_a_person_which_menu_to_open():
+    """A user interface explaining how to navigate itself is a sign the thing
+    is not findable.
+
+    Art's canvas and video used to be announced with "open More -> Shared
+    Canvas". The room carries a control now, so the instruction is both stale
+    and redundant, and it should not creep back into any notice or panel.
+    """
+
+    from webjam_qt.controllers.application_controller import ApplicationController
+
+    notices = (
+        *ApplicationController._SHARED_CANVAS_NOTICES.values(),
+        *ApplicationController._REFERENCE_VIDEO_NOTICES.values(),
+    )
+    assert notices
+
+    for message in notices:
+        assert "\u2192" not in message, message
+        assert "More" not in message, message
+        assert "menu" not in message.lower(), message
+
+    for name in (
+        "webjam_qt/windows/shared_canvas.py",
+        "webjam_qt/windows/reference_video.py",
+        "webjam_qt/windows/ai_image.py",
+    ):
+        assert "More \u2192" not in _source(name), name
+
+
 def test_the_companion_carries_no_message_field_to_leak_a_stack_trace():
     """Recovery copy is the desktop's job. A projection with a free-text
     field would eventually carry whatever an exception said."""

@@ -413,7 +413,13 @@ def test_an_artist_is_told_once_when_the_host_starts_sharing():
     )
     message = controller.window.flash_message.call_args.args[0]
     assert "host is sharing a reference video" in message
-    assert "Reference Video" in message
+    # It names the event and what the artist can do about it. It does not
+    # route them through a menu: the room's own chip carries the control, and
+    # a notice telling someone which menu to open is a sign the thing is not
+    # findable.
+    assert "More" not in message
+    assert "→" not in message
+    assert "keep working" in message
 
     # A steady state must not nag on every tick.
     for _ in range(5):

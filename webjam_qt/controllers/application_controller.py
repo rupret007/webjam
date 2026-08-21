@@ -11667,11 +11667,12 @@ class ApplicationController(QObject):
 
     #: Follow states worth interrupting an artist for, and what to say. A
     #: state that resolves itself, or that the artist chose, stays silent.
+    #: One line per transition. These say what happened; the room's own chip
+    #: says what to do about it, so none of them names a menu path any more.
     _REFERENCE_VIDEO_NOTICES = {
         "needs_file": (
             "The host is sharing a reference video. Open your own copy of the "
-            "same file from More → Reference Video, or ignore it and keep "
-            "working."
+            "same file to follow along, or keep working."
         ),
         "mismatched_file": (
             "That is not the same file the host is playing, so WebJam will "
@@ -11686,9 +11687,9 @@ class ApplicationController(QObject):
     def _announce_reference_video_follow_state(self, snapshot) -> None:
         """Tell an artist once when the shared video needs them.
 
-        Without this, a guest who never opens the panel would never learn that
-        a video is being shared, or that the copy they opened stopped
-        matching. Only transitions speak, so a steady state stays quiet.
+        Same division as the canvas: this announces the change, and the
+        room's chip carries the standing state. Only transitions speak, so a
+        steady state stays quiet.
         """
 
         state = str(getattr(getattr(snapshot, "state", None), "value", "") or "")
@@ -11886,12 +11887,12 @@ class ApplicationController(QObject):
     #: state they already acted on stays quiet.
     _SHARED_CANVAS_NOTICES = {
         "ready": (
-            "The host shared a canvas. Open it from More → Shared Canvas, or "
-            "ignore it and keep working."
+            "The host shared a canvas. Open it whenever you are ready, or "
+            "keep working."
         ),
         "needs_drawpile": (
-            "The host shared a Drawpile canvas, but Drawpile is not installed "
-            "here. Install it from More → Shared Canvas, or just talk."
+            "The host shared a Drawpile canvas, and Drawpile is not installed "
+            "here. You can install it, or just talk and keep working."
         ),
         "unreadable": (
             "The host shared a canvas WebJam could not read, so it will not "
@@ -11902,8 +11903,10 @@ class ApplicationController(QObject):
     def _announce_shared_canvas_follow_state(self, snapshot) -> None:
         """Tell an artist once when a canvas appears or cannot be opened.
 
-        Without this, a guest who never opens the panel would never learn a
-        canvas exists. Only transitions speak, so a steady state stays quiet.
+        A transition is an event and the room's chip is a state, which are
+        different jobs: this says a canvas just arrived, the chip says the
+        room has one. Only transitions speak, so a steady state stays quiet,
+        and neither of them names a menu to go hunting through.
         """
 
         state = str(getattr(getattr(snapshot, "state", None), "value", "") or "")
