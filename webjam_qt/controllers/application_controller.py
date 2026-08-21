@@ -577,6 +577,7 @@ class ApplicationController(QObject):
         self._shared_canvas_dialog = None
         self._shared_canvas_binding: tuple[str, str] | tuple[()] = ()
         self._shared_canvas_notified_state = ""
+        self._announced_creator_start: tuple[str, str] | tuple[()] = ()
         self._reference_track_operation_lock = threading.RLock()
         self._reference_track_worker_state_lock = threading.Lock()
         self._reference_track_operation_inflight = False
@@ -682,6 +683,15 @@ class ApplicationController(QObject):
         self._reference_video_timer = QTimer(self)
         self._reference_video_timer.setInterval(500)
         self._reference_video_timer.timeout.connect(self._tick_reference_video)
+
+        # Art's start card is chosen before there is a room to act on, so this
+        # waits for one and then says, once, where the control it promised
+        # lives. It stops itself as soon as it has spoken; a card that opened
+        # a window instead would steal focus from the meeting beside WebJam.
+        self._art_start_timer = QTimer(self)
+        self._art_start_timer.setInterval(1000)
+        self._art_start_timer.timeout.connect(self._tick_creator_start)
+        self._art_start_timer.start()
 
         self._connection_timer = QTimer(self)
         self._connection_timer.setSingleShot(True)
@@ -1167,6 +1177,9 @@ class ApplicationController(QObject):
         reference_track_timer = getattr(self, "_reference_track_timer", None)
         if reference_track_timer is not None:
             reference_track_timer.stop()
+        art_start_timer = getattr(self, "_art_start_timer", None)
+        if art_start_timer is not None:
+            art_start_timer.stop()
         self._release_reference_video()
         self._release_shared_canvas()
         self._connection_timer.stop()
@@ -1553,6 +1566,75 @@ class ApplicationController(QObject):
                 ),
             )
         )
+
+    @property
+    def creator_start(self):
+        """Return the start card this artist chose, or ``None``.
+
+        The value is re-resolved against the active profile every time, so a
+        key saved under another profile can never arm a capability this one
+        does not have; it falls back to the plain talk-only door.
+        """
+
+        return self.creator_profile.start_or_default(
+            getattr(getattr(self, "settings", None), "last_creator_start_key", "")
+        )
+
+    #: What to say once, per start that promises an add-on, when a room exists.
+    _CREATOR_START_NOTICES = {
+        "paint_together": (
+            "Paint together: open More → Shared Canvas to host the canvas in "
+            "Drawpile and share its invitation with the room."
+        ),
+        "paint_along": (
+            "Paint along: open More → Reference Video to share one local "
+            "video. Everyone follows it on their own copy of the same file."
+        ),
+    }
+
+    def _tick_creator_start(self) -> None:
+        """Wait for a real room, then point the host at what they chose.
+
+        A start is picked at launch, before any room exists, so it cannot be
+        acted on there. Rather than opening a window later and taking focus,
+        this says where the control is and then stops for good.
+        """
+
+        timer = getattr(self, "_art_start_timer", None)
+        if getattr(self, "_shutdown", False):
+            if timer is not None:
+                timer.stop()
+            return
+        start = self.creator_start
+        if start is None or start.talk_only:
+            if timer is not None:
+                timer.stop()
+            return
+        try:
+            coordinator = (
+                self._shared_canvas_coordinator()
+                if start.shared_canvas
+                else self._reference_video_coordinator()
+            )
+        except Exception:  # noqa: BLE001 - a nudge never breaks the room
+            LOGGER.debug("Creator start binding failed safely", exc_info=True)
+            return
+        # Only a host chose this card. A guest's saved start says nothing about
+        # the room they joined, and the canvas and video each already announce
+        # themselves to a guest when the host shares one.
+        if coordinator is None or not coordinator.hosting:
+            return
+        binding = (start.key, str(getattr(self, "_shared_canvas_binding", ()) or ""))
+        if getattr(self, "_announced_creator_start", ()) == binding:
+            if timer is not None:
+                timer.stop()
+            return
+        self._announced_creator_start = binding
+        notice = self._CREATOR_START_NOTICES.get(start.key)
+        if notice:
+            self.window.flash_message(notice, ms=9000)
+        if timer is not None:
+            timer.stop()
 
     def _apply_creator_profile_key(
         self,
