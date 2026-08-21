@@ -428,10 +428,17 @@ CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
 
 # Explicit migration from every previously persisted mode key.  Canonical keys
 # are deliberately absent so callers can distinguish migration from identity.
+#
+# ``visual_studio`` was the visual-arts mode and only pointed at Review &
+# Rehearsal because nothing better existed.  Studio Visit is the profile that
+# mode was always describing, so someone who last worked in Visual Studio now
+# lands in a room built for making things at a table rather than in a review
+# Preview.  The other three legacy modes are discussion and planning rooms and
+# stay on Review.
 LEGACY_MODE_KEY_ALIASES: Mapping[str, str] = MappingProxyType(
     {
         "music_jam": "music",
-        "visual_studio": "review_rehearsal",
+        "visual_studio": "studio_visit",
         "writers_room": "review_rehearsal",
         "design_critique": "review_rehearsal",
         "storyboard_film_room": "review_rehearsal",
@@ -540,6 +547,11 @@ def _validate_creator_registry() -> None:
     ):
         raise RuntimeError(
             "Only Studio Visit ships the host-clocked reference video contract."
+        )
+    if LEGACY_MODE_KEY_ALIASES.get("visual_studio") != "studio_visit":
+        raise RuntimeError(
+            "The legacy visual-arts mode must migrate to Studio Visit, which is "
+            "the profile it always described."
         )
 
 

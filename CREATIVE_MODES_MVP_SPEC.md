@@ -108,9 +108,19 @@ Record action.
 - Previously persisted mode aliases map explicitly to one current profile;
   malformed or unknown keys fail safely to Music rather than inventing a mode.
 - Opening a Review & Rehearsal standalone project is refused before mutation.
-- `studio_visit` is a new canonical key, not an alias target. The legacy
-  `visual_studio` mode continues to migrate to Review & Rehearsal, so no
-  existing session silently becomes a Studio Visit.
+- `studio_visit` is a new canonical key. It could not reuse `visual_studio`,
+  because the registry refuses a canonical key that is also a legacy alias.
+- The legacy `visual_studio` mode now migrates to **Studio Visit**. It was the
+  visual-arts mode and only pointed at Review & Rehearsal because no artist
+  profile existed; someone whose last saved workflow was Visual Studio opens
+  into a room for making things rather than a review Preview. The other legacy
+  modes — `writers_room`, `design_critique`, `storyboard_film_room` — are
+  discussion and planning rooms and stay on Review & Rehearsal.
+- `visual_studio` remains a valid legacy *mode* key in its own registry, so
+  session metadata that records it keeps resolving. Only the profile it
+  migrates to changed.
+- The retired five-mode list is not offered anywhere as a picker. What someone
+  is making is chosen once, at launch, from the creator profiles.
 - Every profile owns a distinct private scratchpad file; a profile registered
   without one refuses to start rather than writing another profile's notes.
 

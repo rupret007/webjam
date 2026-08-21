@@ -139,6 +139,12 @@ class SessionStrip(QFrame):
         self._timer_label.setObjectName("SessionTimer")
         self._timer_label.setAccessibleName("Session elapsed time")
 
+        # Backing store for the legacy creative-mode key that session metadata
+        # still records. It is deliberately not a picker: what someone is
+        # making is chosen once, at launch, from the creator profiles. This
+        # combo is never shown, never laid out, and never enabled, so the
+        # retired five-mode list cannot resurface as a second, contradictory
+        # choice beside the profile they already made.
         self._mode_picker = QComboBox()
         self._mode_picker.setAccessibleName("Session mode")
         self._mode_picker.setMaximumWidth(140)
@@ -151,6 +157,7 @@ class SessionStrip(QFrame):
         self._mode_picker.currentIndexChanged.connect(self._on_mode_index_changed)
         self._sync_subtitle()
         self._mode_picker.setVisible(False)
+        self._mode_picker.setEnabled(False)
 
         self._audio_button = QPushButton("Start Session")
         self._audio_button.setObjectName("AudioButton")

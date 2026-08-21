@@ -204,7 +204,7 @@ def test_conductor_preserves_profile_across_attempt_boundaries() -> None:
 def test_profile_key_is_canonicalized_without_expanding_protocol_values() -> None:
     legacy = SessionConductorFacts(creator_profile_key="visual_studio")
     malformed = SessionConductorFacts(creator_profile_key="not-a-profile")
-    assert legacy.creator_profile_key == "review_rehearsal"
+    assert legacy.creator_profile_key == "studio_visit"
     assert malformed.creator_profile_key == "music"
 
 

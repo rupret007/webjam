@@ -54,12 +54,22 @@ All notable improvements and features for the WebJam creator collaboration platf
   frame-accurate review and carries **no media timecode**; the registry refuses
   a Studio Visit profile that claims otherwise. There is no shared canvas, no
   camera feed, and no shipped, downloaded, or ingested video catalog.
-- `studio_visit` is a new canonical profile key, not an alias target. The legacy
-  `visual_studio` mode still migrates to Review & Rehearsal, unknown keys still
-  fail safely to Music, and Music, Podcast & Voice, and Review & Rehearsal are
-  unchanged. Launch copy and a private scratchpad path are now required for
-  every registered profile, so a future profile fails at import instead of as a
-  KeyError mid-selection.
+- `studio_visit` is a new canonical profile key. It could not reuse
+  `visual_studio`, because the registry refuses a canonical key that is also a
+  legacy alias.
+- The legacy `visual_studio` mode now migrates to **Studio Visit** instead of
+  Review & Rehearsal. It was the visual-arts mode and only pointed at Review
+  because no artist profile existed, so someone whose last saved workflow was
+  Visual Studio now opens into a room for making things rather than a review
+  Preview. `writers_room`, `design_critique`, and `storyboard_film_room` are
+  discussion and planning rooms and stay on Review & Rehearsal. The legacy mode
+  key itself still resolves, so session metadata recording it is unaffected.
+- The retired five-mode list is not offered anywhere as a picker, so "Visual
+  Studio" cannot resurface beside the profile someone already chose. Unknown
+  keys still fail safely to Music, and Music, Podcast & Voice, and Review &
+  Rehearsal are otherwise unchanged. Launch copy and a private scratchpad path
+  are now required for every registered profile, so a future profile fails at
+  import instead of as a KeyError mid-selection.
 - Two-computer behavior is **NOT RUN**: this profile is covered by automated
   tests only and has no release or physical evidence.
 

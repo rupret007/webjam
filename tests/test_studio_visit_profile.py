@@ -170,44 +170,59 @@ def test_an_unknown_profile_key_still_fails_safely_to_music(
     assert load_settings(config).last_creator_profile_key == "music"
 
 
-def test_studio_visit_does_not_shadow_any_legacy_alias():
-    # ``visual_studio`` is a legacy visual mode and must keep migrating to
-    # Review & Rehearsal rather than silently becoming Studio Visit.
-    assert canonical_creator_profile_key("visual_studio") == "review_rehearsal"
+def test_the_legacy_visual_arts_mode_now_lands_on_studio_visit():
+    """``visual_studio`` was always describing this room.
+
+    It only pointed at Review & Rehearsal because no artist profile existed.
+    Someone whose last saved workflow was Visual Studio is a visual artist, so
+    they open into a room for making things rather than a review Preview.
+    """
+
+    assert canonical_creator_profile_key("visual_studio") == STUDIO_VISIT
     assert canonical_creator_profile_key(STUDIO_VISIT) == STUDIO_VISIT
     assert get_creator_profile_by_key_or_default("nonsense").key == "music"
 
 
-def test_studio_visit_is_a_new_key_and_never_a_migration_target():
+def test_only_the_visual_arts_mode_moves_and_the_talking_rooms_stay():
+    """Writing, critique, and storyboarding are not work at a table."""
+
     from core.creative_modes import LEGACY_MODE_KEY_ALIASES
 
-    assert STUDIO_VISIT not in LEGACY_MODE_KEY_ALIASES
-    assert STUDIO_VISIT not in set(LEGACY_MODE_KEY_ALIASES.values())
+    assert dict(LEGACY_MODE_KEY_ALIASES) == {
+        "music_jam": "music",
+        "visual_studio": STUDIO_VISIT,
+        "writers_room": "review_rehearsal",
+        "design_critique": "review_rehearsal",
+        "storyboard_film_room": "review_rehearsal",
+    }
+    # A canonical key must never also be an alias, or the registry refuses to
+    # load; this is what made ``studio_visit`` the required key rather than
+    # reusing ``visual_studio``.
+    assert not set(LEGACY_MODE_KEY_ALIASES) & set(get_creator_profile_keys())
 
 
-def test_repointing_the_visual_studio_alias_would_strand_recorded_takes():
-    """Why the legacy visual mode still migrates to Review, not here.
+def test_the_legacy_mode_key_itself_still_resolves_for_old_session_metadata():
+    """Migrating the profile must not invalidate saved session metadata.
 
-    ``visual_studio`` was the visual-arts mode, so pointing it at Studio Visit
-    looks tempting. It would be a silent capability regression: a session
-    already recorded under that mode resolves today to a profile that can play
-    it back, and Studio Visit records nothing and reviews nothing. Existing
-    take evidence would become unreviewable on upgrade.
+    ``visual_studio`` remains a legacy *mode* key in its own registry. Session
+    metadata stores that mode alongside the profile, so it has to keep
+    resolving even though the profile it migrates to has changed.
     """
 
-    migrated = get_creator_profile_by_key(
-        canonical_creator_profile_key("visual_studio")
-    )
-    assert migrated.key == "review_rehearsal"
-    assert migrated.capabilities.session_recording is True
-    assert migrated.capabilities.take_review is True
+    from core.creative_modes import get_mode_by_key
 
-    studio_visit = get_creator_profile_by_key(STUDIO_VISIT)
-    assert studio_visit.capabilities.session_recording is False
-    assert studio_visit.capabilities.take_review is False
+    mode = get_mode_by_key("visual_studio")
+    assert mode is not None
+    assert mode.creator_profile_key == STUDIO_VISIT
 
 
-def test_a_take_recorded_under_the_legacy_visual_mode_stays_reviewable():
+def test_a_take_carrying_the_legacy_visual_key_still_reads_without_error():
+    """Historical take evidence must not start failing reconciliation.
+
+    The manifest's profile key drives Studio labels and reconciliation, not
+    permission to open a take, so moving the alias changes presentation only.
+    """
+
     from core.take_library import _manifest_creator_profile_key
 
     key, error = _manifest_creator_profile_key(
@@ -215,7 +230,7 @@ def test_a_take_recorded_under_the_legacy_visual_mode_stays_reviewable():
     )
 
     assert error == ""
-    assert get_creator_profile_by_key(key).capabilities.take_review is True
+    assert key == STUDIO_VISIT
 
 
 def test_every_profile_keeps_a_private_scratchpad_of_its_own():

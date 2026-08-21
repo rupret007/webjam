@@ -183,7 +183,7 @@ class TestCreatorProfileMigration(unittest.TestCase):
             dict(LEGACY_MODE_KEY_ALIASES),
             {
                 "music_jam": "music",
-                "visual_studio": "review_rehearsal",
+                "visual_studio": "studio_visit",
                 "writers_room": "review_rehearsal",
                 "design_critique": "review_rehearsal",
                 "storyboard_film_room": "review_rehearsal",
