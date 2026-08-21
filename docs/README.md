@@ -57,6 +57,9 @@ keeps the product story and five-minute demo intentionally short.
 - [Test procedure](../TEST_PROCEDURE.md) — automated evidence and the physical /
   credentialed ledger. **NOT RUN** is not a claim of failure; it means evidence
   has not yet been collected against an exact package.
+- [Dual-musician and exact multitrack proof lab](../DUAL_MUSICIAN_REHEARSAL_LAB.md)
+  — deterministic host/guest, ARM/ACK, mono/stereo, repeat-lane, export, and
+  20-process source evidence with explicit hardware/Jamulus limitations.
 - [v0.26 creator-multitrack physical checklist — release identity verified; physical rows NOT RUN](../V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.25 creator-multitrack physical checklist](../V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.24 recording-first physical checklist](../V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)

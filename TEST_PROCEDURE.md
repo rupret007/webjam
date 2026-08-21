@@ -33,6 +33,36 @@ git diff --check origin/master...HEAD
 QT_QPA_PLATFORM=offscreen .venv/bin/pytest -q
 ```
 
+### Deterministic multitrack proof
+
+Run the joined Music/Podcast source proof once, then require 20 fresh-process
+iterations before calling the automated matrix repeatable:
+
+```bash
+QT_QPA_PLATFORM=offscreen PYTEST_ADDOPTS='-p no:cacheprovider' \
+  .venv/bin/python -m pytest -q tests/test_multitrack_proof_lab.py
+.venv/bin/python tools/run_multitrack_proof_lab.py \
+  --report /tmp/webjam-multitrack-proof-lab.json
+```
+
+The single module proves exact seven-source Music plans through v2 presence,
+guest ARM/ACK, idempotent lifecycle, distinct mono/stereo PCM, transfer,
+manifest/reconciliation, second-take stable IDs, automatic lanes, Studio
+save/reopen, and checksummed export. It also rejects silent, swapped,
+truncated, collapsed, and wrong-width media. The fixed runner adds the complete
+Podcast & Voice journey and focused Shared Track, recovery, cancellation, and
+authority nodes. It stops at the first nonzero subprocess, disk floor, cleanup
+failure, missing inner report, timeout, or 250 MiB per-iteration temporary cap.
+
+The JSON report is automated source evidence only. Confirm it is mode `0600`,
+under 100 KiB, has 20 `passed` iterations with distinct inner-report SHA-256
+values or deterministic content as applicable, `qualification_complete=true`,
+`source_tree_clean=true`, zero failed/error counts,
+`run_root_cleanup_ok=true`, and explicit
+`physical_status=not_run`. Do not update the v0.26 physical checklist from this
+result: I07-I08, every A-F observation, all decision rows, and the release
+recommendation remain **NOT RUN**.
+
 Audit the four native release locks separately. Windows/Linux use the exact
 lock with no dependency resolution; the narrowly documented macOS ignore is
 for sdist creation while native release jobs install checksum-pinned wheels:
