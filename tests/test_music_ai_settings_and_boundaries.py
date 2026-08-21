@@ -281,3 +281,44 @@ def test_the_clock_never_reads_the_live_jam():
         assert not any(
             forbidden in name.lower() for name in identifiers
         ), forbidden
+
+
+# ----------------------------------------------------------------------
+# The song stack loads only when a session asks for it
+# ----------------------------------------------------------------------
+def test_the_song_stack_is_not_imported_at_controller_import_time():
+    """Podcast and Review sessions must not pay for Music AI to start.
+
+    This is also load-bearing for stability: pulling this module graph in at
+    application_controller import time reproducibly crashed Qt teardown during
+    pytest's forced end-of-session garbage collection, in a process where every
+    test had passed. Keeping the import inside the property fixes that and
+    keeps the stack off the startup path.
+    """
+
+    tree = ast.parse(
+        (REPO_ROOT / "webjam_qt" / "controllers" / "application_controller.py")
+        .read_text()
+    )
+    module_level = {
+        node.module
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom) and node.module
+    }
+    assert "webjam_qt.controllers.song_tools_coordinator" not in module_level
+    for module in module_level:
+        assert not module.startswith("core.music_ai")
+        assert module not in {"core.song_workbench", "core.stem_bench"}
+
+
+def test_the_coordinator_is_built_on_first_use():
+    from webjam_qt.controllers.application_controller import ApplicationController
+
+    controller = ApplicationController.__new__(ApplicationController)
+    controller._song_tools = None
+
+    first = ApplicationController.song_tools.fget(controller)
+    second = ApplicationController.song_tools.fget(controller)
+
+    assert type(first).__name__ == "SongToolsCoordinator"
+    assert first is second

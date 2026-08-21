@@ -106,7 +106,6 @@ from webjam_qt.controllers.session_persistence import SessionPersistence
 from webjam_qt.controllers.ui_thread import UiThreadInvoker
 from webjam_qt.controllers.video_coordinator import VideoCoordinator
 from webjam_qt.session_state import SessionPhase, SessionUiState
-from webjam_qt.controllers.song_tools_coordinator import SongToolsCoordinator
 from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.windows.conductor_window import ConductorWindow
 
@@ -365,9 +364,7 @@ class ApplicationController(QObject):
         )
 
         self._ui_invoker = UiThreadInvoker(self)
-        # Owns the in-session song panel: local writing help, and Music AI
-        # jobs on a worker thread. It never opens itself.
-        self.song_tools = SongToolsCoordinator(self)
+        self._song_tools = None
 
         self.repository = WebJamRepository()
         self.metrics = MetricsService(self.repository)
@@ -11278,6 +11275,22 @@ class ApplicationController(QObject):
                     # familiar live review controls.
                     self.window.reference_studio.show_take_review()
             self._update_session_hud()
+
+    @property
+    def song_tools(self):
+        """The in-session song panel, built the first time it is needed.
+
+        Imported lazily so the Music AI, song-form, and stem stack never loads
+        for a Podcast or Review session that cannot use it.
+        """
+
+        if self._song_tools is None:
+            from webjam_qt.controllers.song_tools_coordinator import (
+                SongToolsCoordinator,
+            )
+
+            self._song_tools = SongToolsCoordinator(self)
+        return self._song_tools
 
     def _open_song_tools(self) -> None:
         """Toggle the in-session song panel. Music only; never auto-opens."""
