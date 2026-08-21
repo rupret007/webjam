@@ -37,11 +37,15 @@ Art (Preview) opens a room where you talk while you work — painting, drawing,
 sculpting, anything at a table. When you choose Art at launch, you pick one of
 three ways to start, and nothing more:
 
-- **Talk & make** — the room and live audio. Work on paper, in clay, or in any
-  application you already have. This is a completely normal room; nothing asks
-  you to share anything.
-- **Paint together** — the room plus one shared canvas, painted in Drawpile.
-- **Paint along** — the room plus one video the host plays for everyone.
+- **Talk & make** — just the room and your voices. Make whatever you're making,
+  on paper, in clay, or in whatever you already use. This is a completely
+  normal room; nothing asks you to share anything.
+- **Paint together** — the room, plus one canvas you all draw on.
+- **Paint along** — the room, plus one video you all watch in step.
+
+The first screen deliberately does not name the programs behind those last two.
+You find out which one to install at the moment you need it, in the room, and
+only if it is missing.
 
 AI image work is *not* a fourth choice: it is an in-session action available
 from any of the three, because nobody plans a session around an image

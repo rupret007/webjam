@@ -55,9 +55,21 @@ refuses a fourth:
 
 | Start | What it opens |
 | --- | --- |
-| **Talk & make** | The room and live audio. No canvas, no video. |
-| **Paint together** | The room plus one shared Drawpile canvas. |
-| **Paint along** | The room plus one host-clocked reference video. |
+| **Talk & make** | Just the room and your voices. No canvas, no video. |
+| **Paint together** | The room, plus one canvas you all draw on. |
+| **Paint along** | The room, plus one video you all watch in step. |
+
+Those are the words on the cards. **No component names itself on the first
+screen** -- not the painting program, not the audio path, not the image
+generator. A person choosing a room should not have to learn what it is built
+on to decide whether they want it. Each component introduces itself in the
+room, at the moment it matters, and only if something is missing: "Install
+Drawpile to paint together" is a one-liner behind Paint together, never a word
+on the card.
+
+The name field asks for a name. Its validation is unchanged -- the mixer still
+refuses a name it cannot show -- but the field and its preview say so in plain
+words rather than naming the component.
 
 A start carries **at most one** add-on. Combining the canvas and the video is
 an in-room decision the host makes afterwards, not a fourth card, because the
