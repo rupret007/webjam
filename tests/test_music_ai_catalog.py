@@ -20,6 +20,7 @@ from core.music_ai_client import (
 )
 from core.music_ai_results import (
     ARTIFACT_AUDIO,
+    SongArtifact,
     SongToolRun,
     download_artifacts,
     extract_facts,
@@ -321,3 +322,73 @@ def test_downloaded_filenames_cannot_escape_the_results_directory(tmp_path):
     for artifact in finished.artifacts:
         if artifact.local_path:
             assert target.resolve() == type(target)(artifact.local_path).parent.resolve()
+
+
+# ----------------------------------------------------------------------
+# A job can succeed and still return nothing usable
+# ----------------------------------------------------------------------
+def test_a_succeeded_job_with_no_usable_output_says_so():
+    """"0 files" reads like a bug; this is a real workflow outcome."""
+
+    run = SongToolRun(
+        verb_key="stems",
+        label="Split stems",
+        workflow_slug="my-stems",
+        job_id="j-empty",
+        source_name="mix.wav",
+    )
+
+    assert run.is_empty
+    summary = run.summary_line()
+    assert "returned nothing WebJam could use" in summary
+    assert "Music AI dashboard" in summary
+    assert "0 file" not in summary
+
+
+def test_results_dropped_for_being_off_host_read_as_empty_not_as_zero():
+    catalog = resolve_song_tools(REALISTIC_ACCOUNT)
+    run = interpret_job(
+        MusicAIJob(
+            id="j-off-host",
+            status="SUCCEEDED",
+            result={"vocals": "https://attacker.example.com/vocals.wav"},
+        ),
+        catalog.capability("stems"),
+    )
+
+    assert run.is_empty
+    assert "returned nothing WebJam could use" in run.summary_line()
+
+
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [(1, "1 audio file"), (2, "2 audio files"), (5, "5 audio files")],
+)
+def test_counts_read_as_english(count, expected):
+    run = SongToolRun(
+        verb_key="stems",
+        label="Split stems",
+        workflow_slug="s",
+        job_id="j",
+        source_name="mix.wav",
+        artifacts=tuple(
+            SongArtifact(f"stem{index}", ARTIFACT_AUDIO, local_path=f"/tmp/{index}.wav")
+            for index in range(count)
+        ),
+    )
+    assert expected in run.summary_line()
+
+
+def test_a_single_chord_or_section_is_not_pluralised():
+    run = SongToolRun(
+        verb_key="chords",
+        label="Chords & key",
+        workflow_slug="c",
+        job_id="j",
+        source_name="mix.wav",
+        chord_symbols=("G",),
+        detected_sections=("Verse",),
+    )
+    assert "1 chord," in run.summary_line()
+    assert "1 section" in run.summary_line()
+    assert "chords," not in run.summary_line()

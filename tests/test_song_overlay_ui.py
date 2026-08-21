@@ -1101,3 +1101,154 @@ def test_the_song_button_follows_the_other_session_tools_when_disabled(app):
         assert strip._song_button.isEnabled()
     finally:
         window.deleteLater()
+
+
+# ----------------------------------------------------------------------
+# The panel gives ground before the mixer does
+# ----------------------------------------------------------------------
+def test_the_panel_narrows_on_a_narrow_window(overlay):
+    from webjam_qt.widgets.song_overlay import (
+        COMPACT_WINDOW_WIDTH,
+        OVERLAY_WIDTH,
+        OVERLAY_WIDTH_COMPACT,
+    )
+
+    overlay.set_available_width(1440)
+    assert overlay.width() == OVERLAY_WIDTH
+    assert not overlay.compact
+
+    overlay.set_available_width(COMPACT_WINDOW_WIDTH - 1)
+    assert overlay.width() == OVERLAY_WIDTH_COMPACT
+    assert overlay.compact
+
+
+def test_the_panel_never_takes_half_the_supported_floor(overlay):
+    """720x560 is the documented window minimum; the jam keeps the majority."""
+
+    overlay.set_available_width(720)
+    assert overlay.width() / 720 < 0.4
+
+
+def test_the_big_chord_steps_down_with_the_panel(overlay):
+    overlay.set_available_width(1440)
+    wide = overlay._now_chord.styleSheet()
+    overlay.set_available_width(720)
+    narrow = overlay._now_chord.styleSheet()
+
+    assert "32px" in wide
+    assert "24px" in narrow
+
+
+def test_the_panel_sizes_itself_the_moment_it_is_shown(app):
+    """Opening on an already-narrow window must not draw one wide frame."""
+
+    window = ConductorWindow(
+        mode_entries=[("music", "Music")],
+        initial_mode_key="music",
+        initial_title="Tuesday",
+    )
+    try:
+        window.resize(760, 620)
+        window.show()
+        app.processEvents()
+        window.song_overlay.setVisible(True)
+        app.processEvents()
+
+        assert window.song_overlay.compact
+    finally:
+        window.deleteLater()
+
+
+def test_the_window_resizes_the_panel_with_it(app):
+    window = ConductorWindow(
+        mode_entries=[("music", "Music")],
+        initial_mode_key="music",
+        initial_title="Tuesday",
+    )
+    try:
+        window.show()
+        window.resize(760, 620)
+        app.processEvents()
+        assert window.song_overlay.compact
+
+        window.resize(1440, 900)
+        app.processEvents()
+        assert not window.song_overlay.compact
+    finally:
+        window.deleteLater()
+
+
+# ----------------------------------------------------------------------
+# Readable by a screen reader, without interrupting a take
+# ----------------------------------------------------------------------
+def test_the_position_is_described_but_not_announced(overlay):
+    now = {"value": 0.0}
+    workbench = _clocked(lambda: now["value"])
+    workbench.clock.start()
+    now["value"] = 2.0
+
+    overlay.set_song_state(clock=workbench.clock_snapshot())
+
+    name = overlay._clock_line.accessibleName()
+    assert "Song position" in name
+    assert "not announced" in name
+
+
+def test_the_current_chord_carries_its_context_for_a_screen_reader(overlay):
+    now = {"value": 0.0}
+    workbench = _clocked(lambda: now["value"])
+    workbench.clock.start()
+    now["value"] = 2.0
+
+    overlay.set_song_state(clock=workbench.clock_snapshot())
+
+    # Two seconds at 120 BPM is bar two of the four-bar Intro: G D, so D now
+    # and G next as the two-chord loop wraps.
+    assert overlay._now_chord.accessibleName() == "Current chord D"
+    description = overlay._now_chord.accessibleDescription()
+    assert description.startswith("Intro, bar 2")
+    assert "next chord G" in description
+    assert "not audio-followed" in description
+
+
+def test_the_form_is_readable_as_one_description(overlay):
+    workbench = SongWorkbench(notes=SHEET)
+    overlay.set_song_state(form_rows=workbench.form_overlay())
+
+    name = overlay._form_rows.accessibleName()
+    assert name.startswith("Song form:")
+    assert "Verse: Am F C G" in name
+
+
+def test_an_empty_form_says_so_rather_than_reading_blank(overlay):
+    overlay.set_song_state(form_rows=())
+    assert overlay._form_rows.accessibleName() == "No song form written yet"
+
+
+def test_song_has_a_keyboard_route_beside_the_other_surfaces(app):
+    """Ctrl+1/2/3 reach the views; Song is next in the same run."""
+
+    window = ConductorWindow(
+        mode_entries=[("music", "Music")],
+        initial_mode_key="music",
+        initial_title="Tuesday",
+    )
+    try:
+        bound = {
+            shortcut.key().toString() for shortcut in window._navigation_shortcuts
+        }
+        assert {"Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4"} <= bound
+
+        seen: list[str] = []
+        window.session_strip.tool_requested.connect(seen.append)
+        song = next(
+            shortcut
+            for shortcut in window._navigation_shortcuts
+            if shortcut.key().toString() == "Ctrl+4"
+        )
+        song.activated.emit()
+        app.processEvents()
+
+        assert seen == ["song_tools"]
+    finally:
+        window.deleteLater()

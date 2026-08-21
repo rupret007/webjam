@@ -107,8 +107,23 @@ class SongToolRun:
             or self.lyrics_text
         )
 
+    @property
+    def is_empty(self) -> bool:
+        """Whether the job succeeded but returned nothing WebJam can use."""
+
+        return not self.artifacts and not self.has_detected_facts
+
     def summary_line(self) -> str:
         """Return a short line that claims only what the job returned."""
+
+        if self.is_empty:
+            # "0 files" reads like a bug. A workflow can legitimately succeed
+            # and return an output shape WebJam does not recognise, or URLs on
+            # a host it will not fetch from.
+            return (
+                f"{self.label}: finished, but returned nothing WebJam could "
+                "use. Check the workflow's outputs in the Music AI dashboard."
+            )
 
         parts: list[str] = []
         if self.detected_key:
@@ -116,14 +131,14 @@ class SongToolRun:
         if self.detected_tempo:
             parts.append(f"{self.detected_tempo} BPM")
         if self.chord_symbols:
-            parts.append(f"{len(self.chord_symbols)} chords")
+            parts.append(_count(len(self.chord_symbols), "chord"))
         if self.detected_sections:
-            parts.append(f"{len(self.detected_sections)} sections")
+            parts.append(_count(len(self.detected_sections), "section"))
         audio = self.audio_artifacts
         if audio:
-            parts.append(f"{len(audio)} audio files")
+            parts.append(_count(len(audio), "audio file"))
         if not parts:
-            parts.append(f"{len(self.artifacts)} files")
+            parts.append(_count(len(self.artifacts), "file"))
         return f"{self.label}: {', '.join(parts)}"
 
 
@@ -255,6 +270,12 @@ def extract_facts(payload: Mapping[str, Any]) -> dict[str, Any]:
         "chord_symbols": _first_chords(payload, flat),
         "lyrics_text": _first_lyrics(payload, flat),
     }
+
+
+def _count(total: int, noun: str) -> str:
+    """Return "1 chord" rather than "1 chords"."""
+
+    return f"{total} {noun}" if total == 1 else f"{total} {noun}s"
 
 
 def _artifact_kind(url: str, capability: SongToolCapability) -> str:

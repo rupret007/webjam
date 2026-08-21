@@ -54,6 +54,10 @@ _PAGE_LABELS = {
 # Narrow enough to sit beside a meeting on a laptop, wide enough to read a
 # four-chord line without wrapping it mid-progression.
 OVERLAY_WIDTH = 340
+# At the supported 720px window floor a fixed 340px panel would take nearly
+# half the workspace, so it gives ground before the mixer does.
+OVERLAY_WIDTH_COMPACT = 264
+COMPACT_WINDOW_WIDTH = 1000
 _MAX_LIST_ROWS = 4
 
 
@@ -85,6 +89,7 @@ class SongOverlay(QFrame):
         self.setAutoFillBackground(True)
         self.setVisible(False)
 
+        self._compact = False
         self._page_buttons: dict[str, QPushButton] = {}
         self._tool_buttons: list[QPushButton] = []
         self._busy_verb = ""
@@ -395,6 +400,43 @@ class SongOverlay(QFrame):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+    def set_available_width(self, window_width: int) -> None:
+        """Give ground to the mixer before the mixer gives ground to us.
+
+        The panel is a companion to the jam, not a competitor for it, so on a
+        narrow window it narrows first. Below the threshold the large current
+        chord also steps down, because a 32px glyph in a 264px column pushes
+        everything useful off the bottom.
+        """
+
+        compact = int(window_width or 0) < COMPACT_WINDOW_WIDTH
+        if compact == self._compact:
+            return
+        self._compact = compact
+        self.setFixedWidth(OVERLAY_WIDTH_COMPACT if compact else OVERLAY_WIDTH)
+        size = Font.SIZE_XL if compact else Font.SIZE_DISPLAY
+        self._now_chord.setStyleSheet(
+            f"color: {Color.TEXT_PRIMARY};"
+            f" font-size: {size}px;"
+            f" font-weight: {Font.WEIGHT_SEMIBOLD};"
+        )
+
+    @property
+    def compact(self) -> bool:
+        return self._compact
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        """Size to the window the moment the panel appears.
+
+        Opening on an already-narrow window must not draw one wide frame and
+        then snap; the window's resize event may have happened long before.
+        """
+
+        window = self.window()
+        if window is not None:
+            self.set_available_width(window.width())
+        super().showEvent(event)
+
     def show_page(self, page: str) -> None:
         key = page if page in _PAGES else PAGE_SONG
         self._stack.setCurrentIndex(_PAGES.index(key))
@@ -489,6 +531,12 @@ class SongOverlay(QFrame):
             )
         )
         self._form_rows.setVisible(bool(form_rows))
+        self._form_rows.setAccessibleName(
+            "Song form: "
+            + "; ".join(row.describe().replace("\n", ", ") for row in form_rows)
+            if form_rows
+            else "No song form written yet"
+        )
         self._advice.setText(_advice_text(advice, next_chords))
         self._advice.setVisible(bool(self._advice.text()))
         self._render_suggestions(chords)
@@ -527,7 +575,12 @@ class SongOverlay(QFrame):
         following = chords[(index + 1) % len(chords)] if len(chords) > 1 else ""
 
         self._now_chord.setText(current)
-        self._now_chord.setAccessibleName(f"Now playing {current}")
+        self._now_chord.setAccessibleName(f"Current chord {current}")
+        self._now_chord.setAccessibleDescription(
+            f"{clock.section_label}, bar {clock.bar_in_section}"
+            + (f", next chord {following}" if following else "")
+            + ". Position is a reference the host runs, not audio-followed."
+        )
         self._now_chord.setVisible(True)
         self._now_next.setText(
             f"{clock.section_label} · next {following}"
@@ -645,6 +698,12 @@ class SongOverlay(QFrame):
         if snapshot.section_lengths_assumed:
             line = f"{line} · lengths assumed"
         self._clock_line.setText(line)
+        # Described, never announced. A screen reader interrupting every bar
+        # would make the panel unusable in the room it was built for; a
+        # musician reads this when they ask for it.
+        self._clock_line.setAccessibleName(
+            f"Song position: {line}. Read on request; not announced."
+        )
         self._clock_line.setToolTip(
             (
                 "Counting against the Shared Track, which the host controls. "
@@ -884,7 +943,9 @@ def _unsupported_text(catalog: SongToolCatalog | None) -> str:
 
 
 __all__ = [
+    "COMPACT_WINDOW_WIDTH",
     "OVERLAY_WIDTH",
+    "OVERLAY_WIDTH_COMPACT",
     "PAGE_MEETING",
     "PAGE_SONG",
     "PAGE_STEMS",

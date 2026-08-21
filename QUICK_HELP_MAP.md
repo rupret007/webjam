@@ -43,7 +43,7 @@
 | Export for another editor | Music or Podcast & Voice Studio → **Track Export** |
 | Pair the owner-device iPhone preview | **More → Use iPhone as Pocket Stage…** |
 | Verify a live session | Music **Band Check**, Podcast **Sound Check**, or Review **Session Check** |
-| Open Song tools | Music live session → direct **Song** control beside Studio; it is intentionally absent from More |
+| Open Song tools | Music live session → direct **Song** control beside Studio, or Cmd/Ctrl+4; it is intentionally absent from More |
 | Write the song down | Session notes are the sheet: `Key: G major`, `Tempo: 120`, `[Verse x8]`, then chords and lyrics under each part |
 | Get chords for a part | **Song → Suggest chords**; pick the part, read the reasoning, **Keep** writes it into your notes and **Dismiss** writes nothing |
 | Get help with the next section | **Song → Help write**; runs on this computer, nothing is uploaded |

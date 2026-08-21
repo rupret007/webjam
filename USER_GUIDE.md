@@ -472,7 +472,8 @@ exact controlled source build using the
 
 ## Song tools and writing help — Music only
 
-**Song** on the session bar opens a compact panel beside the jam. It never
+**Song** on the session bar, or Cmd/Ctrl+4, opens a compact panel beside the
+jam. On a narrow window the panel narrows first so the mixer keeps the room. It never
 covers the session, never opens a window, and closing it leaves whatever you
 turned on visible on the strip.
 

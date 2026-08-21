@@ -391,6 +391,12 @@ class ConductorWindow(QMainWindow):
                 self,
                 lambda: self.side_rail.trigger("takes"),
             ),
+            # Cmd/Ctrl+4 — Song, next in the same run as the other surfaces.
+            QShortcut(
+                QKeySequence("Ctrl+4"),
+                self,
+                lambda: self.session_strip.tool_requested.emit("song_tools"),
+            ),
         )
 
     def _setup_tab_order(self) -> None:
@@ -468,11 +474,11 @@ class ConductorWindow(QMainWindow):
         from webjam_qt import __version__
 
         if sys.platform == "darwin":
-            navigation_shortcuts = "⌘1 / ⌘2 / ⌘3"
+            navigation_shortcuts = "⌘1 / ⌘2 / ⌘3 / ⌘4"
             mix_shortcuts = "⌘S / ⌘O"
             reset_shortcut = "Control+Shift+R"
         else:
-            navigation_shortcuts = "Ctrl+1 / Ctrl+2 / Ctrl+3"
+            navigation_shortcuts = "Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4"
             mix_shortcuts = "Ctrl+S / Ctrl+O"
             reset_shortcut = "Ctrl+Shift+R"
         profile = self._creator_profile
@@ -829,6 +835,8 @@ class ConductorWindow(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, "session_strip"):
             self.session_strip.set_compact_control_labels(self.width() < 900)
+        if getattr(self, "song_overlay", None) is not None:
+            self.song_overlay.set_available_width(self.width())
 
     # ------------------------------------------------------------------
     # Qt overrides
