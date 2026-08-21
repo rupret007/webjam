@@ -58,7 +58,6 @@ from core.studio_project import (
 from core.studio_renderer import StudioRenderer
 from core.studio_sections import reorder_section
 
-
 SUCCESS_MARKER = "WebJam Reference Studio frozen-runtime smoke passed"
 _SAMPLE_RATE = 48_000
 _FRAMES = 4_800

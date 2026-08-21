@@ -16,9 +16,8 @@ import sys
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAccessible, QAccessibleEvent
 from PySide6.QtWidgets import (
     QComboBox,
@@ -52,8 +51,6 @@ from core.settings import (
     hosted_server_secret_path,
     save_settings,
 )
-from webjam_qt.theme.brand import BrandMark
-from webjam_qt.theme.tokens import Space
 from webjam_qt.invitation_ingress import (
     Invitation,
     InvitationIngressError,
@@ -61,8 +58,9 @@ from webjam_qt.invitation_ingress import (
     invitation_from_arguments,
     parse_invitation_at_ingress,
 )
+from webjam_qt.theme.brand import BrandMark
+from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
-
 
 LOGGER = logging.getLogger("webjam.qt.launch_dialog")
 
@@ -266,7 +264,7 @@ class LaunchDialog(QDialog):
     def __init__(
         self,
         settings: AppSettings,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         *,
         initial_invitation: Invitation | None = None,
         initial_invite_url: str = "",
@@ -814,7 +812,7 @@ class LaunchDialog(QDialog):
         self._name_error.setVisible(False)
 
     @staticmethod
-    def _announce_error(label: QLabel, *, focus: Optional[QWidget] = None) -> None:
+    def _announce_error(label: QLabel, *, focus: QWidget | None = None) -> None:
         label.setAccessibleDescription(label.text())
         try:
             QAccessible.updateAccessibility(

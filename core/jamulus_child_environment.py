@@ -8,10 +8,9 @@ without a core-to-services dependency.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import os
+from collections.abc import Mapping
 from pathlib import Path
-
 
 _INJECTION_PREFIXES = ("DYLD_", "LD_", "QML", "QT")
 _INJECTION_NAMES = frozenset(

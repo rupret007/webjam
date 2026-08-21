@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timedelta, timezone
 import hashlib
 import io
 import json
-from pathlib import Path
 import plistlib
 import shutil
 import subprocess
 import sys
 import threading
 import time
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -27,8 +27,8 @@ from core.component_download import (
     OpenedDownload,
     VerifiedDownload,
 )
-from core.component_store import ComponentBusyReason, ComponentBusyStatus
 from core.component_lock import InterProcessComponentLock
+from core.component_store import ComponentBusyReason, ComponentBusyStatus
 from core.jamulus_compatibility import (
     ActivationMode,
     ArtifactIdentity,
@@ -45,11 +45,11 @@ from core.jamulus_compatibility import (
     WebJamVersionRange,
     official_jamulus_compatibility_registry,
 )
-from core.jamulus_update_state import JamulusUpdateState
 from core.jamulus_component_resolver import (
     ComponentOrigin,
     ExternalComponentCandidate,
 )
+from core.jamulus_update_state import JamulusUpdateState
 from services.jamulus_component_platform import (
     JamulusLicenseApprovalRequired,
     JamulusPlatformError,
@@ -69,7 +69,6 @@ from services.jamulus_component_update import (
     JamulusComponentUpdateService,
     SignedCatalogFetcher,
 )
-
 
 NOW = datetime(2026, 7, 28, 19, 0, tzinfo=timezone.utc)
 

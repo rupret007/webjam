@@ -29,6 +29,8 @@ from typing import Any
 
 from core.session_transfer import (
     MAX_CHUNK_BYTES as TRANSFER_STORE_MAX_CHUNK_BYTES,
+)
+from core.session_transfer import (
     MAX_SEGMENT_BYTES,
     TransferConflictError,
     TransferDescriptor,
@@ -36,7 +38,6 @@ from core.session_transfer import (
     TransferReceipt,
     TransferStore,
 )
-
 
 DEFAULT_MAX_FILE_BYTES = 8 * 1024 * 1024 * 1024
 DEFAULT_MAX_SESSION_BYTES = 64 * 1024 * 1024 * 1024

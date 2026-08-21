@@ -46,7 +46,6 @@ from core.studio_source_catalog import (
 )
 from core.take_project import MediaSegment
 
-
 DEFAULT_WAVEFORM_TILE_PEAKS: Final = 512
 DEFAULT_WAVEFORM_READ_CHUNK_FRAMES: Final = 4_096
 DEFAULT_WAVEFORM_CACHE_ENTRIES: Final = 256
@@ -406,7 +405,7 @@ class WaveformSource:
         cls,
         take_root: str | Path,
         segment: MediaSegment,
-    ) -> "WaveformSource":
+    ) -> WaveformSource:
         """Build a source without resolving away the media file component."""
 
         if not isinstance(segment, MediaSegment):
@@ -441,7 +440,7 @@ class WaveformSource:
         take_id: str,
         track_id: str,
         segment_id: str,
-    ) -> "WaveformSource":
+    ) -> WaveformSource:
         """Bind one waveform source to a trusted repeated-take catalog key."""
 
         if type(catalog) is not StudioSourceCatalog:
@@ -459,7 +458,7 @@ class WaveformSource:
     def _from_catalog_entry(
         cls,
         catalog_source: StudioCatalogSource,
-    ) -> "WaveformSource":
+    ) -> WaveformSource:
         """Build from an entry after its owning catalog was checked once.
 
         This is an internal batch-activation hook. Public callers use
@@ -499,7 +498,7 @@ class WaveformSource:
         cls,
         catalog: SongMediaCatalog,
         media_id: str,
-    ) -> "WaveformSource":
+    ) -> WaveformSource:
         """Bind one waveform source to a sealed standalone project catalog."""
 
         if type(catalog) is not SongMediaCatalog:
@@ -517,7 +516,7 @@ class WaveformSource:
     def _from_song_catalog_entry(
         cls,
         catalog_source: SongCatalogSource,
-    ) -> "WaveformSource":
+    ) -> WaveformSource:
         """Build from one entry after its song catalog was checked once."""
 
         if type(catalog_source) is not SongCatalogSource:
@@ -838,7 +837,7 @@ def _require_source_current(
 
 def _sha256_descriptor(
     descriptor: int,
-    token: "WaveformRequestToken",
+    token: WaveformRequestToken,
 ) -> str:
     digest = hashlib.sha256()
     try:
@@ -863,7 +862,7 @@ class WaveformRequestToken:
 
     def __init__(
         self,
-        owner: "WaveformTileCache",
+        owner: WaveformTileCache,
         generation: int,
         event: threading.Event,
     ) -> None:
@@ -1275,7 +1274,7 @@ class WaveformTileCache:
             observed = (
                 int(reader.samplerate),
                 int(reader.channels),
-                int(len(reader)),
+                len(reader),
             )
             declared = (source.sample_rate, source.channels, source.frame_count)
             if observed != declared:

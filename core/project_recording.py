@@ -9,28 +9,28 @@ publication all belong to a dedicated writer thread.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
-import os
 import operator
-from pathlib import Path
+import os
 import re
 import shutil
 import stat
 import tempfile
 import threading
-from typing import Callable, Final, Protocol
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
+from typing import Final, Protocol
 
 import numpy as np
 
 from core.project_audio import (
+    PROJECT_AUDIO_MAX_OUTPUT_FRAMES,
+    PROJECT_AUDIO_SAMPLE_RATE,
     CaptureBlockRing,
     GenerationGate,
     GenerationToken,
-    PROJECT_AUDIO_MAX_OUTPUT_FRAMES,
-    PROJECT_AUDIO_SAMPLE_RATE,
 )
-
 
 _TRACK_ID: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 _WINDOWS_RESERVED_TRACK_IDS: Final = frozenset(
@@ -552,8 +552,7 @@ class ProjectRecordingIngress:
                     generation=self.generation,
                 )
             end = output_start + amount
-            if end > self.scheduled_frames:
-                self.scheduled_frames = end
+            self.scheduled_frames = max(self.scheduled_frames, end)
             captured += amount
             offset += amount
 

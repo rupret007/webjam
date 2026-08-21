@@ -7,8 +7,8 @@ and resumable delivery.  A peer outage never stops an active local capture.
 
 from __future__ import annotations
 
-import ipaddress
 import hashlib
+import ipaddress
 import json
 import logging
 import math
@@ -17,12 +17,12 @@ import shutil
 import threading
 import time
 import uuid
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Callable, Iterable
 
-from core.network_invite import BandInvite, create_invite_link
 from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
+from core.network_invite import BandInvite, create_invite_link
 from core.session_transfer import (
     CaptureArmAcknowledgement,
     CaptureArmSnapshot,
@@ -46,16 +46,15 @@ from core.session_transfer import (
     TransferGap,
     TransferIntegrityError,
     TransferStore,
-    _sha256_file,
-    _write_json_secure,
     _presence_digest_text,
     _presence_fingerprint_text,
     _presence_int,
     _presence_ordinal_tuple,
+    _sha256_file,
+    _write_json_secure,
     derive_participant_id,
     load_or_create_installation_id,
 )
-
 
 LOGGER = logging.getLogger("webjam.session_transfer")
 _POLL_SECONDS = 0.75
@@ -417,7 +416,7 @@ def _reference_fingerprint(track: object) -> str:
 
     digest = hashlib.sha256()
     for segment in sorted(
-        tuple(getattr(track, "segments", ()) or ()),
+        getattr(track, "segments", ()) or (),
         key=lambda item: str(getattr(item, "segment_id", "")),
     ):
         digest.update(str(getattr(segment, "segment_id", "")).encode("utf-8"))
@@ -744,7 +743,7 @@ class HostPeerSession:
         if server is not None:
             try:
                 server_stopped = server.stop()
-            except Exception:  # noqa: BLE001 - retain owner for explicit retry
+            except Exception:
                 LOGGER.exception("Host peer server stop could not be confirmed")
                 return False
             if server_stopped is False:
@@ -829,7 +828,7 @@ class HostPeerSession:
         try:
             with self._stop_lock:
                 self._stop_once(expected_generation=generation)
-        except Exception:  # noqa: BLE001 - explicit callers can still retry
+        except Exception:
             LOGGER.exception("Deferred host peer stop could not be confirmed")
         finally:
             with self._lock:
@@ -1889,7 +1888,7 @@ class HostPeerSession:
                 registered = tuple(self._registered_takes.items())
             try:
                 self._refresh_host_recording_presence()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 # Recorder proof renewal is fail-closed and independent of
                 # media-transfer maintenance. Never let it end the worker.
                 LOGGER.exception("Could not renew recorder-correlation presence")
@@ -1903,7 +1902,7 @@ class HostPeerSession:
                         _generation=generation,
                         _stop_event=stop_event,
                     )
-                except Exception:  # noqa: BLE001
+                except Exception:
                     LOGGER.exception("Could not refresh peer transfer inventory")
 
     def reconcile_take(
@@ -1980,10 +1979,10 @@ class HostPeerSession:
             readiness_issue = self._presence_readiness_issue_by_take.get(take_id, "")
         from core.take_project import (
             AlignmentState,
+            GapInterval,
             MediaSegment,
             MediaStatus,
             Participant,
-            GapInterval,
             ProjectStatus,
             ProjectTrack,
             RecoveryStatus,
@@ -2299,7 +2298,7 @@ class HostPeerSession:
                                     attached_track,
                                     project_sample_rate=project.project_sample_rate,
                                 )
-                            except Exception:  # noqa: BLE001
+                            except Exception:
                                 LOGGER.exception(
                                     "Could not analyze verified guest original alignment"
                                 )
@@ -2562,7 +2561,7 @@ class HostPeerSession:
         if callback is not None:
             try:
                 callback(take_id, folder, attached_new_media)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 # UI notification is advisory. Never turn a successfully
                 # verified/attached original back into a transfer failure.
                 LOGGER.exception("Could not publish peer take update")
@@ -2888,7 +2887,7 @@ class GuestPeerSession:
                 # Peer failure is control-plane only. Keep capture rolling and
                 # retry from the confirmed host byte offset on the next poll.
                 self.last_error = str(exc)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Guest recording transfer worker failed")
                 self.last_error = "The host recording service needs attention."
             self._stop_event.wait(_POLL_SECONDS)
@@ -2943,13 +2942,12 @@ class GuestPeerSession:
             RecordingSignal.FINALIZING,
             RecordingSignal.COMPLETE,
             RecordingSignal.NEEDS_ATTENTION,
-        }:
-            if state.take_id and state.take_id == self._active_take_id:
-                self._finalize_capture(
-                    needs_attention=state.message
-                    if state.signal is RecordingSignal.NEEDS_ATTENTION
-                    else ""
-                )
+        } and state.take_id and state.take_id == self._active_take_id:
+            self._finalize_capture(
+                needs_attention=state.message
+                if state.signal is RecordingSignal.NEEDS_ATTENTION
+                else ""
+            )
         self._upload_pending()
         if (
             state_changed
@@ -3554,7 +3552,7 @@ class GuestPeerSession:
             return
         try:
             callback(self.originals_root)
-        except Exception:  # noqa: BLE001
+        except Exception:
             # The audio and durable queue are already safe; a reveal-action
             # refresh must never make capture finalization look unsuccessful.
             LOGGER.exception("Could not publish Local Originals update")
@@ -3566,7 +3564,7 @@ class GuestPeerSession:
             return
         try:
             callback()
-        except Exception:  # noqa: BLE001 - guidance cannot affect transfer
+        except Exception:
             LOGGER.exception("Could not publish Local Originals guidance")
 
     def _upload_pending(self) -> None:

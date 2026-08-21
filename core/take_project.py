@@ -18,16 +18,15 @@ import math
 import re
 import threading
 import uuid
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterator, Iterable, Mapping
+from typing import Any
 
 from core.logical_sources import canonical_logical_source_id
-
 from core.redaction import redact_text
-
 
 PROJECT_SCHEMA_VERSION = 2
 _MIGRATION_NAMESPACE = uuid.UUID("f1203a8a-b035-4fe0-8a48-1c5b23d78d33")
@@ -247,7 +246,7 @@ class GapInterval:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "GapInterval":
+    def from_dict(cls, value: Mapping[str, Any]) -> GapInterval:
         return cls(
             start_frame=value.get("start_frame", -1),
             frame_count=value.get("frame_count", 0),
@@ -309,7 +308,7 @@ class CaptureDevice:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "CaptureDevice":
+    def from_dict(cls, value: Mapping[str, Any]) -> CaptureDevice:
         return cls(
             device_id=value.get("device_id", ""),
             display_name=value.get("display_name", ""),
@@ -359,7 +358,7 @@ class AlignmentAnchor:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "AlignmentAnchor":
+    def from_dict(cls, value: Mapping[str, Any]) -> AlignmentAnchor:
         return cls(
             source_time_s=value.get("source_time_s", 0.0),
             project_time_s=value.get("project_time_s", 0.0),
@@ -453,13 +452,13 @@ class AlignmentState:
     def effective_offset_s(self) -> float:
         return self.automatic_offset_s + self.manual_nudge_s
 
-    def with_manual_nudge(self, seconds: float) -> "AlignmentState":
+    def with_manual_nudge(self, seconds: float) -> AlignmentState:
         return replace(
             self,
             manual_nudge_s=_finite_float(seconds, "alignment.manual_nudge_s"),
         )
 
-    def restore_automatic(self) -> "AlignmentState":
+    def restore_automatic(self) -> AlignmentState:
         return replace(self, manual_nudge_s=0.0)
 
     def to_dict(self) -> dict[str, Any]:
@@ -484,7 +483,7 @@ class AlignmentState:
         return payload
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "AlignmentState":
+    def from_dict(cls, value: Mapping[str, Any]) -> AlignmentState:
         raw_anchors = value.get("anchors", ())
         anchors = (
             tuple(
@@ -602,7 +601,7 @@ class MediaSegment:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "MediaSegment":
+    def from_dict(cls, value: Mapping[str, Any]) -> MediaSegment:
         raw_gaps = value.get("gaps", ())
         gaps = (
             tuple(
@@ -667,7 +666,7 @@ class Participant:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "Participant":
+    def from_dict(cls, value: Mapping[str, Any]) -> Participant:
         return cls(
             participant_id=value.get("participant_id", ""),
             display_name=value.get("display_name", ""),
@@ -819,7 +818,7 @@ class ProjectTrack:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "ProjectTrack":
+    def from_dict(cls, value: Mapping[str, Any]) -> ProjectTrack:
         raw_segments = value.get("segments", ())
         segments = (
             tuple(
@@ -835,7 +834,7 @@ class ProjectTrack:
             duration = _finite_float(
                 value.get("duration_s", 0), "track.duration_s", minimum=0
             )
-            frames = int(round(duration * rate)) if rate else 0
+            frames = round(duration * rate) if rate else 0
             segments = (
                 MediaSegment(
                     segment_id=value.get("segment_id", new_project_id()),
@@ -914,7 +913,7 @@ class ProjectMarker:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "ProjectMarker":
+    def from_dict(cls, value: Mapping[str, Any]) -> ProjectMarker:
         return cls(
             marker_id=value.get("marker_id", ""),
             position_s=value.get("position_s", 0.0),
@@ -961,7 +960,7 @@ class HostIdentity:
         return payload
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "HostIdentity":
+    def from_dict(cls, value: Mapping[str, Any]) -> HostIdentity:
         return cls(
             participant_id=value.get("participant_id", ""),
             display_name=value.get("display_name", ""),
@@ -1011,7 +1010,7 @@ class SessionTimelineEvent:
         return payload
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "SessionTimelineEvent":
+    def from_dict(cls, value: Mapping[str, Any]) -> SessionTimelineEvent:
         return cls(
             event=value.get("event", ""),
             occurred_utc=value.get("occurred_utc", ""),
@@ -1139,7 +1138,7 @@ class SessionEvidence:
         return payload
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "SessionEvidence":
+    def from_dict(cls, value: Mapping[str, Any]) -> SessionEvidence:
         host_value = value.get("host", {})
         host = (
             HostIdentity.from_dict(host_value)
@@ -1358,7 +1357,7 @@ class TakeProject:
         return payload
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "TakeProject":
+    def from_dict(cls, value: Mapping[str, Any]) -> TakeProject:
         schema = value.get("schema_version")
         if schema != PROJECT_SCHEMA_VERSION:
             raise TakeProjectError(f"Unsupported project schema: {schema!r}.")
@@ -1498,7 +1497,7 @@ def migrate_v1_manifest(take_dir: str | Path, value: Mapping[str, Any]) -> TakeP
             raw.get("duration_s", 0.0), "track.duration_s", minimum=0
         )
         frame_count = _nonnegative_int(
-            raw.get("frame_count", int(round(duration * rate))), "segment.frame_count"
+            raw.get("frame_count", round(duration * rate)), "segment.frame_count"
         )
         segment_id = _legacy_id("segment", f"{take_id}|{safe_filename}|0")
         source_id = _legacy_id("source", f"{take_id}|{safe_filename}")

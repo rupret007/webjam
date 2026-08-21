@@ -24,9 +24,9 @@ correction operation before beat-grid edits are trusted.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
 import math
 import uuid
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -48,7 +48,6 @@ from core.studio_tempo import (
     TempoMap,
     bpm_to_micros,
 )
-
 
 ANALYSIS_ENVELOPE_RATE = 200
 ANALYSIS_HOP_FRAMES = PROJECT_AUDIO_SAMPLE_RATE // ANALYSIS_ENVELOPE_RATE
@@ -119,7 +118,7 @@ class ProjectTempoAnalysis:
         bpm: object,
         numerator: int,
         denominator: int,
-    ) -> "ProjectTempoAnalysis":
+    ) -> ProjectTempoAnalysis:
         """Return a corrected result and matching map without mutating analysis."""
 
         corrected = self.result.with_manual_override(
@@ -284,7 +283,7 @@ def _onset_feature(energies: np.ndarray) -> tuple[np.ndarray, int, float]:
     quantized = np.rint(novelty).astype(np.int64)
     # Center each independently sampled window so joins and overall density
     # cannot become false periodic evidence.
-    quantized -= int(round(float(np.mean(quantized))))
+    quantized -= round(float(np.mean(quantized)))
     return quantized, onset_count, peak_rms
 
 
@@ -423,9 +422,7 @@ def _tempo_from_features(
             offset = 0.5 * (left - right) / curvature
             best_lag += max(-0.5, min(0.5, offset))
 
-    bpm_micros = int(
-        round(envelope_rate_micros / best_lag)
-    )
+    bpm_micros = round(envelope_rate_micros / best_lag)
     bpm_micros = max(
         minimum_bpm_micros,
         min(maximum_bpm_micros, bpm_micros),
@@ -451,9 +448,7 @@ def _tempo_from_features(
         * (0.65 + 0.35 * separation)
         * coverage
     )
-    confidence_millionths = int(
-        round(max(0.0, min(1.0, confidence)) * CONFIDENCE_UNITS)
-    )
+    confidence_millionths = round(max(0.0, min(1.0, confidence)) * CONFIDENCE_UNITS)
     return bpm_micros, confidence_millionths
 
 

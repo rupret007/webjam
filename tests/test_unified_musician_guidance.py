@@ -29,7 +29,6 @@ from webjam_qt.theme import load_stylesheet
 from webjam_qt.widgets.recording_studio import RecordingStudio
 from webjam_qt.windows.conductor_window import ConductorWindow
 
-
 APP = QApplication.instance() or QApplication([])
 
 

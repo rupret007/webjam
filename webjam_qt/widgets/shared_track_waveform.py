@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QFrame, QSizePolicy, QWidget
 
@@ -24,7 +22,7 @@ class SharedTrackWaveform(QFrame):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         *,
         compact: bool = False,
     ) -> None:
@@ -91,7 +89,7 @@ class SharedTrackWaveform(QFrame):
         self.setToolTip(description)
         self.update()
 
-    def paintEvent(self, event) -> None:  # noqa: N802 - Qt naming
+    def paintEvent(self, event) -> None:
         del event
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)

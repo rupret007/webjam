@@ -21,7 +21,6 @@ from core.studio_controller import StudioControllerError
 from core.studio_project import StudioProjectError
 from core.studio_store import StudioStoreError
 
-
 # Types whose messages are authored as short, abstract, musician-facing
 # sentences.  ``StudioProjectError`` also covers ``StudioSectionError``.
 _DISPLAYABLE_EDIT_ERRORS = (

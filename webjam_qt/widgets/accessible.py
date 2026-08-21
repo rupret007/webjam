@@ -11,14 +11,12 @@ Setting both together is one line, but only if there is one call to make.
 
 from __future__ import annotations
 
-from typing import Optional
-
 
 def set_labeled_action(
     widget,
     label: str,
     *,
-    description: Optional[str] = None,
+    description: str | None = None,
 ) -> None:
     """Set a control's visible label and announce exactly the same thing.
 

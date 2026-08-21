@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import struct
 import json
+import struct
 import tempfile
 import unittest
 import uuid
@@ -15,6 +15,21 @@ from unittest.mock import patch
 from core.local_capture import LocalCaptureTrack
 from core.recording_readiness import RecordingStorageCheck, RecordingStorageStatus
 from core.session_recording_plan import SessionRecordingPlan
+from core.take_library import (
+    RecorderClientReceipt,
+    RecorderRosterError,
+    discover_takes,
+    estimate_local_alignment,
+    find_changed_take,
+    load_take,
+    parse_jamulus_recording_filename,
+    parse_lof_offsets,
+    recorder_client_observations,
+    recording_staging_identity,
+    snapshot_take_directories,
+    validate_take,
+    write_take_manifest,
+)
 from core.take_project import (
     CaptureDevice,
     HostIdentity,
@@ -22,22 +37,6 @@ from core.take_project import (
     SessionEvidence,
     SessionTimelineEvent,
     new_project_id,
-)
-
-from core.take_library import (
-    RecorderClientReceipt,
-    RecorderRosterError,
-    discover_takes,
-    find_changed_take,
-    load_take,
-    parse_lof_offsets,
-    parse_jamulus_recording_filename,
-    recording_staging_identity,
-    recorder_client_observations,
-    snapshot_take_directories,
-    validate_take,
-    write_take_manifest,
-    estimate_local_alignment,
 )
 
 
@@ -857,8 +856,8 @@ class TestTakeValidation(unittest.TestCase):
     def test_malformed_and_duplicate_lof_never_publish_complete(self):
         for lof_text in (
             'file "Alice-127_0_0_1_52000-0-1.wav" offset not-a-number\n',
-            'file "Alice-127_0_0_1_52000-0-1.wav" offset 0.0\n'
-            'file "Alice-127_0_0_1_52000-0-1.wav" offset 1.0\n',
+            ('file "Alice-127_0_0_1_52000-0-1.wav" offset 0.0\n'
+            'file "Alice-127_0_0_1_52000-0-1.wav" offset 1.0\n'),
         ):
             with self.subTest(lof_text=lof_text), tempfile.TemporaryDirectory() as d:
                 take = Path(d) / "take"

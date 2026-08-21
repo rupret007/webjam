@@ -8,11 +8,10 @@ never touches Qt.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import os
-from pathlib import Path
 import sys
-from typing import List
+from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass
@@ -27,7 +26,7 @@ class CheckItem:
 
 @dataclass
 class ReadyCheckReport:
-    items: List[CheckItem] = field(default_factory=list)
+    items: list[CheckItem] = field(default_factory=list)
 
     @property
     def all_ok(self) -> bool:
@@ -473,7 +472,7 @@ def _check_webex(settings) -> CheckItem:
     return CheckItem("Conversation companion", False, error, required=False)
 
 
-def _check_hosted_server(settings) -> "CheckItem | None":
+def _check_hosted_server(settings) -> CheckItem | None:
     """When this Mac hosts, verify the supported dedicated server binary."""
     if getattr(settings, "host_server_enabled", False) is not True:
         return None

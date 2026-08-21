@@ -20,12 +20,13 @@ that unrelated program material can always be aligned automatically.
 from __future__ import annotations
 
 import bisect
+import itertools
 import math
 import statistics
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Iterable, Sequence
 
 from core.take_project import (
     AlignmentAnchor,
@@ -35,7 +36,6 @@ from core.take_project import (
     MediaStatus,
     ProjectTrack,
 )
-
 
 READ_BLOCK_FRAMES = 65_536
 MAX_TRANSIENTS_PER_SOURCE = 4_096
@@ -147,7 +147,7 @@ class TimeTransform:
         return float(self.automatic_offset_s) + float(self.manual_nudge_s)
 
     @classmethod
-    def from_state(cls, state: AlignmentState) -> "TimeTransform":
+    def from_state(cls, state: AlignmentState) -> TimeTransform:
         return cls(
             automatic_offset_s=state.automatic_offset_s,
             drift_ppm=state.drift_ppm,
@@ -225,7 +225,7 @@ def analyze_audio_transients(
         with sf.SoundFile(str(media_path)) as audio:
             rate = int(audio.samplerate)
             channels = int(audio.channels)
-            actual_frames = int(len(audio))
+            actual_frames = len(audio)
     except (OSError, RuntimeError) as exc:
         raise AlignmentError(f"Could not read {media_path.name}: {exc}") from exc
 
@@ -272,7 +272,7 @@ def analyze_audio_transients(
                 peak = max(peak, float(np.max(usable)))
                 sum_squares += float(np.dot(usable, usable))
                 valid_frames += int(usable.size)
-            cursor += int(len(block))
+            cursor += len(block)
 
     rms = math.sqrt(sum_squares / valid_frames) if valid_frames else 0.0
     had_signal = peak > SIGNAL_FLOOR
@@ -282,8 +282,8 @@ def analyze_audio_transients(
         )
 
     threshold = max(SIGNAL_FLOOR * 5.0, peak * 0.18, rms * 3.5)
-    release_frames = max(1, int(round(TRANSIENT_RELEASE_S * rate)))
-    minimum_separation = max(1, int(round(MIN_TRANSIENT_SEPARATION_S * rate)))
+    release_frames = max(1, round(TRANSIENT_RELEASE_S * rate))
+    minimum_separation = max(1, round(MIN_TRANSIENT_SEPARATION_S * rate))
     bucket_frames = max(
         minimum_separation,
         math.ceil(max(1, read_frames) / MAX_TRANSIENTS_PER_SOURCE),
@@ -330,7 +330,7 @@ def analyze_audio_transients(
             # across a declared gap at the next block edge.
             if last_above_frame >= 0 and cursor + len(block) - last_above_frame > release_frames:
                 finalize_active()
-            cursor += int(len(block))
+            cursor += len(block)
     finalize_active()
 
     raw_points = [
@@ -935,7 +935,7 @@ def _typical_event_gap(
     gaps = [
         later.time_s - earlier.time_s
         for events in (source, reference)
-        for earlier, later in zip(events, events[1:])
+        for earlier, later in itertools.pairwise(events)
         if later.time_s > earlier.time_s
     ]
     return statistics.median(gaps) if gaps else None
@@ -978,8 +978,8 @@ def _quantile_index(length: int, numerator: int, denominator: int) -> int:
 
 def _round_half_away_from_zero(value: float) -> int:
     if value >= 0:
-        return int(math.floor(value + 0.5))
-    return int(math.ceil(value - 0.5))
+        return math.floor(value + 0.5)
+    return math.ceil(value - 0.5)
 
 
 def _clean(value: float, *, digits: int = 12) -> float:

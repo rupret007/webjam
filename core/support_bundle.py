@@ -8,18 +8,18 @@ and ZIP so those surfaces cannot drift apart.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import tempfile
-from typing import Any
 import uuid
 import zipfile
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 
 from core.musician_guidance import GuidanceEvidence, GuidanceRecovery, GuidanceState
 from core.redaction import REDACTED, redact_text, should_redact_name
@@ -29,7 +29,6 @@ from core.session_conductor import (
     SessionRole,
 )
 from core.session_lifecycle import SessionLifecyclePhase
-
 
 SCHEMA_VERSION = 1
 _MAX_TEXT_LENGTH = 2_000
@@ -1149,9 +1148,7 @@ def _sanitize_mapping(
         if key not in value:
             continue
         safe = _safe_value(value[key])
-        if safe not in (None, "", [], {}):
-            result[key] = safe
-        elif safe in (False, 0):
+        if safe not in (None, "", [], {}) or safe in (False, 0):
             result[key] = safe
     return result
 

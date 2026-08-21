@@ -109,7 +109,7 @@ class PocketStageTlsIdentity:
     not_after_unix: float
 
     @classmethod
-    def create(cls, host: str) -> "PocketStageTlsIdentity":
+    def create(cls, host: str) -> PocketStageTlsIdentity:
         """Create a short-lived ECDSA identity whose SAN is the LAN address."""
 
         try:

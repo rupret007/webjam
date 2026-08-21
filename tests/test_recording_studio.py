@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import os
 import re
 import struct
@@ -18,7 +18,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
 import pytest
-from PySide6.QtCore import QPoint, QRect, QThread, QTimer, Qt
+from PySide6.QtCore import QPoint, QRect, Qt, QThread, QTimer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
@@ -31,13 +31,13 @@ from PySide6.QtWidgets import (
 )
 
 from core.creative_modes import get_creator_profile_by_key_or_default
-from core.settings import AppSettings
 from core.network_invite import local_band_address
 from core.recording_sources import (
     RecordingSourceKind,
     RecordingSourcePresentation,
     RecordingSourceState,
 )
+from core.settings import AppSettings
 from core.studio_project import (
     MarkerKind,
     StudioMarker,
@@ -45,6 +45,9 @@ from core.studio_project import (
     default_studio_document,
 )
 from core.studio_sections import StudioSectionError
+from core.studio_source_catalog import StudioSourceCatalogError
+from core.studio_state import load_studio_state
+from core.studio_store import StudioStoreError
 from core.take_library import TakeInfo, TrackInfo
 from core.take_player import PlaybackDeviceError, StudioPlaybackSourceError, TakePlayer
 from core.take_project import (
@@ -62,20 +65,17 @@ from core.take_project import (
     new_project_id,
     write_take_project,
 )
-from core.studio_state import load_studio_state
-from core.studio_store import StudioStoreError
-from core.studio_source_catalog import StudioSourceCatalogError
 from webjam_qt.widgets.recording_studio import (
-    _CompositeWaveformSpec,
-    _WaveformSegmentSpec,
     RecordingStudio,
-    _WaveformPeakCache,
     _composite_waveform_peaks,
+    _CompositeWaveformSpec,
     _studio_document_differs_from_default,
     _studio_export_failure_message,
     _track_export_failure_message,
     _waveform_peaks,
     _waveform_source_key,
+    _WaveformPeakCache,
+    _WaveformSegmentSpec,
 )
 from webjam_qt.widgets.studio_arrange import _format_frame_time
 from webjam_qt.widgets.studio_messages import (
@@ -95,7 +95,6 @@ from webjam_qt.windows.recording_setup import (
     RecordingSetupDialog,
 )
 from webjam_qt.windows.simple_settings import SimpleSettingsDialog
-
 
 APP = QApplication.instance() or QApplication([])
 RATE = 8000
@@ -2248,7 +2247,7 @@ def test_named_section_move_rejection_explains_the_specific_reason(tmp_path):
     """A rejected section move must surface its real cause, not a generic
     catch-all, so a musician knows the precise problem and corrective action."""
 
-    take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    _take_dir, _track_ids = _schema2_studio_take(tmp_path)
     studio = RecordingStudio(
         str(tmp_path),
         player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
@@ -3341,16 +3340,16 @@ def test_track_export_failure_keeps_take_available_and_actionable():
     ("error", "expected"),
     (
         (
-            "WebJam found explicitly silent segments in selected performance tracks: "
+            ("WebJam found explicitly silent segments in selected performance tracks: "
             "private-guitar. Review the recording or intentionally deselect the "
-            "affected track before export.",
+            "affected track before export."),
             "explicitly silent segment",
         ),
         (
-            "WebJam cannot create a timing-ready track export because these local "
+            ("WebJam cannot create a timing-ready track export because these local "
             "originals have no verified timeline alignment: private-guitar. Keep "
             "the Jamulus server track for this take, or align and verify each local "
-            "original before export.",
+            "original before export."),
             "no verified timeline alignment",
         ),
     ),

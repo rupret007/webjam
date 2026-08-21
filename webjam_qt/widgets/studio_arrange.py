@@ -20,9 +20,9 @@ from PySide6.QtGui import (
     QColor,
     QKeySequence,
     QMouseEvent,
-    QPaintEvent,
     QPainter,
     QPainterPath,
+    QPaintEvent,
     QPen,
     QShortcut,
     QWheelEvent,
@@ -41,7 +41,6 @@ from core.studio_project import (
 )
 from core.studio_waveform import WaveformTile, WaveformTileKey
 from webjam_qt.theme.tokens import Color
-
 
 TRACK_HEADER_WIDTH = 168
 RULER_HEIGHT = 42
@@ -155,7 +154,7 @@ class _TrackHeaders(QWidget):
         )
         self.setToolTip("Track headers remain fixed while the timeline scrolls.")
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor(Color.BG_PANEL))
         painter.setPen(QPen(QColor(Color.BORDER_SUBTLE), 1))
@@ -248,7 +247,7 @@ class _TrackHeaders(QWidget):
         painter.restore()
         painter.end()
 
-    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             layout = self._arrange._canvas._track_at_y(event.position().y())
             if layout is not None:
@@ -261,7 +260,7 @@ class _TrackHeaders(QWidget):
                 return
         super().mousePressEvent(event)
 
-    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             layout = self._arrange._canvas._track_at_y(event.position().y())
             if layout is not None:
@@ -582,7 +581,7 @@ class _ArrangeScrollArea(QAbstractScrollArea):
         self._set_scroll_start(previous_start)
         self._arrange._headers.update()
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
+    def resizeEvent(self, event) -> None:
         start = self._visible_start_frame()
         super().resizeEvent(event)
         self._update_scrollbars(scroll_start=start)
@@ -591,19 +590,19 @@ class _ArrangeScrollArea(QAbstractScrollArea):
     # QAbstractScrollArea remaps viewport events onto these handlers.  Keeping
     # the handlers here (and painting explicitly onto ``viewport()``) also
     # makes synthetic QTest input behave exactly like native mouse input.
-    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
+    def paintEvent(self, event: QPaintEvent) -> None:
         self._paint_viewport(event)
 
-    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         self._mouse_press(event)
 
-    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
         self._mouse_move(event)
 
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         self._mouse_release(event)
 
-    def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802
+    def wheelEvent(self, event: QWheelEvent) -> None:
         self._wheel(event)
 
     def _track_at_y(self, y: float) -> _TrackLayout | None:
@@ -2357,10 +2356,10 @@ class StudioArrange(QWidget):
                     self._waveform_tiles.pop(region_id, None)
             self._waveform_retained_bytes -= tile.byte_size
 
-    def sizeHint(self) -> QSize:  # noqa: N802
+    def sizeHint(self) -> QSize:
         return QSize(760, 600)
 
-    def minimumSizeHint(self) -> QSize:  # noqa: N802
+    def minimumSizeHint(self) -> QSize:
         # The standalone editor starts at 480x280.  RecordingStudio lowers
         # that floor for its embedded Arrange/mixer split, and Qt's splitter
         # must receive the active minimum rather than this original constant.
@@ -2665,9 +2664,7 @@ class StudioArrange(QWidget):
         if (
             edge == "start"
             and region.timeline_start_frame < frame < region.timeline_end_frame
-        ):
-            self.region_trim_requested.emit(region.region_id, edge, frame)
-        elif (
+        ) or (
             edge == "end"
             and region.timeline_start_frame < frame < region.timeline_end_frame
         ):
@@ -2815,9 +2812,9 @@ __all__ = [
     "MIN_PIXELS_PER_SECOND",
     "RULER_HEIGHT",
     "STUDIO_ARRANGE_TRACK_HEADER_WIDTH",
-    "StudioArrange",
     "TAKE_LANE_HEIGHT",
     "TRACK_HEIGHT",
+    "StudioArrange",
 ]
 
 # Descriptive public alias without exposing the implementation class.

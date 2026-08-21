@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass
-from typing import Dict, Optional
 
 from core.models import AudioLevel
 from core.settings import AppSettings
@@ -58,17 +57,17 @@ class RealAudioEngine:
     def __init__(
         self,
         settings: AppSettings,
-        logger: Optional[logging.Logger] = None,
+        logger: logging.Logger | None = None,
         *,
-        device_index: Optional[int] = None,
+        device_index: int | None = None,
     ):
         self.settings = settings
         self.logger = logger or logging.getLogger("webjam.audio")
         self._preferred_device_index = device_index  # explicit override
         self.running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._stream = None
-        self._levels: Dict[int, AudioLevel] = {}
+        self._levels: dict[int, AudioLevel] = {}
         self._lock = threading.Lock()
         self._diagnostics = AudioDiagnostics(
             samplerate=settings.audio_samplerate,
@@ -169,7 +168,7 @@ class RealAudioEngine:
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
-    def _resolve_device(self) -> Optional[int]:
+    def _resolve_device(self) -> int | None:
         """Pick the best input device index, updating diagnostics in-place."""
         from core.audio_routing import scan_loopback_devices
 

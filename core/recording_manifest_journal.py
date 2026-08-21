@@ -15,18 +15,18 @@ result marked untrusted with ``RecoveryStatus.NEEDS_ATTENTION``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import os
-from pathlib import Path
 import stat
 import tempfile
-from typing import Any, Mapping
 import uuid
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 from core.session_recording_plan import SessionRecordingPlan
 from core.take_project import RecoveryStatus, SessionEvidence
-
 
 LEGACY_JOURNAL_SCHEMA_VERSION = 1
 JOURNAL_SCHEMA_VERSION = 2
@@ -529,13 +529,12 @@ def _validate_session_shape(value: Any) -> None:
         if any(not isinstance(item, str) for item in host.values()):
             raise ValueError("Journal host field is invalid.")
     notes = value.get("recovery_notes")
-    if notes is not None:
-        if (
-            not isinstance(notes, list)
-            or len(notes) > MAX_RECOVERY_NOTES
-            or any(not isinstance(item, str) for item in notes)
-        ):
-            raise ValueError("Journal recovery notes are invalid.")
+    if notes is not None and (
+        not isinstance(notes, list)
+        or len(notes) > MAX_RECOVERY_NOTES
+        or any(not isinstance(item, str) for item in notes)
+    ):
+        raise ValueError("Journal recovery notes are invalid.")
     timeline = value.get("timeline")
     if timeline is not None:
         if not isinstance(timeline, list) or len(timeline) > MAX_TIMELINE_EVENTS:

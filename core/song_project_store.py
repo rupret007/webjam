@@ -29,11 +29,11 @@ import stat
 import tempfile
 import threading
 import uuid
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Iterator, Mapping, Sequence
 
 from core.file_io import atomic_write_bytes
 from core.song_project import (
@@ -47,7 +47,6 @@ from core.song_project import (
     SongProjectError,
     TimeSignature,
 )
-
 
 PROJECT_MANIFEST_FILENAME = "webjam-project.json"
 PROJECT_BACKUP_FILENAME = ".webjam-project.json.bak"
@@ -1398,12 +1397,12 @@ __all__ = [
     "MAX_PROJECT_MANIFEST_BYTES",
     "MAX_RECENT_PROJECTS",
     "MAX_RECENT_PROJECTS_BYTES",
-    "MediaImportResult",
-    "MediaRelinkResult",
     "PROJECT_AUTOSAVE_FILENAME",
     "PROJECT_BACKUP_FILENAME",
     "PROJECT_LOCK_FILENAME",
     "PROJECT_MANIFEST_FILENAME",
+    "MediaImportResult",
+    "MediaRelinkResult",
     "ProjectLoadOrigin",
     "ProjectLoadResult",
     "ProjectRecoveryCandidate",

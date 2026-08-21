@@ -36,20 +36,20 @@ import tempfile
 import threading
 import time
 import uuid
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from socketserver import TCPServer
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any
 from urllib.parse import parse_qs, quote, urlsplit
 
 from core.creative_modes import canonical_creator_profile_key
 from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
 from core.logical_sources import canonical_logical_source_id
 from core.redaction import redact_text
-
 
 MAX_JSON_BYTES = 64 * 1024
 MAX_CHUNK_BYTES = 4 * 1024 * 1024
@@ -272,7 +272,7 @@ class SessionCredentials:
         )
 
     @classmethod
-    def create(cls) -> "SessionCredentials":
+    def create(cls) -> SessionCredentials:
         return cls(str(uuid.uuid4()), secrets.token_urlsafe(32))
 
     def participant_token(self, participant_id: str) -> str:
@@ -629,7 +629,7 @@ class LocalOriginalObligation:
         )
 
     @classmethod
-    def from_presence_proof(cls, proof: PresenceV2Proof) -> "LocalOriginalObligation":
+    def from_presence_proof(cls, proof: PresenceV2Proof) -> LocalOriginalObligation:
         return cls(
             participant_id=proof.participant_id,
             track_count=proof.local_original_track_count,
@@ -1158,7 +1158,7 @@ class EnrollmentRegistry:
         # extra millisecond (a 15 000 ms lease reported as 15 001 ms).  Never
         # promise more remaining time than this registry actually granted;
         # the constructor already bounds the grant by PRESENCE_V2_MAX_LEASE_S.
-        granted_lease_ms = int(round(self._presence_v2_lease_s * 1000))
+        granted_lease_ms = round(self._presence_v2_lease_s * 1000)
         remaining_ms = min(
             granted_lease_ms,
             max(
@@ -1748,7 +1748,7 @@ class CaptureArmSnapshot:
         object.__setattr__(self, "recording_plan_fingerprint", fingerprint)
 
     @classmethod
-    def from_mapping(cls, value: object) -> "CaptureArmSnapshot":
+    def from_mapping(cls, value: object) -> CaptureArmSnapshot:
         if not isinstance(value, Mapping):
             raise ValueError("capture_arm must be an object.")
         if value.get("schema") != _CAPTURE_ARM_SCHEMA:
@@ -1784,7 +1784,7 @@ class CaptureArmCancellationSnapshot:
         )
 
     @classmethod
-    def from_mapping(cls, value: object) -> "CaptureArmCancellationSnapshot":
+    def from_mapping(cls, value: object) -> CaptureArmCancellationSnapshot:
         if not isinstance(value, Mapping):
             raise ValueError("capture_arm_cancellation must be an object.")
         if value.get("schema") != _CAPTURE_ARM_SCHEMA:
@@ -1872,7 +1872,7 @@ class CaptureArmAcknowledgement:
         value: Mapping[str, object],
         *,
         participant_id: str,
-    ) -> "CaptureArmAcknowledgement":
+    ) -> CaptureArmAcknowledgement:
         return cls(
             participant_id=participant_id,
             take_id=value["take_id"],
@@ -2093,7 +2093,7 @@ class SharedTrackSessionSnapshot:
         object.__setattr__(self, "needs_attention", attention)
 
     @classmethod
-    def from_mapping(cls, value: object) -> "SharedTrackSessionSnapshot":
+    def from_mapping(cls, value: object) -> SharedTrackSessionSnapshot:
         """Parse a peer payload, treating absence as a legacy idle host."""
 
         if value is None:
@@ -2893,7 +2893,7 @@ def _gap_integer(value: object, field_name: str, *, positive: bool = False) -> i
     return result
 
 
-def _gap_timeline_frames(gaps: tuple["TransferGap", ...]) -> int:
+def _gap_timeline_frames(gaps: tuple[TransferGap, ...]) -> int:
     """Return the union of declared source-frame intervals.
 
     A multi-channel descriptor can report the same missing time range for
@@ -2972,7 +2972,7 @@ class TransferGap:
         }
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "TransferGap":
+    def from_mapping(cls, value: Mapping[str, Any]) -> TransferGap:
         if not isinstance(value, Mapping):
             raise ValueError("gap must be an object.")
         raw_channels = value.get("channels", ())
@@ -3110,7 +3110,7 @@ class TransferDescriptor:
         )
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "TransferDescriptor":
+    def from_mapping(cls, value: Mapping[str, Any]) -> TransferDescriptor:
         raw_gaps = value.get("gaps", ())
         if not isinstance(raw_gaps, (list, tuple)):
             raise ValueError("gaps must be a sequence of structured gap records.")
@@ -3616,7 +3616,7 @@ class SessionPeerServer:
                     )
                 return participant_id
 
-            def do_POST(self) -> None:  # noqa: N802
+            def do_POST(self) -> None:
                 route = urlsplit(self.path).path
                 if route not in {
                     "/v1/enroll",
@@ -3788,7 +3788,7 @@ class SessionPeerServer:
                     return
                 self._json(HTTPStatus.OK, asdict(enrolled))
 
-            def do_GET(self) -> None:  # noqa: N802
+            def do_GET(self) -> None:
                 parsed = urlsplit(self.path)
                 try:
                     participant_id = self._participant()
@@ -3867,7 +3867,7 @@ class SessionPeerServer:
                     return
                 self._error(HTTPStatus.NOT_FOUND, "not_found", "Unknown WebJam route.")
 
-            def do_PUT(self) -> None:  # noqa: N802
+            def do_PUT(self) -> None:
                 if urlsplit(self.path).path != "/v1/segment":
                     self._error(
                         HTTPStatus.NOT_FOUND, "not_found", "Unknown WebJam route."

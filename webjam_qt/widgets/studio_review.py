@@ -7,14 +7,13 @@ coordinates them and the immutable arrangement/controller remains elsewhere.
 
 from __future__ import annotations
 
+import logging
+import math
+import threading
 from collections import OrderedDict
 from contextlib import ExitStack
 from dataclasses import dataclass
-import logging
-import math
 from pathlib import Path
-import threading
-from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
@@ -33,7 +32,6 @@ from PySide6.QtWidgets import (
 
 from core.take_library import TakeInfo
 from webjam_qt.theme.tokens import Color, Space
-
 
 LOGGER = logging.getLogger("webjam.qt.recording_studio")
 
@@ -88,7 +86,7 @@ class _WaveformPeakCache:
         self._items: OrderedDict[_WaveformSourceKey, tuple[float, ...]] = OrderedDict()
         self._lock = threading.Lock()
 
-    def get(self, key: _WaveformSourceKey) -> Optional[tuple[float, ...]]:
+    def get(self, key: _WaveformSourceKey) -> tuple[float, ...] | None:
         with self._lock:
             value = self._items.get(key)
             if value is not None:
@@ -176,7 +174,7 @@ class StudioTimelineRuler(QWidget):
 
     seek_requested = Signal(float)
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("StudioRuler")
         self.setMinimumHeight(34)
@@ -231,7 +229,7 @@ class StudioTimelineRuler(QWidget):
         if self._seek_enabled:
             self.seek_requested.emit(self._seconds_at(x))
 
-    def mousePressEvent(self, event) -> None:  # noqa: N802
+    def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton and self._seek_enabled:
             self._dragging = True
             self._emit_seek(event.position().x())
@@ -239,14 +237,14 @@ class StudioTimelineRuler(QWidget):
             return
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+    def mouseMoveEvent(self, event) -> None:
         if self._dragging and self._seek_enabled:
             self._emit_seek(event.position().x())
             event.accept()
             return
         super().mouseMoveEvent(event)
 
-    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+    def mouseReleaseEvent(self, event) -> None:
         if self._dragging and event.button() == Qt.MouseButton.LeftButton:
             self._dragging = False
             self._emit_seek(event.position().x())
@@ -254,7 +252,7 @@ class StudioTimelineRuler(QWidget):
             return
         super().mouseReleaseEvent(event)
 
-    def paintEvent(self, _event) -> None:  # noqa: N802
+    def paintEvent(self, _event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect().adjusted(0, 0, -1, -1)
@@ -301,7 +299,7 @@ class StudioTimelineRuler(QWidget):
 class TrackLevelMeter(QWidget):
     """Compact stereo peaks with a latched-over-one-block clip indicator."""
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("StudioTrackMeter")
         self.setFixedSize(38, 24)
@@ -334,7 +332,7 @@ class TrackLevelMeter(QWidget):
         )
         self.update()
 
-    def paintEvent(self, _event) -> None:  # noqa: N802
+    def paintEvent(self, _event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect().adjusted(0, 0, -1, -1)
@@ -368,12 +366,12 @@ class TrackLevelMeter(QWidget):
 class _CompactComboBox(QComboBox):
     """Keep long hardware names from setting the window's minimum width."""
 
-    def minimumSizeHint(self):  # noqa: N802
+    def minimumSizeHint(self):
         hint = super().minimumSizeHint()
         hint.setWidth(140)
         return hint
 
-    def sizeHint(self):  # noqa: N802
+    def sizeHint(self):
         hint = super().sizeHint()
         hint.setWidth(min(220, hint.width()))
         return hint
@@ -384,7 +382,7 @@ def _waveform_peaks(
     buckets: int = _WAVEFORM_BUCKETS,
     *,
     chunk_frames: int = _WAVEFORM_CHUNK_FRAMES,
-    cancel_event: Optional[threading.Event] = None,
+    cancel_event: threading.Event | None = None,
 ) -> tuple[float, ...]:
     """Build a truthful bounded envelope by streaming every source frame.
 
@@ -465,7 +463,7 @@ def _composite_waveform_peaks(
     buckets: int = _WAVEFORM_BUCKETS,
     *,
     chunk_frames: int = _WAVEFORM_CHUNK_FRAMES,
-    cancel_event: Optional[threading.Event] = None,
+    cancel_event: threading.Event | None = None,
 ) -> tuple[float, ...]:
     """Inspect every segment frame while retaining reconnect gaps on screen."""
     if buckets <= 0 or chunk_frames <= 0:
@@ -483,7 +481,7 @@ def _composite_waveform_peaks(
             1,
             min(
                 int(buckets),
-                int(round(spec.timeline_duration_s * spec.project_samplerate)),
+                round(spec.timeline_duration_s * spec.project_samplerate),
             ),
         )
         values = [0.0] * count
@@ -654,7 +652,7 @@ def _timeline_gaps_for_track(
 class WaveformCanvas(QWidget):
     """Small DAW-like clip lane for a recorded file or live input history."""
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("WaveformCanvas")
         self.setMinimumHeight(78)
@@ -740,7 +738,7 @@ class WaveformCanvas(QWidget):
             del self._history[: len(self._history) - 1200]
         self.update()
 
-    def set_playhead(self, seconds: float, duration: Optional[float] = None) -> None:
+    def set_playhead(self, seconds: float, duration: float | None = None) -> None:
         self._playhead = max(0.0, float(seconds))
         if duration is not None:
             self._timeline_duration = max(1.0, float(duration))
@@ -750,7 +748,7 @@ class WaveformCanvas(QWidget):
         self._selected = bool(selected)
         self.update()
 
-    def paintEvent(self, _event) -> None:  # noqa: N802
+    def paintEvent(self, _event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect().adjusted(0, 0, -1, -1)
@@ -912,7 +910,7 @@ class TrackLane(QFrame):
         track_number: int = 0,
         source: str = "jamulus_server",
         source_badge_label: str = "",
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.channel_id = int(channel_id)
@@ -1071,7 +1069,7 @@ class TrackLane(QFrame):
                 )
             )
 
-    def mousePressEvent(self, event) -> None:  # noqa: N802
+    def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self._select()
         super().mousePressEvent(event)

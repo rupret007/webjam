@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import itertools
 import json
 import math
 import re
@@ -38,7 +39,6 @@ from core.session_conductor import (
     SessionPrimaryAction,
     SessionRole,
 )
-
 
 POCKET_STAGE_PROTOCOL_VERSION = 1
 MOBILE_PROJECTION_SCHEMA_VERSION = 1
@@ -851,7 +851,7 @@ class MobileSessionProjection:
         section_ordinals = tuple(item.ordinal for item in sections)
         if section_ordinals != tuple(sorted(set(section_ordinals))):
             raise ValueError("sections must use unique ascending ordinals.")
-        for previous, current in zip(sections, sections[1:]):
+        for previous, current in itertools.pairwise(sections):
             if current.start_ms < previous.end_ms:
                 raise ValueError("sections must use ascending non-overlapping times.")
         current_ordinal = self.current_section_ordinal

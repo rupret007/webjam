@@ -15,7 +15,6 @@ from __future__ import annotations
 import logging
 import sys
 from dataclasses import dataclass, field
-from typing import Optional
 
 _logger = logging.getLogger("webjam.audio_routing")
 
@@ -68,9 +67,9 @@ class LoopbackDevice:
 @dataclass
 class AudioRoutingStatus:
     """Result of a loopback device scan."""
-    loopback_device: Optional[LoopbackDevice] = None
+    loopback_device: LoopbackDevice | None = None
     all_devices: list[LoopbackDevice] = field(default_factory=list)
-    scan_error: Optional[str] = None
+    scan_error: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -148,7 +147,7 @@ def scan_loopback_devices() -> AudioRoutingStatus:
             )
 
     # Prefer a device that has an input side (needed for metering)
-    best: Optional[LoopbackDevice] = None
+    best: LoopbackDevice | None = None
     for cand in candidates:
         if cand.has_input:
             best = cand
@@ -165,7 +164,7 @@ def scan_loopback_devices() -> AudioRoutingStatus:
     return AudioRoutingStatus(loopback_device=best, all_devices=candidates)
 
 
-def find_device_index(name_fragment: str) -> Optional[int]:
+def find_device_index(name_fragment: str) -> int | None:
     """Return the sounddevice index for a device whose name contains ``name_fragment``."""
     try:
         import sounddevice as sd  # type: ignore

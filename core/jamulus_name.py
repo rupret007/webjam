@@ -16,7 +16,6 @@ from __future__ import annotations
 import unicodedata
 from dataclasses import dataclass
 
-
 DEFAULT_JAMULUS_NAME = "WebJam Musician"
 DEFAULT_JAMULUS_NAME_VERSION = "3.12.3"
 JAMULUS_NAME_HELP = (

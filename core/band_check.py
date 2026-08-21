@@ -13,17 +13,17 @@ exercise every transition without opening an audio device.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
-from enum import Enum
-import json
 import hashlib
+import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
+from enum import Enum
+from pathlib import Path
 
 from core.session_transport import ConnectionQuality, TransportPath
 
@@ -756,13 +756,13 @@ class BandCheckSession:
         evidence = self.evidence
         return (
             f"process_started={str(evidence.jamulus_process_started).lower()}",
-            "authenticated_responsive="
-            f"{str(evidence.jamulus_authenticated_responsive).lower()}",
+            ("authenticated_responsive="
+            f"{str(evidence.jamulus_authenticated_responsive).lower()}"),
             f"remote_participant={str(evidence.remote_participant_appeared).lower()}",
             f"transport_datagrams={str(evidence.transport_datagrams_flowed).lower()}",
             f"remote_decoded_test={str(evidence.remote_decoded_test_observed).lower()}",
-            "musician_two_way_confirmation="
-            f"{str(evidence.musician_confirmed_two_way_audibility).lower()}",
+            ("musician_two_way_confirmation="
+            f"{str(evidence.musician_confirmed_two_way_audibility).lower()}"),
             f"connection_path={getattr(evidence.connection_path, 'value', 'unknown')}",
             f"connection_quality={evidence.connection_quality.value}",
             f"path_generation={evidence.path_generation}",
@@ -1190,7 +1190,7 @@ class VerificationSignature:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> "VerificationSignature":
+    def from_dict(cls, value: Mapping[str, object]) -> VerificationSignature:
         channels = value.get("input_channels", [])
         if not isinstance(channels, list):
             raise ValueError("input_channels must be a list")
@@ -1247,7 +1247,7 @@ class BandCheckVerification:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> "BandCheckVerification":
+    def from_dict(cls, value: Mapping[str, object]) -> BandCheckVerification:
         if int(value.get("schema", 0)) != 1:
             raise ValueError("unsupported Band Check verification schema")
         signature = value.get("signature")

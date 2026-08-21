@@ -8,15 +8,15 @@ different installed bundle with the same identifier.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 import ctypes
-from dataclasses import dataclass
-from enum import Enum
 import os
-from pathlib import Path
 import sys
 import time
-from typing import Callable
+from collections.abc import Callable
+from contextlib import contextmanager
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
 
 
 class MacOSProcessActivationError(RuntimeError):
@@ -109,7 +109,9 @@ class MacOSProcessActivationRuntime:
                 "native application activation is unavailable"
             ) from exc
 
-        send = lambda signature: signature(address)  # noqa: E731
+        def send(signature):
+            return signature(address)
+
         self._send_id = send(ctypes.CFUNCTYPE(self._ID, self._ID, self._SEL))
         self._send_id_int = send(
             ctypes.CFUNCTYPE(self._ID, self._ID, self._SEL, ctypes.c_int)

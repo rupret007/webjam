@@ -18,22 +18,36 @@ master routing share this exact stream for playback and bounce.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import math
 import os
 import stat
 import warnings
 from collections import OrderedDict
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Callable, Iterator, Sequence
 
 import numpy as np
+from typing_extensions import Self
 
+from core.song_media_catalog import (
+    SongMediaCatalog,
+    SongMediaCatalogError,
+)
+from core.song_project import SongMedia, SongProject
+from core.studio_mixer import (
+    StudioMixEngine,
+    StudioMixerError,
+    StudioMixResult,
+    studio_effect_tail_frames,
+    studio_mixer_capability,
+)
 from core.studio_project import (
-    FadeCurve,
     MAX_PROJECT_FRAMES,
     STUDIO_PROJECT_SCHEMA_VERSION,
     STUDIO_SONG_PROJECT_SCHEMA_VERSION,
+    FadeCurve,
     StudioCompRange,
     StudioCrossfade,
     StudioDocument,
@@ -43,18 +57,6 @@ from core.studio_project import (
     StudioTrack,
     StudioTrackKind,
 )
-from core.studio_mixer import (
-    StudioMixEngine,
-    StudioMixResult,
-    StudioMixerError,
-    studio_effect_tail_frames,
-    studio_mixer_capability,
-)
-from core.song_media_catalog import (
-    SongMediaCatalog,
-    SongMediaCatalogError,
-)
-from core.song_project import SongMedia, SongProject
 from core.studio_source_catalog import (
     StudioSourceCatalog,
     StudioSourceCatalogError,
@@ -68,7 +70,6 @@ from core.take_project import (
     TakeProject,
     TakeProjectError,
 )
-
 
 DEFAULT_RENDER_BLOCK_FRAMES = 4_096
 MAX_RENDER_BLOCK_FRAMES = 1_048_576
@@ -701,7 +702,7 @@ class _SongSourceSegment:
     gaps: tuple[object, ...] = ()
 
     @classmethod
-    def from_media(cls, media: SongMedia) -> "_SongSourceSegment":
+    def from_media(cls, media: SongMedia) -> _SongSourceSegment:
         return cls(
             segment_id=media.media_id,
             path=media.path,
@@ -1037,7 +1038,7 @@ class StudioRenderer:
             except SongMediaCatalogError as exc:
                 raise StudioRenderError(str(exc)) from exc
 
-    def _same_project_identity(self, other: "StudioRenderer") -> bool:
+    def _same_project_identity(self, other: StudioRenderer) -> bool:
         if self._song_project != other._song_project:
             return False
         if self._song_project:
@@ -1464,7 +1465,7 @@ class StudioRenderer:
 
         for region_id, values in by_region.items():
             ordered = sorted(values, key=lambda item: item[0].start_frame)
-            for previous, following in zip(ordered, ordered[1:]):
+            for previous, following in itertools.pairwise(ordered):
                 if following[0].start_frame < previous[0].end_frame:
                     raise StudioRenderError(
                         "A region has overlapping crossfade envelopes."
@@ -1534,7 +1535,7 @@ class StudioRenderer:
                             observed = (
                                 int(reader.samplerate),
                                 int(reader.channels),
-                                int(len(reader)),
+                                len(reader),
                             )
                     except Exception as exc:
                         raise StudioRenderError(
@@ -1579,7 +1580,7 @@ class StudioRenderer:
 
     def reuse_media_validation(
         self,
-        validated_renderer: "StudioRenderer",
+        validated_renderer: StudioRenderer,
         cancel_check: Callable[[], None] | None = None,
     ) -> None:
         """Reuse exact source receipts from a compatible prepared renderer.
@@ -1676,7 +1677,7 @@ class StudioRenderer:
         end_frame: int | None = None,
         cancel_check: Callable[[], None] | None = None,
         realtime_safe: bool = False,
-    ) -> "StudioRenderStream":
+    ) -> StudioRenderStream:
         """Validate media and return a bounded, seekable render stream.
 
         ``realtime_safe`` eagerly binds every source descriptor before this
@@ -2053,7 +2054,7 @@ class StudioRenderStream:
             observed = (
                 int(reader.samplerate),
                 int(reader.channels),
-                int(len(reader)),
+                len(reader),
             )
             declared = (
                 source.segment.sample_rate,
@@ -2096,7 +2097,7 @@ class StudioRenderStream:
             if binding is not None:
                 binding.close()
 
-    def __enter__(self) -> "StudioRenderStream":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, _exc_type, _exc, _traceback) -> None:
@@ -2463,8 +2464,8 @@ __all__ = [
     "MAX_OPEN_SOURCE_READERS",
     "MAX_RENDER_BLOCK_FRAMES",
     "StudioRenderError",
-    "StudioRenderer",
     "StudioRenderStream",
-    "studio_delivery_block",
+    "StudioRenderer",
     "iter_studio_blocks",
+    "studio_delivery_block",
 ]

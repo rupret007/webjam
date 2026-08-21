@@ -8,8 +8,8 @@ import contextlib
 import logging
 import os
 import signal
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from .config import ServiceConfig
 from .server import ReferenceService

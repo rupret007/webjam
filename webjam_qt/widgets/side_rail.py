@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
@@ -48,10 +47,10 @@ class SideRail(QFrame):
 
     def __init__(
         self,
-        items: Optional[tuple[RailItem, ...]] = None,
+        items: tuple[RailItem, ...] | None = None,
         *,
         initial_key: str = "stage",
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("SideRail")

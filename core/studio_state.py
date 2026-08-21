@@ -34,7 +34,6 @@ from core.studio_store import (
     studio_state_path,
 )
 
-
 # Preserve the established names while making the arrangement document the
 # single source of Studio truth.
 StudioStateError = StudioProjectError

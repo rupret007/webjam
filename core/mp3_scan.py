@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
 import re
 import stat
+from dataclasses import dataclass
 from typing import Final
-
 
 MP3_MAX_ID3_TAG_BYTES: Final = 4 * 1_024 * 1_024
 MP3_MAX_ID3_TEXT_BYTES: Final = 4_096

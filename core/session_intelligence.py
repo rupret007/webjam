@@ -8,16 +8,15 @@ summary of a session.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Sequence
 
 from core.creative_modes import (
-    CreatorProfile,
     CreativeMode,
+    CreatorProfile,
     get_creator_profile_by_key_or_default,
     get_mode_by_key_or_default,
 )
-
 
 _MAX_ITEMS = 5
 _URL_RE = re.compile(r"https?://[^\s<>()\[\]{}]+")
@@ -208,9 +207,7 @@ def _strip_marker(line: str) -> str:
 
 def _is_decision(lowered: str) -> bool:
     return (
-        lowered.startswith(("decision:", "decided:", "decided "))
-        or " approved" in lowered
-        or lowered.startswith("approved ")
+        lowered.startswith(("decision:", "decided:", "decided ", "approved ")) or " approved" in lowered
     )
 
 

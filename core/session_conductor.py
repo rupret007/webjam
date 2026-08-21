@@ -1542,7 +1542,7 @@ class SessionConductor:
         )
 
     @classmethod
-    def restore(cls, checkpoint: SessionConductorCheckpoint) -> "SessionConductor":
+    def restore(cls, checkpoint: SessionConductorCheckpoint) -> SessionConductor:
         """Restore durable facts without trusting stale live-process state."""
 
         conductor = cls(checkpoint.facts)

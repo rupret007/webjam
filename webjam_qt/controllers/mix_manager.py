@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from core.file_io import atomic_write_text
 
@@ -37,7 +37,7 @@ class MixManager:
         self,
         jamulus_controller,
         flash_callback: Callable[[str, int], None],
-        logger: Optional[logging.Logger] = None,
+        logger: logging.Logger | None = None,
         metrics=None,  # Optional MetricsService — increments mix_corruption_recovered
     ) -> None:
         self._jamulus = jamulus_controller

@@ -23,18 +23,19 @@ from __future__ import annotations
 
 import base64
 import binascii
-from dataclasses import dataclass, field, replace
-from enum import Enum
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import secrets
 import stat
 import subprocess
 import sys
-from typing import Callable, Iterable, Mapping, NoReturn
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field, replace
+from enum import Enum
+from pathlib import Path
+from typing import NoReturn
 from xml.etree import ElementTree
 
 from core.file_io import atomic_write_text
@@ -43,7 +44,6 @@ from core.jamulus_child_environment import (
     sanitized_jamulus_child_environment,
 )
 from core.secure_runtime import SecureRuntimeDirectory, SecureRuntimeError
-
 
 WEBJAM_NATIVE_PROFILE_FILENAME = "WebJam-native-v0.16.ini"
 """Dedicated Jamulus profile; never the musician's normal ``Jamulus.ini``."""

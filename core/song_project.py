@@ -18,10 +18,11 @@ import math
 import re
 import unicodedata
 import uuid
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import PurePosixPath
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 from core.creative_modes import canonical_creator_profile_key
 
@@ -269,7 +270,7 @@ class TimeSignature:
         return {"numerator": self.numerator, "denominator": self.denominator}
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "TimeSignature":
+    def from_dict(cls, value: Mapping[str, Any]) -> TimeSignature:
         if not isinstance(value, Mapping):
             raise SongProjectError("time_signature must be an object.")
         _strict_keys(
@@ -326,7 +327,7 @@ class InputMapping:
         return {"device_key": self.device_key, "channels": list(self.channels)}
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "InputMapping":
+    def from_dict(cls, value: Mapping[str, Any]) -> InputMapping:
         if not isinstance(value, Mapping):
             raise SongProjectError("input_mapping must be an object.")
         _strict_keys(
@@ -401,7 +402,7 @@ class SongTrack:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "SongTrack":
+    def from_dict(cls, value: Mapping[str, Any]) -> SongTrack:
         _strict_keys(
             value,
             allowed={
@@ -568,7 +569,7 @@ class SongMedia:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "SongMedia":
+    def from_dict(cls, value: Mapping[str, Any]) -> SongMedia:
         _strict_keys(
             value,
             allowed={
@@ -744,7 +745,7 @@ class SongProject:
         time_signature: TimeSignature | None = None,
         project_id: str | None = None,
         creator_profile_key: str = DEFAULT_CREATOR_PROFILE_KEY,
-    ) -> "SongProject":
+    ) -> SongProject:
         return cls(
             project_id=project_id or str(uuid.uuid4()),
             name=name,
@@ -754,7 +755,7 @@ class SongProject:
             creator_profile_key=creator_profile_key,
         )
 
-    def _bumped(self, **changes: object) -> "SongProject":
+    def _bumped(self, **changes: object) -> SongProject:
         if self.revision >= MAX_PROJECT_REVISION:
             raise SongProjectError("Project revision cannot be incremented.")
         return replace(self, revision=self.revision + 1, **changes)
@@ -765,7 +766,7 @@ class SongProject:
         *,
         input_mapping: InputMapping | None = None,
         track_id: str | None = None,
-    ) -> "SongProject":
+    ) -> SongProject:
         if len(self.tracks) >= MAX_PROJECT_TRACKS:
             raise SongProjectError("Project track limit reached.")
         track = SongTrack(
@@ -781,7 +782,7 @@ class SongProject:
         media: SongMedia,
         *,
         designate_backing: bool = False,
-    ) -> "SongProject":
+    ) -> SongProject:
         if not isinstance(media, SongMedia):
             raise SongProjectError("media must be a SongMedia value.")
         if len(self.media) >= MAX_PROJECT_MEDIA:
@@ -792,7 +793,7 @@ class SongProject:
             backing_media_id=backing,
         )
 
-    def remove_track(self, track_id: str) -> "SongProject":
+    def remove_track(self, track_id: str) -> SongProject:
         """Remove one manifest track and compact the remaining display order."""
 
         canonical = _uuid(track_id, "track_id")
@@ -806,7 +807,7 @@ class SongProject:
         )
         return self._bumped(tracks=tracks)
 
-    def designate_backing_media(self, media_id: str | None) -> "SongProject":
+    def designate_backing_media(self, media_id: str | None) -> SongProject:
         normalized = _uuid(media_id, "backing_media_id", optional=True)
         if normalized is not None and normalized not in {
             media.media_id for media in self.media
@@ -814,12 +815,12 @@ class SongProject:
             raise SongProjectError("backing_media_id does not identify project media.")
         return self._bumped(backing_media_id=normalized)
 
-    def rename(self, name: str) -> "SongProject":
+    def rename(self, name: str) -> SongProject:
         """Return one validated project-name edit."""
 
         return self._bumped(name=name)
 
-    def set_tempo(self, tempo_bpm: float) -> "SongProject":
+    def set_tempo(self, tempo_bpm: float) -> SongProject:
         """Return one constant project-tempo edit."""
 
         return self._bumped(tempo_bpm=tempo_bpm)
@@ -828,7 +829,7 @@ class SongProject:
         self,
         numerator: int,
         denominator: int,
-    ) -> "SongProject":
+    ) -> SongProject:
         """Return one constant project time-signature edit."""
 
         return self._bumped(
@@ -861,7 +862,7 @@ class SongProject:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "SongProject":
+    def from_dict(cls, value: Mapping[str, Any]) -> SongProject:
         if not isinstance(value, Mapping):
             raise SongProjectError("Project manifest root must be an object.")
         schema_version = value.get("schema_version")
@@ -952,7 +953,6 @@ def song_project_from_dict(value: Mapping[str, Any]) -> SongProject:
 __all__ = [
     "DEFAULT_CREATOR_PROFILE_KEY",
     "DEFAULT_PROJECT_SAMPLE_RATE",
-    "InputMapping",
     "LEGACY_SONG_PROJECT_SCHEMA_VERSION",
     "MAX_MEDIA_FILE_BYTES",
     "MAX_PROJECT_MEDIA",
@@ -960,9 +960,10 @@ __all__ = [
     "MAX_PROJECT_TRACKS",
     "MAX_TEMPO_BPM",
     "MIN_TEMPO_BPM",
+    "SONG_PROJECT_SCHEMA_VERSION",
+    "InputMapping",
     "MediaImportMethod",
     "MediaProvenance",
-    "SONG_PROJECT_SCHEMA_VERSION",
     "SongMedia",
     "SongProject",
     "SongProjectError",

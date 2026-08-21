@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
-from typing import Mapping
 
 from core.jamulus_compatibility import ComponentTarget
 
@@ -148,7 +148,7 @@ class JamulusUpdateSnapshot:
         self,
         state: JamulusUpdateState,
         **changes: object,
-    ) -> "JamulusUpdateSnapshot":
+    ) -> JamulusUpdateSnapshot:
         destination = JamulusUpdateState(state)
         if (
             destination is not self.state
@@ -174,7 +174,7 @@ class JamulusUpdateSnapshot:
         }
 
     @classmethod
-    def from_dict(cls, value: object) -> "JamulusUpdateSnapshot":
+    def from_dict(cls, value: object) -> JamulusUpdateSnapshot:
         if not isinstance(value, dict):
             raise ValueError("updater snapshot must be an object")
         keys = frozenset(

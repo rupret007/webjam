@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import errno
 import os
-from pathlib import Path
 import stat
 import time
+from pathlib import Path
+
+from typing_extensions import Self
 
 
 class ComponentLockError(RuntimeError):
@@ -45,7 +47,7 @@ class InterProcessComponentLock:
         if self.poll_interval <= 0 or self.poll_interval > 1:
             raise ValueError("lock poll interval must be between 0 and 1 second")
 
-    def __enter__(self) -> "InterProcessComponentLock":
+    def __enter__(self) -> Self:
         if self._descriptor is not None:
             raise ComponentLockError("component lock is not re-entrant")
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -133,8 +135,8 @@ class InterProcessComponentLock:
 
 
 __all__ = [
+    "RUNTIME_ACTIVE_LOCK_NAME",
     "ComponentLockError",
     "ComponentLockTimeout",
     "InterProcessComponentLock",
-    "RUNTIME_ACTIVE_LOCK_NAME",
 ]

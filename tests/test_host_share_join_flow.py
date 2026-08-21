@@ -22,12 +22,12 @@ from PySide6.QtWidgets import (
 )
 
 from core.creative_modes import CREATOR_PROFILES
+from core.jamulus_name import DEFAULT_JAMULUS_NAME
 from core.network_invite import (
     InviteLinkError,
     create_invite_link,
     parse_invite_link,
 )
-from core.jamulus_name import DEFAULT_JAMULUS_NAME
 from core.settings import AppSettings, load_settings, save_settings
 from webjam_qt.widgets.session_hud import SessionHud
 from webjam_qt.windows.launch_dialog import (

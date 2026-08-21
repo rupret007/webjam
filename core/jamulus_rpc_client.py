@@ -40,9 +40,9 @@ import logging
 import socket
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
 
 from core.jamulus_name import JamulusNameError, validate_jamulus_name
 from core.jamulus_roster_identity import (
@@ -240,20 +240,14 @@ class JamulusRpcClient:
         self,
         port: int = 22222,
         *,
-        on_participants_changed: Optional[Callable[[List[ChannelInfo]], None]] = None,
-        on_participants_changed_with_source: Optional[
-            Callable[[List[ChannelInfo], JamulusRpcMonitorIdentity], None]
-        ] = None,
-        on_levels: Optional[Callable[[Dict[int, float]], None]] = None,
-        on_chat: Optional[Callable[[str], None]] = None,
-        on_chat_with_source: Optional[
-            Callable[[str, JamulusRpcMonitorIdentity], None]
-        ] = None,
-        on_recorder_state: Optional[Callable[[bool, int], None]] = None,
-        on_recorder_state_with_source: Optional[
-            Callable[[bool, int, JamulusRpcMonitorIdentity], None]
-        ] = None,
-        secret_path: Optional[Path] = None,
+        on_participants_changed: Callable[[list[ChannelInfo]], None] | None = None,
+        on_participants_changed_with_source: Callable[[list[ChannelInfo], JamulusRpcMonitorIdentity], None] | None = None,
+        on_levels: Callable[[dict[int, float]], None] | None = None,
+        on_chat: Callable[[str], None] | None = None,
+        on_chat_with_source: Callable[[str, JamulusRpcMonitorIdentity], None] | None = None,
+        on_recorder_state: Callable[[bool, int], None] | None = None,
+        on_recorder_state_with_source: Callable[[bool, int, JamulusRpcMonitorIdentity], None] | None = None,
+        secret_path: Path | None = None,
     ) -> None:
         self._port = port
         self._secret_path = Path(secret_path) if secret_path else DEFAULT_SECRET_PATH
@@ -270,8 +264,8 @@ class JamulusRpcClient:
         self._available = False
         self._authed = False
         self._running = False
-        self._thread: Optional[threading.Thread] = None
-        self._sock: Optional[socket.socket] = None
+        self._thread: threading.Thread | None = None
+        self._sock: socket.socket | None = None
         self._sock_epoch = 0
         self._monitor_epoch = 0
         self._monitor_identity = JamulusRpcMonitorIdentity(0, 0, 0)
@@ -289,8 +283,8 @@ class JamulusRpcClient:
         self._request_counter = 0
         # request id -> (monitor epoch, method).  Legacy parser fixtures may
         # still seed a bare method string; production sends are always bound.
-        self._inflight: Dict[int, tuple[int, str] | str] = {}
-        self._clients: List[ChannelInfo] = []     # last-known participant list
+        self._inflight: dict[int, tuple[int, str] | str] = {}
+        self._clients: list[ChannelInfo] = []     # last-known participant list
         self._local_channel_id: int = -1
         # Jamulus 3.12.2's real getChannelInfo response describes this client
         # but does not include its server-assigned channel id.  Keep the
@@ -629,7 +623,7 @@ class JamulusRpcClient:
             {"name": validated.value},
         ) is not None
 
-    def get_channel_clients(self) -> Optional[List[ChannelInfo]]:
+    def get_channel_clients(self) -> list[ChannelInfo] | None:
         """Return the last-known participant list, or None if not yet received."""
         with self._state_lock:
             if not self._available:
@@ -708,7 +702,7 @@ class JamulusRpcClient:
     # ------------------------------------------------------------------
     # Connection / reader loop
     # ------------------------------------------------------------------
-    def _read_secret(self) -> Optional[str]:
+    def _read_secret(self) -> str | None:
         try:
             secret = self._secret_path.read_text(encoding="utf-8").strip()
             return secret or None
@@ -760,7 +754,7 @@ class JamulusRpcClient:
             self._sock_epoch = epoch
         read_buf = b""
 
-        def _readline(deadline: Optional[float] = None) -> str:
+        def _readline(deadline: float | None = None) -> str:
             nonlocal read_buf
             while self._epoch_is_current(epoch) and not stop_event.is_set():
                 nl = read_buf.find(b"\n")
@@ -777,7 +771,7 @@ class JamulusRpcClient:
                 sock.settimeout(remaining)
                 try:
                     chunk = sock.recv(4096)
-                except socket.timeout:
+                except TimeoutError:
                     if deadline is not None:
                         continue
                     return ""
@@ -839,7 +833,7 @@ class JamulusRpcClient:
     def _await_auth(
         self,
         readline,
-        auth_id: Optional[int],
+        auth_id: int | None,
         *,
         epoch: int,
     ) -> bool:
@@ -874,7 +868,7 @@ class JamulusRpcClient:
         request_id,
         *,
         epoch: int | None,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Pop only the request owned by ``epoch``.
 
         Request IDs restart at one for every monitor. A delayed old response
@@ -901,7 +895,7 @@ class JamulusRpcClient:
         params: dict,
         *,
         epoch: int | None = None,
-    ) -> Optional[int]:
+    ) -> int | None:
         if method not in self.supported_request_methods:
             _logger.error(
                 "refusing unsupported Jamulus %s request: %s",
@@ -958,7 +952,7 @@ class JamulusRpcClient:
         return req_id
 
     @staticmethod
-    def _parse(line: str) -> Optional[dict]:
+    def _parse(line: str) -> dict | None:
         line = line.strip()
         if not line:
             return None
@@ -999,7 +993,7 @@ class JamulusRpcClient:
     # ------------------------------------------------------------------
     def _handle_response(
         self,
-        method: Optional[str],
+        method: str | None,
         result,
         *,
         epoch: int | None = None,
@@ -1162,7 +1156,7 @@ class JamulusRpcClient:
         self,
         *,
         epoch: int | None = None,
-    ) -> Optional[int]:
+    ) -> int | None:
         """Return the sole roster row matching getChannelInfo, if any."""
         with self._state_lock:
             if epoch is not None and (
@@ -1243,7 +1237,7 @@ class JamulusRpcClient:
             ):
                 return
             local_channel_id = self._local_channel_id
-        clients: List[ChannelInfo] = []
+        clients: list[ChannelInfo] = []
         for idx, entry in enumerate(raw_clients):
             if not isinstance(entry, dict):
                 continue
@@ -1433,7 +1427,7 @@ class JamulusRpcClient:
 
     def _invoke_participant_callbacks(
         self,
-        clients: List[ChannelInfo],
+        clients: list[ChannelInfo],
         *,
         epoch: int | None,
     ) -> None:
@@ -1539,7 +1533,7 @@ class JamulusRpcClient:
             ):
                 return
             clients = list(self._clients)
-        levels: Dict[int, float] = {}
+        levels: dict[int, float] = {}
         for idx, raw in enumerate(raw_levels):
             try:
                 value = min(1.0, max(0.0, int(raw) / self.LEVEL_MAX))

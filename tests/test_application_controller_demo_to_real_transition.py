@@ -11,15 +11,17 @@ from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 _app = QApplication.instance() or QApplication([])
 
-from core.settings import AppSettings  # noqa: E402
-from jamulus_controller import JamulusParticipant  # noqa: E402
-from tests.support.jamulus_monitor import bind_primary_rpc_monitor  # noqa: E402
-from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
-from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
+from core.settings import AppSettings
+from jamulus_controller import JamulusParticipant
+from tests.support.jamulus_monitor import bind_primary_rpc_monitor
+from webjam_qt.controllers.application_controller import (
+    ApplicationController,
+)
+from webjam_qt.windows.conductor_window import ConductorWindow
 
 
 def _live_primary(pid: int) -> MagicMock:

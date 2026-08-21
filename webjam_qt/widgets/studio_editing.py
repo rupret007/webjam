@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Protocol
 from uuid import uuid4
 
 from PySide6.QtCore import Signal
@@ -26,7 +27,6 @@ from core.studio_project import (
     StudioRegion,
 )
 from webjam_qt.theme.tokens import Space
-
 
 StudioEdit = Callable[[StudioDocument], StudioDocument]
 StudioCrossfadeTarget = tuple[StudioRegion, StudioRegion, StudioCrossfade | None]

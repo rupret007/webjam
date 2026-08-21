@@ -20,11 +20,10 @@ import re
 import sys
 import threading
 import time
-from types import SimpleNamespace
 import unicodedata
 import uuid
 from pathlib import Path
-from typing import Optional
+from types import SimpleNamespace
 
 from PySide6.QtCore import QObject, Qt, QTimer
 from PySide6.QtWidgets import QDialog, QMessageBox
@@ -35,12 +34,17 @@ from core.creative_modes import (
     get_creator_profile_by_key_or_default,
     get_mode_by_key_or_default,
 )
-from core.local_capture import LocalCaptureTrack, check_local_capture_preflight
 from core.jamulus_rpc_client import (
     JamulusOrderedRosterProof,
     JamulusRpcMonitorIdentity,
 )
+from core.local_capture import LocalCaptureTrack, check_local_capture_preflight
 from core.meeting_link import RECORD_SESSION_MEETING_CAPTURE_NOTICE
+from core.musician_guidance import (
+    GuidanceDisplayOverride,
+    StudioGuidanceFacts,
+    build_musician_guidance,
+)
 from core.network_invite import BandInvite
 from core.pocket_stage import (
     MobileParticipant,
@@ -55,12 +59,6 @@ from core.pocket_stage import (
     PocketCommandStatus,
 )
 from core.remote_invitation import RemoteInvitation
-from core.session_health import SessionHealth
-from core.musician_guidance import (
-    GuidanceDisplayOverride,
-    StudioGuidanceFacts,
-    build_musician_guidance,
-)
 from core.session_conductor import (
     CleanupState,
     EvidenceState,
@@ -71,43 +69,43 @@ from core.session_conductor import (
     ProcessState,
     RecorderState,
     ReviewState,
+    SessionConductor,
     SessionConductorFacts,
     SessionConductorPhase,
-    SessionPrimaryAction,
-    SessionRole,
-    SessionConductor,
     SessionConductorSnapshot,
     SessionConductorToken,
+    SessionPrimaryAction,
+    SessionRole,
     TakeValidationState,
 )
-from core.session_lifecycle import SessionLifecycle, SessionLifecyclePhase
+from core.session_health import SessionHealth
 from core.session_intelligence import build_session_pulse
-from core.settings import AppSettings, load_settings
+from core.session_lifecycle import SessionLifecycle, SessionLifecyclePhase
 from core.session_transfer_runtime import (
     GuestPeerSession,
     HostPeerSession,
     default_installation_identity_path,
 )
+from core.settings import AppSettings, load_settings
 from services.bridge_service import (
+    NATIVE_SOUND_SETUP_GRACE_SECONDS,
+    RECONNECT_HANG_THRESHOLD_SECONDS,
     BridgeService,
     JamulusRecoverySnapshot,
     JamulusRpcFreshness,
-    NATIVE_SOUND_SETUP_GRACE_SECONDS,
-    RECONNECT_HANG_THRESHOLD_SECONDS,
 )
 from services.macos_process_activation import JamulusForegroundReason
 from storage.repository import WebJamRepository
 from ui.services import MetricsService
-
+from webjam_qt.controllers.audio_coordinator import AudioCoordinator
 from webjam_qt.controllers.mix_manager import MixManager
+from webjam_qt.controllers.recording_coordinator import RecordingCoordinator
 from webjam_qt.controllers.session_persistence import SessionPersistence
 from webjam_qt.controllers.ui_thread import UiThreadInvoker
-from webjam_qt.controllers.audio_coordinator import AudioCoordinator
 from webjam_qt.controllers.video_coordinator import VideoCoordinator
-from webjam_qt.controllers.recording_coordinator import RecordingCoordinator
+from webjam_qt.session_state import SessionPhase, SessionUiState
 from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.windows.conductor_window import ConductorWindow
-from webjam_qt.session_state import SessionPhase, SessionUiState
 
 LOGGER = logging.getLogger("webjam.qt.application_controller")
 
@@ -157,25 +155,25 @@ def _live_quit_copy(
         if hosting:
             return (
                 "End recording session and quit?",
-                "Quitting WebJam ends this recording session for every connected "
-                "speaker.",
+                ("Quitting WebJam ends this recording session for every connected "
+                "speaker."),
             )
         return (
             "Leave recording session and quit?",
-            "Quitting WebJam disconnects you; the other speakers can continue "
-            "the recording session.",
+            ("Quitting WebJam disconnects you; the other speakers can continue "
+            "the recording session."),
         )
     if profile.key == "review_rehearsal":
         if hosting:
             return (
                 "End review session and quit? (Preview)",
-                "Quitting WebJam ends this Preview review session for every "
-                "connected participant.",
+                ("Quitting WebJam ends this Preview review session for every "
+                "connected participant."),
             )
         return (
             "Leave review session and quit? (Preview)",
-            "Quitting WebJam disconnects you; the other participants can continue "
-            "the Preview review session.",
+            ("Quitting WebJam disconnects you; the other participants can continue "
+            "the Preview review session."),
         )
     return (
         "End jam and quit?" if hosting else "Leave jam and quit?",
@@ -266,7 +264,7 @@ class ApplicationController(QObject):
     def __init__(
         self,
         window: ConductorWindow,
-        settings: Optional[AppSettings] = None,
+        settings: AppSettings | None = None,
         session_invite: BandInvite | None = None,
         remote_invitation: RemoteInvitation | None = None,
         *,
@@ -743,7 +741,7 @@ class ApplicationController(QObject):
             try:
                 if not bool(prepare_project_close()):
                     return False
-            except Exception:  # noqa: BLE001 - quit must retain unsaved projects
+            except Exception:
                 LOGGER.exception("Reference Studio project close preparation failed")
                 return False
         studio = getattr(getattr(self, "window", None), "recording_studio", None)
@@ -752,7 +750,7 @@ class ApplicationController(QObject):
             return True
         try:
             prepared = bool(prepare_close())
-        except Exception:  # noqa: BLE001 - closing must fail safe on save errors
+        except Exception:
             LOGGER.exception("Studio close preparation failed")
             prepared = False
         if prepared:
@@ -865,7 +863,7 @@ class ApplicationController(QObject):
             # harnesses that exercise shutdown ordering without constructing
             # a QObject-backed controller.
             return ApplicationController._shutdown_once(self)
-        except Exception:  # noqa: BLE001 - an unknown owner failure must fail closed
+        except Exception:
             LOGGER.exception("Unexpected shutdown cleanup failure")
             # At least one teardown operation may already have completed.
             # Never restore the ordinary app surface after that boundary, and
@@ -921,7 +919,7 @@ class ApplicationController(QObject):
         if jamulus_update_service is not None:
             try:
                 updater_stopped = bool(jamulus_update_service.close(timeout=3.0))
-            except Exception:  # noqa: BLE001 - updater cleanup fails closed
+            except Exception:
                 LOGGER.exception("Jamulus updater shutdown failed")
                 updater_stopped = False
             if not updater_stopped:
@@ -976,7 +974,7 @@ class ApplicationController(QObject):
                 hosted_recording_safe = bool(
                     self.recording.stop_server_recording_for_shutdown()
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Hosted recording shutdown failed")
                 hosted_recording_safe = False
         if hosted_server_alive and not hosted_recording_safe:
@@ -1038,14 +1036,14 @@ class ApplicationController(QObject):
         if self._mix_dirty and self._jamulus_connected:
             try:
                 self._on_save_mix()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Auto-save mix on shutdown failed")
         # Terminate the Jamulus subprocess so it doesn't outlive WebJam.
         # bridge.stop_jamulus() also calls jamulus_controller.stop() internally.
         jamulus_stopped = False
         try:
             jamulus_stopped = self.bridge.stop_jamulus() is not False
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Jamulus shutdown failed")
         if not jamulus_stopped:
             return self._show_shutdown_cleanup_retry(
@@ -1067,7 +1065,7 @@ class ApplicationController(QObject):
                 hosted_recording_safe = bool(
                     self.recording.stop_server_recording_for_shutdown()
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Late hosted recording shutdown failed")
                 hosted_recording_safe = False
         if hosted_server_alive and not hosted_recording_safe:
@@ -1079,7 +1077,7 @@ class ApplicationController(QObject):
             hosted_server_stopped = False
             try:
                 hosted_server_stopped = self.bridge.stop_hosted_server() is not False
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Hosted server shutdown failed")
             if not hosted_server_stopped:
                 return self._show_shutdown_cleanup_retry(
@@ -1100,7 +1098,7 @@ class ApplicationController(QObject):
         companion_stopped = False
         try:
             companion_stopped = self.api_bridge.stop() is not False
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Companion API stop failed")
         if not companion_stopped:
             return self._show_shutdown_cleanup_retry(
@@ -1160,13 +1158,13 @@ class ApplicationController(QObject):
         self._webex_activation_inflight = False
         try:
             self.webex.stop()
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Webex stop failed")
         # Preserve the launch-card shutdown boundary. The external-only card
         # owns no browser, media process, or meeting session.
         try:
             self.window.webex_embed.shutdown()
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Webex launch-card shutdown failed")
         self._shutdown = True
         return True
@@ -1233,7 +1231,7 @@ class ApplicationController(QObject):
                     "session. Open Studio to review it.",
                     ms=9000,
                 )
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Could not configure private recording transfer")
             self.guest_peer = None
             # Keep the parsed v2 invite in memory. A musician can repair an
@@ -1343,7 +1341,7 @@ class ApplicationController(QObject):
             try:
                 if guest.stop() is False:
                     cleanup_ok = False
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Guest recording transfer cleanup failed")
                 cleanup_ok = False
         host = getattr(self, "host_peer", None)
@@ -1351,7 +1349,7 @@ class ApplicationController(QObject):
             try:
                 if host.stop() is False:
                     cleanup_ok = False
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Host recording service cleanup failed")
                 cleanup_ok = False
         # Keep every failed owner reachable so End/Leave can retry and
@@ -1687,7 +1685,7 @@ class ApplicationController(QObject):
                 host_owned=True,
             )
             return True
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Could not start private recording service")
             self._host_peer_warning = (
                 "Bandmates can still join and play. Automatic Local Originals "
@@ -1801,7 +1799,7 @@ class ApplicationController(QObject):
                     started_utc or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                 ),
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Could not publish confirmed recording start")
 
     def signal_peer_recording_stopped(
@@ -1823,7 +1821,7 @@ class ApplicationController(QObject):
                 needs_attention=needs_attention,
                 message=message,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Could not publish confirmed recording stop")
 
     def _confirm_close(self) -> bool:
@@ -1954,7 +1952,7 @@ class ApplicationController(QObject):
             return False
         try:
             started = self.api_bridge.start()
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Companion API failed to start")
             return False
         if started:
@@ -2888,7 +2886,7 @@ class ApplicationController(QObject):
                         reason=recording_reason,
                         recovery_attempt=lifecycle.snapshot.recovery_attempt,
                     )
-                except Exception:  # noqa: BLE001
+                except Exception:
                     LOGGER.debug(
                         "Could not attach lifecycle evidence to active take",
                         exc_info=True,
@@ -3327,20 +3325,12 @@ class ApplicationController(QObject):
                     current,
                     PocketCommandRejectionReason.INVALID_STATE,
                 )
-            if wants_start and phase is MobileRecordingState.RECORDING:
-                status = PocketCommandStatus.CONFIRMED
-            elif not wants_start and phase is MobileRecordingState.IDLE:
+            if wants_start and phase is MobileRecordingState.RECORDING or not wants_start and phase is MobileRecordingState.IDLE:
                 status = PocketCommandStatus.CONFIRMED
             elif wants_start and phase not in {
                 MobileRecordingState.IDLE,
                 MobileRecordingState.READY,
-            }:
-                return self._pocket_rejection(
-                    request,
-                    current,
-                    PocketCommandRejectionReason.INVALID_STATE,
-                )
-            elif not wants_start and phase not in {
+            } or not wants_start and phase not in {
                 MobileRecordingState.RECORDING,
                 MobileRecordingState.NEEDS_ATTENTION,
             }:
@@ -4110,7 +4100,7 @@ class ApplicationController(QObject):
                 ok, _detail = self.bridge.ensure_hosted_server(
                     cancel_requested=cancelled,
                 )
-            except Exception:  # noqa: BLE001 - fixed-copy recovery below
+            except Exception:
                 LOGGER.exception("Hosted server startup failed")
                 ok = False
 
@@ -4302,18 +4292,17 @@ class ApplicationController(QObject):
             native_setup_was_bounded
             and callable(finish_setup)
             and isinstance(recovery, JamulusRecoverySnapshot)
+        ) and not bool(
+            finish_setup(
+                generation=recovery.generation,
+                process_id=recovery.process_id,
+            )
         ):
-            if not bool(
-                finish_setup(
-                    generation=recovery.generation,
-                    process_id=recovery.process_id,
-                )
-            ):
-                # An authenticated callback for a replaced generation cannot
-                # advance this journey. Wait for the current process's own
-                # monitor/roster proof.
-                self._schedule_startup_poll(generation)
-                return
+            # An authenticated callback for a replaced generation cannot
+            # advance this journey. Wait for the current process's own
+            # monitor/roster proof.
+            self._schedule_startup_poll(generation)
+            return
         attempt.pop("native_setup_deadline", None)
         # A v2 invitation's authenticated peer plane carries only enrollment,
         # durable presence, and opt-in Local Originals. Start it only after
@@ -4449,7 +4438,7 @@ class ApplicationController(QObject):
             return
         try:
             guest.start()
-        except Exception:  # noqa: BLE001 - peer transfer cannot block music
+        except Exception:
             LOGGER.exception("Could not start guest recording transfer")
 
     def _apply_matching_startup_recovery(
@@ -4499,7 +4488,7 @@ class ApplicationController(QObject):
             if decision in {"skipped", "open_requested"}:
                 attempt["webex_decision"] = decision
             attempt["resumed"] = True
-        except Exception:  # noqa: BLE001 - recovery must fail closed
+        except Exception:
             LOGGER.info(
                 "Startup recovery did not match the active profile", exc_info=True
             )
@@ -4512,7 +4501,7 @@ class ApplicationController(QObject):
         self._startup_recovery_record = None
         try:
             self._startup_attempt_store.clear()
-        except Exception:  # noqa: BLE001 - a stale private prompt is harmless
+        except Exception:
             LOGGER.debug("Could not clear completed startup recovery", exc_info=True)
 
     def _startup_music_is_proven(
@@ -4587,7 +4576,7 @@ class ApplicationController(QObject):
                     StartupRole(str(attempt["role"])),
                     human_confirmed=True,
                 )
-        except Exception:  # noqa: BLE001 - confirmation remains useful this run
+        except Exception:
             LOGGER.info("Could not save native sound readiness", exc_info=True)
         attempt["human_confirmed"] = True
         self._continue_after_music_ready(generation)
@@ -4625,12 +4614,12 @@ class ApplicationController(QObject):
         attempt = getattr(self, "_startup_attempt", None)
         if attempt is None:
             return
-        from core.settings import save_settings
         from core.meeting_link import (
             SUPPORTED_MEETING_SERVICES_TEXT,
             meeting_link_error,
             normalize_meeting_url,
         )
+        from core.settings import save_settings
 
         raw = self.window.session_hud.input_text()
         value = normalize_meeting_url(raw)
@@ -4792,7 +4781,7 @@ class ApplicationController(QObject):
                 cleanup_ok = bool(self.bridge.stop_jamulus()) and cleanup_ok
                 if role == "host":
                     cleanup_ok = bool(self.bridge.stop_hosted_server()) and cleanup_ok
-            except Exception:  # noqa: BLE001 - cleanup state remains conservative
+            except Exception:
                 LOGGER.exception("Startup cancellation cleanup failed")
                 cleanup_ok = False
 
@@ -4945,7 +4934,7 @@ class ApplicationController(QObject):
                 record = StartupAttemptRecord.new(**record_kwargs)
                 attempt["attempt_id"] = record.attempt_id
             self._startup_attempt_store.save(record)
-        except Exception:  # noqa: BLE001 - recovery persistence must not block music
+        except Exception:
             LOGGER.info("Could not persist startup recovery state", exc_info=True)
 
     @staticmethod
@@ -5457,7 +5446,7 @@ class ApplicationController(QObject):
                     and saved
                     and saved.matches(signature)
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Band Check verification could not be inspected")
 
             def deliver() -> None:
@@ -5874,7 +5863,7 @@ class ApplicationController(QObject):
                         str(person.name or self.settings.musician_name),
                         capture_enabled=bool(self.settings.local_capture_enabled),
                     )
-                except Exception:  # noqa: BLE001
+                except Exception:
                     LOGGER.exception("Could not bind host participant presence")
             if self.guest_peer is not None:
                 self.guest_peer.observe_presence(
@@ -5935,7 +5924,7 @@ class ApplicationController(QObject):
         # treating every remote channel 0 as local would mask a failed host
         # connection when guests remain on the server.
         if hasattr(person, "is_local"):
-            return bool(getattr(person, "is_local"))
+            return bool(person.is_local)
         return getattr(person, "channel_id", -1) == 0
 
     @staticmethod
@@ -6848,7 +6837,7 @@ class ApplicationController(QObject):
             apply_join_invite(new_settings, invitation)
             try:
                 save_settings(new_settings)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Could not save incoming invitation")
                 self.window.flash_message(
                     "WebJam couldn't use that invite yet. Try opening it again.",
@@ -6896,7 +6885,7 @@ class ApplicationController(QObject):
                 return False
             try:
                 self.begin_startup_journey()
-            except Exception:  # noqa: BLE001 - leave invitation retryable
+            except Exception:
                 LOGGER.exception("Could not launch the incoming invitation")
                 self.audio.stopping = False
                 self.window.flash_message(
@@ -6970,7 +6959,7 @@ class ApplicationController(QObject):
                         selected,
                         reference_track_already_retired=True,
                     )
-                except Exception:  # noqa: BLE001 - keep the UI recoverable
+                except Exception:
                     LOGGER.exception(
                         "Could not launch the replacement private invitation"
                     )
@@ -6982,7 +6971,7 @@ class ApplicationController(QObject):
                 return
             try:
                 applied = _apply_and_launch(selected)
-            except Exception:  # noqa: BLE001 - leave the UI recoverable
+            except Exception:
                 LOGGER.exception("Could not apply the replacement invitation")
                 applied = False
             if not applied:
@@ -7000,7 +6989,7 @@ class ApplicationController(QObject):
             self._complete_pocket_stage_session_end(succeeded=True)
             try:
                 self.begin_startup_journey()
-            except Exception:  # noqa: BLE001 - leave the UI recoverable
+            except Exception:
                 LOGGER.exception("Could not launch the replacement invitation")
                 _show_switch_failure(cleanup_unresolved=False)
 
@@ -7033,7 +7022,7 @@ class ApplicationController(QObject):
                     # on the owner thread. Do not restore the prior settings
                     # from this worker, because reconfiguration touches Qt.
                     cleanup_ok = self._stop_remote_transport(restore_route=False)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Could not safely leave the current jam")
                 cleanup_ok = False
             if cleanup_ok:
@@ -7451,7 +7440,7 @@ class ApplicationController(QObject):
             return
         try:
             owner.reset()
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Remote invitation reset failed")
             self.window.flash_message(
                 "WebJam couldn’t reset the invitation yet. Try again.",
@@ -8259,9 +8248,7 @@ class ApplicationController(QObject):
         ready_dialog = getattr(self, "_ready_check_dialog", None)
         if ready_dialog is not None and bool(
             getattr(ready_dialog, "isVisible", lambda: False)()
-        ):
-            band_check = EvidenceState.IN_PROGRESS
-        elif bool(getattr(self, "_band_check_start_pending", False)):
+        ) or bool(getattr(self, "_band_check_start_pending", False)):
             band_check = EvidenceState.IN_PROGRESS
         elif band_check is EvidenceState.NOT_STARTED and (launch_intended or connected):
             # A live/launching attempt cannot be sent backwards into an
@@ -8307,7 +8294,7 @@ class ApplicationController(QObject):
                 if callable(studio_facts_provider)
                 else StudioGuidanceFacts()
             )
-        except Exception:  # noqa: BLE001 - guidance must never interrupt audio
+        except Exception:
             LOGGER.warning("Studio guidance facts were unavailable", exc_info=True)
             studio_facts = StudioGuidanceFacts()
         return SessionConductorFacts(
@@ -8535,7 +8522,7 @@ class ApplicationController(QObject):
         timeline = getattr(lifecycle, "public_timeline", None)
         try:
             events = timeline() if callable(timeline) else ()
-        except Exception:  # noqa: BLE001 - guidance remains best effort
+        except Exception:
             LOGGER.warning("Session guidance timeline was unavailable", exc_info=True)
             events = ()
         try:
@@ -8550,7 +8537,7 @@ class ApplicationController(QObject):
             self._last_musician_guidance = guidance
             self.window.session_canvas.set_musician_guidance(guidance)
             self.window.recording_studio.set_musician_guidance(guidance)
-        except Exception:  # noqa: BLE001 - never disturb live session work
+        except Exception:
             LOGGER.warning("Musician guidance could not be refreshed", exc_info=True)
 
     def _focus_initial_hud_action(self) -> None:
@@ -9447,11 +9434,12 @@ class ApplicationController(QObject):
     def _export_test_night_report(self) -> None:
         """Write an allowlisted report only after an operator asks for it."""
 
+        import json
+
         from PySide6.QtWidgets import QFileDialog
 
         from core.file_io import atomic_write_text
         from core.pilot_evidence import build_sanitized_pilot_report
-        import json
 
         ledger = getattr(self, "_pilot_ledger", None)
         if ledger is None or getattr(self, "_pilot_run_state", "not_started") not in {
@@ -9920,7 +9908,7 @@ class ApplicationController(QObject):
             def invoke_retry() -> None:
                 try:
                     retry_callback()
-                except Exception:  # noqa: BLE001
+                except Exception:
                     LOGGER.exception("Retry callback failed")
 
             # Re-enter only after the modal and the failing preflight stack
@@ -9999,7 +9987,7 @@ class ApplicationController(QObject):
         self._connection_timer.start()
         try:
             self.metrics.increment("metric_session_wake_revalidation")
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.debug("wake revalidation metric failed", exc_info=True)
         return True
 
@@ -10365,7 +10353,7 @@ class ApplicationController(QObject):
                 self._rpc_hang_banner_shown = True
                 try:
                     self.metrics.increment("metric_jamulus_hang_detected")
-                except Exception:  # noqa: BLE001
+                except Exception:
                     LOGGER.debug("hang metric failed", exc_info=True)
 
         if (
@@ -10480,7 +10468,7 @@ class ApplicationController(QObject):
                 "github.com/rupret007/webjam/issues",
                 ms=8000,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Failed to export diagnostics")
             self.window.flash_message(
                 "Couldn't export diagnostics. Open Band Check and save a Support "
@@ -10541,7 +10529,7 @@ class ApplicationController(QObject):
                 f"Support bundle saved as {saved.name}.",
                 ms=7000,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Failed to save support bundle")
             QMessageBox.warning(
                 self.window,
@@ -10571,6 +10559,7 @@ class ApplicationController(QObject):
         setup, etc.) instead of overwriting the single default slot.
         """
         from pathlib import Path
+
         from PySide6.QtWidgets import QFileDialog
 
         path, _ = QFileDialog.getSaveFileName(
@@ -10589,6 +10578,7 @@ class ApplicationController(QObject):
     def _on_load_mix_from(self) -> None:
         """Ctrl+Shift+O — open a Load dialog and apply the chosen mix file."""
         from pathlib import Path
+
         from PySide6.QtWidgets import QFileDialog
 
         path, _ = QFileDialog.getOpenFileName(
@@ -10706,7 +10696,7 @@ class ApplicationController(QObject):
             if old_rpc is not None:
                 try:
                     old_rpc.stop()
-                except Exception:  # noqa: BLE001
+                except Exception:
                     LOGGER.debug("Old Jamulus RPC client stop failed", exc_info=True)
             from core.jamulus_rpc_client import JamulusRpcClient
 
@@ -10737,7 +10727,7 @@ class ApplicationController(QObject):
         ):
             try:
                 self.api_bridge.stop()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.debug(
                     "Companion API stop during settings apply failed", exc_info=True
                 )
@@ -10978,7 +10968,7 @@ class ApplicationController(QObject):
                         participant.name,
                         capture_enabled=capture,
                     )
-                except Exception:  # noqa: BLE001
+                except Exception:
                     LOGGER.exception("Could not refresh local recording preference")
 
     def _save_take_playback_output(self, device_name: str) -> None:
@@ -10991,7 +10981,7 @@ class ApplicationController(QObject):
             from core.settings import save_settings
 
             save_settings(self.settings)
-        except Exception:  # noqa: BLE001
+        except Exception:
             self.settings.take_playback_output_device = previous
             LOGGER.exception("Failed to persist Take Deck output device")
             self.window.recording_studio.set_output_device(previous)
@@ -11565,7 +11555,7 @@ class ApplicationController(QObject):
             pid = int(process.pid)
         except (AttributeError, TypeError, ValueError, OSError):
             return 0
-        return pid if pid > 0 else 0
+        return max(0, pid)
 
     def _primary_jamulus_rpc_freshness(self) -> tuple[bool, float | None]:
         """Return fail-closed authenticated client-RPC freshness evidence.
@@ -11580,9 +11570,7 @@ class ApplicationController(QObject):
             return False, None
         age = snapshot.rpc_age_seconds
         rpc = getattr(self.jamulus, "rpc_client", None)
-        if getattr(rpc, "available", False) is not True:
-            age = None
-        elif age is not None and (not math.isfinite(age) or age < 0.0):
+        if getattr(rpc, "available", False) is not True or age is not None and (not math.isfinite(age) or age < 0.0):
             age = None
         return snapshot.rpc_freshness is JamulusRpcFreshness.FRESH, age
 
@@ -12435,7 +12423,7 @@ class ApplicationController(QObject):
                         None,
                     ),
                 )
-        except Exception:  # noqa: BLE001
+        except Exception:
             # Never leave stale derived content beside newer raw notes. Brief
             # export then safely falls back to the notes themselves.
             self.window.session_canvas.clear_session_pulse()
@@ -12455,7 +12443,7 @@ class ApplicationController(QObject):
 
             try:
                 status = scan_loopback_devices()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 # scan_loopback_devices() is contracted never to raise, but guard
                 # anyway so an unexpected failure can't silently kill this thread
                 # and leave the routing status blank forever.
@@ -12480,7 +12468,7 @@ class ApplicationController(QObject):
             self.window.set_status_routing(label)
             try:
                 self.metrics.increment("metric_audio_device_blackhole_found")
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.debug("audio device metric failed", exc_info=True)
         else:
             self.window.set_status_routing("No audio device")
@@ -12490,7 +12478,7 @@ class ApplicationController(QObject):
             )
             try:
                 self.metrics.increment("metric_audio_device_missing")
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.debug("audio device metric failed", exc_info=True)
 
     # ------------------------------------------------------------------

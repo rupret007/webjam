@@ -10,21 +10,20 @@ official Cisco HTTPS installer URL after an explicit user action.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 import ctypes
-from dataclasses import dataclass
-from enum import Enum
 import os
-from pathlib import Path
 import platform
 import plistlib
 import subprocess
 import sys
 import time
-from typing import Callable, Iterable
-from urllib.parse import urlsplit
 import webbrowser
-
+from collections.abc import Callable, Iterable
+from contextlib import contextmanager
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
+from urllib.parse import urlsplit
 
 WEBEX_MAC_TEAM_ID = "DE8Y96K9QP"
 WEBEX_MAC_BUNDLE_ID = "Cisco-Systems.Spark"
@@ -175,8 +174,7 @@ def _run_command(
 ) -> subprocess.CompletedProcess[bytes]:
     return subprocess.run(
         arguments,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         timeout=timeout,
         check=False,
         shell=False,
@@ -282,7 +280,9 @@ class _MacOSApplicationRuntime:
         except (OSError, AttributeError) as exc:
             raise WebexAppError("native Webex activation is unavailable") from exc
 
-        send = lambda signature: signature(address)  # noqa: E731
+        def send(signature):
+            return signature(address)
+
         self._send_id = send(ctypes.CFUNCTYPE(self._ID, self._ID, self._SEL))
         self._send_id_id = send(
             ctypes.CFUNCTYPE(self._ID, self._ID, self._SEL, self._ID)
@@ -773,9 +773,9 @@ def _show_or_launch_verified_macos_app(
                 "application-reference-unverified",
             )
 
-        path_matches = lambda path: (  # noqa: E731
-            runtime.application_reference_matches_path(reference, path)
-        )
+        def path_matches(path):
+            return runtime.application_reference_matches_path(reference, path)
+
         initial_pid: int | None = None
         with runtime.activation_session() as active_runtime:
             applications = active_runtime.running_applications(
@@ -1132,7 +1132,7 @@ def open_official_webex_installer(
     )
     try:
         return bool(opener(url))
-    except Exception as exc:  # noqa: BLE001 - browser handoff is best effort
+    except Exception as exc:
         raise WebexAppError(
             "the official Cisco Webex installer could not be opened"
         ) from exc

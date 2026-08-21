@@ -15,14 +15,13 @@ the strongest portable identity checks available.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import secrets
 import stat
 import tempfile
+from pathlib import Path
 from typing import TextIO
 
 from core.secure_runtime import SecureRuntimeDirectory, SecureRuntimeError
-
 
 _PRIVATE_FILE_MODE = 0o600
 

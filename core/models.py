@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Dict, Optional
 
 
 def _utc_now() -> datetime:
@@ -31,8 +30,8 @@ class ParticipantState:
 
 @dataclass
 class MixerSnapshot:
-    participants: Dict[int, ParticipantState]
+    participants: dict[int, ParticipantState]
     created_at: datetime = field(default_factory=_utc_now)
-    server_host: Optional[str] = None
-    server_port: Optional[int] = None
+    server_host: str | None = None
+    server_port: int | None = None
 

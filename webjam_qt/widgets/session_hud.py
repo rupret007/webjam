@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
-from PySide6.QtCore import Signal, Qt
 from PySide6 import QtGui
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAccessible, QAccessibleEvent
 from PySide6.QtWidgets import (
     QFrame,
@@ -31,7 +29,7 @@ class SessionHud(QFrame):
     invite_requested = Signal()
     retry_requested = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("SessionHud")
         self.setAccessibleName("Session readiness")

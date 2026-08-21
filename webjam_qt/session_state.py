@@ -34,7 +34,7 @@ class SessionUiState:
     show_primary: bool = True
 
     @classmethod
-    def idle(cls, server: str = "", hosting: bool = False) -> "SessionUiState":
+    def idle(cls, server: str = "", hosting: bool = False) -> SessionUiState:
         if hosting:
             hint = "Multitrack recording is ready on this Mac"
         else:
@@ -51,7 +51,7 @@ class SessionUiState:
         )
 
     @classmethod
-    def connecting(cls, server: str) -> "SessionUiState":
+    def connecting(cls, server: str) -> SessionUiState:
         return cls(
             SessionPhase.CONNECTING,
             "Connecting to your band…",
@@ -62,7 +62,7 @@ class SessionUiState:
         )
 
     @classmethod
-    def practice(cls) -> "SessionUiState":
+    def practice(cls) -> SessionUiState:
         return cls(
             SessionPhase.PRACTICE,
             "Starting private practice…",
@@ -73,7 +73,7 @@ class SessionUiState:
         )
 
     @classmethod
-    def reconnecting(cls, attempt: int | None = None) -> "SessionUiState":
+    def reconnecting(cls, attempt: int | None = None) -> SessionUiState:
         detail = (
             f"Reconnecting automatically (attempt {attempt} of 5). Your mix is safe."
             if attempt is not None
@@ -89,7 +89,7 @@ class SessionUiState:
         )
 
     @classmethod
-    def reconnect_failed(cls) -> "SessionUiState":
+    def reconnect_failed(cls) -> SessionUiState:
         return cls(
             SessionPhase.ERROR,
             "Could not reconnect",
@@ -98,7 +98,7 @@ class SessionUiState:
         )
 
     @classmethod
-    def connection_failed(cls) -> "SessionUiState":
+    def connection_failed(cls) -> SessionUiState:
         return cls(
             SessionPhase.ERROR,
             "Couldn’t reach the jam",
@@ -108,7 +108,7 @@ class SessionUiState:
         )
 
     @classmethod
-    def host_start_failed(cls) -> "SessionUiState":
+    def host_start_failed(cls) -> SessionUiState:
         return cls(
             SessionPhase.ERROR,
             "Couldn’t start the jam",
@@ -119,7 +119,7 @@ class SessionUiState:
         )
 
     @classmethod
-    def session_unavailable(cls) -> "SessionUiState":
+    def session_unavailable(cls) -> SessionUiState:
         return cls(
             SessionPhase.ERROR,
             "This jam isn’t available",
@@ -129,7 +129,7 @@ class SessionUiState:
         )
 
     @classmethod
-    def remote_session_retry_available(cls) -> "SessionUiState":
+    def remote_session_retry_available(cls) -> SessionUiState:
         return cls(
             SessionPhase.ERROR,
             "Private connection unavailable",
@@ -139,7 +139,7 @@ class SessionUiState:
         )
 
     @classmethod
-    def remote_session_fresh_invitation_required(cls) -> "SessionUiState":
+    def remote_session_fresh_invitation_required(cls) -> SessionUiState:
         return cls(
             SessionPhase.ERROR,
             "Fresh invitation required",
@@ -150,7 +150,7 @@ class SessionUiState:
         )
 
     @classmethod
-    def permission_required(cls) -> "SessionUiState":
+    def permission_required(cls) -> SessionUiState:
         return cls(
             SessionPhase.PERMISSION_REQUIRED,
             "Microphone access is needed",
@@ -160,7 +160,7 @@ class SessionUiState:
         )
 
     @classmethod
-    def permission_denied(cls) -> "SessionUiState":
+    def permission_denied(cls) -> SessionUiState:
         return cls(
             SessionPhase.PERMISSION_DENIED,
             "Microphone access is off",
@@ -171,7 +171,7 @@ class SessionUiState:
         )
 
     @classmethod
-    def permission_retry(cls) -> "SessionUiState":
+    def permission_retry(cls) -> SessionUiState:
         return cls(
             SessionPhase.PERMISSION_REQUIRED,
             "Allow microphone access, then return",
@@ -181,7 +181,7 @@ class SessionUiState:
         )
 
     @classmethod
-    def ending(cls, *, hosting: bool) -> "SessionUiState":
+    def ending(cls, *, hosting: bool) -> SessionUiState:
         return cls(
             SessionPhase.ENDING,
             "Ending this jam…" if hosting else "Leaving the jam…",
@@ -196,7 +196,7 @@ class SessionUiState:
         )
 
     @classmethod
-    def stop_failed(cls) -> "SessionUiState":
+    def stop_failed(cls) -> SessionUiState:
         return cls(
             SessionPhase.ERROR,
             "WebJam couldn’t finish cleanly",

@@ -18,10 +18,10 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Callable, Mapping
 
 from core.song_project import SongMedia, SongProject
 from core.song_project_store import (
@@ -32,7 +32,6 @@ from core.song_project_store import (
     resolve_project_media,
     verify_project_media,
 )
-
 
 _CATALOG_AUTHORITY = object()
 
@@ -266,7 +265,7 @@ class SongMediaCatalog:
         bundle_path: str | Path,
         *,
         cancel_check: Callable[[], None] | None = None,
-    ) -> "SongMediaCatalog":
+    ) -> SongMediaCatalog:
         """Seal the exact saved manifest and fully verified collected media."""
 
         if not isinstance(project, SongProject):

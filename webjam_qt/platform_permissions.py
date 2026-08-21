@@ -12,7 +12,6 @@ import ctypes
 import logging
 import sys
 
-
 LOGGER = logging.getLogger("webjam.qt.permissions")
 
 

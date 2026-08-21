@@ -31,7 +31,6 @@ from core.studio_project import (
     StudioTrackKind,
 )
 
-
 MIXER_CAPABILITY_ID = "webjam.schema3-mixer.v1"
 MIXER_NOISE_FLOOR_DB = -100.0
 MAX_REVERB_TAIL_SECONDS = 10.0
@@ -332,7 +331,7 @@ class _ReverbProcessor(_EffectProcessor):
     def __init__(self, effect: StudioEffect, sample_rate: int) -> None:
         delay_frames = max(
             1,
-            int(round(effect.reverb_delay_ms * sample_rate / 1_000.0)),
+            round(effect.reverb_delay_ms * sample_rate / 1_000.0),
         )
         self._delay = np.zeros((delay_frames, 2), dtype=np.float64)
         self._index = 0
@@ -396,13 +395,11 @@ def studio_effect_tail_frames(document: StudioDocument) -> int:
                 continue
             delay = max(
                 1,
-                int(
-                    round(
+                round(
                         effect.reverb_delay_ms
                         * document.project_sample_rate
                         / 1_000.0
-                    )
-                ),
+                    ),
             )
             if effect.reverb_decay <= 0.0:
                 repeats = 1
@@ -734,10 +731,10 @@ class StudioMixEngine:
 
 
 __all__ = [
-    "MAX_REVERB_TAIL_SECONDS",
     "MAX_MIXER_BLOCK_FRAMES",
     "MAX_MIXER_TRACK_BLOCK_FRAMES",
     "MAX_REALTIME_EFFECT_UNITS_48K",
+    "MAX_REVERB_TAIL_SECONDS",
     "MIXER_CAPABILITY_ID",
     "MIXER_NOISE_FLOOR_DB",
     "StudioMixEngine",

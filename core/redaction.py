@@ -8,15 +8,13 @@ these functions are the second line of defence for nested values and free text.
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-from pathlib import PureWindowsPath
-import re
 import ipaddress
+import os
+import re
 from collections.abc import Mapping
+from pathlib import Path, PureWindowsPath
 from typing import Any
 from urllib.parse import urlsplit
-
 
 REDACTED = "[redacted]"
 REDACTED_PATH = "[redacted-path]"

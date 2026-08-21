@@ -143,6 +143,7 @@ class TestJamulusPage(unittest.TestCase):
 
     def test_rpc_copy_distinguishes_local_client_from_recorder_control(self):
         from PySide6.QtWidgets import QLabel
+
         from webjam_qt.windows.setup_wizard import _JamulusPage
 
         page = _JamulusPage(AppSettings(jamulus_server="x"))
@@ -210,6 +211,7 @@ class TestJamulusPage(unittest.TestCase):
         Next permanently disabled. Pin the non-mandatory + validatePage()
         design: a valid saved config must advance on the first click."""
         from PySide6.QtWidgets import QWizard
+
         from webjam_qt.windows.setup_wizard import SetupWizard, _PageId
 
         with tempfile.NamedTemporaryFile(suffix="Jamulus") as jam:
@@ -230,6 +232,7 @@ class TestJamulusPage(unittest.TestCase):
 
     def test_blank_name_keeps_next_clickable_with_feedback(self):
         from PySide6.QtWidgets import QWizard
+
         from webjam_qt.windows.setup_wizard import SetupWizard, _PageId
 
         with tempfile.NamedTemporaryFile(suffix="Jamulus") as jam:
@@ -514,6 +517,7 @@ class TestWebexPage(unittest.TestCase):
 
     def test_meeting_link_copy_is_provider_neutral(self):
         from PySide6.QtWidgets import QLabel
+
         from webjam_qt.windows.setup_wizard import _WebexPage
 
         page = _WebexPage(AppSettings(webex_url=""))
@@ -567,6 +571,7 @@ class TestWebexPage(unittest.TestCase):
 
     def test_legacy_guest_credentials_are_not_exposed(self):
         from PySide6.QtWidgets import QGroupBox, QLineEdit
+
         from webjam_qt.windows.setup_wizard import _WebexPage
 
         page = _WebexPage(AppSettings(webex_url="https://a.webex.com/m/b"))
@@ -587,6 +592,7 @@ class TestRoutingPage(unittest.TestCase):
 
     def test_page_does_not_offer_discarded_webex_audio_modes(self):
         from PySide6.QtWidgets import QLabel, QRadioButton
+
         from webjam_qt.windows.setup_wizard import _RoutingPage
 
         page = _RoutingPage(AppSettings(webex_audio_mode="audience_bridge"))

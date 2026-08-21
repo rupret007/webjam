@@ -16,16 +16,16 @@ import numpy as np
 import pytest
 import soundfile as sf
 
+from core.local_capture import (
+    LocalCaptureGap,
+    LocalCaptureTrack,
+    local_capture_track_map_fingerprint,
+)
 from core.network_invite import (
     BandInvite,
     InviteLinkError,
     create_invite_link,
     parse_invite_link,
-)
-from core.local_capture import (
-    LocalCaptureGap,
-    LocalCaptureTrack,
-    local_capture_track_map_fingerprint,
 )
 from core.session_transfer import (
     EnrollmentRegistry,
@@ -42,9 +42,9 @@ from core.session_transfer import (
     load_or_create_installation_id,
 )
 from core.session_transfer_runtime import (
+    PEER_TRANSFER_ERROR_PREFIX,
     GuestPeerSession,
     HostPeerSession,
-    PEER_TRANSFER_ERROR_PREFIX,
     _participant_inventory_disposition,
     is_private_lan_host,
 )
@@ -120,10 +120,10 @@ def _click_wav(
     """Write bounded shared-transient fixtures for peer timing tests."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    audio = np.zeros(int(round(duration_s * rate)), dtype=np.float32)
+    audio = np.zeros(round(duration_s * rate), dtype=np.float32)
     shape = np.asarray((0.88, 0.54, 0.24, 0.08), dtype=np.float32)
     for time_s in times:
-        frame = int(round(time_s * rate))
+        frame = round(time_s * rate)
         if 0 <= frame <= len(audio) - len(shape):
             audio[frame : frame + len(shape)] = shape
     sf.write(path, audio, rate, subtype="PCM_24")
@@ -210,7 +210,7 @@ def _descriptor(
 
 
 class _FakeCapture:
-    instances: list["_FakeCapture"] = []
+    instances: list[_FakeCapture] = []
 
     def __init__(
         self,
@@ -259,7 +259,7 @@ class _FakeCapture:
 class _GappedFakeCapture(_FakeCapture):
     """A deterministic local-capture result with one gap per source stem."""
 
-    instances: list["_GappedFakeCapture"] = []
+    instances: list[_GappedFakeCapture] = []
 
     def stop_into(self, destination: Path):
         result = super().stop_into(destination)
