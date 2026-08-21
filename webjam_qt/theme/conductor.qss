@@ -778,6 +778,39 @@ QCommandLinkButton#LaunchStartCard:disabled {
 }
 
 /* -------------------------------------------------------------------------
+ * Room clock readout
+ *
+ * A musical pulse is accented; a file offset is not, because they are not the
+ * same claim. A stale clock is dimmed rather than hidden, so a reader can see
+ * that the number stopped moving.
+ * ---------------------------------------------------------------------- */
+
+#RoomClock {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_SM}px;
+}
+
+#RoomClock[clock="song_form"] {
+    border-left: 3px solid ${COLOR_ACCENT_PRIMARY};
+}
+
+#RoomClockHeadline {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#RoomClock[stale="true"] #RoomClockHeadline {
+    color: ${COLOR_TEXT_MUTED};
+}
+
+#RoomClockDetail {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+/* -------------------------------------------------------------------------
  * Art AI image panel
  * ---------------------------------------------------------------------- */
 

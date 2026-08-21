@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.room_clock import RoomClockView
 from core.shared_canvas import (
     HOST_CANVAS_HINT,
     NO_CANVAS_MESSAGE,
@@ -33,6 +34,7 @@ from core.shared_canvas import (
     SharedCanvasState,
 )
 from webjam_qt.theme.tokens import Space
+from webjam_qt.widgets.room_clock_label import RoomClockLabel
 
 _NO_CANVAS_HEADLINE = "No shared canvas"
 _GUEST_HINT = (
@@ -79,6 +81,13 @@ class SharedCanvasDialog(QDialog):
         self._status.setObjectName("SharedCanvasStatus")
         self._status.setAccessibleName("Shared canvas status")
         layout.addWidget(self._status)
+
+        # Where the room is, for the person painting. This is the whole point
+        # of a shared clock: a painter should not have to leave the canvas to
+        # find out what bar the band is on.
+        self._room_clock = RoomClockLabel()
+        self._room_clock.setVisible(False)
+        layout.addWidget(self._room_clock)
 
         if self._hosting:
             self._build_host_controls(layout)
@@ -245,6 +254,16 @@ class SharedCanvasDialog(QDialog):
         self._install_button.setVisible(
             state is SharedCanvasFollowState.NEEDS_DRAWPILE
         )
+
+    def set_room_clock(self, view: RoomClockView) -> None:
+        """Show the room's pulse, or nothing at all when it has none.
+
+        A room with no song and no running video honestly has no clock, and a
+        hopeful zero would be worse than an absent line.
+        """
+
+        self._room_clock.set_view(view)
+        self._room_clock.setVisible(view.present)
 
     def _set_status(self, text: str) -> None:
         self._status.setText(text)

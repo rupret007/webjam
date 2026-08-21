@@ -40,6 +40,8 @@ from core.session_transfer import (
     SessionPeerClient,
     SessionPeerServer,
     SessionStateSnapshot,
+    RoomClockSessionSnapshot,
+    RoomClockSourceValue,
     SessionTransferError,
     SharedCanvasSessionSnapshot,
     SharedTrackPlaybackState,
@@ -1742,6 +1744,46 @@ class HostPeerSession:
             session_label=session_label,
         )
 
+    def publish_room_clock_state(
+        self,
+        *,
+        source: RoomClockSourceValue | str,
+        running: bool = False,
+        position_s: float = 0.0,
+        duration_s: float = 0.0,
+        bar: int = 0,
+        beat: int = 0,
+        section_label: str = "",
+        tempo_bpm: float = 0.0,
+        meter_numerator: int = 0,
+        meter_denominator: int = 0,
+    ) -> RoomClockSessionSnapshot | None:
+        """Offer authenticated peers one pulse for the whole room.
+
+        This is the published seam. Art calls it with a reference video
+        position; a music surface calls it with a bar, a beat, a section, and
+        optionally a tempo and meter. Neither has to know the other exists,
+        and a room with no owner simply has no clock.
+
+        The projection grants no authority: it says where the room is, not who
+        may move it.
+        """
+
+        if self.control is None:
+            return None
+        return self.control.publish_room_clock(
+            source=source,
+            running=running,
+            position_s=position_s,
+            duration_s=duration_s,
+            bar=bar,
+            beat=beat,
+            section_label=section_label,
+            tempo_bpm=tempo_bpm,
+            meter_numerator=meter_numerator,
+            meter_denominator=meter_denominator,
+        )
+
     def finish_take(
         self,
         take_id: str,
@@ -2975,6 +3017,7 @@ class GuestPeerSession:
                     # host next touched anything.
                     or state.reference_video.generation > 0
                     or state.shared_canvas.generation > 0
+                    or state.room_clock.generation > 0
                     or state.capture_arm is not None
                 )
             )

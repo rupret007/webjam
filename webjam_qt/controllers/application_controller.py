@@ -577,6 +577,8 @@ class ApplicationController(QObject):
         self._shared_canvas_notified_state = ""
         self._ai_image = None
         self._ai_image_dialog = None
+        self._room_clock = None
+        self._room_clock_binding: tuple[str, str] | tuple[()] = ()
         self._announced_creator_start: tuple[str, str] | tuple[()] = ()
         self._reference_track_operation_lock = threading.RLock()
         self._reference_track_worker_state_lock = threading.Lock()
@@ -974,6 +976,7 @@ class ApplicationController(QObject):
         self._release_reference_video()
         self._release_shared_canvas()
         self._release_ai_image()
+        self._release_room_clock()
         reference_track = getattr(self, "_reference_track", None)
         if reference_track is not None:
             reference_closed = False
@@ -1184,6 +1187,7 @@ class ApplicationController(QObject):
         self._release_reference_video()
         self._release_shared_canvas()
         self._release_ai_image()
+        self._release_room_clock()
         self._connection_timer.stop()
         jamulus_update_dialog = getattr(self, "_jamulus_update_dialog", None)
         if jamulus_update_dialog is not None:
@@ -1531,6 +1535,12 @@ class ApplicationController(QObject):
                 canvas.observe_host_state(state)
         except Exception:  # noqa: BLE001 - an add-on never breaks the room
             LOGGER.debug("Shared canvas observation failed safely", exc_info=True)
+        try:
+            clock = self._room_clock_coordinator()
+            if clock is not None:
+                clock.observe_host_state(state)
+        except Exception:  # noqa: BLE001 - a readout never breaks the room
+            LOGGER.debug("Room clock observation failed safely", exc_info=True)
 
         if shared is None or int(getattr(shared, "generation", 0) or 0) <= 0:
             return
@@ -11419,6 +11429,9 @@ class ApplicationController(QObject):
             coordinator.tick()
         except Exception:  # noqa: BLE001 - a periodic sample is best effort
             LOGGER.debug("Reference video tick failed", exc_info=True)
+        # The room's pulse follows the same cadence the video is corrected on,
+        # because today the video is the only thing in Art that owns one.
+        self._tick_room_clock()
 
     def _on_reference_video_host_snapshot(self, snapshot) -> None:
         dialog = getattr(self, "_reference_video_dialog", None)
@@ -11587,6 +11600,9 @@ class ApplicationController(QObject):
             dialog.set_host_snapshot(coordinator.host_snapshot)
         else:
             dialog.set_follow_snapshot(coordinator.follow_snapshot)
+        clock = self._room_clock_coordinator()
+        if clock is not None:
+            dialog.set_room_clock(clock.view)
         dialog.show()
         dialog.raise_()
         dialog.activateWindow()
@@ -11678,6 +11694,94 @@ class ApplicationController(QObject):
         notice = self._SHARED_CANVAS_NOTICES.get(state)
         if notice and not getattr(self, "_shutdown", False):
             self.window.flash_message(notice, ms=9000)
+
+    # ------------------------------------------------------------------
+    # The room clock
+    # ------------------------------------------------------------------
+
+    def _room_clock_coordinator(self):
+        """Return a coordinator bound to the current room, or ``None``.
+
+        The clock is deliberately not gated on a creator profile: a music
+        surface owns this pulse as naturally as Art's reference video does, so
+        binding depends only on being in a real room.
+        """
+
+        if getattr(self, "_shutdown", False):
+            self._release_room_clock()
+            return None
+        role, session_id, session_key = self._reference_video_identity()
+        if not role or not session_id or not session_key:
+            self._release_room_clock()
+            return None
+        binding = (role, session_id)
+        coordinator = getattr(self, "_room_clock", None)
+        if coordinator is not None:
+            if getattr(self, "_room_clock_binding", ()) == binding:
+                return coordinator
+            self._release_room_clock()
+
+        from webjam_qt.controllers.room_clock_coordinator import RoomClockCoordinator
+
+        coordinator = RoomClockCoordinator(
+            host_peer_provider=lambda: getattr(self, "host_peer", None),
+            song_form_provider=self._room_clock_song_form,
+            video_facts_provider=self._room_clock_video_facts,
+            on_view=self._on_room_clock_view,
+        )
+        if role == "host":
+            coordinator.begin_host()
+        else:
+            coordinator.begin_guest()
+        self._room_clock = coordinator
+        self._room_clock_binding = binding
+        return coordinator
+
+    def _room_clock_song_form(self):
+        """Return the room's song form, or ``None`` when nothing owns one.
+
+        This is the published seam. Art has no song engine and must not
+        pretend to: it returns nothing, and every Art surface works exactly as
+        well without a musical pulse. A music surface replaces this with a
+        real owner and the painting surfaces do not change.
+        """
+
+        return None
+
+    def _room_clock_video_facts(self):
+        """Read Art's host-clocked reference video as room-clock facts."""
+
+        coordinator = getattr(self, "_reference_video", None)
+        if coordinator is None or not getattr(coordinator, "hosting", False):
+            return None
+        from core.room_clock import reference_video_facts
+        from core.reference_video import ReferenceVideoState
+
+        return reference_video_facts(
+            coordinator.host_snapshot, playing_state=ReferenceVideoState.PLAYING
+        )
+
+    def _release_room_clock(self) -> None:
+        coordinator = getattr(self, "_room_clock", None)
+        if coordinator is not None:
+            coordinator.end()
+        self._room_clock = None
+        self._room_clock_binding = ()
+
+    def _tick_room_clock(self) -> None:
+        """Advance the room's pulse, best effort."""
+
+        try:
+            coordinator = self._room_clock_coordinator()
+            if coordinator is not None:
+                coordinator.tick()
+        except Exception:  # noqa: BLE001 - a readout never breaks the room
+            LOGGER.debug("Room clock tick failed safely", exc_info=True)
+
+    def _on_room_clock_view(self, view) -> None:
+        dialog = getattr(self, "_shared_canvas_dialog", None)
+        if dialog is not None:
+            dialog.set_room_clock(view)
 
     # ------------------------------------------------------------------
     # Art AI image

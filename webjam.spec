@@ -330,6 +330,11 @@ a = Analysis(
         "core.krita_ai",
         "services.krita_ai_service",
         "webjam_qt.windows.ai_image",
+        # The room clock is reached through function-local imports too, and it
+        # is the seam a music surface publishes into.
+        "core.room_clock",
+        "webjam_qt.controllers.room_clock_coordinator",
+        "webjam_qt.widgets.room_clock_label",
         "PySide6.QtMultimedia",
         "PySide6.QtMultimediaWidgets",
         "soundfile",
