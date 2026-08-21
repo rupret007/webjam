@@ -715,7 +715,11 @@ def test_remote_host_copy_and_reset_stay_under_owned_progressive_disclosure(
     controller._copy_band_invite()
     copied = QApplication.clipboard().text()
 
-    assert copied.startswith("webjam://join?v=3")
+    # Copy Invite now produces one message rather than a bare URL, so assert
+    # the remote link is the one carried. The LAN serializer above still
+    # raises if it is reached at all.
+    assert "webjam://join?v=3" in copied
+    assert copied.count("webjam://") == 1
     assert copied not in repr(vars(controller))
     assert not controller.window.session_hud._action.isHidden()
     assert controller.window.session_hud._action.text() == "Copy Invite"

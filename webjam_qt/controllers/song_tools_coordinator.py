@@ -46,7 +46,7 @@ from core.song_workbench import (
     evaluate_upload,
 )
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = logging.getLogger("webjam.qt.song_tools")
 
 AUDIO_FILTER = (
     "Audio (*.wav *.mp3 *.flac *.m4a *.aif *.aiff *.ogg);;All files (*)"
