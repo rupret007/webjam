@@ -65,6 +65,7 @@ from core.take_project import (
     new_project_id,
     write_take_project,
 )
+from webjam_qt.theme import load_stylesheet
 from webjam_qt.widgets.recording_studio import (
     RecordingStudio,
     _composite_waveform_peaks,
@@ -1395,6 +1396,7 @@ def test_arrange_toolbar_edits_reload_cycle_and_preserve_source_truth(tmp_path):
         str(tmp_path),
         player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
     )
+    studio.setStyleSheet(load_stylesheet())
     try:
         studio._take_list.setCurrentRow(0)
         document = studio._studio_state
@@ -2247,7 +2249,7 @@ def test_named_section_move_rejection_explains_the_specific_reason(tmp_path):
     """A rejected section move must surface its real cause, not a generic
     catch-all, so a musician knows the precise problem and corrective action."""
 
-    _take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    take_dir, _track_ids = _schema2_studio_take(tmp_path)
     studio = RecordingStudio(
         str(tmp_path),
         player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
@@ -3340,16 +3342,16 @@ def test_track_export_failure_keeps_take_available_and_actionable():
     ("error", "expected"),
     (
         (
-            ("WebJam found explicitly silent segments in selected performance tracks: "
+            "WebJam found explicitly silent segments in selected performance tracks: "
             "private-guitar. Review the recording or intentionally deselect the "
-            "affected track before export."),
+            "affected track before export.",
             "explicitly silent segment",
         ),
         (
-            ("WebJam cannot create a timing-ready track export because these local "
+            "WebJam cannot create a timing-ready track export because these local "
             "originals have no verified timeline alignment: private-guitar. Keep "
             "the Jamulus server track for this take, or align and verify each local "
-            "original before export."),
+            "original before export.",
             "no verified timeline alignment",
         ),
     ),

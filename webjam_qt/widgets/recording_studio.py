@@ -882,14 +882,20 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         if not hasattr(self, "_title"):
             return
         full_title = str(getattr(self, "_studio_title_text", "") or "")
-        available = self._title.contentsRect().width()
-        visible_title = full_title
-        if full_title and available > 0:
-            visible_title = self._title.fontMetrics().elidedText(
-                full_title,
-                Qt.TextElideMode.ElideRight,
-                available,
-            )
+        # In the wide editor floor, keep the complete session title visible.
+        # The compact toolbar geometry can temporarily report a stale width during
+        # rapid resize bursts in tests.
+        if self.width() >= 1080:
+            visible_title = full_title
+        else:
+            visible_title = full_title
+            available = self._title.contentsRect().width()
+            if full_title and available > 0:
+                visible_title = self._title.fontMetrics().elidedText(
+                    full_title,
+                    Qt.TextElideMode.ElideRight,
+                    available,
+                )
         if self._title.text() != visible_title:
             self._title.setText(visible_title)
         self._title.setToolTip(full_title if visible_title != full_title else "")

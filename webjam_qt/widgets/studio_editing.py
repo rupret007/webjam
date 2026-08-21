@@ -164,16 +164,32 @@ class StudioEditingToolbar(QWidget):
         button.setText(self._label(full_text))
         button.setAccessibleName(accessible_name)
         button.setAccessibleDescription(description)
+        button.ensurePolished()
+        hint = button.minimumSizeHint()
+        button.setMinimumHeight(hint.height())
+        button.setMinimumWidth(hint.width())
+        if self._compact:
+            button.setMaximumWidth(hint.width())
+        else:
+            button.setMaximumWidth(16_777_215)
 
     def set_compact(self, compact: bool) -> None:
         """Use bounded visual copy while preserving complete accessible names."""
 
         compact = bool(compact)
-        if compact == self._compact:
-            return
         self._compact = compact
-        self.add_marker_button.setText(self._label("＋ Marker"))
-        self.add_section_button.setText(self._label("＋ Section"))
+        self._set_action_presentation(
+            self.add_marker_button,
+            "＋ Marker",
+            accessible_name="Add named marker at playhead",
+            description="Add a named marker at the current playhead position.",
+        )
+        self._set_action_presentation(
+            self.add_section_button,
+            "＋ Section",
+            accessible_name="Name selected region as a section",
+            description="Add a named section spanning the selected region.",
+        )
         self.refresh()
 
     def _context(self) -> StudioEditingContext:
