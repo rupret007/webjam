@@ -391,6 +391,93 @@ def test_an_unexpected_intent_failure_never_leaks_a_raw_exception():
     assert "The room is still running." in message
 
 
+def _follow(state):
+    from core.reference_video import _FOLLOW_MESSAGES, ReferenceVideoFollowSnapshot
+
+    return ReferenceVideoFollowSnapshot(state=state, message=_FOLLOW_MESSAGES[state])
+
+
+def test_an_artist_is_told_once_when_the_host_starts_sharing():
+    """A guest who never opens the panel still has to learn a video exists."""
+
+    controller = _controller("studio_visit")
+    _as_guest(controller)
+
+    controller._on_reference_video_follow_snapshot(
+        _follow(ReferenceVideoFollowState.NO_VIDEO)
+    )
+    controller.window.flash_message.assert_not_called()
+
+    controller._on_reference_video_follow_snapshot(
+        _follow(ReferenceVideoFollowState.NEEDS_FILE)
+    )
+    message = controller.window.flash_message.call_args.args[0]
+    assert "host is sharing a reference video" in message
+    assert "Reference Video" in message
+
+    # A steady state must not nag on every tick.
+    for _ in range(5):
+        controller._on_reference_video_follow_snapshot(
+            _follow(ReferenceVideoFollowState.NEEDS_FILE)
+        )
+    assert controller.window.flash_message.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "state, marker",
+    [
+        (ReferenceVideoFollowState.MISMATCHED_FILE, "not the same file"),
+        (ReferenceVideoFollowState.FILE_UNAVAILABLE, "moved, changed"),
+    ],
+)
+def test_an_artist_is_told_when_their_copy_stops_matching(state, marker):
+    controller = _controller("studio_visit")
+    _as_guest(controller)
+    controller._on_reference_video_follow_snapshot(
+        _follow(ReferenceVideoFollowState.FOLLOWING)
+    )
+    controller.window.flash_message.assert_not_called()
+
+    controller._on_reference_video_follow_snapshot(_follow(state))
+
+    assert marker in controller.window.flash_message.call_args.args[0]
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        ReferenceVideoFollowState.FOLLOWING,
+        ReferenceVideoFollowState.HIDDEN,
+        ReferenceVideoFollowState.NO_VIDEO,
+        ReferenceVideoFollowState.HOST_ATTENTION,
+        ReferenceVideoFollowState.STALLED,
+    ],
+)
+def test_states_an_artist_chose_or_cannot_act_on_stay_quiet(state):
+    controller = _controller("studio_visit")
+    _as_guest(controller)
+
+    controller._on_reference_video_follow_snapshot(_follow(state))
+
+    controller.window.flash_message.assert_not_called()
+
+
+def test_leaving_a_room_lets_the_next_one_speak_again():
+    controller = _controller("studio_visit")
+    _as_guest(controller)
+    controller._on_reference_video_follow_snapshot(
+        _follow(ReferenceVideoFollowState.NEEDS_FILE)
+    )
+    assert controller.window.flash_message.call_count == 1
+
+    controller._release_reference_video()
+    controller._on_reference_video_follow_snapshot(
+        _follow(ReferenceVideoFollowState.NEEDS_FILE)
+    )
+
+    assert controller.window.flash_message.call_count == 2
+
+
 def test_the_profile_capability_is_the_only_gate_on_the_menu_entry():
     for profile in ("music", "podcast_voice", "review_rehearsal", "studio_visit"):
         controller = _controller(profile)

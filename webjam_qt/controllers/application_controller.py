@@ -572,6 +572,7 @@ class ApplicationController(QObject):
         self._reference_video = None
         self._reference_video_dialog = None
         self._reference_video_binding: tuple[str, str] | tuple[()] = ()
+        self._reference_video_notified_state = ""
         self._reference_track_operation_lock = threading.RLock()
         self._reference_track_worker_state_lock = threading.Lock()
         self._reference_track_operation_inflight = False
@@ -11219,6 +11220,7 @@ class ApplicationController(QObject):
             coordinator.end()
         self._reference_video = None
         self._reference_video_binding = ()
+        self._reference_video_notified_state = ""
 
     def _open_reference_video(self) -> None:
         """Open the reference video panel for whichever role this computer has."""
@@ -11331,6 +11333,41 @@ class ApplicationController(QObject):
         dialog = getattr(self, "_reference_video_dialog", None)
         if dialog is not None:
             dialog.set_follow_snapshot(snapshot)
+        self._announce_reference_video_follow_state(snapshot)
+
+    #: Follow states worth interrupting an artist for, and what to say. A
+    #: state that resolves itself, or that the artist chose, stays silent.
+    _REFERENCE_VIDEO_NOTICES = {
+        "needs_file": (
+            "The host is sharing a reference video. Open your own copy of the "
+            "same file from More → Reference Video, or ignore it and keep "
+            "working."
+        ),
+        "mismatched_file": (
+            "That is not the same file the host is playing, so WebJam will "
+            "not follow it. Open the host's exact file, or hide the video."
+        ),
+        "file_unavailable": (
+            "Your copy of the reference video moved, changed, or became "
+            "unreadable, so WebJam stopped following the host."
+        ),
+    }
+
+    def _announce_reference_video_follow_state(self, snapshot) -> None:
+        """Tell an artist once when the shared video needs them.
+
+        Without this, a guest who never opens the panel would never learn that
+        a video is being shared, or that the copy they opened stopped
+        matching. Only transitions speak, so a steady state stays quiet.
+        """
+
+        state = str(getattr(getattr(snapshot, "state", None), "value", "") or "")
+        if state == getattr(self, "_reference_video_notified_state", ""):
+            return
+        self._reference_video_notified_state = state
+        notice = self._REFERENCE_VIDEO_NOTICES.get(state)
+        if notice and not getattr(self, "_shutdown", False):
+            self.window.flash_message(notice, ms=9000)
 
     def _reference_track_controller(self):
         controller = getattr(self, "_reference_track", None)

@@ -117,7 +117,7 @@ def test_the_host_panel_swaps_play_and_pause_with_the_transport(host_dialog):
     )
     assert host_dialog._play_button.isEnabled() is False
     assert host_dialog._pause_button.isEnabled() is True
-    assert "Playing for the room" in host_dialog._status.text()
+    assert host_dialog._status.text() == "Playing."
     assert host_dialog._clock.text() == "1:01 / 10:00"
 
     host_dialog.set_host_snapshot(
@@ -158,6 +158,21 @@ def test_a_host_seek_is_emitted_only_when_scrubbing_ends(host_dialog, qapp):
 
     host_dialog._end_scrub()
     assert seeks == [pytest.approx(120.0)]
+
+
+def test_the_host_panel_never_claims_the_room_is_watching(host_dialog):
+    """WebJam cannot see another artist's screen, so it must not say it can."""
+
+    host_dialog.set_host_snapshot(
+        _shared(state=ReferenceVideoState.PLAYING, position_s=10.0)
+    )
+    surfaced = " ".join(
+        widget.text()
+        for widget in host_dialog.findChildren(type(host_dialog._status))
+    ).casefold()
+
+    assert "everyone in the room watches" not in surfaced
+    assert "cannot confirm who has opened the file" in surfaced
 
 
 def test_a_host_panel_ignores_follower_snapshots(host_dialog):

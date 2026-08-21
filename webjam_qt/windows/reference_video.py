@@ -33,9 +33,10 @@ from webjam_qt.theme.tokens import Space
 
 _NO_VIDEO_HEADLINE = "No reference video"
 _HOST_HINT = (
-    "Optional. Share one local video file you have the right to play. "
-    "Everyone in the room watches their own copy of that exact file under "
-    "your transport. WebJam ships no video and downloads none."
+    "Optional. Share one local video file you have the right to play. Each "
+    "artist follows your transport on their own copy of that exact file. "
+    "WebJam ships no video and downloads none, and it cannot confirm who has "
+    "opened the file, hidden it, or can play it."
 )
 _GUEST_HINT = (
     "Optional. The host controls play, pause, stop, and position. To follow "
@@ -250,12 +251,14 @@ class ReferenceVideoDialog(QDialog):
         elif not shared:
             self._status.setText(NO_VIDEO_MESSAGE)
         else:
+            # Deliberately states this computer's transport and nothing about
+            # what anyone else is seeing, which WebJam cannot observe.
             self._status.setText(
                 {
-                    ReferenceVideoState.READY: "Cued for the room. Nothing is playing yet.",
-                    ReferenceVideoState.PLAYING: "Playing for the room.",
-                    ReferenceVideoState.PAUSED: "Paused for the room.",
-                }.get(state, "Shared with the room.")
+                    ReferenceVideoState.READY: "Shared and cued. Nothing is playing yet.",
+                    ReferenceVideoState.PLAYING: "Playing.",
+                    ReferenceVideoState.PAUSED: "Paused.",
+                }.get(state, "Shared.")
             )
         self._render_position(snapshot.position_s, self._duration_s)
         self._play_button.setEnabled(shared and state is not ReferenceVideoState.PLAYING)
