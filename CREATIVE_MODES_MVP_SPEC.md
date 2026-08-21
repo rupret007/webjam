@@ -3,7 +3,7 @@
 > Status: Music, Podcast & Voice, and Review & Rehearsal are implemented in
 > immutable v0.26.0, the GitHub **Latest** private test release. The exact tag,
 > packages, checksum manifest, and protected publication are verified release
-> evidence; no physical PASS is claimed. **Studio Visit is added after v0.26.0
+> evidence; no physical PASS is claimed. **Art is added after v0.26.0
 > and has no release evidence yet**: it is covered by automated tests only, and
 > its two-computer behavior is **NOT RUN**. This document supersedes the earlier
 > speculative cross-discipline MVP and describes only bounded current behavior.
@@ -21,7 +21,7 @@ security, or meeting-handoff truth.
 | Music | GA | Host/Join, Band Check, Shared Track, Record Session | Playback, edit, comp, mix, export | Music Project |
 | Podcast & Voice | GA | Host Remote Recording/Join Recording, Sound Check, reference audio, Record Session | Playback, edit, comp, mix, export | Host + Guest or Solo Voice; 48 kHz, time ruler, count-in/click off |
 | Review & Rehearsal | Preview | Host Review/Join Review, Session Check, WebJam-audio Record Session | Playback/read-only review | Blocked |
-| Studio Visit | Preview | Host Studio Visit/Join Studio Visit, Session Check, optional host-clocked reference video | None — the session is not recorded | Blocked |
+| Art | Preview | Host Art/Join Art, Session Check, optional host-clocked reference video | None — the session is not recorded | Blocked |
 
 Review & Rehearsal also blocks take editing, comping, mix mutation, track
 export, shared notes, visual synchronization, and media timecode. No profile
@@ -30,16 +30,80 @@ Scratchpads are profile-scoped on one computer, stored through fixed
 private mode-0600 files with regular-file/no-follow reads bounded to 1 MiB.
 They are never shared, session-synchronized, or media-timecoded.
 
-## Studio Visit (added after v0.26.0, no release evidence)
+## Art (added after v0.26.0, no release evidence)
 
-Studio Visit is a room where artists in any medium — painting, drawing,
-sculpture, anything on a table — talk while they work. Conversation uses the
-same WebJam audio path and the same optional external meeting handoff as every
-other profile. The profile adds exactly one capability of its own: an
-**optional** host-clocked reference video.
+Art is a room where artists in any medium — painting, drawing, sculpture,
+anything on a table — talk while they work. Conversation uses the same WebJam
+audio path and the same optional external meeting handoff as every other
+profile. The profile adds exactly two capabilities of its own, both optional: a
+**shared canvas** it hands to Drawpile, and a **host-clocked reference video**.
 
-**A room with no video is the first-class path**, not a degraded empty player.
+**A room with neither is the first-class path**, not a degraded empty player.
 Nothing about the profile requires anyone to share anything.
+
+Art shipped its Preview under the name "Studio Visit". The old `studio_visit`
+key remains only as a migrate-from alias so a saved choice survives the rename.
+`visual_studio` deliberately does not move here: a session recorded under that
+legacy mode resolves today to a profile that can play it back, and Art records
+nothing.
+
+### The three starts
+
+Launch shows exactly three cards for Art, in this order, and the registry
+refuses a fourth:
+
+| Start | What it opens |
+| --- | --- |
+| **Talk & make** | The room and live audio. No canvas, no video. |
+| **Paint together** | The room plus one shared Drawpile canvas. |
+| **Paint along** | The room plus one host-clocked reference video. |
+
+A start carries **at most one** add-on. Combining the canvas and the video is
+an in-room decision the host makes afterwards, not a fourth card, because the
+point of the list is that a person reads it once. A profile that offers starts
+must keep a talk-only one, so an add-on can never look required. No other
+profile offers start cards.
+
+Joining re-picks nothing. One pasted WebJam invitation carries whatever the
+host started, including to an artist who joins late.
+
+### Shared canvas
+
+WebJam does not paint. Real-time collaborative painting is a solved
+open-source problem — Drawpile already has the operational transform, the
+MyPaint and Krita-style brush engines, layers, ORA and PSD export, and tablet
+pressure — so WebJam does for Drawpile what it does for Jamulus: it finds the
+real program, launches it, and carries the joining information.
+
+- **Drawpile hosts the canvas.** WebJam opens Drawpile on its own Host page and
+  stops there, because Drawpile's host flow asks for a title, a password, and a
+  server, and answering those on someone's behalf would be a guess. The
+  recommended shape is Drawpile's default **Personal** session, which is
+  password-protected, rather than a public listed one.
+- **The host shares the invitation WebJam is given.** Both forms Drawpile hands
+  a person are accepted: the `drawpile://` (or `ws`/`wss`) session URL, and the
+  `https://…/invites/…` link its Invite dialog copies. The web form is
+  normalized into the session form exactly as Drawpile's own Join page
+  normalizes it, password fragment included, because `--join` skips that
+  rewrite.
+- **One WebJam invitation is enough.** The canvas address rides the same
+  authenticated peer plane as the reference video, so a guest never has to be
+  sent a second link through a second product, and a late joiner lands on the
+  same canvas.
+- **It never touches disk.** Publication is memory-only, like the reference
+  video's position, because a Drawpile session password has no business
+  surviving in the durable recording journal. A restarted host offers no canvas
+  until its owner shares one again.
+- **Discovery is explicit.** WebJam bundles no Drawpile and makes no publisher
+  claim about one, so it checks a fixed list of absolute install locations with
+  no `PATH` search and no glob. A wildcard would let any executable named
+  `drawpile` inherit an affordance the artist thinks they granted to Drawpile.
+- **Fail closed, always.** No Drawpile means an install path and an honest
+  status, never a blank surface implying a canvas is open. A projection this
+  computer cannot parse stops before a launcher rather than becoming a URL from
+  another machine. A guest has no share and no withdraw.
+- **WebJam cannot see the canvas.** It never reports who is painting, and
+  leaving a WebJam room closes nobody's Drawpile.
 
 ### Reference video
 
@@ -78,26 +142,40 @@ the host.
 
 Sync is host play/pause/stop/seek plus a position corrected on a tolerance
 bounded by the peer poll interval — the same bar as Shared Track. It is
-**not** frame-accurate review and carries **no media timecode**. Studio Visit's
+**not** frame-accurate review and carries **no media timecode**. Art's
 capability set asserts `media_timecode=False`, and the registry refuses to load
-a Studio Visit profile that claims otherwise.
+an Art profile that claims otherwise.
 
 Because the reference video is not bound into the recording plan's source
-identity, **Studio Visit does not record a session**. Rather than fake a take
-whose sources cannot be proven, the profile disables session recording, and
-therefore take review, take editing, and track export. Its conductor offers no
-Record action.
+identity, **Art does not record a session**. Rather than fake a take whose
+sources cannot be proven, the profile disables session recording, and therefore
+take review, take editing, and track export. Its conductor offers no Record
+action.
 
-### Explicit non-goals for Studio Visit
+### In-session chrome
 
-- no shared drawing canvas or collaborative surface;
+Few controls. Talk is already there. The reference video adds host transport
+and a guest hide. The canvas adds one open action and a status line — ready,
+missing Drawpile, or unreadable. There is no brush, colour, or layer control in
+WebJam, because those belong to Drawpile.
+
+### Explicit non-goals for Art
+
+- no canvas surface inside WebJam, and no brush, colour, or layer control;
+- no Drawpile server run by WebJam, and no session posted on an artist's behalf;
+- no launch menu of other creative tools; finishing a piece in Krita, MyPaint,
+  GIMP, Inkscape, Blender, or OpenToonz is the artist's own business;
 - no camera-on-the-easel feed;
 - no shipped, bundled, or downloadable video catalog, and no ripped or ingested
   third-party lesson content;
 - no frame-accurate video review and no media timecode;
 - no Jamulus reference-audio route;
 - no recorded take, take review, take editing, or track export;
-- no standalone Studio Visit project.
+- no standalone Art project;
+- no Webex Embedded App, companion projection, or in-meeting surface. A free or
+  personal Webex account cannot create or load a custom embedded app, so the
+  desktop application is the whole product and Webex stays the second window
+  described in ADR 0004.
 
 ## Persistence and migration
 
@@ -108,17 +186,15 @@ Record action.
 - Previously persisted mode aliases map explicitly to one current profile;
   malformed or unknown keys fail safely to Music rather than inventing a mode.
 - Opening a Review & Rehearsal standalone project is refused before mutation.
-- `studio_visit` is a new canonical key. It could not reuse `visual_studio`,
-  because the registry refuses a canonical key that is also a legacy alias.
-- The legacy `visual_studio` mode now migrates to **Studio Visit**. It was the
-  visual-arts mode and only pointed at Review & Rehearsal because no artist
-  profile existed; someone whose last saved workflow was Visual Studio opens
-  into a room for making things rather than a review Preview. The other legacy
-  modes — `writers_room`, `design_critique`, `storyboard_film_room` — are
-  discussion and planning rooms and stay on Review & Rehearsal.
+- `art` is the canonical key. `studio_visit` is a migrate-from alias for the
+  Preview that shipped under the old name, and the legacy `visual_studio` mode
+  continues to migrate to Review & Rehearsal, so no recorded session silently
+  becomes an unreviewable Art session.
+- The chosen start key is re-validated against the resolved profile on every
+  load and save. A start decides whether a canvas or a video is armed, so a
+  stale or foreign key falls back to the talk-only start.
 - `visual_studio` remains a valid legacy *mode* key in its own registry, so
-  session metadata that records it keeps resolving. Only the profile it
-  migrates to changed.
+  session metadata that records it keeps resolving.
 - The retired five-mode list is not offered anywhere as a picker. What someone
   is making is chosen once, at launch, from the creator profiles.
 - Every profile owns a distinct private scratchpad file; a profile registered
@@ -133,10 +209,10 @@ storage verdict, count-in/pre-roll, and expected source count. Finalization
 rechecks that identity and fails closed on missing, extra, changed, or
 substituted sources.
 
-Studio Visit is deliberately outside that plan. Its reference video is not a
+Art is deliberately outside that plan. Its reference video is not a
 recorded source and is not bound into any take, so the profile disables session
 recording entirely rather than producing a take whose sources cannot be proven.
-There is one session truth, and Studio Visit does not invent a second one.
+There is one session truth, and Art does not invent a second one.
 
 Before capture, the same path-free readiness sheet shows every exact server,
 Local Original, and Shared Track row with mono/stereo topology,
@@ -166,15 +242,15 @@ audio into those inputs.
 - no direct or automatic meeting-app, browser, or system-output capture;
 - no media timecode;
 - no Review & Rehearsal standalone project, edit, comp, mix mutation, or export;
-- no Studio Visit canvas, camera feed, shipped video catalog, ingested
+- no Art canvas, camera feed, shipped video catalog, ingested
   third-party lesson content, or recorded take;
 - no claim that a link handoff joined, muted, found participants, or recorded;
 - no physical-audio, hardware, signing, notarization, or accessibility PASS
   without exact package evidence in the v0.26 checklist;
-- no physical two-computer PASS for Studio Visit's reference video: its
+- no physical two-computer PASS for Art's reference video: its
   host-clocked follow behavior is proven by automated tests only.
 
-Studio Visit synchronizes one host-clocked reference video, which is the single
+Art synchronizes one host-clocked reference video, which is the single
 exception to the blanket "no visual synchronization" statement elsewhere in
 this document. That exception does not extend to frame accuracy or timecode,
 which remain non-goals for every profile.
