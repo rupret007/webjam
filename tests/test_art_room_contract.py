@@ -192,6 +192,78 @@ def _shared_video_projection(signer, tmp_path: Path):
     )
 
 
+def test_hiding_the_video_costs_a_guest_nothing_else(tmp_path: Path):
+    """Ignoring the video is a choice, not a penalty.
+
+    A guest who hides it stays in the conversation, keeps the shared canvas,
+    and keeps reading the room's pulse. Hiding is local to their own player.
+    """
+
+    from core.room_clock import RoomClockSource, render_room_clock
+    from core.session_transfer import RoomClockSourceValue
+
+    signer = session_identity_signer(session_id="room", session_key="token")
+    video = ReferenceVideoFollower(identity_signer=signer)
+    video.observe(
+        _shared_video_projection(signer, tmp_path), received_monotonic_s=100.0
+    )
+    hidden = video.set_hidden(True)
+
+    assert hidden.state.value == "hidden"
+    # Hidden is not blocked: nothing needs fixing and nothing is wrong.
+    assert hidden.blocked is False
+
+    # The canvas is untouched by that choice.
+    launcher = FakeLauncher()
+    canvas = SharedCanvasFollower(launcher=launcher)
+    ready = canvas.observe(
+        SessionStateSnapshot(
+            session_id=str(uuid.uuid4()),
+            generation=1,
+            signal=RecordingSignal.IDLE,
+            creator_profile_key=ART,
+            shared_canvas={
+                "schema": 1,
+                "generation": 1,
+                "shared": True,
+                "join_url": WEB_INVITE,
+                "server_label": "pub.drawpile.net",
+                "session_label": "album-cover",
+            },
+        ).shared_canvas
+    )
+    assert ready.state is SharedCanvasFollowState.READY
+    canvas.open_canvas()
+    assert launcher.joined
+
+    # And the room's pulse is still readable, because it is not the video's
+    # player -- it is the room's.
+    view = render_room_clock(
+        SessionStateSnapshot(
+            session_id=str(uuid.uuid4()),
+            generation=1,
+            signal=RecordingSignal.IDLE,
+            creator_profile_key=ART,
+            room_clock={
+                "schema": 1,
+                "generation": 1,
+                "source": RoomClockSourceValue.REFERENCE_VIDEO.value,
+                "running": True,
+                "position_s": 42.0,
+                "duration_s": 600.0,
+                "bar": 0,
+                "beat": 0,
+                "section_label": "",
+                "tempo_bpm": 0.0,
+                "meter_numerator": 0,
+                "meter_denominator": 0,
+            },
+        ).room_clock
+    )
+    assert view.source is RoomClockSource.REFERENCE_VIDEO
+    assert view.headline == "0:42 / 10:00"
+
+
 def test_a_guest_may_still_act_locally_on_both(tmp_path: Path):
     """Host-owned transport is not the same as a guest having no choices."""
 
