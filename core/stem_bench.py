@@ -28,20 +28,23 @@ MAX_BOUNCE_SECONDS = 20 * 60
 _BOUNCE_SUFFIX = ".wav"
 
 # Names Music AI stem workflows return, mapped to what a musician calls them
-# and to what muting one is actually for.
+# and to what dropping one leaves you free to do. The purpose is stored as the
+# bare action so it reads correctly both as a tooltip and inline in the mix
+# line -- a songwriter should not have to hover to find out why they would
+# mute the vocal.
 _STEM_ROLES: dict[str, tuple[str, str]] = {
-    "vocals": ("Vocals", "Mute this to sing it yourself."),
-    "vocal": ("Vocals", "Mute this to sing it yourself."),
-    "lead": ("Lead vocal", "Mute this to sing the lead."),
-    "backing": ("Backing vocals", "Mute this to sing the harmonies."),
-    "accompaniment": ("Backing", "Everything except the vocal."),
-    "accompaniments": ("Backing", "Everything except the vocal."),
-    "instrumental": ("Backing", "Everything except the vocal."),
-    "drums": ("Drums", "Mute this and play the kit."),
-    "bass": ("Bass", "Mute this and play the bass."),
-    "guitar": ("Guitar", "Mute this and play the guitar part."),
-    "piano": ("Piano", "Mute this and play the keys."),
-    "keys": ("Keys", "Mute this and play the keys."),
+    "vocals": ("Vocals", "sing it yourself"),
+    "vocal": ("Vocals", "sing it yourself"),
+    "lead": ("Lead vocal", "sing the lead"),
+    "backing": ("Backing vocals", "sing the harmonies"),
+    "accompaniment": ("Backing", "everything except the vocal"),
+    "accompaniments": ("Backing", "everything except the vocal"),
+    "instrumental": ("Backing", "everything except the vocal"),
+    "drums": ("Drums", "play the kit"),
+    "bass": ("Bass", "play the bass"),
+    "guitar": ("Guitar", "play the guitar part"),
+    "piano": ("Piano", "play the keys"),
+    "keys": ("Keys", "play the keys"),
     "strings": ("Strings", ""),
     "brass": ("Brass", ""),
     "woodwinds": ("Woodwinds", ""),
@@ -49,6 +52,8 @@ _STEM_ROLES: dict[str, tuple[str, str]] = {
     "synth": ("Synth", ""),
     "other": ("Other", ""),
 }
+# Backing is a description of the file, not something you do instead of it.
+_DESCRIPTIVE_PURPOSES = frozenset({"everything except the vocal"})
 
 
 class StemBenchError(RuntimeError):
@@ -74,8 +79,19 @@ class StemTarget:
         return re.sub(r"[^a-z]+", "", self.name.lower())
 
     @property
-    def hint(self) -> str:
+    def purpose(self) -> str:
+        """What dropping this stem leaves you free to do, bare and reusable."""
+
         return _STEM_ROLES.get(self.key, ("", ""))[1]
+
+    @property
+    def hint(self) -> str:
+        purpose = self.purpose
+        if not purpose:
+            return ""
+        if purpose in _DESCRIPTIVE_PURPOSES:
+            return purpose.capitalize() + "."
+        return f"Mute this to {purpose}."
 
     @property
     def exists(self) -> bool:
@@ -107,7 +123,14 @@ class StemMix:
             return f"All stems: {names}"
         dropped = ", ".join(item.label for item in self.silent)
         verb = "Soloing" if self.soloing else "Playing"
-        return f"{verb} {names} · without {dropped}"
+        line = f"{verb} {names} · without {dropped}"
+        # Say what the gap is for, so the point of muting is on screen.
+        purposes = [
+            item.purpose
+            for item in self.silent
+            if item.purpose and item.purpose not in _DESCRIPTIVE_PURPOSES
+        ]
+        return f"{line} — {purposes[0]}" if purposes else line
 
 
 class StemBench:

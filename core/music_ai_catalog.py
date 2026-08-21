@@ -53,7 +53,7 @@ SONG_TOOL_VERBS: tuple[SongToolVerb, ...] = (
     SongToolVerb(
         key="stems",
         label="Split stems",
-        summary="Separate a file into vocals, drums, bass, and the rest.",
+        summary="Separate the singer, drums, bass, and the rest into their own\n        files, so you can drop one and play it yourself.",
         result_kind=RESULT_AUDIO_SET,
         keywords=("stem", "separat", "isolat", "vocal remov", "karaoke"),
         unsupported_hint="No stem-separation workflow is on this account.",
@@ -61,7 +61,7 @@ SONG_TOOL_VERBS: tuple[SongToolVerb, ...] = (
     SongToolVerb(
         key="chords",
         label="Chords & key",
-        summary="Read the chords, key, and tempo out of a file.",
+        summary="Read the chords, key, and tempo off a recording.",
         result_kind=RESULT_CHORDS,
         keywords=(
             "chord",
@@ -80,7 +80,7 @@ SONG_TOOL_VERBS: tuple[SongToolVerb, ...] = (
     SongToolVerb(
         key="lyrics",
         label="Lyrics",
-        summary="Transcribe the words, aligned to the recording.",
+        summary="Write out the words, timed to the recording.",
         result_kind=RESULT_LYRICS,
         keywords=("lyric", "transcri", "align", "subtitle", "caption"),
         excludes=("chord", "beat", "drum"),
@@ -100,7 +100,7 @@ SONG_TOOL_VERBS: tuple[SongToolVerb, ...] = (
     SongToolVerb(
         key="key_tempo",
         label="Change key/tempo",
-        summary="Render the file at a new key or a new speed.",
+        summary="Make a copy in a different key, or slower or faster.",
         result_kind=RESULT_AUDIO_FILE,
         keywords=(
             "pitch",
@@ -120,7 +120,7 @@ SONG_TOOL_VERBS: tuple[SongToolVerb, ...] = (
     SongToolVerb(
         key="master",
         label="Master",
-        summary="Run a mastering pass over a mix.",
+        summary="Even out the loudness of a finished mix.",
         result_kind=RESULT_AUDIO_FILE,
         keywords=("master",),
         excludes=("stem", "separat"),
@@ -129,7 +129,7 @@ SONG_TOOL_VERBS: tuple[SongToolVerb, ...] = (
     SongToolVerb(
         key="enhance",
         label="Clean up audio",
-        summary="Reduce noise or restore a rough recording.",
+        summary="Clean up a noisy or rough recording.",
         result_kind=RESULT_AUDIO_FILE,
         keywords=("enhance", "denoise", "noise", "cleanup", "clean up", "restor"),
         excludes=("stem", "separat"),

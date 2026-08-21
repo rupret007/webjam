@@ -10,6 +10,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import re
 from pathlib import Path
 from unittest.mock import patch
 
@@ -790,3 +791,91 @@ def test_a_job_left_running_is_reported_not_restarted():
     # Nothing in the failure path starts another job.
     assert "run_song_tool" not in called
     assert "run_file_workflow" not in called
+
+
+# ----------------------------------------------------------------------
+# Music vocabulary stays inside Music
+# ----------------------------------------------------------------------
+# Words that belong to a song. "stem" is deliberately absent: master already
+# uses it for recording stems across every profile, so it is shared product
+# vocabulary rather than something Music leaked.
+MUSIC_ONLY_WORDS = (
+    "chord",
+    "bpm",
+    "verse",
+    "chorus",
+    "bridge",
+    "lyric",
+    "song tools",
+    "music ai",
+    "moises",
+)
+
+
+def test_music_words_never_reach_another_creator_profile(qapp=None):
+    """Art, Podcast, and Review share this window; they do not share the song."""
+
+    from PySide6.QtWidgets import (
+        QApplication,
+        QComboBox,
+        QLabel,
+        QPushButton,
+        QWidget,
+    )
+
+    from core.creative_modes import CREATOR_PROFILES, get_creator_profile_by_key_or_default
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    app = QApplication.instance() or QApplication([])
+    del app
+
+    for profile in CREATOR_PROFILES:
+        if profile.key == "music":
+            continue
+        window = ConductorWindow(
+            mode_entries=[("music", "Music")],
+            initial_mode_key="music",
+            initial_title="Session",
+        )
+        try:
+            window.set_creator_profile(
+                get_creator_profile_by_key_or_default(profile.key)
+            )
+            visible: list[str] = []
+            for widget in window.findChildren(QWidget):
+                # isVisibleTo walks the ancestor chain; isHidden would collect
+                # the children of a panel that is itself hidden.
+                if not widget.isVisibleTo(window):
+                    continue
+                if isinstance(widget, (QLabel, QPushButton)):
+                    visible.append(widget.text())
+                    visible.append(widget.toolTip())
+                elif isinstance(widget, QComboBox):
+                    visible.extend(
+                        widget.itemText(index) for index in range(widget.count())
+                    )
+            for action in window.session_strip._tools_button.menu().actions():
+                if action.isVisible():
+                    visible.append(action.text())
+
+            blob = " ".join(text for text in visible if text).lower()
+            for word in MUSIC_ONLY_WORDS:
+                # Whole words only: "system output" is not a stem, and
+                # "bridge" the word appears in ordinary sentences.
+                assert not re.search(rf"\b{re.escape(word)}\b", blob), (
+                    f"{profile.key}: {word}"
+                )
+        finally:
+            window.deleteLater()
+
+
+def test_the_shared_clock_contract_names_no_music_only_concept():
+    """A painter subscribing to bars must not be handed a vocabulary lesson."""
+
+    from core.song_clock import describe_contract
+
+    fields = set(describe_contract()["fields"])
+    # Bars, sections, key, and BPM are timeline facts any profile can use.
+    # Anything narrower than that would be Music leaking outward.
+    for narrow in ("stems", "lyrics", "suggestion", "workflow", "job"):
+        assert not any(narrow in field for field in fields), narrow

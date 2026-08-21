@@ -763,6 +763,14 @@ class ConductorWindow(QMainWindow):
         self.setWindowTitle(f"WebJam — {profile.label}{suffix} (v{__version__})")
         self.setAccessibleName(f"WebJam {profile.label} workspace{suffix}")
         self.session_strip.set_creator_profile(profile, locked=locked)
+        if getattr(self, "song_overlay", None) is not None:
+            # A host can impose a profile mid-session. Song has no meaning
+            # outside Music, so the panel leaves with it rather than sitting
+            # open showing another maker a song they do not have.
+            if profile.key == "music":
+                self.song_overlay.set_creator_profile(profile)
+            else:
+                self.song_overlay.setVisible(False)
         self.participant_grid.set_creator_profile(profile)
         self.recording_studio.set_creator_profile(profile)
         self.session_canvas.set_creator_profile(profile)

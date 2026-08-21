@@ -732,8 +732,9 @@ def test_the_stem_page_says_what_you_would_hear(overlay):
     bench.sing_this_one()
     overlay.set_stems(stems=bench.stems, mix=bench.mix())
 
+    # Says what you would hear, and what the gap is for.
     assert overlay._stem_status.text() == (
-        "Playing Drums, Bass · without Vocals"
+        "Playing Drums, Bass · without Vocals — sing it yourself"
     )
 
 
@@ -1301,3 +1302,173 @@ def test_the_panel_keeps_the_chosen_part_across_a_close(overlay):
     overlay.set_sections(("Verse", "Chorus"))
 
     assert overlay.selected_section() == "Chorus"
+
+
+# ----------------------------------------------------------------------
+# Readable by a songwriter, not only by a producer
+# ----------------------------------------------------------------------
+def test_each_tool_says_what_it_is_for_without_hovering(overlay):
+    """"Split stems" teaches a songwriter nothing on its own."""
+
+    from PySide6.QtWidgets import QLabel
+
+    from core.music_ai_client import MusicAIWorkflow
+
+    overlay.set_tools_state(
+        catalog=resolve_song_tools(
+            [
+                MusicAIWorkflow("1", "Stem Separation", "s", "isolate vocals"),
+                MusicAIWorkflow("2", "Auto Master", "m", "mastering chain"),
+            ]
+        ),
+        has_api_key=True,
+        is_host=True,
+    )
+
+    purposes = [
+        row.findChildren(QLabel)[0].text() for row in overlay._tool_rows
+    ]
+    assert any("so you can drop one and play it yourself" in text for text in purposes)
+    assert any("Even out the loudness" in text for text in purposes)
+    # The producer's word is still the label; the plain purpose is on screen.
+    assert [button.text() for button in overlay._tool_buttons] == [
+        "Split stems",
+        "Master",
+    ]
+
+
+def test_no_tool_explains_itself_in_producer_jargon():
+    """"Run a mastering pass" teaches a songwriter nothing.
+
+    The labels keep the names people know from Moises. The summaries may not,
+    because the summary is what someone reads when the label did not land.
+    "Chords" and "key" stay: those are words every songwriter has.
+    """
+
+    from core.music_ai_catalog import SONG_TOOL_VERBS
+
+    producer_only = (
+        "mastering",
+        "stem",
+        "transcribe",
+        "render",
+        "normalize",
+        "normalise",
+        "bounce",
+        "daw",
+        "pass over",
+        "signal chain",
+    )
+    for verb in SONG_TOOL_VERBS:
+        summary = " ".join(verb.summary.split()).lower()
+        for word in producer_only:
+            assert word not in summary, f"{verb.label}: {word}"
+        assert summary.endswith("."), verb.label
+
+
+def test_the_chords_lead_and_the_numerals_follow(overlay):
+    """A songwriter reads chords; roman numerals are for those who want them."""
+
+    from PySide6.QtWidgets import QLabel
+
+    workbench = SongWorkbench(notes=SHEET)
+    overlay.set_song_state(chords=workbench.chord_advice())
+
+    labels = [
+        label.text() for label in overlay._suggestion_rows[0].findChildren(QLabel)
+    ]
+    headline, detail = labels[0], labels[1]
+
+    assert headline.startswith("Suggestion · ")
+    assert not any(numeral in headline for numeral in (" IV ", " vi ", " VII "))
+    # Still present for people who read them, on the quieter line.
+    assert detail.split(" · ")[0].strip()
+
+
+def test_the_stem_page_says_why_you_would_mute_something(overlay):
+    workbench = _bench_workbench()
+    bench = workbench.stem_bench
+    bench.set_muted("drums", True)
+    overlay.set_stems(stems=bench.stems, mix=bench.mix())
+
+    assert "play the kit" in overlay._stem_status.text()
+
+
+def test_the_panel_stays_smaller_than_a_plugin_rack(overlay):
+    """Not a DAW: every page together is a short list, not a console."""
+
+    from PySide6.QtWidgets import QComboBox
+
+    from core.music_ai_client import MusicAIWorkflow
+
+    overlay.set_tools_state(
+        catalog=resolve_song_tools(
+            [
+                MusicAIWorkflow("1", "Stem Separation", "s", "isolate"),
+                MusicAIWorkflow("2", "Chord detection", "c", "detect chords"),
+                MusicAIWorkflow("3", "Lyric transcription", "l", "lyrics"),
+                MusicAIWorkflow("4", "Section finder", "x", "song structure"),
+                MusicAIWorkflow("5", "Pitch shift", "p", "change key"),
+                MusicAIWorkflow("6", "Auto Master", "m", "mastering"),
+            ]
+        ),
+        has_api_key=True,
+        is_host=True,
+    )
+    workbench = _bench_workbench()
+    overlay.set_stems(
+        stems=workbench.stem_bench.stems, mix=workbench.stem_bench.mix()
+    )
+
+    buttons = [
+        button
+        for button in overlay.findChildren(QPushButton)
+        if not button.isHidden() and len(button.text()) > 2
+    ]
+    # Worded actions across every page, tabs excluded by the length filter.
+    assert len(buttons) <= 18
+    assert len(overlay.findChildren(QComboBox)) == 1
+
+
+def test_leaving_music_closes_the_song_panel(app):
+    """A host can impose a profile mid-session; Song leaves with the music."""
+
+    window = ConductorWindow(
+        mode_entries=[("music", "Music")],
+        initial_mode_key="music",
+        initial_title="Tuesday",
+    )
+    try:
+        window.set_creator_profile(get_creator_profile_by_key_or_default("music"))
+        window.song_overlay.setVisible(True)
+        assert not window.song_overlay.isHidden()
+
+        window.set_creator_profile(
+            get_creator_profile_by_key_or_default("podcast_voice")
+        )
+
+        assert window.song_overlay.isHidden()
+        assert window.session_strip._song_button.isHidden()
+    finally:
+        window.deleteLater()
+
+
+def test_returning_to_music_leaves_the_panel_closed_until_asked(app):
+    """It closed because the profile changed, not because it was minimised."""
+
+    window = ConductorWindow(
+        mode_entries=[("music", "Music")],
+        initial_mode_key="music",
+        initial_title="Tuesday",
+    )
+    try:
+        window.song_overlay.setVisible(True)
+        window.set_creator_profile(
+            get_creator_profile_by_key_or_default("review_rehearsal")
+        )
+        window.set_creator_profile(get_creator_profile_by_key_or_default("music"))
+
+        assert window.song_overlay.isHidden()
+        assert not window.session_strip._song_button.isHidden()
+    finally:
+        window.deleteLater()

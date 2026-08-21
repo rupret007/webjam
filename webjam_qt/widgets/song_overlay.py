@@ -92,6 +92,7 @@ class SongOverlay(QFrame):
         self._compact = False
         self._page_buttons: dict[str, QPushButton] = {}
         self._tool_buttons: list[QPushButton] = []
+        self._tool_rows: list[QWidget] = []
         self._busy_verb = ""
 
         root = QVBoxLayout(self)
@@ -628,9 +629,7 @@ class SongOverlay(QFrame):
 
             headline = QHBoxLayout()
             headline.setSpacing(Space.XS)
-            text = _body_label(
-                f"Suggestion · {suggestion.chord_line}   {suggestion.numeral_line}"
-            )
+            text = _body_label(f"Suggestion · {suggestion.chord_line}")
             headline.addWidget(text, 1)
             keep = QPushButton("Keep")
             keep.setObjectName("GhostButton")
@@ -651,6 +650,7 @@ class SongOverlay(QFrame):
             row_layout.addLayout(headline)
 
             reason = _body_label(
+                f"{suggestion.numeral_line} · "
                 f"{suggestion.reason} {suggestion.context}".strip()
             )
             reason.setObjectName("SongOverlayMuted")
@@ -822,10 +822,17 @@ class SongOverlay(QFrame):
 
         self._tools_status.setText(catalog.summary_line())
         for capability in catalog.available:
+            # A songwriter should not have to hover to learn what a producer's
+            # word means, so the plain purpose is on screen under the button.
+            row = QWidget()
+            row_layout = QVBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(1)
+
             button = QPushButton(capability.label)
             button.setObjectName("GhostButton")
             button.setAccessibleName(f"Run {capability.label} on a file you pick")
-            hint = capability.verb.summary
+            hint = " ".join(capability.verb.summary.split())
             if capability.shared_template:
                 hint = f"{hint} Uses the shared Music AI template."
             if not is_host:
@@ -833,13 +840,21 @@ class SongOverlay(QFrame):
                     f"{hint} Only the host can send a file to Music AI."
                 )
             button.setToolTip(hint)
+            button.setAccessibleDescription(hint)
             button.setEnabled(is_host and not self._busy_verb)
             button.clicked.connect(
                 lambda _checked=False, key=capability.key: (
                     self.song_tool_requested.emit(key)
                 )
             )
-            self._tools_layout.addWidget(button)
+            row_layout.addWidget(button)
+
+            purpose = _body_label(" ".join(capability.verb.summary.split()))
+            purpose.setObjectName("SongOverlayMuted")
+            row_layout.addWidget(purpose)
+
+            self._tools_layout.addWidget(row)
+            self._tool_rows.append(row)
             self._tool_buttons.append(button)
 
         self._tools_unsupported.setText(_unsupported_text(catalog))
@@ -896,10 +911,11 @@ class SongOverlay(QFrame):
     # Internals
     # ------------------------------------------------------------------
     def _clear_tool_buttons(self) -> None:
-        for button in self._tool_buttons:
-            self._tools_layout.removeWidget(button)
-            button.setParent(None)
-            button.deleteLater()
+        for row in self._tool_rows:
+            self._tools_layout.removeWidget(row)
+            row.setParent(None)
+            row.deleteLater()
+        self._tool_rows = []
         self._tool_buttons = []
 
     def _on_close(self) -> None:

@@ -116,6 +116,28 @@ have silently dropped a valid Zoom or Meet link.
 
 No copy anywhere claims WebJam joined, muted, or verified a meeting.
 
+### Written for songwriters, not only producers
+
+Music is one artist type in a product that also has Art, and a songwriter is
+not a producer. The panel is held to that:
+
+- **Every tool says what it is for, on screen.** "Split stems" teaches nobody
+  anything on its own, so the plain purpose sits under the button rather than
+  in a tooltip: *"Separate the singer, drums, bass, and the rest into their own
+  files, so you can drop one and play it yourself."* The labels keep the names
+  people know from Moises; the summaries may not use producer-only words, and
+  a test enforces that list.
+- **Chords lead, numerals follow.** A suggestion reads `Suggestion · G C D C`,
+  with `I IV V IV` on the quieter reasoning line. Roman numerals are useful to
+  the people who read them and noise to everyone else.
+- **The stem line says why.** *"Playing Drums, Bass · without Vocals — sing it
+  yourself"*, so the point of muting something is visible rather than hovered.
+- **Not a DAW.** A control-count test caps the whole panel across every page.
+- **Music words stay in Music.** A test walks a Podcast, Review, or Studio
+  Visit window and fails if chord, BPM, verse, chorus, bridge, lyric, Song
+  tools, Music AI, or Moises is visible anywhere in it. A host who imposes a
+  profile mid-session closes the panel with it.
+
 ### The rules that are easy to leave out
 
 Each of these is a place where a plausible implementation would have been
