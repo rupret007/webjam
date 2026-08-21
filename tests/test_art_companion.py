@@ -8,6 +8,7 @@ must carry nothing private, and a command must never be an authority.
 
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import fields
 
@@ -95,6 +96,30 @@ def test_the_public_dict_is_the_whole_projection_with_nothing_withheld():
     # Every value is a primitive a JSON bridge can carry, and every state is
     # one of a finite set rather than free text from this computer.
     assert all(isinstance(value, (bool, int, str)) for value in published.values())
+
+
+def test_the_projection_survives_a_json_round_trip_unchanged():
+    """Whatever transport a companion track builds will serialize this, so
+    the projection has to be JSON already rather than nearly-JSON."""
+
+    projection = _room()
+
+    restored = json.loads(json.dumps(projection.to_public_dict()))
+
+    assert restored == projection.to_public_dict()
+    assert ArtCompanionProjection(**restored) == projection
+
+
+def test_a_receipt_survives_a_json_round_trip():
+    room = _room()
+    receipt = authorize_art_command(
+        _request(ArtCommand.AI_MAKE, room), room, ALL_SCOPES
+    )
+
+    restored = json.loads(json.dumps(receipt.to_public_dict()))
+
+    assert restored["status"] == "needs_local_confirmation"
+    assert restored["command"] == "ai_make"
 
 
 def test_no_projection_value_can_carry_free_text():
