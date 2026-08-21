@@ -582,6 +582,23 @@ def suggest_writing(form: SongForm) -> WritingAdvice:
     )
 
 
+def resolve_section_label(
+    form: SongForm,
+    *,
+    role: str = "",
+    section_name: str = "",
+) -> str:
+    """Return the part a request is actually about.
+
+    Selecting nothing means "the next part the song is missing", which is what
+    a musician means when they ask for help without pointing at anything. Every
+    surface that has to *name* that part — the panel, the companion projection,
+    a model prompt — has to agree on it, so they all ask here.
+    """
+
+    return _resolve_target(form, role=role, section_name=section_name).label
+
+
 def resolve_key(form: SongForm) -> tuple[str, str]:
     """Return the key to write in and where it came from.
 
@@ -1051,6 +1068,7 @@ __all__ = [
     "detected_sections",
     "infer_key_from_chords",
     "resolve_key",
+    "resolve_section_label",
     "suggest_chords",
     "suggest_next_chords",
     "suggest_writing",
