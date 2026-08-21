@@ -178,6 +178,46 @@ def test_studio_visit_does_not_shadow_any_legacy_alias():
     assert get_creator_profile_by_key_or_default("nonsense").key == "music"
 
 
+def test_studio_visit_is_a_new_key_and_never_a_migration_target():
+    from core.creative_modes import LEGACY_MODE_KEY_ALIASES
+
+    assert STUDIO_VISIT not in LEGACY_MODE_KEY_ALIASES
+    assert STUDIO_VISIT not in set(LEGACY_MODE_KEY_ALIASES.values())
+
+
+def test_repointing_the_visual_studio_alias_would_strand_recorded_takes():
+    """Why the legacy visual mode still migrates to Review, not here.
+
+    ``visual_studio`` was the visual-arts mode, so pointing it at Studio Visit
+    looks tempting. It would be a silent capability regression: a session
+    already recorded under that mode resolves today to a profile that can play
+    it back, and Studio Visit records nothing and reviews nothing. Existing
+    take evidence would become unreviewable on upgrade.
+    """
+
+    migrated = get_creator_profile_by_key(
+        canonical_creator_profile_key("visual_studio")
+    )
+    assert migrated.key == "review_rehearsal"
+    assert migrated.capabilities.session_recording is True
+    assert migrated.capabilities.take_review is True
+
+    studio_visit = get_creator_profile_by_key(STUDIO_VISIT)
+    assert studio_visit.capabilities.session_recording is False
+    assert studio_visit.capabilities.take_review is False
+
+
+def test_a_take_recorded_under_the_legacy_visual_mode_stays_reviewable():
+    from core.take_library import _manifest_creator_profile_key
+
+    key, error = _manifest_creator_profile_key(
+        {"session": {"creator_profile_key": "visual_studio"}}
+    )
+
+    assert error == ""
+    assert get_creator_profile_by_key(key).capabilities.take_review is True
+
+
 def test_every_profile_keeps_a_private_scratchpad_of_its_own():
     from webjam_qt.controllers.session_persistence import _PROFILE_NOTES_FILES
 
