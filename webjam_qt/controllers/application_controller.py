@@ -11273,13 +11273,18 @@ class ApplicationController(QObject):
         return bool(getattr(self, "_art_companion_paired", False))
 
     def _present_art_panel(self, dialog) -> None:
-        """Show one Art panel, taking focus only when nobody is watching it.
+        """Show one Art panel, reaching for focus only when nobody is reading
+        this room somewhere else.
 
         Without a companion this is the ordinary raise-and-activate every
         other panel does. With one paired, the artist is looking at the
-        meeting window, so taking focus would pull them off the faces they
-        are talking to in order to show them something they can already see.
-        The panel still opens; it just waits its turn.
+        meeting window, so pulling the desktop in front of the faces they are
+        talking to -- in order to show them what they are already looking at
+        -- is the focus stealing ADR 0004 rules out.
+
+        This declines to *take* focus; it cannot promise a window manager
+        will not give it. A panel that is already open simply stays where it
+        is instead of jumping forward.
         """
 
         dialog.show()
