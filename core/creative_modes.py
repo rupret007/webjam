@@ -13,7 +13,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from core.meeting_link import RECORD_SESSION_MEETING_CAPTURE_NOTICE
+from core.meeting_link import (
+    MEETING_DIRECT_CAPTURE_BOUNDARY,
+    RECORD_SESSION_MEETING_CAPTURE_NOTICE,
+)
 
 RELEASE_TIER_GA = "ga"
 RELEASE_TIER_PREVIEW = "preview"
@@ -59,6 +62,11 @@ class CreatorCapabilities:
     take_review: bool = True
     take_editing: bool = True
     track_export: bool = True
+    # Host-clocked reference video watched locally on every computer.  It is
+    # deliberately separate from ``shared_reference_audio``, which routes
+    # decoded audio through Jamulus, and from ``media_timecode``, which this
+    # capability never implies.
+    shared_reference_video: bool = False
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -71,6 +79,7 @@ class CreatorCapabilities:
             "take_review",
             "take_editing",
             "track_export",
+            "shared_reference_video",
         ):
             if type(getattr(self, field_name)) is not bool:
                 raise ValueError(f"{field_name} must be a boolean.")
@@ -78,6 +87,8 @@ class CreatorCapabilities:
             raise ValueError("take_editing requires take_review.")
         if self.track_export and not self.take_review:
             raise ValueError("track_export requires take_review.")
+        if self.shared_reference_video and not self.live_session:
+            raise ValueError("shared_reference_video requires live_session.")
 
 
 @dataclass(frozen=True)
@@ -89,6 +100,9 @@ class CreatorVocabulary:
     session_noun: str
     reference_audio_noun: str
     section_noun: str
+    # Only surfaced by profiles that enable ``shared_reference_video``; the
+    # default keeps every existing construction site source-compatible.
+    reference_video_noun: str = "reference video"
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -97,6 +111,7 @@ class CreatorVocabulary:
             "session_noun",
             "reference_audio_noun",
             "section_noun",
+            "reference_video_noun",
         ):
             object.__setattr__(
                 self,
@@ -251,6 +266,22 @@ _REVIEW_CAPABILITIES = CreatorCapabilities(
     take_editing=False,
     track_export=False,
 )
+# Studio Visit is a room for making things at a table.  It carries live
+# conversation and an optional host-clocked reference video, and it claims
+# nothing else: no Jamulus reference-audio route, no recorded take, and
+# therefore no review, editing, or export contract to honor afterwards.
+_STUDIO_VISIT_CAPABILITIES = CreatorCapabilities(
+    live_session=True,
+    local_multitrack=False,
+    shared_reference_audio=False,
+    meeting_handoff=True,
+    media_timecode=False,
+    session_recording=False,
+    take_review=False,
+    take_editing=False,
+    track_export=False,
+    shared_reference_video=True,
+)
 
 
 CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
@@ -360,6 +391,38 @@ CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
             section_noun="cue",
         ),
     ),
+    CreatorProfile(
+        key="studio_visit",
+        label="Studio Visit",
+        release_tier=RELEASE_TIER_PREVIEW,
+        default_template="Studio Visit (Preview)",
+        default_goal="Share a table, talk, and move one piece forward.",
+        quick_help=(
+            "Preview opens a room for artists in any medium: talk while you "
+            "paint, draw, sculpt, or build. The host may optionally share one "
+            "local video file they already have the right to play, and "
+            "everyone watches their own copy of that exact file under the "
+            "host's play, pause, stop, and position control. WebJam ships and "
+            "downloads no video, and follows nothing it cannot prove is the "
+            "same file. There is no shared canvas, no camera feed, no "
+            "recorded take, and no frame-accurate or timecoded review. "
+            f"{MEETING_DIRECT_CAPTURE_BOUNDARY}"
+        ),
+        review_prompts=(
+            "What did this piece need that you could not see alone?",
+            "Which part is worth another pass before the next visit?",
+            "What material or step should be ready next time?",
+        ),
+        capabilities=_STUDIO_VISIT_CAPABILITIES,
+        vocabulary=CreatorVocabulary(
+            participant_singular="artist",
+            participant_plural="artists",
+            session_noun="studio visit",
+            reference_audio_noun="reference audio",
+            section_noun="stage",
+            reference_video_noun="reference video",
+        ),
+    ),
 )
 
 
@@ -381,8 +444,9 @@ def _validate_creator_registry() -> None:
         "music",
         "podcast_voice",
         "review_rehearsal",
+        "studio_visit",
     ):
-        raise RuntimeError("Creator profiles must remain the bounded v0.25 set.")
+        raise RuntimeError("Creator profiles must remain the bounded shipped set.")
     keys = tuple(item.key for item in CREATOR_PROFILES)
     labels = tuple(item.label for item in CREATOR_PROFILES)
     if len(set(keys)) != len(keys) or len(set(labels)) != len(labels):
@@ -431,6 +495,52 @@ def _validate_creator_registry() -> None:
         )
     if review.capabilities.local_multitrack or review.studio_presets:
         raise RuntimeError("Review & Rehearsal has no local Studio contract yet.")
+
+    studio_visit = by_key["studio_visit"]
+    if studio_visit.release_tier != RELEASE_TIER_PREVIEW or not studio_visit.is_preview:
+        raise RuntimeError("Studio Visit must remain a Preview.")
+    if not studio_visit.capabilities.shared_reference_video:
+        raise RuntimeError("Studio Visit requires host-clocked reference video.")
+    if studio_visit.capabilities.media_timecode:
+        raise RuntimeError(
+            "Studio Visit is host transport sync, not frame-accurate review, "
+            "so it cannot claim media timecode."
+        )
+    if studio_visit.capabilities.shared_reference_audio:
+        raise RuntimeError(
+            "Studio Visit has no Jamulus reference-audio route to offer."
+        )
+    if (
+        studio_visit.capabilities.session_recording
+        or studio_visit.capabilities.take_review
+        or studio_visit.capabilities.take_editing
+        or studio_visit.capabilities.track_export
+    ):
+        raise RuntimeError(
+            "Studio Visit cannot record a take, so it must not offer recording, "
+            "review, editing, or export."
+        )
+    if studio_visit.capabilities.local_multitrack or studio_visit.studio_presets:
+        raise RuntimeError("Studio Visit has no local Studio contract.")
+    if any(
+        term in phrase.casefold()
+        for term in ("musician", "track", "song", "band")
+        for phrase in (
+            studio_visit.vocabulary.participant_singular,
+            studio_visit.vocabulary.participant_plural,
+            studio_visit.vocabulary.session_noun,
+            studio_visit.vocabulary.section_noun,
+        )
+    ):
+        raise RuntimeError("Studio Visit speaks to artists, not to a band.")
+    if any(
+        profile.capabilities.shared_reference_video
+        for profile in CREATOR_PROFILES
+        if profile.key != "studio_visit"
+    ):
+        raise RuntimeError(
+            "Only Studio Visit ships the host-clocked reference video contract."
+        )
 
 
 _validate_creator_registry()

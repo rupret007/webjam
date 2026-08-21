@@ -113,6 +113,7 @@ def test_launch_creator_selector_uses_canonical_profiles_and_truthful_actions(
             "Music (Ready)",
             "Podcast & Voice (Ready)",
             "Review & Rehearsal (Preview)",
+            "Studio Visit (Preview)",
         ]
         assert dialog.selected_creator_profile_key == "music"
         assert dialog._host_button.text() == "Host"

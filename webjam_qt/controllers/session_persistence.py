@@ -30,6 +30,7 @@ _PROFILE_NOTES_FILES = {
     "music": _NOTES_FILE,
     "podcast_voice": ".webjam_notes.podcast_voice.md",
     "review_rehearsal": ".webjam_notes.review_rehearsal.md",
+    "studio_visit": ".webjam_notes.studio_visit.md",
 }
 _SESSION_FILE = ".webjam_session.json"
 _SESSION_SCHEMA_VERSION = 2
@@ -38,6 +39,11 @@ _MAX_NOTES_FILE_BYTES = 1024 * 1024
 _MAX_TITLE_BYTES = 512
 _MAX_MODE_KEY_BYTES = 64
 _PROFILE_ORDER = tuple(profile.key for profile in CREATOR_PROFILES)
+
+if set(_PROFILE_NOTES_FILES) != set(_PROFILE_ORDER):
+    # A profile without its own scratchpad path would silently write another
+    # profile's notes file, so refuse to start instead.
+    raise RuntimeError("Every creator profile requires a private notes file.")
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
