@@ -12,12 +12,9 @@ desktop may issue an invitation.
 from __future__ import annotations
 
 import base64
-from collections import deque
-from dataclasses import dataclass
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import signal
 import stat
@@ -25,10 +22,13 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Any, BinaryIO, Callable
+from collections import deque
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, BinaryIO
 
 from core.remote_invitation import RemoteInvitation
-
 
 IPC_VERSION = 1
 MAX_IPC_LINE_BYTES = 64 * 1024
@@ -258,32 +258,30 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         or build
     ):
         raise TransportProtocolError("The transport process sent invalid data.")
-    if event_type == "host_registered":
-        if (
-            code != "ok"
-            or state != "host_waiting"
-            or mode != "host"
-            or not profile_id
-            or generation == 0
-            or loopback_port == 0
-            or host_pin
-            or event_id == 0
-            or build
-        ):
-            raise TransportProtocolError("The transport process sent invalid data.")
-    if event_type == "peer_connected":
-        if (
-            code != "ok"
-            or state != "connected"
-            or mode not in {"host", "guest"}
-            or not profile_id
-            or generation == 0
-            or loopback_port == 0
-            or host_pin
-            or ((mode == "host") != (event_id == 0))
-            or build
-        ):
-            raise TransportProtocolError("The transport process sent invalid data.")
+    if event_type == "host_registered" and (
+        code != "ok"
+        or state != "host_waiting"
+        or mode != "host"
+        or not profile_id
+        or generation == 0
+        or loopback_port == 0
+        or host_pin
+        or event_id == 0
+        or build
+    ):
+        raise TransportProtocolError("The transport process sent invalid data.")
+    if event_type == "peer_connected" and (
+        code != "ok"
+        or state != "connected"
+        or mode not in {"host", "guest"}
+        or not profile_id
+        or generation == 0
+        or loopback_port == 0
+        or host_pin
+        or ((mode == "host") != (event_id == 0))
+        or build
+    ):
+        raise TransportProtocolError("The transport process sent invalid data.")
     if event_type == "peer_closed" and (
         code != "ok"
         or state != "closed"

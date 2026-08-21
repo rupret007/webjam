@@ -18,18 +18,19 @@ reads, or changes Jamulus configuration.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
-from dataclasses import dataclass, replace
-from enum import Enum
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import stat
 import threading
-from typing import Any, Mapping
 import uuid
+from collections.abc import Mapping
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
+from enum import Enum
+from pathlib import Path
+from typing import Any
 
 from core.file_io import atomic_write_bytes
 from core.project_audio import (
@@ -74,7 +75,6 @@ from core.studio_project import (
     StudioTrackKind,
     studio_document_from_dict,
 )
-
 
 RECORDING_EVIDENCE_FILENAME = ".webjam-recording-evidence.json"
 RECORDING_EVIDENCE_BACKUP_FILENAME = ".webjam-recording-evidence.json.bak"
@@ -239,7 +239,7 @@ class RecordingDropoutEvidence:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "RecordingDropoutEvidence":
+    def from_dict(cls, value: Mapping[str, Any]) -> RecordingDropoutEvidence:
         _strict_keys(
             value,
             fields={
@@ -324,7 +324,7 @@ class RecordingPassEvidence:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "RecordingPassEvidence":
+    def from_dict(cls, value: Mapping[str, Any]) -> RecordingPassEvidence:
         _strict_keys(
             value,
             fields={
@@ -470,7 +470,7 @@ class RecordingTrackEvidence:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "RecordingTrackEvidence":
+    def from_dict(cls, value: Mapping[str, Any]) -> RecordingTrackEvidence:
         _strict_keys(
             value,
             fields={
@@ -614,7 +614,7 @@ class RecordingCommitEvidence:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "RecordingCommitEvidence":
+    def from_dict(cls, value: Mapping[str, Any]) -> RecordingCommitEvidence:
         _strict_keys(
             value,
             fields={"commit_id", "generation", "schedule", "tracks"},
@@ -686,7 +686,7 @@ class RecordingEvidenceLedger:
                 "recording evidence contains duplicate commit IDs."
             )
 
-    def append(self, entry: RecordingCommitEvidence) -> "RecordingEvidenceLedger":
+    def append(self, entry: RecordingCommitEvidence) -> RecordingEvidenceLedger:
         if not isinstance(entry, RecordingCommitEvidence):
             raise ProjectRecordingCommitError(
                 "entry must be RecordingCommitEvidence."
@@ -712,7 +712,7 @@ class RecordingEvidenceLedger:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "RecordingEvidenceLedger":
+    def from_dict(cls, value: Mapping[str, Any]) -> RecordingEvidenceLedger:
         _strict_keys(
             value,
             fields={"schema_version", "project_id", "commits"},
@@ -2212,15 +2212,15 @@ def recover_project_recording_commit(
 __all__ = [
     "MAX_RECORDING_COMMIT_JOURNAL_BYTES",
     "MAX_RECORDING_EVIDENCE_BYTES",
+    "RECORDING_COMMIT_JOURNAL_FILENAME",
+    "RECORDING_COMMIT_LOCK_FILENAME",
+    "RECORDING_EVIDENCE_BACKUP_FILENAME",
+    "RECORDING_EVIDENCE_FILENAME",
     "ProjectRecordingCommitError",
     "ProjectRecordingCommitRecoveryRequired",
     "ProjectRecordingCommitResult",
     "ProjectRecordingCommitState",
     "ProjectRecordingRecoveryCandidate",
-    "RECORDING_COMMIT_LOCK_FILENAME",
-    "RECORDING_COMMIT_JOURNAL_FILENAME",
-    "RECORDING_EVIDENCE_BACKUP_FILENAME",
-    "RECORDING_EVIDENCE_FILENAME",
     "RecordingCommitEvidence",
     "RecordingDropoutEvidence",
     "RecordingEvidenceLedger",

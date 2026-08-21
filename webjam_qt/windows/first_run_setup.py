@@ -8,7 +8,6 @@ import subprocess
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -36,17 +35,17 @@ from core.jamulus_name import (
     JamulusNameError,
     validate_jamulus_name,
 )
-from core.settings import (
-    AppSettings,
-    hosted_server_recordings_dir,
-    hosted_server_secret_path,
-)
 from core.meeting_link import (
     identify_meeting_service,
     meeting_link_error,
     meeting_link_hostname,
     meeting_service_label,
     normalize_meeting_url,
+)
+from core.settings import (
+    AppSettings,
+    hosted_server_recordings_dir,
+    hosted_server_secret_path,
 )
 from webjam_qt.theme import Space
 from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
@@ -73,7 +72,7 @@ def _body(text: str, *, name: str = "FirstRunBody") -> QLabel:
     return label
 
 
-def _find_client(settings: AppSettings) -> Optional[str]:
+def _find_client(settings: AppSettings) -> str | None:
     from services.bridge_service import _bundled_jamulus_candidate
     bundled = _bundled_jamulus_candidate()
     if bundled:
@@ -87,7 +86,7 @@ def _find_client(settings: AppSettings) -> Optional[str]:
     return None
 
 
-def _find_server() -> tuple[Optional[str], str]:
+def _find_server() -> tuple[str | None, str]:
     from services.bridge_service import _bundled_jamulus_server_candidate
     bundled = _bundled_jamulus_server_candidate()
     if bundled:
@@ -107,13 +106,13 @@ class FirstRunSetupDialog(QDialog):
 
     def __init__(
         self,
-        settings: Optional[AppSettings] = None,
-        parent: Optional[QWidget] = None,
+        settings: AppSettings | None = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._settings = settings or AppSettings()
         self._step = 0
-        self._result: Optional[FirstRunSetupResult] = None
+        self._result: FirstRunSetupResult | None = None
         self._hosting_supported = sys.platform == "darwin"
         self._client_path = _find_client(self._settings)
         from services.bridge_service import _bundled_jamulus_candidate
@@ -192,7 +191,7 @@ class FirstRunSetupDialog(QDialog):
         return not Path(settings.config_file).exists()
 
     @staticmethod
-    def _bundled_windows_installer() -> Optional[str]:
+    def _bundled_windows_installer() -> str | None:
         from services.bridge_service import _bundled_jamulus_installer
         return _bundled_jamulus_installer()
 
@@ -375,7 +374,7 @@ class FirstRunSetupDialog(QDialog):
             host = f"[{host}]"
         return f"{host}:{self._settings.jamulus_port}"
 
-    def _selected_role(self) -> Optional[str]:
+    def _selected_role(self) -> str | None:
         if self._host_card.isChecked():
             return "host"
         if self._join_card.isChecked():
@@ -643,5 +642,5 @@ class FirstRunSetupDialog(QDialog):
         self._install_client.setEnabled(False)
 
     @property
-    def result(self) -> Optional[FirstRunSetupResult]:
+    def result(self) -> FirstRunSetupResult | None:
         return self._result

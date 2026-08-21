@@ -31,7 +31,6 @@ from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from enum import Enum
 
-
 REMOTE_INVITATION_VERSION = 3
 DEFAULT_INVITATION_TTL_SECONDS = 10 * 60
 MAX_INVITATION_TTL_SECONDS = 60 * 60
@@ -178,8 +177,8 @@ class RemoteInvitation:
         "_issued_at_unix",
         "_participant_limit",
         "_profile_id",
-        "_session_reference",
         "_sealed",
+        "_session_reference",
     )
 
     def __init__(
@@ -280,7 +279,7 @@ class RemoteInvitation:
 
         return self._capability
 
-    def advisory_expired(self, now_unix: int | float | None = None) -> bool:
+    def advisory_expired(self, now_unix: float | None = None) -> bool:
         """Return local-clock expiry truth; the service remains authoritative."""
 
         now = time.time() if now_unix is None else float(now_unix)
@@ -667,7 +666,7 @@ class InvitationLifecycle:
         self._guest_key_sha256: bytes | None = None
         self._last_observed_unix = invitation.issued_at_unix
 
-    def _now_locked(self, supplied: int | float | None) -> float:
+    def _now_locked(self, supplied: float | None) -> float:
         raw = self._clock() if supplied is None else supplied
         if isinstance(raw, bool):
             raise ValueError("now_unix must be a finite non-negative number")
@@ -680,7 +679,7 @@ class InvitationLifecycle:
         self._last_observed_unix = max(self._last_observed_unix, value)
         return self._last_observed_unix
 
-    def _refresh_expiry_locked(self, now_unix: int | float | None) -> None:
+    def _refresh_expiry_locked(self, now_unix: float | None) -> None:
         now = self._now_locked(now_unix)
         if (
             self._state in {InvitationState.ISSUED, InvitationState.RESERVED}
@@ -745,7 +744,7 @@ class InvitationLifecycle:
         code, message = mapping[state]
         return InvitationLifecycleError(code, message)
 
-    def snapshot(self, *, now_unix: int | float | None = None) -> InvitationSnapshot:
+    def snapshot(self, *, now_unix: float | None = None) -> InvitationSnapshot:
         with self._lock:
             self._refresh_expiry_locked(now_unix)
             return InvitationSnapshot(
@@ -758,7 +757,7 @@ class InvitationLifecycle:
         self,
         claim: EnrollmentClaim,
         *,
-        now_unix: int | float | None = None,
+        now_unix: float | None = None,
     ) -> ReservationResult:
         """Atomically reserve the sole enrollment, idempotent for one claimant."""
 
@@ -799,7 +798,7 @@ class InvitationLifecycle:
         self,
         claim: EnrollmentClaim,
         *,
-        now_unix: int | float | None = None,
+        now_unix: float | None = None,
     ) -> bool:
         """Consume a matching reservation; repeat confirmation is idempotent."""
 
@@ -840,7 +839,7 @@ class InvitationLifecycle:
             self._state = InvitationState.CONSUMED
             return True
 
-    def revoke(self, *, now_unix: int | float | None = None) -> bool:
+    def revoke(self, *, now_unix: float | None = None) -> bool:
         """Revoke an unused invitation; terminal states never move backward."""
 
         with self._lock:

@@ -21,11 +21,12 @@ import stat
 import sys
 import threading
 import uuid
+from collections.abc import Iterator, Sequence
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import BinaryIO, Iterator, Protocol, Sequence
+from typing import BinaryIO, Protocol
 
 import numpy as np
 
@@ -38,8 +39,8 @@ from core.studio_project import (
 from core.studio_renderer import (
     DEFAULT_RENDER_BLOCK_FRAMES,
     MAX_RENDER_BLOCK_FRAMES,
-    StudioRenderError,
     StudioRenderer,
+    StudioRenderError,
     studio_delivery_block,
 )
 from core.studio_source_catalog import (
@@ -55,7 +56,6 @@ from core.take_project import (
     ProjectTrack,
     TakeProject,
 )
-
 
 STUDIO_EXPORT_SCHEMA_VERSION = 1
 DEFAULT_DISK_RESERVE_BYTES = 64 * 1024 * 1024
@@ -2056,21 +2056,20 @@ def _write_renderer_wav(
             package,
             destination,
             sample_rate=renderer.sample_rate,
-        ) as writer:
-            with renderer.open(
-                start_frame=0,
-                end_frame=frames,
-                cancel_check=lambda: _check_cancelled(cancel_event),
-            ) as stream:
-                while written < frames:
-                    _check_cancelled(cancel_event)
-                    count = min(block_frames, frames - written)
-                    block = stream.read(count)
-                    delivered, clipped = _delivery_audio_block(block, count)
-                    clipped_samples += clipped
-                    writer.write(delivered)
-                    written += count
-                    _check_cancelled(cancel_event)
+        ) as writer, renderer.open(
+            start_frame=0,
+            end_frame=frames,
+            cancel_check=lambda: _check_cancelled(cancel_event),
+        ) as stream:
+            while written < frames:
+                _check_cancelled(cancel_event)
+                count = min(block_frames, frames - written)
+                block = stream.read(count)
+                delivered, clipped = _delivery_audio_block(block, count)
+                clipped_samples += clipped
+                writer.write(delivered)
+                written += count
+                _check_cancelled(cancel_event)
     except StudioExportError:
         raise
     except (OSError, RuntimeError) as exc:

@@ -8,16 +8,17 @@ manifest.  Original recorder files are never modified.
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import os
 import re
 import shutil
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Mapping, Optional
+from typing import TYPE_CHECKING
 
 from core.take_library import TakeInfo
 
@@ -236,7 +237,7 @@ def _inspect_audio(path: Path) -> dict:
     with sf.SoundFile(str(path)) as reader:
         rate = int(reader.samplerate)
         channels = int(reader.channels)
-        frames = int(len(reader))
+        frames = len(reader)
         while True:
             block = reader.read(65_536, dtype="float32", always_2d=True)
             if not len(block):
@@ -380,7 +381,7 @@ def _write_project_track(
     drift_scale = 1.0 + float(track.alignment.drift_ppm) / 1_000_000.0
     if drift_scale <= 0.0:
         raise TakeExportError(f"{track.name} has an invalid drift transform.")
-    offset_frames = int(round(float(track.alignment.effective_offset_s) * project_rate))
+    offset_frames = round(float(track.alignment.effective_offset_s) * project_rate)
     prepared: list[tuple[object, object, int, int]] = []
     intervals: list[tuple[int, int]] = []
     try:
@@ -404,7 +405,7 @@ def _write_project_track(
             observed = (
                 int(reader.samplerate),
                 int(reader.channels),
-                int(len(reader)),
+                len(reader),
             )
             declared = (
                 int(segment.sample_rate),
@@ -417,14 +418,12 @@ def _write_project_track(
                     f"{track.name} media facts changed after validation."
                 )
             start = int(segment.project_start_frame) + offset_frames
-            rendered_frames = int(
-                round(
+            rendered_frames = round(
                     segment.frame_count
                     / segment.sample_rate
                     * drift_scale
                     * project_rate
                 )
-            )
             end = start + max(0, rendered_frames)
             if intervals and start < intervals[-1][1]:
                 reader.close()
@@ -477,18 +476,14 @@ def _project_timeline_frames(project) -> int:
     latest = 0
     for track in project.tracks:
         scale = 1.0 + float(track.alignment.drift_ppm) / 1_000_000.0
-        offset = int(
-            round(track.alignment.effective_offset_s * project.project_sample_rate)
-        )
+        offset = round(track.alignment.effective_offset_s * project.project_sample_rate)
         for segment in track.segments:
-            duration = int(
-                round(
+            duration = round(
                     segment.frame_count
                     / segment.sample_rate
                     * scale
                     * project.project_sample_rate
                 )
-            )
             latest = max(latest, segment.project_start_frame + offset + duration)
     return latest
 
@@ -497,7 +492,7 @@ def _reference_fingerprint(track) -> str:
     """Match the immutable peer-reference fingerprint recorded at alignment."""
 
     digest = hashlib.sha256()
-    for segment in sorted(tuple(track.segments), key=lambda item: item.segment_id):
+    for segment in sorted(track.segments, key=lambda item: item.segment_id):
         digest.update(str(segment.segment_id).encode("utf-8"))
         digest.update(b"\0")
         digest.update(str(segment.sha256 or "").lower().encode("ascii"))
@@ -732,8 +727,8 @@ def _export_project_track_package(
     take: TakeInfo,
     project,
     *,
-    destination_root: Optional[Path],
-    mix_settings: Optional[MixSettings],
+    destination_root: Path | None,
+    mix_settings: MixSettings | None,
     chunk_frames: int,
     selected_track_ids: set[str] | None,
     include_processed_stems: bool,
@@ -1085,8 +1080,8 @@ def _export_project_track_package(
 def export_track_package(
     take: TakeInfo,
     *,
-    destination_root: Optional[Path] = None,
-    mix_settings: Optional[MixSettings] = None,
+    destination_root: Path | None = None,
+    mix_settings: MixSettings | None = None,
     chunk_frames: int = 65536,
     selected_track_ids: set[str] | None = None,
     include_processed_stems: bool = False,
@@ -1130,7 +1125,7 @@ def export_track_package(
     for track in take.tracks:
         try:
             info = sf.info(str(track.path))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise TakeExportError(
                 f"{track.path.name} could not be read: {exc}"
             ) from exc
@@ -1138,7 +1133,7 @@ def export_track_package(
         if rate <= 0 or info.frames <= 0:
             raise TakeExportError(f"{track.path.name} is empty or unreadable.")
         rates.add(rate)
-        offset_frames = int(round(float(track.offset_s) * rate))
+        offset_frames = round(float(track.offset_s) * rate)
         source_info.append((offset_frames, int(info.frames), int(info.channels)))
     if len(rates) != 1:
         raise TakeExportError(
@@ -1271,8 +1266,8 @@ def export_track_package(
 def export_logic_package(
     take: TakeInfo,
     *,
-    destination_root: Optional[Path] = None,
-    mix_settings: Optional[MixSettings] = None,
+    destination_root: Path | None = None,
+    mix_settings: MixSettings | None = None,
     chunk_frames: int = 65536,
     selected_track_ids: set[str] | None = None,
     include_processed_stems: bool = False,

@@ -15,11 +15,13 @@ UUIDs and remain stable through immutable edits and undo/redo snapshots.
 
 from __future__ import annotations
 
+import itertools
 import math
 import uuid
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Iterable, Mapping
+from typing import TYPE_CHECKING, Any
 
 from core.take_project import TakeProject
 
@@ -347,7 +349,7 @@ class StudioAutomationPoint:
         return {"frame": self.frame, "value": self.value}
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "StudioAutomationPoint":
+    def from_dict(cls, value: Mapping[str, Any]) -> StudioAutomationPoint:
         _strict_keys(
             value,
             allowed={"frame", "value"},
@@ -448,7 +450,7 @@ class StudioAutomationLane:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "StudioAutomationLane":
+    def from_dict(cls, value: Mapping[str, Any]) -> StudioAutomationLane:
         _strict_keys(
             value,
             allowed={
@@ -535,7 +537,7 @@ class StudioSend:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "StudioSend":
+    def from_dict(cls, value: Mapping[str, Any]) -> StudioSend:
         _strict_keys(
             value,
             allowed={"send_id", "target_bus_id", "gain", "pre_fader", "enabled"},
@@ -645,7 +647,7 @@ class StudioEffect:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "StudioEffect":
+    def from_dict(cls, value: Mapping[str, Any]) -> StudioEffect:
         expected = {
             "effect_id",
             "kind",
@@ -853,7 +855,7 @@ class StudioTrack:
         value: Mapping[str, Any],
         *,
         schema_version: int = STUDIO_PROJECT_SCHEMA_VERSION,
-    ) -> "StudioTrack":
+    ) -> StudioTrack:
         schema = _integer(
             schema_version,
             "schema_version",
@@ -1246,7 +1248,7 @@ class StudioRegion:
         value: Mapping[str, Any],
         *,
         schema_version: int = STUDIO_PROJECT_SCHEMA_VERSION,
-    ) -> "StudioRegion":
+    ) -> StudioRegion:
         schema = _integer(
             schema_version,
             "schema_version",
@@ -1437,7 +1439,7 @@ class StudioTakeLane:
         value: Mapping[str, Any],
         *,
         schema_version: int = STUDIO_PROJECT_SCHEMA_VERSION,
-    ) -> "StudioTakeLane":
+    ) -> StudioTakeLane:
         schema = _integer(
             schema_version,
             "schema_version",
@@ -1570,7 +1572,7 @@ class StudioCompRange:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "StudioCompRange":
+    def from_dict(cls, value: Mapping[str, Any]) -> StudioCompRange:
         _strict_keys(
             value,
             allowed={
@@ -1666,7 +1668,7 @@ class StudioMarker:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "StudioMarker":
+    def from_dict(cls, value: Mapping[str, Any]) -> StudioMarker:
         _strict_keys(
             value,
             allowed={
@@ -1762,7 +1764,7 @@ class StudioCrossfade:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "StudioCrossfade":
+    def from_dict(cls, value: Mapping[str, Any]) -> StudioCrossfade:
         _strict_keys(
             value,
             allowed={
@@ -1821,7 +1823,7 @@ class StudioCycleRange:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "StudioCycleRange":
+    def from_dict(cls, value: Mapping[str, Any]) -> StudioCycleRange:
         _strict_keys(
             value,
             allowed={"start_frame", "end_frame", "enabled"},
@@ -1856,7 +1858,7 @@ class StudioMaster:
         return {"gain": self.gain, "limiter_enabled": self.limiter_enabled}
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "StudioMaster":
+    def from_dict(cls, value: Mapping[str, Any]) -> StudioMaster:
         _strict_keys(
             value,
             allowed={"gain", "limiter_enabled"},
@@ -2196,14 +2198,13 @@ class StudioDocument:
                 raise StudioProjectError(
                     "Studio bus and master tracks cannot contain take lanes."
                 )
-            if lane.region_ids:
-                if (
-                    schema_version == STUDIO_PROJECT_SCHEMA_VERSION
-                    and not lane.source_take_id
-                ):
-                    raise StudioProjectError(
-                        "A take lane with regions requires source take and track IDs."
-                    )
+            if lane.region_ids and (
+                schema_version == STUDIO_PROJECT_SCHEMA_VERSION
+                and not lane.source_take_id
+            ):
+                raise StudioProjectError(
+                    "A take lane with regions requires source take and track IDs."
+                )
             for region_id in lane.region_ids:
                 region = region_map.get(region_id)
                 if region is None:
@@ -2289,7 +2290,7 @@ class StudioDocument:
                     item.comp_range_id,
                 ),
             )
-            for left, right in zip(ordered, ordered[1:]):
+            for left, right in itertools.pairwise(ordered):
                 if right.timeline_start_frame < left.timeline_end_frame:
                     raise StudioProjectError("Active comp ranges cannot overlap.")
 
@@ -2376,12 +2377,12 @@ class StudioDocument:
                 return lane
         raise StudioProjectError("Take lane is not part of this Studio document.")
 
-    def _bumped(self, **changes: object) -> "StudioDocument":
+    def _bumped(self, **changes: object) -> StudioDocument:
         if self.revision >= MAX_PROJECT_FRAMES:
             raise StudioProjectError("Studio document revision is exhausted.")
         return replace(self, revision=self.revision + 1, **changes)
 
-    def update_track(self, track_id: str, **changes: object) -> "StudioDocument":
+    def update_track(self, track_id: str, **changes: object) -> StudioDocument:
         """Return a copy with one track's mix state changed.
 
         ``gain`` is accepted as a compatibility alias for ``fader_gain``.
@@ -2436,7 +2437,7 @@ class StudioDocument:
 
     def move_region(
         self, region_id: str, timeline_start_frame: int
-    ) -> "StudioDocument":
+    ) -> StudioDocument:
         original = self._editable_region(region_id)
         new_start = _timeline_frame(timeline_start_frame, "region.timeline_start_frame")
         delta = new_start - original.timeline_start_frame
@@ -2457,7 +2458,7 @@ class StudioDocument:
         source_frame_count: int | None = None,
         timeline_start_frame: int | None = None,
         timeline_frame_count: int | None = None,
-    ) -> "StudioDocument":
+    ) -> StudioDocument:
         original = self._editable_region(region_id)
         source_changed = (
             source_start_frame is not None or source_frame_count is not None
@@ -2522,7 +2523,7 @@ class StudioDocument:
         at_frame: int,
         *,
         right_region_id: str | None = None,
-    ) -> "StudioDocument":
+    ) -> StudioDocument:
         original = self._editable_region(region_id)
         split_frame = _timeline_frame(at_frame, "split.at_frame")
         if (
@@ -2617,7 +2618,7 @@ class StudioDocument:
         *,
         new_region_id: str | None = None,
         timeline_start_frame: int | None = None,
-    ) -> "StudioDocument":
+    ) -> StudioDocument:
         original = self._editable_region(region_id)
         duplicate_id = _next_uuid(new_region_id, "region.region_id")
         if any(item.region_id == duplicate_id for item in self.regions):
@@ -2644,7 +2645,7 @@ class StudioDocument:
         )
         return self._bumped(regions=(*self.regions, duplicate))
 
-    def set_region_enabled(self, region_id: str, enabled: bool) -> "StudioDocument":
+    def set_region_enabled(self, region_id: str, enabled: bool) -> StudioDocument:
         original = self.region_for(region_id)
         if original.deleted:
             raise StudioProjectError("A deleted region cannot be enabled or disabled.")
@@ -2662,7 +2663,7 @@ class StudioDocument:
             )
         return self._replace_region(original, updated, crossfades=crossfades)
 
-    def delete_region(self, region_id: str) -> "StudioDocument":
+    def delete_region(self, region_id: str) -> StudioDocument:
         """Tombstone a region so reconciliation never recreates its source."""
 
         original = self.region_for(region_id)
@@ -2686,7 +2687,7 @@ class StudioDocument:
         fade_out_frames: int,
         fade_in_curve: FadeCurve | str | None = None,
         fade_out_curve: FadeCurve | str | None = None,
-    ) -> "StudioDocument":
+    ) -> StudioDocument:
         original = self._editable_region(region_id)
         updated = replace(
             original,
@@ -2713,7 +2714,7 @@ class StudioDocument:
         updated: StudioRegion,
         *,
         crossfades: tuple[StudioCrossfade, ...] | None = None,
-    ) -> "StudioDocument":
+    ) -> StudioDocument:
         if updated == original and crossfades is None:
             return self
         return self._bumped(
@@ -2733,7 +2734,7 @@ class StudioDocument:
         frame_count: int,
         curve: FadeCurve | str = FadeCurve.EQUAL_POWER,
         crossfade_id: str | None = None,
-    ) -> "StudioDocument":
+    ) -> StudioDocument:
         crossfade = StudioCrossfade(
             crossfade_id=_next_uuid(crossfade_id, "crossfade.crossfade_id"),
             left_region_id=left_region_id,
@@ -2744,7 +2745,7 @@ class StudioDocument:
         )
         return self.upsert_crossfade(crossfade)
 
-    def upsert_crossfade(self, crossfade: StudioCrossfade) -> "StudioDocument":
+    def upsert_crossfade(self, crossfade: StudioCrossfade) -> StudioDocument:
         if not isinstance(crossfade, StudioCrossfade):
             raise StudioProjectError("crossfade must be a StudioCrossfade.")
         found = False
@@ -2761,7 +2762,7 @@ class StudioDocument:
             return self
         return self._bumped(crossfades=tuple(values))
 
-    def remove_crossfade(self, crossfade_id: str) -> "StudioDocument":
+    def remove_crossfade(self, crossfade_id: str) -> StudioDocument:
         canonical = _canonical_uuid(crossfade_id, "crossfade_id")
         for item in self.crossfades:
             if item.crossfade_id == canonical:
@@ -2777,7 +2778,7 @@ class StudioDocument:
                 )
         raise StudioProjectError("Crossfade is not part of this Studio document.")
 
-    def upsert_marker(self, marker: StudioMarker) -> "StudioDocument":
+    def upsert_marker(self, marker: StudioMarker) -> StudioDocument:
         if not isinstance(marker, StudioMarker):
             raise StudioProjectError("marker must be a StudioMarker.")
         found = False
@@ -2794,7 +2795,7 @@ class StudioDocument:
             return self
         return self._bumped(markers=tuple(values))
 
-    def remove_marker(self, marker_id: str) -> "StudioDocument":
+    def remove_marker(self, marker_id: str) -> StudioDocument:
         canonical = _canonical_uuid(marker_id, "marker_id")
         for marker in self.markers:
             if marker.marker_id == canonical:
@@ -2810,27 +2811,27 @@ class StudioDocument:
                 )
         raise StudioProjectError("Marker is not part of this Studio document.")
 
-    def set_cycle_range(self, cycle_range: StudioCycleRange | None) -> "StudioDocument":
+    def set_cycle_range(self, cycle_range: StudioCycleRange | None) -> StudioDocument:
         if cycle_range is not None and not isinstance(cycle_range, StudioCycleRange):
             raise StudioProjectError("cycle_range must be a StudioCycleRange or null.")
         if cycle_range == self.cycle_range:
             return self
         return self._bumped(cycle_range=cycle_range)
 
-    def set_snap_mode(self, snap_mode: SnapMode | str) -> "StudioDocument":
+    def set_snap_mode(self, snap_mode: SnapMode | str) -> StudioDocument:
         mode = _enum_value(SnapMode, snap_mode, "snap_mode")
         if mode is self.snap_mode:
             return self
         return self._bumped(snap_mode=mode)
 
-    def set_master(self, master: StudioMaster) -> "StudioDocument":
+    def set_master(self, master: StudioMaster) -> StudioDocument:
         if not isinstance(master, StudioMaster):
             raise StudioProjectError("master must be a StudioMaster.")
         if master == self.master:
             return self
         return self._bumped(master=master)
 
-    def upsert_take_lane(self, lane: StudioTakeLane) -> "StudioDocument":
+    def upsert_take_lane(self, lane: StudioTakeLane) -> StudioDocument:
         if not isinstance(lane, StudioTakeLane):
             raise StudioProjectError("lane must be a StudioTakeLane.")
         found = False
@@ -2851,7 +2852,7 @@ class StudioDocument:
         self,
         lane: StudioTakeLane,
         regions: Iterable[StudioRegion],
-    ) -> "StudioDocument":
+    ) -> StudioDocument:
         """Atomically add or restore one take lane and all regions it owns.
 
         A lane cannot be published before its referenced regions exist because
@@ -2925,7 +2926,7 @@ class StudioDocument:
             take_lanes=tuple(lane_values),
         )
 
-    def remove_take_lane(self, lane_id: str) -> "StudioDocument":
+    def remove_take_lane(self, lane_id: str) -> StudioDocument:
         lane = self.lane_for(lane_id)
         if lane.deleted:
             return self
@@ -2954,7 +2955,7 @@ class StudioDocument:
             comp_ranges=comps,
         )
 
-    def select_comp_range(self, comp_range: StudioCompRange) -> "StudioDocument":
+    def select_comp_range(self, comp_range: StudioCompRange) -> StudioDocument:
         if not isinstance(comp_range, StudioCompRange):
             raise StudioProjectError("comp_range must be a StudioCompRange.")
         found = False
@@ -2973,7 +2974,7 @@ class StudioDocument:
 
     upsert_comp_range = select_comp_range
 
-    def remove_comp_range(self, comp_range_id: str) -> "StudioDocument":
+    def remove_comp_range(self, comp_range_id: str) -> StudioDocument:
         canonical = _canonical_uuid(comp_range_id, "comp_range_id")
         for comp_range in self.comp_ranges:
             if comp_range.comp_range_id == canonical:
@@ -2993,7 +2994,7 @@ class StudioDocument:
         self,
         track_id: str,
         ranges: Iterable[StudioCompRange],
-    ) -> "StudioDocument":
+    ) -> StudioDocument:
         canonical = self.state_for(track_id).track_id
         incoming = tuple(ranges)
         if any(not isinstance(item, StudioCompRange) for item in incoming):
@@ -3096,7 +3097,7 @@ def _default_region_id(take_id: str, track_id: str, segment_id: str) -> str:
 def _default_marker(project, marker) -> StudioMarker:
     return StudioMarker(
         marker_id=marker.marker_id,
-        start_frame=int(round(marker.position_s * project.project_sample_rate)),
+        start_frame=round(marker.position_s * project.project_sample_rate),
         label=marker.label,
     )
 
@@ -3107,21 +3108,17 @@ def _default_region(project: TakeProject, track, segment) -> StudioRegion:
         raise StudioProjectError(
             f"Track {track.track_id} has an invalid drift transform."
         )
-    timeline_count = int(
-        round(
+    timeline_count = round(
             segment.frame_count
             / segment.sample_rate
             * drift_scale
             * project.project_sample_rate
         )
-    )
     if timeline_count <= 0:
         raise StudioProjectError(
             f"Segment {segment.segment_id} has no project-frame duration."
         )
-    offset_frames = int(
-        round(track.alignment.effective_offset_s * project.project_sample_rate)
-    )
+    offset_frames = round(track.alignment.effective_offset_s * project.project_sample_rate)
     return StudioRegion(
         region_id=_default_region_id(
             project.take_id, track.track_id, segment.segment_id
@@ -3196,7 +3193,7 @@ def _song_backing_region_id(project_id: str, media_id: str) -> str:
     )
 
 
-def default_song_studio_document(project: "SongProject") -> StudioDocument:
+def default_song_studio_document(project: SongProject) -> StudioDocument:
     """Return deterministic schema-3 arrangement defaults for a song project.
 
     The Studio snapshot deliberately retains only durable project/media IDs
@@ -3555,11 +3552,11 @@ def studio_document_from_dict(value: Mapping[str, Any]) -> StudioDocument:
 
 
 __all__ = [
+    "STUDIO_PROJECT_SCHEMA_VERSION",
+    "STUDIO_SONG_PROJECT_SCHEMA_VERSION",
     "FadeCurve",
     "MarkerKind",
     "SnapMode",
-    "STUDIO_PROJECT_SCHEMA_VERSION",
-    "STUDIO_SONG_PROJECT_SCHEMA_VERSION",
     "StudioAutomationInterpolation",
     "StudioAutomationLane",
     "StudioAutomationParameter",

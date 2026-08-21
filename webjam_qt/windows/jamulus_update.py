@@ -8,8 +8,6 @@ lifecycle owner and makes every displayed claim directly testable.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QDialog,
@@ -33,7 +31,7 @@ class JamulusLicenseDialog(QDialog):
         self,
         license_text: str,
         *,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         if not isinstance(license_text, str) or not license_text.strip():
@@ -93,7 +91,7 @@ class JamulusUpdateDialog(QDialog):
     def __init__(
         self,
         *,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("JamulusUpdateDialog")
@@ -286,11 +284,9 @@ class JamulusUpdateDialog(QDialog):
         ).strip()
         self._activate.setText(activate_label)
         self._activate.setAccessibleName(
-            (
-                "Verify the operating-system Jamulus installation"
-                if activate_label == "Verify installation"
-                else "Continue the Jamulus update when every session is idle"
-            )
+            "Verify the operating-system Jamulus installation"
+            if activate_label == "Verify installation"
+            else "Continue the Jamulus update when every session is idle"
         )
         self._activate.setEnabled(not busy)
         self._approve.setVisible(bool(getattr(snapshot, "can_approve", False)))

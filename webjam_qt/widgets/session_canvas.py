@@ -8,7 +8,6 @@ not media timecode. Chat is the separate live shared-text path.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -46,7 +45,7 @@ class SessionCanvas(QFrame):
     chat_submitted = Signal(str)   # user pressed Enter in the chat box
     brief_export_requested = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("SessionCanvas")
         self.setMinimumWidth(self.CANVAS_MIN_WIDTH)
@@ -304,7 +303,7 @@ class SessionCanvas(QFrame):
         )
         self._guidance_recent.setVisible(True)
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
+    def resizeEvent(self, event) -> None:
         compact = self.height() < 500
         if compact != self._compact_guidance:
             self._compact_guidance = compact

@@ -23,11 +23,10 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
-from typing import Union
 
 
 def atomic_write_bytes(
-    path: Union[str, Path],
+    path: str | Path,
     data: bytes,
     *,
     mode: int | None = None,
@@ -44,7 +43,7 @@ def atomic_write_bytes(
 
 
 def atomic_write_text(
-    path: Union[str, Path],
+    path: str | Path,
     text: str,
     *,
     encoding: str = "utf-8",
@@ -70,7 +69,7 @@ def atomic_write_text(
 
 
 def _atomic_write(
-    path: Union[str, Path],
+    path: str | Path,
     data: bytes,
     *,
     mode: int | None,

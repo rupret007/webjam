@@ -10,20 +10,20 @@ same-sequence equivocation.  Exact component records are then validated by
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 import hashlib
 import json
-from pathlib import Path
 import re
 import stat
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import MappingProxyType
-from typing import Callable, Mapping
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-from core.component_hosts import HttpsHostPolicy, JAMULUS_RELEASE_HOST_POLICY
+from core.component_hosts import JAMULUS_RELEASE_HOST_POLICY, HttpsHostPolicy
 from core.component_lock import InterProcessComponentLock
 from core.file_io import atomic_write_text
 from core.jamulus_compatibility import (
@@ -31,7 +31,6 @@ from core.jamulus_compatibility import (
     JamulusCompatibilityError,
     JamulusCompatibilityRegistry,
 )
-
 
 CATALOG_SCHEMA = 1
 MAX_CATALOG_BYTES = 1_048_576
@@ -110,7 +109,7 @@ class CatalogPublicKey:
         return hashlib.sha256(self.raw_key).hexdigest()
 
     @classmethod
-    def from_base64(cls, key_id: str, value: str) -> "CatalogPublicKey":
+    def from_base64(cls, key_id: str, value: str) -> CatalogPublicKey:
         if not isinstance(value, str):
             raise ComponentCatalogError("catalog public key must be base64")
         try:
@@ -132,7 +131,7 @@ class CatalogKeyring:
         self._keys = MappingProxyType(mapping)
 
     @classmethod
-    def embedded(cls) -> "CatalogKeyring":
+    def embedded(cls) -> CatalogKeyring:
         return cls(
             tuple(
                 CatalogPublicKey.from_base64(key_id, encoded)
@@ -517,6 +516,7 @@ def _strict_json_loads(raw: bytes, *, maximum: int) -> object:
 
 __all__ = [
     "CATALOG_SCHEMA",
+    "EMBEDDED_CATALOG_PUBLIC_KEYS_BASE64",
     "CatalogKeyring",
     "CatalogPublicKey",
     "CatalogSequenceStore",
@@ -526,7 +526,6 @@ __all__ = [
     "ComponentCatalogRollback",
     "ComponentCatalogSignatureError",
     "ComponentCatalogVerifier",
-    "EMBEDDED_CATALOG_PUBLIC_KEYS_BASE64",
     "VerifiedComponentCatalog",
     "canonical_payload_bytes",
 ]

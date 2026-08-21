@@ -8,7 +8,8 @@ This object bridges the gap via a queued signal.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from PySide6.QtCore import QObject, Qt, Signal, Slot
 
@@ -43,7 +44,7 @@ class UiThreadInvoker(QObject):
     def _run_on_main(self, callable_: Callable[[], Any]) -> None:
         try:
             callable_()
-        except Exception:  # noqa: BLE001
+        except Exception:
             # A misbehaving UI callback should not crash the app.
             import logging
             logging.getLogger("webjam.ui_thread").exception("UI callback failed")

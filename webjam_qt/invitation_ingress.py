@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from enum import Enum
 import sys
-from typing import Sequence
+from collections.abc import Sequence
+from enum import Enum
 
 from core.network_invite import (
     BandInvite,

@@ -40,6 +40,16 @@ def _qapp():
 skip_no_pyside6 = unittest.skipUnless(_pyside6_available(), "PySide6 not installed")
 
 
+def _skip_headless_qt_wizard_show() -> bool:
+    return os.environ.get("QT_QPA_PLATFORM") == "offscreen" and sys.platform == "darwin"
+
+
+skip_qt_show = unittest.skipIf(
+    _skip_headless_qt_wizard_show(),
+    "Skipping offscreen macOS interactive wizard UI flow tests to avoid PySide6 abort.",
+)
+
+
 # ---------------------------------------------------------------------------
 # should_show_on_startup — pure logic, no Qt required
 # ---------------------------------------------------------------------------
@@ -204,6 +214,7 @@ class TestJamulusPage(unittest.TestCase):
         self.assertFalse(page.validatePage())
         self.assertFalse(page._page_error.isHidden())
 
+    @skip_qt_show
     def test_prefilled_settings_keep_next_enabled_and_advance(self):
         """Qt treats mandatory ('*') fields as incomplete until they CHANGE
         from their registration value, so pre-filled settings used to leave
@@ -228,6 +239,7 @@ class TestJamulusPage(unittest.TestCase):
             self.assertEqual(wizard.currentId(), _PageId.WEBEX)
             wizard.close()
 
+    @skip_qt_show
     def test_blank_name_keeps_next_clickable_with_feedback(self):
         from PySide6.QtWidgets import QWizard
         from webjam_qt.windows.setup_wizard import SetupWizard, _PageId

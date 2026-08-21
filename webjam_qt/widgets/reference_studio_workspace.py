@@ -8,8 +8,8 @@ the full menu and keyboard surface without opening devices or mutating a song.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import sys
+from dataclasses import dataclass
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction, QKeySequence
@@ -928,16 +928,16 @@ class ReferenceStudioWorkspace(QWidget):
             control.setVisible(not compact)
         self.splitter.setSizes([150, 610, 0] if compact else [190, 760, 230])
 
-    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self.set_compact(self.width() < 1_080)
 
-    def dragEnterEvent(self, event) -> None:  # noqa: N802 - Qt API
+    def dragEnterEvent(self, event) -> None:
         urls = event.mimeData().urls()
         if urls and all(item.isLocalFile() for item in urls):
             event.acceptProposedAction()
 
-    def dropEvent(self, event) -> None:  # noqa: N802 - Qt API
+    def dropEvent(self, event) -> None:
         urls = event.mimeData().urls()
         if urls and all(item.isLocalFile() for item in urls):
             self.files_dropped.emit(tuple(item.toLocalFile() for item in urls))

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import uuid
 
-
 _LOGICAL_SOURCE_NAMESPACE = uuid.UUID("0c85a31b-4c6e-5faa-90e2-68aff7bedef5")
 _SOURCE_KINDS = {"jamulus_server", "local_original", "shared_track"}
 

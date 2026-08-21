@@ -20,9 +20,10 @@ Wiring to services happens in ApplicationController.
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+import itertools
+from collections.abc import Callable
 
-from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import (
     QCloseEvent,
     QDragEnterEvent,
@@ -37,8 +38,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
-    QStackedWidget,
     QSplitter,
+    QStackedWidget,
     QStatusBar,
     QVBoxLayout,
     QWidget,
@@ -53,13 +54,13 @@ from webjam_qt.theme import Color
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets import (
     ParticipantGrid,
+    RecordingStudio,
+    ReferenceStudioShell,
     SessionCanvas,
+    SessionHud,
     SessionStrip,
     SideRail,
     WebexEmbed,
-    RecordingStudio,
-    ReferenceStudioShell,
-    SessionHud,
 )
 
 
@@ -83,7 +84,7 @@ class ConductorWindow(QMainWindow):
         initial_mode_key: str,
         initial_title: str,
         operator_mode: bool = False,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         from webjam_qt import __version__
@@ -97,13 +98,13 @@ class ConductorWindow(QMainWindow):
         # display. Child layouts own adaptation below the generous default.
         self.setMinimumSize(720, 560)
         # Controller-injected veto (e.g. "a recording is running — quit?").
-        self.confirm_close: Optional[Callable[[], bool]] = None
+        self.confirm_close: Callable[[], bool] | None = None
         # A second synchronous gate owns teardown that can still fail after
         # the musician confirms closing (for example, an unsaved Studio
         # document or an unproved Reference Track process stop).  A Qt signal
         # cannot return that result, so closeEvent must call this callback
         # directly before accepting the native close.
-        self.finalize_close: Optional[Callable[[], bool]] = None
+        self.finalize_close: Callable[[], bool] | None = None
         self.operator_mode = bool(operator_mode)
         self._reference_studio_only = False
 
@@ -417,7 +418,7 @@ class ConductorWindow(QMainWindow):
                 strip._audio_button,
             ]
         )
-        for current, following in zip(order, order[1:]):
+        for current, following in itertools.pairwise(order):
             QWidget.setTabOrder(current, following)
         QWidget.setTabOrder(order[-1], order[0])
 
@@ -454,6 +455,7 @@ class ConductorWindow(QMainWindow):
         import sys
 
         from PySide6.QtWidgets import QMessageBox
+
         from webjam_qt import __version__
 
         if sys.platform == "darwin":
@@ -812,7 +814,7 @@ class ConductorWindow(QMainWindow):
             if not self._status_recording.isVisible():
                 self._status_bar.setVisible(False)
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
+    def resizeEvent(self, event) -> None:
         """Keep every bottom-bar action readable on compact live windows."""
 
         super().resizeEvent(event)
@@ -822,18 +824,18 @@ class ConductorWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Qt overrides
     # ------------------------------------------------------------------
-    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         """Let a host drop one Shared Track anywhere on the live window."""
 
         self.session_strip.dragEnterEvent(event)
 
-    def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # noqa: N802
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
         self.session_strip.dragMoveEvent(event)
 
-    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
+    def dropEvent(self, event: QDropEvent) -> None:
         self.session_strip.dropEvent(event)
 
-    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+    def closeEvent(self, event: QCloseEvent) -> None:
         if self.confirm_close is not None and not self.confirm_close():
             event.ignore()
             return

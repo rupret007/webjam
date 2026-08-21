@@ -8,8 +8,6 @@ on :attr:`start_requested`.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from PySide6 import QtGui
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAccessible, QAccessibleEvent, QShowEvent
@@ -45,7 +43,7 @@ def _plain_label(text: str, object_name: str = "") -> QLabel:
 class _ReadinessSummaryCard(QFrame):
     """One path-free storage or Shared Track status card."""
 
-    def __init__(self, title: str, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, title: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("RecordingReadinessSummaryCard")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
@@ -89,7 +87,7 @@ class RecordingReadinessSourceRow(QFrame):
     def __init__(
         self,
         source: RecordingReadinessSource,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ) -> None:
         if not isinstance(source, RecordingReadinessSource):
             raise TypeError("source must be a RecordingReadinessSource")
@@ -204,7 +202,7 @@ class RecordingReadinessDialog(QDialog):
     def __init__(
         self,
         presentation: RecordingReadinessPresentation,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ) -> None:
         if not isinstance(presentation, RecordingReadinessPresentation):
             raise TypeError("presentation must be a RecordingReadinessPresentation")
@@ -371,16 +369,14 @@ class RecordingReadinessDialog(QDialog):
             " ".join(blockers) if blockers else "No recording blockers."
         )
         self._summary.setText(
-            (
+            f"{presentation.profile_label} · {presentation.ready_source_count} "
+            f"of {len(presentation.sources)} exact sources ready · "
+            "Start Recording is available."
+            if presentation.can_start
+            else (
                 f"{presentation.profile_label} · {presentation.ready_source_count} "
                 f"of {len(presentation.sources)} exact sources ready · "
-                "Start Recording is available."
-                if presentation.can_start
-                else (
-                    f"{presentation.profile_label} · {presentation.ready_source_count} "
-                    f"of {len(presentation.sources)} exact sources ready · "
-                    f"{len(blockers)} item(s) need attention."
-                )
+                f"{len(blockers)} item(s) need attention."
             )
         )
         self._summary.setAccessibleDescription(presentation.accessible_description)
@@ -388,14 +384,12 @@ class RecordingReadinessDialog(QDialog):
         self._start_button.setEnabled(presentation.can_start)
         self._start_button.setDefault(presentation.can_start)
         self._start_button.setAccessibleDescription(
-            (
-                "Start this exact Record Session snapshot. WebJam will recheck "
-                "private recorder authority before arming."
-                if presentation.can_start
-                else (
-                    f"Unavailable until {len(blockers)} recording readiness "
-                    "item(s) are resolved."
-                )
+            "Start this exact Record Session snapshot. WebJam will recheck "
+            "private recorder authority before arming."
+            if presentation.can_start
+            else (
+                f"Unavailable until {len(blockers)} recording readiness "
+                "item(s) are resolved."
             )
         )
         if announce and self.isVisible():
@@ -431,7 +425,7 @@ class RecordingReadinessDialog(QDialog):
 
         self._request_start()
 
-    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
+    def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
         if self._presentation.can_start:
             self._start_button.setFocus(Qt.FocusReason.OtherFocusReason)

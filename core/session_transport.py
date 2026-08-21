@@ -8,13 +8,12 @@ credentials, candidates, or protocol internals.
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, replace
-from enum import Enum
 import math
 import time
-from typing import Callable, Iterable
-
+from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, replace
+from enum import Enum
 
 MAX_CONNECTION_TIMELINE = 64
 MAX_EVIDENCE_SAMPLES = 64

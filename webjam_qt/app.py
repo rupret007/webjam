@@ -17,7 +17,6 @@ from core.logging_config import configure_logging
 from core.network_invite import BandInvite
 from core.settings import load_settings
 from webjam_qt.controllers.application_controller import ApplicationController
-from webjam_qt.theme import load_stylesheet, make_brand_icon
 from webjam_qt.invitation_ingress import (
     Invitation,
     InvitationIngressError,
@@ -25,9 +24,9 @@ from webjam_qt.invitation_ingress import (
     invitation_from_arguments,
     parse_invitation_at_ingress,
 )
+from webjam_qt.theme import load_stylesheet, make_brand_icon
 from webjam_qt.windows.conductor_window import ConductorWindow
 from webjam_qt.windows.launch_dialog import LaunchDialog, apply_host_defaults
-
 
 TEST_NIGHT_ARGUMENT = "--test-night"
 
@@ -78,7 +77,7 @@ class WebJamApplication(QApplication):
         self._pending_invitation_error = ""
         super().__init__(arguments)
 
-    def event(self, event) -> bool:  # noqa: A003
+    def event(self, event) -> bool:
         if event.type() == QEvent.Type.FileOpen:
             try:
                 url = event.url().toString()
@@ -201,7 +200,7 @@ def _report_unhandled_exception(exception_type, exception, traceback) -> None:
             "Your current session could not continue safely. Close WebJam, "
             "then open it again.",
         )
-    except Exception:  # noqa: BLE001 - the process log is the final fallback
+    except Exception:
         logging.getLogger("webjam.qt").exception(
             "WebJam could not show the runtime failure screen"
         )
@@ -485,7 +484,7 @@ def run() -> int:
                 os.environ.get("WEBJAM_SMOKE_REFERENCE_STUDIO_RESULT", "")
             )
             return run_frozen_reference_studio_smoke(result_path=result_path)
-        except Exception:  # noqa: BLE001 - bounded CI-only frozen proof
+        except Exception:
             logging.getLogger("webjam.qt").exception(
                 "Frozen Reference Studio runtime smoke failed"
             )
@@ -501,14 +500,14 @@ def run() -> int:
 
             result_path = Path(os.environ.get("WEBJAM_SMOKE_POCKET_STAGE_RESULT", ""))
             return run_frozen_pocket_stage_smoke(result_path=result_path)
-        except Exception:  # noqa: BLE001 - bounded CI-only frozen proof
+        except Exception:
             logging.getLogger("webjam.qt").exception(
                 "Frozen Pocket Stage runtime smoke failed"
             )
             return 1
     try:
         return _run_app()
-    except Exception:  # noqa: BLE001 - this is the process-level safety net
+    except Exception:
         logging.getLogger("webjam.qt").exception("WebJam failed during startup")
         try:
             app = QApplication.instance()
@@ -521,7 +520,7 @@ def run() -> int:
                 "Quit WebJam and open it again. If this keeps happening, "
                 "reinstall the latest WebJam build.",
             )
-        except Exception:  # noqa: BLE001 - logging is the only fallback left
+        except Exception:
             logging.getLogger("webjam.qt").exception(
                 "WebJam could not show the startup failure screen"
             )

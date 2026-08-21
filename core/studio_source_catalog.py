@@ -19,10 +19,10 @@ import hashlib
 import json
 import os
 import stat
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Callable, Iterable, Mapping
 
 from core.take_project import (
     PROJECT_SCHEMA_VERSION,
@@ -31,7 +31,6 @@ from core.take_project import (
     TakeProject,
     TakeProjectError,
 )
-
 
 MAX_STUDIO_SOURCE_TAKES = 128
 MAX_STUDIO_SOURCE_MANIFEST_BYTES = 16 * 1024 * 1024
@@ -322,10 +321,10 @@ class StudioSourceCatalog:
 
     __slots__ = (
         "_primary_take_id",
-        "_session_id",
         "_project_sample_rate",
-        "_takes",
+        "_session_id",
         "_sources",
+        "_takes",
     )
 
     def __init__(
@@ -355,7 +354,7 @@ class StudioSourceCatalog:
         primary_take_root: str | Path,
         *,
         additional_take_roots: Iterable[str | Path] = (),
-    ) -> "StudioSourceCatalog":
+    ) -> StudioSourceCatalog:
         """Load exact schema-v2 manifests for a primary and alternate takes."""
 
         if not isinstance(primary_project, TakeProject):

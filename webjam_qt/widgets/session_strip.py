@@ -14,8 +14,6 @@ Emits semantic signals; ApplicationController wires them to services.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from PySide6.QtCore import QTime, QTimer, Signal
 from PySide6.QtGui import QAction, QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtWidgets import (
@@ -24,12 +22,12 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QPushButton,
     QMenu,
+    QPushButton,
     QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
-    QToolButton,
 )
 
 from core.creative_modes import CreatorProfile
@@ -68,7 +66,7 @@ class SessionStrip(QFrame):
         initial_mode_key: str = "",
         initial_title: str = "Untitled Session",
         operator_mode: bool = False,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("SessionStrip")
@@ -1200,7 +1198,7 @@ class SessionStrip(QFrame):
             else ""
         )
 
-    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if (
             self._shared_track_host
             and self._shared_track_source_change_allowed
@@ -1210,10 +1208,10 @@ class SessionStrip(QFrame):
         else:
             event.ignore()
 
-    def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # noqa: N802
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
         self.dragEnterEvent(event)
 
-    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
+    def dropEvent(self, event: QDropEvent) -> None:
         path = self._dropped_shared_track_path(event.mimeData())
         if (
             not self._shared_track_host

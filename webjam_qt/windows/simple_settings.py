@@ -9,9 +9,9 @@ at the moment those features are used.
 
 from __future__ import annotations
 
-from copy import deepcopy
 import logging
-from typing import Callable, Optional
+from collections.abc import Callable
+from copy import deepcopy
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAccessible, QAccessibleEvent
@@ -29,7 +29,6 @@ from PySide6.QtWidgets import (
 )
 
 from core.jamulus_name import JamulusNameError, validate_jamulus_name
-from core.settings import AppSettings, save_settings
 from core.meeting_link import (
     GENERIC_MEETING_SERVICE_KEY,
     identify_meeting_service,
@@ -38,10 +37,10 @@ from core.meeting_link import (
     meeting_service_label,
     normalize_meeting_url,
 )
+from core.settings import AppSettings, save_settings
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
 from webjam_qt.windows.launch_dialog import default_musician_name
-
 
 LOGGER = logging.getLogger("webjam.qt.simple_settings")
 
@@ -55,12 +54,12 @@ class SimpleSettingsDialog(QDialog):
     def __init__(
         self,
         settings: AppSettings,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         *,
         primary_action_label: str = "Save",
         show_band_check_action: bool = True,
-        webex_opener: Optional[Callable[[str], bool]] = None,
-        settings_provider: Optional[Callable[[], AppSettings]] = None,
+        webex_opener: Callable[[str], bool] | None = None,
+        settings_provider: Callable[[], AppSettings] | None = None,
     ) -> None:
         super().__init__(parent)
         # Keep edits isolated until the settings file is saved successfully.
@@ -337,7 +336,7 @@ class SimpleSettingsDialog(QDialog):
         self._announce(self._webex_status)
 
     @staticmethod
-    def _announce(label: QLabel, *, focus: Optional[QWidget] = None) -> None:
+    def _announce(label: QLabel, *, focus: QWidget | None = None) -> None:
         """Expose dynamic validation/results to assistive technology."""
 
         label.setAccessibleDescription(label.text())
@@ -354,7 +353,7 @@ class SimpleSettingsDialog(QDialog):
         self,
         message: str,
         *,
-        focus: Optional[QWidget] = None,
+        focus: QWidget | None = None,
     ) -> None:
         self._error.setText(message)
         self._error.setVisible(True)

@@ -27,21 +27,31 @@ separately gated and does not count as longevity certification::
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import shutil
 import sys
 import time
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 
 from tests.support.jamulus_jack_harness import (
     CAPTURE_TAIL_S,
     FIXTURE_DURATION_S,
-    ProcessResourceSample,
+    SAMPLE_RATE,
+    SPEC_A,
+    SPEC_B,
     JamulusJackHarness,
+    ProcessResourceSample,
+    analyze_recorded_stem,
+    assert_recorded_stem_metrics,
+    make_fixture,
 )
 
 MIN_SOAK_SECONDS = 60.0 * 60.0
@@ -55,6 +65,8 @@ DEFAULT_MAX_FD_GROWTH = 8
 DEFAULT_MAX_XRUNS_PER_SECOND = 10.0
 RECORDING_CYCLE_FRACTIONS = (0.10, 0.40, 0.70)
 RECONNECT_FRACTION = 0.33
+MAX_RECORDING_PAIR_DRIFT_S = 0.25
+MAX_RECORDING_CLICK_ALIGNMENT_ERROR_S = 0.075
 
 
 def _positive_float(name: str, default: float) -> float:
@@ -152,6 +164,245 @@ def _new_signal_summary() -> dict[str, Any]:
         "client_a": process.copy(),
         "client_b": process.copy(),
     }
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _recording_evidence(
+    recordings_path: Path,
+    artifacts: tuple[Path, ...],
+    *,
+    client_a_name: str,
+    client_b_name: str,
+    expected_take_count: int,
+    expected_duration_s: float,
+) -> dict[str, Any]:
+    """Inspect every finalized stem and return independently auditable evidence."""
+    wav_artifacts = tuple(
+        path for path in artifacts if path.suffix.lower() == ".wav"
+    )
+    expected_names = (client_a_name, client_b_name)
+    specs = {client_a_name: SPEC_A, client_b_name: SPEC_B}
+    forbidden_frequencies = {
+        client_a_name: SPEC_B.frequency_hz,
+        client_b_name: SPEC_A.frequency_hz,
+    }
+    grouped: dict[str, list[Path]] = {}
+    for path in wav_artifacts:
+        relative = path.relative_to(recordings_path)
+        if len(relative.parts) != 2:
+            raise AssertionError(
+                f"recording stem is outside a single take directory: {relative}"
+            )
+        grouped.setdefault(relative.parent.as_posix(), []).append(path)
+
+    assert len(grouped) == expected_take_count, (
+        f"recorder produced {len(grouped)} takes; expected {expected_take_count}"
+    )
+    assert len(wav_artifacts) == expected_take_count * len(expected_names), (
+        f"recorder produced {len(wav_artifacts)} WAV stems; expected "
+        f"{expected_take_count * len(expected_names)}"
+    )
+
+    duration_bounds_s = (
+        max(0.1, expected_duration_s - 1.5),
+        expected_duration_s + 3.0,
+    )
+    max_pair_drift_frames = round(MAX_RECORDING_PAIR_DRIFT_S * SAMPLE_RATE)
+    take_evidence: list[dict[str, Any]] = []
+    observed_pair_drifts: list[int] = []
+    observed_alignment_errors: list[float] = []
+
+    for take_name in sorted(grouped):
+        paths_by_owner: dict[str, Path] = {}
+        for path in grouped[take_name]:
+            owners = [
+                name for name in expected_names if path.name.startswith(f"{name}-")
+            ]
+            assert len(owners) == 1, (
+                f"cannot prove one client owner for recorder stem {path.name}"
+            )
+            owner = owners[0]
+            assert owner not in paths_by_owner, (
+                f"take {take_name} contains duplicate stems for {owner}"
+            )
+            paths_by_owner[owner] = path
+        assert set(paths_by_owner) == set(expected_names), (
+            f"take {take_name} does not contain exactly {sorted(expected_names)}"
+        )
+
+        metrics_by_owner = {}
+        stems: list[dict[str, Any]] = []
+        for owner in expected_names:
+            path = paths_by_owner[owner]
+            expected = specs[owner]
+            metrics = analyze_recorded_stem(
+                path,
+                expected=expected,
+                forbidden_frequency_hz=forbidden_frequencies[owner],
+            )
+            assert_recorded_stem_metrics(
+                metrics,
+                expected=expected,
+                duration_bounds_s=duration_bounds_s,
+            )
+            metrics_by_owner[owner] = metrics
+            stems.append(
+                {
+                    "relative_path": path.relative_to(recordings_path).as_posix(),
+                    "owner": owner,
+                    "sha256": _sha256(path),
+                    "bytes": path.stat().st_size,
+                    "sample_rate": metrics.sample_rate,
+                    "frames": metrics.frames,
+                    "channels": metrics.channels,
+                    "duration_s": round(metrics.duration_s, 6),
+                    "click_frame": metrics.click_frame,
+                    "click_s": round(metrics.click_frame / metrics.sample_rate, 6),
+                    "expected_frequency_hz": expected.frequency_hz,
+                    "dominant_frequency_hz": round(metrics.dominant_hz, 6),
+                    "tone_rms": round(metrics.tone_rms, 8),
+                    "silence_rms": round(metrics.silence_rms, 8),
+                    "peak": round(metrics.peak, 8),
+                    "cross_rejection_db": round(metrics.cross_rejection_db, 6),
+                }
+            )
+
+        metrics_a = metrics_by_owner[client_a_name]
+        metrics_b = metrics_by_owner[client_b_name]
+        pair_drift_frames = abs(metrics_a.frames - metrics_b.frames)
+        assert pair_drift_frames <= max_pair_drift_frames, (
+            f"take {take_name} client duration drift is {pair_drift_frames} frames; "
+            f"limit is {max_pair_drift_frames}"
+        )
+        observed_click_offset_s = (
+            metrics_b.click_frame / metrics_b.sample_rate
+            - metrics_a.click_frame / metrics_a.sample_rate
+        )
+        expected_click_offset_s = SPEC_B.click_s - SPEC_A.click_s
+        click_alignment_error_s = abs(
+            observed_click_offset_s - expected_click_offset_s
+        )
+        assert click_alignment_error_s <= MAX_RECORDING_CLICK_ALIGNMENT_ERROR_S, (
+            f"take {take_name} click alignment error is "
+            f"{click_alignment_error_s:.6f}s; limit is "
+            f"{MAX_RECORDING_CLICK_ALIGNMENT_ERROR_S:.6f}s"
+        )
+        observed_pair_drifts.append(pair_drift_frames)
+        observed_alignment_errors.append(click_alignment_error_s)
+        take_evidence.append(
+            {
+                "take": take_name,
+                "pair_frame_drift": pair_drift_frames,
+                "pair_duration_drift_s": round(
+                    pair_drift_frames / SAMPLE_RATE, 6
+                ),
+                "observed_click_offset_s": round(observed_click_offset_s, 6),
+                "expected_click_offset_s": expected_click_offset_s,
+                "click_alignment_error_s": round(click_alignment_error_s, 6),
+                "stems": stems,
+            }
+        )
+
+    return {
+        "file_count": len(artifacts),
+        "wav_file_count": len(wav_artifacts),
+        "take_count": len(grouped),
+        "total_bytes": sum(path.stat().st_size for path in artifacts),
+        "paths": [
+            path.relative_to(recordings_path).as_posix() for path in artifacts
+        ],
+        "duration_bounds_s": {
+            "minimum": duration_bounds_s[0],
+            "maximum": duration_bounds_s[1],
+        },
+        "max_pair_frame_drift_limit": max_pair_drift_frames,
+        "max_observed_pair_frame_drift": max(observed_pair_drifts, default=0),
+        "max_click_alignment_error_limit_s": (
+            MAX_RECORDING_CLICK_ALIGNMENT_ERROR_S
+        ),
+        "max_observed_click_alignment_error_s": round(
+            max(observed_alignment_errors, default=0.0), 6
+        ),
+        "ownership_proof": (
+            "exact recorder client-name prefix plus client-specific click/tone "
+            "frequency and forbidden-frequency rejection"
+        ),
+        "takes": take_evidence,
+    }
+
+
+def _preserve_wav_evidence(
+    recordings_path: Path,
+    artifacts: tuple[Path, ...],
+) -> str | None:
+    raw_target = os.environ.get("WEBJAM_JACK_AUDIO_SOAK_RECORDINGS", "").strip()
+    if not raw_target:
+        return None
+    target = Path(raw_target)
+    for path in artifacts:
+        if path.suffix.lower() != ".wav":
+            continue
+        destination = target / path.relative_to(recordings_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, destination)
+    return target.as_posix()
+
+
+def _write_test_recording_pair(
+    root: Path,
+    *,
+    swap_owner_content: bool = False,
+) -> tuple[Path, ...]:
+    import soundfile as sf  # type: ignore
+
+    take = root / "Jam-deterministic"
+    take.mkdir(parents=True)
+    specs = (SPEC_B, SPEC_A) if swap_owner_content else (SPEC_A, SPEC_B)
+    for owner, spec in zip(("WebJamCertA", "WebJamCertB"), specs, strict=True):
+        mono = make_fixture(spec, duration_s=FIXTURE_DURATION_S + CAPTURE_TAIL_S)
+        stereo = np.column_stack((mono, mono))
+        sf.write(take / f"{owner}-127_0_0_1_10000-0-2.wav", stereo, SAMPLE_RATE)
+    return tuple(sorted(root.rglob("*")))
+
+
+def test_recording_evidence_proves_owned_synchronized_stems(tmp_path: Path) -> None:
+    artifacts = _write_test_recording_pair(tmp_path)
+    evidence = _recording_evidence(
+        tmp_path,
+        artifacts,
+        client_a_name="WebJamCertA",
+        client_b_name="WebJamCertB",
+        expected_take_count=1,
+        expected_duration_s=FIXTURE_DURATION_S + CAPTURE_TAIL_S,
+    )
+
+    assert evidence["take_count"] == 1
+    assert evidence["wav_file_count"] == 2
+    assert evidence["max_observed_pair_frame_drift"] == 0
+    stems = evidence["takes"][0]["stems"]
+    assert {stem["owner"] for stem in stems} == {"WebJamCertA", "WebJamCertB"}
+    assert all(len(stem["sha256"]) == 64 for stem in stems)
+
+
+def test_recording_evidence_rejects_swapped_owner_content(tmp_path: Path) -> None:
+    artifacts = _write_test_recording_pair(tmp_path, swap_owner_content=True)
+
+    with pytest.raises(AssertionError, match="dominant"):
+        _recording_evidence(
+            tmp_path,
+            artifacts,
+            client_a_name="WebJamCertA",
+            client_b_name="WebJamCertB",
+            expected_take_count=1,
+            expected_duration_s=FIXTURE_DURATION_S + CAPTURE_TAIL_S,
+        )
 
 
 @pytest.mark.skipif(
@@ -324,7 +575,13 @@ def test_two_real_clients_survive_one_hour_transport_and_recovery() -> None:
     completed_recording_cycles = 0
     recording_restarts = 0
     report: dict[str, Any] = {
-        "schema": 1,
+        "schema": 2,
+        "started_at_utc": datetime.now(UTC).isoformat(timespec="seconds"),
+        "source": {
+            "github_sha": os.environ.get("GITHUB_SHA"),
+            "github_run_id": os.environ.get("GITHUB_RUN_ID"),
+            "github_run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+        },
         "requested_duration_s": requested_s,
         "segment_duration_s": segment_s,
         "capture_tail_s": tail_s,
@@ -332,6 +589,12 @@ def test_two_real_clients_survive_one_hour_transport_and_recovery() -> None:
         "max_fd_growth": max_fd_growth,
         "max_jack_xruns_per_wall_second": max_xruns_per_second,
         "success": False,
+    }
+    report["jamulus"] = {
+        "expected_version": harness.expected_version,
+        "server_binary": Path(harness.server_binary).name,
+        "client_binary": Path(harness.client_binary).name,
+        "client_names": list(harness.expected_client_names),
     }
     test_started = time.monotonic()
 
@@ -451,15 +714,23 @@ def test_two_real_clients_survive_one_hour_transport_and_recovery() -> None:
                 )
 
             artifacts = harness.recording_artifacts()
-            wav_artifacts = [path for path in artifacts if path.suffix.lower() == ".wav"]
-            report["recording_artifacts"] = {
-                "file_count": len(artifacts),
-                "wav_file_count": len(wav_artifacts),
-                "total_bytes": sum(path.stat().st_size for path in artifacts),
-                "paths": [
-                    str(path.relative_to(harness.recordings_path)) for path in artifacts
-                ],
-            }
+            expected_take_count = completed_recording_cycles + recording_restarts
+            report["recording_artifacts"] = _recording_evidence(
+                harness.recordings_path,
+                artifacts,
+                client_a_name=harness.CLIENT_A_NAME,
+                client_b_name=harness.CLIENT_B_NAME,
+                expected_take_count=expected_take_count,
+                expected_duration_s=segment_s + tail_s,
+            )
+            preserved_wavs = _preserve_wav_evidence(
+                harness.recordings_path,
+                artifacts,
+            )
+            if preserved_wavs is not None:
+                report["recording_artifacts"]["preserved_wav_directory"] = (
+                    preserved_wavs
+                )
             report["actual_soak_duration_s"] = actual_soak_s
             report["jack_xrun_rate_per_wall_second"] = round(xrun_rate, 6)
             report["resource_growth"] = growth
@@ -472,12 +743,6 @@ def test_two_real_clients_survive_one_hour_transport_and_recovery() -> None:
             assert reconnect_done and reconnect_event is not None
             assert completed_recording_cycles >= len(RECORDING_CYCLE_FRACTIONS)
             assert recording_restarts >= len(RECORDING_CYCLE_FRACTIONS)
-            assert len(wav_artifacts) >= completed_recording_cycles * 2, (
-                "real recorder did not produce at least one stem per client and cycle"
-            )
-            assert all(path.stat().st_size > 44 for path in wav_artifacts), (
-                "real recorder produced an empty WAV stem"
-            )
 
         # close() enforces zero live owned processes, zero occupied test ports,
         # and an unreachable private JACK server. Keep those exact thresholds
@@ -489,6 +754,7 @@ def test_two_real_clients_survive_one_hour_transport_and_recovery() -> None:
         report["error"] = f"{type(exc).__name__}: {exc}"
         raise
     finally:
+        report["completed_at_utc"] = datetime.now(UTC).isoformat(timespec="seconds")
         report["wall_duration_s"] = round(time.monotonic() - test_started, 3)
         report["signal_summary"] = signal_summary
         report["resource_samples"] = resource_payloads

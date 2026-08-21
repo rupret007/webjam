@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from core.studio_project import (
     STUDIO_PROJECT_SCHEMA_VERSION,
@@ -23,7 +23,6 @@ from core.studio_project import (
     StudioDocument,
     StudioProjectError,
 )
-
 
 DEFAULT_MAX_ENTRIES = 128
 DEFAULT_MAX_BYTES = 8 * 1024 * 1024

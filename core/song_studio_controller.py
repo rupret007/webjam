@@ -11,20 +11,10 @@ later call :meth:`SongStudioController.flush_autosave`.
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from core.song_project import SongProject
-from core.studio_history import (
-    DEFAULT_MAX_BYTES,
-    DEFAULT_MAX_ENTRIES,
-    StudioHistory,
-)
-from core.studio_project import (
-    STUDIO_SONG_PROJECT_SCHEMA_VERSION,
-    StudioDocument,
-    StudioProjectError,
-)
 from core.song_studio_store import (
     SongStudioConflict,
     SongStudioLoadResult,
@@ -36,7 +26,16 @@ from core.song_studio_store import (
     save_song_studio_document,
     write_song_studio_autosave,
 )
-
+from core.studio_history import (
+    DEFAULT_MAX_BYTES,
+    DEFAULT_MAX_ENTRIES,
+    StudioHistory,
+)
+from core.studio_project import (
+    STUDIO_SONG_PROJECT_SCHEMA_VERSION,
+    StudioDocument,
+    StudioProjectError,
+)
 
 SongStudioEdit = Callable[[StudioDocument], StudioDocument]
 SongStudioAutosaveRequest = Callable[[int], None]

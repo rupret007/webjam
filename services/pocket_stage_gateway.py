@@ -47,7 +47,6 @@ from services.pocket_stage_tls import (
     validate_gateway_host,
 )
 
-
 LOGGER = logging.getLogger("webjam.pocket_stage.gateway")
 _DEFAULT_SCOPES = (
     PairingScope.OBSERVE,
@@ -205,8 +204,8 @@ class PocketStageGateway:
         identity: PocketStageTlsIdentity | None = None
         try:
             try:
-                from fastapi import FastAPI
                 import uvicorn
+                from fastapi import FastAPI
             except ImportError as exc:
                 raise PocketStageGatewayError(
                     "This WebJam build is missing its secure iPhone gateway."

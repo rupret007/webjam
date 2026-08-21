@@ -7,8 +7,6 @@ otherwise quiet launch surface a musical cue.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
@@ -20,7 +18,7 @@ from webjam_qt.theme.tokens import Color
 class JamSignalGraphic(QWidget):
     """Scalable, static launch artwork based on the WebJam trinity mark."""
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("JamSignalGraphic")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -32,10 +30,10 @@ class JamSignalGraphic(QWidget):
         )
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
-    def sizeHint(self) -> QSize:  # noqa: N802
+    def sizeHint(self) -> QSize:
         return QSize(320, 144)
 
-    def minimumSizeHint(self) -> QSize:  # noqa: N802
+    def minimumSizeHint(self) -> QSize:
         return QSize(220, 104)
 
     def _draw_signal_line(self, painter: QPainter, bounds: QRectF) -> None:
@@ -61,7 +59,7 @@ class JamSignalGraphic(QWidget):
                     QPointF(x, center.y() + half_height),
                 )
 
-    def paintEvent(self, _event) -> None:  # noqa: N802
+    def paintEvent(self, _event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         bounds = QRectF(self.rect()).adjusted(12.0, 6.0, -12.0, -6.0)

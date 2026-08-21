@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import errno
 import os
-from pathlib import Path
 import stat
 import time
-
+from pathlib import Path
 
 class ComponentLockError(RuntimeError):
     pass
@@ -133,8 +132,8 @@ class InterProcessComponentLock:
 
 
 __all__ = [
+    "RUNTIME_ACTIVE_LOCK_NAME",
     "ComponentLockError",
     "ComponentLockTimeout",
     "InterProcessComponentLock",
-    "RUNTIME_ACTIVE_LOCK_NAME",
 ]

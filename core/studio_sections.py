@@ -12,9 +12,10 @@ for a single history command.
 
 from __future__ import annotations
 
+import itertools
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, replace
-from typing import Callable
 
 from core.studio_project import (
     MAX_PROJECT_FRAMES,
@@ -27,7 +28,6 @@ from core.studio_project import (
     StudioProjectError,
     StudioRegion,
 )
-
 
 SplitIdFactory = Callable[[], str]
 
@@ -175,14 +175,14 @@ def _plan_region(
         region.source_boundary_for_timeline(frame) for frame in boundaries
     )
     if any(
-        right <= left for left, right in zip(source_boundaries, source_boundaries[1:])
+        right <= left for left, right in itertools.pairwise(source_boundaries)
     ):
         raise StudioSectionError(
             "A region cannot be split at an exact interior source-frame boundary."
         )
 
     fragments: list[_FragmentPlan] = []
-    for index, (start, end) in enumerate(zip(boundaries, boundaries[1:])):
+    for index, (start, end) in enumerate(itertools.pairwise(boundaries)):
         delta = permutation.interval_delta(start, end, "A region fragment")
         mapping_start = int(region.mapping_timeline_start_frame) + delta
         if not -MAX_PROJECT_FRAMES <= mapping_start <= MAX_PROJECT_FRAMES:

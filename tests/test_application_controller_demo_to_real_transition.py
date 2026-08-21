@@ -32,6 +32,11 @@ def _live_primary(pid: int) -> MagicMock:
 class TestDemoToRealTransition(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls._microphone_permission_patch = patch(
+            "webjam_qt.platform_permissions.microphone_permission_status",
+            return_value="authorized",
+        )
+        cls._microphone_permission_patch.start()
         cls.window = ConductorWindow(
             mode_entries=ApplicationController.mode_entries(),
             initial_mode_key="music_jam",
@@ -41,6 +46,7 @@ class TestDemoToRealTransition(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        cls._microphone_permission_patch.stop()
         cls.controller.shutdown()
 
     def setUp(self):

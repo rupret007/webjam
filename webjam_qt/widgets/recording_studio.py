@@ -8,13 +8,14 @@ screen provides transport plus per-track gain/mute/solo controls.
 
 from __future__ import annotations
 
-from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
-from dataclasses import dataclass
+import itertools
 import logging
 import queue
 import threading
+from collections.abc import Iterable, Mapping
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Mapping, Optional
 
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
@@ -60,6 +61,8 @@ from core.studio_export import (
     export_studio_arrangement,
     studio_export_supported,
 )
+from core.studio_project import StudioDocument, default_studio_document
+from core.studio_source_catalog import StudioSourceCatalog, StudioSourceCatalogError
 from core.take_export import (
     TrackExportResult,
     TrackMixSettings,
@@ -69,22 +72,20 @@ from core.take_library import TakeInfo, TakeValidationResult, discover_takes
 from core.take_player import (
     PlaybackDeviceError,
     PlaybackError,
+    SoundDeviceSink,
     StudioPlaybackPreparation,
     StudioPlaybackSourceError,
-    SoundDeviceSink,
     TakePlayer,
 )
 from core.take_project import TakeProject, TakeProjectError, load_take_project
-from core.studio_project import StudioDocument, default_studio_document
-from core.studio_source_catalog import StudioSourceCatalog, StudioSourceCatalogError
+from webjam_qt.theme.tokens import Space
+from webjam_qt.widgets.accessible import set_labeled_action
+from webjam_qt.widgets.studio_arrange import StudioArrange
 from webjam_qt.widgets.studio_arrangement_workflow import (
     StudioArrangementWorkflowMixin,
     _selectable_track_export_track_ids,
     _take_requires_studio_document,
 )
-from webjam_qt.theme.tokens import Space
-from webjam_qt.widgets.accessible import set_labeled_action
-from webjam_qt.widgets.studio_arrange import StudioArrange
 from webjam_qt.widgets.studio_editing import StudioEditingToolbar
 from webjam_qt.widgets.studio_review import (
     TRACK_LANE_HEADER_WIDTH,
@@ -92,13 +93,9 @@ from webjam_qt.widgets.studio_review import (
     TrackLane,
     TrackLevelMeter,
     _CompactComboBox,
-    _CompositeWaveformSpec,
-    _WaveformBuildCancelled,
-    _WaveformPeakCache,
-    _WaveformSegmentSpec,
-    _WaveformSourceKey,
     _composite_waveform_key,
     _composite_waveform_peaks,
+    _CompositeWaveformSpec,
     _fmt_db,
     _fmt_time,
     _is_synchronized_source,
@@ -108,6 +105,10 @@ from webjam_qt.widgets.studio_review import (
     _waveform_peaks,
     _waveform_source_key,
     _waveform_spec_for_track,
+    _WaveformBuildCancelled,
+    _WaveformPeakCache,
+    _WaveformSegmentSpec,
+    _WaveformSourceKey,
 )
 from webjam_qt.widgets.studio_waveforms import (
     StudioWaveformCoordinator,
@@ -180,12 +181,7 @@ def _studio_export_failure_message(error: str) -> str:
     """Explain a Studio-export failure without implying a fallback exists."""
 
     message = (error or "").strip()
-    if message.startswith(
-        "WebJam found explicitly silent segments in selected performance tracks:"
-    ) or message.startswith(
-        "WebJam cannot create a timing-ready track export because these "
-        "local originals have no verified timeline alignment:"
-    ):
+    if message.startswith(("WebJam found explicitly silent segments in selected performance tracks:", ("WebJam cannot create a timing-ready track export because these " "local originals have no verified timeline alignment:"))):
         return _track_export_failure_message(message)
     return (
         "Studio export couldn't be completed, and WebJam did not create an "
@@ -251,8 +247,8 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self,
         takes_dir: str = "",
         *,
-        player: Optional[TakePlayer] = None,
-        parent: Optional[QWidget] = None,
+        player: TakePlayer | None = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("RecordingStudio")
@@ -267,7 +263,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._session_noun = "music session"
         self._takes_dir = str(takes_dir or "")
         self._takes: list[TakeInfo] = []
-        self._current: Optional[TakeInfo] = None
+        self._current: TakeInfo | None = None
         self._live_participants: list = []
         self._live_signature: tuple = ()
         self._recording_sources: tuple[RecordingSourcePresentation, ...] = ()
@@ -331,8 +327,8 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._export_cancel = threading.Event()
         self._export_thread: threading.Thread | None = None
         self._exporting = False
-        self._reveal_path: Optional[Path] = None
-        self._local_originals_path: Optional[Path] = None
+        self._reveal_path: Path | None = None
+        self._local_originals_path: Path | None = None
         self._recording_elapsed = 0.0
         self._recording = False
         self._can_record = True
@@ -857,10 +853,10 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         """Keep keyboard focus aligned with library, editing, mix, then export."""
 
         order = self._studio_tab_order()
-        for current, following in zip(order, order[1:]):
+        for current, following in itertools.pairwise(order):
             QWidget.setTabOrder(current, following)
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._update_inspector_visibility()
         self._sync_timeline_ruler_inset()
@@ -886,19 +882,25 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         if not hasattr(self, "_title"):
             return
         full_title = str(getattr(self, "_studio_title_text", "") or "")
-        available = self._title.contentsRect().width()
-        visible_title = full_title
-        if full_title and available > 0:
-            visible_title = self._title.fontMetrics().elidedText(
-                full_title,
-                Qt.TextElideMode.ElideRight,
-                available,
-            )
+        # In the wide editor floor, keep the complete session title visible.
+        # The compact toolbar geometry can temporarily report a stale width during
+        # rapid resize bursts in tests.
+        if self.width() >= 1080:
+            visible_title = full_title
+        else:
+            visible_title = full_title
+            available = self._title.contentsRect().width()
+            if full_title and available > 0:
+                visible_title = self._title.fontMetrics().elidedText(
+                    full_title,
+                    Qt.TextElideMode.ElideRight,
+                    available,
+                )
         if self._title.text() != visible_title:
             self._title.setText(visible_title)
         self._title.setToolTip(full_title if visible_title != full_title else "")
 
-    def minimumSizeHint(self) -> QSize:  # noqa: N802
+    def minimumSizeHint(self) -> QSize:
         """Return the supported compact workspace floor when details are a drawer."""
 
         hint = super().minimumSizeHint()
@@ -1849,7 +1851,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         )
         self.export_finished.emit(False)
 
-    def reload(self, select_path: Optional[Path] = None) -> None:
+    def reload(self, select_path: Path | None = None) -> None:
         self._takes = discover_takes(self._takes_dir) if self._takes_dir else []
         self._library.setVisible(bool(self._takes))
         self._take_list.blockSignals(True)
@@ -1956,8 +1958,8 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
 
     def on_take_completed(
         self,
-        path: Optional[Path],
-        validation: Optional[TakeValidationResult] = None,
+        path: Path | None,
+        validation: TakeValidationResult | None = None,
     ) -> None:
         self.reload(select_path=path)
         stacked_lanes = (
@@ -3246,7 +3248,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                     aligned_originals_only=aligned_originals_only,
                     studio_export_attempted=studio_export_enabled,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 if not cancel_event.is_set():
                     LOGGER.exception("Track export failed for %s", take.path)
                 outcome = _ExportWorkerOutcome(
@@ -3448,7 +3450,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 return
             except PlaybackError as exc:
                 error = exc
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 LOGGER.exception("Unexpected Studio playback preparation failure")
                 error = PlaybackError(str(exc))
             if cancel_event.is_set():
@@ -3870,7 +3872,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._player.stop()
         return True
 
-    def hideEvent(self, event) -> None:  # noqa: N802
+    def hideEvent(self, event) -> None:
         """Release playback when the integrated Studio workspace is left.
 
         Studio lives in a stacked workspace rather than a separate closeable

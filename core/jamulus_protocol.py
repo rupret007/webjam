@@ -34,7 +34,6 @@ import socket
 import struct
 import threading
 import time
-from typing import Dict, List, Optional, Tuple
 
 _logger = logging.getLogger("webjam.jamulus_protocol")
 
@@ -89,7 +88,7 @@ def _build_packet(msg_id: int, count: int, data: bytes) -> bytes:
     return payload + struct.pack("<H", crc)
 
 
-def _parse_packet(raw: bytes) -> Optional[Tuple[int, int, bytes]]:
+def _parse_packet(raw: bytes) -> tuple[int, int, bytes] | None:
     """
     Parse a raw UDP datagram into ``(msg_id, count, data)``.
 
@@ -116,20 +115,19 @@ def _parse_packet(raw: bytes) -> Optional[Tuple[int, int, bytes]]:
 # ---------------------------------------------------------------------------
 # Payload parsers
 # ---------------------------------------------------------------------------
-def _parse_le_string(data: bytes, offset: int) -> Tuple[str, int]:
+def _parse_le_string(data: bytes, offset: int) -> tuple[str, int]:
     """Parse a Jamulus LE-prefixed UTF-8 string.  Returns (string, new_offset)."""
     if offset + 2 > len(data):
         return "", offset
     length = struct.unpack_from("<H", data, offset)[0]
     offset += 2
     end = offset + length
-    if end > len(data):
-        end = len(data)
+    end = min(end, len(data))
     text = data[offset:end].decode("utf-8", errors="replace")
     return text, end
 
 
-def _parse_conn_clients_list(data: bytes) -> Dict[int, str]:
+def _parse_conn_clients_list(data: bytes) -> dict[int, str]:
     """
     Parse CONN_CLIENTS_LIST payload.
 
@@ -141,7 +139,7 @@ def _parse_conn_clients_list(data: bytes) -> Dict[int, str]:
         string   name    (LE uint16 length + UTF-8 bytes)
         string   city    (LE uint16 length + UTF-8 bytes)
     """
-    clients: Dict[int, str] = {}
+    clients: dict[int, str] = {}
     offset = 0
     while offset + 9 <= len(data):
         try:
@@ -171,17 +169,17 @@ _MAX_UNKNOWN_MSG_IDS_REMEMBERED = 256
 
 
 def _map_level_list_to_channels(
-    index_levels: Dict[int, float], channel_order: list[int]
-) -> Dict[int, float]:
+    index_levels: dict[int, float], channel_order: list[int]
+) -> dict[int, float]:
     """Map CLT_CHANNEL_LEVEL_LIST indices to Jamulus channel IDs."""
-    mapped: Dict[int, float] = {}
+    mapped: dict[int, float] = {}
     for idx, level in index_levels.items():
         if idx < len(channel_order):
             mapped[channel_order[idx]] = level
     return mapped
 
 
-def _parse_level_list(data: bytes) -> Dict[int, float]:
+def _parse_level_list(data: bytes) -> dict[int, float]:
     """
     Parse CLT_CHANNEL_LEVEL_LIST payload.
 
@@ -191,7 +189,7 @@ def _parse_level_list(data: bytes) -> Dict[int, float]:
     Bounded to ``_MAX_LEVEL_LIST_ENTRIES`` to prevent memory exhaustion from
     malformed/hostile packets.
     """
-    levels: Dict[int, float] = {}
+    levels: dict[int, float] = {}
     count = min(len(data) // 2, _MAX_LEVEL_LIST_ENTRIES)
     for i in range(count):
         raw = struct.unpack_from("<H", data, i * 2)[0]
@@ -225,8 +223,8 @@ class JamulusProtocolAdapter:
         timeout: float = 1.0,
         enabled: bool = False,
         *,
-        on_participants_changed: Optional[callable] = None,
-        on_levels: Optional[callable] = None,
+        on_participants_changed: callable | None = None,
+        on_levels: callable | None = None,
     ) -> None:
         if not host or not isinstance(host, str):
             raise ValueError(f"host must be non-empty string, got {host!r}")
@@ -240,13 +238,13 @@ class JamulusProtocolAdapter:
         self._on_participants_changed = on_participants_changed
         self._on_levels = on_levels
 
-        self._sock: Optional[socket.socket] = None
-        self._participants: Dict[int, str] = {}
+        self._sock: socket.socket | None = None
+        self._participants: dict[int, str] = {}
         self._participant_order: list[int] = []
         self._participants_lock = threading.Lock()
 
         self._running = False
-        self._rx_thread: Optional[threading.Thread] = None
+        self._rx_thread: threading.Thread | None = None
         self._tx_count = 1
         # Track which unknown msg_ids we've already logged so a malformed-packet
         # storm can't fill the debug log at receive-loop speed.
@@ -318,7 +316,7 @@ class JamulusProtocolAdapter:
         except Exception as exc:
             _logger.debug("apply_mixer send failed: %s", exc)
 
-    def request_clients(self) -> Dict[int, str]:
+    def request_clients(self) -> dict[int, str]:
         """Return cached participant list (populated from background thread)."""
         if not self.enabled:
             with self._participants_lock:
@@ -327,11 +325,11 @@ class JamulusProtocolAdapter:
         with self._participants_lock:
             return dict(self._participants)
 
-    def set_cached_participants(self, participants: Dict[int, str]) -> None:
+    def set_cached_participants(self, participants: dict[int, str]) -> None:
         with self._participants_lock:
             self._participants = dict(participants)
 
-    def get_cached_participants(self) -> List[str]:
+    def get_cached_participants(self) -> list[str]:
         with self._participants_lock:
             return [self._participants[k] for k in sorted(self._participants.keys())]
 
@@ -384,7 +382,7 @@ class JamulusProtocolAdapter:
             try:
                 raw, _ = self._sock.recvfrom(8192)
                 self._handle_packet(raw)
-            except socket.timeout:
+            except TimeoutError:
                 pass  # Expected — we use short timeout and poll in the loop
             except OSError as exc:
                 if self._running:
@@ -434,7 +432,7 @@ class JamulusProtocolAdapter:
             # OS type: 0=Windows, 1=macOS, 2=Linux (send 1 for macOS)
             import sys
             os_type = 2 if sys.platform.startswith("linux") else (1 if sys.platform == "darwin" else 0)
-            version_bytes = "WebJam/0.1".encode("utf-8")
+            version_bytes = b"WebJam/0.1"
             # string format: [2B LE: length][bytes]
             version_str = struct.pack("<H", len(version_bytes)) + version_bytes
             self._send(_MsgId.VERSION_AND_OS, struct.pack("<H", os_type) + version_str)

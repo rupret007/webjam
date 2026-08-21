@@ -5,12 +5,17 @@ import platform
 import shutil
 import tempfile
 import time
+from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any
 
 from core.redaction import redact_mapping, redact_text
-from core.support_bundle import SupportBundleArtifact, SupportFacts, build_support_bundle
+from core.support_bundle import (
+    SupportBundleArtifact,
+    SupportFacts,
+    build_support_bundle,
+)
 
 
 class RetryService:
@@ -99,7 +104,7 @@ class MetricsService:
         return values
 
     def reset_with_prefix(self, prefix: str = "metric_") -> None:
-        for key in self.repository.list_settings().keys():
+        for key in self.repository.list_settings():
             if key.startswith(prefix):
                 self.repository.delete_setting(key)
 

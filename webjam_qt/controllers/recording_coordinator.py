@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import os
@@ -20,36 +21,24 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QMessageBox
 
-from core.take_library import (
-    EVIDENCE_ONLY_EXPORT_BLOCK_REASON,
-    RecorderClientReceipt,
-    RecorderRosterError,
-    RecordingStagingIdentity,
-    TakeValidationResult,
-    find_changed_take,
-    is_local_stem_name,
-    load_take,
-    recording_staging_identity,
-    recorder_client_observations,
-    snapshot_take_directories,
-    write_take_manifest,
-    wait_for_take_files_stable,
-)
 from core.creative_modes import (
     canonical_creator_profile_key,
     get_creator_profile_by_key_or_default,
 )
+from core.jamulus_roster_identity import (
+    JamulusRosterIdentityError,
+    ordered_common_roster_digest,
+    server_common_profile,
+)
+from core.jamulus_rpc_client import JamulusOrderedRosterProof
+from core.local_capture import (
+    LocalCapturePreflight,
+    check_local_capture_preflight,
+    local_capture_track_map_fingerprint,
+)
 from core.recording_manifest_journal import (
     RecordingManifestJournal,
     RecordingManifestJournalError,
-)
-from core.redaction import redact_text
-from core.take_project import (
-    HostIdentity,
-    RecoveryStatus,
-    SessionEvidence,
-    SessionTimelineEvent,
-    new_project_id,
 )
 from core.recording_readiness import (
     RecordingStorageCheck,
@@ -69,16 +58,14 @@ from core.recording_readiness_presentation import (
 )
 from core.recording_sources import (
     RecordingSourceKind as LiveRecordingSourceKind,
+)
+from core.recording_sources import (
     RecordingSourcePresentation,
     RecordingSourceState,
     project_recording_sources,
     validate_exact_recording_sources,
 )
-from core.local_capture import (
-    LocalCapturePreflight,
-    check_local_capture_preflight,
-    local_capture_track_map_fingerprint,
-)
+from core.redaction import redact_text
 from core.session_recording_plan import (
     GuestLocalOriginalBinding,
     InputMapBinding,
@@ -87,13 +74,29 @@ from core.session_recording_plan import (
     configured_input_map_bindings,
     resolve_capture_tracks,
 )
-from core.jamulus_roster_identity import (
-    JamulusRosterIdentityError,
-    ordered_common_roster_digest,
-    server_common_profile,
-)
-from core.jamulus_rpc_client import JamulusOrderedRosterProof
 from core.session_transfer_runtime import PEER_TRANSFER_ERROR_PREFIX
+from core.take_library import (
+    EVIDENCE_ONLY_EXPORT_BLOCK_REASON,
+    RecorderClientReceipt,
+    RecorderRosterError,
+    RecordingStagingIdentity,
+    TakeValidationResult,
+    find_changed_take,
+    is_local_stem_name,
+    load_take,
+    recorder_client_observations,
+    recording_staging_identity,
+    snapshot_take_directories,
+    wait_for_take_files_stable,
+    write_take_manifest,
+)
+from core.take_project import (
+    HostIdentity,
+    RecoveryStatus,
+    SessionEvidence,
+    SessionTimelineEvent,
+    new_project_id,
+)
 
 if TYPE_CHECKING:
     from webjam_qt.controllers.application_controller import ApplicationController
@@ -766,8 +769,8 @@ class RecordingCoordinator:
             with self._shared_track_condition:
                 if self._shared_track_take_id != take_id:
                     return (
-                        "Shared Track recording evidence changed before the take "
-                        "was finalized. The take was preserved for review.",
+                        ("Shared Track recording evidence changed before the take "
+                        "was finalized. The take was preserved for review."),
                     )
                 settled = bool(
                     self._shared_track_playback_proven
@@ -1144,9 +1147,7 @@ class RecordingCoordinator:
             "_primary_ordered_roster_proof",
             None,
         )
-        if not isinstance(ordered_proof, JamulusOrderedRosterProof):
-            ordered_proof = None
-        elif not ordered_proof.identity.is_process_bound:
+        if not isinstance(ordered_proof, JamulusOrderedRosterProof) or not ordered_proof.identity.is_process_bound:
             ordered_proof = None
         else:
             try:
@@ -1170,7 +1171,7 @@ class RecordingCoordinator:
             enrollment = getattr(host_peer, "host_enrollment", None)
             try:
                 host_participant_id = str(
-                    uuid.UUID(str(getattr(enrollment, "participant_id")))
+                    uuid.UUID(str(enrollment.participant_id))
                 )
             except (AttributeError, TypeError, ValueError):
                 host_participant_id = ""
@@ -1187,7 +1188,7 @@ class RecordingCoordinator:
                     recording_presence_proofs = ()
         for item in presentations:
             try:
-                channel_id = int(getattr(item, "channel_id"))
+                channel_id = int(item.channel_id)
             except (TypeError, ValueError, AttributeError):
                 continue
             name = self._normalized_roster_name(
@@ -1254,7 +1255,7 @@ class RecordingCoordinator:
         enrollment = getattr(host_peer, "host_enrollment", None)
         try:
             host_participant_id = str(
-                uuid.UUID(str(getattr(enrollment, "participant_id")))
+                uuid.UUID(str(enrollment.participant_id))
             )
             proofs = tuple(
                 host_peer.recording_presence_snapshot(
@@ -1279,7 +1280,7 @@ class RecordingCoordinator:
         seen_channels: set[int] = set()
         for participant in participants:
             try:
-                channel_id = int(getattr(participant, "channel_id"))
+                channel_id = int(participant.channel_id)
             except (AttributeError, TypeError, ValueError):
                 return None
             name = self._normalized_roster_name(
@@ -1426,7 +1427,7 @@ class RecordingCoordinator:
                 server_ids.append(server_id)
                 profiles.append(server_common_profile(raw_row))
             if any(
-                later <= earlier for earlier, later in zip(server_ids, server_ids[1:])
+                later <= earlier for earlier, later in itertools.pairwise(server_ids)
             ):
                 return None
             proof = context.ordered_roster_proof
@@ -1678,7 +1679,7 @@ class RecordingCoordinator:
                     server_profiles.append(server_common_profile(raw_row))
                 if any(
                     later <= earlier
-                    for earlier, later in zip(server_ids, server_ids[1:])
+                    for earlier, later in itertools.pairwise(server_ids)
                 ):
                     raise JamulusRosterIdentityError("server roster order is invalid")
                 if len(observations) != len(raw_server_rows):
@@ -1788,12 +1789,12 @@ class RecordingCoordinator:
         if stable_ordered_roster:
             for proof in context.recording_presence_proofs:
                 try:
-                    ordinal = int(getattr(proof, "self_ordinal"))
+                    ordinal = int(proof.self_ordinal)
                     if (
                         getattr(proof, "recorder_eligible", False) is not True
                         or getattr(proof, "ordered_roster_digest", "")
                         != before_proof.common_digest
-                        or int(getattr(proof, "roster_count"))
+                        or int(proof.roster_count)
                         != before_proof.roster_size
                         or ordinal < 0
                         or ordinal >= before_proof.roster_size
@@ -2428,8 +2429,8 @@ class RecordingCoordinator:
             bound_fingerprint = self._recording_plan_fingerprint
         if plan is None:
             return (
-                "The immutable recording plan was unavailable at finalization. "
-                "The take was preserved for review.",
+                ("The immutable recording plan was unavailable at finalization. "
+                "The take was preserved for review."),
             )
         fingerprint = plan.plan_fingerprint()
         if (
@@ -2440,8 +2441,8 @@ class RecordingCoordinator:
             != fingerprint
         ):
             return (
-                "The recording plan identity changed before finalization. The "
-                "take was preserved for review.",
+                ("The recording plan identity changed before finalization. The "
+                "take was preserved for review."),
             )
 
         errors: list[str] = []
@@ -2573,22 +2574,22 @@ class RecordingCoordinator:
         expected_count = max(0, int(required_local_count))
         if len(expected) != expected_count:
             return (
-                "The Local Original topology in the immutable recording plan "
-                "was inconsistent. The take was preserved for review.",
+                ("The Local Original topology in the immutable recording plan "
+                "was inconsistent. The take was preserved for review."),
             )
         if not expected:
             return (
                 ()
                 if not observed
                 else (
-                    "Unplanned Local Original media appeared in the take. The take "
-                    "was preserved for review.",
+                    ("Unplanned Local Original media appeared in the take. The take "
+                    "was preserved for review."),
                 )
             )
         if not observed:
             return (
-                "The captured Local Original topology could not be proven. The "
-                "take was preserved for review.",
+                ("The captured Local Original topology could not be proven. The "
+                "take was preserved for review."),
             )
         try:
             matches = len(observed) == len(
@@ -2601,8 +2602,8 @@ class RecordingCoordinator:
         if matches:
             return ()
         return (
-            "The captured Local Original mono/stereo map did not match the "
-            "immutable recording plan. The take was preserved for review.",
+            ("The captured Local Original mono/stereo map did not match the "
+            "immutable recording plan. The take was preserved for review."),
         )
 
     def _create_evidence_journal(self) -> bool:
@@ -5019,7 +5020,7 @@ class RecordingCoordinator:
         participant_channels: list[int] = []
         for index, participant in enumerate(real_participants):
             try:
-                channel_id = int(getattr(participant, "channel_id"))
+                channel_id = int(participant.channel_id)
             except (AttributeError, TypeError, ValueError):
                 channel_id = index
             participant_channels.append(channel_id)
@@ -6083,19 +6084,19 @@ class RecordingCoordinator:
         box.setWindowTitle("WebJam — Tracks recovered")
         box.setIcon(QMessageBox.Icon.Information)
         details = [
-            "Recording stopped before a finished server take arrived, but "
-            "your isolated local tracks were saved.",
+            ("Recording stopped before a finished server take arrived, but "
+            "your isolated local tracks were saved."),
             "",
-            "This folder is outside your Takes folder, so it won't appear in "
+            ("This folder is outside your Takes folder, so it won't appear in "
             "Studio. Use Reveal in Finder to open it, and set a Takes "
-            "folder in Settings so future recordings land in one place.",
+            "folder in Settings so future recordings land in one place."),
         ]
         if errors:
             details.extend(
                 [
                     "",
-                    "Some local tracks need review. Listen to each file before "
-                    "using it.",
+                    ("Some local tracks need review. Listen to each file before "
+                    "using it."),
                 ]
             )
         box.setText("\n".join(details))
@@ -6186,9 +6187,9 @@ class RecordingCoordinator:
             result = TakeValidationResult(
                 take,
                 (
-                    "WebJam couldn't finish verifying this take. The source audio "
+                    ("WebJam couldn't finish verifying this take. The source audio "
                     "was preserved; check free disk space and folder access, then "
-                    "review the take before using it.",
+                    "review the take before using it."),
                     *capture_errors,
                 ),
             )
@@ -6787,8 +6788,8 @@ class RecordingCoordinator:
                 details.extend(
                     [
                         "",
-                        "WebJam found something to review. Open Studio and listen "
-                        "to each track before export.",
+                        ("WebJam found something to review. Open Studio and listen "
+                        "to each track before export."),
                     ]
                 )
             return "WebJam — Recording complete", "\n".join(details)
@@ -6797,8 +6798,8 @@ class RecordingCoordinator:
             details = [
                 "Your recording was preserved, but it did not pass every check.",
                 "",
-                "The recorded tracks may still be playable. Open Studio, listen "
-                "to each track, then record a short test take.",
+                ("The recorded tracks may still be playable. Open Studio, listen "
+                "to each track, then record a short test take."),
                 "",
                 "Use Reveal in Finder to open the saved files.",
             ]
@@ -6806,9 +6807,9 @@ class RecordingCoordinator:
             details = [
                 "No completed take was found on this Mac.",
                 "",
-                "There is nothing to play back yet. Run Band Check (F2) to "
+                ("There is nothing to play back yet. Run Band Check (F2) to "
                 "verify the band server's recorder, then record a short test "
-                "take.",
+                "take."),
             ]
         return title, "\n".join(details)
 

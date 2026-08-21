@@ -14,10 +14,10 @@ from PySide6.QtWidgets import QMessageBox
 
 from core.jamulus_name import JamulusNameError, validate_jamulus_name
 from core.jamulus_rpc_client import JamulusRpcMonitorIdentity
-from services.bridge_service import JamulusRpcFreshness
-from webjam_qt.widgets.participant_card import ParticipantPresentation
-from webjam_qt.session_state import SessionUiState
 from core.session_lifecycle import SessionLifecyclePhase
+from services.bridge_service import JamulusRpcFreshness
+from webjam_qt.session_state import SessionUiState
+from webjam_qt.widgets.participant_card import ParticipantPresentation
 
 if TYPE_CHECKING:
     from webjam_qt.controllers.application_controller import ApplicationController
@@ -427,7 +427,7 @@ class AudioCoordinator:
                 old_settings = self._c.settings
                 self._c._replace_settings_object(remote_route_base_settings)
                 self._c._reconfigure_services_after_settings(old_settings)
-            except Exception:  # noqa: BLE001 - keep the retry owner reachable
+            except Exception:
                 LOGGER.exception(
                     "Could not restore settings after private transport stop"
                 )
@@ -491,7 +491,7 @@ class AudioCoordinator:
                 )
                 if not recording_stopped:
                     failures.append("The recording may still be finishing.")
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Could not finish hosted recording during End Jam")
                 failures.append("The recording may still be finishing.")
             if failures:
@@ -523,14 +523,14 @@ class AudioCoordinator:
         try:
             if not self._c.bridge.stop_jamulus():
                 failures.append("The local music connection did not stop cleanly.")
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Could not stop the local music connection")
             failures.append("The local music connection did not stop cleanly.")
         if hosting:
             try:
                 if not self._c.bridge.stop_hosted_server():
                     failures.append("The hosted jam did not stop cleanly.")
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Could not stop the hosted band server")
                 failures.append("The hosted jam did not stop cleanly.")
         if failures:
@@ -692,7 +692,7 @@ class AudioCoordinator:
                         process_id=recovery.process_id,
                     )
                 )
-            except Exception:  # noqa: BLE001 - recovery ownership fails closed
+            except Exception:
                 LOGGER.warning(
                     "Jamulus roster recovery acknowledgement failed",
                     exc_info=True,
@@ -788,7 +788,7 @@ class AudioCoordinator:
             self._c._restore_saved_mix()
             try:
                 self._c.metrics.increment("metric_session_started")
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.debug("metric_session_started increment failed", exc_info=True)
             if self._c.bridge.practice_mode:
                 self._c.window.set_status_audio("Practice live")

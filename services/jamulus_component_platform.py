@@ -9,12 +9,9 @@ uses ``sudo``, a command shell, Gatekeeper bypasses, or quarantine removal.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
 import hashlib
 import json
 import os
-from pathlib import Path
 import platform
 import plistlib
 import re
@@ -24,8 +21,12 @@ import struct
 import subprocess
 import sys
 import time
-from typing import Callable, Mapping, Protocol
 import uuid
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
+from typing import Protocol
 
 from core.component_download import verify_downloaded_file
 from core.component_lock import InterProcessComponentLock
@@ -35,6 +36,12 @@ from core.component_store import (
     default_component_store_root,
 )
 from core.file_io import atomic_write_text
+from core.jamulus_child_environment import (
+    JamulusChildEnvironmentError,
+)
+from core.jamulus_child_environment import (
+    sanitized_jamulus_child_environment as _core_child_environment,
+)
 from core.jamulus_compatibility import (
     ActivationMode,
     ArtifactKind,
@@ -47,16 +54,11 @@ from core.jamulus_compatibility import (
     SourceProvenance,
     official_jamulus_compatibility_registry,
 )
-from core.jamulus_child_environment import (
-    JamulusChildEnvironmentError,
-    sanitized_jamulus_child_environment as _core_child_environment,
-)
-from core.jamulus_profile import default_jamulus_version_probe
 from core.jamulus_component_resolver import (
     ExternalComponentCandidate,
     ValidatedExternalComponent,
 )
-
+from core.jamulus_profile import default_jamulus_version_probe
 
 MACOS_JAMULUS_TEAM_ID = "V9ZZ6B9WH8"
 MACOS_CLIENT_BUNDLE_ID = "app.jamulussoftware.Jamulus"
@@ -374,8 +376,7 @@ def _run_command(
     return subprocess.run(
         arguments,
         input=input,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         timeout=timeout,
         check=False,
         shell=False,
@@ -685,7 +686,7 @@ class _MacPointer:
         }
 
     @classmethod
-    def from_dict(cls, value: object) -> "_MacPointer":
+    def from_dict(cls, value: object) -> _MacPointer:
         if not isinstance(value, dict) or frozenset(value) != frozenset(
             {"version", "target", "artifact_sha256"}
         ):
@@ -2233,8 +2234,7 @@ def _verify_linux_dpkg_install(path: Path, version: str) -> None:
     try:
         owner = subprocess.run(
             [str(query), "-S", str(path)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             timeout=10.0,
             check=False,
             shell=False,
@@ -2247,8 +2247,7 @@ def _verify_linux_dpkg_install(path: Path, version: str) -> None:
                 "-f=${db:Status-Abbrev}\\t${Version}\\t${Architecture}\\n",
                 "jamulus",
             ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             timeout=10.0,
             check=False,
             shell=False,
@@ -2303,8 +2302,7 @@ def _sanitized_installed_version_probe(
     try:
         completed = subprocess.run(
             [str(path), "--version"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             timeout=8.0,
             check=False,
             shell=False,
@@ -2774,14 +2772,14 @@ def _fsync_directory(path: Path) -> None:
 
 
 __all__ = [
+    "MACOS_INTEGRATED_RUNTIME_CAPABILITY",
+    "MACOS_INTEGRATED_RUNTIME_VARIANT",
+    "MACOS_INTEGRATED_RUNTIME_VERIFIER_ENABLED",
+    "MACOS_JAMULUS_TEAM_ID",
     "JamulusLicenseApprovalRequired",
     "JamulusPlatformError",
     "JamulusPlatformInstallDeferred",
     "JamulusPlatformInstallationNotFound",
-    "MACOS_JAMULUS_TEAM_ID",
-    "MACOS_INTEGRATED_RUNTIME_CAPABILITY",
-    "MACOS_INTEGRATED_RUNTIME_VARIANT",
-    "MACOS_INTEGRATED_RUNTIME_VERIFIER_ENABLED",
     "MacOSBundleVerifier",
     "MacOSExecutionContract",
     "MacOSExecutionContractKind",
@@ -2793,9 +2791,9 @@ __all__ = [
     "PlatformInstalledJamulusStore",
     "VerifiedMacBundle",
     "default_macos_target",
-    "open_platform_jamulus_installer",
     "macos_integrated_runtime_contract_allows",
     "macos_integrated_runtime_entry_is_eligible",
+    "open_platform_jamulus_installer",
     "platform_component_target",
     "sanitized_jamulus_child_environment",
 ]

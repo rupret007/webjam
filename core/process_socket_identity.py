@@ -12,12 +12,11 @@ addresses, command output, process paths, or socket-table text.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Callable
-
+from collections.abc import Callable
+from pathlib import Path
 
 _MAX_FDS = 4_096
 _MAX_SOCKET_TABLE_BYTES = 1_048_576

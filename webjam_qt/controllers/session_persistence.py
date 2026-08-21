@@ -16,7 +16,6 @@ import logging
 import os
 import stat
 from pathlib import Path
-from typing import Optional
 
 from core.creative_modes import (
     CREATOR_PROFILES,
@@ -193,7 +192,7 @@ class SessionPersistence:
         self,
         session_strip,
         session_canvas,
-        logger: Optional[logging.Logger] = None,
+        logger: logging.Logger | None = None,
         *,
         creator_profile_key: object = "music",
     ) -> None:

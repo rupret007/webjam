@@ -13,16 +13,15 @@ runtime, and focused security tests.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
 import hashlib
 import json
-from pathlib import PurePosixPath
 import re
+from collections.abc import Iterable
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import PurePosixPath
 from types import MappingProxyType
-from typing import Iterable
 from urllib.parse import urlsplit
-
 
 _COMPONENT_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$")
 _VARIANT_RE = re.compile(r"^[a-z0-9](?:[a-z0-9._-]{0,30}[a-z0-9])?$")
@@ -187,7 +186,7 @@ class WebJamVersionRange:
         return {"minimum": self.minimum, "maximum": self.maximum}
 
     @classmethod
-    def from_dict(cls, value: object) -> "WebJamVersionRange":
+    def from_dict(cls, value: object) -> WebJamVersionRange:
         data = _strict_dict(
             value,
             keys=frozenset({"minimum", "maximum"}),
@@ -242,7 +241,7 @@ class JamulusSourceIdentity:
         }
 
     @classmethod
-    def from_dict(cls, value: object) -> "JamulusSourceIdentity":
+    def from_dict(cls, value: object) -> JamulusSourceIdentity:
         data = _strict_dict(
             value,
             keys=frozenset(
@@ -288,7 +287,7 @@ class LegalInventory:
             raise JamulusCompatibilityError("legal inventory paths must be text")
         for index, path in enumerate((*licenses, *notices)):
             _validate_relative_path(path, label=f"legal file {index}")
-        if len(set((*licenses, *notices))) != len((*licenses, *notices)):
+        if len({*licenses, *notices}) != len((*licenses, *notices)):
             raise JamulusCompatibilityError("legal inventory contains duplicate paths")
         _validate_relative_path(self.source_offer, label="source offer")
         source_hash = str(self.corresponding_source_sha256).lower()
@@ -309,7 +308,7 @@ class LegalInventory:
         }
 
     @classmethod
-    def from_dict(cls, value: object) -> "LegalInventory":
+    def from_dict(cls, value: object) -> LegalInventory:
         data = _strict_dict(
             value,
             keys=frozenset(
@@ -390,7 +389,7 @@ class ArtifactIdentity:
         }
 
     @classmethod
-    def from_dict(cls, value: object) -> "ArtifactIdentity":
+    def from_dict(cls, value: object) -> ArtifactIdentity:
         data = _strict_dict(
             value,
             keys=frozenset({"url", "filename", "size", "sha256", "kind"}),
@@ -439,7 +438,7 @@ class RuntimeFileIdentity:
         }
 
     @classmethod
-    def from_dict(cls, value: object) -> "RuntimeFileIdentity":
+    def from_dict(cls, value: object) -> RuntimeFileIdentity:
         data = _strict_dict(
             value,
             keys=frozenset({"relative_path", "size", "sha256", "executable"}),
@@ -488,7 +487,7 @@ class JamulusCapabilities:
         return sorted(self.values)
 
     @classmethod
-    def from_list(cls, value: object) -> "JamulusCapabilities":
+    def from_list(cls, value: object) -> JamulusCapabilities:
         if not isinstance(value, list) or not all(
             isinstance(item, str) for item in value
         ):
@@ -655,7 +654,7 @@ class JamulusCompatibility:
         }
 
     @classmethod
-    def from_dict(cls, value: object) -> "JamulusCompatibility":
+    def from_dict(cls, value: object) -> JamulusCompatibility:
         data = _strict_dict(
             value,
             keys=frozenset(
@@ -748,8 +747,8 @@ class JamulusCompatibilityRegistry:
 
     @classmethod
     def combine(
-        cls, *registries: "JamulusCompatibilityRegistry"
-    ) -> "JamulusCompatibilityRegistry":
+        cls, *registries: JamulusCompatibilityRegistry
+    ) -> JamulusCompatibilityRegistry:
         """Combine baseline and signed registries without permitting conflicts."""
 
         combined: dict[

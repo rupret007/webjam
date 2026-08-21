@@ -15,7 +15,7 @@ per-instance QTimer.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QLinearGradient, QPainter, QColor, QPaintEvent
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPaintEvent
 from PySide6.QtWidgets import QWidget
 
 from webjam_qt.theme.tokens import Color
@@ -66,8 +66,7 @@ class LevelMeter(QWidget):
     def set_level(self, level: float) -> None:
         level = max(0.0, min(1.0, level))
         self._level = level
-        if level > self._peak:
-            self._peak = level
+        self._peak = max(self._peak, level)
         band = "high" if level >= 0.85 else "signal present" if level >= 0.05 else "quiet"
         if band != self._accessible_band:
             self._accessible_band = band
@@ -92,7 +91,7 @@ class LevelMeter(QWidget):
         if changed:
             self.update()
 
-    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802 (Qt override)
+    def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 

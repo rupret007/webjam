@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Final, Optional
+from typing import Final
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import (
@@ -31,7 +31,6 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QLabel, QSizePolicy, QWidget
 
 from webjam_qt.theme.tokens import Color
-
 
 BRAND_NAME: Final = "WebJam"
 BRAND_DESCRIPTION: Final = (
@@ -263,7 +262,7 @@ class BrandMark(QLabel):
         logical_size: int = 28,
         *,
         color: str = Color.ACCENT_PRIMARY,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._logical_size = max(16, int(logical_size))
@@ -277,14 +276,14 @@ class BrandMark(QLabel):
         self.setText("")
         self.setFixedSize(self._logical_size, self._logical_size)
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def sizeHint(self) -> QSize:
         return QSize(self._logical_size, self._logical_size)
 
     def has_vector_mark(self) -> bool:
         """The mark is native QPainter geometry, with no runtime asset risk."""
         return True
 
-    def paintEvent(self, _event) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event) -> None:
         painter = QPainter(self)
         draw_brand_mark(painter, QRectF(self.contentsRect()), color=self._color)
         painter.end()

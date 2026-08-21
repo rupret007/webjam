@@ -14,8 +14,8 @@ in the DAW (the take keeps its Reaper-project escape hatch).
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
@@ -51,10 +51,10 @@ class TakeDeck(QDialog):
 
     closed = Signal()
 
-    def __init__(self, takes_dir: str, parent: Optional[QWidget] = None,
-                 player: Optional[TakePlayer] = None,
+    def __init__(self, takes_dir: str, parent: QWidget | None = None,
+                 player: TakePlayer | None = None,
                  output_device_name: str = "",
-                 on_output_device_changed: Optional[Callable[[str], None]] = None):
+                 on_output_device_changed: Callable[[str], None] | None = None):
         super().__init__(parent)
         self.setObjectName("TakeDeck")
         self.setWindowTitle("WebJam — Take Deck")
@@ -306,7 +306,7 @@ class TakeDeck(QDialog):
             # so this stays interactive even for long takes.
             try:
                 result = validate_take(take.path)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Take health check failed for %s", take.path)
                 result = TakeValidationResult(
                     take,
@@ -422,7 +422,7 @@ class TakeDeck(QDialog):
                 f"{device['name']} ({device['channels']} ch)", device["name"]
             )
         target = self._output_picker.findData(self._output_device_name)
-        self._output_picker.setCurrentIndex(target if target >= 0 else 0)
+        self._output_picker.setCurrentIndex(max(target, 0))
         if self._output_device_name and target < 0:
             self._output_fallback_message = (
                 f"Saved output '{self._output_device_name}' is unavailable; "
@@ -453,7 +453,7 @@ class TakeDeck(QDialog):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._current.path)))
 
     # -- lifecycle --------------------------------------------------------
-    def closeEvent(self, event) -> None:  # noqa: N802
+    def closeEvent(self, event) -> None:
         try:
             self._ui_timer.stop()
             self._player.stop()

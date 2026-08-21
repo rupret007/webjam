@@ -11,7 +11,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Callable, Protocol
+from collections.abc import Callable
+from typing import Protocol
 
 from core.remote_invitation import (
     DEFAULT_INVITATION_TTL_SECONDS,
@@ -23,7 +24,6 @@ from core.remote_invitation import (
     RemoteInvitation,
     issue_remote_invitation,
 )
-
 
 LOGGER = logging.getLogger("webjam.services.remote_invitation")
 

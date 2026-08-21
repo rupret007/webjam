@@ -79,6 +79,10 @@ NOW = datetime(2026, 7, 28, 19, 0, tzinfo=timezone.utc)
 DEFAULT_TEST_CLOCK = NOW + timedelta(hours=1)
 
 
+def _valid_catalog_now() -> datetime:
+    return NOW + timedelta(hours=1)
+
+
 def _artifact(
     data: bytes,
     target: ComponentTarget,
@@ -328,6 +332,9 @@ def _service(
     installed_store=None,
     platform_store=None,
 ) -> tuple[JamulusComponentUpdateService, bytes]:
+    if now is None:
+        now = _valid_catalog_now
+
     data = b"approved Jamulus installer"
     client, server = _pair(data, target=target)
     service = JamulusComponentUpdateService(
@@ -998,10 +1005,7 @@ def test_macos_upstream_catalog_and_existing_pointer_stay_source_only(
     assert service.snapshot.state is JamulusUpdateState.FALLBACK
     assert service.snapshot.active_version == "3.12.2"
     assert service.snapshot.available_version == "3.12.4"
-    assert (
-        service.snapshot.reason_code
-        == "macos-integrated-runtime-required"
-    )
+    assert service.snapshot.reason_code == "macos-integrated-runtime-required"
     assert "does not have the WebJam-integrated execution contract" in (
         service.snapshot.message
     )
@@ -1144,8 +1148,7 @@ def test_updater_handoff_uses_shared_integrated_gate_and_contract(
     assert service.managed_server_component() is None
 
     monkeypatch.setattr(
-        "services.jamulus_component_platform."
-        "MACOS_INTEGRATED_RUNTIME_VERIFIER_ENABLED",
+        "services.jamulus_component_platform.MACOS_INTEGRATED_RUNTIME_VERIFIER_ENABLED",
         True,
     )
     managed_client = service.managed_client_component()
@@ -1207,9 +1210,7 @@ def test_signed_macos_identity_conflict_cannot_use_overclaim_downgrade():
     changed = baked.to_dict()
     changed["capabilities"].append("webjam-route-profile")
     changed["publisher"] = "Different publisher"
-    signed = JamulusCompatibilityRegistry(
-        (JamulusCompatibility.from_dict(changed),)
-    )
+    signed = JamulusCompatibilityRegistry((JamulusCompatibility.from_dict(changed),))
 
     with pytest.raises(
         update_module.JamulusComponentUpdateError,
@@ -1223,9 +1224,7 @@ def _mac_bundle_for_verifier(
     *,
     role: JamulusRole = JamulusRole.CLIENT,
 ) -> Path:
-    executable_name = (
-        "Jamulus" if role is JamulusRole.CLIENT else "JamulusServer"
-    )
+    executable_name = "Jamulus" if role is JamulusRole.CLIENT else "JamulusServer"
     bundle = tmp_path / f"{executable_name}.app"
     executable = bundle / "Contents" / "MacOS" / executable_name
     executable.parent.mkdir(parents=True)
@@ -1338,9 +1337,7 @@ def test_macos_bundle_verifier_rejects_non_boolean_sandbox_entitlement(
             return subprocess.CompletedProcess(
                 args,
                 0,
-                plistlib.dumps(
-                    {"com.apple.security.app-sandbox": "true"}
-                ),
+                plistlib.dumps({"com.apple.security.app-sandbox": "true"}),
                 b"",
             )
         raise AssertionError(args)
@@ -1382,12 +1379,10 @@ def test_macos_bundle_verifier_rejects_incomplete_execution_evidence(
             )
         if args[:3] == ["/usr/bin/codesign", "-d", "--verbose=4"]:
             authority = (
-                b"Authority=Developer ID Application: Someone Else "
-                b"(BADTEAM123)\n"
+                b"Authority=Developer ID Application: Someone Else (BADTEAM123)\n"
                 if failure == "wrong-publisher"
                 else (
-                    b"Authority=Developer ID Application: Jonathan Chung "
-                    b"(V9ZZ6B9WH8)\n"
+                    b"Authority=Developer ID Application: Jonathan Chung (V9ZZ6B9WH8)\n"
                 )
             )
             return subprocess.CompletedProcess(
@@ -1396,17 +1391,14 @@ def test_macos_bundle_verifier_rejects_incomplete_execution_evidence(
                 b"",
                 (
                     b"Identifier=app.jamulussoftware.Jamulus\n"
-                    b"TeamIdentifier=V9ZZ6B9WH8\n"
-                    + authority
+                    b"TeamIdentifier=V9ZZ6B9WH8\n" + authority
                 ),
             )
         if args[:3] == ["/usr/bin/codesign", "-d", "--xml"]:
             return subprocess.CompletedProcess(
                 args,
                 0,
-                plistlib.dumps(
-                    {"com.apple.security.app-sandbox": True}
-                ),
+                plistlib.dumps({"com.apple.security.app-sandbox": True}),
                 b"",
             )
         if args[0] == "/usr/sbin/spctl":
@@ -1415,13 +1407,9 @@ def test_macos_bundle_verifier_rejects_incomplete_execution_evidence(
             )
         if args[:2] == ["/usr/bin/lipo", "-archs"]:
             architectures = (
-                b"x86_64"
-                if failure == "wrong-architecture"
-                else b"arm64 x86_64"
+                b"x86_64" if failure == "wrong-architecture" else b"arm64 x86_64"
             )
-            return subprocess.CompletedProcess(
-                args, 0, architectures, b""
-            )
+            return subprocess.CompletedProcess(args, 0, architectures, b"")
         raise AssertionError(args)
 
     with pytest.raises(JamulusPlatformError, match=match):
@@ -1543,9 +1531,7 @@ def test_macos_external_validation_never_activates_upstream_source(
             calls.append(kwargs["webjam_version"])
             return registry.compatible(**kwargs)
 
-    executable = (
-        tmp_path / "Jamulus.app" / "Contents" / "MacOS" / "Jamulus"
-    )
+    executable = tmp_path / "Jamulus.app" / "Contents" / "MacOS" / "Jamulus"
     executable.parent.mkdir(parents=True)
     executable.write_bytes(b"official binary")
     store = MacOSJamulusComponentStore(
@@ -1743,9 +1729,7 @@ def test_macos_current_lookup_does_not_mutate_or_auto_rollback(
         version="3.12.4",
     )
     store = MacOSJamulusComponentStore(
-        JamulusCompatibilityRegistry(
-            (old_client, old_server, new_client, new_server)
-        ),
+        JamulusCompatibilityRegistry((old_client, old_server, new_client, new_server)),
         webjam_version="0.22.0",
         root=tmp_path,
         verifier=_AcceptingMacVerifier(),
@@ -1827,16 +1811,17 @@ def test_macos_point_of_use_authorization_precedes_pointer_write(
         dmg_path=dmg,
         license_accepted=True,
         busy_check=lambda: None,
-        authorization_check=lambda _client, _server: authorizations.append(
-            "accept"
-        ),
+        authorization_check=lambda _client, _server: authorizations.append("accept"),
     )
     assert installed.current.version == "3.12.3"
     assert authorizations == ["reject", "accept"]
-    assert sum(
-        args[:2] == ["/usr/bin/hdiutil", "attach"]
-        for args, _input in commands.calls
-    ) == 1
+    assert (
+        sum(
+            args[:2] == ["/usr/bin/hdiutil", "attach"]
+            for args, _input in commands.calls
+        )
+        == 1
+    )
 
 
 def test_corrupt_macos_pointer_is_bounded_platform_error(tmp_path, monkeypatch):

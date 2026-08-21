@@ -8,13 +8,14 @@ for Qt and support diagnostics.
 
 from __future__ import annotations
 
+import sys
+import threading
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-import sys
-import threading
-from typing import Callable, NoReturn
+from typing import NoReturn
 
 from core.component_catalog import (
     MAX_CATALOG_BYTES,
@@ -33,11 +34,11 @@ from core.component_download import (
     UrllibHttpsTransport,
     verify_downloaded_file,
 )
-from core.component_hosts import HttpsHostPolicy, JAMULUS_RELEASE_HOST_POLICY
+from core.component_hosts import JAMULUS_RELEASE_HOST_POLICY, HttpsHostPolicy
 from core.component_lock import (
+    RUNTIME_ACTIVE_LOCK_NAME,
     ComponentLockTimeout,
     InterProcessComponentLock,
-    RUNTIME_ACTIVE_LOCK_NAME,
 )
 from core.component_store import (
     BusyCheck,
@@ -55,14 +56,14 @@ from core.jamulus_compatibility import (
     JamulusRole,
     official_jamulus_compatibility_registry,
 )
-from core.jamulus_update_state import JamulusUpdateSnapshot, JamulusUpdateState
 from core.jamulus_component_resolver import ValidatedExternalComponent
+from core.jamulus_update_state import JamulusUpdateSnapshot, JamulusUpdateState
 from services.jamulus_component_platform import (
+    MACOS_INTEGRATED_RUNTIME_VARIANT,
     JamulusLicenseApprovalRequired,
     JamulusPlatformError,
-    JamulusPlatformInstallDeferred,
     JamulusPlatformInstallationNotFound,
-    MACOS_INTEGRATED_RUNTIME_VARIANT,
+    JamulusPlatformInstallDeferred,
     MacOSExecutionContract,
     MacOSExecutionContractKind,
     MacOSJamulusComponentStore,
@@ -72,7 +73,6 @@ from services.jamulus_component_platform import (
     open_platform_jamulus_installer,
     platform_component_target,
 )
-
 
 DEFAULT_COMPONENT_CATALOG_URL = (
     "https://github.com/rupret007/webjam/releases/download/"

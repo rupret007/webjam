@@ -8,15 +8,15 @@ lab-only until a public rendezvous profile is provisioned.
 
 from __future__ import annotations
 
-from copy import deepcopy
 import logging
 import os
-from pathlib import Path
 import platform
 import re
 import sys
 import threading
-from typing import Callable
+from collections.abc import Callable
+from copy import deepcopy
+from pathlib import Path
 
 from core.build_info import build_id
 from core.remote_invitation import RemoteInvitation
@@ -35,7 +35,6 @@ from services.transport_runtime import (
     TransportProcess,
     TransportProcessError,
 )
-
 
 REFERENCE_LOCAL_OPT_IN = "WEBJAM_ENABLE_REFERENCE_LOCAL"
 TRANSPORT_BINARY_OVERRIDE = "WEBJAM_TRANSPORT_BINARY"

@@ -10,10 +10,9 @@ loopback-only reference used by the isolated service and CI lab.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import ipaddress
 import re
-
+from dataclasses import dataclass
 
 _PROFILE_ID = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$")
 _DNS_NAME = re.compile(

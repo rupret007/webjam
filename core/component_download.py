@@ -2,23 +2,24 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
-from http.client import HTTPMessage
 import os
-from pathlib import Path
 import ssl
 import stat
 import tempfile
 import threading
-from typing import Callable, Mapping, Protocol
 import urllib.error
 import urllib.request
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from http.client import HTTPMessage
+from pathlib import Path
+from typing import Protocol
 
 from core.component_hosts import (
+    JAMULUS_RELEASE_HOST_POLICY,
     ComponentUrlError,
     HttpsHostPolicy,
-    JAMULUS_RELEASE_HOST_POLICY,
 )
 from core.jamulus_compatibility import ArtifactIdentity
 

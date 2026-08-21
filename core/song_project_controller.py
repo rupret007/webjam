@@ -14,10 +14,10 @@ from __future__ import annotations
 
 import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Callable
 
 from core.song_project import (
     InputMapping,
@@ -89,7 +89,7 @@ class RecoverySnapshot:
     @classmethod
     def from_candidate(
         cls, candidate: ProjectRecoveryCandidate | None
-    ) -> "RecoverySnapshot | None":
+    ) -> RecoverySnapshot | None:
         if candidate is None:
             return None
         return cls(

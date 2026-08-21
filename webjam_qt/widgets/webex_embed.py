@@ -9,16 +9,15 @@ handoff separate from its explicitly labeled native Webex app controls.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAccessible, QAccessibleEvent
 from PySide6.QtWidgets import (
+    QApplication,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QApplication,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
@@ -43,7 +42,7 @@ class WebexEmbed(QFrame):
     copy_link_requested = Signal()
     recheck_webex_requested = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("WebexEmbed")
         self.setMinimumHeight(112)
@@ -518,11 +517,9 @@ class WebexEmbed(QFrame):
             )
         )
         self._change_link_btn.setToolTip(
-            (
-                f"Open Settings to add or change the {service} meeting link."
-                if service
-                else "Open Settings to add or change the meeting link."
-            )
+            f"Open Settings to add or change the {service} meeting link."
+            if service
+            else "Open Settings to add or change the meeting link."
         )
 
     def focus_primary_action(self) -> None:

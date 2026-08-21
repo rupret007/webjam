@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 import sys
 import time
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap
@@ -23,7 +23,10 @@ from PySide6.QtWidgets import (
 from webjam_qt.theme.tokens import Color, Space
 
 if TYPE_CHECKING:
-    from services.pocket_stage_gateway import PocketStageGateway, PocketStagePairingOffer
+    from services.pocket_stage_gateway import (
+        PocketStageGateway,
+        PocketStagePairingOffer,
+    )
 
 
 class PocketStagePairingDialog(QDialog):
@@ -34,9 +37,9 @@ class PocketStagePairingDialog(QDialog):
 
     def __init__(
         self,
-        gateway: "PocketStageGateway",
-        offer: "PocketStagePairingOffer",
-        parent: Optional[QWidget] = None,
+        gateway: PocketStageGateway,
+        offer: PocketStagePairingOffer,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._gateway = gateway
@@ -162,7 +165,7 @@ class PocketStagePairingDialog(QDialog):
         self._timer.start()
         self.set_offer(offer)
 
-    def set_offer(self, offer: "PocketStagePairingOffer") -> None:
+    def set_offer(self, offer: PocketStagePairingOffer) -> None:
         """Replace the displayed one-use capability with a newly issued one."""
 
         self._expires_at_unix = float(offer.expires_at_unix)

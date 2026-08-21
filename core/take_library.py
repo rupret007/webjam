@@ -14,10 +14,10 @@ environments without libsndfile.
 
 from __future__ import annotations
 
-import logging
-import json
 import hashlib
 import ipaddress
+import json
+import logging
 import math
 import os
 import re
@@ -25,9 +25,10 @@ import stat
 import time
 import uuid
 import wave
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Mapping, Optional
+from typing import TYPE_CHECKING
 
 from core.creative_modes import canonical_creator_profile_key
 
@@ -197,10 +198,10 @@ class TakeInfo:
 
     path: Path
     name: str
-    tracks: List[TrackInfo] = field(default_factory=list)
-    reaper_project: Optional[Path] = None
+    tracks: list[TrackInfo] = field(default_factory=list)
+    reaper_project: Path | None = None
     validation_status: str = "unchecked"
-    manifest_path: Optional[Path] = None
+    manifest_path: Path | None = None
     # Findings recorded at validation time, so reviewing a finished take
     # never needs to re-probe its audio files.
     manifest_errors: tuple[str, ...] = ()
@@ -253,10 +254,10 @@ class TakeInfo:
 class TakeValidationResult:
     """Post-recording confidence report for one take directory."""
 
-    take: Optional[TakeInfo]
+    take: TakeInfo | None
     errors: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
-    manifest_path: Optional[Path] = None
+    manifest_path: Path | None = None
 
     @property
     def ok(self) -> bool:
@@ -274,7 +275,7 @@ class TakeValidationResult:
             if len(rate_values) == 1
             else "mixed rate"
         )
-        duration = int(round(self.take.duration_s))
+        duration = round(self.take.duration_s)
         return (
             f"{self.take.track_count} track{'s' if self.take.track_count != 1 else ''}"
             f" · {duration // 60}:{duration % 60:02d} · {rate}"
@@ -1168,7 +1169,7 @@ def snapshot_take_directories(root: str | Path) -> dict[Path, int]:
         return {}
 
 
-def find_changed_take(root: str | Path, before: dict[Path, int]) -> Optional[Path]:
+def find_changed_take(root: str | Path, before: dict[Path, int]) -> Path | None:
     """Return the sole changed take directory, or fail closed on ambiguity."""
     path = Path(root).expanduser()
     candidates: list[tuple[int, Path]] = []
@@ -1195,7 +1196,7 @@ def wait_for_take_files_stable(
     interval_s: float = 0.25,
 ) -> bool:
     """Wait until audio file sizes stop changing for two consecutive polls."""
-    previous: Optional[tuple[tuple[str, int], ...]] = None
+    previous: tuple[tuple[str, int], ...] | None = None
     stable = 0
     for _ in range(max(1, polls)):
         try:
@@ -1219,7 +1220,7 @@ def wait_for_take_files_stable(
     return False
 
 
-def _track_has_signal(path: Path) -> Optional[bool]:
+def _track_has_signal(path: Path) -> bool | None:
     """Sample a few short windows; return None when the file cannot be read."""
     try:
         import numpy as np
@@ -1474,6 +1475,11 @@ def _refine_lag(
         if denom <= 0.0:
             continue
         value = abs(float(np.dot(local_part, server_part))) / denom
+        # Normalized correlation is mathematically bounded by one, but float32
+        # dot/norm rounding can exceed it by a few ulps. Durable alignment
+        # truth rejects confidence above 1.0, so clamp at this calculation
+        # boundary instead of letting a perfect match crash finalization.
+        value = min(1.0, max(0.0, value))
         if value > best_val:
             best_val = value
             best_lag = lag
@@ -1566,11 +1572,11 @@ def write_take_manifest(
     local_duration_s: float = 0.0,
     capture_errors: tuple[str, ...] = (),
     app_version: str = "",
-    participant_names: Optional[dict[int, str]] = None,
+    participant_names: dict[int, str] | None = None,
     session_title: str = "",
     session_id: str = "",
     take_id: str = "",
-    participant_ids: Optional[dict[int, str]] = None,
+    participant_ids: dict[int, str] | None = None,
     local_participant_id: str = "",
     local_participant_name: str = "Host",
     capture_device=None,
@@ -1578,7 +1584,7 @@ def write_take_manifest(
     local_capture_tracks: object = None,
     local_total_frames: int = 0,
     local_durable_frames: int | None = None,
-    session_evidence: "SessionEvidence | None" = None,
+    session_evidence: SessionEvidence | None = None,
     recording_receipts: tuple[RecorderClientReceipt, ...] | None = None,
     recording_identity_errors: tuple[str, ...] = (),
     required_reference_track: bool = False,
@@ -1658,16 +1664,15 @@ def write_take_manifest(
             required=required_reference_track,
         )
     local_topology = _validated_local_capture_topology(local_capture_tracks)
-    if recording_plan is not None:
-        if (
-            str(getattr(recording_plan, "session_id", "")) != str(session_id)
-            or str(getattr(recording_plan, "take_id", "")) != str(take_id)
-            or not callable(
-                getattr(recording_plan, "logical_source_id_for_server", None)
-            )
-            or not callable(getattr(recording_plan, "channel_count_for_server", None))
-        ):
-            raise ValueError("recording_plan does not match this take.")
+    if recording_plan is not None and (
+        str(getattr(recording_plan, "session_id", "")) != str(session_id)
+        or str(getattr(recording_plan, "take_id", "")) != str(take_id)
+        or not callable(
+            getattr(recording_plan, "logical_source_id_for_server", None)
+        )
+        or not callable(getattr(recording_plan, "channel_count_for_server", None))
+    ):
+        raise ValueError("recording_plan does not match this take.")
     offset_s = 0.0
     confidence = 0.0
     # The old channel-keyed maps remain accepted for source compatibility but
@@ -2375,9 +2380,7 @@ def write_take_manifest(
                 )
                 project_start_frame = 0
             else:
-                project_start_frame = int(
-                    round(float(lof_offset) * project_sample_rate)
-                )
+                project_start_frame = round(float(lof_offset) * project_sample_rate)
 
         if participant_id is not None:
             participants_by_id.setdefault(
@@ -2439,8 +2442,8 @@ def write_take_manifest(
                     channels = tuple(getattr(item, "channels", ()) or ())
                     if channels and local_channel not in channels:
                         continue
-                    gap_start = int(getattr(item, "start_frame"))
-                    gap_frames = int(getattr(item, "frame_count"))
+                    gap_start = int(item.start_frame)
+                    gap_frames = int(item.frame_count)
                     if (
                         gap_start < 0
                         or gap_frames <= 0
@@ -2454,7 +2457,7 @@ def write_take_manifest(
                         GapInterval(
                             start_frame=gap_start,
                             frame_count=gap_frames,
-                            reason=str(getattr(item, "reason")),
+                            reason=str(item.reason),
                             # Capture gaps select logical WAVs. Once selected, the
                             # unavailable interval covers every channel in that
                             # mono/stereo logical track.
@@ -2833,17 +2836,7 @@ def _schema_v2_segment_shape_valid(value: object) -> bool:
         return False
     if re.fullmatch(r"[0-9a-f]{64}", str(value.get("sha256") or "")) is None:
         return False
-    if str(value.get("media_status") or "available") not in {
-        "available",
-        "recovered",
-        "partial",
-        "missing",
-        "damaged",
-        "transferring",
-        "transfer_failed",
-    }:
-        return False
-    return True
+    return str(value.get("media_status") or "available") in {"available", "recovered", "partial", "missing", "damaged", "transferring", "transfer_failed"}
 
 
 def _take_media_entry_state(take_dir: Path, relative: str) -> str:
@@ -2901,7 +2894,7 @@ def _manifest_creator_profile_key(
     return canonical, ""
 
 
-def load_take(take_dir: Path) -> Optional[TakeInfo]:
+def load_take(take_dir: Path) -> TakeInfo | None:
     """Build a TakeInfo from a single take folder.
 
     A completed manifest is the take's expected-media inventory, not merely a
@@ -3012,7 +3005,7 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
 
     reaper = next(iter(take_dir.glob("*.rpp")), None)
 
-    tracks: List[TrackInfo] = []
+    tracks: list[TrackInfo] = []
     # Manifest order is stable project order.  Legacy/unlisted files follow in
     # their prior deterministic filename order.
     candidates: list[tuple[Path, dict]] = [
@@ -3197,7 +3190,7 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
                         )
                     else:
                         observed_duration, observed_rate = _probe_audio(segment_path)
-                        observed_frames = int(round(observed_duration * observed_rate))
+                        observed_frames = round(observed_duration * observed_rate)
                         changed = (
                             observed_rate != segment_rate
                             or abs(observed_frames - frame_count) > 1
@@ -3267,7 +3260,7 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
                     media_status = (
                         "missing"
                         if "missing" in blocked_statuses
-                        else sorted(blocked_statuses)[0]
+                        else min(blocked_statuses)
                     )
         if schema_v2 and not segment_infos:
             media_status = "damaged"
@@ -3280,7 +3273,7 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
                 frames = int(info.frames)
             except Exception:  # noqa: BLE001
                 channels = 1
-                frames = int(round(duration * rate))
+                frames = round(duration * rate)
             segment_infos.append(
                 TrackSegmentInfo(
                     path=audio,
@@ -3365,7 +3358,7 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
     )
 
 
-def discover_takes(root: str | Path) -> List[TakeInfo]:
+def discover_takes(root: str | Path) -> list[TakeInfo]:
     """Scan ``root`` for take folders, newest first.
 
     A take folder is an immediate subdirectory containing audio files or a
@@ -3377,7 +3370,7 @@ def discover_takes(root: str | Path) -> List[TakeInfo]:
     if not root.is_dir():
         return []
 
-    takes: List[TakeInfo] = []
+    takes: list[TakeInfo] = []
     try:
         # root-as-single-take
         direct = load_take(root)

@@ -2059,6 +2059,28 @@ class TestTakeValidation(unittest.TestCase):
         self.assertAlmostEqual(offset, 0.5, delta=0.02)
         self.assertGreater(confidence, 0.9)
 
+    def test_exact_alignment_confidence_never_exceeds_durable_bound(self):
+        import numpy as np
+        import soundfile as sf
+
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            rate = 48000
+            frames = rate * 3
+            timeline = np.arange(frames, dtype=np.float64) / rate
+            first = (0.1 * np.sin(2 * np.pi * 223 * timeline)).astype("float32")
+            second = (0.1 * np.sin(2 * np.pi * 337 * timeline)).astype("float32")
+            server = (0.5 * (first + second)).astype("float32")
+            sf.write(take / "local-First.wav", first, rate, subtype="PCM_24")
+            sf.write(take / "local-Second.wav", second, rate, subtype="PCM_24")
+            sf.write(take / "server-host.wav", server, rate, subtype="PCM_24")
+
+            _offset, confidence = estimate_local_alignment(take)
+
+        self.assertGreater(confidence, 0.99)
+        self.assertLessEqual(confidence, 1.0)
+
     def test_alignment_failure_log_hides_media_path_and_exception(self):
         with tempfile.TemporaryDirectory() as d:
             take = Path(d) / "Secret Session"

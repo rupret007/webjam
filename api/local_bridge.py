@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 # Stay inside the ``webjam`` logger namespace so the redaction filter that
 # ``core.logging_config`` attaches to the app's handlers covers this module.
@@ -19,8 +20,8 @@ class LocalApiBridge:
 
     def __init__(
         self,
-        get_participants: Callable[[], List[Dict]],
-        get_diagnostics: Callable[[], Dict[str, Any]],
+        get_participants: Callable[[], list[dict]],
+        get_diagnostics: Callable[[], dict[str, Any]],
         host: str = "127.0.0.1",
         port: int = 8765,
     ):
@@ -29,12 +30,12 @@ class LocalApiBridge:
         self.host = host
         self.port = port
         self._state_lock = threading.Lock()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._server = None
         self._running = False
 
     @staticmethod
-    def _host_allowed(host_header: Optional[str]) -> bool:
+    def _host_allowed(host_header: str | None) -> bool:
         """True only for loopback Host headers.
 
         Defends against DNS-rebinding: a malicious web page can force a browser
@@ -66,11 +67,11 @@ class LocalApiBridge:
             return await call_next(request)
 
         @app.get("/health")
-        def health() -> Dict[str, str]:
+        def health() -> dict[str, str]:
             return {"status": "ok"}
 
         @app.get("/participants")
-        def participants() -> Dict[str, List[Dict]]:
+        def participants() -> dict[str, list[dict]]:
             try:
                 return {"participants": self.get_participants()}
             except Exception as exc:
@@ -80,7 +81,7 @@ class LocalApiBridge:
                 ) from exc
 
         @app.get("/diagnostics")
-        def diagnostics() -> Dict[str, Dict[str, Any]]:
+        def diagnostics() -> dict[str, dict[str, Any]]:
             try:
                 return {"diagnostics": self.get_diagnostics()}
             except Exception as exc:
@@ -124,8 +125,8 @@ class LocalApiBridge:
             _LOGGER.warning("LocalApiBridge port out of range: %r", port)
             return False
         try:
-            from fastapi import FastAPI, HTTPException  # type: ignore
             import uvicorn  # type: ignore
+            from fastapi import FastAPI, HTTPException  # type: ignore
         except Exception:
             return False
 

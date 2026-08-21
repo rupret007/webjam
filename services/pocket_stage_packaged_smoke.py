@@ -31,7 +31,6 @@ from core.session_conductor import (
 )
 from services.pocket_stage_gateway import PocketStageGateway
 
-
 SUCCESS_MARKER = "WebJam Pocket Stage frozen-runtime smoke passed"
 
 

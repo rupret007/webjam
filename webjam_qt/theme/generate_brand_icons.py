@@ -26,7 +26,6 @@ from webjam_qt.theme.brand import (
     trinity_svg_path_data,
 )
 
-
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_DIR = BRAND_MARK_PATH.parent
 IOS_ASSET_CATALOG = ROOT / "ios" / "PocketStage" / "Assets.xcassets"

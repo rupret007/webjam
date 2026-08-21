@@ -31,8 +31,8 @@ from pathlib import Path
 
 import numpy as np
 
-from core.project_audio import CaptureBlockRing
 from core.logical_sources import canonical_logical_source_id, derive_logical_source_id
+from core.project_audio import CaptureBlockRing
 
 LOGGER = logging.getLogger("webjam.local_capture")
 
@@ -1047,11 +1047,11 @@ class LocalInputCapture:
         ):
             return
         elapsed = self._stopped_monotonic - self._started_monotonic
-        wall_frames = max(0, int(round(elapsed * self.samplerate)))
+        wall_frames = max(0, round(elapsed * self.samplerate))
         callback_frames = max(0, int(self._next_input_frame))
         block_tolerance = max(
             self._ring_block_frames * 2,
-            int(round(_DEVICE_STALL_TOLERANCE_S * self.samplerate)),
+            round(_DEVICE_STALL_TOLERANCE_S * self.samplerate),
         )
         if wall_frames - callback_frames <= block_tolerance:
             return
@@ -1359,7 +1359,7 @@ class LocalInputCapture:
             self._finalized = True
             try:
                 writer_released = self._drain_writer()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.debug("Local capture abort failed", exc_info=True)
                 writer_released = False
             if not writer_released:
@@ -1587,7 +1587,7 @@ def _recovery_audio_files(directory: Path) -> tuple[Path, ...]:
         if path.is_symlink() or not path.is_file():
             continue
         name = path.name.lower()
-        if name.endswith(".recovered-partial.wav") or name.endswith(".wav.part"):
+        if name.endswith((".recovered-partial.wav", ".wav.part")):
             files.append(path)
     return tuple(files)
 

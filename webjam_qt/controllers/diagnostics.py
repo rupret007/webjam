@@ -7,18 +7,22 @@ preview, structured JSON, and ZIP export all come from one cached artifact.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import asdict
 import json
 import logging
 import math
 import platform
+from collections.abc import Mapping
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from core.redaction import (
     REDACTED_FIELDS as _REDACTED_FIELDS,  # noqa: F401 - compatibility re-export
+)
+from core.redaction import (
     REDACTED_NAME_HINTS as _REDACTED_NAME_HINTS,  # noqa: F401 - compatibility re-export
+)
+from core.redaction import (
     redact_mapping,
     redact_text,
 )
@@ -450,7 +454,7 @@ class DiagnosticsExporter:
                 raw = handle.read()
         except OSError:
             return ["(log file unavailable)"] if unavailable_marker else []
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.debug("Unexpected log read failure", exc_info=True)
             return ["(log file unavailable)"] if unavailable_marker else []
         if _looks_binary(raw):

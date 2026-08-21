@@ -21,7 +21,6 @@ import subprocess
 import sys
 from dataclasses import asdict
 from pathlib import Path
-from typing import Optional
 
 from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtGui import QFont
@@ -36,9 +35,9 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSpinBox,
     QVBoxLayout,
+    QWidget,
     QWizard,
     QWizardPage,
-    QWidget,
 )
 
 from core.jamulus_name import (
@@ -46,7 +45,6 @@ from core.jamulus_name import (
     JamulusNameError,
     validate_jamulus_name,
 )
-from core.settings import AppSettings, load_settings
 from core.meeting_link import (
     identify_meeting_service,
     meeting_link_error,
@@ -54,6 +52,7 @@ from core.meeting_link import (
     meeting_service_label,
     normalize_meeting_url,
 )
+from core.settings import AppSettings, load_settings
 from webjam_qt.theme.tokens import Color, Font, Space
 from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
 
@@ -74,7 +73,7 @@ class _PageId:
 # ---------------------------------------------------------------------------
 # Helper — styled section header
 # ---------------------------------------------------------------------------
-def _section_label(text: str, parent: Optional[QWidget] = None) -> QLabel:
+def _section_label(text: str, parent: QWidget | None = None) -> QLabel:
     lbl = QLabel(text, parent)
     font = lbl.font()
     font.setPixelSize(Font.SIZE_MD)
@@ -83,7 +82,7 @@ def _section_label(text: str, parent: Optional[QWidget] = None) -> QLabel:
     return lbl
 
 
-def _body_label(text: str, parent: Optional[QWidget] = None) -> QLabel:
+def _body_label(text: str, parent: QWidget | None = None) -> QLabel:
     lbl = QLabel(text, parent)
     lbl.setWordWrap(True)
     lbl.setObjectName("BodyLabel")
@@ -296,7 +295,7 @@ class _JamulusPage(QWizardPage):
         # installer is present, offer to run it instead of sending the
         # user to jamulus.io — mirrors the audio-routing page's "Show me
         # how to set this up" pattern below.
-        self._bundled_installer_path: Optional[str] = None
+        self._bundled_installer_path: str | None = None
         install_btn = QPushButton("Install Jamulus now")
         install_btn.setObjectName("GhostButton")
         install_btn.setVisible(False)
@@ -646,7 +645,7 @@ class _WebexPage(QWizardPage):
 # Page 3 — Optional local recording
 # ---------------------------------------------------------------------------
 class _RoutingPage(QWizardPage):
-    def __init__(self, settings: Optional[AppSettings] = None) -> None:
+    def __init__(self, settings: AppSettings | None = None) -> None:
         super().__init__()
         self.setTitle("Local Meter and Recording")
         self.setSubTitle(
@@ -842,8 +841,8 @@ class SetupWizard(QWizard):
 
     def __init__(
         self,
-        settings: Optional[AppSettings] = None,
-        parent: Optional[QWidget] = None,
+        settings: AppSettings | None = None,
+        parent: QWidget | None = None,
         *,
         skip_welcome: bool = False,
     ) -> None:

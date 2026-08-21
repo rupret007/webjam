@@ -18,11 +18,12 @@ import os
 import stat
 import threading
 import uuid
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Any, Iterator, Mapping
+from typing import Any
 
 from core.file_io import atomic_write_bytes
 from core.studio_project import (
@@ -33,7 +34,6 @@ from core.studio_project import (
     studio_document_from_dict,
 )
 from core.take_project import PROJECT_SCHEMA_VERSION, TakeProject, TakeProjectError
-
 
 STUDIO_STATE_FILENAME = ".webjam-studio-state.json"
 STUDIO_STATE_BACKUP_FILENAME = ".webjam-studio-state.json.bak"
@@ -550,13 +550,12 @@ def save_studio_document(
     """CAS-save one arrangement while preserving valid or corrupt prior bytes."""
     if not isinstance(document, StudioDocument):
         raise StudioStoreError("Studio state must be a StudioDocument value.")
-    if expected_token is not None:
-        if (
-            not isinstance(expected_token, str)
-            or len(expected_token) != 64
-            or any(character not in "0123456789abcdef" for character in expected_token)
-        ):
-            raise StudioStoreError("Studio state token must be a lowercase SHA-256.")
+    if expected_token is not None and (
+        not isinstance(expected_token, str)
+        or len(expected_token) != 64
+        or any(character not in "0123456789abcdef" for character in expected_token)
+    ):
+        raise StudioStoreError("Studio state token must be a lowercase SHA-256.")
 
     folder, _project = _read_project(take_dir)
     with studio_store_lock(folder):

@@ -7,12 +7,12 @@ validated, and deleted by default when its owner closes.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import queue
 import shutil
 import threading
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -91,7 +91,7 @@ class InputActivityProbe:
             with self._lock:
                 self._snapshot = InputSnapshot(active=True)
             self._stream.start()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.stop()
             with self._lock:
                 self._snapshot = InputSnapshot(error=str(exc))
@@ -347,7 +347,7 @@ class ScratchRecorder:
             )
             self._thread.start()
             self._stream.start()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.delete()
             raise BandCheckAudioError(f"The test recording could not start: {exc}") from exc
 
@@ -482,7 +482,7 @@ class ScratchRecorder:
             device = _output_device_index(sd, output_device_name)
             sd.play(data * gain, int(sample_rate), device=device, blocking=False)
             return len(data) / int(sample_rate) if sample_rate else 0.0
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise BandCheckAudioError(f"The test recording could not be played: {exc}") from exc
 
     def delete(self, *, wait_timeout: float | None = DELETE_JOIN_TIMEOUT_S) -> bool:
@@ -550,7 +550,7 @@ class HeadphoneTonePlayer:
     SAMPLE_RATE = 48_000
     LEVEL = 0.03  # roughly -30.5 dBFS
 
-    def play(self, *, output_device_name: str = "") -> "HeadphoneTestEvidence":
+    def play(self, *, output_device_name: str = "") -> HeadphoneTestEvidence:
         try:
             import sounddevice as sd  # type: ignore
 
@@ -601,7 +601,7 @@ class HeadphoneTonePlayer:
                 duration_s=len(output) / self.SAMPLE_RATE,
                 channels=channels,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise BandCheckAudioError(f"The headphone test could not play: {exc}") from exc
 
     @staticmethod

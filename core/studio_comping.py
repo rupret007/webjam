@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import math
 import uuid
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from core.studio_project import (
     MAX_PROJECT_FRAMES,
@@ -30,7 +30,6 @@ from core.take_project import (
     SourceType,
     TakeProject,
 )
-
 
 DEFAULT_COMP_BOUNDARY_MS = 5.0
 _USABLE_MEDIA = frozenset({MediaStatus.AVAILABLE, MediaStatus.RECOVERED})
@@ -463,15 +462,7 @@ def _lane_id(
     return str(
         uuid.uuid5(
             _COMP_NAMESPACE,
-            ":".join(
-                (
-                    "lane",
-                    document.take_id,
-                    destination_track_id,
-                    source_project.take_id,
-                    source_track.track_id,
-                )
-            ),
+            f"lane:{document.take_id}:{destination_track_id}:{source_project.take_id}:{source_track.track_id}",
         )
     )
 
@@ -500,16 +491,7 @@ def _lane_region(
     region_id = str(
         uuid.uuid5(
             _COMP_NAMESPACE,
-            ":".join(
-                (
-                    "region",
-                    document.take_id,
-                    destination_track_id,
-                    source_project.take_id,
-                    source_track.track_id,
-                    segment.segment_id,
-                )
-            ),
+            f"region:{document.take_id}:{destination_track_id}:{source_project.take_id}:{source_track.track_id}:{segment.segment_id}",
         )
     )
     return StudioRegion(
@@ -947,9 +929,9 @@ __all__ = [
     "DEFAULT_COMP_BOUNDARY_MS",
     "StudioCompingError",
     "add_take_lane",
+    "audition_lane_document",
     "automatic_source_track_match",
     "automatic_take_lane_matches",
-    "audition_lane_document",
     "compatible_source_tracks",
     "remove_take_lane",
     "select_lane_range",

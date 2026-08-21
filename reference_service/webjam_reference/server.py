@@ -40,7 +40,7 @@ def _response(*, ok: bool, **values: object) -> bytes:
 
 
 class _RelayProtocol(asyncio.DatagramProtocol):
-    def __init__(self, service: "ReferenceService") -> None:
+    def __init__(self, service: ReferenceService) -> None:
         self.service = service
         self.transport: asyncio.DatagramTransport | None = None
 
@@ -102,7 +102,7 @@ class ReferenceService:
         address = self._relay_transport.get_extra_info("sockname")
         return int(address[1])
 
-    async def start(self) -> "ReferenceService":
+    async def start(self) -> ReferenceService:
         if self._started:
             raise RuntimeError("service can only be started once")
         self._started = True
@@ -174,7 +174,7 @@ class ReferenceService:
         self.registry.close()
         self._privacy_log("stopped", active_sessions=active)
 
-    async def __aenter__(self) -> "ReferenceService":
+    async def __aenter__(self) -> ReferenceService:
         return await self.start()
 
     async def __aexit__(self, *_: object) -> None:

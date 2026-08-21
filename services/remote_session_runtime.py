@@ -8,11 +8,12 @@ is released immediately after that backend call returns.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
 import logging
 import threading
-from typing import Callable, Protocol
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import Enum
+from typing import Protocol
 
 from core.remote_invitation import RemoteInvitation
 from core.session_transport import (
@@ -20,7 +21,6 @@ from core.session_transport import (
     SessionRole,
     TransportPath,
 )
-
 
 LOGGER = logging.getLogger("webjam.services.remote_session")
 

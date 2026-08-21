@@ -22,10 +22,10 @@ Truth rules, deliberately conservative:
 
 from __future__ import annotations
 
+import math
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
-import math
-from typing import Iterable, Mapping
 
 from core.logical_sources import canonical_logical_source_id
 
