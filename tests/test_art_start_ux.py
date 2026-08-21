@@ -97,6 +97,19 @@ def test_art_adds_no_start_action_beyond_the_cards_and_host_join(
         dialog.deleteLater()
 
 
+
+def test_only_paint_along_shows_the_face_mark(qapp, tmp_path: Path):
+    """Jeff locked the squirrel-face mark on Paint along only."""
+
+    dialog = _dialog(tmp_path)
+    try:
+        cards = {card.start_key: card for card in _visible_cards(dialog)}
+        assert cards["paint_along"].icon().isNull() is False
+        assert cards["talk_and_make"].icon().isNull() is True
+        assert cards["paint_together"].icon().isNull() is True
+    finally:
+        dialog.deleteLater()
+
 def test_each_card_says_what_it_does_in_one_short_line(qapp, tmp_path: Path):
     dialog = _dialog(tmp_path)
     try:

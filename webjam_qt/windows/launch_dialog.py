@@ -192,10 +192,21 @@ class StartCard(QCommandLinkButton):
         # and away from Host.
         self.setAutoDefault(False)
         self.setDefault(False)
-        # The stock control ships a decorative arrow. The card is already
-        # obviously pressable, and the glyph only competes with the words.
-        self.setIcon(QIcon())
-        self.setIconSize(QSize(0, 0))
+        # The stock control ships a decorative arrow. Clear it on every card
+        # except Paint along, which carries the locked face mark and nothing
+        # else.
+        mark = (
+            Path(__file__).resolve().parent.parent
+            / "theme"
+            / "assets"
+            / "paint_along_mark.png"
+        )
+        if start.key == "paint_along" and mark.is_file():
+            self.setIcon(QIcon(str(mark)))
+            self.setIconSize(QSize(28, 28))
+        else:
+            self.setIcon(QIcon())
+            self.setIconSize(QSize(0, 0))
         # The stock hint assumes a wrapped description and comes out tall
         # enough to push Host and Join off a supported window. Bounding the
         # height keeps three cards, Host, and Join all on screen at the
