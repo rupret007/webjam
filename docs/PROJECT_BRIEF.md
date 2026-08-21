@@ -19,8 +19,14 @@ Music and Podcast & Voice are GA creator profiles. Review & Rehearsal is
 Preview: it supports live WebJam-audio Host/Join, Record Session, a local-only
 scratchpad, and playback/read-only review of completed session takes. It blocks
 standalone projects, take editing/comp/mix mutation, track export,
-shared notes, visual sync, and media timecode. No profile directly or
-automatically taps a meeting app, browser, or system output.
+shared notes, visual sync, and media timecode. Studio Visit is Preview and is
+for artists rather than musicians: a live WebJam-audio room to talk in while
+painting, drawing, sculpting, or building, plus one optional reference video
+that the host plays while each computer shows its own copy of the same local
+file. It blocks standalone projects, session recording and every take
+capability, a Jamulus reference-audio route, a shared canvas, and any
+frame-accurate or media-timecode claim. No profile directly or automatically
+taps a meeting app, browser, or system output.
 
 The product thesis is simple: creators should have one clear place to conduct
 the session while each specialist system keeps the responsibility it is good at.
@@ -39,7 +45,8 @@ and truthful failure states.
 
 | Surface | Purpose | Owner of the critical truth |
 | --- | --- | --- |
-| Creator profile | Select Music, Podcast & Voice, or Review & Rehearsal presentation and capability gates | WebJam profile registry |
+| Creator profile | Select Music, Podcast & Voice, Review & Rehearsal, or Studio Visit presentation and capability gates | WebJam profile registry |
+| Reference Video | Studio Visit only: host-clocked play/pause/stop/seek over one local file each computer holds its own proven copy of | WebJam reference video controller |
 | Host / Join | Start or enter a private live session | WebJam session conductor + Jamulus |
 | Conversation | Provider-neutral public-HTTPS meeting handoff; friendly labels for Webex/Zoom/Teams/Meet/FaceTime; separate native Webex focus guidance | Selected meeting service |
 | Record Session | Capture and finalize a session with durable identity | WebJam recorder + Jamulus evidence |

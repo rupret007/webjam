@@ -15,7 +15,8 @@ meeting services reached through hardened external links. The boundary is delibe
 | Layer | Responsibility |
 | --- | --- |
 | `webjam_qt` | Host/Join launch, Session HUD, live Shared Track deck/transport, Record Session and session-Studio UI, standalone Reference Studio, recovery messages |
-| `core/creative_modes.py` | Canonical Music and Podcast & Voice GA profiles, Review & Rehearsal Preview profile, safe defaults, legacy aliases, and cross-surface presentation vocabulary |
+| `core/creative_modes.py` | Canonical Music and Podcast & Voice GA profiles, Review & Rehearsal and Studio Visit Preview profiles, safe defaults, legacy aliases, and cross-surface presentation vocabulary |
+| `core/reference_video.py` | Studio Visit's host-clocked reference video: descriptor-bound content hashing, session-scoped same-file identity, host-only transport, and a fail-closed follower |
 | `core/song_*`, `core/project_*`, schema-3 Studio | Portable Reference Studio project/media ownership, local playback/recording, non-destructive arrangement/mix, and bounce |
 | `services/bridge_service.py` | Direct owned-process launch/stop, hosted-server supervision, authenticated Jamulus RPC, and verified managed/embedded/explicit/system component resolution |
 | `core/jamulus_profile.py` | Dedicated Jamulus profile launch contract and private, allowlisted restart records |
@@ -36,6 +37,11 @@ to Music. Review & Rehearsal is always visibly Preview: it allows live
 WebJam-audio Host/Join, session recording, and playback/read-only completed-take
 review, while refusing standalone project create/open, take editing/comp/mix
 mutation, track export, shared notes, visual sync, and media-timecode behavior.
+Studio Visit is also visibly Preview: it allows live WebJam-audio Host/Join,
+local notes, and one optional host-clocked reference video that each computer
+plays from its own copy of the same local file. It refuses standalone projects,
+session recording, take review/editing/export, a Jamulus reference-audio route,
+a shared canvas, and any frame-accurate or media-timecode behavior.
 No profile directly or automatically taps a meeting app, browser, or system
 output.
 

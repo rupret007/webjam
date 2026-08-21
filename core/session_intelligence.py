@@ -114,6 +114,12 @@ _CREATOR_CHECKPOINT_TEMPLATES: dict[str, tuple[str, ...]] = {
         "{section} feedback",
         "handoff",
     ),
+    "studio_visit": (
+        "set up the table",
+        "block in",
+        "{section} check",
+        "next visit",
+    ),
 }
 
 _PulseMode = CreativeMode | CreatorProfile
