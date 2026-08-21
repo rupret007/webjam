@@ -8,8 +8,6 @@ means, and what to say when the answer is "no canvas on this computer".
 from __future__ import annotations
 
 import os
-import stat
-import sys
 from pathlib import Path
 
 import pytest
