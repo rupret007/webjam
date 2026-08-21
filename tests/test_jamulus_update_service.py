@@ -72,6 +72,11 @@ from services.jamulus_component_update import (
 
 
 NOW = datetime(2026, 7, 28, 19, 0, tzinfo=timezone.utc)
+# The signed catalog these tests build is valid from ``NOW`` for 20 days, so a
+# service left on the real wall clock starts rejecting it as expired once that
+# window passes. Every service here therefore reads a fixed clock inside the
+# window unless a test deliberately supplies its own.
+DEFAULT_TEST_CLOCK = NOW + timedelta(hours=1)
 
 
 def _artifact(
@@ -336,11 +341,32 @@ def _service(
         active_version_provider=lambda: "3.12.2",
         platform_approval_launcher=launcher or (lambda _path, _entry: True),
         automatic_download=automatic_download,
-        now=now,
+        now=now or (lambda: DEFAULT_TEST_CLOCK),
         installed_store=installed_store,
         platform_store=platform_store,
     )
     return service, data
+
+
+def test_these_tests_cannot_start_failing_on_a_calendar_date(tmp_path):
+    """Guard against the wall clock leaving the signed catalog's window.
+
+    The catalog fixture is issued at ``NOW`` and valid for 20 days. A service
+    left on the real clock accepted it while that window was open and then
+    rejected it as ``catalog-authorization-stale`` afterwards, so this file
+    went red with no code change. Every service must read a fixed clock.
+    """
+
+    client, server = _pair()
+    catalog = _catalog(client, server)
+    assert catalog.issued_at <= DEFAULT_TEST_CLOCK < catalog.expires_at
+
+    service, _ = _service(tmp_path)
+    assert service.check_now()
+    _wait(service)
+
+    assert service.snapshot.state is JamulusUpdateState.AVAILABLE
+    assert service.snapshot.reason_code != "catalog-authorization-stale"
 
 
 def test_license_text_uses_frozen_third_party_license_layout(
