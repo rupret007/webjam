@@ -17,9 +17,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
-    QHBoxLayout,
     QLabel,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -31,12 +29,14 @@ from core.ai_image import (
 )
 from core.krita_ai import AI_IMAGE_SUFFIXES
 from webjam_qt.theme.tokens import Space
+from webjam_qt.widgets.status_chip import QuietAction, StatusChip
 
 _HEADLINE = "AI image"
 _HINT = (
     "WebJam does not generate anything. Krita's AI Image Generation plugin "
-    "does, on this computer, using a local backend. Put a result on the "
-    "shared canvas yourself if you want the room to see it."
+    "does, on this computer, using a local backend. You describe the image "
+    "there, because WebJam cannot type into another program. Put a result on "
+    "the shared canvas yourself if you want the room to see it."
 )
 
 
@@ -79,61 +79,22 @@ class AiImageDialog(QDialog):
         self._status.setAccessibleName("AI image status")
         layout.addWidget(self._status)
 
-        verbs = QHBoxLayout()
-        verbs.setContentsMargins(0, 0, 0, 0)
-        verbs.setSpacing(Space.SM)
-        self._make_button = QPushButton("Make")
-        self._make_button.setObjectName("GhostButton")
-        self._make_button.setAccessibleName("Make a new image with AI")
-        self._make_button.setAccessibleDescription(
-            "Open Krita on a new canvas with AI Image Generation, where you "
-            "describe the image you want. WebJam takes no prompt."
-        )
-        self._make_button.clicked.connect(self.make_requested.emit)
-        self._edit_button = QPushButton("Edit…")
-        self._edit_button.setObjectName("GhostButton")
-        self._edit_button.setAccessibleName("Edit an image you already have")
-        self._edit_button.setAccessibleDescription(
-            "Choose a local image you own and open it in Krita, where AI "
-            "Image Generation can fill, extend, or remove part of it."
-        )
-        self._edit_button.clicked.connect(self._choose_image)
-        verbs.addWidget(self._make_button)
-        verbs.addWidget(self._edit_button)
-        layout.addLayout(verbs)
+        self._chip = StatusChip()
+        self._chip.clicked.connect(self._chip_pressed)
+        layout.addWidget(self._chip)
+
+        # Editing an image you already have is a real need and not the point
+        # of the panel, so it is available and visibly lesser rather than a
+        # second equal call to action.
+        self._edit = QuietAction()
+        self._edit.clicked.connect(self._choose_image)
+        layout.addWidget(self._edit)
 
         self._activity = QLabel("")
         self._activity.setObjectName("AiImageActivity")
         self._activity.setWordWrap(True)
         self._activity.setVisible(False)
         layout.addWidget(self._activity)
-
-        self._install_krita_button = QPushButton("Get Krita")
-        self._install_krita_button.setObjectName("GhostButton")
-        self._install_krita_button.setAccessibleName("Get Krita")
-        self._install_krita_button.setAccessibleDescription(
-            "Open Krita's download page in your browser. WebJam does not "
-            "install anything for you."
-        )
-        self._install_krita_button.clicked.connect(
-            self.install_krita_requested.emit
-        )
-        self._install_krita_button.setVisible(False)
-        layout.addWidget(self._install_krita_button)
-
-        self._install_plugin_button = QPushButton("Get the AI plugin")
-        self._install_plugin_button.setObjectName("GhostButton")
-        self._install_plugin_button.setAccessibleName(
-            "Get the Krita AI Diffusion plugin"
-        )
-        self._install_plugin_button.setAccessibleDescription(
-            "Open the Krita AI Diffusion download page in your browser."
-        )
-        self._install_plugin_button.clicked.connect(
-            self.install_plugin_requested.emit
-        )
-        self._install_plugin_button.setVisible(False)
-        layout.addWidget(self._install_plugin_button)
 
         ownership = QLabel(RESULTS_ARE_YOURS_MESSAGE)
         ownership.setObjectName("AiImageOwnership")
@@ -146,6 +107,15 @@ class AiImageDialog(QDialog):
         layout.addWidget(hint)
 
     # -- intent --------------------------------------------------------
+
+    def _chip_pressed(self) -> None:
+        action = self._chip.property("action")
+        if action == "make":
+            self.make_requested.emit()
+        elif action == "install_krita":
+            self.install_krita_requested.emit()
+        elif action == "install_plugin":
+            self.install_plugin_requested.emit()
 
     def _choose_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -169,14 +139,40 @@ class AiImageDialog(QDialog):
         else:
             self._headline.setText(_HEADLINE)
 
-        self._make_button.setEnabled(ready)
-        self._edit_button.setEnabled(ready)
-        self._install_krita_button.setVisible(
-            snapshot.state is AiImageState.NEEDS_KRITA
-        )
-        self._install_plugin_button.setVisible(
-            snapshot.state is AiImageState.NEEDS_PLUGIN
-        )
+        if ready:
+            self._chip.setProperty("action", "make")
+            self._chip.offer(
+                "Make an image",
+                "Open Krita on a new canvas with AI Image Generation, where "
+                "you describe the image you want.",
+            )
+            self._edit.offer(
+                "Edit an image you have…",
+                "Choose a local image you own and open it in Krita, where AI "
+                "Image Generation can fill, extend, or remove part of it.",
+            )
+        elif snapshot.state is AiImageState.NEEDS_KRITA:
+            self._chip.setProperty("action", "install_krita")
+            self._chip.offer(
+                "Install Krita",
+                "Open Krita's download page. WebJam does not install anything "
+                "for you.",
+                tone=StatusChip.RECOVERY,
+            )
+            self._edit.withdraw()
+        elif snapshot.state is AiImageState.NEEDS_PLUGIN:
+            self._chip.setProperty("action", "install_plugin")
+            self._chip.offer(
+                "Install the AI plugin",
+                "Open the Krita AI Diffusion download page.",
+                tone=StatusChip.RECOVERY,
+            )
+            self._edit.withdraw()
+        else:
+            # Outside a room there is nothing to press and nothing missing.
+            self._chip.withdraw()
+            self._edit.withdraw()
+
         self._activity.setText(snapshot.activity)
         self._activity.setVisible(bool(snapshot.activity))
 

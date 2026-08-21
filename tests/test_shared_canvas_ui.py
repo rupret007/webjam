@@ -97,31 +97,78 @@ def test_a_guest_gets_exactly_one_button_and_no_canvas():
         dialog.deleteLater()
 
 
+def test_a_guest_is_never_offered_two_equal_calls_to_action():
+    """ADR 0002: a surface explains the next action, it does not compete.
+
+    Every guest state offers at most one thing to press, so there is never a
+    moment where two buttons look equally like the point of the panel.
+    """
+
+    dialog = SharedCanvasDialog(hosting=False)
+    try:
+        for state in SharedCanvasFollowState:
+            dialog.set_follow_snapshot(_follow(state))
+            assert len(_visible_buttons(dialog)) <= 1, state
+    finally:
+        dialog.deleteLater()
+
+
 def test_a_guest_is_offered_no_way_to_share_or_stop_the_canvas():
     dialog = SharedCanvasDialog(hosting=False)
     try:
-        for forbidden in ("_share_button", "_withdraw_button", "_host_button"):
-            assert not hasattr(dialog, forbidden), forbidden
+        assert not hasattr(dialog, "_invite_input")
+        for state in SharedCanvasFollowState:
+            dialog.set_follow_snapshot(_follow(state))
+            assert dialog._quiet.offered is False, state
+            assert dialog._chip.property("action") in (None, "install", "open")
     finally:
         dialog.deleteLater()
 
 
-def test_a_guest_cannot_open_a_canvas_that_is_not_there():
+def test_a_room_with_no_canvas_offers_nothing_rather_than_a_dead_button():
+    """A talk-only room is a finished state, not an unfinished one.
+
+    A greyed-out canvas button would be a small taunt repeated every time
+    someone glanced at the panel, so nothing is offered at all.
+    """
+
     dialog = SharedCanvasDialog(hosting=False)
     try:
         dialog.set_follow_snapshot(_follow(SharedCanvasFollowState.NO_CANVAS))
-        assert dialog._open_button.isEnabled() is False
-        assert dialog._install_button.isHidden() is True
+        assert _visible_buttons(dialog) == []
+        assert dialog._chip.offered is False
     finally:
         dialog.deleteLater()
 
 
-def test_a_guest_without_drawpile_is_offered_the_download_and_not_the_canvas():
+def test_a_canvas_webjam_cannot_read_offers_nothing_to_press():
     dialog = SharedCanvasDialog(hosting=False)
     try:
+        dialog.set_follow_snapshot(_follow(SharedCanvasFollowState.UNREADABLE))
+        assert dialog._chip.offered is False
+    finally:
+        dialog.deleteLater()
+
+
+def test_a_guest_without_drawpile_gets_a_recovery_not_an_error():
+    """"Install Drawpile to join the canvas" is a way forward, not a fault."""
+
+    dialog = SharedCanvasDialog(hosting=False)
+    seen: list[int] = []
+    dialog.install_drawpile_requested.connect(lambda: seen.append(1))
+    try:
         dialog.set_follow_snapshot(_follow(SharedCanvasFollowState.NEEDS_DRAWPILE))
-        assert dialog._open_button.isEnabled() is False
-        assert dialog._install_button.isHidden() is False
+
+        assert _visible_buttons(dialog) == ["Install Drawpile"]
+        assert dialog._chip.property("tone") == "recovery"
+        assert "Install Drawpile to join the canvas" in dialog._status.text()
+        # Never a fault report, never internal vocabulary.
+        lowered = dialog._status.text().casefold()
+        for banned in ("error", "failed", "capability", "traceback", "exception"):
+            assert banned not in lowered, banned
+
+        dialog._chip.click()
+        assert seen == [1]
     finally:
         dialog.deleteLater()
 
@@ -164,23 +211,67 @@ def test_the_guest_hint_says_where_the_painting_actually_happens():
 # ---------------------------------------------------------------------------
 
 
-def test_a_host_with_no_canvas_is_offered_hosting_and_a_paste_field():
+def test_a_host_starts_with_one_verb_and_no_paste_field():
+    """There is nothing to paste until Drawpile has actually been opened."""
+
     dialog = SharedCanvasDialog(hosting=True)
     try:
-        dialog.set_host_snapshot(
-            SharedCanvasSnapshot(launcher_available=True)
-        )
-        assert _visible_buttons(dialog) == ["Host in Drawpile", "Share with the room"]
-        assert dialog._invite_input.isHidden() is False
+        dialog.set_host_snapshot(SharedCanvasSnapshot(launcher_available=True))
+
+        assert _visible_buttons(dialog) == ["Host a canvas in Drawpile"]
+        assert dialog._invite_input.isHidden() is True
     finally:
         dialog.deleteLater()
 
 
-def test_a_sharing_host_is_offered_only_open_and_stop():
+def test_the_paste_field_appears_only_after_hosting_has_started():
+    dialog = SharedCanvasDialog(hosting=True)
+    opened: list[int] = []
+    dialog.host_in_drawpile_requested.connect(lambda: opened.append(1))
+    try:
+        dialog.set_host_snapshot(SharedCanvasSnapshot(launcher_available=True))
+        dialog._chip.click()
+
+        assert opened == [1]
+        dialog.set_host_snapshot(SharedCanvasSnapshot(launcher_available=True))
+        assert dialog._invite_input.isHidden() is False
+        assert "copy its invitation" in dialog._status.text()
+        # Still exactly one thing to press.
+        assert len(_visible_buttons(dialog)) == 1
+    finally:
+        dialog.deleteLater()
+
+
+def test_the_chip_becomes_share_once_something_is_pasted():
+    dialog = SharedCanvasDialog(hosting=True)
+    try:
+        dialog.set_host_snapshot(SharedCanvasSnapshot(launcher_available=True))
+        dialog._chip.click()
+        dialog.set_host_snapshot(SharedCanvasSnapshot(launcher_available=True))
+        assert dialog._chip.text() == "Host a canvas in Drawpile"
+
+        dialog._invite_input.setText(WEB_INVITE)
+
+        assert dialog._chip.text() == "Share with the room"
+        assert len(_visible_buttons(dialog)) == 1
+    finally:
+        dialog.deleteLater()
+
+
+def test_a_sharing_host_has_one_primary_and_one_quiet_action():
+    """Stopping a share is a real need and not the point of the panel."""
+
     dialog = SharedCanvasDialog(hosting=True)
     try:
         dialog.set_host_snapshot(_host_snapshot())
-        assert _visible_buttons(dialog) == ["Open canvas", "Stop sharing"]
+
+        assert dialog._chip.text() == "Open canvas"
+        assert dialog._quiet.text() == "Stop sharing"
+        assert dialog._quiet.offered is True
+        # The quiet action is visibly lesser, not a second equal CTA.
+        assert dialog._quiet.objectName() == "QuietAction"
+        assert dialog._chip.minimumHeight() >= 52
+        assert dialog._quiet.minimumHeight() < dialog._chip.minimumHeight()
         assert dialog._invite_input.isHidden() is True
     finally:
         dialog.deleteLater()
@@ -201,28 +292,31 @@ def test_sharing_emits_the_pasted_text_once_and_clears_the_field():
     seen: list[str] = []
     dialog.share_requested.connect(seen.append)
     try:
+        dialog.set_host_snapshot(SharedCanvasSnapshot(launcher_available=True))
+        dialog._chip.click()
+        dialog.set_host_snapshot(SharedCanvasSnapshot(launcher_available=True))
         dialog._invite_input.setText(WEB_INVITE)
-        dialog._share_button.click()
+        dialog._chip.click()
 
         assert seen == [WEB_INVITE]
         assert dialog._invite_input.text() == ""
 
         # An empty field must not emit an intent to share nothing.
-        dialog._share_button.click()
+        dialog._chip.click()
         assert seen == [WEB_INVITE]
     finally:
         dialog.deleteLater()
 
 
-def test_a_host_without_drawpile_is_told_so_and_offered_the_download():
+def test_a_host_without_drawpile_gets_a_recovery_not_a_disabled_panel():
     dialog = SharedCanvasDialog(hosting=True)
     try:
         dialog.set_host_snapshot(SharedCanvasSnapshot(launcher_available=False))
 
-        assert dialog._host_button.isEnabled() is False
-        assert dialog._share_button.isEnabled() is False
-        assert dialog._install_button.isHidden() is False
-        assert "not installed" in dialog._status.text()
+        assert _visible_buttons(dialog) == ["Install Drawpile"]
+        assert dialog._chip.property("tone") == "recovery"
+        assert dialog._status.text() == "Install Drawpile to paint together."
+        assert dialog._invite_input.isHidden() is True
     finally:
         dialog.deleteLater()
 

@@ -256,7 +256,7 @@ def test_join_keeps_one_name_one_secret_invite_and_one_primary_at_460px(
         assert dialog._join_button_primary.isVisibleTo(dialog)
         assert dialog._invite_input.height() >= 44
         assert dialog._join_button_primary.height() >= 48
-        assert dialog._invite_input.accessibleName() == "WebJam invite link"
+        assert dialog._invite_input.accessibleName() == "Invite"
         assert dialog._invite_input.accessibleDescription()
         assert dialog._invite_input.echoMode() is dialog._invite_input.EchoMode.Password
         for control in (

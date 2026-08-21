@@ -720,9 +720,12 @@ QPushButton#LaunchSecondary:focus {
     border: 2px solid ${COLOR_BORDER_FOCUS};
 }
 
+/* An unchosen card recedes: same shape, quieter surface and text, so the
+   chosen one reads as the room you are about to open rather than as one of
+   three equally loud settings. */
 QCommandLinkButton#LaunchStartCard {
-    background-color: ${COLOR_BG_CARD};
-    color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_PANEL};
+    color: ${COLOR_TEXT_MUTED};
     border: 1px solid ${COLOR_BORDER_SUBTLE};
     border-radius: ${RADIUS_MD}px;
     text-align: left;
@@ -732,12 +735,14 @@ QCommandLinkButton#LaunchStartCard {
 }
 
 QCommandLinkButton#LaunchStartCard:hover {
-    background-color: ${COLOR_BG_CARD_HOVER};
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_SECONDARY};
     border-color: ${COLOR_BORDER_STRONG};
 }
 
 QCommandLinkButton#LaunchStartCard:checked {
     background-color: ${COLOR_BG_CARD_HOVER};
+    color: ${COLOR_TEXT_PRIMARY};
     border: 2px solid ${COLOR_ACCENT_PRIMARY};
 }
 
@@ -775,6 +780,71 @@ QCommandLinkButton#LaunchStartCard:disabled {
 #SharedCanvasInviteInput {
     min-height: 32px;
     padding: 0 ${SPACE_SM}px;
+}
+
+/* -------------------------------------------------------------------------
+ * Status chip and its quiet companion
+ *
+ * A panel offers one thing to press. The chip carries it, and its label is the
+ * status, so "Install Drawpile" and "Open shared canvas" are the same control
+ * at different moments. A recovery chip is outlined rather than filled and
+ * uses no warning colour: nothing is broken, something is absent.
+ * ---------------------------------------------------------------------- */
+
+QPushButton#StatusChip {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_MD}px;
+    min-height: 52px;
+    padding: 0 ${SPACE_LG}px;
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+QPushButton#StatusChip:hover {
+    background-color: ${COLOR_ACCENT_HOVER};
+    border-color: ${COLOR_ACCENT_HOVER};
+}
+
+QPushButton#StatusChip:pressed {
+    background-color: ${COLOR_ACCENT_PRESSED};
+    border-color: ${COLOR_ACCENT_PRESSED};
+}
+
+QPushButton#StatusChip:focus {
+    border: 2px solid ${COLOR_TEXT_PRIMARY};
+}
+
+QPushButton#StatusChip[tone="recovery"] {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+}
+
+QPushButton#StatusChip[tone="recovery"]:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    border-color: ${COLOR_TEXT_PRIMARY};
+}
+
+QPushButton#QuietAction {
+    background: transparent;
+    color: ${COLOR_TEXT_MUTED};
+    border: none;
+    border-radius: ${RADIUS_SM}px;
+    min-height: 30px;
+    padding: 0 ${SPACE_SM}px;
+    font-size: ${FONT_SIZE_SM}px;
+    text-align: left;
+}
+
+QPushButton#QuietAction:hover {
+    color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_CARD};
+}
+
+QPushButton#QuietAction:focus {
+    border: 1px solid ${COLOR_BORDER_FOCUS};
 }
 
 /* -------------------------------------------------------------------------

@@ -76,13 +76,26 @@ def _visible_buttons(dialog: AiImageDialog) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def test_a_ready_panel_offers_exactly_two_verbs():
+def test_a_ready_panel_offers_one_primary_and_one_quiet_verb():
+    """ADR 0002: never two equal calls to action.
+
+    Making a new image is the point of the panel. Editing one you already have
+    is a real need beside it, and reads as visibly lesser rather than as a
+    second equal button.
+    """
+
     dialog = AiImageDialog()
     try:
         dialog.set_snapshot(_snapshot(AiImageState.READY))
-        assert _visible_buttons(dialog) == ["Make", "Edit…"]
-        assert dialog._make_button.isEnabled() is True
-        assert dialog._edit_button.isEnabled() is True
+
+        assert _visible_buttons(dialog) == [
+            "Make an image",
+            "Edit an image you have…",
+        ]
+        assert dialog._chip.objectName() == "StatusChip"
+        assert dialog._edit.objectName() == "QuietAction"
+        assert dialog._chip.minimumHeight() >= 52
+        assert dialog._edit.minimumHeight() < dialog._chip.minimumHeight()
     finally:
         dialog.deleteLater()
 
@@ -131,8 +144,8 @@ def test_a_managed_backend_still_allows_both_verbs_and_claims_no_address():
     dialog = AiImageDialog()
     try:
         dialog.set_snapshot(_snapshot(AiImageState.READY_MANAGED_BACKEND))
-        assert dialog._make_button.isEnabled() is True
-        assert dialog._edit_button.isEnabled() is True
+        assert dialog._chip.offered is True
+        assert dialog._edit.offered is True
         assert dialog._headline.text() == "AI image"
     finally:
         dialog.deleteLater()
@@ -147,37 +160,62 @@ def test_a_detected_backend_is_named_in_the_headline():
         dialog.deleteLater()
 
 
-def test_no_krita_disables_both_verbs_and_offers_the_download():
+def test_no_krita_replaces_the_verbs_with_one_recovery():
+    """A greyed-out Make would taunt; a way forward is offered instead."""
+
     dialog = AiImageDialog()
+    seen: list[int] = []
+    dialog.install_krita_requested.connect(lambda: seen.append(1))
     try:
         dialog.set_snapshot(_snapshot(AiImageState.NEEDS_KRITA))
-        assert dialog._make_button.isEnabled() is False
-        assert dialog._edit_button.isEnabled() is False
-        assert dialog._install_krita_button.isHidden() is False
-        assert dialog._install_plugin_button.isHidden() is True
+
+        assert _visible_buttons(dialog) == ["Install Krita"]
+        assert dialog._chip.property("tone") == "recovery"
+        assert dialog._edit.offered is False
+
+        dialog._chip.click()
+        assert seen == [1]
     finally:
         dialog.deleteLater()
 
 
 def test_a_missing_plugin_offers_the_plugin_not_krita():
     dialog = AiImageDialog()
+    seen: list[int] = []
+    dialog.install_plugin_requested.connect(lambda: seen.append(1))
     try:
         dialog.set_snapshot(_snapshot(AiImageState.NEEDS_PLUGIN))
-        assert dialog._make_button.isEnabled() is False
-        assert dialog._install_krita_button.isHidden() is True
-        assert dialog._install_plugin_button.isHidden() is False
+
+        assert _visible_buttons(dialog) == ["Install the AI plugin"]
+        dialog._chip.click()
+        assert seen == [1]
     finally:
         dialog.deleteLater()
 
 
-def test_outside_a_room_the_panel_offers_nothing_and_no_install():
+def test_outside_a_room_the_panel_offers_nothing_at_all():
+    """Nothing is missing and nothing is broken, so nothing is pressed."""
+
     dialog = AiImageDialog()
     try:
         dialog.set_snapshot(_snapshot(AiImageState.NOT_IN_A_ROOM))
-        assert dialog._make_button.isEnabled() is False
-        assert dialog._edit_button.isEnabled() is False
-        assert dialog._install_krita_button.isHidden() is True
-        assert dialog._install_plugin_button.isHidden() is True
+        assert _visible_buttons(dialog) == []
+    finally:
+        dialog.deleteLater()
+
+
+def test_no_state_ever_offers_two_equal_calls_to_action():
+    dialog = AiImageDialog()
+    try:
+        for state in AiImageState:
+            dialog.set_snapshot(_snapshot(state))
+            chips = [
+                button
+                for button in dialog.findChildren(QPushButton)
+                if not button.isHidden()
+                and button.objectName() == "StatusChip"
+            ]
+            assert len(chips) <= 1, state
     finally:
         dialog.deleteLater()
 
@@ -203,8 +241,26 @@ def test_make_emits_one_intent_and_carries_no_arguments():
     dialog.make_requested.connect(lambda: seen.append(1))
     try:
         dialog.set_snapshot(_snapshot(AiImageState.READY))
-        dialog._make_button.click()
+        dialog._chip.click()
         assert seen == [1]
+    finally:
+        dialog.deleteLater()
+
+
+def test_the_panel_says_plainly_that_the_prompt_lives_in_krita():
+    """There is no prompt box because WebJam cannot type into Krita.
+
+    A field that swallowed a prompt and did nothing with it would be worse
+    than no field, so the copy states where the prompt actually goes.
+    """
+
+    dialog = AiImageDialog()
+    try:
+        spoken = " ".join(
+            label.text() for label in dialog.findChildren(type(dialog._status))
+        ).casefold()
+        assert "you describe the image there" in spoken
+        assert "cannot type into another program" in spoken
     finally:
         dialog.deleteLater()
 

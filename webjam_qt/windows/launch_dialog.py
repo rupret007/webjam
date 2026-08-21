@@ -146,24 +146,19 @@ _CREATOR_LAUNCH_COPY = {
     "art": _CreatorLaunchCopy(
         host="Host",
         join="Join",
-        local="Standalone Art Unavailable",
+        local="Art rooms are live for now",
         host_description=(
-            "Open a room where artists talk and work, and create one "
-            "invitation link that carries whatever you started. This Preview "
-            "has no camera feed, no recorded take, and no frame-accurate "
-            f"review. {MEETING_DIRECT_CAPTURE_BOUNDARY}"
+            "Open the room and send one invite. Whoever joins lands in "
+            "whatever you started."
         ),
         join_description=(
-            "Join an art session with one WebJam invitation. The invitation "
-            "carries whatever the host started, so there is nothing else to "
-            f"choose here. {MEETING_DIRECT_CAPTURE_BOUNDARY}"
+            "Paste the invite you were sent. It carries whatever the host "
+            "started, so there is nothing else to pick."
         ),
-        local_description=(
-            "Standalone Art projects are not available in this Preview."
-        ),
-        helper="Preview: talk and make art together.",
+        local_description="Art rooms are live for now, so there is nothing to open on your own.",
+        helper="Open a room and make something together.",
         join_title="Join the room.",
-        join_subtitle="Paste the WebJam invitation your host sent you.",
+        join_subtitle="Paste the invite your host sent you.",
     ),
 }
 
@@ -380,25 +375,29 @@ class LaunchDialog(QDialog):
         name_row = QHBoxLayout()
         name_row.setContentsMargins(0, 0, 0, 0)
         name_row.setSpacing(Space.SM)
-        name_label = QLabel("Your Jamulus name")
+        name_label = QLabel("Your name")
         name_label.setObjectName("LaunchNameLabel")
         self._name_input = QLineEdit(default_musician_name(settings))
         self._name_input.setObjectName("LaunchNameInput")
         self._name_input.setPlaceholderText("Short stage name")
-        self._name_input.setAccessibleName("Your Jamulus musician name")
+        self._name_input.setAccessibleName("Your name")
         name_label.setBuddy(self._name_input)
         name_row.addWidget(name_label)
         name_row.addWidget(self._name_input, 1)
         root.addLayout(name_row)
+        # The validation is unchanged; only the words are. The first screen is
+        # about what someone is making, so a component does not introduce
+        # itself here.
         self._name_preview = JamulusNamePreview(
             self._name_input,
             compact=True,
+            plain_words=True,
         )
         self._name_preview.setObjectName("LaunchNamePreview")
         root.addWidget(self._name_preview)
         self._name_error = QLabel("")
         self._name_error.setObjectName("LaunchError")
-        self._name_error.setAccessibleName("Musician name error")
+        self._name_error.setAccessibleName("Name error")
         self._name_error.setWordWrap(True)
         self._name_error.setVisible(False)
         root.addWidget(self._name_error)
@@ -474,8 +473,7 @@ class LaunchDialog(QDialog):
         self._creator_profile_selector.setObjectName("LaunchCreatorProfileSelector")
         self._creator_profile_selector.setAccessibleName("What are you creating?")
         self._creator_profile_selector.setAccessibleDescription(
-            "Choose Music, Podcast and Voice, Review and Rehearsal, or Art. "
-            "Each option states whether it is Ready or Preview."
+            "Choose Music, Podcast and Voice, Review and Rehearsal, or Art."
         )
         self._creator_profile_label.setBuddy(self._creator_profile_selector)
         for profile in CREATOR_PROFILES:
@@ -702,10 +700,10 @@ class LaunchDialog(QDialog):
         # on screen or exposing it as an ordinary editable value to assistive
         # technologies.
         self._invite_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self._invite_input.setPlaceholderText("Paste your WebJam invite link")
-        self._invite_input.setAccessibleName("WebJam invite link")
+        self._invite_input.setPlaceholderText("Paste the invite")
+        self._invite_input.setAccessibleName("Invite")
         self._invite_input.setAccessibleDescription(
-            "Paste the complete invitation from your host."
+            "Paste the whole invite your host sent you."
         )
         self._invite_input.returnPressed.connect(self._join)
         self._invite_input.textChanged.connect(lambda *_: self._join_error.clear())

@@ -152,12 +152,78 @@ def test_choosing_a_card_binds_host_to_that_card(qapp, tmp_path: Path):
         cards["paint_together"].setChecked(True)
         host_described = dialog._host_button.accessibleDescription().casefold()
         assert "start paint together as the host" in host_described
-        assert "webjam does not paint the strokes" in host_described
+        assert "canvas everyone can draw on" in host_described
 
         cards["paint_along"].setChecked(True)
         host_described = dialog._host_button.accessibleDescription().casefold()
         assert "start paint along as the host" in host_described
-        assert "right to play" in host_described
+        assert "own copy of the same file" in host_described
+    finally:
+        dialog.deleteLater()
+
+
+def test_the_first_screen_names_no_component(qapp, tmp_path: Path):
+    """The ten-second door is about what you are making, not what runs it.
+
+    The painting program, the audio path, and the image generator all
+    introduce themselves in the room, at the moment they matter, and only if
+    something is missing.
+    """
+
+    dialog = _dialog(tmp_path)
+    try:
+        spoken = " ".join(
+            [
+                dialog._creator_profile_label.text(),
+                dialog._creator_profile_selector.accessibleDescription(),
+                dialog._name_preview.text(),
+                dialog._host_button.text(),
+                dialog._host_button.accessibleDescription(),
+                dialog._join_button.text(),
+                dialog._join_button.accessibleDescription(),
+                dialog._choice_helper.text(),
+            ]
+            + [card.text() for card in _visible_cards(dialog)]
+            + [card.description() for card in _visible_cards(dialog)]
+            + [
+                card.accessibleDescription()
+                for card in _visible_cards(dialog)
+            ]
+        ).casefold()
+
+        for component in (
+            "drawpile",
+            "krita",
+            "jamulus",
+            "webex",
+            "moises",
+            "byok",
+            "comfyui",
+            "host-clocked",
+        ):
+            assert component not in spoken, component
+    finally:
+        dialog.deleteLater()
+
+
+def test_the_name_field_asks_for_a_name(qapp, tmp_path: Path):
+    """It is a person's name, not a component's field, and validation stays."""
+
+    dialog = _dialog(tmp_path)
+    try:
+        label = next(
+            widget
+            for widget in dialog.findChildren(type(dialog._choice_helper))
+            if widget.objectName() == "LaunchNameLabel"
+        )
+        assert label.text() == "Your name"
+        assert dialog._name_input.accessibleName() == "Your name"
+        assert "jamulus" not in dialog._name_preview.text().casefold()
+
+        # The same validation still refuses a name the mixer cannot show.
+        dialog._name_input.setText("")
+        assert dialog._validated_musician_name() is None
+        assert dialog._name_error.isHidden() is False
     finally:
         dialog.deleteLater()
 
@@ -213,8 +279,8 @@ def test_talk_and_make_promises_neither_a_canvas_nor_a_video(qapp, tmp_path: Pat
         cards = {card.start_key: card for card in _visible_cards(dialog)}
         cards["talk_and_make"].setChecked(True)
         described = cards["talk_and_make"].accessibleDescription().casefold()
-        assert "nothing else" in described
-        assert "no shared canvas and no video are needed" in described
+        assert "nothing to set up" in described
+        assert "nothing shared but the conversation" in described
     finally:
         dialog.deleteLater()
 
@@ -278,9 +344,9 @@ def test_joining_asks_for_one_invitation_and_nothing_else(qapp, tmp_path: Path):
         dialog.show_join()
         assert dialog.showing_choices is False
         assert dialog._join_title.text() == "Join the room."
-        assert "paste the webjam invitation" in dialog._join_subtitle.text().casefold()
+        assert "paste the invite" in dialog._join_subtitle.text().casefold()
         described = dialog._join_button_primary.accessibleDescription().casefold()
-        assert "nothing else to choose here" in described
+        assert "nothing else to pick" in described
 
         # No start card is reachable from the join page.
         for cards in dialog._start_cards.values():

@@ -400,39 +400,44 @@ _ART_CAPABILITIES = CreatorCapabilities(
 # Exactly three ways to begin: a room, a room plus a canvas, a room plus a
 # reference video.  There is deliberately no fourth card for "both" and no
 # tool picker; a host adds the other option from inside the room.
+#
+# The words here are the ten-second door.  A person choosing a room should not
+# have to learn what any of it is built on, so no component names itself on the
+# first screen: the program that paints, the one that carries the audio, and
+# the one that generates an image all introduce themselves in the room, at the
+# moment they matter, and only if something is missing.
 _ART_STARTS = (
     CreatorStart(
         key="talk_and_make",
         label="Talk & make",
-        summary="A room and live audio. Work on paper, clay, or your own app.",
+        summary="Just the room and your voices. Make whatever you're making.",
         detail=(
-            "Opens a room with WebJam's live audio and nothing else. Paint, "
-            "draw, sculpt, or use any application you already have, and talk "
-            "while you work. No shared canvas and no video are needed."
+            "Opens a room where you talk while you work, on paper, in clay, "
+            "or in whatever you already use. Nothing to set up, and nothing "
+            "shared but the conversation."
         ),
     ),
     CreatorStart(
         key="paint_together",
         label="Paint together",
-        summary="The room plus one shared canvas, painted in Drawpile.",
+        summary="The room, plus one canvas you all draw on.",
         detail=(
-            "Opens the room and hands the canvas to Drawpile, the open-source "
-            "collaborative painting program. WebJam does not paint the "
-            "strokes; Drawpile does, with its own brushes and layers. Every "
-            "artist needs Drawpile installed, and the host shares one canvas "
-            "invitation with the room."
+            "Opens the room and one canvas everyone can draw on at the same "
+            "time. WebJam does not draw it. It opens the painting program on "
+            "your computer and passes the canvas around, and it says plainly "
+            "if that program is not installed yet."
         ),
         shared_canvas=True,
     ),
     CreatorStart(
         key="paint_along",
         label="Paint along",
-        summary="The room plus one host-clocked video played on each computer.",
+        summary="The room, plus one video you all watch in step.",
         detail=(
-            "Opens the room and lets the host share one local video file they "
-            "already have the right to play. Each artist opens their own copy "
-            "of that exact file and it follows the host's play, pause, stop, "
-            "and position. WebJam ships and downloads no video."
+            "Opens the room and lets whoever is hosting play one video they "
+            "already own. Everyone watches their own copy of the same file, "
+            "kept in step by the person hosting, who is the only one able to "
+            "move it. WebJam brings no videos of its own."
         ),
         reference_video=True,
     ),
