@@ -768,6 +768,7 @@ jobs:
       WEBJAM_RUN_JACK_AUDIO_SOAK: "1"
       WEBJAM_JACK_AUDIO_SOAK_SECONDS: "3600"
       WEBJAM_JACK_AUDIO_SOAK_REPORT: artifacts/jamulus-jack-soak.json
+      WEBJAM_JACK_AUDIO_SOAK_RECORDINGS: artifacts/jamulus-jack-soak-recordings
     steps:
       - name: Checkout selected candidate ref
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -821,6 +822,7 @@ jobs:
           path: |
             artifacts/jamulus-jack-soak.json
             artifacts/jamulus-jack-soak-pytest.log
+            artifacts/jamulus-jack-soak-recordings/
           if-no-files-found: error
           retention-days: 30
 
