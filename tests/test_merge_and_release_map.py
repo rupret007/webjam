@@ -54,16 +54,14 @@ def _heading_anchors(text: str) -> set[str]:
 
 
 def test_map_lands_the_audio_core_then_each_room_after_a_rebase() -> None:
-    positions = [FLAT_MAP_TEXT.index(f"| {step} |") for step in range(1, 7)]
-    assert positions == sorted(positions), "the land order steps must read in order"
-    assert FLAT_MAP_TEXT.index("Land [#14]") < FLAT_MAP_TEXT.index("Rebase [#19]")
-    for step, pull in ((3, "#19"), (5, "#17")):
-        assert FLAT_MAP_TEXT.index(f"Rebase [{pull}]") < FLAT_MAP_TEXT.index(
-            f"| {step} | Land {pull}"
-        ), pull
-    for landed in ("#15", "#16"):
+    positions = [FLAT_MAP_TEXT.index(f"| {step} |") for step in range(1, 4)]
+    assert positions == sorted(positions), "the remaining land-order steps must read in order"
+    for landed in ("#14", "#15", "#16", "#19"):
         assert landed in FLAT_MAP_TEXT, landed
     assert "already on `master`" in FLAT_MAP_TEXT
+    assert FLAT_MAP_TEXT.index("Rebase [#17]") < FLAT_MAP_TEXT.index(
+        "| 2 | Land #17"
+    )
 
 
 def test_map_gates_landing_and_release_on_the_ten_second_read() -> None:
