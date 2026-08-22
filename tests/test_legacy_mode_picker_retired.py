@@ -102,6 +102,15 @@ def test_the_only_visible_workflow_choice_is_the_creator_profile(qapp, tmp_path)
         qapp.processEvents()
         offered = _visible_combo_items(dialog)
 
+        # Music door is Host / Join only: no workflow combo on the first screen.
+        assert offered == set()
+        assert not (offered & LEGACY_LABELS)
+        assert not any("Visual Studio" == item for item in offered)
+
+        selector = dialog._creator_profile_selector
+        selector.setCurrentIndex(selector.findData("art"))
+        qapp.processEvents()
+        offered = _visible_combo_items(dialog)
         assert PROFILE_LABELS <= offered or all(
             any(label in item for item in offered) for label in PROFILE_LABELS
         )
