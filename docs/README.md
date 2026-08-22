@@ -69,6 +69,7 @@ keeps the product story and five-minute demo intentionally short.
   **NOT RUN**.
 - [v0.22.5 demo readiness](../WEBJAM_V0225_DEMO_READINESS.md) — the exact
   two-musician Reference Track/Webex scorecard in musician order.
+- [Merge and release map](MERGE_AND_RELEASE.md) — Art #19 is on `master`; #17 is the remaining product land, plus the required CI round and the gates that stay **NOT RUN**.
 - [Desktop release runbook](DESKTOP_RELEASE_RUNBOOK.md) — draft-first,
   checksum-bound, immutable release process.
 - [Jamulus component catalog runbook](JAMULUS_COMPONENT_RELEASE_RUNBOOK.md) —
