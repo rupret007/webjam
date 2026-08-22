@@ -132,6 +132,8 @@ def test_launch_hierarchy_is_one_primary_then_two_clear_alternatives(
         assert not dialog._name_label.isVisibleTo(dialog)
         assert not dialog._name_input.isVisibleTo(dialog)
         assert not dialog._name_preview.isVisibleTo(dialog)
+        assert not dialog._creator_profile_label.isVisibleTo(dialog)
+        assert not dialog._creator_profile_selector.isVisibleTo(dialog)
         assert (
             dialog._host_button.geometry().top()
             < dialog._join_button.geometry().top()
@@ -164,7 +166,6 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
         assert dialog.minimumHeight() <= 480
         for control in (
             dialog._logo,
-            dialog._creator_profile_selector,
             dialog._host_button,
             dialog._join_button,
             dialog._choice_helper,
@@ -176,6 +177,8 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
             dialog._name_input,
             dialog._name_preview,
             dialog._studio_button,
+            dialog._creator_profile_label,
+            dialog._creator_profile_selector,
         ):
             assert not hidden.isVisibleTo(dialog)
         assert dialog._choice_helper.text() == "Play live together."
@@ -214,12 +217,13 @@ def test_windows_launch_name_roles_and_installer_do_not_overlap_at_default_size(
             dialog._name_input,
             dialog._name_preview,
             dialog._studio_button,
+            dialog._creator_profile_label,
+            dialog._creator_profile_selector,
         ):
             assert not hidden.isVisibleTo(dialog)
         assert dialog._name_input.accessibleName() == "Your name"
         assert "Play live together." in dialog._choice_helper.text()
         controls = (
-            dialog._creator_profile_selector,
             dialog._host_button,
             dialog._join_button,
             dialog._install_jamulus_button,

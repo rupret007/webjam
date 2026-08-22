@@ -795,6 +795,10 @@ class LaunchDialog(QDialog):
         self._name_preview.setVisible(not hide_name)
         self._name_error.setVisible(bool(self._name_error.text()))
 
+        # Music door: no profile combo. Art and others keep the picker.
+        self._creator_profile_label.setVisible(not music_door)
+        self._creator_profile_selector.setVisible(not music_door)
+
         helper = copy.helper
         if not self._host_available:
             helper += " Hosting is available in the macOS app."
