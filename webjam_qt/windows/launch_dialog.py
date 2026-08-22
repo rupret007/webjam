@@ -824,7 +824,11 @@ class LaunchDialog(QDialog):
         self._restore_submission()
         self._invite_input.clear()
         self._pages.setCurrentWidget(self._choice_page)
-        self._creator_profile_selector.setFocus()
+        # Music door hides the picker; do not park focus on a hidden widget.
+        if self._selected_creator_profile.key == "music":
+            self._host_button.setFocus()
+        else:
+            self._creator_profile_selector.setFocus()
 
     def show_join(self) -> None:
         if not self._submitting:
