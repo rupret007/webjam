@@ -198,3 +198,90 @@ def test_untrusted_profile_is_rejected_without_echoing_it() -> None:
         )
     assert caught.value.code is InvitationIngressErrorCode.INVALID
     assert "untrusted-profile" not in str(caught.value)
+
+
+# ----------------------------------------------------------------------
+# One invite: a paste is no longer always a bare URL
+# ----------------------------------------------------------------------
+def test_the_link_is_found_inside_the_one_invite_message() -> None:
+    """Copy Invite now sends a short message, and bandmates forward it."""
+
+    from core.meeting_companion import build_invite_message
+
+    link = create_invite_link("192.168.1.5", port=22124, session_name="Tuesday Jam")
+    message = build_invite_message(
+        join_link=link,
+        session_name="Tuesday Jam",
+        meeting_url="https://band.webex.com/meet/jeff",
+    )
+
+    parsed = parse_invitation_at_ingress(
+        message.text, source=InvitationSource.PASTE
+    )
+    assert isinstance(parsed, BandInvite)
+
+
+def test_a_v3_link_still_arrives_intact_from_a_surrounding_message() -> None:
+    raw = f"Here you go!\n{_remote_link()}\n\n-- sent from my phone"
+    parsed = parse_invitation_at_ingress(
+        raw,
+        source=InvitationSource.PASTE,
+        allowed_remote_profiles=ALLOWED,
+    )
+    assert isinstance(parsed, RemoteInvitation)
+
+
+def test_quoting_and_punctuation_around_a_forwarded_link_are_tolerated() -> None:
+    link = create_invite_link("192.168.1.5", port=22124, session_name="Tuesday Jam")
+    for decorated in (f"<{link}>", f'"{link}"', f"{link},", f"> {link}"):
+        parsed = parse_invitation_at_ingress(
+            decorated, source=InvitationSource.PASTE
+        )
+        assert isinstance(parsed, BandInvite)
+
+
+def test_two_different_jam_links_in_one_paste_are_ambiguous_not_guessed() -> None:
+    first = create_invite_link("192.168.1.5", port=22124, session_name="One")
+    second = create_invite_link("192.168.1.9", port=22124, session_name="Two")
+    with pytest.raises(InvitationIngressError) as caught:
+        parse_invitation_at_ingress(
+            f"{first}\n{second}", source=InvitationSource.PASTE
+        )
+    assert caught.value.code is InvitationIngressErrorCode.INVALID
+
+
+def test_the_same_link_repeated_by_a_quoting_mail_client_is_fine() -> None:
+    link = create_invite_link("192.168.1.5", port=22124, session_name="Tuesday Jam")
+    parsed = parse_invitation_at_ingress(
+        f"{link}\n\n> {link}", source=InvitationSource.PASTE
+    )
+    assert isinstance(parsed, BandInvite)
+
+
+def test_an_enormous_paste_is_refused_rather_than_scanned() -> None:
+    link = create_invite_link("192.168.1.5", port=22124, session_name="Tuesday Jam")
+    with pytest.raises(InvitationIngressError) as caught:
+        parse_invitation_at_ingress(
+            ("x" * 9000) + "\n" + link, source=InvitationSource.PASTE
+        )
+    assert caught.value.code is InvitationIngressErrorCode.INVALID
+
+
+def test_extraction_is_paste_only_so_argv_can_never_carry_a_bearer() -> None:
+    raw = f"Join us\n{_remote_link()}"
+    for source in (InvitationSource.ARGV, InvitationSource.MAC_FILE_OPEN):
+        with pytest.raises(InvitationIngressError):
+            parse_invitation_at_ingress(
+                raw,
+                source=source,
+                platform="darwin",
+                allowed_remote_profiles=ALLOWED,
+            )
+
+
+def test_a_paste_with_no_jam_link_is_still_rejected() -> None:
+    with pytest.raises(InvitationIngressError):
+        parse_invitation_at_ingress(
+            "Hi, see you at 8 — https://band.webex.com/meet/jeff",
+            source=InvitationSource.PASTE,
+        )

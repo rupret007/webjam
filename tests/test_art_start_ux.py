@@ -93,6 +93,9 @@ def test_art_adds_no_start_action_beyond_the_cards_and_host_join(
         # rather than being offered and then refused.
         assert dialog._studio_button.isHidden() is True
         assert dialog._studio_button.isEnabled() is False
+        # Art still needs a way onto this door; the profile picker stays.
+        assert dialog._creator_profile_label.isHidden() is False
+        assert dialog._creator_profile_selector.isHidden() is False
     finally:
         dialog.deleteLater()
 
@@ -276,7 +279,9 @@ def test_a_profile_without_cards_keeps_its_headline_and_helper(
     try:
         assert dialog._choice_title.isVisibleTo(dialog._choice_page) is True
         assert dialog._choice_subtitle.isVisibleTo(dialog._choice_page) is True
-        assert "multitrack music project" in dialog._choice_helper.text()
+        assert dialog._choice_helper.text() == "Play live together."
+        assert dialog._creator_profile_label.isVisibleTo(dialog._choice_page) is False
+        assert dialog._creator_profile_selector.isVisibleTo(dialog._choice_page) is False
     finally:
         dialog.deleteLater()
 
@@ -384,6 +389,9 @@ def test_a_profile_without_starts_shows_no_cards(
         assert _visible_cards(dialog) == []
         assert dialog.selected_start_key == ""
         assert dialog.selected_start is None
+        hide_profile = profile_key == "music"
+        assert dialog._creator_profile_label.isHidden() is hide_profile
+        assert dialog._creator_profile_selector.isHidden() is hide_profile
     finally:
         dialog.deleteLater()
 

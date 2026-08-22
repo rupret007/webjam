@@ -61,6 +61,7 @@ from webjam_qt.widgets import (
     SessionStrip,
     SideRail,
     WebexEmbed,
+    SongOverlay,
 )
 
 
@@ -123,6 +124,10 @@ class ConductorWindow(QMainWindow):
         self.session_canvas = SessionCanvas()
         self.recording_studio = RecordingStudio()
         self.reference_studio = ReferenceStudioShell(self.recording_studio)
+        # Compact chrome that can sit beside a free Webex window: a fixed
+        # column rather than a dialog, so opening it never takes the
+        # foreground away from the meeting. Hidden until Music asks for it.
+        self.song_overlay = SongOverlay()
         # Video, notes, Studio, and Settings are session tools.  They remain
         # available from one menu without competing with the live session.
         self.side_rail.setVisible(False)
@@ -146,6 +151,9 @@ class ConductorWindow(QMainWindow):
         controls_layout.addWidget(self.session_strip._record_elapsed)
         controls_layout.addWidget(self.session_strip._record_button)
         controls_layout.addWidget(self.session_strip._video_button)
+        # Song sits beside Studio: the same class of in-session surface, on
+        # the bar a musician already uses, rather than inside a menu.
+        controls_layout.addWidget(self.session_strip._song_button)
         controls_layout.addWidget(self.session_strip._studio_button)
         self.session_strip._tools_button.setText("More ▾")
         self.session_strip._tools_button.setAccessibleName("More session options")
@@ -190,6 +198,7 @@ class ConductorWindow(QMainWindow):
         body_layout.setSpacing(0)
         body_layout.addWidget(self.side_rail)
         body_layout.addWidget(self.workspace_stack, stretch=1)
+        body_layout.addWidget(self.song_overlay)
 
         central = QWidget()
         central_layout = QVBoxLayout(central)
@@ -382,6 +391,12 @@ class ConductorWindow(QMainWindow):
                 self,
                 lambda: self.side_rail.trigger("takes"),
             ),
+            # Cmd/Ctrl+4 — Song, next in the same run as the other surfaces.
+            QShortcut(
+                QKeySequence("Ctrl+4"),
+                self,
+                lambda: self.session_strip.tool_requested.emit("song_tools"),
+            ),
         )
 
     def _setup_tab_order(self) -> None:
@@ -413,6 +428,9 @@ class ConductorWindow(QMainWindow):
                 strip._invite_button,
                 strip._record_button,
                 strip._video_button,
+                # Song sits where it sits on the bar, so tabbing matches what
+                # a musician sees rather than the order things were built in.
+                strip._song_button,
                 strip._studio_button,
                 strip._tools_button,
                 strip._audio_button,
@@ -460,13 +478,22 @@ class ConductorWindow(QMainWindow):
 
         if sys.platform == "darwin":
             navigation_shortcuts = "⌘1 / ⌘2 / ⌘3"
+            song_shortcut = "⌘4"
             mix_shortcuts = "⌘S / ⌘O"
             reset_shortcut = "Control+Shift+R"
         else:
             navigation_shortcuts = "Ctrl+1 / Ctrl+2 / Ctrl+3"
+            song_shortcut = "Ctrl+4"
             mix_shortcuts = "Ctrl+S / Ctrl+O"
             reset_shortcut = "Ctrl+Shift+R"
         profile = self._creator_profile
+        # Song exists only in Music, so only Music advertises its shortcut.
+        navigation_line = (
+            f"{navigation_shortcuts} / {song_shortcut} — "
+            "Live / Notes / Studio / Song"
+            if profile.key == "music"
+            else f"{navigation_shortcuts} — Live / Notes / Studio"
+        )
         if self._reference_studio_only and profile.key == "podcast_voice":
             body = (
                 f"<b>WebJam v{__version__} — Podcast & Voice Studio</b><br>"
@@ -524,7 +551,7 @@ class ConductorWindow(QMainWindow):
                 "<b>8.</b> Press <b>End Session</b> when recording is finished.<br><br>"
                 "<b>Useful shortcuts</b><br>"
                 "F2 — Sound Check<br>"
-                f"{navigation_shortcuts} — Live / Notes / Studio<br>"
+                f"{navigation_line}<br>"
                 f"{mix_shortcuts} — Save / load your monitor mix while Live is open<br>"
                 f"{reset_shortcut} — Reset every fader to 0 dB<br>"
                 "F11 / Esc — Enter / leave full screen"
@@ -547,7 +574,7 @@ class ConductorWindow(QMainWindow):
                 "<b>8.</b> Press <b>End Session</b> when the review is over.<br><br>"
                 "<b>Useful shortcuts</b><br>"
                 "F2 — Session Check (Preview)<br>"
-                f"{navigation_shortcuts} — Live / Notes / Studio<br>"
+                f"{navigation_line}<br>"
                 "F11 / Esc — Enter / leave full screen"
             )
         else:
@@ -571,7 +598,7 @@ class ConductorWindow(QMainWindow):
                 "<b>8.</b> Press <b>End Session</b> when the jam is over.<br><br>"
                 "<b>Useful shortcuts</b><br>"
                 "F2 — Band Check<br>"
-                f"{navigation_shortcuts} — Live / Notes / Studio<br>"
+                f"{navigation_line}<br>"
                 f"{mix_shortcuts} — Save / load your monitor mix while Live is open<br>"
                 f"{reset_shortcut} — Reset every fader to 0 dB<br>"
                 "F11 / Esc — Enter / leave full screen"
@@ -736,6 +763,14 @@ class ConductorWindow(QMainWindow):
         self.setWindowTitle(f"WebJam — {profile.label}{suffix} (v{__version__})")
         self.setAccessibleName(f"WebJam {profile.label} workspace{suffix}")
         self.session_strip.set_creator_profile(profile, locked=locked)
+        if getattr(self, "song_overlay", None) is not None:
+            # A host can impose a profile mid-session. Song has no meaning
+            # outside Music, so the panel leaves with it rather than sitting
+            # open showing another maker a song they do not have.
+            if profile.key == "music":
+                self.song_overlay.set_creator_profile(profile)
+            else:
+                self.song_overlay.setVisible(False)
         self.participant_grid.set_creator_profile(profile)
         self.recording_studio.set_creator_profile(profile)
         self.session_canvas.set_creator_profile(profile)
@@ -820,6 +855,8 @@ class ConductorWindow(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, "session_strip"):
             self.session_strip.set_compact_control_labels(self.width() < 900)
+        if getattr(self, "song_overlay", None) is not None:
+            self.song_overlay.set_available_width(self.width())
 
     # ------------------------------------------------------------------
     # Qt overrides

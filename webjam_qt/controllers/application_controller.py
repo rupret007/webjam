@@ -40,6 +40,7 @@ from core.jamulus_rpc_client import (
     JamulusRpcMonitorIdentity,
 )
 from core.local_capture import LocalCaptureTrack, check_local_capture_preflight
+from core.meeting_companion import build_invite_message
 from core.meeting_link import RECORD_SESSION_MEETING_CAPTURE_NOTICE
 from core.musician_guidance import (
     GuidanceDisplayOverride,
@@ -109,6 +110,24 @@ from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.windows.conductor_window import ConductorWindow
 
 LOGGER = logging.getLogger("webjam.qt.application_controller")
+
+
+def _invite_song_line_for(controller) -> str:
+    """Return the song a joiner is joining, or "" if there isn't one.
+
+    Copying an invite is a safety-critical action, so it degrades to a plain
+    link rather than failing because a song line could not be built.
+    """
+
+    coordinator = getattr(controller, "_song_tools", None)
+    reader = getattr(coordinator, "invite_song_line", None)
+    if reader is None:
+        return ""
+    try:
+        return str(reader() or "")
+    except Exception:  # noqa: BLE001 - an invite must never fail on copy
+        LOGGER.debug("song line unavailable for invite", exc_info=True)
+        return ""
 
 
 def _creator_profile_for_controller(controller: object):
@@ -363,6 +382,7 @@ class ApplicationController(QObject):
         )
 
         self._ui_invoker = UiThreadInvoker(self)
+        self._song_tools = None
 
         self.repository = WebJamRepository()
         self.metrics = MetricsService(self.repository)
@@ -3587,6 +3607,7 @@ class ApplicationController(QObject):
         strip.invite_requested.connect(self._copy_band_invite)
         strip.reset_invite_requested.connect(self._confirm_reset_remote_invite)
         strip.tool_requested.connect(self._on_rail_view_changed)
+        self.song_tools.connect()
         if self._operator_mode:
             self.window.test_night_requested.connect(self._open_test_night)
         self.window.session_hud.action_requested.connect(
@@ -6742,7 +6763,19 @@ class ApplicationController(QObject):
                 ms=6000,
             )
             return
-        QApplication.clipboard().setText(invite_url)
+        # One paste, not two. A bandmate gets the jam link and, when the host
+        # has configured one, the meeting link in the same message with a line
+        # saying which is the music. The invitation protocol is unchanged.
+        invite_message = build_invite_message(
+            join_link=invite_url,
+            session_name=self.window.session_strip.current_title(),
+            meeting_url=str(getattr(self.settings, "webex_url", "") or ""),
+            participant_noun=_creator_profile_for_controller(
+                self
+            ).vocabulary.participant_singular,
+            song_line=_invite_song_line_for(self),
+        )
+        QApplication.clipboard().setText(invite_message.text)
         invite_url = ""
         if owner is None:
             # Mark the address only after the complete link was copied. A
@@ -6757,7 +6790,12 @@ class ApplicationController(QObject):
             self
         ).vocabulary.participant_singular
         self.window.flash_message(
-            f"Invite link copied — send it to another {participant}.",
+            (
+                f"One invite copied — jam link and meeting link. Send it to "
+                f"another {participant}."
+            )
+            if invite_message.includes_meeting
+            else f"Invite link copied — send it to another {participant}.",
             ms=7000,
         )
 
@@ -10909,7 +10947,7 @@ class ApplicationController(QObject):
                 audience_bridge_active=(self._webex_audio_mode() == "audience_bridge")
             )
 
-    def _open_settings_wizard(self) -> None:
+    def _open_settings_wizard(self, *, show_keys: bool = False) -> None:
         from webjam_qt.windows.simple_settings import SimpleSettingsDialog
 
         if self._shutdown_cleanup_blocks_action():
@@ -10936,6 +10974,10 @@ class ApplicationController(QObject):
         wizard.install_webex_requested.connect(
             lambda: self._on_install_webex_requested(parent=wizard)
         )
+        if show_keys:
+            # Somebody arrived here from a feature that wanted a key. Opening
+            # on a collapsed section would make them go looking twice.
+            wizard.show_optional_keys()
         if wizard.exec() == SimpleSettingsDialog.DialogCode.Accepted:
             from core.settings import load_settings
 
@@ -11197,6 +11239,8 @@ class ApplicationController(QObject):
             self._bring_jamulus_forward()
         elif key == "recording_setup":
             self._open_recording_setup()
+        elif key == "song_tools":
+            self._open_song_tools()
         elif key == "support":
             self._on_save_support_bundle()
         elif key == "settings":
@@ -11254,6 +11298,35 @@ class ApplicationController(QObject):
                     # familiar live review controls.
                     self.window.reference_studio.show_take_review()
             self._update_session_hud()
+
+    @property
+    def song_tools(self):
+        """The in-session song panel, built the first time it is needed.
+
+        Imported lazily so the Music AI, song-form, and stem stack never loads
+        for a Podcast or Review session that cannot use it.
+        """
+
+        if self._song_tools is None:
+            from webjam_qt.controllers.song_tools_coordinator import (
+                SongToolsCoordinator,
+            )
+
+            self._song_tools = SongToolsCoordinator(self)
+        return self._song_tools
+
+    def _open_song_tools(self) -> None:
+        """Toggle the in-session song panel. Music only; never auto-opens."""
+
+        if self._shutdown or self._shutdown_cleanup_blocks_action():
+            return
+        if not self.song_tools.is_available():
+            self.window.flash_message(
+                "Song tools are part of a Music session.",
+                ms=6000,
+            )
+            return
+        self.song_tools.toggle_panel()
 
     def _reference_track_is_host(self) -> bool:
         if not bool(getattr(self.settings, "host_server_enabled", False)):

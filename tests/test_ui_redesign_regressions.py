@@ -123,24 +123,28 @@ def test_launch_hierarchy_is_one_primary_then_two_clear_alternatives(
         assert dialog._host_button.isDefault()
         assert not dialog._join_button.isDefault()
         assert not dialog._studio_button.isDefault()
+        # Music first screen is Host / Join only. Studio stays a capability
+        # behind the door, not a third button, so its geometry is unused.
+        assert dialog._studio_button.isHidden()
+        assert not dialog._studio_button.isVisibleTo(dialog)
+        assert dialog._choice_helper.text() == "Play live together."
+        assert dialog._name_input.accessibleName() == "Your name"
+        assert not dialog._name_label.isVisibleTo(dialog)
+        assert not dialog._name_input.isVisibleTo(dialog)
+        assert not dialog._name_preview.isVisibleTo(dialog)
+        assert not dialog._creator_profile_label.isVisibleTo(dialog)
+        assert not dialog._creator_profile_selector.isVisibleTo(dialog)
         assert (
             dialog._host_button.geometry().top()
             < dialog._join_button.geometry().top()
-            < dialog._studio_button.geometry().top()
         )
-        assert (
-            dialog._host_button.width()
-            == dialog._join_button.width()
-            == dialog._studio_button.width()
-        )
+        assert dialog._host_button.width() == dialog._join_button.width()
         assert dialog._host_button.width() >= 360
         assert dialog._host_button.accessibleDescription()
         assert dialog._join_button.accessibleDescription()
-        assert dialog._studio_button.accessibleDescription()
         for control in (
             dialog._host_button,
             dialog._join_button,
-            dialog._studio_button,
         ):
             assert dialog.rect().contains(_rect_in(control, dialog))
     finally:
@@ -162,16 +166,23 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
         assert dialog.minimumHeight() <= 480
         for control in (
             dialog._logo,
-            dialog._name_input,
-            dialog._name_preview,
-            dialog._creator_profile_selector,
             dialog._host_button,
             dialog._join_button,
-            dialog._studio_button,
             dialog._choice_helper,
         ):
             assert control.isVisibleTo(dialog)
             assert dialog.rect().contains(_rect_in(control, dialog))
+        for hidden in (
+            dialog._name_label,
+            dialog._name_input,
+            dialog._name_preview,
+            dialog._studio_button,
+            dialog._creator_profile_label,
+            dialog._creator_profile_selector,
+        ):
+            assert not hidden.isVisibleTo(dialog)
+        assert dialog._choice_helper.text() == "Play live together."
+        assert dialog._name_input.accessibleName() == "Your name"
 
         dialog.show_join()
         styled_qapp.processEvents()
@@ -181,6 +192,7 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
         ):
             assert control.isVisibleTo(dialog)
             assert dialog.rect().contains(_rect_in(control, dialog))
+        assert not dialog._name_input.isVisibleTo(dialog)
     finally:
         _destroy(dialog)
 
@@ -200,13 +212,20 @@ def test_windows_launch_name_roles_and_installer_do_not_overlap_at_default_size(
     dialog.show()
     styled_qapp.processEvents()
     try:
-        controls = (
+        for hidden in (
+            dialog._name_label,
             dialog._name_input,
             dialog._name_preview,
+            dialog._studio_button,
+            dialog._creator_profile_label,
             dialog._creator_profile_selector,
+        ):
+            assert not hidden.isVisibleTo(dialog)
+        assert dialog._name_input.accessibleName() == "Your name"
+        assert "Play live together." in dialog._choice_helper.text()
+        controls = (
             dialog._host_button,
             dialog._join_button,
-            dialog._studio_button,
             dialog._install_jamulus_button,
             dialog._choice_helper,
         )
@@ -251,7 +270,10 @@ def test_join_keeps_one_name_one_secret_invite_and_one_primary_at_460px(
     dialog.show()
     styled_qapp.processEvents()
     try:
-        assert dialog._name_input.isVisibleTo(dialog)
+        # hide_name stays true on Music until a Host/Join name error.
+        # Join is therefore a secret invite and one primary, not a name field.
+        assert not dialog._name_input.isVisibleTo(dialog)
+        assert dialog._name_input.accessibleName() == "Your name"
         assert dialog._invite_input.isVisibleTo(dialog)
         assert dialog._join_button_primary.isVisibleTo(dialog)
         assert dialog._invite_input.height() >= 44
@@ -260,7 +282,6 @@ def test_join_keeps_one_name_one_secret_invite_and_one_primary_at_460px(
         assert dialog._invite_input.accessibleDescription()
         assert dialog._invite_input.echoMode() is dialog._invite_input.EchoMode.Password
         for control in (
-            dialog._name_input,
             dialog._invite_input,
             dialog._join_button_primary,
         ):

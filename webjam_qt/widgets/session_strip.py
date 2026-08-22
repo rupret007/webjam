@@ -83,6 +83,7 @@ class SessionStrip(QFrame):
         self._shared_track_channel_present = False
         self._shared_track_source_change_allowed = False
         self._shared_track_snapshot_seen = False
+        self._shared_track_last_snapshot: object | None = None
         self._shared_track_projection_visible = False
         self._shared_track_transport_action = "play"
         self._shared_track_transport_enabled = False
@@ -216,6 +217,25 @@ class SessionStrip(QFrame):
             lambda: self.tool_requested.emit("conversation")
         )
 
+        # Song sits beside Studio because it is the same kind of thing: a
+        # first-class in-session surface, not a setting buried in a menu. It
+        # is not a primary action -- the HUD keeps those -- and it exists only
+        # where a song form does.
+        self._song_button = QPushButton("Song")
+        self._song_button.setObjectName("GhostButton")
+        self._song_button.setAccessibleName("Open Song tools")
+        self._song_button.setAccessibleDescription(
+            "Chords, lyrics, stems, and writing help for the song in this "
+            "session. Suggestions are made on this computer."
+        )
+        self._song_button.setToolTip(
+            "Chords, lyrics, and writing help for this song."
+        )
+        self._song_button.clicked.connect(
+            lambda: self.tool_requested.emit("song_tools")
+        )
+        self._song_button.setVisible(False)
+
         self._studio_button = QPushButton("Studio")
         self._studio_button.setObjectName("GhostButton")
         self._studio_button.setAccessibleName("Open Studio")
@@ -303,6 +323,17 @@ class SessionStrip(QFrame):
                 "shared_canvas" if target == "canvas" else "reference_video"
             )
         )
+
+        # Where the song lives on the strip: the current part while the clock
+        # runs, or a quiet word while a Song tools job is working. It sits
+        # beside the Shared Track because that is the song's clock, and it
+        # survives closing the Song tools panel so the overlay you turned on
+        # stays on. It is never a control and never a spinner.
+        self._song_line = QLabel("")
+        self._song_line.setObjectName("SessionStripSongLine")
+        self._song_line.setAccessibleName("Song position")
+        self._song_line.setMaximumWidth(230)
+        self._song_line.setVisible(False)
 
         self._invite_button = QPushButton("Copy Invite")
         self._invite_button.setObjectName("GhostButton")
@@ -406,8 +437,8 @@ class SessionStrip(QFrame):
         about_action.triggered.connect(lambda: self.tool_requested.emit("about"))
 
         # Grouped by what the musician is trying to do, not by which
-        # component implements it. Studio is not repeated here because it is
-        # already a first-class button on the session bar.
+        # component implements it. Studio and Song are not repeated here
+        # because both are already first-class buttons on the session bar.
         # Sound
         tools_menu.addAction(self._audio_settings_action)
         tools_menu.addAction(self._diagnostics_action)
@@ -481,6 +512,8 @@ class SessionStrip(QFrame):
         layout.addWidget(self._video_button)
         layout.addWidget(self._shared_track_surface)
         layout.addWidget(self._art_room_chip)
+        layout.addWidget(self._song_line)
+        layout.addWidget(self._song_button)
         layout.addWidget(self._studio_button)
         layout.addWidget(self._tools_button)
 
@@ -714,6 +747,12 @@ class SessionStrip(QFrame):
             "Open local session notes. Notes stay on this computer and are not "
             "media-timecode synchronized."
         )
+        # Song tools read a song form — a key, sections, and chords. Podcast
+        # and Review sessions have none, so the entry is absent there rather
+        # than present and inert.
+        song_tools_available = profile_key == "music"
+        self._song_button.setVisible(song_tools_available)
+        self._song_button.setEnabled(song_tools_available and self._tools_enabled)
         self._tools_button.setAccessibleDescription(
             f"Open sound settings, {check_label}, conversation, recording, Shared "
             "Track, local notes, and WebJam support options."
@@ -904,6 +943,9 @@ class SessionStrip(QFrame):
             self._tools_enabled and self._shared_track_stop_enabled
         )
         self._studio_button.setEnabled(self._tools_enabled)
+        self._song_button.setEnabled(
+            self._tools_enabled and self._creator_profile_key == "music"
+        )
         self._video_action.setEnabled(self._tools_enabled)
 
     def set_recording_phase(self, phase: str, detail: str = "") -> None:
@@ -1075,10 +1117,31 @@ class SessionStrip(QFrame):
     def art_room_chip(self) -> ArtRoomChip:
         return self._art_room_chip
 
+    def set_song_line(self, text: str, *, description: str = "") -> None:
+        """Show one quiet line about the song, or nothing at all.
+
+        Read-only by contract: this reports where the song is or that a Song
+        tools job is working. It never becomes a button, so it cannot compete
+        with the HUD's primary action.
+        """
+
+        line = " ".join(str(text or "").split())
+        self._song_line.setText(line)
+        self._song_line.setVisible(bool(line))
+        self._song_line.setToolTip(description or line)
+        self._song_line.setAccessibleDescription(description or line)
+
+    def current_song_line(self) -> str:
+        return self._song_line.text()
+
     def set_shared_track_snapshot(self, snapshot: object) -> None:
         """Render the host-owned source/transport truth in the live mini deck."""
 
         self._shared_track_snapshot_seen = True
+        # Retained so other session surfaces can read the host's transport
+        # without a second subscription. Host and guest projections both
+        # arrive here, so this is the one place that sees every update.
+        self._shared_track_last_snapshot = snapshot
         state_value = getattr(getattr(snapshot, "state", None), "value", "")
         state = str(state_value or getattr(snapshot, "state", "idle")).lower()
         loaded = bool(str(getattr(snapshot, "source_name", "") or ""))
@@ -1173,6 +1236,7 @@ class SessionStrip(QFrame):
         """Retire host-published guest truth at the session ownership boundary."""
 
         self._shared_track_snapshot_seen = False
+        self._shared_track_last_snapshot = None
         self._shared_track_projection_visible = False
         self._shared_track_source_change_allowed = self._shared_track_host
         self._shared_track_transport_action = "play"

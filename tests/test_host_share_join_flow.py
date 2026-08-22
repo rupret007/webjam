@@ -93,9 +93,11 @@ def test_launch_shows_live_and_offline_music_paths(qapp, tmp_path):
     assert [button.accessibleName() for button in visible_actions] == [
         "Host",
         "Join",
-        "New Music Project",
     ]
     assert dialog.selected_creator_profile_key == "music"
+    assert dialog._name_label.isVisibleTo(dialog) is False
+    assert dialog._name_input.isVisibleTo(dialog) is False
+    assert dialog._name_preview.isVisibleTo(dialog) is False
     assert dialog.showing_choices
     assert not dialog._invite_input.isVisibleTo(dialog)
     dialog.close()
@@ -126,12 +128,15 @@ def test_launch_creator_selector_uses_canonical_profiles_and_truthful_actions(
         assert dialog.selected_creator_profile_key == "music"
         assert dialog._host_button.text() == "Host"
         assert dialog._join_button.text() == "Join"
-        assert dialog._studio_button.text() == "New Music Project"
+        assert dialog._studio_button.isHidden() is True
+        assert dialog._studio_button.isEnabled() is False
+        # Music door is Host / Join only. Canonical profiles stay on the
+        # widget, but the picker is not a first-screen control.
+        assert selector.isVisibleTo(dialog) is False
+        assert dialog._creator_profile_label.isVisibleTo(dialog) is False
         for control in (
-            selector,
             dialog._host_button,
             dialog._join_button,
-            dialog._studio_button,
         ):
             assert control.isVisibleTo(dialog)
             assert dialog.rect().contains(
@@ -141,24 +146,19 @@ def test_launch_creator_selector_uses_canonical_profiles_and_truthful_actions(
                 control.mapTo(dialog, control.rect().bottomRight())
             )
             assert control.accessibleDescription()
-        for button in (
-            dialog._host_button,
-            dialog._join_button,
-            dialog._studio_button,
-        ):
-            assert button.accessibleName() == button.text()
+            assert control.accessibleName() == control.text()
 
-        selector.setFocus()
-        QTest.keyClick(selector, Qt.Key.Key_Down)
+        selector.setCurrentIndex(selector.findData("podcast_voice"))
         qapp.processEvents()
-        assert selector.hasFocus()
+        assert selector.isVisibleTo(dialog)
+        assert dialog._creator_profile_label.isVisibleTo(dialog)
         assert dialog.selected_creator_profile_key == "podcast_voice"
         assert dialog._host_button.text() == "Host Remote Recording"
         assert dialog._join_button.text() == "Join Recording"
         assert dialog._studio_button.text() == "New Local Recording"
         assert dialog._studio_button.isVisibleTo(dialog)
 
-        QTest.keyClick(selector, Qt.Key.Key_Down)
+        selector.setCurrentIndex(selector.findData("review_rehearsal"))
         qapp.processEvents()
         assert dialog.selected_creator_profile_key == "review_rehearsal"
         assert dialog._host_button.text() == "Host Review"
@@ -226,14 +226,24 @@ def test_launch_exposes_exact_jamulus_wrap_preview_without_changing_saved_name(
     dialog.show()
     qapp.processEvents()
     try:
+        assert dialog.selected_creator_profile_key == "music"
+        assert dialog._name_label.isVisibleTo(dialog) is False
+        assert dialog._name_input.isVisibleTo(dialog) is False
+        assert dialog._name_preview.isVisibleTo(dialog) is False
         assert dialog._name_input.text() == "Jeff Story"
+        selector = dialog._creator_profile_selector
+        selector.setCurrentIndex(selector.findData("podcast_voice"))
+        qapp.processEvents()
+        assert dialog._name_label.isVisibleTo(dialog) is True
+        assert dialog._name_input.isVisibleTo(dialog) is True
+        assert dialog._name_preview.isVisibleTo(dialog) is True
         assert "Jeff Sto / ry" in dialog._name_preview.text()
         assert "two lines" in dialog._name_preview.text()
     finally:
         dialog.close()
 
 
-def test_reference_studio_choice_persists_profile_without_rewriting_live_settings(
+def test_local_project_choice_persists_profile_without_rewriting_live_settings(
     qapp, tmp_path
 ):
     config = tmp_path / "settings.json"
@@ -244,16 +254,16 @@ def test_reference_studio_choice_persists_profile_without_rewriting_live_setting
     )
     dialog = LaunchDialog(settings)
     dialog._creator_profile_selector.setCurrentIndex(
-        dialog._creator_profile_selector.findData("music")
+        dialog._creator_profile_selector.findData("podcast_voice")
     )
 
     dialog._studio_button.click()
 
     assert dialog.selected_role == "studio"
-    assert dialog.session_name == "Reference Studio"
+    assert dialog.session_name == "Host + Guest"
     assert dialog.result() == dialog.DialogCode.Accepted
     persisted = load_settings(config)
-    assert persisted.last_creator_profile_key == "music"
+    assert persisted.last_creator_profile_key == "podcast_voice"
     assert persisted.jamulus_server == "band.example"
     assert persisted.host_server_enabled is False
     assert settings.jamulus_server == "band.example"
@@ -477,7 +487,8 @@ def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     visible_fields = [
         field for field in dialog.findChildren(QLineEdit) if field.isVisibleTo(dialog)
     ]
-    assert visible_fields == [dialog._name_input, dialog._invite_input]
+    assert visible_fields == [dialog._invite_input]
+    assert dialog._name_input.isVisibleTo(dialog) is False
     dialog._name_input.setText("Drummer")
     dialog._invite_input.setText(
         create_invite_link("192.168.1.42", session_name="Drummer Test")
@@ -715,7 +726,11 @@ def test_remote_host_copy_and_reset_stay_under_owned_progressive_disclosure(
     controller._copy_band_invite()
     copied = QApplication.clipboard().text()
 
-    assert copied.startswith("webjam://join?v=3")
+    # Copy Invite now produces one message rather than a bare URL, so assert
+    # the remote link is the one carried. The LAN serializer above still
+    # raises if it is reached at all.
+    assert "webjam://join?v=3" in copied
+    assert copied.count("webjam://") == 1
     assert copied not in repr(vars(controller))
     assert not controller.window.session_hud._action.isHidden()
     assert controller.window.session_hud._action.text() == "Copy Invite"

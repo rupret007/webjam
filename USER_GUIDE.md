@@ -206,6 +206,13 @@ native app checks are exclusively for Webex. If Webex is missing, an explicit
 button opens Cisco's official installer in your browser; WebJam does not save
 a Webex password or install/update Webex silently.
 
+Which app owns which hardware is worth knowing before a session, because
+nothing moves it for you. The meeting platform uses your computer's built-in
+microphone and speakers for faces and talking. Jamulus uses your audio
+interface for the instruments. Song tools read and write files only; picking a
+file or running a Music AI job never re-binds, re-routes, or borrows an input
+or output from either one.
+
 WebJam never directly or automatically taps Webex, Zoom, Teams, Google Meet,
 FaceTime, another meeting app, a browser, or system output. Record Session
 includes authoritative Jamulus server stems and explicitly planned Local
@@ -246,10 +253,12 @@ The main session rail keeps the everyday destinations visible:
 | --- | --- |
 | Conversation | Shows meeting controls without opening the saved link |
 | Shared Track | Host-only live waveform and transport; loading never starts playback |
+| Song | Music only. Chords, lyrics, stems, and writing help for the song in this session |
 | Studio | Opens live completed-take review, or the current song workspace when WebJam was opened in Reference Studio |
 
-Studio is intentionally absent from More. Use the direct **Studio** control or
-Cmd/Ctrl+3 so there is one obvious route to the existing workspace.
+Studio and Song are intentionally absent from More. Use the direct **Studio**
+control or Cmd/Ctrl+3, and the direct **Song** control, so there is one obvious
+route to each.
 
 | Item | What it does |
 | --- | --- |
@@ -460,6 +469,101 @@ mixes, no-direct-monitor proof, server-stem alignment, route removal, repeated
 teardown, and a long session remain **NOT RUN** until recorded against an
 exact controlled source build using the
 [physical pilot](docs/plans/webjam-reference-track-macos-pilot.md).
+
+## Song tools and writing help — Music only
+
+**Song** on the session bar, or Cmd/Ctrl+4, opens a compact panel beside the
+jam. On a narrow window the panel narrows first so the mixer keeps the room. It never
+covers the session, never opens a window, and closing it leaves whatever you
+turned on visible on the strip.
+
+### The song comes from your notes
+
+The session notes are the song sheet. Write what you already write:
+
+```
+Key: G major
+Tempo: 120
+Time: 4/4
+
+[Intro x4]
+G D
+
+[Verse x8]
+G D Em C
+Walking out the back door again
+
+[Chorus x8]
+C G D G
+```
+
+`x8` states how long a part runs. Without it WebJam assumes eight bars and
+says so. Everything on the panel is read from this text; nothing is guessed,
+and a fact WebJam does not have stays blank.
+
+### Writing help
+
+**Help write** suggests the next part and what to do with the one you have.
+**Suggest chords** answers for the part you pick, scored against the parts
+either side of it, and says why. Both run entirely on this computer: no audio
+and no text is sent anywhere to produce them.
+
+Every result is labelled **Suggestion**. **Keep** writes one under its part in
+your notes. **Dismiss** clears it. Nothing is ever written into a Studio
+arrangement, and nothing is written at all until you press Keep.
+
+### The song clock
+
+The clock counts bars and sections across your form at your stated tempo. It is
+a shared reference, not a follower: WebJam does not listen to the band, so it
+will not correct if the room rushes. When a Shared Track holds a song, that
+transport owns the position instead and the panel's own transport steps aside —
+there is one clock, not two. A count-in is held through rather than counted.
+
+### Music AI
+
+Song tools that read audio use the Music AI developer API. You need an API key:
+
+1. Create one at <https://music.ai/dash>.
+2. Paste it into WebJam Settings, or set `MUSIC_AI_API_KEY` in your
+   environment.
+
+A Moises app login is a different account and will not work. Without a key,
+Song tools say so once inside the panel and offer nothing; nothing appears in
+the session HUD.
+
+Which tools you see depends on the workflows on your Music AI account, read
+when the panel opens. A tool your account cannot run is named as unavailable
+rather than shown as a button that would fail.
+
+| Tool | What it does |
+| --- | --- |
+| Split stems | Separates a file into vocals, drums, bass, and the rest |
+| Chords & key | Reads chords, key, and tempo from a file |
+| Lyrics | Transcribes the words |
+| Sections | Finds where parts begin, when your account offers it |
+| Change key/tempo | Renders the file at a new key or speed |
+| Master | Runs a mastering pass |
+
+Only the host can send a file, always with a confirmation naming it. WebJam
+never uploads the live jam, a meeting, or a meeting recording. Jobs run in the
+background — the strip shows one quiet word, the session is never blocked, and
+one job runs at a time with a per-hour limit so a jam cannot spend an account's
+credits by accident. If WebJam stops waiting for a job it says so and never
+re-runs it.
+
+### Stems beside the jam
+
+Separated stems arrive as mute and solo chips for the **reference file**. They
+are not the band: musician faders and the meeting are unaffected. **Sing this
+one** mutes the vocal. **Send to jam** routes what you can hear through the
+host-owned Shared Track, mixing several stems to one file first when needed.
+
+### Sharing what you see
+
+Chords and lyrics live on the WebJam strip. Screen-sharing your desktop into a
+meeting is your own choice and works like any other window; it is not what Song
+tools are for and WebJam never starts, requests, or requires it.
 
 ## Record Session
 

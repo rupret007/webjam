@@ -43,6 +43,16 @@
 | Export for another editor | Music or Podcast & Voice Studio → **Track Export** |
 | Pair the owner-device iPhone preview | **More → Use iPhone as Pocket Stage…** |
 | Verify a live session | Music **Band Check**, Podcast **Sound Check**, or Review **Session Check** |
+| Open Song tools | Music live session → direct **Song** control beside Studio, or Cmd/Ctrl+4; it is intentionally absent from More |
+| Write the song down | Session notes are the sheet: `Key: G major`, `Tempo: 120`, `[Verse x8]`, then chords and lyrics under each part |
+| Get chords for a part | **Song → Suggest chords**; pick the part, read the reasoning, **Keep** writes it into your notes and **Dismiss** writes nothing |
+| Get help with the next section | **Song → Help write**; runs on this computer, nothing is uploaded |
+| Add a Music AI key | Create one at <https://music.ai/dash> → paste into **Settings**, or set `MUSIC_AI_API_KEY`; a Moises app login is a different account |
+| Split stems, read chords or lyrics | **Song → Tools**; host only, always confirms the file, and only tools your Music AI account can actually run appear |
+| Mute the record's vocal and sing it | **Song → Stems → Sing this one**; these chips are the reference file, not the band, and musician faders are unchanged |
+| Send stems into the jam | **Song → Stems → Send to jam**; routes through the host-owned Shared Track, mixing several stems to one file first |
+| Know which app owns which device | Meeting platform uses the computer mic/speakers for faces; Jamulus uses your interface; Song tools never re-bind either |
+| Show chords to the room | They live on the WebJam strip. Screen-sharing your desktop into a meeting is your own choice, not a WebJam feature |
 | End safely | Use the profile's **End** or **Leave** session action |
 
 Jamulus carries WebJam's live music, voice, or review-audio path. Any meeting
