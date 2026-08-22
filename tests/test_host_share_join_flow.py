@@ -130,8 +130,11 @@ def test_launch_creator_selector_uses_canonical_profiles_and_truthful_actions(
         assert dialog._join_button.text() == "Join"
         assert dialog._studio_button.isHidden() is True
         assert dialog._studio_button.isEnabled() is False
+        # Music door is Host / Join only. Canonical profiles stay on the
+        # widget, but the picker is not a first-screen control.
+        assert selector.isVisibleTo(dialog) is False
+        assert dialog._creator_profile_label.isVisibleTo(dialog) is False
         for control in (
-            selector,
             dialog._host_button,
             dialog._join_button,
         ):
@@ -143,23 +146,19 @@ def test_launch_creator_selector_uses_canonical_profiles_and_truthful_actions(
                 control.mapTo(dialog, control.rect().bottomRight())
             )
             assert control.accessibleDescription()
-        for button in (
-            dialog._host_button,
-            dialog._join_button,
-        ):
-            assert button.accessibleName() == button.text()
+            assert control.accessibleName() == control.text()
 
-        selector.setFocus()
-        QTest.keyClick(selector, Qt.Key.Key_Down)
+        selector.setCurrentIndex(selector.findData("podcast_voice"))
         qapp.processEvents()
-        assert selector.hasFocus()
+        assert selector.isVisibleTo(dialog)
+        assert dialog._creator_profile_label.isVisibleTo(dialog)
         assert dialog.selected_creator_profile_key == "podcast_voice"
         assert dialog._host_button.text() == "Host Remote Recording"
         assert dialog._join_button.text() == "Join Recording"
         assert dialog._studio_button.text() == "New Local Recording"
         assert dialog._studio_button.isVisibleTo(dialog)
 
-        QTest.keyClick(selector, Qt.Key.Key_Down)
+        selector.setCurrentIndex(selector.findData("review_rehearsal"))
         qapp.processEvents()
         assert dialog.selected_creator_profile_key == "review_rehearsal"
         assert dialog._host_button.text() == "Host Review"
