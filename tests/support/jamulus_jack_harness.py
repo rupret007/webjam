@@ -661,6 +661,32 @@ def _free_port(sock_type: int) -> int:
         return int(sock.getsockname()[1])
 
 
+def _reserve_ports(kinds: list[int]) -> list[int]:
+    """Bind every requested port at once so the kernel cannot recycle one mid-set.
+
+    `_free_port` bind-and-close is TOCTOU: a later call can receive the same
+    ephemeral port after the earlier socket is closed. Hold the whole set,
+    read the numbers, then close.
+    """
+
+    socks: list[socket.socket] = []
+    try:
+        for kind in kinds:
+            sock = socket.socket(socket.AF_INET, kind)
+            sock.bind(("127.0.0.1", 0))
+            socks.append(sock)
+        ports = [int(sock.getsockname()[1]) for sock in socks]
+        if len(set(ports)) != len(ports):
+            raise HarnessFailure(f"ephemeral port collision while reserved: {ports}")
+        return ports
+    finally:
+        for sock in socks:
+            try:
+                sock.close()
+            except OSError:
+                pass
+
+
 def _stop_process(proc: subprocess.Popen[bytes], timeout_s: float = 5.0) -> None:
     if proc.poll() is not None:
         return
@@ -1253,21 +1279,26 @@ class JamulusJackHarness:
         self.client_rpc_endpoints: list[_ClientRpcEndpoint] = []
         self.recordings_path = self.root / "recordings"
         self.cleanup_errors: tuple[str, ...] = ()
-        self.ports = {
-            "server_udp": _free_port(socket.SOCK_DGRAM),
-            "server_rpc": _free_port(socket.SOCK_STREAM),
-            "client_a_udp": _free_port(socket.SOCK_DGRAM),
-            "client_a_rpc": _free_port(socket.SOCK_STREAM),
-            "client_b_udp": _free_port(socket.SOCK_DGRAM),
-            "client_b_rpc": _free_port(socket.SOCK_STREAM),
-        }
+        port_names = [
+            "server_udp",
+            "server_rpc",
+            "client_a_udp",
+            "client_a_rpc",
+            "client_b_udp",
+            "client_b_rpc",
+        ]
+        port_kinds = [
+            socket.SOCK_DGRAM,
+            socket.SOCK_STREAM,
+            socket.SOCK_DGRAM,
+            socket.SOCK_STREAM,
+            socket.SOCK_DGRAM,
+            socket.SOCK_STREAM,
+        ]
         if self.include_reference_track:
-            self.ports.update(
-                {
-                    "reference_udp": _free_port(socket.SOCK_DGRAM),
-                    "reference_rpc": _free_port(socket.SOCK_STREAM),
-                }
-            )
+            port_names.extend(("reference_udp", "reference_rpc"))
+            port_kinds.extend((socket.SOCK_DGRAM, socket.SOCK_STREAM))
+        self.ports = dict(zip(port_names, _reserve_ports(port_kinds)))
         if len(set(self.ports.values())) != len(self.ports):
             raise HarnessFailure(f"ephemeral port collision: {self.ports}")
         self._closed = False
