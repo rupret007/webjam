@@ -9,6 +9,22 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the immutable v0.26.0 release boundary belongs here. Every
 > published tag, release, and asset remains immutable historical evidence.
 
+### Recording recovery and multitrack proof lab
+
+- Landed via [#14](https://github.com/rupret007/webjam/pull/14): recording recovery hardening, guest capture finalization, Studio toolbar readability, local alignment confidence bounds, platform capability test guards, updater catalog time fixtures, exact multitrack proof lab (`tests/support/multitrack_proof_lab.py`, `tools/run_multitrack_proof_lab.py`), annotation-only runtime dependency removal, and auditable Jamulus soak recording preservation.
+
+### Jamulus harness port hold
+
+- Landed via [#20](https://github.com/rupret007/webjam/pull/20): reserve Jamulus ports as one held set in the test harness to reduce `_free_port` TOCTOU flakes on Integration.
+
+### Merge and release map / ten-second UX gate
+
+- Landed via [#18](https://github.com/rupret007/webjam/pull/18): documents the land order, required CI jobs for a release round, and the ten-second UX door law (Art three cards; Music Host/Join only).
+
+### Music song tools, write-help, and shared clock
+
+- Landed via [#17](https://github.com/rupret007/webjam/pull/17): in-jam song tools and write-help on native song objects, one shared song/room clock, Music live door stays **Host / Join** only (no profile picker / display name / local studio on the first screen). BYOK and Music AI keys remain Settings-only; zero-key jam still works.
+
 ### Art creator profile (Preview)
 
 - Added **Art**, a Preview creator profile for artists working in any medium —
