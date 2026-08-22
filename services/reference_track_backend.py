@@ -18,13 +18,11 @@ the callback emit silence.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import base64
 import errno
 import hashlib
 import json
 import os
-from pathlib import Path
 import secrets
 import socket
 import stat
@@ -32,7 +30,9 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Callable, Mapping
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from pathlib import Path
 from xml.etree import ElementTree
 
 import numpy as np
@@ -54,20 +54,19 @@ from core.coreaudio_process_route import (
     CoreAudioProcessRouteProbe,
     CoreAudioProcessRouteSnapshot,
 )
-from core.jamulus_endpoint import parse_jamulus_endpoint
 from core.jamulus_child_environment import (
     JamulusChildEnvironmentError,
     sanitized_jamulus_child_environment,
 )
+from core.jamulus_endpoint import parse_jamulus_endpoint
 from core.process_socket_identity import (
     JAMULUS_CLIENT_MAX_BASE_PORT,
     exact_jamulus_client_udp_port,
 )
 from core.reference_track import (
     REFERENCE_BLOCK_FRAMES,
-    REFERENCE_MAX_DIAGNOSTIC_COUNTER,
     REFERENCE_MAX_DECODE_FRAMES,
-    REFERENCE_PARTICIPANT_NAME as _CORE_REFERENCE_PARTICIPANT_NAME,
+    REFERENCE_MAX_DIAGNOSTIC_COUNTER,
     REFERENCE_SAMPLE_RATE,
     ReferenceAudioBridgeSession,
     ReferenceTrackCapability,
@@ -75,10 +74,14 @@ from core.reference_track import (
     ReferenceTrackLaunchContext,
     ReferenceTrackOwnershipClaim,
 )
+from core.reference_track import (
+    REFERENCE_PARTICIPANT_NAME as _CORE_REFERENCE_PARTICIPANT_NAME,
+)
 from core.secure_runtime import (
     SecureRuntimeDirectory,
     SecureRuntimeError,
 )
+
 REFERENCE_PROFILE_FILENAME = "WebJam-reference-track-v1.ini"
 REFERENCE_SECRET_FILENAME = ".WebJam-reference-track-v1.rpc-secret"
 # Defined in core so the take builder can recognise the stem without services.
@@ -548,7 +551,7 @@ class _ReferencePrivateFiles:
         directory_path: Path,
         *,
         home: Path,
-    ) -> "_ReferencePrivateFiles":
+    ) -> _ReferencePrivateFiles:
         directory = Path(directory_path).expanduser()
         expected = reference_track_runtime_directory(home)
         if directory != expected:
@@ -1702,7 +1705,7 @@ class MacOSBlackHoleReferenceBackend:
     ) -> CoreAudioProcessRouteSnapshot:
         try:
             scan = self._scanner()
-        except Exception as exc:  # noqa: BLE001 - native hot-plug boundary
+        except Exception as exc:
             raise ReferenceTrackError(
                 "Shared Track couldn't read a fresh CoreAudio device snapshot."
             ) from exc
@@ -1762,7 +1765,7 @@ class MacOSBlackHoleReferenceBackend:
             ) from None
         try:
             scan = self._scanner()
-        except Exception as exc:  # noqa: BLE001 - native hot-plug boundary
+        except Exception as exc:
             raise ReferenceTrackError(
                 "Shared Track couldn't read a fresh CoreAudio device snapshot."
             ) from exc
@@ -1800,7 +1803,7 @@ class MacOSBlackHoleReferenceBackend:
         rpc_port: int,
         context: ReferenceTrackLaunchContext,
         primary_route: CoreAudioProcessRouteSnapshot,
-    ) -> "_MacReferenceSession":
+    ) -> _MacReferenceSession:
         config_dir = reference_track_runtime_directory(self._home)
         profile = AudioRouteProfile(
             platform=AudioRoutePlatform.MACOS_COREAUDIO,
@@ -1942,7 +1945,7 @@ class MacOSBlackHoleReferenceBackend:
     def _resolve_route(self) -> _BlackHoleRoute:
         try:
             scan = self._scanner()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise ReferenceTrackError(
                 "WebJam couldn't inspect BlackHole safely."
             ) from exc
@@ -2027,7 +2030,7 @@ class MacOSBlackHoleReferenceBackend:
             return self._sounddevice
         try:
             import sounddevice as sd  # type: ignore
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise ReferenceTrackError(
                 "Shared Track audio support is unavailable in this build."
             ) from exc
@@ -2111,7 +2114,7 @@ class MacOSBlackHoleReferenceBackend:
             return stopped()
         return stopped()
 
-    def _session_stopped(self, session: "_MacReferenceSession") -> None:
+    def _session_stopped(self, session: _MacReferenceSession) -> None:
         with self._lock:
             if self._active is session:
                 self._active = None
@@ -2133,7 +2136,7 @@ class _MacReferenceSession:
         prove_owned_route: Callable[[], CoreAudioProcessRouteSnapshot],
         owned_files: _ReferencePrivateFiles,
         route_lease: _BlackHoleRouteLease,
-        on_stopped: Callable[["_MacReferenceSession"], None],
+        on_stopped: Callable[[_MacReferenceSession], None],
     ) -> None:
         self._route = route
         self._process = process
@@ -2284,11 +2287,11 @@ class _MacReferenceSession:
         """Verify PortAudio opened the exact fixed-format route requested."""
 
         try:
-            actual_device = int(getattr(stream, "device"))
-            actual_rate = float(getattr(stream, "samplerate"))
-            actual_channels = int(getattr(stream, "channels"))
-            actual_blocksize = int(getattr(stream, "blocksize"))
-            actual_dtype = np.dtype(getattr(stream, "dtype"))
+            actual_device = int(stream.device)
+            actual_rate = float(stream.samplerate)
+            actual_channels = int(stream.channels)
+            actual_blocksize = int(stream.blocksize)
+            actual_dtype = np.dtype(stream.dtype)
         except (AttributeError, TypeError, ValueError):
             raise ReferenceTrackError(
                 "Shared Track couldn't prove the opened BlackHole stream."
@@ -2399,7 +2402,7 @@ class _MacReferenceSession:
                 "Choose Stop again; its route remains reserved."
             )
         try:
-            closed = getattr(stream, "closed")
+            closed = stream.closed
         except Exception:  # noqa: BLE001 - native property boundary
             closed = False
         if closed is not True:
@@ -2522,7 +2525,7 @@ class _MacReferenceSession:
             owned = self._prove_owned_route()
         except ReferenceTrackError:
             raise
-        except Exception as exc:  # noqa: BLE001 - native proof boundary
+        except Exception as exc:
             raise ReferenceTrackError(
                 "Shared Track stopped because its owned Jamulus live route "
                 "could no longer be proved."
@@ -2548,7 +2551,7 @@ class _MacReferenceSession:
             current = self._prove_routes()
         except ReferenceTrackError:
             raise
-        except Exception as exc:  # noqa: BLE001 - native proof boundary
+        except Exception as exc:
             raise ReferenceTrackError(
                 "Shared Track stopped because its live audio route could "
                 "no longer be proved."
@@ -2601,10 +2604,10 @@ def create_reference_audio_backend():
 
 
 __all__ = [
-    "MacOSBlackHoleReferenceBackend",
     "REFERENCE_PARTICIPANT_NAME",
     "REFERENCE_PROFILE_FILENAME",
     "REFERENCE_SECRET_FILENAME",
+    "MacOSBlackHoleReferenceBackend",
     "create_reference_audio_backend",
     "reference_track_runtime_directory",
 ]

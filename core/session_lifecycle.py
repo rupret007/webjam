@@ -19,7 +19,6 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Deque
 
 from core.redaction import redact_text
 
@@ -235,7 +234,7 @@ class SessionLifecycle:
         self._recovery_attempt = 0
         self._transition_count = 0
         self._last_reason = ""
-        self._events: Deque[dict[str, str]] = deque(maxlen=max_events)
+        self._events: deque[dict[str, str]] = deque(maxlen=max_events)
 
     @staticmethod
     def _normalise_role(role: str) -> str:

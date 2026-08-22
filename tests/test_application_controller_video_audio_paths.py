@@ -58,9 +58,15 @@ class _ControllerTestBase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.window, cls.controller = _make_controller()
+        cls._permission_patch = patch(
+            "webjam_qt.platform_permissions.microphone_permission_status",
+            return_value="authorized",
+        )
+        cls._permission_patch.start()
 
     @classmethod
     def tearDownClass(cls):
+        cls._permission_patch.stop()
         cls.controller.shutdown()
 
     def setUp(self):

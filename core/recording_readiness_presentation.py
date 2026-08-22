@@ -9,13 +9,12 @@ credentials, recording-plan fingerprints, or mutable service objects.
 
 from __future__ import annotations
 
+import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
-import re
-from typing import Iterable
 
 from core.redaction import REDACTED_PATH, redact_log_text
-
 
 MAX_READINESS_SOURCES = 512
 MAX_READINESS_BLOCKERS = 32

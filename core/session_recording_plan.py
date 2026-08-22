@@ -21,8 +21,9 @@ import hashlib
 import hmac
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any
 
 from core.creative_modes import canonical_creator_profile_key
 from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
@@ -779,7 +780,7 @@ class SessionRecordingPlan:
         *,
         expected_take_id: str | None = None,
         expected_fingerprint_sha256: str | None = None,
-    ) -> "SessionRecordingPlan":
+    ) -> SessionRecordingPlan:
         """Rebuild and authenticate a private plan payload.
 
         The wire shape is exact: missing, additional, incorrectly typed, or
@@ -1008,12 +1009,11 @@ class SessionRecordingPlan:
             raise ValueError("input-map logical source IDs do not match the plan.")
         if not hmac.compare_digest(serialized_fingerprint, actual_fingerprint):
             raise ValueError("recording plan fingerprint does not match its facts.")
-        if expected_take_id is not None:
-            if (
-                not isinstance(expected_take_id, str)
-                or plan.take_id != expected_take_id
-            ):
-                raise ValueError("recording plan take identity does not match.")
+        if expected_take_id is not None and (
+            not isinstance(expected_take_id, str)
+            or plan.take_id != expected_take_id
+        ):
+            raise ValueError("recording plan take identity does not match.")
         if expected_fingerprint_sha256 is not None:
             if not isinstance(
                 expected_fingerprint_sha256, str

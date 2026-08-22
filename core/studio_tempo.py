@@ -18,16 +18,17 @@ and export disagree by construction.
 
 from __future__ import annotations
 
+import itertools
 import math
 import threading
 import uuid
 from bisect import bisect_right
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from decimal import Decimal, InvalidOperation
 from enum import Enum
 from fractions import Fraction
-from typing import Any, Mapping
-
+from typing import Any
 
 TEMPO_MAP_SCHEMA_VERSION = 1
 TEMPO_ANALYSIS_SCHEMA_VERSION = 1
@@ -289,7 +290,7 @@ class TempoPoint:
         bpm: object,
         *,
         point_id: str | None = None,
-    ) -> "TempoPoint":
+    ) -> TempoPoint:
         return cls(
             point_id=point_id or str(uuid.uuid4()),
             frame=frame,
@@ -305,7 +306,7 @@ class TempoPoint:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "TempoPoint":
+    def from_dict(cls, value: Mapping[str, Any]) -> TempoPoint:
         if not isinstance(value, Mapping):
             raise StudioTempoError("Tempo point must be an object.")
         _strict_keys(
@@ -363,7 +364,7 @@ class TimeSignaturePoint:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "TimeSignaturePoint":
+    def from_dict(cls, value: Mapping[str, Any]) -> TimeSignaturePoint:
         if not isinstance(value, Mapping):
             raise StudioTempoError("Time-signature point must be an object.")
         _strict_keys(
@@ -492,7 +493,7 @@ class TempoMap:
             (signatures, "time-signature"),
         ):
             frames = tuple(item.frame for item in values)
-            if any(right <= left for left, right in zip(frames, frames[1:])):
+            if any(right <= left for left, right in itertools.pairwise(frames)):
                 raise StudioTempoError(
                     f"{label.capitalize()} points must use strictly increasing frames."
                 )
@@ -513,7 +514,7 @@ class TempoMap:
 
         tempo_frames = tuple(item.frame for item in tempos)
         tempo_start_beats: list[Fraction] = [Fraction(0, 1)]
-        for prior, following in zip(tempos, tempos[1:]):
+        for prior, following in itertools.pairwise(tempos):
             tempo_start_beats.append(
                 tempo_start_beats[-1]
                 + Fraction(
@@ -558,7 +559,7 @@ class TempoMap:
         )
 
     @classmethod
-    def default(cls, sample_rate: int) -> "TempoMap":
+    def default(cls, sample_rate: int) -> TempoMap:
         return cls(
             sample_rate=sample_rate,
             tempo_points=(
@@ -814,7 +815,7 @@ class TempoMap:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "TempoMap":
+    def from_dict(cls, value: Mapping[str, Any]) -> TempoMap:
         if not isinstance(value, Mapping):
             raise StudioTempoError("Tempo map must be an object.")
         _strict_keys(
@@ -1067,7 +1068,7 @@ class TempoAnalysisResult:
         bpm: object | None = None,
         numerator: int | None = None,
         denominator: int | None = None,
-    ) -> "TempoAnalysisResult":
+    ) -> TempoAnalysisResult:
         if (numerator is None) != (denominator is None):
             raise StudioTempoError(
                 "Manual time-signature numerator and denominator are paired."
@@ -1081,7 +1082,7 @@ class TempoAnalysisResult:
             manual_denominator=denominator,
         )
 
-    def clear_manual_override(self) -> "TempoAnalysisResult":
+    def clear_manual_override(self) -> TempoAnalysisResult:
         return replace(
             self,
             manual_bpm_micros=None,
@@ -1135,7 +1136,7 @@ class TempoAnalysisResult:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "TempoAnalysisResult":
+    def from_dict(cls, value: Mapping[str, Any]) -> TempoAnalysisResult:
         if not isinstance(value, Mapping):
             raise StudioTempoError("Tempo analysis result must be an object.")
         keys = {
@@ -1281,16 +1282,16 @@ class TempoAnalysisGuard:
 
 
 __all__ = [
-    "BarPosition",
     "CONFIDENCE_UNITS",
-    "FrameRounding",
     "MICRO_BPM_PER_BPM",
-    "MusicalSnapMode",
-    "SnapTiePolicy",
-    "StudioTempoError",
     "TEMPO_ANALYSIS_SCHEMA_VERSION",
     "TEMPO_MAP_SCHEMA_VERSION",
     "TICKS_PER_QUARTER",
+    "BarPosition",
+    "FrameRounding",
+    "MusicalSnapMode",
+    "SnapTiePolicy",
+    "StudioTempoError",
     "TempoAnalysisCancelled",
     "TempoAnalysisGuard",
     "TempoAnalysisResult",

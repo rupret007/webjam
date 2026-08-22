@@ -117,14 +117,14 @@ class TestCreativeModeDataclass(unittest.TestCase):
 
 
 class TestCreatorProfileRegistry(unittest.TestCase):
-    def test_registry_is_the_bounded_v025_set(self):
+    def test_registry_is_the_bounded_shipped_set(self):
         self.assertEqual(
             get_creator_profile_keys(),
-            ["music", "podcast_voice", "review_rehearsal"],
+            ["music", "podcast_voice", "review_rehearsal", "art"],
         )
         self.assertEqual(
             get_creator_profile_labels(),
-            ["Music", "Podcast & Voice", "Review & Rehearsal"],
+            ["Music", "Podcast & Voice", "Review & Rehearsal", "Art"],
         )
         self.assertEqual(
             get_creator_profile_keys(),
@@ -187,6 +187,7 @@ class TestCreatorProfileMigration(unittest.TestCase):
                 "writers_room": "review_rehearsal",
                 "design_critique": "review_rehearsal",
                 "storyboard_film_room": "review_rehearsal",
+                "studio_visit": "art",
             },
         )
         for mode in CREATIVE_MODES:

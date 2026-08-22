@@ -181,13 +181,11 @@ class ReferenceStudioTempoReviewDialog(QDialog):
         layout.addWidget(summary)
 
         guidance = QLabel(
-            (
-                "Confidence is low. Check the beat against playback and correct "
-                "the values before applying them."
-                if manual_review_recommended
-                else "Review the result and correct it if the detected pulse is half- "
-                "or double-time."
-            )
+            "Confidence is low. Check the beat against playback and correct "
+            "the values before applying them."
+            if manual_review_recommended
+            else "Review the result and correct it if the detected pulse is half- "
+            "or double-time."
         )
         guidance.setObjectName("ReferenceStudioTempoGuidance")
         guidance.setWordWrap(True)

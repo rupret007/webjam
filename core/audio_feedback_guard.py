@@ -7,9 +7,9 @@ output. Unknown evidence never becomes a claim that a route is safe.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
-import re
 
 
 class AudioFeedbackRisk(str, Enum):

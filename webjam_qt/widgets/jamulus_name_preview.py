@@ -13,13 +13,28 @@ from core.jamulus_name import (
 
 
 class JamulusNamePreview(QLabel):
-    """Show the native mixer wrap without changing the entered name."""
+    """Show the native mixer wrap without changing the entered name.
 
-    def __init__(self, editor: QLineEdit, *, compact: bool = False) -> None:
+    ``plain_words`` drops the component's name from the visible text. The
+    setup surfaces are explicitly about configuring Jamulus and say so, but
+    the first screen someone ever sees is about what they are making, and a
+    piece of infrastructure has no business introducing itself there.
+    """
+
+    def __init__(
+        self,
+        editor: QLineEdit,
+        *,
+        compact: bool = False,
+        plain_words: bool = False,
+    ) -> None:
         super().__init__(editor.parentWidget())
         self._compact = bool(compact)
+        self._plain_words = bool(plain_words)
         self.setObjectName("JamulusNamePreview")
-        self.setAccessibleName("Jamulus musician-name preview")
+        self.setAccessibleName(
+            "Name preview" if plain_words else "Jamulus musician-name preview"
+        )
         self.setWordWrap(True)
         self.setTextFormat(Qt.TextFormat.PlainText)
         editor.setAccessibleDescription(JAMULUS_NAME_HELP)
@@ -41,7 +56,8 @@ class JamulusNamePreview(QLabel):
         preview = name.preview.replace("\n", " / ")
         if self._compact:
             layout = "two lines" if name.wraps else "one line"
-            text = f"Jamulus mixer: {preview} ({layout})"
+            label = "Others see" if self._plain_words else "Jamulus mixer"
+            text = f"{label}: {preview} ({layout})"
         else:
             text = f"{JAMULUS_NAME_HELP}\nMixer preview: {preview}"
         self.setText(text)

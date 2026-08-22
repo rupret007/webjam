@@ -6,18 +6,18 @@ import hashlib
 import hmac
 import time
 from collections import Counter, OrderedDict, deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from .config import ServiceConfig
 from .protocol import (
+    SESSION_BYTES,
+    TOKEN_BYTES,
     DatagramKind,
     ProtocolError,
     RelayFrame,
     ReplayWindow,
     Role,
-    SESSION_BYTES,
-    TOKEN_BYTES,
     derive_relay_key,
     encode_relay,
     token_digest,

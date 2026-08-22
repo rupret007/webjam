@@ -33,7 +33,7 @@ class Role(IntEnum):
     GUEST = 1
 
     @classmethod
-    def from_text(cls, value: object) -> "Role":
+    def from_text(cls, value: object) -> Role:
         if value == "host":
             return cls.HOST
         if value == "guest":
@@ -45,7 +45,7 @@ class Role(IntEnum):
         return "host" if self is Role.HOST else "guest"
 
     @property
-    def opposite(self) -> "Role":
+    def opposite(self) -> Role:
         return Role.GUEST if self is Role.HOST else Role.HOST
 
 

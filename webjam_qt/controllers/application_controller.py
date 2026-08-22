@@ -20,11 +20,11 @@ import re
 import sys
 import threading
 import time
-from types import SimpleNamespace
 import unicodedata
 import uuid
 from pathlib import Path
-from typing import Optional
+from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, Qt, QTimer
 from PySide6.QtWidgets import QDialog, QMessageBox
@@ -35,12 +35,17 @@ from core.creative_modes import (
     get_creator_profile_by_key_or_default,
     get_mode_by_key_or_default,
 )
-from core.local_capture import LocalCaptureTrack, check_local_capture_preflight
 from core.jamulus_rpc_client import (
     JamulusOrderedRosterProof,
     JamulusRpcMonitorIdentity,
 )
+from core.local_capture import LocalCaptureTrack, check_local_capture_preflight
 from core.meeting_link import RECORD_SESSION_MEETING_CAPTURE_NOTICE
+from core.musician_guidance import (
+    GuidanceDisplayOverride,
+    StudioGuidanceFacts,
+    build_musician_guidance,
+)
 from core.network_invite import BandInvite
 from core.pocket_stage import (
     MobileParticipant,
@@ -55,12 +60,6 @@ from core.pocket_stage import (
     PocketCommandStatus,
 )
 from core.remote_invitation import RemoteInvitation
-from core.session_health import SessionHealth
-from core.musician_guidance import (
-    GuidanceDisplayOverride,
-    StudioGuidanceFacts,
-    build_musician_guidance,
-)
 from core.session_conductor import (
     CleanupState,
     EvidenceState,
@@ -71,43 +70,43 @@ from core.session_conductor import (
     ProcessState,
     RecorderState,
     ReviewState,
+    SessionConductor,
     SessionConductorFacts,
     SessionConductorPhase,
-    SessionPrimaryAction,
-    SessionRole,
-    SessionConductor,
     SessionConductorSnapshot,
     SessionConductorToken,
+    SessionPrimaryAction,
+    SessionRole,
     TakeValidationState,
 )
-from core.session_lifecycle import SessionLifecycle, SessionLifecyclePhase
+from core.session_health import SessionHealth
 from core.session_intelligence import build_session_pulse
-from core.settings import AppSettings, load_settings
+from core.session_lifecycle import SessionLifecycle, SessionLifecyclePhase
 from core.session_transfer_runtime import (
     GuestPeerSession,
     HostPeerSession,
     default_installation_identity_path,
 )
+from core.settings import AppSettings, load_settings
 from services.bridge_service import (
+    NATIVE_SOUND_SETUP_GRACE_SECONDS,
+    RECONNECT_HANG_THRESHOLD_SECONDS,
     BridgeService,
     JamulusRecoverySnapshot,
     JamulusRpcFreshness,
-    NATIVE_SOUND_SETUP_GRACE_SECONDS,
-    RECONNECT_HANG_THRESHOLD_SECONDS,
 )
 from services.macos_process_activation import JamulusForegroundReason
 from storage.repository import WebJamRepository
 from ui.services import MetricsService
-
+from webjam_qt.controllers.audio_coordinator import AudioCoordinator
 from webjam_qt.controllers.mix_manager import MixManager
+from webjam_qt.controllers.recording_coordinator import RecordingCoordinator
 from webjam_qt.controllers.session_persistence import SessionPersistence
 from webjam_qt.controllers.ui_thread import UiThreadInvoker
-from webjam_qt.controllers.audio_coordinator import AudioCoordinator
 from webjam_qt.controllers.video_coordinator import VideoCoordinator
-from webjam_qt.controllers.recording_coordinator import RecordingCoordinator
+from webjam_qt.session_state import SessionPhase, SessionUiState
 from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.windows.conductor_window import ConductorWindow
-from webjam_qt.session_state import SessionPhase, SessionUiState
 
 LOGGER = logging.getLogger("webjam.qt.application_controller")
 
@@ -157,25 +156,25 @@ def _live_quit_copy(
         if hosting:
             return (
                 "End recording session and quit?",
-                "Quitting WebJam ends this recording session for every connected "
-                "speaker.",
+                ("Quitting WebJam ends this recording session for every connected "
+                "speaker."),
             )
         return (
             "Leave recording session and quit?",
-            "Quitting WebJam disconnects you; the other speakers can continue "
-            "the recording session.",
+            ("Quitting WebJam disconnects you; the other speakers can continue "
+            "the recording session."),
         )
     if profile.key == "review_rehearsal":
         if hosting:
             return (
                 "End review session and quit? (Preview)",
-                "Quitting WebJam ends this Preview review session for every "
-                "connected participant.",
+                ("Quitting WebJam ends this Preview review session for every "
+                "connected participant."),
             )
         return (
             "Leave review session and quit? (Preview)",
-            "Quitting WebJam disconnects you; the other participants can continue "
-            "the Preview review session.",
+            ("Quitting WebJam disconnects you; the other participants can continue "
+            "the Preview review session."),
         )
     return (
         "End jam and quit?" if hosting else "Leave jam and quit?",
@@ -202,9 +201,33 @@ def _meeting_service_name(url: object, *, fallback: str = "") -> str:
     return meeting_service_label(service) if service else fallback
 
 
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from core.art_companion import ArtCompanionProjection
+
+
 def _meeting_open_action_label(url: object) -> str:
     service = _meeting_service_name(url)
     return f"Open {service}" if service else "Join / Open Meeting"
+
+
+def _same_companion_view(left: object, right: object) -> bool:
+    """Whether two projections show a companion the same thing.
+
+    Compared field by field rather than by equality so the revision, which is
+    the one field that differs by construction, cannot decide the answer.
+    """
+
+    return all(
+        getattr(left, name, None) == getattr(right, name, None)
+        for name in (
+            "generation",
+            "in_room",
+            "canvas",
+            "video",
+            "transport_allowed",
+            "ai",
+        )
+    )
 
 
 class ApplicationController(QObject):
@@ -266,7 +289,7 @@ class ApplicationController(QObject):
     def __init__(
         self,
         window: ConductorWindow,
-        settings: Optional[AppSettings] = None,
+        settings: AppSettings | None = None,
         session_invite: BandInvite | None = None,
         remote_invitation: RemoteInvitation | None = None,
         *,
@@ -569,6 +592,19 @@ class ApplicationController(QObject):
         # the primary Jamulus client.
         self._reference_track = None
         self._reference_track_dialog = None
+        self._reference_video = None
+        self._reference_video_dialog = None
+        self._reference_video_binding: tuple[str, str] | tuple[()] = ()
+        self._reference_video_notified_state = ""
+        self._shared_canvas = None
+        self._shared_canvas_dialog = None
+        self._shared_canvas_binding: tuple[str, str] | tuple[()] = ()
+        self._shared_canvas_notified_state = ""
+        self._ai_image = None
+        self._ai_image_dialog = None
+        self._room_clock = None
+        self._room_clock_binding: tuple[str, str] | tuple[()] = ()
+        self._announced_creator_start: tuple[str, str] | tuple[()] = ()
         self._reference_track_operation_lock = threading.RLock()
         self._reference_track_worker_state_lock = threading.Lock()
         self._reference_track_operation_inflight = False
@@ -668,6 +704,23 @@ class ApplicationController(QObject):
         self._reference_track_timer.setInterval(250)
         self._reference_track_timer.timeout.connect(self._refresh_reference_track_ui)
 
+        # Art's reference video is corrected toward the host on a
+        # slower cadence than audio meters: the peer plane only publishes new
+        # host truth about once a second, so a faster tick would chase noise.
+        self._reference_video_timer = QTimer(self)
+        self._reference_video_timer.setInterval(500)
+        self._reference_video_timer.timeout.connect(self._tick_reference_video)
+
+        # Art's start card is chosen before there is a room to act on, so the
+        # room carries one small line about its canvas or its video: the way
+        # in while a host has not set theirs up, and the status once they
+        # have. A card that opened a window instead would steal focus from
+        # the meeting beside WebJam.
+        self._art_start_timer = QTimer(self)
+        self._art_start_timer.setInterval(1000)
+        self._art_start_timer.timeout.connect(self._tick_creator_start)
+        self._art_start_timer.start()
+
         self._connection_timer = QTimer(self)
         self._connection_timer.setSingleShot(True)
         self._connection_timer.setInterval(self._CONNECTION_TIMEOUT_MS)
@@ -743,7 +796,7 @@ class ApplicationController(QObject):
             try:
                 if not bool(prepare_project_close()):
                     return False
-            except Exception:  # noqa: BLE001 - quit must retain unsaved projects
+            except Exception:
                 LOGGER.exception("Reference Studio project close preparation failed")
                 return False
         studio = getattr(getattr(self, "window", None), "recording_studio", None)
@@ -752,7 +805,7 @@ class ApplicationController(QObject):
             return True
         try:
             prepared = bool(prepare_close())
-        except Exception:  # noqa: BLE001 - closing must fail safe on save errors
+        except Exception:
             LOGGER.exception("Studio close preparation failed")
             prepared = False
         if prepared:
@@ -865,7 +918,7 @@ class ApplicationController(QObject):
             # harnesses that exercise shutdown ordering without constructing
             # a QObject-backed controller.
             return ApplicationController._shutdown_once(self)
-        except Exception:  # noqa: BLE001 - an unknown owner failure must fail closed
+        except Exception:
             LOGGER.exception("Unexpected shutdown cleanup failure")
             # At least one teardown operation may already have completed.
             # Never restore the ordinary app surface after that boundary, and
@@ -921,7 +974,7 @@ class ApplicationController(QObject):
         if jamulus_update_service is not None:
             try:
                 updater_stopped = bool(jamulus_update_service.close(timeout=3.0))
-            except Exception:  # noqa: BLE001 - updater cleanup fails closed
+            except Exception:
                 LOGGER.exception("Jamulus updater shutdown failed")
                 updater_stopped = False
             if not updater_stopped:
@@ -942,6 +995,14 @@ class ApplicationController(QObject):
         self._reference_track_session_generation = (
             int(getattr(self, "_reference_track_session_generation", 0)) + 1
         )
+        # A reference video owns only a local player and a memory-only peer
+        # projection, so it can be released before the audio path unwinds.
+        # The shared canvas owns even less: a pointer to someone else's
+        # Drawpile, which keeps running.
+        self._release_reference_video()
+        self._release_shared_canvas()
+        self._release_ai_image()
+        self._release_room_clock()
         reference_track = getattr(self, "_reference_track", None)
         if reference_track is not None:
             reference_closed = False
@@ -976,7 +1037,7 @@ class ApplicationController(QObject):
                 hosted_recording_safe = bool(
                     self.recording.stop_server_recording_for_shutdown()
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Hosted recording shutdown failed")
                 hosted_recording_safe = False
         if hosted_server_alive and not hosted_recording_safe:
@@ -1038,14 +1099,14 @@ class ApplicationController(QObject):
         if self._mix_dirty and self._jamulus_connected:
             try:
                 self._on_save_mix()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Auto-save mix on shutdown failed")
         # Terminate the Jamulus subprocess so it doesn't outlive WebJam.
         # bridge.stop_jamulus() also calls jamulus_controller.stop() internally.
         jamulus_stopped = False
         try:
             jamulus_stopped = self.bridge.stop_jamulus() is not False
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Jamulus shutdown failed")
         if not jamulus_stopped:
             return self._show_shutdown_cleanup_retry(
@@ -1067,7 +1128,7 @@ class ApplicationController(QObject):
                 hosted_recording_safe = bool(
                     self.recording.stop_server_recording_for_shutdown()
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Late hosted recording shutdown failed")
                 hosted_recording_safe = False
         if hosted_server_alive and not hosted_recording_safe:
@@ -1079,7 +1140,7 @@ class ApplicationController(QObject):
             hosted_server_stopped = False
             try:
                 hosted_server_stopped = self.bridge.stop_hosted_server() is not False
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Hosted server shutdown failed")
             if not hosted_server_stopped:
                 return self._show_shutdown_cleanup_retry(
@@ -1100,7 +1161,7 @@ class ApplicationController(QObject):
         companion_stopped = False
         try:
             companion_stopped = self.api_bridge.stop() is not False
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Companion API stop failed")
         if not companion_stopped:
             return self._show_shutdown_cleanup_retry(
@@ -1146,6 +1207,13 @@ class ApplicationController(QObject):
         reference_track_timer = getattr(self, "_reference_track_timer", None)
         if reference_track_timer is not None:
             reference_track_timer.stop()
+        art_start_timer = getattr(self, "_art_start_timer", None)
+        if art_start_timer is not None:
+            art_start_timer.stop()
+        self._release_reference_video()
+        self._release_shared_canvas()
+        self._release_ai_image()
+        self._release_room_clock()
         self._connection_timer.stop()
         jamulus_update_dialog = getattr(self, "_jamulus_update_dialog", None)
         if jamulus_update_dialog is not None:
@@ -1160,13 +1228,13 @@ class ApplicationController(QObject):
         self._webex_activation_inflight = False
         try:
             self.webex.stop()
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Webex stop failed")
         # Preserve the launch-card shutdown boundary. The external-only card
         # owns no browser, media process, or meeting session.
         try:
             self.window.webex_embed.shutdown()
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Webex launch-card shutdown failed")
         self._shutdown = True
         return True
@@ -1233,7 +1301,7 @@ class ApplicationController(QObject):
                     "session. Open Studio to review it.",
                     ms=9000,
                 )
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Could not configure private recording transfer")
             self.guest_peer = None
             # Keep the parsed v2 invite in memory. A musician can repair an
@@ -1343,7 +1411,7 @@ class ApplicationController(QObject):
             try:
                 if guest.stop() is False:
                     cleanup_ok = False
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Guest recording transfer cleanup failed")
                 cleanup_ok = False
         host = getattr(self, "host_peer", None)
@@ -1351,7 +1419,7 @@ class ApplicationController(QObject):
             try:
                 if host.stop() is False:
                     cleanup_ok = False
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Host recording service cleanup failed")
                 cleanup_ok = False
         # Keep every failed owner reachable so End/Leave can retry and
@@ -1484,6 +1552,22 @@ class ApplicationController(QObject):
         self.window.session_strip.set_recording_phase(phase)
         self.window.recording_studio.set_recording_phase(phase)
 
+        coordinator = self._reference_video_coordinator()
+        if coordinator is not None:
+            coordinator.observe_host_state(state)
+        try:
+            canvas = self._shared_canvas_coordinator()
+            if canvas is not None:
+                canvas.observe_host_state(state)
+        except Exception:  # noqa: BLE001 - an add-on never breaks the room
+            LOGGER.debug("Shared canvas observation failed safely", exc_info=True)
+        try:
+            clock = self._room_clock_coordinator()
+            if clock is not None:
+                clock.observe_host_state(state)
+        except Exception:  # noqa: BLE001 - a readout never breaks the room
+            LOGGER.debug("Room clock observation failed safely", exc_info=True)
+
         if shared is None or int(getattr(shared, "generation", 0) or 0) <= 0:
             return
         projection = SimpleNamespace(
@@ -1520,6 +1604,81 @@ class ApplicationController(QObject):
                 ),
             )
         )
+
+    @property
+    def creator_start(self):
+        """Return the start card this artist chose, or ``None``.
+
+        The value is re-resolved against the active profile every time, so a
+        key saved under another profile can never arm a capability this one
+        does not have; it falls back to the plain talk-only door.
+        """
+
+        return self.creator_profile.start_or_default(
+            getattr(getattr(self, "settings", None), "last_creator_start_key", "")
+        )
+
+    #: What to say once, per start that promises an add-on, when a room exists.
+    def _tick_creator_start(self) -> None:
+        """Keep the room's one Art line true, including before anything exists.
+
+        A start is picked at launch, before any room exists, so it cannot be
+        acted on there. This used to be answered with a nine-second message
+        naming the menu to open, which is a user interface explaining how to
+        navigate itself. The room carries a small persistent chip instead: it
+        is the way in when a host has chosen a layer and not set it up yet,
+        and it is the room's status once they have.
+
+        Nothing here opens or focuses a window. The chip is a control the
+        artist presses when they are ready.
+        """
+
+        if getattr(self, "_shutdown", False):
+            timer = getattr(self, "_art_start_timer", None)
+            if timer is not None:
+                timer.stop()
+            return
+        try:
+            self._sync_art_room_presence()
+        except Exception:  # noqa: BLE001 - room chrome never breaks the room
+            # Reported once at warning so a real fault is discoverable, then
+            # quietly: this runs every second, and a repeating stack trace
+            # would bury whatever else the log was trying to say.
+            if not getattr(self, "_art_room_presence_failed", False):
+                self._art_room_presence_failed = True
+                LOGGER.warning(
+                    "Art room presence is unavailable this session",
+                    exc_info=True,
+                )
+            else:
+                LOGGER.debug("Art room presence failed again", exc_info=True)
+
+    def _sync_art_room_presence(self) -> None:
+        """Render the room's Art line from the projection the companion reads.
+
+        One derivation feeds both, so the chip in this room and a chip in a
+        paired meeting-window panel cannot disagree about what is happening.
+        """
+
+        strip = getattr(getattr(self, "window", None), "session_strip", None)
+        if strip is None or not hasattr(strip, "set_art_room_presence"):
+            return
+        from core.art_room_presence import ABSENT, art_room_presence
+
+        if not (self._shared_canvas_supported() or self._reference_video_supported()):
+            strip.set_art_room_presence(ABSENT)
+            return
+        projection = self.art_room_state()
+        start = self.creator_start
+        # Only a host chose a card. A guest's saved start says nothing about
+        # the room they joined, so what the host shared is the only fact.
+        presence = art_room_presence(
+            projection,
+            hosting=projection.transport_allowed,
+            intended_canvas=bool(start is not None and start.shared_canvas),
+            intended_video=bool(start is not None and start.reference_video),
+        )
+        strip.set_art_room_presence(presence)
 
     def _apply_creator_profile_key(
         self,
@@ -1571,9 +1730,11 @@ class ApplicationController(QObject):
         """Map the guest transfer owner's finite facts without exposing errors."""
 
         guest = getattr(self, "guest_peer", None)
-        if guest is None or not bool(
-            getattr(self.settings, "local_capture_enabled", False)
-        ):
+        if guest is None:
+            return GuestMediaState.NOT_EXPECTED, EvidenceState.NOT_REQUIRED
+        if bool(getattr(guest, "capture_finalization_needs_attention", False)):
+            return GuestMediaState.NEEDS_ATTENTION, EvidenceState.UNKNOWN
+        if not bool(getattr(self.settings, "local_capture_enabled", False)):
             return GuestMediaState.NOT_EXPECTED, EvidenceState.NOT_REQUIRED
         try:
             segments = tuple(guest.pending_segments)
@@ -1687,7 +1848,7 @@ class ApplicationController(QObject):
                 host_owned=True,
             )
             return True
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Could not start private recording service")
             self._host_peer_warning = (
                 "Bandmates can still join and play. Automatic Local Originals "
@@ -1801,7 +1962,7 @@ class ApplicationController(QObject):
                     started_utc or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                 ),
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Could not publish confirmed recording start")
 
     def signal_peer_recording_stopped(
@@ -1823,7 +1984,7 @@ class ApplicationController(QObject):
                 needs_attention=needs_attention,
                 message=message,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Could not publish confirmed recording stop")
 
     def _confirm_close(self) -> bool:
@@ -1954,7 +2115,7 @@ class ApplicationController(QObject):
             return False
         try:
             started = self.api_bridge.start()
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Companion API failed to start")
             return False
         if started:
@@ -2888,7 +3049,7 @@ class ApplicationController(QObject):
                         reason=recording_reason,
                         recovery_attempt=lifecycle.snapshot.recovery_attempt,
                     )
-                except Exception:  # noqa: BLE001
+                except Exception:
                     LOGGER.debug(
                         "Could not attach lifecycle evidence to active take",
                         exc_info=True,
@@ -3327,20 +3488,12 @@ class ApplicationController(QObject):
                     current,
                     PocketCommandRejectionReason.INVALID_STATE,
                 )
-            if wants_start and phase is MobileRecordingState.RECORDING:
-                status = PocketCommandStatus.CONFIRMED
-            elif not wants_start and phase is MobileRecordingState.IDLE:
+            if wants_start and phase is MobileRecordingState.RECORDING or not wants_start and phase is MobileRecordingState.IDLE:
                 status = PocketCommandStatus.CONFIRMED
             elif wants_start and phase not in {
                 MobileRecordingState.IDLE,
                 MobileRecordingState.READY,
-            }:
-                return self._pocket_rejection(
-                    request,
-                    current,
-                    PocketCommandRejectionReason.INVALID_STATE,
-                )
-            elif not wants_start and phase not in {
+            } or not wants_start and phase not in {
                 MobileRecordingState.RECORDING,
                 MobileRecordingState.NEEDS_ATTENTION,
             }:
@@ -4110,7 +4263,7 @@ class ApplicationController(QObject):
                 ok, _detail = self.bridge.ensure_hosted_server(
                     cancel_requested=cancelled,
                 )
-            except Exception:  # noqa: BLE001 - fixed-copy recovery below
+            except Exception:
                 LOGGER.exception("Hosted server startup failed")
                 ok = False
 
@@ -4302,18 +4455,17 @@ class ApplicationController(QObject):
             native_setup_was_bounded
             and callable(finish_setup)
             and isinstance(recovery, JamulusRecoverySnapshot)
+        ) and not bool(
+            finish_setup(
+                generation=recovery.generation,
+                process_id=recovery.process_id,
+            )
         ):
-            if not bool(
-                finish_setup(
-                    generation=recovery.generation,
-                    process_id=recovery.process_id,
-                )
-            ):
-                # An authenticated callback for a replaced generation cannot
-                # advance this journey. Wait for the current process's own
-                # monitor/roster proof.
-                self._schedule_startup_poll(generation)
-                return
+            # An authenticated callback for a replaced generation cannot
+            # advance this journey. Wait for the current process's own
+            # monitor/roster proof.
+            self._schedule_startup_poll(generation)
+            return
         attempt.pop("native_setup_deadline", None)
         # A v2 invitation's authenticated peer plane carries only enrollment,
         # durable presence, and opt-in Local Originals. Start it only after
@@ -4449,7 +4601,7 @@ class ApplicationController(QObject):
             return
         try:
             guest.start()
-        except Exception:  # noqa: BLE001 - peer transfer cannot block music
+        except Exception:
             LOGGER.exception("Could not start guest recording transfer")
 
     def _apply_matching_startup_recovery(
@@ -4499,7 +4651,7 @@ class ApplicationController(QObject):
             if decision in {"skipped", "open_requested"}:
                 attempt["webex_decision"] = decision
             attempt["resumed"] = True
-        except Exception:  # noqa: BLE001 - recovery must fail closed
+        except Exception:
             LOGGER.info(
                 "Startup recovery did not match the active profile", exc_info=True
             )
@@ -4512,7 +4664,7 @@ class ApplicationController(QObject):
         self._startup_recovery_record = None
         try:
             self._startup_attempt_store.clear()
-        except Exception:  # noqa: BLE001 - a stale private prompt is harmless
+        except Exception:
             LOGGER.debug("Could not clear completed startup recovery", exc_info=True)
 
     def _startup_music_is_proven(
@@ -4587,7 +4739,7 @@ class ApplicationController(QObject):
                     StartupRole(str(attempt["role"])),
                     human_confirmed=True,
                 )
-        except Exception:  # noqa: BLE001 - confirmation remains useful this run
+        except Exception:
             LOGGER.info("Could not save native sound readiness", exc_info=True)
         attempt["human_confirmed"] = True
         self._continue_after_music_ready(generation)
@@ -4625,12 +4777,12 @@ class ApplicationController(QObject):
         attempt = getattr(self, "_startup_attempt", None)
         if attempt is None:
             return
-        from core.settings import save_settings
         from core.meeting_link import (
             SUPPORTED_MEETING_SERVICES_TEXT,
             meeting_link_error,
             normalize_meeting_url,
         )
+        from core.settings import save_settings
 
         raw = self.window.session_hud.input_text()
         value = normalize_meeting_url(raw)
@@ -4792,7 +4944,7 @@ class ApplicationController(QObject):
                 cleanup_ok = bool(self.bridge.stop_jamulus()) and cleanup_ok
                 if role == "host":
                     cleanup_ok = bool(self.bridge.stop_hosted_server()) and cleanup_ok
-            except Exception:  # noqa: BLE001 - cleanup state remains conservative
+            except Exception:
                 LOGGER.exception("Startup cancellation cleanup failed")
                 cleanup_ok = False
 
@@ -4945,7 +5097,7 @@ class ApplicationController(QObject):
                 record = StartupAttemptRecord.new(**record_kwargs)
                 attempt["attempt_id"] = record.attempt_id
             self._startup_attempt_store.save(record)
-        except Exception:  # noqa: BLE001 - recovery persistence must not block music
+        except Exception:
             LOGGER.info("Could not persist startup recovery state", exc_info=True)
 
     @staticmethod
@@ -5457,7 +5609,7 @@ class ApplicationController(QObject):
                     and saved
                     and saved.matches(signature)
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Band Check verification could not be inspected")
 
             def deliver() -> None:
@@ -5874,7 +6026,7 @@ class ApplicationController(QObject):
                         str(person.name or self.settings.musician_name),
                         capture_enabled=bool(self.settings.local_capture_enabled),
                     )
-                except Exception:  # noqa: BLE001
+                except Exception:
                     LOGGER.exception("Could not bind host participant presence")
             if self.guest_peer is not None:
                 self.guest_peer.observe_presence(
@@ -5935,7 +6087,7 @@ class ApplicationController(QObject):
         # treating every remote channel 0 as local would mask a failed host
         # connection when guests remain on the server.
         if hasattr(person, "is_local"):
-            return bool(getattr(person, "is_local"))
+            return bool(person.is_local)
         return getattr(person, "channel_id", -1) == 0
 
     @staticmethod
@@ -6848,7 +7000,7 @@ class ApplicationController(QObject):
             apply_join_invite(new_settings, invitation)
             try:
                 save_settings(new_settings)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Could not save incoming invitation")
                 self.window.flash_message(
                     "WebJam couldn't use that invite yet. Try opening it again.",
@@ -6896,7 +7048,7 @@ class ApplicationController(QObject):
                 return False
             try:
                 self.begin_startup_journey()
-            except Exception:  # noqa: BLE001 - leave invitation retryable
+            except Exception:
                 LOGGER.exception("Could not launch the incoming invitation")
                 self.audio.stopping = False
                 self.window.flash_message(
@@ -6970,7 +7122,7 @@ class ApplicationController(QObject):
                         selected,
                         reference_track_already_retired=True,
                     )
-                except Exception:  # noqa: BLE001 - keep the UI recoverable
+                except Exception:
                     LOGGER.exception(
                         "Could not launch the replacement private invitation"
                     )
@@ -6982,7 +7134,7 @@ class ApplicationController(QObject):
                 return
             try:
                 applied = _apply_and_launch(selected)
-            except Exception:  # noqa: BLE001 - leave the UI recoverable
+            except Exception:
                 LOGGER.exception("Could not apply the replacement invitation")
                 applied = False
             if not applied:
@@ -7000,7 +7152,7 @@ class ApplicationController(QObject):
             self._complete_pocket_stage_session_end(succeeded=True)
             try:
                 self.begin_startup_journey()
-            except Exception:  # noqa: BLE001 - leave the UI recoverable
+            except Exception:
                 LOGGER.exception("Could not launch the replacement invitation")
                 _show_switch_failure(cleanup_unresolved=False)
 
@@ -7033,7 +7185,7 @@ class ApplicationController(QObject):
                     # on the owner thread. Do not restore the prior settings
                     # from this worker, because reconfiguration touches Qt.
                     cleanup_ok = self._stop_remote_transport(restore_route=False)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Could not safely leave the current jam")
                 cleanup_ok = False
             if cleanup_ok:
@@ -7451,7 +7603,7 @@ class ApplicationController(QObject):
             return
         try:
             owner.reset()
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Remote invitation reset failed")
             self.window.flash_message(
                 "WebJam couldn’t reset the invitation yet. Try again.",
@@ -8259,9 +8411,7 @@ class ApplicationController(QObject):
         ready_dialog = getattr(self, "_ready_check_dialog", None)
         if ready_dialog is not None and bool(
             getattr(ready_dialog, "isVisible", lambda: False)()
-        ):
-            band_check = EvidenceState.IN_PROGRESS
-        elif bool(getattr(self, "_band_check_start_pending", False)):
+        ) or bool(getattr(self, "_band_check_start_pending", False)):
             band_check = EvidenceState.IN_PROGRESS
         elif band_check is EvidenceState.NOT_STARTED and (launch_intended or connected):
             # A live/launching attempt cannot be sent backwards into an
@@ -8307,7 +8457,7 @@ class ApplicationController(QObject):
                 if callable(studio_facts_provider)
                 else StudioGuidanceFacts()
             )
-        except Exception:  # noqa: BLE001 - guidance must never interrupt audio
+        except Exception:
             LOGGER.warning("Studio guidance facts were unavailable", exc_info=True)
             studio_facts = StudioGuidanceFacts()
         return SessionConductorFacts(
@@ -8535,7 +8685,7 @@ class ApplicationController(QObject):
         timeline = getattr(lifecycle, "public_timeline", None)
         try:
             events = timeline() if callable(timeline) else ()
-        except Exception:  # noqa: BLE001 - guidance remains best effort
+        except Exception:
             LOGGER.warning("Session guidance timeline was unavailable", exc_info=True)
             events = ()
         try:
@@ -8550,7 +8700,7 @@ class ApplicationController(QObject):
             self._last_musician_guidance = guidance
             self.window.session_canvas.set_musician_guidance(guidance)
             self.window.recording_studio.set_musician_guidance(guidance)
-        except Exception:  # noqa: BLE001 - never disturb live session work
+        except Exception:
             LOGGER.warning("Musician guidance could not be refreshed", exc_info=True)
 
     def _focus_initial_hud_action(self) -> None:
@@ -9447,11 +9597,12 @@ class ApplicationController(QObject):
     def _export_test_night_report(self) -> None:
         """Write an allowlisted report only after an operator asks for it."""
 
+        import json
+
         from PySide6.QtWidgets import QFileDialog
 
         from core.file_io import atomic_write_text
         from core.pilot_evidence import build_sanitized_pilot_report
-        import json
 
         ledger = getattr(self, "_pilot_ledger", None)
         if ledger is None or getattr(self, "_pilot_run_state", "not_started") not in {
@@ -9920,7 +10071,7 @@ class ApplicationController(QObject):
             def invoke_retry() -> None:
                 try:
                     retry_callback()
-                except Exception:  # noqa: BLE001
+                except Exception:
                     LOGGER.exception("Retry callback failed")
 
             # Re-enter only after the modal and the failing preflight stack
@@ -9999,7 +10150,7 @@ class ApplicationController(QObject):
         self._connection_timer.start()
         try:
             self.metrics.increment("metric_session_wake_revalidation")
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.debug("wake revalidation metric failed", exc_info=True)
         return True
 
@@ -10365,7 +10516,7 @@ class ApplicationController(QObject):
                 self._rpc_hang_banner_shown = True
                 try:
                     self.metrics.increment("metric_jamulus_hang_detected")
-                except Exception:  # noqa: BLE001
+                except Exception:
                     LOGGER.debug("hang metric failed", exc_info=True)
 
         if (
@@ -10480,7 +10631,7 @@ class ApplicationController(QObject):
                 "github.com/rupret007/webjam/issues",
                 ms=8000,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Failed to export diagnostics")
             self.window.flash_message(
                 "Couldn't export diagnostics. Open Band Check and save a Support "
@@ -10541,7 +10692,7 @@ class ApplicationController(QObject):
                 f"Support bundle saved as {saved.name}.",
                 ms=7000,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.exception("Failed to save support bundle")
             QMessageBox.warning(
                 self.window,
@@ -10571,6 +10722,7 @@ class ApplicationController(QObject):
         setup, etc.) instead of overwriting the single default slot.
         """
         from pathlib import Path
+
         from PySide6.QtWidgets import QFileDialog
 
         path, _ = QFileDialog.getSaveFileName(
@@ -10589,6 +10741,7 @@ class ApplicationController(QObject):
     def _on_load_mix_from(self) -> None:
         """Ctrl+Shift+O — open a Load dialog and apply the chosen mix file."""
         from pathlib import Path
+
         from PySide6.QtWidgets import QFileDialog
 
         path, _ = QFileDialog.getOpenFileName(
@@ -10706,7 +10859,7 @@ class ApplicationController(QObject):
             if old_rpc is not None:
                 try:
                     old_rpc.stop()
-                except Exception:  # noqa: BLE001
+                except Exception:
                     LOGGER.debug("Old Jamulus RPC client stop failed", exc_info=True)
             from core.jamulus_rpc_client import JamulusRpcClient
 
@@ -10737,7 +10890,7 @@ class ApplicationController(QObject):
         ):
             try:
                 self.api_bridge.stop()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.debug(
                     "Companion API stop during settings apply failed", exc_info=True
                 )
@@ -10978,7 +11131,7 @@ class ApplicationController(QObject):
                         participant.name,
                         capture_enabled=capture,
                     )
-                except Exception:  # noqa: BLE001
+                except Exception:
                     LOGGER.exception("Could not refresh local recording preference")
 
     def _save_take_playback_output(self, device_name: str) -> None:
@@ -10991,7 +11144,7 @@ class ApplicationController(QObject):
             from core.settings import save_settings
 
             save_settings(self.settings)
-        except Exception:  # noqa: BLE001
+        except Exception:
             self.settings.take_playback_output_device = previous
             LOGGER.exception("Failed to persist Take Deck output device")
             self.window.recording_studio.set_output_device(previous)
@@ -11024,6 +11177,12 @@ class ApplicationController(QObject):
             self._show_webex_conversation()
         elif key == "reference_track":
             self._open_reference_track()
+        elif key == "reference_video":
+            self._open_reference_video()
+        elif key == "shared_canvas":
+            self._open_shared_canvas()
+        elif key == "ai_image":
+            self._open_ai_image()
         elif key == "jamulus_updates":
             self._open_jamulus_updates()
         elif key == "pocket_stage":
@@ -11104,6 +11263,868 @@ class ApplicationController(QObject):
         token = getattr(snapshot, "token", None)
         role = getattr(token, "role", SessionRole.HOST)
         return role is SessionRole.HOST
+
+    # ------------------------------------------------------------------
+    # Art companion projection
+    # ------------------------------------------------------------------
+
+    def _companion_paired(self) -> bool:
+        """Whether a companion panel is currently showing this room.
+
+        The seam a companion transport fills in later. It is deliberately
+        false here: no companion exists on this branch, so every Art surface
+        keeps its standalone behaviour and the fallback path is the only path
+        that runs.
+        """
+
+        return bool(getattr(self, "_art_companion_paired", False))
+
+    def _present_art_panel(self, dialog) -> None:
+        """Show one Art panel, reaching for focus only when nobody is reading
+        this room somewhere else.
+
+        Without a companion this is the ordinary raise-and-activate every
+        other panel does. With one paired, the artist is looking at the
+        meeting window, so pulling the desktop in front of the faces they are
+        talking to -- in order to show them what they are already looking at
+        -- is the focus stealing ADR 0004 rules out.
+
+        This declines to *take* focus; it cannot promise a window manager
+        will not give it. A panel that is already open simply stays where it
+        is instead of jumping forward.
+        """
+
+        dialog.show()
+        if self._companion_paired():
+            return
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def art_companion_projection(self) -> "ArtCompanionProjection":
+        """Return what a paired companion may see of this Art room.
+
+        Built from the coordinators that already own each fact, so a
+        companion cannot disagree with the desktop. Every value is a finite
+        state: no path, no file name, no canvas address, no digest, no token,
+        and no prompt has a field to travel in.
+        """
+
+        from core.art_companion import ArtCompanionProjection
+        from webjam_qt.controllers.art_companion_projection import (
+            build_art_companion_projection,
+        )
+
+        if getattr(self, "_shutdown", False):
+            return ArtCompanionProjection(
+                generation=int(getattr(self, "_art_companion_generation", 0))
+            )
+        video = self._reference_video_coordinator()
+        canvas = self._shared_canvas_coordinator()
+        ai = self._ai_image_controller() if self._in_art_room() else None
+        hosting = bool(
+            getattr(video, "hosting", False) or getattr(canvas, "hosting", False)
+        )
+        in_room = video is not None or canvas is not None or ai is not None
+        generation = self._art_companion_generation_for(in_room)
+        video_snapshot = None
+        if video is not None:
+            video_snapshot = (
+                video.host_snapshot if video.hosting else video.follow_snapshot
+            )
+        canvas_snapshot = None
+        if canvas is not None:
+            canvas_snapshot = (
+                canvas.host_snapshot if canvas.hosting else canvas.follow_snapshot
+            )
+        projection = build_art_companion_projection(
+            generation=generation,
+            revision=int(getattr(self, "_art_companion_revision", 0)),
+            in_room=in_room,
+            hosting=hosting,
+            canvas_snapshot=canvas_snapshot,
+            video_snapshot=video_snapshot,
+            ai_snapshot=self._ai_companion_snapshot(ai),
+        )
+        return self._advance_art_companion_revision(projection)
+
+    #: Reading the AI snapshot probes the filesystem and asks a local backend
+    #: over HTTP, so a poller cannot be allowed to trigger it on every read.
+    _AI_PROBE_INTERVAL_S = 5.0
+
+    def _ai_companion_snapshot(self, controller: object):
+        """Return the AI state, probing at most every few seconds.
+
+        The panel reads the controller directly and is always fresh, because
+        opening it is something a person did. This path exists for whatever
+        polls the projection, where an unthrottled read would mean a
+        filesystem walk and a loopback request on every poll, forever.
+        """
+
+        if controller is None:
+            self._ai_companion_cached = None
+            return None
+        now = time.monotonic()
+        cached = getattr(self, "_ai_companion_cached", None)
+        if cached is not None:
+            since = now - float(getattr(self, "_ai_companion_probed_at", 0.0))
+            if 0.0 <= since < self._AI_PROBE_INTERVAL_S:
+                return cached
+        snapshot = getattr(controller, "snapshot", None)
+        self._ai_companion_cached = snapshot
+        self._ai_companion_probed_at = now
+        return snapshot
+
+    def art_room_state(self) -> "ArtCompanionProjection":
+        """Return only the facts that belong to the room: canvas and video.
+
+        The image action is personal to whoever runs it, so the room's own
+        chrome never shows it -- and asking for it would probe a filesystem
+        and a local backend once a second for the whole session, on behalf of
+        something that would not display the answer.
+        """
+
+        from core.art_companion import ArtCompanionProjection
+        from webjam_qt.controllers.art_companion_projection import (
+            build_art_companion_projection,
+        )
+
+        if getattr(self, "_shutdown", False):
+            return ArtCompanionProjection()
+        video = self._reference_video_coordinator()
+        canvas = self._shared_canvas_coordinator()
+        if video is None and canvas is None:
+            return ArtCompanionProjection()
+        hosting = bool(
+            getattr(video, "hosting", False) or getattr(canvas, "hosting", False)
+        )
+        video_snapshot = None
+        if video is not None:
+            video_snapshot = (
+                video.host_snapshot if video.hosting else video.follow_snapshot
+            )
+        canvas_snapshot = None
+        if canvas is not None:
+            canvas_snapshot = (
+                canvas.host_snapshot if canvas.hosting else canvas.follow_snapshot
+            )
+        return build_art_companion_projection(
+            generation=0,
+            revision=0,
+            in_room=True,
+            hosting=hosting,
+            canvas_snapshot=canvas_snapshot,
+            video_snapshot=video_snapshot,
+        )
+
+    def _art_companion_generation_for(self, in_room: bool) -> int:
+        """Return a generation that changes whenever the room does.
+
+        A companion binds commands to a generation as well as a revision, so
+        an intent formed in one room can never be replayed into the next one.
+        """
+
+        role, session_id, _ = self._reference_video_identity()
+        binding = (role, session_id) if in_room else ()
+        if getattr(self, "_art_companion_binding", None) != binding:
+            self._art_companion_binding = binding
+            self._art_companion_generation = (
+                int(getattr(self, "_art_companion_generation", 0)) + 1
+            )
+            # A new room means the old view is not something to compare
+            # against; the next projection is a change by definition.
+            self._art_companion_last = None
+        return int(getattr(self, "_art_companion_generation", 0))
+
+    def _advance_art_companion_revision(
+        self, projection: "ArtCompanionProjection"
+    ) -> "ArtCompanionProjection":
+        """Bump the revision only when the projected view actually changed.
+
+        A companion binds its commands to a revision, so the number has to
+        mean "something you can see is different" rather than "time passed".
+        """
+
+        from dataclasses import replace
+
+        previous = getattr(self, "_art_companion_last", None)
+        if previous is not None and _same_companion_view(previous, projection):
+            return previous
+        revision = int(getattr(self, "_art_companion_revision", 0)) + 1
+        projection = replace(projection, revision=revision)
+        self._art_companion_revision = revision
+        self._art_companion_last = projection
+        return projection
+
+    # ------------------------------------------------------------------
+    # Art reference video
+    # ------------------------------------------------------------------
+
+    def _reference_video_supported(self) -> bool:
+        """Only the profile whose contract includes it may share video."""
+
+        return bool(self.creator_profile.capabilities.shared_reference_video)
+
+    def _reference_video_identity(self) -> tuple[str, str, str]:
+        """Return this computer's ``(role, session_id, session_key)``.
+
+        Identity comes from whichever peer session actually exists, never from
+        an intent flag, so a coordinator can only ever be bound to a room that
+        has real credentials.
+        """
+
+        host_peer = getattr(self, "host_peer", None)
+        credentials = getattr(host_peer, "credentials", None)
+        if bool(getattr(host_peer, "active", False)) and credentials is not None:
+            return "host", credentials.session_id, credentials.invite_token
+        guest_peer = getattr(self, "guest_peer", None)
+        invite = getattr(guest_peer, "invite", None)
+        if invite is not None and bool(getattr(invite, "peer_enabled", False)):
+            return "guest", invite.session_id, invite.invite_token
+        return "", "", ""
+
+    def _reference_video_coordinator(self):
+        """Return a coordinator bound to the current room, or ``None``.
+
+        Binding is re-derived rather than driven from session lifecycle hooks:
+        a profile switch, a new invite, or a role change all produce a
+        different binding key and rebuild the coordinator from scratch.
+        """
+
+        if getattr(self, "_shutdown", False) or not self._reference_video_supported():
+            self._release_reference_video()
+            return None
+        role, session_id, session_key = self._reference_video_identity()
+        if not role or not session_id or not session_key:
+            self._release_reference_video()
+            return None
+        binding = (role, session_id)
+        coordinator = getattr(self, "_reference_video", None)
+        if coordinator is not None:
+            if getattr(self, "_reference_video_binding", ()) == binding:
+                return coordinator
+            self._release_reference_video()
+
+        from webjam_qt.controllers.reference_video_coordinator import (
+            ReferenceVideoCoordinator,
+        )
+
+        def build_player():
+            from webjam_qt.widgets.reference_video_player import (
+                create_qt_reference_video_player,
+            )
+
+            return create_qt_reference_video_player(self.window)
+
+        coordinator = ReferenceVideoCoordinator(
+            player_factory=build_player,
+            host_peer_provider=lambda: getattr(self, "host_peer", None),
+            on_host_snapshot=self._on_reference_video_host_snapshot,
+            on_follow_snapshot=self._on_reference_video_follow_snapshot,
+        )
+        if role == "host":
+            coordinator.begin_host(session_id=session_id, session_key=session_key)
+        else:
+            coordinator.begin_guest(session_id=session_id, session_key=session_key)
+        self._reference_video = coordinator
+        self._reference_video_binding = binding
+        timer = getattr(self, "_reference_video_timer", None)
+        if timer is not None:
+            timer.start()
+        return coordinator
+
+    def _release_reference_video(self) -> None:
+        """Return this computer to the no-video path and free its player."""
+
+        timer = getattr(self, "_reference_video_timer", None)
+        if timer is not None:
+            timer.stop()
+        dialog = getattr(self, "_reference_video_dialog", None)
+        if dialog is not None:
+            dialog.attach_surface(None)
+            dialog.close()
+            dialog.deleteLater()
+            self._reference_video_dialog = None
+        coordinator = getattr(self, "_reference_video", None)
+        if coordinator is not None:
+            coordinator.end()
+        self._reference_video = None
+        self._reference_video_binding = ()
+        self._reference_video_notified_state = ""
+
+    def _open_reference_video(self) -> None:
+        """Open the reference video panel for whichever role this computer has."""
+
+        if self._shutdown or self._shutdown_cleanup_blocks_action():
+            return
+        if not self._reference_video_supported():
+            self.window.flash_message(
+                "A shared reference video is part of Art.",
+                ms=6000,
+            )
+            return
+        coordinator = self._reference_video_coordinator()
+        if coordinator is None:
+            self.window.flash_message(
+                "Start or join an art session before sharing a reference video.",
+                ms=6000,
+            )
+            return
+        dialog = getattr(self, "_reference_video_dialog", None)
+        if dialog is None:
+            from webjam_qt.windows.reference_video import ReferenceVideoDialog
+
+            dialog = ReferenceVideoDialog(
+                hosting=coordinator.hosting, parent=self.window
+            )
+            if coordinator.hosting:
+                dialog.share_requested.connect(
+                    lambda path: self._run_reference_video(
+                        lambda: coordinator.share(path)
+                    )
+                )
+                dialog.withdraw_requested.connect(
+                    lambda: self._run_reference_video(coordinator.withdraw)
+                )
+                dialog.play_requested.connect(
+                    lambda: self._run_reference_video(coordinator.play)
+                )
+                dialog.pause_requested.connect(
+                    lambda: self._run_reference_video(coordinator.pause)
+                )
+                dialog.stop_requested.connect(
+                    lambda: self._run_reference_video(coordinator.stop)
+                )
+                dialog.seek_requested.connect(
+                    lambda seconds: self._run_reference_video(
+                        lambda: coordinator.seek(float(seconds))
+                    )
+                )
+            else:
+                dialog.open_local_copy_requested.connect(
+                    lambda path: self._run_reference_video(
+                        lambda: coordinator.open_local_copy(path)
+                    )
+                )
+                dialog.close_local_copy_requested.connect(
+                    lambda: self._run_reference_video(coordinator.close_local_copy)
+                )
+                dialog.hide_requested.connect(
+                    lambda hidden: self._run_reference_video(
+                        lambda: coordinator.set_hidden(bool(hidden))
+                    )
+                )
+            self._reference_video_dialog = dialog
+        if coordinator.hosting:
+            dialog.set_host_snapshot(coordinator.host_snapshot)
+        else:
+            dialog.set_follow_snapshot(coordinator.follow_snapshot)
+        dialog.attach_surface(coordinator.player_surface)
+        self._present_art_panel(dialog)
+
+    def _run_reference_video(self, operation) -> None:
+        """Run one reference video intent, surfacing bounded failure text."""
+
+        from core.reference_video import ReferenceVideoError
+
+        try:
+            operation()
+        except ReferenceVideoError as exc:
+            self.window.flash_message(str(exc), ms=8000)
+        except Exception:  # noqa: BLE001 - never let a panel kill the room
+            LOGGER.exception("A reference video operation failed safely")
+            self.window.flash_message(
+                "WebJam couldn't complete that reference video request. The "
+                "room is still running.",
+                ms=8000,
+            )
+        dialog = getattr(self, "_reference_video_dialog", None)
+        coordinator = getattr(self, "_reference_video", None)
+        if dialog is not None and coordinator is not None:
+            dialog.attach_surface(coordinator.player_surface)
+
+    def _tick_reference_video(self) -> None:
+        coordinator = getattr(self, "_reference_video", None)
+        if self._shutdown or coordinator is None:
+            return
+        try:
+            coordinator.tick()
+        except Exception:  # noqa: BLE001 - a periodic sample is best effort
+            LOGGER.debug("Reference video tick failed", exc_info=True)
+        # The room's pulse follows the same cadence the video is corrected on,
+        # because today the video is the only thing in Art that owns one.
+        self._tick_room_clock()
+
+    def _on_reference_video_host_snapshot(self, snapshot) -> None:
+        dialog = getattr(self, "_reference_video_dialog", None)
+        if dialog is not None:
+            dialog.set_host_snapshot(snapshot)
+
+    def _on_reference_video_follow_snapshot(self, snapshot) -> None:
+        dialog = getattr(self, "_reference_video_dialog", None)
+        if dialog is not None:
+            dialog.set_follow_snapshot(snapshot)
+        self._announce_reference_video_follow_state(snapshot)
+
+    #: Follow states worth interrupting an artist for, and what to say. A
+    #: state that resolves itself, or that the artist chose, stays silent.
+    #: One line per transition. These say what happened; the room's own chip
+    #: says what to do about it, so none of them names a menu path any more.
+    _REFERENCE_VIDEO_NOTICES = {
+        "needs_file": (
+            "The host is sharing a reference video. Open your own copy of the "
+            "same file to follow along, or keep working."
+        ),
+        "mismatched_file": (
+            "That is not the same file the host is playing, so WebJam will "
+            "not follow it. Open the host's exact file, or hide the video."
+        ),
+        "file_unavailable": (
+            "Your copy of the reference video moved, changed, or became "
+            "unreadable, so WebJam stopped following the host."
+        ),
+    }
+
+    def _announce_reference_video_follow_state(self, snapshot) -> None:
+        """Tell an artist once when the shared video needs them.
+
+        Same division as the canvas: this announces the change, and the
+        room's chip carries the standing state. Only transitions speak, so a
+        steady state stays quiet.
+        """
+
+        state = str(getattr(getattr(snapshot, "state", None), "value", "") or "")
+        if state == getattr(self, "_reference_video_notified_state", ""):
+            return
+        self._reference_video_notified_state = state
+        notice = self._REFERENCE_VIDEO_NOTICES.get(state)
+        if notice and not getattr(self, "_shutdown", False):
+            self.window.flash_message(notice, ms=9000)
+
+    # ------------------------------------------------------------------
+    # Art shared canvas
+    # ------------------------------------------------------------------
+
+    def _shared_canvas_supported(self) -> bool:
+        """Only the profile whose contract includes it may share a canvas."""
+
+        return bool(self.creator_profile.capabilities.shared_canvas)
+
+    def _shared_canvas_coordinator(self):
+        """Return a coordinator bound to the current room, or ``None``.
+
+        Binding follows the same rule the reference video uses: it is derived
+        from whichever peer session actually exists, so a profile switch, a
+        new invite, or a role change rebuilds it from scratch.
+        """
+
+        if getattr(self, "_shutdown", False) or not self._shared_canvas_supported():
+            self._release_shared_canvas()
+            return None
+        role, session_id, session_key = self._reference_video_identity()
+        if not role or not session_id or not session_key:
+            self._release_shared_canvas()
+            return None
+        binding = (role, session_id)
+        coordinator = getattr(self, "_shared_canvas", None)
+        if coordinator is not None:
+            if getattr(self, "_shared_canvas_binding", ()) == binding:
+                return coordinator
+            self._release_shared_canvas()
+
+        from webjam_qt.controllers.shared_canvas_coordinator import (
+            SharedCanvasCoordinator,
+        )
+
+        def build_launcher():
+            from services.drawpile_service import create_canvas_launcher
+
+            return create_canvas_launcher(self.settings)
+
+        coordinator = SharedCanvasCoordinator(
+            launcher_factory=build_launcher,
+            host_peer_provider=lambda: getattr(self, "host_peer", None),
+            on_host_snapshot=self._on_shared_canvas_host_snapshot,
+            on_follow_snapshot=self._on_shared_canvas_follow_snapshot,
+        )
+        if role == "host":
+            coordinator.begin_host()
+        else:
+            coordinator.begin_guest()
+        self._shared_canvas = coordinator
+        self._shared_canvas_binding = binding
+        return coordinator
+
+    def _release_shared_canvas(self) -> None:
+        """Return this computer to the no-canvas path.
+
+        Drawpile is the artist's own program. Leaving a WebJam room releases
+        WebJam's pointer to the canvas and closes nothing they are painting.
+        """
+
+        dialog = getattr(self, "_shared_canvas_dialog", None)
+        if dialog is not None:
+            dialog.close()
+            dialog.deleteLater()
+            self._shared_canvas_dialog = None
+        coordinator = getattr(self, "_shared_canvas", None)
+        if coordinator is not None:
+            coordinator.end()
+        self._shared_canvas = None
+        self._shared_canvas_binding = ()
+        self._shared_canvas_notified_state = ""
+
+    def _open_shared_canvas(self) -> None:
+        """Open the canvas panel for whichever role this computer has."""
+
+        if self._shutdown or self._shutdown_cleanup_blocks_action():
+            return
+        if not self._shared_canvas_supported():
+            self.window.flash_message("A shared canvas is part of Art.", ms=6000)
+            return
+        coordinator = self._shared_canvas_coordinator()
+        if coordinator is None:
+            self.window.flash_message(
+                "Start or join an art session before sharing a canvas.",
+                ms=6000,
+            )
+            return
+        dialog = getattr(self, "_shared_canvas_dialog", None)
+        if dialog is None:
+            from webjam_qt.windows.shared_canvas import SharedCanvasDialog
+
+            dialog = SharedCanvasDialog(
+                hosting=coordinator.hosting, parent=self.window
+            )
+            dialog.install_drawpile_requested.connect(self._open_drawpile_download)
+            if coordinator.hosting:
+                dialog.host_in_drawpile_requested.connect(
+                    lambda: self._run_shared_canvas(
+                        coordinator.open_drawpile_to_host
+                    )
+                )
+                dialog.share_requested.connect(
+                    lambda text: self._run_shared_canvas(
+                        lambda: coordinator.share(text)
+                    )
+                )
+                dialog.withdraw_requested.connect(
+                    lambda: self._run_shared_canvas(coordinator.withdraw)
+                )
+                dialog.open_canvas_requested.connect(
+                    lambda: self._run_shared_canvas(coordinator.open_canvas_as_host)
+                )
+            else:
+                dialog.open_canvas_requested.connect(
+                    lambda: self._run_shared_canvas(coordinator.open_canvas)
+                )
+            self._shared_canvas_dialog = dialog
+        if coordinator.hosting:
+            dialog.set_host_snapshot(coordinator.host_snapshot)
+        else:
+            dialog.set_follow_snapshot(coordinator.follow_snapshot)
+        clock = self._room_clock_coordinator()
+        if clock is not None:
+            dialog.set_room_clock(clock.view)
+        self._present_art_panel(dialog)
+
+    def _open_drawpile_download(self) -> None:
+        """Hand the artist to Drawpile's own download page, once, on request."""
+
+        from core.drawpile import drawpile_download_url
+
+        self._open_external_page(drawpile_download_url())
+
+    @staticmethod
+    def _open_external_page(url: str) -> None:
+        """Open one fixed https page an artist explicitly asked for.
+
+        Every caller passes a constant from a core module, so nothing
+        user-controlled reaches the browser.
+        """
+
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        QDesktopServices.openUrl(QUrl(str(url)))
+
+    def _run_shared_canvas(self, operation) -> None:
+        """Run one canvas intent, surfacing bounded failure text."""
+
+        from core.drawpile import DrawpileError
+        from core.shared_canvas import SharedCanvasError
+
+        try:
+            operation()
+        except (DrawpileError, SharedCanvasError) as exc:
+            self.window.flash_message(str(exc), ms=8000)
+        except Exception:  # noqa: BLE001 - never let a panel kill the room
+            LOGGER.exception("A shared canvas operation failed safely")
+            self.window.flash_message(
+                "WebJam couldn't complete that shared canvas request. The "
+                "room is still running.",
+                ms=8000,
+            )
+        dialog = getattr(self, "_shared_canvas_dialog", None)
+        coordinator = getattr(self, "_shared_canvas", None)
+        if dialog is not None and coordinator is not None:
+            if coordinator.hosting:
+                dialog.set_host_snapshot(coordinator.host_snapshot)
+            else:
+                dialog.set_follow_snapshot(coordinator.follow_snapshot)
+
+    def _on_shared_canvas_host_snapshot(self, snapshot) -> None:
+        dialog = getattr(self, "_shared_canvas_dialog", None)
+        if dialog is not None:
+            dialog.set_host_snapshot(snapshot)
+
+    def _on_shared_canvas_follow_snapshot(self, snapshot) -> None:
+        dialog = getattr(self, "_shared_canvas_dialog", None)
+        if dialog is not None:
+            dialog.set_follow_snapshot(snapshot)
+        self._announce_shared_canvas_follow_state(snapshot)
+
+    #: Canvas states worth interrupting an artist for, and what to say. A
+    #: state they already acted on stays quiet.
+    _SHARED_CANVAS_NOTICES = {
+        "ready": (
+            "The host shared a canvas. Open it whenever you are ready, or "
+            "keep working."
+        ),
+        "needs_drawpile": (
+            "The host shared a Drawpile canvas, and Drawpile is not installed "
+            "here. You can install it, or just talk and keep working."
+        ),
+        "unreadable": (
+            "The host shared a canvas WebJam could not read, so it will not "
+            "open anything. Ask them to share the Drawpile invitation again."
+        ),
+    }
+
+    def _announce_shared_canvas_follow_state(self, snapshot) -> None:
+        """Tell an artist once when a canvas appears or cannot be opened.
+
+        A transition is an event and the room's chip is a state, which are
+        different jobs: this says a canvas just arrived, the chip says the
+        room has one. Only transitions speak, so a steady state stays quiet,
+        and neither of them names a menu to go hunting through.
+        """
+
+        state = str(getattr(getattr(snapshot, "state", None), "value", "") or "")
+        if state == getattr(self, "_shared_canvas_notified_state", ""):
+            return
+        self._shared_canvas_notified_state = state
+        notice = self._SHARED_CANVAS_NOTICES.get(state)
+        if notice and not getattr(self, "_shutdown", False):
+            self.window.flash_message(notice, ms=9000)
+
+    # ------------------------------------------------------------------
+    # The room clock
+    # ------------------------------------------------------------------
+
+    def _room_clock_coordinator(self):
+        """Return a coordinator bound to the current room, or ``None``.
+
+        The clock is deliberately not gated on a creator profile: a music
+        surface owns this pulse as naturally as Art's reference video does, so
+        binding depends only on being in a real room.
+        """
+
+        if getattr(self, "_shutdown", False):
+            self._release_room_clock()
+            return None
+        role, session_id, session_key = self._reference_video_identity()
+        if not role or not session_id or not session_key:
+            self._release_room_clock()
+            return None
+        binding = (role, session_id)
+        coordinator = getattr(self, "_room_clock", None)
+        if coordinator is not None:
+            if getattr(self, "_room_clock_binding", ()) == binding:
+                return coordinator
+            self._release_room_clock()
+
+        from webjam_qt.controllers.room_clock_coordinator import RoomClockCoordinator
+
+        coordinator = RoomClockCoordinator(
+            host_peer_provider=lambda: getattr(self, "host_peer", None),
+            song_form_provider=self._room_clock_song_form,
+            video_facts_provider=self._room_clock_video_facts,
+            on_view=self._on_room_clock_view,
+        )
+        if role == "host":
+            coordinator.begin_host()
+        else:
+            coordinator.begin_guest()
+        self._room_clock = coordinator
+        self._room_clock_binding = binding
+        return coordinator
+
+    def _room_clock_song_form(self):
+        """Return the room's song form, or ``None`` when nothing owns one.
+
+        This is the published seam. Art has no song engine and must not
+        pretend to: it returns nothing, and every Art surface works exactly as
+        well without a musical pulse. A music surface replaces this with a
+        real owner and the painting surfaces do not change.
+        """
+
+        return None
+
+    def _room_clock_video_facts(self):
+        """Read Art's host-clocked reference video as room-clock facts."""
+
+        coordinator = getattr(self, "_reference_video", None)
+        if coordinator is None or not getattr(coordinator, "hosting", False):
+            return None
+        from core.room_clock import reference_video_facts
+        from core.reference_video import ReferenceVideoState
+
+        return reference_video_facts(
+            coordinator.host_snapshot, playing_state=ReferenceVideoState.PLAYING
+        )
+
+    def _release_room_clock(self) -> None:
+        coordinator = getattr(self, "_room_clock", None)
+        if coordinator is not None:
+            coordinator.end()
+        self._room_clock = None
+        self._room_clock_binding = ()
+
+    def _tick_room_clock(self) -> None:
+        """Advance the room's pulse, best effort."""
+
+        try:
+            coordinator = self._room_clock_coordinator()
+            if coordinator is not None:
+                coordinator.tick()
+        except Exception:  # noqa: BLE001 - a readout never breaks the room
+            LOGGER.debug("Room clock tick failed safely", exc_info=True)
+
+    def _on_room_clock_view(self, view) -> None:
+        dialog = getattr(self, "_shared_canvas_dialog", None)
+        if dialog is not None:
+            dialog.set_room_clock(view)
+
+    # ------------------------------------------------------------------
+    # Art AI image
+    # ------------------------------------------------------------------
+
+    def _ai_image_supported(self) -> bool:
+        """Only the profile whose contract includes it may generate images."""
+
+        return bool(self.creator_profile.capabilities.ai_image)
+
+    def _in_art_room(self) -> bool:
+        """Whether this computer is actually in a started session.
+
+        AI Image is an in-session action, so it needs a room. It needs nothing
+        else from the room: it publishes nothing and reads nothing, so unlike
+        the canvas and the video it does not care which role this computer has.
+        """
+
+        role, session_id, session_key = self._reference_video_identity()
+        return bool(role and session_id and session_key)
+
+    def _ai_image_controller(self):
+        """Return this computer's AI image controller, or ``None``."""
+
+        if getattr(self, "_shutdown", False) or not self._ai_image_supported():
+            self._release_ai_image()
+            return None
+        controller = getattr(self, "_ai_image", None)
+        if controller is not None:
+            return controller
+
+        from core.ai_image import AiImageController
+
+        def build_studio():
+            from services.krita_ai_service import create_ai_image_studio
+
+            return create_ai_image_studio(self.settings)
+
+        controller = AiImageController(
+            build_studio(),
+            in_room=self._in_art_room,
+            on_change=self._on_ai_image_snapshot,
+        )
+        self._ai_image = controller
+        return controller
+
+    def _release_ai_image(self) -> None:
+        """Close WebJam's panel. Krita is the artist's own program."""
+
+        dialog = getattr(self, "_ai_image_dialog", None)
+        if dialog is not None:
+            dialog.close()
+            dialog.deleteLater()
+            self._ai_image_dialog = None
+        self._ai_image = None
+
+    def _open_ai_image(self) -> None:
+        """Open the AI image panel, which offers exactly two verbs."""
+
+        if self._shutdown or self._shutdown_cleanup_blocks_action():
+            return
+        if not self._ai_image_supported():
+            self.window.flash_message("AI Image is part of Art.", ms=6000)
+            return
+        controller = self._ai_image_controller()
+        if controller is None:  # pragma: no cover - guarded above
+            return
+        dialog = getattr(self, "_ai_image_dialog", None)
+        if dialog is None:
+            from webjam_qt.windows.ai_image import AiImageDialog
+
+            dialog = AiImageDialog(parent=self.window)
+            dialog.make_requested.connect(
+                lambda: self._run_ai_image(controller.make)
+            )
+            dialog.edit_requested.connect(
+                lambda path: self._run_ai_image(lambda: controller.edit(path))
+            )
+            dialog.install_krita_requested.connect(self._open_krita_download)
+            dialog.install_plugin_requested.connect(
+                self._open_ai_plugin_download
+            )
+            self._ai_image_dialog = dialog
+        dialog.set_snapshot(controller.snapshot)
+        self._present_art_panel(dialog)
+
+    def _open_krita_download(self) -> None:
+        from core.krita_ai import krita_download_url
+
+        self._open_external_page(krita_download_url())
+
+    def _open_ai_plugin_download(self) -> None:
+        from core.krita_ai import ai_plugin_download_url
+
+        self._open_external_page(ai_plugin_download_url())
+
+    def _run_ai_image(self, operation) -> None:
+        """Run one AI image intent, surfacing bounded failure text."""
+
+        from core.krita_ai import AiImageError
+
+        try:
+            operation()
+        except AiImageError as exc:
+            self.window.flash_message(str(exc), ms=8000)
+        except Exception:  # noqa: BLE001 - never let a panel kill the room
+            LOGGER.exception("An AI image operation failed safely")
+            self.window.flash_message(
+                "WebJam couldn't complete that AI image request. The room is "
+                "still running.",
+                ms=8000,
+            )
+        dialog = getattr(self, "_ai_image_dialog", None)
+        controller = getattr(self, "_ai_image", None)
+        if dialog is not None and controller is not None:
+            dialog.set_snapshot(controller.snapshot)
+
+    def _on_ai_image_snapshot(self, snapshot) -> None:
+        dialog = getattr(self, "_ai_image_dialog", None)
+        if dialog is not None:
+            dialog.set_snapshot(snapshot)
 
     def _reference_track_controller(self):
         controller = getattr(self, "_reference_track", None)
@@ -11565,7 +12586,7 @@ class ApplicationController(QObject):
             pid = int(process.pid)
         except (AttributeError, TypeError, ValueError, OSError):
             return 0
-        return pid if pid > 0 else 0
+        return max(0, pid)
 
     def _primary_jamulus_rpc_freshness(self) -> tuple[bool, float | None]:
         """Return fail-closed authenticated client-RPC freshness evidence.
@@ -11580,9 +12601,7 @@ class ApplicationController(QObject):
             return False, None
         age = snapshot.rpc_age_seconds
         rpc = getattr(self.jamulus, "rpc_client", None)
-        if getattr(rpc, "available", False) is not True:
-            age = None
-        elif age is not None and (not math.isfinite(age) or age < 0.0):
+        if getattr(rpc, "available", False) is not True or age is not None and (not math.isfinite(age) or age < 0.0):
             age = None
         return snapshot.rpc_freshness is JamulusRpcFreshness.FRESH, age
 
@@ -12435,7 +13454,7 @@ class ApplicationController(QObject):
                         None,
                     ),
                 )
-        except Exception:  # noqa: BLE001
+        except Exception:
             # Never leave stale derived content beside newer raw notes. Brief
             # export then safely falls back to the notes themselves.
             self.window.session_canvas.clear_session_pulse()
@@ -12455,7 +13474,7 @@ class ApplicationController(QObject):
 
             try:
                 status = scan_loopback_devices()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 # scan_loopback_devices() is contracted never to raise, but guard
                 # anyway so an unexpected failure can't silently kill this thread
                 # and leave the routing status blank forever.
@@ -12480,7 +13499,7 @@ class ApplicationController(QObject):
             self.window.set_status_routing(label)
             try:
                 self.metrics.increment("metric_audio_device_blackhole_found")
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.debug("audio device metric failed", exc_info=True)
         else:
             self.window.set_status_routing("No audio device")
@@ -12490,7 +13509,7 @@ class ApplicationController(QObject):
             )
             try:
                 self.metrics.increment("metric_audio_device_missing")
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.debug("audio device metric failed", exc_info=True)
 
     # ------------------------------------------------------------------

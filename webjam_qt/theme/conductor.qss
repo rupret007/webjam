@@ -720,6 +720,240 @@ QPushButton#LaunchSecondary:focus {
     border: 2px solid ${COLOR_BORDER_FOCUS};
 }
 
+/* An unchosen card recedes: same shape, quieter surface and text, so the
+   chosen one reads as the room you are about to open rather than as one of
+   three equally loud settings. */
+QCommandLinkButton#LaunchStartCard {
+    background-color: ${COLOR_BG_PANEL};
+    color: ${COLOR_TEXT_MUTED};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+    text-align: left;
+    padding: ${SPACE_XS}px ${SPACE_MD}px;
+    /* The control already sets its own title/description hierarchy. Forcing a
+       weight or size here would flatten the two lines into one block. */
+}
+
+QCommandLinkButton#LaunchStartCard:hover {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_SECONDARY};
+    border-color: ${COLOR_BORDER_STRONG};
+}
+
+QCommandLinkButton#LaunchStartCard:checked {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 2px solid ${COLOR_ACCENT_PRIMARY};
+}
+
+QCommandLinkButton#LaunchStartCard:focus {
+    border: 2px solid ${COLOR_BORDER_FOCUS};
+}
+
+QCommandLinkButton#LaunchStartCard:disabled {
+    background-color: ${COLOR_BG_PANEL};
+    color: ${COLOR_TEXT_MUTED};
+    border-color: ${COLOR_BORDER_SUBTLE};
+}
+
+/* -------------------------------------------------------------------------
+ * Art shared canvas panel
+ * ---------------------------------------------------------------------- */
+
+#SharedCanvasHeadline {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#SharedCanvasStatus {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_BASE}px;
+}
+
+#SharedCanvasHint {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+    padding-top: ${SPACE_XS}px;
+}
+
+#SharedCanvasInviteInput {
+    min-height: 32px;
+    padding: 0 ${SPACE_SM}px;
+}
+
+/* -------------------------------------------------------------------------
+ * Status chip and its quiet companion
+ *
+ * A panel offers one thing to press. The chip carries it, and its label is the
+ * status, so "Install Drawpile" and "Open shared canvas" are the same control
+ * at different moments. A recovery chip is outlined rather than filled and
+ * uses no warning colour: nothing is broken, something is absent.
+ * ---------------------------------------------------------------------- */
+
+QPushButton#StatusChip {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_MD}px;
+    min-height: 52px;
+    padding: 0 ${SPACE_LG}px;
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+QPushButton#StatusChip:hover {
+    background-color: ${COLOR_ACCENT_HOVER};
+    border-color: ${COLOR_ACCENT_HOVER};
+}
+
+QPushButton#StatusChip:pressed {
+    background-color: ${COLOR_ACCENT_PRESSED};
+    border-color: ${COLOR_ACCENT_PRESSED};
+}
+
+QPushButton#StatusChip:focus {
+    border: 2px solid ${COLOR_TEXT_PRIMARY};
+}
+
+QPushButton#StatusChip[tone="recovery"] {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+}
+
+QPushButton#StatusChip[tone="recovery"]:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    border-color: ${COLOR_TEXT_PRIMARY};
+}
+
+/* -------------------------------------------------------------------------
+ * Art's one line in the room chrome
+ *
+ * Sized to the strip rather than to a panel: this is a room status a person
+ * glances at, not the primary action of a dialog. It shares the chip's tones
+ * so "Install Drawpile" here and "Install Drawpile" inside the panel read as
+ * one control seen twice rather than as two features.
+ * ---------------------------------------------------------------------- */
+
+#ArtRoomDeck {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+}
+
+/* Neither tone is filled. The strip already has one loud control, and a second
+   accent block would make the room argue with itself, so a request is marked
+   by an accent edge rather than by shouting. */
+QPushButton#ArtRoomChipAction {
+    min-height: 30px;
+    font-size: ${FONT_SIZE_SM}px;
+    padding: 0 ${SPACE_SM}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+    background-color: transparent;
+    color: ${COLOR_TEXT_SECONDARY};
+    border: 1px solid transparent;
+    border-radius: ${RADIUS_SM}px;
+    text-align: left;
+}
+
+QPushButton#ArtRoomChipAction[tone="recovery"] {
+    color: ${COLOR_TEXT_PRIMARY};
+    border-color: ${COLOR_ACCENT_PRIMARY};
+}
+
+QPushButton#ArtRoomChipAction:hover {
+    color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_CARD_HOVER};
+}
+
+QPushButton#ArtRoomChipAction:focus {
+    border-color: ${COLOR_BORDER_FOCUS};
+}
+
+/* Quiet is about weight, not size. The fill is absent, the colour is muted
+   and the type is small, but the target stays large enough to hit reliably --
+   a secondary action should be easy to press and hard to mistake for the
+   primary one, which are different problems. */
+QPushButton#QuietAction {
+    background: transparent;
+    color: ${COLOR_TEXT_MUTED};
+    border: none;
+    border-radius: ${RADIUS_SM}px;
+    min-height: 44px;
+    padding: 0 ${SPACE_SM}px;
+    font-size: ${FONT_SIZE_SM}px;
+    text-align: left;
+}
+
+QPushButton#QuietAction:hover {
+    color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_CARD};
+}
+
+QPushButton#QuietAction:focus {
+    border: 1px solid ${COLOR_BORDER_FOCUS};
+}
+
+/* -------------------------------------------------------------------------
+ * Room clock readout
+ *
+ * A musical pulse is accented; a file offset is not, because they are not the
+ * same claim. A stale clock is dimmed rather than hidden, so a reader can see
+ * that the number stopped moving.
+ * ---------------------------------------------------------------------- */
+
+#RoomClock {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_SM}px;
+}
+
+#RoomClock[clock="song_form"] {
+    border-left: 3px solid ${COLOR_ACCENT_PRIMARY};
+}
+
+#RoomClockHeadline {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#RoomClock[stale="true"] #RoomClockHeadline {
+    color: ${COLOR_TEXT_MUTED};
+}
+
+#RoomClockDetail {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+/* -------------------------------------------------------------------------
+ * Art AI image panel
+ * ---------------------------------------------------------------------- */
+
+#AiImageHeadline {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#AiImageStatus {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_BASE}px;
+}
+
+#AiImageActivity {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#AiImageOwnership, #AiImageHint {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+    padding-top: ${SPACE_XS}px;
+}
+
 #LaunchInviteInput {
     min-height: 46px;
     padding: 0 ${SPACE_LG}px;

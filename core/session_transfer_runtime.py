@@ -7,8 +7,8 @@ and resumable delivery.  A peer outage never stops an active local capture.
 
 from __future__ import annotations
 
-import ipaddress
 import hashlib
+import ipaddress
 import json
 import logging
 import math
@@ -17,12 +17,12 @@ import shutil
 import threading
 import time
 import uuid
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Callable, Iterable
 
-from core.network_invite import BandInvite, create_invite_link
 from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
+from core.network_invite import BandInvite, create_invite_link
 from core.session_transfer import (
     CaptureArmAcknowledgement,
     CaptureArmSnapshot,
@@ -33,12 +33,17 @@ from core.session_transfer import (
     PresenceV2Challenge,
     PresenceV2Proof,
     RecordingSignal,
+    ReferenceVideoPlaybackState,
+    ReferenceVideoSessionSnapshot,
     SessionControlState,
     SessionCredentials,
     SessionPeerClient,
     SessionPeerServer,
     SessionStateSnapshot,
+    RoomClockSessionSnapshot,
+    RoomClockSourceValue,
     SessionTransferError,
+    SharedCanvasSessionSnapshot,
     SharedTrackPlaybackState,
     SharedTrackSessionSnapshot,
     TransferConflictError,
@@ -46,16 +51,15 @@ from core.session_transfer import (
     TransferGap,
     TransferIntegrityError,
     TransferStore,
-    _sha256_file,
-    _write_json_secure,
     _presence_digest_text,
     _presence_fingerprint_text,
     _presence_int,
     _presence_ordinal_tuple,
+    _sha256_file,
+    _write_json_secure,
     derive_participant_id,
     load_or_create_installation_id,
 )
-
 
 LOGGER = logging.getLogger("webjam.session_transfer")
 _POLL_SECONDS = 0.75
@@ -417,7 +421,7 @@ def _reference_fingerprint(track: object) -> str:
 
     digest = hashlib.sha256()
     for segment in sorted(
-        tuple(getattr(track, "segments", ()) or ()),
+        getattr(track, "segments", ()) or (),
         key=lambda item: str(getattr(item, "segment_id", "")),
     ):
         digest.update(str(getattr(segment, "segment_id", "")).encode("utf-8"))
@@ -744,7 +748,7 @@ class HostPeerSession:
         if server is not None:
             try:
                 server_stopped = server.stop()
-            except Exception:  # noqa: BLE001 - retain owner for explicit retry
+            except Exception:
                 LOGGER.exception("Host peer server stop could not be confirmed")
                 return False
             if server_stopped is False:
@@ -829,7 +833,7 @@ class HostPeerSession:
         try:
             with self._stop_lock:
                 self._stop_once(expected_generation=generation)
-        except Exception:  # noqa: BLE001 - explicit callers can still retry
+        except Exception:
             LOGGER.exception("Deferred host peer stop could not be confirmed")
         finally:
             with self._lock:
@@ -1351,9 +1355,7 @@ class HostPeerSession:
             obligations = self._local_original_obligations_by_take.get(canonical_take)
             control = self.control
         if obligations is None or control is None:
-            raise SessionTransferError(
-                "The guest capture-arm service is unavailable."
-            )
+            raise SessionTransferError("The guest capture-arm service is unavailable.")
         required = tuple(
             item
             for item in obligations
@@ -1382,9 +1384,7 @@ class HostPeerSession:
         with self._lock:
             control = self.control
             registry = self.registry
-            planned = self._local_original_obligations_by_take.get(
-                canonical_take, ()
-            )
+            planned = self._local_original_obligations_by_take.get(canonical_take, ())
         planned_required_ids = tuple(
             sorted(
                 item.participant_id
@@ -1688,6 +1688,102 @@ class HostPeerSession:
             playback_generation=playback_generation,
         )
 
+    def publish_reference_video_state(
+        self,
+        *,
+        state: ReferenceVideoPlaybackState | str,
+        shared: bool,
+        source_display_name: str = "",
+        identity_digest: str = "",
+        position_s: float = 0.0,
+        duration_s: float = 0.0,
+        needs_attention: bool = False,
+        playback_generation: int | None = None,
+    ) -> ReferenceVideoSessionSnapshot | None:
+        """Publish bounded reference video transport for authenticated peers.
+
+        The projection grants no transport authority and is not evidence that
+        any other computer is showing the same frame.  A follower may mirror
+        it only after proving it opened the same file.
+        """
+
+        if self.control is None:
+            return None
+        return self.control.publish_reference_video(
+            state=state,
+            shared=shared,
+            source_display_name=source_display_name,
+            identity_digest=identity_digest,
+            position_s=position_s,
+            duration_s=duration_s,
+            needs_attention=needs_attention,
+            playback_generation=playback_generation,
+        )
+
+    def publish_shared_canvas_state(
+        self,
+        *,
+        shared: bool,
+        join_url: str = "",
+        server_label: str = "",
+        session_label: str = "",
+    ) -> SharedCanvasSessionSnapshot | None:
+        """Offer authenticated peers the host's Drawpile invitation.
+
+        The projection is an address, not authority: WebJam cannot see the
+        canvas and never reports that anyone else opened it.  Drawpile still
+        applies its own session password and account rules on join.
+        """
+
+        if self.control is None:
+            return None
+        return self.control.publish_shared_canvas(
+            shared=shared,
+            join_url=join_url,
+            server_label=server_label,
+            session_label=session_label,
+        )
+
+    def publish_room_clock_state(
+        self,
+        *,
+        source: RoomClockSourceValue | str,
+        running: bool = False,
+        position_s: float = 0.0,
+        duration_s: float = 0.0,
+        bar: int = 0,
+        beat: int = 0,
+        section_label: str = "",
+        tempo_bpm: float = 0.0,
+        meter_numerator: int = 0,
+        meter_denominator: int = 0,
+    ) -> RoomClockSessionSnapshot | None:
+        """Offer authenticated peers one pulse for the whole room.
+
+        This is the published seam. Art calls it with a reference video
+        position; a music surface calls it with a bar, a beat, a section, and
+        optionally a tempo and meter. Neither has to know the other exists,
+        and a room with no owner simply has no clock.
+
+        The projection grants no authority: it says where the room is, not who
+        may move it.
+        """
+
+        if self.control is None:
+            return None
+        return self.control.publish_room_clock(
+            source=source,
+            running=running,
+            position_s=position_s,
+            duration_s=duration_s,
+            bar=bar,
+            beat=beat,
+            section_label=section_label,
+            tempo_bpm=tempo_bpm,
+            meter_numerator=meter_numerator,
+            meter_denominator=meter_denominator,
+        )
+
     def finish_take(
         self,
         take_id: str,
@@ -1889,7 +1985,7 @@ class HostPeerSession:
                 registered = tuple(self._registered_takes.items())
             try:
                 self._refresh_host_recording_presence()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 # Recorder proof renewal is fail-closed and independent of
                 # media-transfer maintenance. Never let it end the worker.
                 LOGGER.exception("Could not renew recorder-correlation presence")
@@ -1903,7 +1999,7 @@ class HostPeerSession:
                         _generation=generation,
                         _stop_event=stop_event,
                     )
-                except Exception:  # noqa: BLE001
+                except Exception:
                     LOGGER.exception("Could not refresh peer transfer inventory")
 
     def reconcile_take(
@@ -1980,10 +2076,10 @@ class HostPeerSession:
             readiness_issue = self._presence_readiness_issue_by_take.get(take_id, "")
         from core.take_project import (
             AlignmentState,
+            GapInterval,
             MediaSegment,
             MediaStatus,
             Participant,
-            GapInterval,
             ProjectStatus,
             ProjectTrack,
             RecoveryStatus,
@@ -2299,7 +2395,7 @@ class HostPeerSession:
                                     attached_track,
                                     project_sample_rate=project.project_sample_rate,
                                 )
-                            except Exception:  # noqa: BLE001
+                            except Exception:
                                 LOGGER.exception(
                                     "Could not analyze verified guest original alignment"
                                 )
@@ -2562,7 +2658,7 @@ class HostPeerSession:
         if callback is not None:
             try:
                 callback(take_id, folder, attached_new_media)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 # UI notification is advisory. Never turn a successfully
                 # verified/attached original back into a transfer failure.
                 LOGGER.exception("Could not publish peer take update")
@@ -2635,6 +2731,7 @@ class GuestPeerSession:
         self._capture_started_obligation: (
             tuple[int, str, tuple[int, ...], tuple[str, ...]] | None
         ) = None
+        self._capture_finalization_needs_attention = False
         self._guidance_notification_generation = 0
         self._pending: list[PendingLocalSegment] = []
         self._stop_event = threading.Event()
@@ -2670,6 +2767,12 @@ class GuestPeerSession:
     @property
     def active_take_id(self) -> str:
         return self._active_take_id
+
+    @property
+    def capture_finalization_needs_attention(self) -> bool:
+        """Whether capture finalization has an indeterminate durable outcome."""
+
+        return bool(getattr(self, "_capture_finalization_needs_attention", False))
 
     @property
     def pending_segments(self) -> tuple[PendingLocalSegment, ...]:
@@ -2731,7 +2834,7 @@ class GuestPeerSession:
             except SessionTransferError:
                 pass
             self.invalidate_recording_presence()
-            return True
+            return not self.capture_finalization_needs_attention
 
     def observe_presence(self, channel_id: int, display_name: str) -> None:
         desired = (
@@ -2888,7 +2991,7 @@ class GuestPeerSession:
                 # Peer failure is control-plane only. Keep capture rolling and
                 # retry from the confirmed host byte offset on the next poll.
                 self.last_error = str(exc)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Guest recording transfer worker failed")
                 self.last_error = "The host recording service needs attention."
             self._stop_event.wait(_POLL_SECONDS)
@@ -2908,6 +3011,13 @@ class GuestPeerSession:
                 and (
                     state.signal is not RecordingSignal.IDLE
                     or state.shared_track.generation > 0
+                    # A first poll into a room where the host is already
+                    # playing or already painting must notify, or a late
+                    # joiner would sit on the default projection until the
+                    # host next touched anything.
+                    or state.reference_video.generation > 0
+                    or state.shared_canvas.generation > 0
+                    or state.room_clock.generation > 0
                     or state.capture_arm is not None
                 )
             )
@@ -2931,8 +3041,7 @@ class GuestPeerSession:
         self._apply_capture_arm_state(state)
         if state.signal is RecordingSignal.RECORDING and state.take_id:
             if bool(self.capture_enabled()) and (
-                not state.capture_arm_supported
-                or self._active_take_id == state.take_id
+                not state.capture_arm_supported or self._active_take_id == state.take_id
             ):
                 # Legacy hosts have no capture-arm capability and retain their
                 # historical session-wide start behavior.  On a current host,
@@ -2943,13 +3052,12 @@ class GuestPeerSession:
             RecordingSignal.FINALIZING,
             RecordingSignal.COMPLETE,
             RecordingSignal.NEEDS_ATTENTION,
-        }:
-            if state.take_id and state.take_id == self._active_take_id:
-                self._finalize_capture(
-                    needs_attention=state.message
-                    if state.signal is RecordingSignal.NEEDS_ATTENTION
-                    else ""
-                )
+        } and state.take_id and state.take_id == self._active_take_id:
+            self._finalize_capture(
+                needs_attention=state.message
+                if state.signal is RecordingSignal.NEEDS_ATTENTION
+                else ""
+            )
         self._upload_pending()
         if (
             state_changed
@@ -3276,6 +3384,8 @@ class GuestPeerSession:
             self._finalize_capture(
                 needs_attention="A new take started before the prior stop."
             )
+            if self._capture is not None:
+                return False
         (
             enabled,
             track_count,
@@ -3327,11 +3437,18 @@ class GuestPeerSession:
             channel_counts,
             logical_source_ids,
         )
+        self._capture_finalization_needs_attention = False
         self._notify_guidance_changed()
         return True
 
     def _cancel_armed_capture(self) -> None:
         """Discard only pre-start audio after the exact arm was canceled."""
+
+        if self.capture_finalization_needs_attention:
+            # stop_into() may already have partially moved durable files. An
+            # automatic abort cannot distinguish that outcome from an intact
+            # armed stream, so preserve the exact owner for recovery review.
+            return
 
         capture = self._capture
         self._capture = None
@@ -3364,24 +3481,40 @@ class GuestPeerSession:
         needs_attention: str = "",
         upload_allowed: bool = True,
     ) -> None:
+        if self.capture_finalization_needs_attention:
+            # A prior stop_into() failed after an unknown amount of durable
+            # work. Retrying could split, duplicate, or overwrite the take.
+            return
         capture = self._capture
         take_id = self._active_take_id
         if capture is None or not take_id:
+            return
+        final_dir = self.queue_path.parent / take_id
+        try:
+            result = capture.stop_into(final_dir)
+        except Exception:  # noqa: BLE001 - capture errors may contain local paths
+            self._capture_finalization_needs_attention = True
+            self.last_error = (
+                "The local original could not be finalized and needs local "
+                "recovery review."
+            )
+            self._notify_guidance_changed()
+            return
+        source_files = tuple(getattr(result, "files", ()) or ())
+        if not source_files:
+            self._capture_finalization_needs_attention = True
+            self.last_error = (
+                "The local original could not be finalized and needs local "
+                "recovery review."
+            )
+            self._notify_guidance_changed()
             return
         self._capture = None
         self._active_take_id = ""
         self._active_capture_arm = None
         self._active_capture_arm_state_generation = None
         self._bound_capture_arm_ack = None
-        final_dir = self.queue_path.parent / take_id
-        try:
-            result = capture.stop_into(final_dir)
-        except Exception:  # noqa: BLE001 - capture errors may contain local paths
-            self.last_error = (
-                "The local original could not be finalized and needs local "
-                "recovery review."
-            )
-            return
+        self._capture_finalization_needs_attention = False
         errors = list(getattr(result, "errors", ()) or ())
         if needs_attention:
             errors.append(needs_attention)
@@ -3424,7 +3557,6 @@ class GuestPeerSession:
         capture_device = getattr(result, "capture_device", None)
         device_id = str(getattr(capture_device, "device_id", "") or "")
         gaps = tuple(getattr(result, "gaps", ()) or ())
-        source_files = tuple(getattr(result, "files", ()) or ())
         inventory_input_count = len(source_files)
         inventory_segment_count = len(source_files)
         (
@@ -3554,7 +3686,7 @@ class GuestPeerSession:
             return
         try:
             callback(self.originals_root)
-        except Exception:  # noqa: BLE001
+        except Exception:
             # The audio and durable queue are already safe; a reveal-action
             # refresh must never make capture finalization look unsuccessful.
             LOGGER.exception("Could not publish Local Originals update")
@@ -3566,7 +3698,7 @@ class GuestPeerSession:
             return
         try:
             callback()
-        except Exception:  # noqa: BLE001 - guidance cannot affect transfer
+        except Exception:
             LOGGER.exception("Could not publish Local Originals guidance")
 
     def _upload_pending(self) -> None:

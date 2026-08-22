@@ -9,15 +9,14 @@ includes the private Takes path in the public result.
 
 from __future__ import annotations
 
+import shutil
+import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-import shutil
-import tempfile
-from typing import Callable
 
 from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
-
 
 _GIB = 1024**3
 _PCM24_48K_MONO_BYTES_PER_SECOND = 48_000 * 3
@@ -133,7 +132,7 @@ def check_recording_storage(
         ):
             pass
         usage = disk_usage(root)
-        free_bytes = max(0, int(getattr(usage, "free")))
+        free_bytes = max(0, int(usage.free))
     except Exception:  # noqa: BLE001 - OS errors must stay private in UI
         return RecordingStorageCheck(
             RecordingStorageStatus.ACTION_NEEDED,

@@ -8,15 +8,15 @@ work off the callback thread, and never mutates Jamulus configuration.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import replace
 import math
-from pathlib import Path
 import shutil
 import tempfile
 import threading
 import uuid
+from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import replace
+from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -27,18 +27,18 @@ from PySide6.QtWidgets import (
     QProgressDialog,
 )
 
+from core.creative_modes import get_creator_profile_by_key_or_default
+from core.meeting_link import STUDIO_MEETING_CAPTURE_NOTICE
+from core.project_audio import (
+    PROJECT_AUDIO_MAX_OUTPUT_FRAMES,
+    PROJECT_AUDIO_SAMPLE_RATE,
+)
 from core.project_playback import (
     ProjectPlaybackEngine,
     ProjectPlaybackError,
     ProjectPlaybackState,
     SoundDeviceProjectOutputBackend,
 )
-from core.project_audio import (
-    PROJECT_AUDIO_MAX_OUTPUT_FRAMES,
-    PROJECT_AUDIO_SAMPLE_RATE,
-)
-from core.creative_modes import get_creator_profile_by_key_or_default
-from core.meeting_link import STUDIO_MEETING_CAPTURE_NOTICE
 from core.project_recording import (
     ArmedProjectTrack,
     ProjectMultitrackRecorder,
@@ -80,15 +80,15 @@ from core.song_project_store import (
     SongProjectStoreError,
     load_project_bundle,
 )
-from core.song_studio_controller import (
-    SongStudioController,
-    SongStudioControllerError,
-)
 from core.song_studio_clone import (
     SongStudioSaveAsConflict,
     SongStudioSaveAsError,
     SongStudioSaveAsResult,
     save_song_studio_project_as,
+)
+from core.song_studio_controller import (
+    SongStudioController,
+    SongStudioControllerError,
 )
 from core.song_studio_reconcile import (
     SongStudioReconcileError,
@@ -118,7 +118,7 @@ from core.studio_project import (
     StudioTrack,
     StudioTrackKind,
 )
-from core.studio_renderer import StudioRenderError, StudioRenderer
+from core.studio_renderer import StudioRenderer, StudioRenderError
 from core.studio_sections import StudioSectionError, reorder_section
 from core.studio_tempo import (
     MICRO_BPM_PER_BPM,
@@ -140,15 +140,14 @@ from webjam_qt.widgets.studio_waveforms import (
     StudioWaveformRegionError,
     StudioWaveformRegionTile,
 )
-from webjam_qt.windows.reference_studio_tools import (
-    ReferenceStudioBounceDialog,
-    ReferenceStudioTempoReviewDialog,
-)
 from webjam_qt.windows.reference_studio_mixer import (
     ReferenceStudioAutomationDialog,
     ReferenceStudioMixerDialog,
 )
-
+from webjam_qt.windows.reference_studio_tools import (
+    ReferenceStudioBounceDialog,
+    ReferenceStudioTempoReviewDialog,
+)
 
 _AUDIO_FILTER = (
     "Audio files (*.wav *.aif *.aiff *.flac *.ogg *.mp3);;"

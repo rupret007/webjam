@@ -21,6 +21,60 @@ The source-level lab uses real `HostPeerSession`, `GuestPeerSession`,
 test-scoped policy injection is loopback admission; production still rejects
 loopback as a private-session endpoint.
 
+## Exact multitrack proof matrix
+
+The newer deterministic proof joins the authoritative v0.26 boundaries that
+the original rehearsal lab intentionally tested separately:
+
+```bash
+QT_QPA_PLATFORM=offscreen PYTEST_ADDOPTS='-p no:cacheprovider' \
+  .venv/bin/python -m pytest -q tests/test_multitrack_proof_lab.py
+```
+
+One run uses real loopback peer enrollment, exact v2 presence, frozen guest
+Local Original obligations, take-scoped ARM/ACK, idempotent start/Finalizing/
+completion, authenticated upload, exact manifest reconciliation, repeated-take
+Studio lanes, and secure Studio export. Each take binds seven logical sources:
+
+- host, guest, and checksum-bound Shared Track server sources with exact
+  mono/stereo widths;
+- Host Mic and Host DI mono Local Originals;
+- one true-stereo host Room Bus; and
+- one true-stereo guest Local Original.
+
+The PCM-24/48 kHz fixture gives every logical source and stereo channel a
+different carrier while sharing five coded timing transients. The test rejects
+silence, swaps, duplicate media, truncation, mono/stereo substitution, stereo
+collapse, weak timing, missing/extra inventory, unstable source identity, and
+source mutation during Studio/export. The second take must retain all seven
+logical IDs, contain a new performance except for the intentionally reused
+Shared Track, automatically stack seven exact lanes, survive save/reopen, and
+export seven edited plus fourteen original stems with verified checksums.
+
+Run the qualification matrix in 20 fresh processes with:
+
+```bash
+.venv/bin/python tools/run_multitrack_proof_lab.py \
+  --report /tmp/webjam-multitrack-proof-lab.json
+```
+
+The runner has a fixed reviewed target list, stops on the first failure, checks
+at least 750 MiB free before and after every iteration, limits each iteration
+to less than 250 MiB of temporary data, deletes its run-owned `basetemp`, and
+writes one mode-`0600` path-free report under 100 KiB. A reduced
+`--iterations` value is smoke evidence only; only exactly 20 clean iterations
+on a relevant clean committed tree set `qualification_complete=true`. The
+report records both the exact `source_sha` and a path-free working-tree digest;
+preserved `_to_delete/` and `*.bundle` files are excluded from that source
+classification.
+
+The fixed matrix also re-runs the existing Podcast & Voice chapter/overdub/
+Bounce Episode journey plus focused plan, ARM/ACK timeout and authority,
+Shared Track, crash-recovery, exact repeated-lane, stereo-export, and cancelled
+export boundaries. It is still synthetic source evidence: it does not run a
+Jamulus process, audio interface, headphones, meeting provider, packaged app,
+accessibility review, or human audibility check.
+
 ## Optional real-Jamulus transport companion
 
 The companion is Linux-only and opt-in. It requires the checksum-pinned

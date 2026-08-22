@@ -13,24 +13,24 @@ isolation can be proved there.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
 import math
-from pathlib import Path
 import re
 import stat
 import threading
-from typing import Callable, Protocol
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
+from typing import Protocol
 
 import numpy as np
 
 from core.project_audio import (
-    RealtimeBlockPool,
     ProjectAudioDecoder,
     ProjectAudioError,
+    RealtimeBlockPool,
     project_audio_mp3_available,
 )
-
 
 # The Jamulus display name of the dedicated backing participant. It lives in
 # core because the take builder has to recognise that stem when a recording is
@@ -1026,8 +1026,7 @@ class ReferenceTrackStream:
 
     def seek(self, seconds: float) -> None:
         frame = self._seconds_to_frame(seconds)
-        if frame > self._decoder.output_frames:
-            frame = self._decoder.output_frames
+        frame = min(frame, self._decoder.output_frames)
         with self._condition:
             self._consumer_position = frame
             self._finished = False
@@ -1123,7 +1122,7 @@ class ReferenceTrackStream:
         value = float(seconds)
         if not math.isfinite(value) or value < 0:
             raise ReferenceTrackError("Song position must be finite and non-negative.")
-        return int(round(value * REFERENCE_SAMPLE_RATE))
+        return round(value * REFERENCE_SAMPLE_RATE)
 
     def _run(self) -> None:
         while True:
@@ -2272,8 +2271,8 @@ class ReferenceTrackController:
 
 __all__ = [
     "REFERENCE_BLOCK_FRAMES",
-    "REFERENCE_MAX_DIAGNOSTIC_COUNTER",
     "REFERENCE_MAX_DECODE_FRAMES",
+    "REFERENCE_MAX_DIAGNOSTIC_COUNTER",
     "REFERENCE_QUEUE_BLOCKS",
     "REFERENCE_SAMPLE_RATE",
     "REFERENCE_WAVEFORM_BINS",

@@ -15,10 +15,19 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from core.jamulus_compatibility import ComponentTarget
 from tests.support.component_store import isolated_component_store_root
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+@pytest.fixture(autouse=True)
+def _authorize_microphone_permission(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "webjam_qt.platform_permissions.microphone_permission_status",
+        lambda: "authorized",
+    )
 
 
 def _make_bridge(tmp: str):

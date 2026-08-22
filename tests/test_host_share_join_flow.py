@@ -42,6 +42,14 @@ def qapp():
     return QApplication.instance() or QApplication(sys.argv[:1])
 
 
+@pytest.fixture(autouse=True)
+def _authorize_microphone_permission(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "webjam_qt.platform_permissions.microphone_permission_status",
+        lambda: "authorized",
+    )
+
+
 def test_invite_link_round_trip_contains_only_public_connection_data():
     link = create_invite_link(
         "192.168.1.42", port=22124, session_name="Sunday Rehearsal"
@@ -113,6 +121,7 @@ def test_launch_creator_selector_uses_canonical_profiles_and_truthful_actions(
             "Music (Ready)",
             "Podcast & Voice (Ready)",
             "Review & Rehearsal (Preview)",
+            "Art (Preview)",
         ]
         assert dialog.selected_creator_profile_key == "music"
         assert dialog._host_button.text() == "Host"

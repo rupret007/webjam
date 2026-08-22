@@ -19,13 +19,12 @@ No setting is changed and no device identity is persisted.
 from __future__ import annotations
 
 import ctypes
-from dataclasses import dataclass
 import platform as platform_module
 import sys
+from dataclasses import dataclass
 from typing import Protocol
 
 from core.coreaudio_devices import CoreAudioDevice, CoreAudioDirection, CoreAudioScan
-
 
 _MINIMUM_MACOS_VERSION = (14, 2)
 
@@ -203,7 +202,7 @@ class CoreAudioProcessRouteProbe:
             second_process = backend.process_object_id(safe_pid)
         except CoreAudioProcessRouteError:
             raise
-        except Exception as exc:  # noqa: BLE001 - native read boundary
+        except Exception as exc:
             raise CoreAudioProcessRouteError(
                 "Shared Track couldn't inspect the primary Jamulus live "
                 "audio route."

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 import logging
-from pathlib import Path
 import re
 import shutil
 import tempfile
 import threading
-from typing import Callable
+from collections.abc import Callable
+from copy import deepcopy
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -52,7 +52,6 @@ from core.creative_modes import get_creator_profile_by_key_or_default
 from core.redaction import redact_text
 from webjam_qt.platform_permissions import microphone_permission_status
 from webjam_qt.widgets.accessible import set_labeled_action
-
 
 LOGGER = logging.getLogger("webjam.qt.band_check")
 
@@ -389,7 +388,7 @@ class BandCheckDialog(QDialog):
                     host_server_certification=host_server_certification,
                 )
                 self._report_ready.emit((scan_id, session))
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 LOGGER.exception("Band Check configuration scan failed")
                 self._report_ready.emit((scan_id, exc))
 
@@ -741,7 +740,7 @@ class BandCheckDialog(QDialog):
         if probe is not None:
             try:
                 probe.stop()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.debug("Input probe cleanup failed", exc_info=True)
 
     def _play_headphone_test(self) -> None:
@@ -1005,13 +1004,13 @@ class BandCheckDialog(QDialog):
         if recorder is not None:
             try:
                 released = recorder.delete()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.debug("Scratch cleanup failed", exc_info=True)
                 released = False
         if temporary is not None and released:
             try:
                 shutil.rmtree(temporary, ignore_errors=True)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.debug("Scratch directory cleanup failed", exc_info=True)
         elif temporary is not None and recorder is not None:
             # Never remove a libsndfile-owned path from the UI thread. Finish
@@ -1020,7 +1019,7 @@ class BandCheckDialog(QDialog):
                 try:
                     if recorder.delete(wait_timeout=None):
                         shutil.rmtree(temporary, ignore_errors=True)
-                except Exception:  # noqa: BLE001
+                except Exception:
                     LOGGER.debug("Deferred scratch cleanup failed", exc_info=True)
 
             threading.Thread(
@@ -1038,7 +1037,7 @@ class BandCheckDialog(QDialog):
             return
         try:
             observations = self._observations_provider()
-        except Exception:  # noqa: BLE001
+        except Exception:
             LOGGER.debug("Live Band Check observation failed", exc_info=True)
             return
         before = list(self._session.steps)
@@ -1091,7 +1090,7 @@ class BandCheckDialog(QDialog):
                     signature=signature,
                     session=session,
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 LOGGER.exception("Band Check verification could not be saved")
 
         threading.Thread(
@@ -1244,7 +1243,7 @@ class BandCheckDialog(QDialog):
                 widget.setParent(None)
                 widget.deleteLater()
 
-    def closeEvent(self, event) -> None:  # noqa: N802
+    def closeEvent(self, event) -> None:
         self._scan_id += 1
         self._live_timer.stop()
         self._stop_input_probe()

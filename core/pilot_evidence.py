@@ -16,21 +16,20 @@ erase an earlier failure.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import re
+import stat
+import uuid
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-import hashlib
-import json
 from pathlib import Path
-import re
-import stat
 from typing import Any, TypeVar
-import uuid
 
 from core.file_io import atomic_write_text
 from core.redaction import redact_text
-
 
 PILOT_EVIDENCE_SCHEMA_VERSION = 1
 """Independent schema version for private pilot evidence records."""
@@ -47,9 +46,9 @@ MAX_PILOT_LEDGER_FILES = 64
 _CHAIN_ORIGIN = "0" * 64
 _HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{7,64}$")
-_VERSION_RE = re.compile(r"^\d+(?:\.\d+){1,3}(?:[-+][a-z0-9.-]{1,32})?$", re.I)
+_VERSION_RE = re.compile(r"^\d+(?:\.\d+){1,3}(?:[-+][a-z0-9.-]{1,32})?$", re.IGNORECASE)
 _PACKAGE_ARTIFACT_RE = re.compile(
-    r"^webjam-v\d+(?:\.\d+){1,3}(?:-[a-z0-9]+){1,8}(?:\.zip)?$", re.I
+    r"^webjam-v\d+(?:\.\d+){1,3}(?:-[a-z0-9]+){1,8}(?:\.zip)?$", re.IGNORECASE
 )
 
 
@@ -477,7 +476,7 @@ class PilotEvidenceEvent:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "PilotEvidenceEvent":
+    def from_dict(cls, value: Mapping[str, Any]) -> PilotEvidenceEvent:
         expected = {
             "event_id",
             "sequence",
@@ -664,7 +663,7 @@ class PilotEvidenceLedger:
         artifact_identity: str,
         role: PilotRole | str,
         now: datetime | None = None,
-    ) -> "PilotEvidenceLedger":
+    ) -> PilotEvidenceLedger:
         """Create an unsaved opaque run.  :func:`save_pilot_ledger` persists it."""
 
         timestamp = _timestamp(now)
@@ -688,7 +687,7 @@ class PilotEvidenceLedger:
         evidence_reference: EvidenceReference | str,
         limitations: Iterable[EvidenceLimitation | str] = (),
         occurred_at: datetime | None = None,
-    ) -> "PilotEvidenceLedger":
+    ) -> PilotEvidenceLedger:
         """Append one automatic observation with no free-form payload.
 
         Human outcomes intentionally require :meth:`record_human_observation`
@@ -724,7 +723,7 @@ class PilotEvidenceLedger:
         state_after: PilotSessionState | str,
         limitations: Iterable[EvidenceLimitation | str] = (),
         occurred_at: datetime | None = None,
-    ) -> "PilotEvidenceLedger":
+    ) -> PilotEvidenceLedger:
         """Append an explicit human answer without retaining names or notes."""
 
         observation = _enum_value(
@@ -754,13 +753,12 @@ class PilotEvidenceLedger:
         evidence_reference: EvidenceReference,
         limitations: tuple[EvidenceLimitation, ...],
         occurred_at: datetime | None,
-    ) -> "PilotEvidenceLedger":
+    ) -> PilotEvidenceLedger:
         if len(self.events) >= MAX_PILOT_EVENTS:
             raise PilotEvidenceError("Pilot evidence record is full; start a new run.")
         timestamp = _timestamp(occurred_at)
         # A clock correction must not make the append-only order ambiguous.
-        if timestamp < self.updated_at_utc:
-            timestamp = self.updated_at_utc
+        timestamp = max(timestamp, self.updated_at_utc)
         event = _new_event(
             sequence=len(self.events) + 1,
             run_id=self.run_id,
@@ -806,7 +804,7 @@ class PilotEvidenceLedger:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "PilotEvidenceLedger":
+    def from_dict(cls, value: Mapping[str, Any]) -> PilotEvidenceLedger:
         expected = {
             "schema_version",
             "run_id",
@@ -1108,15 +1106,15 @@ def build_sanitized_pilot_report(ledger: PilotEvidenceLedger) -> dict[str, objec
 
 
 __all__ = [
-    "EvidenceLimitation",
-    "EvidenceOutcome",
-    "EvidenceReference",
     "MAX_LIMITATIONS_PER_EVENT",
     "MAX_PILOT_EVENTS",
     "MAX_PILOT_LEDGER_BYTES",
     "MAX_PILOT_LEDGER_FILES",
     "PILOT_EVIDENCE_DIRECTORY",
     "PILOT_EVIDENCE_SCHEMA_VERSION",
+    "EvidenceLimitation",
+    "EvidenceOutcome",
+    "EvidenceReference",
     "PilotEvidenceError",
     "PilotEvidenceEvent",
     "PilotEvidenceLedger",
@@ -1125,8 +1123,8 @@ __all__ = [
     "PilotSessionState",
     "build_sanitized_pilot_report",
     "create_pilot_ledger",
-    "load_pilot_ledger",
     "list_pilot_ledgers",
+    "load_pilot_ledger",
     "pilot_ledger_path",
     "resume_pilot_ledger",
     "save_pilot_ledger",

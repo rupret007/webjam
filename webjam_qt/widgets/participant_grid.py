@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Dict, Iterable, Optional
+from collections.abc import Iterable
 
 from PySide6 import QtGui
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
@@ -26,8 +26,8 @@ from core.creative_modes import (
     get_creator_profile_by_key_or_default,
 )
 from core.meeting_link import RECORD_SESSION_MEETING_CAPTURE_NOTICE
-from webjam_qt.theme.tokens import Space
 from webjam_qt.session_state import SessionUiState
+from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.participant_card import ParticipantCard, ParticipantPresentation
 
 
@@ -40,7 +40,7 @@ class _FlowLayout(QLayout):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         margin: int = 0,
         h_spacing: int = Space.LG,
         v_spacing: int = Space.LG,
@@ -55,39 +55,39 @@ class _FlowLayout(QLayout):
     # ------------------------------------------------------------------
     # QLayout overrides
     # ------------------------------------------------------------------
-    def addItem(self, item) -> None:  # noqa: N802
+    def addItem(self, item) -> None:
         self._items.append(item)
 
     def count(self) -> int:
         return len(self._items)
 
-    def itemAt(self, index: int):  # noqa: N802
+    def itemAt(self, index: int):
         if 0 <= index < len(self._items):
             return self._items[index]
         return None
 
-    def takeAt(self, index: int):  # noqa: N802
+    def takeAt(self, index: int):
         if 0 <= index < len(self._items):
             return self._items.pop(index)
         return None
 
-    def expandingDirections(self):  # noqa: N802
+    def expandingDirections(self):
         return Qt.Orientation(0)
 
-    def hasHeightForWidth(self) -> bool:  # noqa: N802
+    def hasHeightForWidth(self) -> bool:
         return True
 
-    def heightForWidth(self, width: int) -> int:  # noqa: N802
+    def heightForWidth(self, width: int) -> int:
         return self._do_layout(QRect(0, 0, width, 0), test_only=True)
 
-    def setGeometry(self, rect: QRect) -> None:  # noqa: N802
+    def setGeometry(self, rect: QRect) -> None:
         super().setGeometry(rect)
         self._do_layout(rect, test_only=False)
 
-    def sizeHint(self) -> QSize:  # noqa: N802
+    def sizeHint(self) -> QSize:
         return self.minimumSize()
 
-    def minimumSize(self) -> QSize:  # noqa: N802
+    def minimumSize(self) -> QSize:
         size = QSize()
         for item in self._items:
             size = size.expandedTo(item.minimumSize())
@@ -203,7 +203,7 @@ class ParticipantGrid(QScrollArea):
     microphone_settings_requested = Signal()
     participants_changed = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._creator_profile = get_creator_profile_by_key_or_default("music")
         self._last_session_state: SessionUiState | None = None
@@ -226,7 +226,7 @@ class ParticipantGrid(QScrollArea):
 
         self.setWidget(container)
 
-        self._cards: Dict[int, ParticipantCard] = {}
+        self._cards: dict[int, ParticipantCard] = {}
         # The hero lobby card floats centered over the (empty) stage rather
         # than sitting in the flow layout, which packs children top-left.
         self._empty_state = self._build_empty_state(self.viewport())
@@ -365,8 +365,8 @@ class ParticipantGrid(QScrollArea):
                 ),
                 (
                     "Your band needs to hear your instrument. macOS will ask for access next.",
-                    "Other speakers need to hear your microphone. macOS will ask "
-                    "for access next.",
+                    ("Other speakers need to hear your microphone. macOS will ask "
+                    "for access next."),
                 ),
                 ("Try Leave Jam", "Try Leave Session"),
                 ("Leave Jam", "Leave Session"),
@@ -411,8 +411,8 @@ class ParticipantGrid(QScrollArea):
                 ),
                 (
                     "Your band needs to hear your instrument. macOS will ask for access next.",
-                    "Participants need to hear your WebJam audio. macOS will ask "
-                    "for microphone access next.",
+                    ("Participants need to hear your WebJam audio. macOS will ask "
+                    "for microphone access next."),
                 ),
                 ("Try Leave Jam", "Try Leave Session"),
                 ("Leave Jam", "Leave Session"),
@@ -485,7 +485,7 @@ class ParticipantGrid(QScrollArea):
         self._empty_state.setGeometry(x, y, width, height)
         self._empty_state.raise_()
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._center_empty_state()
 

@@ -23,6 +23,20 @@ from core.jamulus_rpc_client import (
 )
 
 
+def _loopback_bind_permitted() -> bool:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(("127.0.0.1", 0))
+    except PermissionError:
+        return False
+    finally:
+        sock.close()
+    return True
+
+
+_LOOPBACK_BIND_PERMITTED = _loopback_bind_permitted()
+
+
 class _FakeJamulus:
     """Minimal Jamulus-client JSON-RPC server for tests (NDJSON over TCP)."""
 
@@ -153,6 +167,10 @@ class _ClientHarness:
             pass
 
 
+@unittest.skipIf(
+    not _LOOPBACK_BIND_PERMITTED,
+    "Skipping Jamulus RPC TCP integration tests: loopback bind unavailable.",
+)
 class TestJamulusRpcTcp(unittest.TestCase):
     def test_authenticates_and_receives_participants(self):
         h = _ClientHarness()

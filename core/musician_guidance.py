@@ -12,10 +12,10 @@ musician-authored notes and identifiers never cross that boundary.
 
 from __future__ import annotations
 
+import re
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
-import re
-from typing import Iterable, Mapping
 
 from core.session_conductor import (
     EvidenceState,
@@ -31,7 +31,6 @@ from core.session_conductor import (
 )
 from core.session_intelligence import SessionPulse
 from core.session_lifecycle import SessionLifecyclePhase
-
 
 _MAX_TRANSITIONS = 5
 _SAFE_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")

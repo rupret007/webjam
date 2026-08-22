@@ -8,17 +8,16 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Optional
 
-from webex_integration import WebexLaunchState
 from core.component_lock import (
+    RUNTIME_ACTIVE_LOCK_NAME,
     ComponentLockError,
     ComponentLockTimeout,
     InterProcessComponentLock,
-    RUNTIME_ACTIVE_LOCK_NAME,
 )
 from core.component_store import default_component_store_root
 from core.jamulus_compatibility import (
@@ -33,19 +32,19 @@ from core.jamulus_compatibility import (
 )
 from core.jamulus_component_resolver import ValidatedExternalComponent
 from core.jamulus_name import validate_jamulus_name
-from core.meeting_link import (
-    GENERIC_MEETING_SERVICE_KEY,
-    identify_meeting_service,
-    meeting_service_label,
+from core.jamulus_profile import (
+    JamulusNativeProfileError,
+    JamulusNativeProfileManager,
+    default_jamulus_version_probe,
 )
 from core.jamulus_rpc_client import (
     DEFAULT_SECRET_PATH,
     JamulusRpcMonitorSnapshot,
 )
-from core.jamulus_profile import (
-    JamulusNativeProfileError,
-    JamulusNativeProfileManager,
-    default_jamulus_version_probe,
+from core.meeting_link import (
+    GENERIC_MEETING_SERVICE_KEY,
+    identify_meeting_service,
+    meeting_service_label,
 )
 from core.private_log import (
     open_private_append_text_log,
@@ -68,6 +67,7 @@ from services.macos_process_activation import (
     JamulusForegroundReason,
     activate_running_macos_application_outcome,
 )
+from webex_integration import WebexLaunchState
 
 LOGGER = logging.getLogger("webjam.services.bridge")
 
@@ -244,7 +244,7 @@ def _jamulus_child_environment(
     return child_environment
 
 
-def _bundled_jamulus_candidate() -> Optional[str]:
+def _bundled_jamulus_candidate() -> str | None:
     """Path to the copy of Jamulus bundled inside WebJam's own app, if any.
 
     macOS builds nest the official ``Jamulus.app`` at
@@ -277,7 +277,7 @@ def _bundled_jamulus_candidate() -> Optional[str]:
     return str(candidate) if candidate.is_file() else None
 
 
-def _bundled_reference_track_jamulus_candidate() -> Optional[str]:
+def _bundled_reference_track_jamulus_candidate() -> str | None:
     """Return only the verified, true-HEADLESS Reference Track companion.
 
     The ordinary interactive Jamulus client cannot apply hidden mixer-fader
@@ -322,7 +322,7 @@ def _bundled_reference_track_jamulus_candidate() -> Optional[str]:
     return str(candidate)
 
 
-def _bundled_jamulus_server_candidate() -> Optional[str]:
+def _bundled_jamulus_server_candidate() -> str | None:
     """Return the dedicated server nested in a frozen macOS build.
 
     Release artifacts copy the official, unmodified ``JamulusServer.app``
@@ -342,7 +342,7 @@ def _bundled_jamulus_server_candidate() -> Optional[str]:
     return str(candidate) if candidate.is_file() else None
 
 
-def _bundled_jamulus_installer() -> Optional[str]:
+def _bundled_jamulus_installer() -> str | None:
     """Path to the bundled Jamulus Windows installer, if present.
 
     Jamulus only publishes an NSIS installer on Windows (no portable
@@ -550,7 +550,7 @@ class BridgeService:
         )
 
         # State
-        self.jamulus_process: Optional[subprocess.Popen] = None
+        self.jamulus_process: subprocess.Popen | None = None
         self.jamulus_state: str = JamulusState.NOT_LAUNCHED.value
         self._jamulus_foreground_reason = (
             JamulusForegroundReason.NOT_REQUESTED
@@ -673,26 +673,26 @@ class BridgeService:
         # `Jamulus --server --nogui` subprocess; `practice_mode` makes
         # launch/reconnect target 127.0.0.1 instead of the band server.
         self.practice_mode = False
-        self.practice_server_process: Optional[subprocess.Popen] = None
+        self.practice_server_process: subprocess.Popen | None = None
 
         # File handle for capturing Jamulus stdout+stderr — closed in stop_jamulus.
         # Captures to ~/.webjam_jamulus.log, overwritten on each launch so the
         # user can inspect the CURRENT session's Jamulus output when troubleshooting.
-        self._jamulus_log_file: Optional[object] = None
-        self._practice_log_file: Optional[object] = None
+        self._jamulus_log_file: object | None = None
+        self._practice_log_file: object | None = None
 
         # Hosted band server: when settings.host_server_enabled, WebJam
         # supervises the official JamulusServer.app (recording + loopback
         # RPC) instead of the manual server/start_macos_pilot.sh Terminal
         # step. Its lifecycle is deliberately decoupled from the client:
         # Stop Audio never stops the band's server.
-        self.hosted_server_process: Optional[subprocess.Popen] = None
+        self.hosted_server_process: subprocess.Popen | None = None
         # True only when WebJam authenticated an already-running external
         # JamulusServer through the configured recorder secret. Adopted
         # servers are observed, never terminated by WebJam.
         self._hosted_server_adopted = False
-        self._hosted_caffeinate_process: Optional[subprocess.Popen] = None
-        self._hosted_log_file: Optional[object] = None
+        self._hosted_caffeinate_process: subprocess.Popen | None = None
+        self._hosted_log_file: object | None = None
         self._hosted_lifecycle_lock = threading.RLock()
         self._hosted_restart_control_lock = threading.Lock()
         self._hosted_restart_inflight = False
@@ -1247,20 +1247,19 @@ class BridgeService:
             raise TypeError("client_provider must be callable or None")
         if server_provider is not None and not callable(server_provider):
             raise TypeError("server_provider must be callable or None")
-        with self._jamulus_lifecycle_lock:
-            with self._hosted_lifecycle_lock:
-                if (
-                    self._runtime_component_lifecycle_is_active()
-                    or self.runtime_component_lease_active
-                ):
-                    raise RuntimeError(
-                        "managed Jamulus providers can change only while audio "
-                        "is stopped"
-                    )
-                self._managed_jamulus_client_provider = client_provider
-                self._managed_jamulus_server_provider = server_provider
-                self._last_resolved_client_component = None
-                self._last_resolved_server_component = None
+        with self._jamulus_lifecycle_lock, self._hosted_lifecycle_lock:
+            if (
+                self._runtime_component_lifecycle_is_active()
+                or self.runtime_component_lease_active
+            ):
+                raise RuntimeError(
+                    "managed Jamulus providers can change only while audio "
+                    "is stopped"
+                )
+            self._managed_jamulus_client_provider = client_provider
+            self._managed_jamulus_server_provider = server_provider
+            self._last_resolved_client_component = None
+            self._last_resolved_server_component = None
 
     def set_managed_jamulus_components(
         self,
@@ -1283,20 +1282,19 @@ class BridgeService:
             raise TypeError("client_provider must be callable or None")
         if server_provider is not None and not callable(server_provider):
             raise TypeError("server_provider must be callable or None")
-        with self._jamulus_lifecycle_lock:
-            with self._hosted_lifecycle_lock:
-                if (
-                    self._runtime_component_lifecycle_is_active()
-                    or self.runtime_component_lease_active
-                ):
-                    raise RuntimeError(
-                        "managed Jamulus providers can change only while audio "
-                        "is stopped"
-                    )
-                self._verified_jamulus_client_provider = client_provider
-                self._verified_jamulus_server_provider = server_provider
-                self._last_resolved_client_component = None
-                self._last_resolved_server_component = None
+        with self._jamulus_lifecycle_lock, self._hosted_lifecycle_lock:
+            if (
+                self._runtime_component_lifecycle_is_active()
+                or self.runtime_component_lease_active
+            ):
+                raise RuntimeError(
+                    "managed Jamulus providers can change only while audio "
+                    "is stopped"
+                )
+            self._verified_jamulus_client_provider = client_provider
+            self._verified_jamulus_server_provider = server_provider
+            self._last_resolved_client_component = None
+            self._last_resolved_server_component = None
 
     def _runtime_webjam_version(self) -> str:
         try:
@@ -1700,7 +1698,7 @@ class BridgeService:
         component = self._last_resolved_server_component
         return None if component is None else component.public_details()
 
-    def find_jamulus(self) -> Optional[str]:
+    def find_jamulus(self) -> str | None:
         """Resolve client as managed, embedded, explicit, then system.
 
         Every non-embedded candidate must report a role-compatible version
@@ -1760,7 +1758,7 @@ class BridgeService:
                     return str(component.executable_path)
         return None
 
-    def find_reference_track_jamulus(self) -> Optional[str]:
+    def find_reference_track_jamulus(self) -> str | None:
         """Resolve the packaged HEADLESS companion with no GUI fallback."""
 
         return _bundled_reference_track_jamulus_candidate()
@@ -2502,10 +2500,10 @@ class BridgeService:
 
         def _do_launch() -> None:
             with self._jamulus_lifecycle_lock:
-                proc: Optional[subprocess.Popen] = None
+                proc: subprocess.Popen | None = None
                 runtime_paths_prepared = False
                 try:
-                    def cancelled(proc: Optional[subprocess.Popen] = None) -> bool:
+                    def cancelled(proc: subprocess.Popen | None = None) -> bool:
                         """Discard a stale queued launch without publishing it."""
 
                         if not (launch_cancel.is_set() or self.shutdown_requested()):
@@ -2656,7 +2654,7 @@ class BridgeService:
                         # never provide process-authenticating roster proof.
                         try:
                             self.jamulus_controller.stop()
-                        except Exception as exc:  # noqa: BLE001 - defensive recovery
+                        except Exception as exc:
                             raise RuntimeError(
                                 "Could not stop the old Jamulus monitor."
                             ) from exc
@@ -2683,7 +2681,7 @@ class BridgeService:
                         if force_restart:
                             try:
                                 self.jamulus_controller.stop()
-                            except Exception as exc:  # noqa: BLE001 - defensive recovery
+                            except Exception as exc:
                                 raise RuntimeError(
                                     "Could not stop the old Jamulus monitor."
                                 ) from exc
@@ -2694,7 +2692,7 @@ class BridgeService:
                                 except subprocess.TimeoutExpired:
                                     self.jamulus_process.kill()
                                     self.jamulus_process.wait(timeout=2.0)
-                            except Exception as exc:  # noqa: BLE001
+                            except Exception as exc:
                                 raise RuntimeError(
                                     "Could not replace a hung Jamulus process."
                                 ) from exc
@@ -3648,7 +3646,7 @@ class BridgeService:
         "/Applications/JamulusServer.app/Contents/MacOS/JamulusServer"
     )
 
-    def find_jamulus_server_with_source(self) -> tuple[Optional[str], str]:
+    def find_jamulus_server_with_source(self) -> tuple[str | None, str]:
         """Resolve server as managed, embedded, then installed system app."""
 
         self._last_resolved_server_component = None
@@ -3687,7 +3685,7 @@ class BridgeService:
             return str(component.executable_path), "installed"
         return None, "missing"
 
-    def find_jamulus_server(self) -> Optional[str]:
+    def find_jamulus_server(self) -> str | None:
         """Locate the dedicated JamulusServer.app binary (macOS pilot)."""
         return self.find_jamulus_server_with_source()[0]
 
@@ -3904,8 +3902,8 @@ class BridgeService:
                 technical.extend(
                     (
                         "server_source=production JamulusServer.app",
-                        "server_version="
-                        f"{verified_server_version or 'unverified'}",
+                        ("server_version="
+                        f"{verified_server_version or 'unverified'}"),
                         f"version_verified={lifecycle_ok}",
                         f"owned_stop_confirmed={owned_stop_confirmed}",
                         f"ports_released={ports_released}",
@@ -4894,7 +4892,7 @@ class BridgeService:
             process_id = int(process.pid)
         except (AttributeError, TypeError, ValueError, OSError):
             return 0
-        return process_id if process_id > 0 else 0
+        return max(0, process_id)
 
     @classmethod
     def _terminate_jamulus_child(

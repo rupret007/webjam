@@ -20,10 +20,10 @@ import json
 import os
 import re
 import stat
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Mapping
 
 from core.file_io import atomic_write_bytes
 from core.song_project import SongProject
@@ -39,7 +39,6 @@ from core.studio_project import (
     default_song_studio_document,
     studio_document_from_dict,
 )
-
 
 SONG_STUDIO_FILENAME = ".webjam-song-studio.json"
 SONG_STUDIO_BACKUP_FILENAME = ".webjam-song-studio.json.bak"

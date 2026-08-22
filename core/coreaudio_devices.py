@@ -16,15 +16,14 @@ need PyObjC, a Swift toolchain, or a bundled helper executable.
 from __future__ import annotations
 
 import ctypes
-from dataclasses import dataclass
-from enum import Enum
 import hashlib
 import json
 import logging
 import math
 import sys
+from dataclasses import dataclass
+from enum import Enum
 from typing import Protocol
-
 
 _LOGGER = logging.getLogger("webjam.coreaudio_devices")
 

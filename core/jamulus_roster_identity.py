@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Mapping, Sequence
-
 
 MAX_JAMULUS_ROSTER_ROWS = 256
 _MAX_PROFILE_TEXT = 512

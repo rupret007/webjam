@@ -550,6 +550,73 @@ def test_guest_capture_starts_only_after_confirmed_state_survives_peer_outage_an
     guest.stop()
 
 
+def test_guest_finalization_failure_retains_exact_owner_and_never_retries(
+    tmp_path: Path,
+    peer,
+) -> None:
+    credentials, _registry, control, _transfers, server = peer
+
+    class FailingFinalizeCapture(_FakeCapture):
+        instances: list["FailingFinalizeCapture"] = []
+
+        def stop_into(self, _destination: Path):
+            self.stop_calls += 1
+            raise OSError("ENOSPC while writing /private/client-project/take.wav")
+
+    invite = BandInvite(
+        "127.0.0.1",
+        22124,
+        "Test",
+        credentials.session_id,
+        server.address[1],
+        credentials.invite_token,
+    )
+    guidance_updates: list[str] = []
+    guest = GuestPeerSession(
+        invite,
+        display_name="Alex",
+        takes_root=tmp_path / "guest",
+        installation_path=tmp_path / "installation.json",
+        capture_enabled=lambda: True,
+        capture_config=lambda: (7, 48_000, 128),
+        capture_factory=FailingFinalizeCapture,
+        on_guidance_changed=lambda: guidance_updates.append("changed"),
+    )
+    guest.poll_once()
+    take_id = _id()
+    control.begin(take_id, started_utc="2026-08-17T01:00:00Z")
+    guest.poll_once()
+    capture = FailingFinalizeCapture.instances[-1]
+
+    control.finish(take_id, stopped_utc="2026-08-17T01:00:01Z")
+    guest.poll_once()
+    guidance_after_failure = len(guidance_updates)
+    guest.poll_once()
+
+    assert capture.stop_calls == 1
+    assert guest.active_take_id == take_id
+    assert guest.capture_finalization_needs_attention
+    assert guest.pending_segments == ()
+    assert guest.last_error == (
+        "The local original could not be finalized and needs local recovery review."
+    )
+    assert "ENOSPC" not in guest.last_error
+    assert "client-project" not in guest.last_error
+    assert len(guidance_updates) == guidance_after_failure
+
+    replacement_take_id = _id()
+    control.begin(
+        replacement_take_id,
+        started_utc="2026-08-17T01:00:02Z",
+    )
+    guest.poll_once()
+    assert guest.active_take_id == take_id
+    assert len(FailingFinalizeCapture.instances) == 1
+    assert capture.stop_calls == 1
+    assert guest.stop() is False
+    assert capture.stop_calls == 1
+
+
 def test_guest_capture_uses_the_exact_configured_local_original_map(
     tmp_path: Path,
     peer,

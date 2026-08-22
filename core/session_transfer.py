@@ -36,20 +36,20 @@ import tempfile
 import threading
 import time
 import uuid
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from socketserver import TCPServer
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any
 from urllib.parse import parse_qs, quote, urlsplit
 
 from core.creative_modes import canonical_creator_profile_key
 from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
 from core.logical_sources import canonical_logical_source_id
 from core.redaction import redact_text
-
 
 MAX_JSON_BYTES = 64 * 1024
 MAX_CHUNK_BYTES = 4 * 1024 * 1024
@@ -272,7 +272,7 @@ class SessionCredentials:
         )
 
     @classmethod
-    def create(cls) -> "SessionCredentials":
+    def create(cls) -> SessionCredentials:
         return cls(str(uuid.uuid4()), secrets.token_urlsafe(32))
 
     def participant_token(self, participant_id: str) -> str:
@@ -629,7 +629,7 @@ class LocalOriginalObligation:
         )
 
     @classmethod
-    def from_presence_proof(cls, proof: PresenceV2Proof) -> "LocalOriginalObligation":
+    def from_presence_proof(cls, proof: PresenceV2Proof) -> LocalOriginalObligation:
         return cls(
             participant_id=proof.participant_id,
             track_count=proof.local_original_track_count,
@@ -1158,7 +1158,7 @@ class EnrollmentRegistry:
         # extra millisecond (a 15 000 ms lease reported as 15 001 ms).  Never
         # promise more remaining time than this registry actually granted;
         # the constructor already bounds the grant by PRESENCE_V2_MAX_LEASE_S.
-        granted_lease_ms = int(round(self._presence_v2_lease_s * 1000))
+        granted_lease_ms = round(self._presence_v2_lease_s * 1000)
         remaining_ms = min(
             granted_lease_ms,
             max(
@@ -1748,7 +1748,7 @@ class CaptureArmSnapshot:
         object.__setattr__(self, "recording_plan_fingerprint", fingerprint)
 
     @classmethod
-    def from_mapping(cls, value: object) -> "CaptureArmSnapshot":
+    def from_mapping(cls, value: object) -> CaptureArmSnapshot:
         if not isinstance(value, Mapping):
             raise ValueError("capture_arm must be an object.")
         if value.get("schema") != _CAPTURE_ARM_SCHEMA:
@@ -1784,7 +1784,7 @@ class CaptureArmCancellationSnapshot:
         )
 
     @classmethod
-    def from_mapping(cls, value: object) -> "CaptureArmCancellationSnapshot":
+    def from_mapping(cls, value: object) -> CaptureArmCancellationSnapshot:
         if not isinstance(value, Mapping):
             raise ValueError("capture_arm_cancellation must be an object.")
         if value.get("schema") != _CAPTURE_ARM_SCHEMA:
@@ -1872,7 +1872,7 @@ class CaptureArmAcknowledgement:
         value: Mapping[str, object],
         *,
         participant_id: str,
-    ) -> "CaptureArmAcknowledgement":
+    ) -> CaptureArmAcknowledgement:
         return cls(
             participant_id=participant_id,
             take_id=value["take_id"],
@@ -2093,7 +2093,7 @@ class SharedTrackSessionSnapshot:
         object.__setattr__(self, "needs_attention", attention)
 
     @classmethod
-    def from_mapping(cls, value: object) -> "SharedTrackSessionSnapshot":
+    def from_mapping(cls, value: object) -> SharedTrackSessionSnapshot:
         """Parse a peer payload, treating absence as a legacy idle host."""
 
         if value is None:
@@ -2138,6 +2138,498 @@ class SharedTrackSessionSnapshot:
         }
 
 
+class ReferenceVideoPlaybackState(str, Enum):
+    """Bounded host-owned reference video truth that followers may render.
+
+    Art's reference video is watched locally on every computer and clocked by
+    the host, so unlike Shared Track there is no route to bring up and no
+    routing state.  ``stop`` returns to ``READY`` with the file still shared;
+    ``IDLE`` means the host is sharing nothing at all.
+    """
+
+    IDLE = "idle"
+    READY = "ready"
+    PLAYING = "playing"
+    PAUSED = "paused"
+    FAILED = "failed"
+
+
+_REFERENCE_VIDEO_SCHEMA = 1
+_MAX_REFERENCE_VIDEO_GENERATION = (1 << 63) - 1
+_MAX_REFERENCE_VIDEO_DURATION_S = 24.0 * 60.0 * 60.0
+_MAX_REFERENCE_VIDEO_NAME_CHARS = 255
+_MAX_REFERENCE_VIDEO_NAME_BYTES = 1_024
+_REFERENCE_VIDEO_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _reference_video_generation(value: object, label: str) -> int:
+    if type(value) is not int or not 0 <= value <= _MAX_REFERENCE_VIDEO_GENERATION:
+        raise ValueError(f"{label} is outside the supported range.")
+    return value
+
+
+def _reference_video_bool(value: object, label: str) -> bool:
+    if type(value) is not bool:
+        raise ValueError(f"{label} must be a boolean.")
+    return value
+
+
+def _reference_video_seconds(value: object, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be a finite non-negative number.")
+    parsed = float(value)
+    if (
+        not math.isfinite(parsed)
+        or parsed < 0.0
+        or parsed > _MAX_REFERENCE_VIDEO_DURATION_S
+    ):
+        raise ValueError(f"{label} is outside the supported range.")
+    return parsed
+
+
+def _reference_video_display_name(value: object) -> str:
+    if type(value) is not str:
+        raise ValueError("source_display_name must be text.")
+    if any(not character.isprintable() for character in value):
+        raise ValueError("source_display_name contains unsupported characters.")
+    if any(character in value for character in ("\0", "\r", "\n", "/", "\\")):
+        raise ValueError("source_display_name must not contain a path.")
+    normalized = " ".join(value.split())
+    if (
+        len(normalized) > _MAX_REFERENCE_VIDEO_NAME_CHARS
+        or len(normalized.encode("utf-8")) > _MAX_REFERENCE_VIDEO_NAME_BYTES
+    ):
+        raise ValueError("source_display_name is too long.")
+    return normalized
+
+
+def _reference_video_identity_digest(value: object) -> str:
+    if type(value) is not str:
+        raise ValueError("identity_digest must be text.")
+    if not value:
+        return ""
+    if _REFERENCE_VIDEO_DIGEST_RE.fullmatch(value) is None:
+        raise ValueError("identity_digest is not a supported digest.")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceVideoSessionSnapshot:
+    """Path-free reference video projection carried by the private peer plane.
+
+    Followers may mirror this transport state, and only this.  The object
+    grants no control authority and makes no claim that any other computer is
+    actually showing the same frame.
+
+    ``identity_digest`` is a session-scoped HMAC over the host's private
+    content hash, not the hash itself.  Followers hold the same session token,
+    so they can prove they opened the host's exact file; the digest is
+    meaningless to anyone outside the session and cannot be matched against a
+    known media library.
+    """
+
+    generation: int = 0
+    playback_generation: int = 0
+    state: ReferenceVideoPlaybackState = ReferenceVideoPlaybackState.IDLE
+    shared: bool = False
+    source_display_name: str = ""
+    identity_digest: str = ""
+    position_s: float = 0.0
+    duration_s: float = 0.0
+    needs_attention: bool = False
+
+    def __post_init__(self) -> None:
+        generation = _reference_video_generation(self.generation, "generation")
+        playback_generation = _reference_video_generation(
+            self.playback_generation, "playback_generation"
+        )
+        state = ReferenceVideoPlaybackState(self.state)
+        shared = _reference_video_bool(self.shared, "shared")
+        source_name = _reference_video_display_name(self.source_display_name)
+        identity_digest = _reference_video_identity_digest(self.identity_digest)
+        position = _reference_video_seconds(self.position_s, "position_s")
+        duration = _reference_video_seconds(self.duration_s, "duration_s")
+        attention = _reference_video_bool(self.needs_attention, "needs_attention")
+
+        if not shared:
+            if source_name or identity_digest or position != 0.0 or duration != 0.0:
+                raise ValueError(
+                    "An unshared reference video cannot expose media facts."
+                )
+            if state not in {
+                ReferenceVideoPlaybackState.IDLE,
+                ReferenceVideoPlaybackState.FAILED,
+            }:
+                raise ValueError("That reference video state requires shared media.")
+        else:
+            if state is ReferenceVideoPlaybackState.IDLE:
+                raise ValueError("A shared reference video cannot be idle.")
+            if duration <= 0.0:
+                raise ValueError("A shared reference video requires a duration.")
+            if position > duration:
+                raise ValueError("position_s must not exceed duration_s.")
+            if not identity_digest:
+                # Without proven identity a follower could open any file and
+                # believe it was watching the host's video.
+                raise ValueError(
+                    "A shared reference video requires a proven identity digest."
+                )
+
+        object.__setattr__(self, "generation", generation)
+        object.__setattr__(self, "playback_generation", playback_generation)
+        object.__setattr__(self, "state", state)
+        object.__setattr__(self, "shared", shared)
+        object.__setattr__(self, "source_display_name", source_name)
+        object.__setattr__(self, "identity_digest", identity_digest)
+        object.__setattr__(self, "position_s", position)
+        object.__setattr__(self, "duration_s", duration)
+        object.__setattr__(self, "needs_attention", attention)
+
+    @classmethod
+    def from_mapping(cls, value: object) -> "ReferenceVideoSessionSnapshot":
+        """Parse a peer payload, treating absence as a host sharing nothing."""
+
+        if value is None:
+            return cls()
+        if not isinstance(value, Mapping):
+            raise ValueError("reference_video must be an object.")
+        if value.get("schema") != _REFERENCE_VIDEO_SCHEMA:
+            raise ValueError("reference_video schema is not supported.")
+        required = {
+            "generation",
+            "playback_generation",
+            "state",
+            "shared",
+            "source_display_name",
+            "identity_digest",
+            "position_s",
+            "duration_s",
+            "needs_attention",
+        }
+        if not required.issubset(value):
+            raise ValueError("reference_video is incomplete.")
+        return cls(**{key: value[key] for key in required})
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "schema": _REFERENCE_VIDEO_SCHEMA,
+            "generation": self.generation,
+            "playback_generation": self.playback_generation,
+            "state": self.state.value,
+            "shared": self.shared,
+            "source_display_name": self.source_display_name,
+            "identity_digest": self.identity_digest,
+            "position_s": self.position_s,
+            "duration_s": self.duration_s,
+            "needs_attention": self.needs_attention,
+        }
+
+
+_SHARED_CANVAS_SCHEMA = 1
+_MAX_SHARED_CANVAS_GENERATION = (1 << 63) - 1
+
+
+def _shared_canvas_join_url(value: object) -> str:
+    """Validate the Drawpile invitation exactly as the domain layer would.
+
+    Parsing here rather than trusting a string means a projection from
+    another computer can never reach a process launcher unless it is a real,
+    bounded Drawpile session URL.
+    """
+
+    if type(value) is not str:
+        raise ValueError("join_url must be text.")
+    if not value:
+        return ""
+    from core.drawpile import DrawpileError, parse_canvas_invite
+
+    try:
+        return parse_canvas_invite(value).join_url
+    except DrawpileError as exc:
+        raise ValueError("join_url is not a supported canvas invitation.") from exc
+
+
+def _shared_canvas_label(value: object, label: str) -> str:
+    if type(value) is not str:
+        raise ValueError(f"{label} must be text.")
+    if any(not character.isprintable() for character in value):
+        raise ValueError(f"{label} contains unsupported characters.")
+    normalized = " ".join(value.split())
+    if len(normalized) > 80:
+        raise ValueError(f"{label} is too long.")
+    return normalized
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class SharedCanvasSessionSnapshot:
+    """The Drawpile invitation Art's host offers the room.
+
+    This is the one projection that deliberately carries a joinable address:
+    a guest who received one WebJam invitation must not have to be sent a
+    second link through a second product, and a late joiner must land on the
+    same canvas as everyone else.  The URL can embed a Drawpile session
+    password, so it is kept out of ``__repr__``, and
+    :meth:`SessionControlState.publish_shared_canvas` keeps it out of the
+    durable recording journal.
+    """
+
+    generation: int = 0
+    shared: bool = False
+    join_url: str = ""
+    server_label: str = ""
+    session_label: str = ""
+
+    def __post_init__(self) -> None:
+        generation = self.generation
+        if (
+            type(generation) is not int
+            or not 0 <= generation <= _MAX_SHARED_CANVAS_GENERATION
+        ):
+            raise ValueError("generation is outside the supported range.")
+        if type(self.shared) is not bool:
+            raise ValueError("shared must be a boolean.")
+        join_url = _shared_canvas_join_url(self.join_url)
+        server_label = _shared_canvas_label(self.server_label, "server_label")
+        session_label = _shared_canvas_label(self.session_label, "session_label")
+
+        if not self.shared:
+            if join_url or server_label or session_label:
+                raise ValueError("An unshared canvas cannot expose canvas facts.")
+        elif not join_url:
+            raise ValueError("A shared canvas requires a join address.")
+
+        object.__setattr__(self, "generation", generation)
+        object.__setattr__(self, "join_url", join_url)
+        object.__setattr__(self, "server_label", server_label)
+        object.__setattr__(self, "session_label", session_label)
+
+    def __repr__(self) -> str:
+        return (
+            "SharedCanvasSessionSnapshot("
+            f"generation={self.generation}, shared={self.shared}, "
+            f"server_label={self.server_label!r}, "
+            f"session_label={self.session_label!r}, url=[redacted])"
+        )
+
+    @classmethod
+    def from_mapping(cls, value: object) -> "SharedCanvasSessionSnapshot":
+        """Parse a peer payload, treating absence as a host sharing nothing."""
+
+        if value is None:
+            return cls()
+        if not isinstance(value, Mapping):
+            raise ValueError("shared_canvas must be an object.")
+        if value.get("schema") != _SHARED_CANVAS_SCHEMA:
+            raise ValueError("shared_canvas schema is not supported.")
+        required = {"generation", "shared", "join_url", "server_label", "session_label"}
+        if not required.issubset(value):
+            raise ValueError("shared_canvas is incomplete.")
+        return cls(**{key: value[key] for key in required})
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "schema": _SHARED_CANVAS_SCHEMA,
+            "generation": self.generation,
+            "shared": self.shared,
+            "join_url": self.join_url,
+            "server_label": self.server_label,
+            "session_label": self.session_label,
+        }
+
+
+_ROOM_CLOCK_SCHEMA = 1
+_MAX_ROOM_CLOCK_GENERATION = (1 << 63) - 1
+
+
+def _room_clock_count(value: object, label: str, maximum: int) -> int:
+    """Parse a 1-based musical count, where 0 means "not stated"."""
+
+    if type(value) is not int or not 0 <= value <= maximum:
+        raise ValueError(f"{label} is outside the supported range.")
+    return value
+
+
+def _room_clock_seconds(value: object, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be a finite non-negative number.")
+    parsed = float(value)
+    if not math.isfinite(parsed) or parsed < 0.0 or parsed > _ROOM_CLOCK_MAX_SECONDS:
+        raise ValueError(f"{label} is outside the supported range.")
+    return parsed
+
+
+_ROOM_CLOCK_MAX_SECONDS = 24.0 * 60.0 * 60.0
+_ROOM_CLOCK_MAX_BAR = 100_000
+_ROOM_CLOCK_MAX_BEAT = 64
+_ROOM_CLOCK_MAX_SECTION_CHARS = 48
+_ROOM_CLOCK_MIN_TEMPO = 20.0
+_ROOM_CLOCK_MAX_TEMPO = 400.0
+
+
+def _room_clock_tempo(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("tempo_bpm must be a number.")
+    parsed = float(value)
+    if parsed == 0.0:
+        return 0.0
+    if (
+        not math.isfinite(parsed)
+        or not _ROOM_CLOCK_MIN_TEMPO <= parsed <= _ROOM_CLOCK_MAX_TEMPO
+    ):
+        raise ValueError("tempo_bpm is outside the supported range.")
+    return parsed
+
+
+def _room_clock_section(value: object) -> str:
+    if type(value) is not str:
+        raise ValueError("section_label must be text.")
+    if any(not character.isprintable() for character in value):
+        raise ValueError("section_label contains unsupported characters.")
+    normalized = " ".join(value.split())
+    if len(normalized) > _ROOM_CLOCK_MAX_SECTION_CHARS:
+        raise ValueError("section_label is too long.")
+    return normalized
+
+
+class RoomClockSourceValue(str, Enum):
+    """Who owns the room's pulse, named on the wire so nothing is inferred."""
+
+    NONE = "none"
+    REFERENCE_VIDEO = "reference_video"
+    SONG_FORM = "song_form"
+
+
+@dataclass(frozen=True, slots=True)
+class RoomClockSessionSnapshot:
+    """One pulse the whole room can read, whatever kind of maker you are.
+
+    This is the seam that lets a band, a painter on the shared canvas, and
+    someone following a reference share a moment. A music surface publishes
+    ``SONG_FORM``; Art publishes ``REFERENCE_VIDEO`` when its host-clocked
+    video is running; and ``NONE`` is a first-class answer for a room that has
+    no pulse at all.
+
+    The schema is what stops this from drifting into a fake music engine: a
+    ``REFERENCE_VIDEO`` clock **cannot** carry a bar, beat, section, tempo, or
+    meter. A file offset is not a musical position, so the wire refuses that
+    combination rather than trusting every future caller to remember.
+    """
+
+    generation: int = 0
+    source: RoomClockSourceValue = RoomClockSourceValue.NONE
+    running: bool = False
+    position_s: float = 0.0
+    duration_s: float = 0.0
+    #: 1-based musical counts. Zero means "not stated", which is not bar zero.
+    bar: int = 0
+    beat: int = 0
+    section_label: str = ""
+    tempo_bpm: float = 0.0
+    meter_numerator: int = 0
+    meter_denominator: int = 0
+
+    def __post_init__(self) -> None:
+        generation = self.generation
+        if (
+            type(generation) is not int
+            or not 0 <= generation <= _MAX_ROOM_CLOCK_GENERATION
+        ):
+            raise ValueError("generation is outside the supported range.")
+        source = RoomClockSourceValue(self.source)
+        if type(self.running) is not bool:
+            raise ValueError("running must be a boolean.")
+        position = _room_clock_seconds(self.position_s, "position_s")
+        duration = _room_clock_seconds(self.duration_s, "duration_s")
+        bar = _room_clock_count(self.bar, "bar", _ROOM_CLOCK_MAX_BAR)
+        beat = _room_clock_count(self.beat, "beat", _ROOM_CLOCK_MAX_BEAT)
+        section = _room_clock_section(self.section_label)
+        tempo = _room_clock_tempo(self.tempo_bpm)
+        numerator = _room_clock_count(
+            self.meter_numerator, "meter_numerator", _ROOM_CLOCK_MAX_BEAT
+        )
+        denominator = _room_clock_count(
+            self.meter_denominator, "meter_denominator", _ROOM_CLOCK_MAX_BEAT
+        )
+
+        states_music = bool(
+            bar or beat or section or tempo or numerator or denominator
+        )
+        if source is RoomClockSourceValue.NONE:
+            if self.running or position or duration or states_music:
+                raise ValueError("An absent room clock cannot expose a position.")
+        elif source is RoomClockSourceValue.REFERENCE_VIDEO:
+            if states_music:
+                raise ValueError(
+                    "A reference video clock cannot state a musical position; "
+                    "a file offset is not a bar."
+                )
+            if duration and position > duration:
+                raise ValueError("position_s must not exceed duration_s.")
+        else:
+            if not bar and not section:
+                raise ValueError(
+                    "A song form clock must state a bar or a section."
+                )
+            if beat and not bar:
+                raise ValueError("A beat needs the bar it belongs to.")
+            if bool(numerator) != bool(denominator):
+                raise ValueError("A meter needs both of its numbers.")
+
+        object.__setattr__(self, "generation", generation)
+        object.__setattr__(self, "source", source)
+        object.__setattr__(self, "position_s", position)
+        object.__setattr__(self, "duration_s", duration)
+        object.__setattr__(self, "bar", bar)
+        object.__setattr__(self, "beat", beat)
+        object.__setattr__(self, "section_label", section)
+        object.__setattr__(self, "tempo_bpm", tempo)
+        object.__setattr__(self, "meter_numerator", numerator)
+        object.__setattr__(self, "meter_denominator", denominator)
+
+    @classmethod
+    def from_mapping(cls, value: object) -> "RoomClockSessionSnapshot":
+        """Parse a peer payload, treating absence as a room with no clock."""
+
+        if value is None:
+            return cls()
+        if not isinstance(value, Mapping):
+            raise ValueError("room_clock must be an object.")
+        if value.get("schema") != _ROOM_CLOCK_SCHEMA:
+            raise ValueError("room_clock schema is not supported.")
+        required = {
+            "generation",
+            "source",
+            "running",
+            "position_s",
+            "duration_s",
+            "bar",
+            "beat",
+            "section_label",
+            "tempo_bpm",
+            "meter_numerator",
+            "meter_denominator",
+        }
+        if not required.issubset(value):
+            raise ValueError("room_clock is incomplete.")
+        return cls(**{key: value[key] for key in required})
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "schema": _ROOM_CLOCK_SCHEMA,
+            "generation": self.generation,
+            "source": self.source.value,
+            "running": self.running,
+            "position_s": self.position_s,
+            "duration_s": self.duration_s,
+            "bar": self.bar,
+            "beat": self.beat,
+            "section_label": self.section_label,
+            "tempo_bpm": self.tempo_bpm,
+            "meter_numerator": self.meter_numerator,
+            "meter_denominator": self.meter_denominator,
+        }
+
+
 @dataclass(frozen=True)
 class SessionStateSnapshot:
     session_id: str
@@ -2149,6 +2641,17 @@ class SessionStateSnapshot:
     message: str = ""
     shared_track: SharedTrackSessionSnapshot = field(
         default_factory=SharedTrackSessionSnapshot
+    )
+    reference_video: ReferenceVideoSessionSnapshot = field(
+        default_factory=ReferenceVideoSessionSnapshot
+    )
+    shared_canvas: SharedCanvasSessionSnapshot = field(
+        default_factory=SharedCanvasSessionSnapshot
+    )
+    # Deliberately not gated on any creator profile: a music surface owns this
+    # pulse as naturally as Art's reference video does, so the seam stays open.
+    room_clock: RoomClockSessionSnapshot = field(
+        default_factory=RoomClockSessionSnapshot
     )
     creator_profile_key: str = "music"
     capture_arm: CaptureArmSnapshot | None = None
@@ -2183,6 +2686,28 @@ class SessionStateSnapshot:
         if not isinstance(shared_track, SharedTrackSessionSnapshot):
             raise ValueError("shared_track must be a SharedTrackSessionSnapshot.")
         object.__setattr__(self, "shared_track", shared_track)
+        reference_video = self.reference_video
+        if isinstance(reference_video, Mapping):
+            reference_video = ReferenceVideoSessionSnapshot.from_mapping(
+                reference_video
+            )
+        if not isinstance(reference_video, ReferenceVideoSessionSnapshot):
+            raise ValueError(
+                "reference_video must be a ReferenceVideoSessionSnapshot."
+            )
+        object.__setattr__(self, "reference_video", reference_video)
+        shared_canvas = self.shared_canvas
+        if isinstance(shared_canvas, Mapping):
+            shared_canvas = SharedCanvasSessionSnapshot.from_mapping(shared_canvas)
+        if not isinstance(shared_canvas, SharedCanvasSessionSnapshot):
+            raise ValueError("shared_canvas must be a SharedCanvasSessionSnapshot.")
+        object.__setattr__(self, "shared_canvas", shared_canvas)
+        room_clock = self.room_clock
+        if isinstance(room_clock, Mapping):
+            room_clock = RoomClockSessionSnapshot.from_mapping(room_clock)
+        if not isinstance(room_clock, RoomClockSessionSnapshot):
+            raise ValueError("room_clock must be a RoomClockSessionSnapshot.")
+        object.__setattr__(self, "room_clock", room_clock)
         capture_arm = self.capture_arm
         if isinstance(capture_arm, Mapping):
             capture_arm = CaptureArmSnapshot.from_mapping(capture_arm)
@@ -2254,7 +2779,14 @@ def _session_state_mapping(
         "creator_profile_key": snapshot.creator_profile_key,
     }
     if include_shared_track:
+        # Every live media projection shares this flag: they are memory-only
+        # guest rendering state, never part of the durable recording journal.
+        # The canvas address especially, since it can embed a Drawpile
+        # session password that has no business surviving on disk.
         payload["shared_track"] = snapshot.shared_track.to_mapping()
+        payload["reference_video"] = snapshot.reference_video.to_mapping()
+        payload["shared_canvas"] = snapshot.shared_canvas.to_mapping()
+        payload["room_clock"] = snapshot.room_clock.to_mapping()
     if include_capture_arm and (
         snapshot.capture_arm is not None
         or snapshot.arm_handshake_required
@@ -2842,6 +3374,138 @@ class SessionControlState:
             self._snapshot = replace(self._snapshot, shared_track=candidate)
             return candidate
 
+    def publish_reference_video(
+        self,
+        *,
+        state: ReferenceVideoPlaybackState | str,
+        shared: bool,
+        source_display_name: str = "",
+        identity_digest: str = "",
+        position_s: float = 0.0,
+        duration_s: float = 0.0,
+        needs_attention: bool = False,
+        playback_generation: int | None = None,
+    ) -> ReferenceVideoSessionSnapshot:
+        """Publish one idempotent, memory-only follower projection.
+
+        Position is deliberately not fsynced into the durable recording-state
+        journal.  A restarted host publishes nothing shared until its
+        reference video owner republishes, so a follower never resumes against
+        a position no one is holding.
+        """
+
+        with self._lock:
+            current = self._snapshot.reference_video
+            parsed_state = ReferenceVideoPlaybackState(state)
+            if playback_generation is None:
+                playback_generation = current.playback_generation
+                if (
+                    parsed_state is ReferenceVideoPlaybackState.PLAYING
+                    and current.state is not ReferenceVideoPlaybackState.PLAYING
+                ):
+                    playback_generation += 1
+            parsed_playback_generation = _reference_video_generation(
+                playback_generation, "playback_generation"
+            )
+            if parsed_playback_generation < current.playback_generation:
+                raise TransferConflictError(
+                    "A newer reference video playback is already published."
+                )
+            candidate = ReferenceVideoSessionSnapshot(
+                generation=current.generation,
+                playback_generation=parsed_playback_generation,
+                state=parsed_state,
+                shared=shared,
+                source_display_name=source_display_name,
+                identity_digest=identity_digest,
+                position_s=position_s,
+                duration_s=duration_s,
+                needs_attention=needs_attention,
+            )
+            if candidate == current:
+                return current
+            candidate = replace(candidate, generation=current.generation + 1)
+            self._snapshot = replace(self._snapshot, reference_video=candidate)
+            return candidate
+
+    def publish_shared_canvas(
+        self,
+        *,
+        shared: bool,
+        join_url: str = "",
+        server_label: str = "",
+        session_label: str = "",
+    ) -> SharedCanvasSessionSnapshot:
+        """Publish one idempotent, memory-only canvas invitation.
+
+        Like the reference video projection this is never fsynced into the
+        durable recording-state journal, so a restarted host offers no canvas
+        until its owner shares one again.  That also keeps a Drawpile session
+        password out of every file WebJam writes.
+        """
+
+        with self._lock:
+            current = self._snapshot.shared_canvas
+            candidate = SharedCanvasSessionSnapshot(
+                generation=current.generation,
+                shared=shared,
+                join_url=join_url,
+                server_label=server_label,
+                session_label=session_label,
+            )
+            if candidate == current:
+                return current
+            candidate = replace(candidate, generation=current.generation + 1)
+            self._snapshot = replace(self._snapshot, shared_canvas=candidate)
+            return candidate
+
+    def publish_room_clock(
+        self,
+        *,
+        source: RoomClockSourceValue | str,
+        running: bool = False,
+        position_s: float = 0.0,
+        duration_s: float = 0.0,
+        bar: int = 0,
+        beat: int = 0,
+        section_label: str = "",
+        tempo_bpm: float = 0.0,
+        meter_numerator: int = 0,
+        meter_denominator: int = 0,
+    ) -> RoomClockSessionSnapshot:
+        """Publish one idempotent, memory-only pulse for the whole room.
+
+        This is the seam a music surface publishes a song form into, and the
+        one Art publishes its reference video position into. Whoever calls it
+        owns the pulse; nothing here derives a musical position from a file
+        offset, and the snapshot's own validation refuses that combination.
+
+        Like the other live projections it is never fsynced into the durable
+        recording journal, so a restarted host has no clock until its owner
+        republishes and no follower resumes against a bar nobody is holding.
+        """
+
+        with self._lock:
+            current = self._snapshot.room_clock
+            candidate = RoomClockSessionSnapshot(
+                generation=current.generation,
+                source=source,
+                running=running,
+                position_s=position_s,
+                duration_s=duration_s,
+                bar=bar,
+                beat=beat,
+                section_label=section_label,
+                tempo_bpm=tempo_bpm,
+                meter_numerator=meter_numerator,
+                meter_denominator=meter_denominator,
+            )
+            if candidate == current:
+                return current
+            candidate = replace(candidate, generation=current.generation + 1)
+            self._snapshot = replace(self._snapshot, room_clock=candidate)
+            return candidate
+
     def finish(
         self,
         take_id: str,
@@ -2893,7 +3557,7 @@ def _gap_integer(value: object, field_name: str, *, positive: bool = False) -> i
     return result
 
 
-def _gap_timeline_frames(gaps: tuple["TransferGap", ...]) -> int:
+def _gap_timeline_frames(gaps: tuple[TransferGap, ...]) -> int:
     """Return the union of declared source-frame intervals.
 
     A multi-channel descriptor can report the same missing time range for
@@ -2972,7 +3636,7 @@ class TransferGap:
         }
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "TransferGap":
+    def from_mapping(cls, value: Mapping[str, Any]) -> TransferGap:
         if not isinstance(value, Mapping):
             raise ValueError("gap must be an object.")
         raw_channels = value.get("channels", ())
@@ -3110,7 +3774,7 @@ class TransferDescriptor:
         )
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "TransferDescriptor":
+    def from_mapping(cls, value: Mapping[str, Any]) -> TransferDescriptor:
         raw_gaps = value.get("gaps", ())
         if not isinstance(raw_gaps, (list, tuple)):
             raise ValueError("gaps must be a sequence of structured gap records.")
@@ -3616,7 +4280,7 @@ class SessionPeerServer:
                     )
                 return participant_id
 
-            def do_POST(self) -> None:  # noqa: N802
+            def do_POST(self) -> None:
                 route = urlsplit(self.path).path
                 if route not in {
                     "/v1/enroll",
@@ -3788,7 +4452,7 @@ class SessionPeerServer:
                     return
                 self._json(HTTPStatus.OK, asdict(enrolled))
 
-            def do_GET(self) -> None:  # noqa: N802
+            def do_GET(self) -> None:
                 parsed = urlsplit(self.path)
                 try:
                     participant_id = self._participant()
@@ -3867,7 +4531,7 @@ class SessionPeerServer:
                     return
                 self._error(HTTPStatus.NOT_FOUND, "not_found", "Unknown WebJam route.")
 
-            def do_PUT(self) -> None:  # noqa: N802
+            def do_PUT(self) -> None:
                 if urlsplit(self.path).path != "/v1/segment":
                     self._error(
                         HTTPStatus.NOT_FOUND, "not_found", "Unknown WebJam route."
@@ -4064,6 +4728,15 @@ class SessionPeerClient:
             message=str(payload.get("message", "")),
             shared_track=SharedTrackSessionSnapshot.from_mapping(
                 payload.get("shared_track")
+            ),
+            reference_video=ReferenceVideoSessionSnapshot.from_mapping(
+                payload.get("reference_video")
+            ),
+            shared_canvas=SharedCanvasSessionSnapshot.from_mapping(
+                payload.get("shared_canvas")
+            ),
+            room_clock=RoomClockSessionSnapshot.from_mapping(
+                payload.get("room_clock")
             ),
             creator_profile_key=payload.get("creator_profile_key", "music"),
             capture_arm=(

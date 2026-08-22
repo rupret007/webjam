@@ -11,9 +11,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from pathlib import Path
 import stat
 import tempfile
+from pathlib import Path
 
 from core.component_catalog import CatalogSequenceStore, ComponentCatalogVerifier
 from core.component_download import DownloadCancellation
@@ -24,7 +24,6 @@ from services.jamulus_component_update import (
     SignedCatalogFetcher,
 )
 from webjam_qt import __version__
-
 
 SUCCESS_MARKER = "WebJam Jamulus catalog frozen-runtime smoke passed"
 EXPECTED_COMPONENT_COUNT = 8

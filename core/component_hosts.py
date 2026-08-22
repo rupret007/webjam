@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import ipaddress
+from dataclasses import dataclass
 from urllib.parse import unquote, urljoin, urlsplit
 
 
@@ -134,7 +134,7 @@ JAMULUS_RELEASE_HOST_POLICY = HttpsHostPolicy(
 
 
 __all__ = [
+    "JAMULUS_RELEASE_HOST_POLICY",
     "ComponentUrlError",
     "HttpsHostPolicy",
-    "JAMULUS_RELEASE_HOST_POLICY",
 ]

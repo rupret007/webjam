@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import stat
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import Enum
-import os
 from pathlib import Path
-import stat
-from typing import Callable, Iterable
 
 from core.component_store import (
     ComponentStoreError,
@@ -313,9 +313,7 @@ def _is_regular_executable(path: Path) -> bool:
         return False
     if stat.S_ISLNK(details.st_mode) or not stat.S_ISREG(details.st_mode):
         return False
-    if os.name == "posix" and not details.st_mode & 0o111:
-        return False
-    return True
+    return not (os.name == "posix" and not details.st_mode & 73)
 
 
 __all__ = [

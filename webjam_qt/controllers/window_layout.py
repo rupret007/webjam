@@ -22,7 +22,6 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import QRect, QSize
 
-
 # WebJam owns the mixer, transport, and take list; the meeting only needs to
 # show faces, so it gets the narrower share.
 DEFAULT_WEBJAM_FRACTION = 0.62
@@ -73,7 +72,7 @@ def split_screen(
         return SessionLayout(QRect(left, top, width, height), QRect())
 
     fraction = min(max(float(webjam_fraction), 0.0), 1.0)
-    webjam_width = int(round(width * fraction))
+    webjam_width = round(width * fraction)
 
     # Clamp so neither pane can be squeezed below usable by the fraction.
     webjam_width = max(webjam_width, minimum_webjam_width)

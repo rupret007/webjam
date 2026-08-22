@@ -102,10 +102,15 @@ transfer, Studio, export, or cleanup behavior:
 
 ```bash
 .venv/bin/python -m pytest -q tests/test_dual_musician_rehearsal_lab.py
+QT_QPA_PLATFORM=offscreen PYTEST_ADDOPTS='-p no:cacheprovider' \
+  .venv/bin/python -m pytest -q tests/test_multitrack_proof_lab.py
+.venv/bin/python tools/run_multitrack_proof_lab.py \
+  --report /tmp/webjam-multitrack-proof-lab.json
 ```
 
 It uses isolated pytest artifacts and synthetic capture only; the separate
-Linux/JACK real-Jamulus companion and its evidence boundary are documented in
+Linux/JACK real-Jamulus companion, exact seven-source/20-run matrix, cleanup
+limits, and automated-versus-physical evidence boundary are documented in
 [Dual-musician rehearsal lab](DUAL_MUSICIAN_REHEARSAL_LAB.md).
 
 ## Integration rules
@@ -192,7 +197,7 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree's package identity is `0.25.0`. Its exact annotated tag built
+The source tree's package identity is `0.26.0`. Its exact annotated tag built
 all four targets and produced the reviewed eight-asset release; the separately
 pinned publisher then passed the protected promotion and post-publication
 redownload checks. Do not change its tag, release, or assets, and never create a

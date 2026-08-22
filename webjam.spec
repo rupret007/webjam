@@ -307,6 +307,44 @@ a = Analysis(
         "services.reference_track_backend",
         "webjam_qt.windows.pocket_stage_pairing",
         "webjam_qt.windows.reference_track",
+        # Art's reference video is reached only through
+        # function-local imports from the application controller, and its Qt
+        # player pulls QtMultimedia. Keep the whole path explicit so a frozen
+        # candidate cannot omit the profile's one real capability.
+        "core.reference_video",
+        "webjam_qt.controllers.reference_video_coordinator",
+        "webjam_qt.widgets.reference_video_player",
+        "webjam_qt.windows.reference_video",
+        # Art's shared canvas is reached the same way: function-local imports
+        # from the application controller, so a frozen candidate would
+        # silently lose the Drawpile handoff without these.
+        "core.drawpile",
+        "core.external_program",
+        "core.shared_canvas",
+        "services.drawpile_service",
+        "webjam_qt.controllers.shared_canvas_coordinator",
+        "webjam_qt.windows.shared_canvas",
+        # Art's AI image action reaches Krita the same way, so a frozen
+        # candidate would silently lose Make and Edit without these.
+        "core.ai_image",
+        "core.krita_ai",
+        "services.krita_ai_service",
+        "webjam_qt.windows.ai_image",
+        # The room clock is reached through function-local imports too, and it
+        # is the seam a music surface publishes into.
+        "core.room_clock",
+        "webjam_qt.controllers.room_clock_coordinator",
+        "webjam_qt.widgets.room_clock_label",
+        # The companion projection is reached through function-local imports
+        # from the controller, so a frozen build would answer a paired panel
+        # with an import error rather than a room.
+        "core.art_companion",
+        "webjam_qt.controllers.art_companion_projection",
+        # The room's own Art line, rendered from the same projection.
+        "core.art_room_presence",
+        "webjam_qt.widgets.art_room_chip",
+        "PySide6.QtMultimedia",
+        "PySide6.QtMultimediaWidgets",
         "soundfile",
         # The frozen Jamulus updater constructs HTTPS trust from Certifi's
         # packaged CA bytes; do not let module-graph changes omit its hook/data.

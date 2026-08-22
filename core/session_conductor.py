@@ -28,7 +28,10 @@ from core.creative_modes import (
     CreatorProfile,
     get_creator_profile_by_key_or_default,
 )
-from core.meeting_link import RECORD_SESSION_MEETING_CAPTURE_NOTICE
+from core.meeting_link import (
+    MEETING_DIRECT_CAPTURE_BOUNDARY,
+    RECORD_SESSION_MEETING_CAPTURE_NOTICE,
+)
 
 
 class SessionRole(str, Enum):
@@ -150,6 +153,11 @@ class SessionPrimaryAction(str, Enum):
             return {
                 SessionPrimaryAction.RUN_BAND_CHECK: "Run Session Check",
                 SessionPrimaryAction.ENTER_JAM: "Enter Review",
+            }.get(self, self.label)
+        if resolved.key == "art":
+            return {
+                SessionPrimaryAction.RUN_BAND_CHECK: "Run Session Check",
+                SessionPrimaryAction.ENTER_JAM: "Enter Studio",
             }.get(self, self.label)
         return self.label
 
@@ -625,9 +633,11 @@ def _presentation(
     else:
         check_name = "Session Check"
         session_short = vocabulary.session_noun
-        counterpart = "participant"
-        waiting_counterpart = "another participant"
-        group = "the participants"
+        # Profiles past Music and Podcast address people by their own noun so
+        # a room of artists is never told to wait for another "musician".
+        counterpart = vocabulary.participant_singular
+        waiting_counterpart = f"another {counterpart}"
+        group = f"the {vocabulary.participant_plural}"
         live_path = "audio path"
         reachable_path = live_path
         authenticated_path = "WebJam audio path"
@@ -641,7 +651,24 @@ def _presentation(
         *,
         retry_safe: bool = False,
     ) -> SessionConductorPresentation:
-        if profile.is_preview:
+        if profile.key == "art":
+            title = f"{title} · Preview"
+            # Art does synchronize one host-clocked video and does point the
+            # room at one shared canvas, so it must not borrow Review's
+            # "visual media is not synchronized" line. It states the narrower
+            # truth instead: host transport only, a canvas WebJam brokers but
+            # does not draw, and no take to review afterwards.
+            policy_limit = (
+                f"{MEETING_DIRECT_CAPTURE_BOUNDARY} Notes stay local and are "
+                "not shared. An optional reference video follows the host's "
+                "play, pause, stop, and position on each artist's own copy of "
+                "the same file; that is not frame-accurate or timecoded "
+                "review. An optional shared canvas is painted in Drawpile, "
+                "not in WebJam, and WebJam cannot see it. This session is not "
+                "recorded."
+            )
+            evidence_limit = f"{evidence_limit} {policy_limit}".strip()
+        elif profile.is_preview:
             title = f"{title} · Preview"
             policy_limit = (
                 f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE} Notes stay local and "
@@ -815,6 +842,16 @@ def _presentation(
             )
             evidence = (
                 "Only speakers can confirm two-way audibility; meters do not prove it."
+            )
+        elif profile.key == "art":
+            title = "Artists connected"
+            message = (
+                "The artists are connected through WebJam. Confirm everyone can "
+                "hear the WebJam audio, then work as usual. Use Session Check "
+                "(F2) if you need help."
+            )
+            evidence = (
+                "Only artists can confirm two-way audibility; meters do not prove it."
             )
         else:
             title = "Participants connected"
@@ -1542,7 +1579,7 @@ class SessionConductor:
         )
 
     @classmethod
-    def restore(cls, checkpoint: SessionConductorCheckpoint) -> "SessionConductor":
+    def restore(cls, checkpoint: SessionConductorCheckpoint) -> SessionConductor:
         """Restore durable facts without trusting stale live-process state."""
 
         conductor = cls(checkpoint.facts)

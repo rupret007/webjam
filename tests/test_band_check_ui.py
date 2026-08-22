@@ -82,17 +82,46 @@ def _session(mode: BandCheckMode = BandCheckMode.PRE_SESSION) -> BandCheckSessio
     )
 
 
+class _ImmediateThread:
+    def __init__(self, *, target, **_kwargs):
+        self.target = target
+
+    def start(self):
+        self.target()
+
+
+@pytest.fixture(autouse=True)
+def _run_dialog_workers_inline():
+    """Give this file's dialogs no background threads at all.
+
+    Band Check does its configuration scan, scratch finalization, cleanup, and
+    verification save on daemon threads that emit back into the dialog. Nothing
+    joins them, so a thread started by one test could still be running when a
+    later test built another dialog and spun the event loop -- and under a
+    full-suite load that raced the main thread and segfaulted the interpreter.
+
+    Every test here is about what the dialog decides and shows, not about the
+    fact that it threads, so running the workers inline makes the whole file
+    deterministic instead of narrowing one window at a time.
+    """
+
+    with mock.patch(
+        "webjam_qt.windows.ready_check.threading.Thread", _ImmediateThread
+    ):
+        yield
+
+
 def _dialog(session: BandCheckSession) -> BandCheckDialog:
+    """Build a dialog whose configuration scan has already reported."""
+
     with mock.patch(
         "webjam_qt.windows.ready_check.build_band_check_session",
         return_value=session,
     ):
         dialog = BandCheckDialog(lambda: _settings(), mode=session.mode)
         dialog.show()
-        for _ in range(30):
-            APP.processEvents()
-            if dialog._session is not None:
-                break
+        APP.processEvents()
+        assert dialog._session is not None, "the Band Check scan never reported"
     return dialog
 
 
@@ -693,14 +722,6 @@ def test_support_action_is_explicit_and_emits() -> None:
         assert received == [True]
     finally:
         dialog.close()
-
-
-class _ImmediateThread:
-    def __init__(self, *, target, **_kwargs):
-        self.target = target
-
-    def start(self):
-        self.target()
 
 
 def test_startup_reuses_only_a_matching_usable_verification() -> None:

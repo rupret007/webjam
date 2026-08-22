@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 import logging
-from typing import Optional
+from copy import deepcopy
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -32,7 +31,6 @@ from core.meeting_link import (
 )
 from core.settings import AppSettings, save_settings
 from webjam_qt.theme.tokens import Space
-
 
 LOGGER = logging.getLogger("webjam.qt.recording_setup")
 
@@ -63,7 +61,7 @@ class LocalOriginalsChoiceDialog(QDialog):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         *,
         creator_profile: CreatorProfile | str | None = None,
     ) -> None:
@@ -174,7 +172,7 @@ class RecordingSetupDialog(QDialog):
     def __init__(
         self,
         settings: AppSettings,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         *,
         local_originals_available: bool = True,
         takes_folder_editable: bool = True,

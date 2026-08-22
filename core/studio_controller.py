@@ -11,8 +11,8 @@ generation supplied to that hook.
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from core.studio_history import (
     DEFAULT_MAX_BYTES,
@@ -27,7 +27,6 @@ from core.studio_store import (
     load_studio_document,
     save_studio_document,
 )
-
 
 StudioEdit = Callable[[StudioDocument], StudioDocument]
 AutosaveRequest = Callable[[int], None]

@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
 import hashlib
 import json
 import os
-from pathlib import Path
 import shutil
 import stat
 import sys
-from typing import Callable, Mapping
 import uuid
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
 
 from core.component_lock import InterProcessComponentLock
 from core.file_io import atomic_write_text
@@ -24,7 +24,6 @@ from core.jamulus_compatibility import (
     JamulusCompatibilityRegistry,
     JamulusRole,
 )
-
 
 STORE_SCHEMA = 1
 DESCRIPTOR_SCHEMA = 1
@@ -142,7 +141,7 @@ class _Pointer:
     runtime_digest: str
 
     @classmethod
-    def for_entry(cls, entry: JamulusCompatibility) -> "_Pointer":
+    def for_entry(cls, entry: JamulusCompatibility) -> _Pointer:
         return cls(
             component_id=entry.component_id,
             role=entry.role.value,
@@ -163,7 +162,7 @@ class _Pointer:
         }
 
     @classmethod
-    def from_dict(cls, value: object) -> "_Pointer":
+    def from_dict(cls, value: object) -> _Pointer:
         if not isinstance(value, dict) or frozenset(value) != frozenset(
             {
                 "component_id",
@@ -194,7 +193,7 @@ class _StoreState:
     ready: dict[str, _Pointer]
 
     @classmethod
-    def empty(cls) -> "_StoreState":
+    def empty(cls) -> _StoreState:
         return cls(current={}, previous={}, ready={})
 
     def to_dict(self) -> dict[str, object]:

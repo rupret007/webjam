@@ -9,6 +9,323 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the immutable v0.26.0 release boundary belongs here. Every
 > published tag, release, and asset remains immutable historical evidence.
 
+### Art creator profile (Preview)
+
+- Added **Art**, a Preview creator profile for artists working in any medium —
+  painting, drawing, sculpture, anything at a table. It reuses the existing
+  session conductor, invite, roster, and meeting-handoff rules unchanged, and
+  speaks to *artists* rather than musicians throughout: launch, conductor,
+  session pulse, and menu copy. Registry validation refuses to load an Art
+  profile whose vocabulary addresses a band.
+- Launch renders **start cards from the registry** rather than hardcoding them.
+  Art has exactly three, in a fixed order, and the registry refuses a fourth:
+  **Talk & make** opens a room and nothing else, **Paint together** adds a
+  shared Drawpile canvas, and **Paint along** adds the host-clocked reference
+  video. A start carries at most one add-on, so combining them is an in-room
+  decision instead of a grid of cards, and any profile offering starts must
+  keep the talk-only door open so an add-on can never look required. Joining
+  re-picks nothing: one pasted invitation carries whatever the host started.
+- The room now carries **one honest line about its canvas or its video**, in
+  the session strip beside the other room controls. A host who chose "Paint
+  together" used to press Host and land in a room that said nothing about a
+  canvas; the only mention was a nine-second message reading "open More →
+  Shared Canvas", which is a user interface explaining how to navigate itself.
+  - It answers one question — what does this room need from me right now — so
+    a missing painting program or a video this computer cannot follow comes
+    before a canvas that is simply fine, and there is never more than one line.
+  - It is the way in while a host has not set their chosen layer up ("Set up
+    shared canvas"), the room's status once they have ("Shared canvas"), a
+    recovery when something is absent ("Install Drawpile"), and the only route
+    back from a hidden video.
+  - **A talk-only room shows nothing at all**, and neither does any other
+    profile — not a greyed-out slot, but absent. Someone who chose to just talk
+    and work has a finished room, and the chrome agrees.
+  - The **image action is deliberately not in it.** It is personal to whoever
+    runs it rather than a thing the room has, and including it would make the
+    line permanent in every Art room.
+  - Neither tone is filled: the strip already has one loud control, so a
+    request carries an accent edge and a description carries no accent at all.
+    Pinned by rendering the chip at rest and counting accent pixels.
+  - Rendered from the same projection a paired companion panel reads, so the
+    room and a meeting-window panel cannot disagree about what is happening.
+    Reading that state is not depending on a companion, and the line is drawn
+    where it belongs: the room may share the state vocabulary, and may never
+    touch the command contract or ask whether anything is paired.
+  - Pressing it opens nothing by itself. The chip asks, the controller decides,
+    and the existing rule against taking focus from the meeting window holds.
+- Added an **optional shared canvas, painted by Drawpile**. Real-time
+  collaborative painting is a solved open-source problem, so WebJam does for
+  Drawpile exactly what it does for Jamulus: it finds the real program,
+  launches it, and carries the one piece of joining information a guest would
+  otherwise be sent separately. WebJam draws no strokes, runs no Drawpile
+  server, holds no Drawpile account, and cannot see the canvas.
+  - Hosting opens Drawpile's own Host page rather than guessing at its dialog,
+    and the copy points at a **Personal** (password-protected) session rather
+    than a public listed one.
+  - Both invitation forms Drawpile hands a person are accepted: the
+    `drawpile://` (or `ws`/`wss`) session URL and the `https://…/invites/…`
+    link its Invite dialog copies. The web form is normalized into the session
+    form exactly as Drawpile's own Join page normalizes it, password fragment
+    included, because `--join` skips that rewrite.
+  - Discovery checks a fixed list of absolute install locations with **no PATH
+    search and no glob**. A wildcard would let any executable named `drawpile`
+    inherit an affordance the artist thinks they granted to Drawpile.
+    `WEBJAM_DRAWPILE_CANDIDATES` overrides the list for an unusual install.
+  - Every failure is closed: no Drawpile means an install path and an honest
+    status, never a blank surface implying a canvas is open; a projection this
+    computer cannot parse stops before a launcher rather than becoming a URL
+    from another machine; and a guest has no share and no withdraw at all.
+  - The canvas address is **memory-only**, like the reference video's position,
+    because a Drawpile session password has no business surviving in the
+    durable recording journal. A restarted host offers no canvas until its
+    owner shares one again.
+- **Art runs beside the meeting window, and now provably so.** Webex is the
+  primary meeting platform with other providers still supported, and Art keeps
+  the same `meeting_handoff` as every other profile rather than growing faces
+  of its own.
+  - A reference video is now **silent from its first frame**. It is never
+    routed anywhere, so every computer holds its own copy, and an unmuted one
+    laid a second soundtrack over the conversation on every machine at once.
+    The player already had the mute and the stated intent; nothing had ever
+    called it. The live audio path and the meeting app own sound; the video is
+    the picture.
+  - Only the existing Webex Controls and Show Webex App may focus or launch the
+    meeting app. No Art snapshot handler, tick, or notice raises a window, and
+    that is checked structurally rather than by review.
+  - Nothing in Art reads or writes the saved meeting URL, imports the
+    meeting-app service, selects an audio device, or captures screen, browser,
+    or system output. Nor does it embed a meeting, add OAuth, or send a blind
+    mute shortcut.
+  - Every Art panel is non-modal and narrow enough to leave a conversation
+    beside it, and a talk-only room leaves nothing on screen at all.
+  - Art's copy never claims WebJam joined, muted, or can hear anything.
+  - Non-Webex links keep the identical handoff. Webex is primary in copy and
+    control labels, not the only accepted host.
+- Added a **room clock**: one named pulse the whole room can read, whatever
+  kind of maker you are. This is the piece that makes a shared canvas and a
+  live song one product rather than two windows -- a painter working on the
+  cover can see what bar the band is on without leaving the canvas.
+  - A clock has exactly one owner and its source is always stated: `song_form`
+    when something in the room owns a song, `reference_video` when Art's
+    host-clocked video is running, or `none` when the room honestly has no
+    pulse. `none` is a first-class answer, not a degraded one; a hopeful
+    `0:00` would be a small lie told continuously.
+  - **A song outranks a video.** When something owns a song, that is the pulse
+    a painter should be riding.
+  - **A file offset is never a bar, and the wire enforces it.** A
+    `reference_video` clock cannot carry a bar, beat, section, tempo, or meter;
+    the schema refuses the combination outright, so no future caller can turn
+    Art into a metronome by passing one extra keyword.
+  - **Only elapsed time is extrapolated**, and only by the age of the
+    projection as measured locally -- the same bounded technique the reference
+    video follower uses, needing no clock shared between computers. A musical
+    position is rendered exactly as published and never advanced here. A lost
+    owner stops the clock and says so rather than drifting.
+  - **Art owns no song engine, and the seam is published.** The song-form
+    owner is a callable that Art supplies nothing for, so every Art surface
+    works exactly as well with no musical pulse. A music surface becomes the
+    owner through `publish_room_clock_state` and no painting surface changes.
+    The projection is deliberately not gated on a creator profile for that
+    reason.
+  - The readout is one line in the shared canvas panel with nothing to press:
+    the room has one owner of its pulse, and someone reading it is not it.
+    Memory-only like the other live projections, so a restarted host has no
+    clock until its owner republishes.
+- Added an **in-session AI image action**: Make a new image from text, or Edit
+  a photo the artist already owns. One action, two verbs, and deliberately
+  **not** a fourth start card, because nobody decides what they are making by
+  choosing an image generator. The registry refuses a start that expresses AI.
+  - WebJam generates nothing. The real stack is **Krita AI Diffusion** driving
+    a **local ComfyUI**, which already covers generation, inpaint, outpaint,
+    object removal, and photo editing. WebJam finds Krita, checks the plugin is
+    installed in Krita's own `pykrita/ai_diffusion` folder, and opens Krita on
+    a fresh canvas or on the artist's file.
+  - There is **no prompt box, no model list, no LoRA browser, no sampler, and
+    no step count**. Krita owns all of it, and WebJam does not even take the
+    prompt.
+  - **Loopback only**, checked in exactly one place. A remote or cloud backend
+    address is refused before a request is built, including one arriving from
+    an edited config file or `WEBJAM_COMFYUI_URL`. The probe is a `GET` to
+    ComfyUI's read-only status endpoint with proxies and redirects disabled, so
+    no path through this feature can upload an artist's photo anywhere.
+  - A backend WebJam cannot see is a **normal state**: Krita AI Diffusion
+    installs and manages its own server, and also connects to one already
+    running. Both are ready.
+  - **Nothing is published.** The module has no publisher, imports no transfer
+    layer, and the session wire schema gains no AI member. A generated image
+    reaches the room only if its owner drops it on the shared canvas, or if the
+    host later shares a file they own under the unchanged reference-video
+    contract. The shared canvas is never read by any model.
+  - **Nobody drives anyone else's generator.** There is no host and no guest in
+    this path, only this computer; guests Make and Edit for themselves.
+  - **Fail closed.** A missing Krita or a missing plugin says which one and
+    offers that download rather than opening an editor that cannot generate.
+    WebJam ships no models, no image catalog, and needs no cloud key.
+- Added an **optional host-clocked reference video**. A room with none of the
+  three add-ons is the first-class path; nothing requires anyone to share anything.
+  When the host does share, everyone watches their own local copy of the same
+  file under the host's play, pause, stop, and position control.
+- The reference video is **not routed through Jamulus**. Unlike Shared Track,
+  which sends decoded audio to guests, each computer plays its own file, so
+  same-file identity must be provable across machines. The host hashes its
+  file's descriptor-bound bytes and publishes a **session-scoped HMAC** of that
+  hash rather than the hash itself: peers holding the session token can prove
+  they opened the host's exact file, while the published digest is meaningless
+  outside the room and cannot be matched against a known media library. A
+  digest captured in one room never matches in another.
+- Every reference video failure path is closed. A computer that has not opened
+  a copy, opened a different file, or whose copy later moved, changed, or
+  became unreadable does not play, and says which of those happened. A guest
+  arriving mid-play lands on the host's position advanced by the locally
+  measured age of that projection, so no clock synchronization between machines
+  is needed or claimed. If the host's position becomes too old to trust,
+  followers hold rather than drifting while claiming to be in sync.
+- Guests **drive neither add-on**. The reference-video follower type and its
+  panel expose no play, pause, stop, or seek control, and the canvas follower
+  exposes no share or withdraw. What a guest still owns is local: hiding the
+  video, and opening the canvas in their own Drawpile.
+- Art **does not record a session**. Its reference video is not bound into the
+  recording plan's source identity, so rather than fake a take whose sources
+  cannot be proven, the profile disables session recording and therefore take
+  review, editing, and export. Its conductor offers no Record action, and there
+  is no second session truth.
+- Both projections travel beside Shared Track on the private peer plane with
+  the same rules: bounded, memory-only, and monotonic. A late joiner's first
+  poll already carries whatever the host shared, so nobody has to wait for the
+  host to touch something.
+- Sync is host transport plus a position corrected on a tolerance bounded by
+  the peer poll interval — the same honesty bar as Shared Track. It is **not**
+  frame-accurate review and carries **no media timecode**; the registry refuses
+  an Art profile that claims otherwise. There is no camera feed, no canvas
+  surface inside WebJam, no image generator or model of WebJam's own, no song
+  engine, metronome, tempo detection, or chord inference, and no shipped,
+  downloaded, or ingested video or image catalog.
+- Art ships **no Webex Embedded App or in-meeting surface** of its own. Webex
+  stays the second window described in ADR 0004: Show Webex App, Join / Open
+  Meeting, and Webex Controls. WebJam's mute and Webex's mute remain separate
+  controls, and leaving a WebJam room does not leave a meeting.
+- Art does publish a **companion-safe status projection and command contract**
+  (ADR 0013) for a companion panel built on a separate track. It is a seam,
+  not a surface: no iframe, hosted page, or pairing transport ships here.
+  - The projection is an allowlist of finite states — canvas
+    (`none`/`ready`/`opening`/`missing_app`/`unreadable`), reference video
+    (`none`/`ready`/`playing`/`paused`/`hidden` plus the blocked states), the
+    image action (`unavailable`/`idle`/`handed_off`/`failed`), and one
+    host-only `transport_allowed` flag. Nothing private has a **field** to
+    travel in: no path, file name, canvas address, identity digest, session
+    token, participant name, playback position, or image. There is no prompt
+    field rather than a length-capped one, because WebJam never holds a
+    prompt — the generator owns it.
+  - It says `opening`, not `open`, and `handed_off`, not `running`. WebJam
+    launches Drawpile and Krita; it cannot see inside them, so a companion is
+    given no vocabulary for a progress spinner it could not justify.
+  - Commands a paired companion may **ask** for: `open_canvas`, `hide_video`,
+    host transport `play`/`pause`/`stop`/`seek`, and `ai_make`/`ai_edit`. Each
+    declares a scope and a bounded argument list, and is bound to a generation
+    and revision so an intent formed in one room cannot be replayed into the
+    next. Receipts carry a finite reason and no raw error text.
+  - **Host-only transport stays host-only.** A guest's companion is refused
+    with `not_host`, decided from this desktop's own role rather than from
+    anything the panel claims about itself.
+  - **Anything that would start another program waits for a local yes.**
+    `open_canvas`, `ai_make`, and `ai_edit` return
+    `needs_local_confirmation`; a panel inside a meeting may ask, and the
+    person at the desk decides. `ai_edit` carries no path, so the desktop
+    opens its own picker. Hiding the video and moving the transport change
+    state the desktop already owns and need no prompt.
+- **Art works with nothing paired, and cannot learn to need a companion.** The
+  dependency runs one way: no Art surface imports the contract, and a test
+  walks their imports to keep it that way. A pairing changes exactly one
+  desktop behaviour — with a panel already showing this room, opening an Art
+  panel no longer takes focus, because pulling the desktop in front of the
+  faces someone is talking to would be the focus-stealing ADR 0004 rules out.
+  A free or personal Webex account still cannot load a custom embedded app,
+  which is why the fallback is the product rather than a gap in it.
+- Fixed the **Join / Open Meeting** tooltip, which told every platform to "use
+  Show Webex App to bring Webex forward". ADR 0004 keeps native activation
+  disabled on Windows and Linux because their detection does not establish
+  publisher proof, and the button was correctly disabled there — but the advice
+  was not, so it pointed at a control that could not do what the sentence said.
+  The suggestion now appears only where the publisher is verified, and
+  detection re-renders it rather than leaving the previous platform's answer in
+  place.
+- Raised the quiet secondary action from a 30px to a **44px hit target**. Quiet
+  is about weight, not size: the fill is still absent, the colour still muted
+  and the type still small, but a secondary action should be easy to press and
+  hard to mistake for the primary one, which are different problems.
+- Pinned the rules that are easy to state and easy to lose, on the desktop and
+  on the projection alike. Each was already true; none of them would have been
+  noticed breaking until somebody in a real session got a wrong answer.
+  - **Two mutes stay two mutes.** No Art panel offers a control whose label
+    contains "mute", and none of their copy mentions a microphone or claims to
+    reach the call. The projection has no field for a mute and the command
+    contract has no verb for one.
+  - **Ending one thing never ends another.** No Art panel intercepts its own
+    close, so dismissing a window cannot withdraw a share or leave a room.
+    Closing Drawpile ends no session, hiding the video leaves nobody, and no
+    Art surface — or companion command — offers to end, leave, or disconnect.
+  - **Opening a painting program takes nobody's microphone.** Neither launch
+    vector carries an audio, device, or mic flag, and no Art module imports an
+    audio library or the mixer.
+  - **A hosted canvas is personal.** The host command is exactly
+    `--start-page host`: never a public listing, never an adult-content flag.
+  - **Fail-closed copy is a recovery on one line** — bounded, path-free, at
+    most two sentences, and never containing "error", "failed", "exception",
+    "traceback", or "capability".
+  - **One theme, applied completely.** Each Art panel renders pixel-identically
+    under a light and a dark OS palette. WebJam sets a stylesheet but no
+    palette, so a widget whose background came from the stylesheet while its
+    text colour fell through to the system would be unreadable on exactly one
+    kind of machine — and whoever wrote it would never see the broken one.
+- `art` is the canonical profile key. `studio_visit` — the key the Preview
+  briefly used — is now a **migrate-from alias only**, so a saved choice
+  survives the rename. The legacy `visual_studio` mode still migrates to
+  Review & Rehearsal, because a session recorded under it must stay reviewable
+  and Art records nothing. Unknown keys still fail safely to Music, and Music,
+  Podcast & Voice, and Review & Rehearsal are unchanged. The saved start key is
+  re-validated against the resolved profile on every load and save, so a stale
+  or foreign key falls back to talk-only rather than arming a capability the
+  profile no longer has.
+- The retired five-mode list is not offered anywhere as a picker, so "Visual
+  Studio" cannot resurface beside the profile someone already chose. Its combo
+  is hidden, disabled, and unlaid-out, and the legacy mode key still resolves
+  so session metadata recording it is unaffected.
+- Launch copy and a private scratchpad path remain required for every
+  registered profile, so a future profile fails at import instead of as a
+  KeyError mid-selection.
+- Two-computer behavior is **NOT RUN**: this profile is covered by automated
+  tests only and has no release or physical evidence. The Drawpile and Krita
+  handoffs in particular have not been exercised against real installs of
+  either program, the AI path has never met a real ComfyUI backend, and the
+  room clock's `song_form` source has never been published by a real music
+  surface because none exists yet.
+
+### Internal
+
+- Discovery rules for a program WebJam did not ship now live once, in
+  `core/external_program.py`: explicit absolute locations, no `PATH` search, no
+  glob, and a resolved real executable file. Drawpile and Krita share it.
+
+### Test reliability
+
+- Fixed a suite-wide ordering hazard: some startup tests ran the real
+  application bootstrap against the shared `QApplication`, which installed
+  WebJam's bundled font and its whole stylesheet and left both in place. Two
+  layout tests in another file then measured text elision and minimum button
+  widths against an appearance their own setup never chose, so whether they
+  passed depended on file order. Restoring both also cut the suite's runtime
+  roughly in half, because later widget tests no longer re-style against a
+  stylesheet nothing asked for.
+- Fixed a Band Check dialog test helper that could return before its
+  background scan thread had reported, leaving that thread to run the real scan
+  after its patch was torn down and to emit into a dialog the finished test no
+  longer held.
+- Pinned the Jamulus component-update tests to a fixed clock inside their
+  signed catalog's validity window. The fixture is issued at a fixed date and
+  valid for twenty days, so a service left on the real wall clock accepted it
+  and then began rejecting it as `catalog-authorization-stale`, turning the
+  file red on a calendar date with no code change.
+
 ## [0.26.0] — Demo-proven creator multitrack private test release (2026-08-16)
 
 > Published on 2026-08-16 as immutable GitHub **Latest** release

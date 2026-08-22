@@ -22,9 +22,10 @@ import logging
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Protocol
+from typing import Protocol
 
 import numpy as np
 
@@ -227,7 +228,7 @@ class _StudioPlaybackPipeline:
         requested_prime = max(
             self.block_frames,
             self.callback_frames,
-            int(round(sample_rate * STUDIO_PLAYBACK_PRIME_BUFFER_MS / 1000.0)),
+            round(sample_rate * STUDIO_PLAYBACK_PRIME_BUFFER_MS / 1000.0),
         )
         self.prime_frames = min(self.capacity_frames, requested_prime)
         self._condition = threading.Condition(threading.Lock())
@@ -1041,7 +1042,7 @@ class SoundDeviceSink:
     def start(self, samplerate, blocksize, pull) -> None:
         import sounddevice as sd  # type: ignore
 
-        def _callback(outdata, frames, time_info, status):  # noqa: ANN001
+        def _callback(outdata, frames, time_info, status):
             if status:
                 _logger.debug("sounddevice status: %s", status)
             block = pull(frames)
@@ -1091,15 +1092,13 @@ class TakePlayer:
         self,
         samplerate: int = DEFAULT_SAMPLERATE,
         blocksize: int = DEFAULT_BLOCKSIZE,
-        sink: Optional[OutputSink] = None,
-        on_position: Optional[Callable[[float], None]] = None,
-        on_levels: Optional[Callable[[Dict[int, float]], None]] = None,
-        on_finished: Optional[Callable[[], None]] = None,
-        on_stereo_levels: Optional[
-            Callable[[Dict[int, tuple[float, float, bool]]], None]
-        ] = None,
-        on_master_level: Optional[Callable[[tuple[float, float, bool]], None]] = None,
-        on_error: Optional[Callable[[PlaybackError], None]] = None,
+        sink: OutputSink | None = None,
+        on_position: Callable[[float], None] | None = None,
+        on_levels: Callable[[dict[int, float]], None] | None = None,
+        on_finished: Callable[[], None] | None = None,
+        on_stereo_levels: Callable[[dict[int, tuple[float, float, bool]]], None] | None = None,
+        on_master_level: Callable[[tuple[float, float, bool]], None] | None = None,
+        on_error: Callable[[PlaybackError], None] | None = None,
     ) -> None:
         self.samplerate = int(samplerate)
         self.blocksize = int(blocksize)
@@ -1111,7 +1110,7 @@ class TakePlayer:
         self._on_master_level = on_master_level
         self._on_error = on_error
 
-        self._tracks: List[TrackState] = []
+        self._tracks: list[TrackState] = []
         self._lock = threading.RLock()
         self._playing = False
         self._pos_frames = 0
@@ -1128,9 +1127,9 @@ class TakePlayer:
         # can reject a callback that was queued by a stopped, paused, or
         # replaced run even when a new run has already started.
         self._playback_epoch = 0
-        self._on_levels_epoch: Callable[[int, Dict[int, float]], None] | None = None
+        self._on_levels_epoch: Callable[[int, dict[int, float]], None] | None = None
         self._on_stereo_levels_epoch: (
-            Callable[[int, Dict[int, tuple[float, float, bool]]], None] | None
+            Callable[[int, dict[int, tuple[float, float, bool]]], None] | None
         ) = None
         self._on_master_level_epoch: (
             Callable[[int, tuple[float, float, bool]], None] | None
@@ -1197,7 +1196,7 @@ class TakePlayer:
                 # starts before the take timeline (normal for supplemental
                 # host stems) and playback skips that lead-in.
                 offset_s = float(getattr(t, "offset_s", 0.0) or 0.0)
-                offset_frames = int(round(offset_s * self.samplerate))
+                offset_frames = round(offset_s * self.samplerate)
                 drift_ppm = float(getattr(t, "drift_ppm", 0.0) or 0.0)
                 drift_scale = 1.0 + drift_ppm / 1_000_000.0
                 if not np.isfinite(drift_scale) or drift_scale <= 0.0:
@@ -1210,7 +1209,7 @@ class TakePlayer:
                     if source_rate <= 0 or source_frames <= 0:
                         continue
                     state = TrackSegmentState(
-                        path=Path(getattr(segment, "path")),
+                        path=Path(segment.path),
                         project_start_frame=int(
                             getattr(segment, "project_start_frame", 0) or 0
                         ),
@@ -1220,11 +1219,9 @@ class TakePlayer:
                         gaps=tuple(getattr(segment, "gaps", ()) or ()),
                     )
                     segment_states.append(state)
-                    rendered = int(
-                        round(
+                    rendered = round(
                             source_frames / source_rate * drift_scale * self.samplerate
                         )
-                    )
                     longest = max(
                         longest,
                         state.project_start_frame + offset_frames + rendered,
@@ -1232,10 +1229,10 @@ class TakePlayer:
                 if not segment_states:
                     source_rate = int(getattr(t, "samplerate", 0) or self.samplerate)
                     duration = float(getattr(t, "duration_s", 0.0) or 0.0)
-                    source_frames = max(0, int(round(duration * source_rate)))
+                    source_frames = max(0, round(duration * source_rate))
                     segment_states.append(
                         TrackSegmentState(
-                            path=Path(getattr(t, "path")),
+                            path=Path(t.path),
                             project_start_frame=0,
                             frame_count=source_frames,
                             samplerate=source_rate,
@@ -1244,13 +1241,13 @@ class TakePlayer:
                     longest = max(
                         longest,
                         offset_frames
-                        + int(round(duration * drift_scale * self.samplerate)),
+                        + round(duration * drift_scale * self.samplerate),
                     )
                 self._tracks.append(
                     TrackState(
                         channel_id=i,
                         name=getattr(t, "name", f"Track {i}"),
-                        path=Path(getattr(t, "path")),
+                        path=Path(t.path),
                         track_id=str(getattr(t, "track_id", "") or ""),
                         offset_s=offset_s,
                         source=str(getattr(t, "source", "jamulus_server")),
@@ -1278,7 +1275,7 @@ class TakePlayer:
         accepted by export/render callers.
         """
 
-        from core.studio_renderer import StudioRenderError, StudioRenderer
+        from core.studio_renderer import StudioRenderer, StudioRenderError
 
         self.stop()
         with self._lock:
@@ -1351,7 +1348,7 @@ class TakePlayer:
                     self._studio_cycle_range = (cycle_start, cycle_end)
 
     @property
-    def tracks(self) -> List[TrackState]:
+    def tracks(self) -> list[TrackState]:
         return list(self._tracks)
 
     @property
@@ -1595,11 +1592,11 @@ class TakePlayer:
     ) -> _StudioPlaybackPipeline:
         target_frames = max(
             1,
-            int(round(samplerate * STUDIO_PLAYBACK_TARGET_BUFFER_MS / 1000.0)),
+            round(samplerate * STUDIO_PLAYBACK_TARGET_BUFFER_MS / 1000.0),
         )
         minimum_producer_frames = max(
             1,
-            int(round(samplerate * STUDIO_PLAYBACK_MIN_PRODUCER_BLOCK_MS / 1000.0)),
+            round(samplerate * STUDIO_PLAYBACK_MIN_PRODUCER_BLOCK_MS / 1000.0),
         )
         producer_frames = max(
             1,
@@ -1719,7 +1716,7 @@ class TakePlayer:
             self._open_readers()
             if self._studio_renderer is not None:
                 self._start_studio_pipeline(playback_epoch)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             with self._lock:
                 self._playing = False
                 self._close_readers()
@@ -1737,7 +1734,7 @@ class TakePlayer:
                     _callback_epoch=epoch,
                 ),
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             studio_render_error = False
             if self._studio_renderer is not None:
                 from core.studio_renderer import StudioRenderError
@@ -1838,7 +1835,7 @@ class TakePlayer:
             elif self._studio_stream is not None:
                 try:
                     self._studio_stream.checkpoint(self._pos_frames)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     if self._studio_renderer is None:
                         raise
                     from core.studio_renderer import StudioRenderError
@@ -1853,7 +1850,7 @@ class TakePlayer:
                 if self._playing:
                     try:
                         self._open_readers()
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         if self._studio_renderer is None:
                             raise
                         from core.studio_renderer import StudioRenderError
@@ -2236,18 +2233,16 @@ class TakePlayer:
         the track isn't sounding (before its offset or past its end)."""
         channels = max((segment.channels for segment in t.segments), default=1)
         out = np.zeros((n, channels), dtype=np.float32)
-        offset_frames = int(round(t.offset_s * self.samplerate))
+        offset_frames = round(t.offset_s * self.samplerate)
         scale = 1.0 + float(t.drift_ppm) / 1_000_000.0
         for segment in t.segments:
             reader = segment._reader
             if reader is None or segment.samplerate <= 0 or segment.frame_count <= 0:
                 continue
             segment_start = segment.project_start_frame + offset_frames
-            rendered_frames = int(
-                round(
+            rendered_frames = round(
                     segment.frame_count / segment.samplerate * scale * self.samplerate
                 )
-            )
             segment_end = segment_start + max(0, rendered_frames)
             overlap_start = max(start, segment_start)
             overlap_end = min(start + n, segment_end)
@@ -2344,8 +2339,8 @@ class TakePlayer:
             start = self._pos_frames
             any_solo = any(t.solo for t in self._tracks)
             mix = np.zeros((frames, 2), dtype=np.float32)
-            levels: Dict[int, float] = {}
-            stereo_levels: Dict[int, tuple[float, float, bool]] = {}
+            levels: dict[int, float] = {}
+            stereo_levels: dict[int, tuple[float, float, bool]] = {}
             for t in self._tracks:
                 audible = (not t.muted) and (t.solo or not any_solo)
                 block = self._read_track_block(t, start, frames)
@@ -2425,7 +2420,7 @@ class TakePlayer:
         if cycle_frames < 4:
             return gains
         fade_frames = min(
-            max(1, int(round(self.samplerate * 0.005))),
+            max(1, round(self.samplerate * 0.005)),
             cycle_frames // 2,
         )
         if fade_frames <= 0:
@@ -2486,8 +2481,8 @@ class TakePlayer:
             return silence
 
         if consumed.consumed_frames:
-            levels: Dict[int, float] = {}
-            stereo_levels: Dict[int, tuple[float, float, bool]] = {}
+            levels: dict[int, float] = {}
+            stereo_levels: dict[int, tuple[float, float, bool]] = {}
             for track in self._tracks:
                 contribution = consumed.track_audio.get(track.track_id)
                 if contribution is None or not contribution.size:

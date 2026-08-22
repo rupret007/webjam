@@ -9,10 +9,10 @@ and the peer service accepts it only for enrollment into the one session.
 from __future__ import annotations
 
 import ipaddress
+import re
 import socket
 import subprocess
 import sys
-import re
 import uuid
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -22,7 +22,6 @@ from core.jamulus_endpoint import (
     JamulusEndpointError,
     parse_jamulus_endpoint,
 )
-
 
 INVITE_SCHEME = "webjam"
 INVITE_ACTION = "join"

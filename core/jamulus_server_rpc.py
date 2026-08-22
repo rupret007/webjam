@@ -30,7 +30,6 @@ import logging
 import socket
 import time
 from pathlib import Path
-from typing import Optional
 
 _logger = logging.getLogger("webjam.server_rpc")
 
@@ -79,12 +78,12 @@ class JamulusServerRpc:
         self._host = host
         self._port = int(port)
         self._secret = secret
-        self._sock: Optional[socket.socket] = None
+        self._sock: socket.socket | None = None
         self._buf = b""          # unparsed bytes from the last recv
         self._id = 0
 
     # -- lifecycle ---------------------------------------------------------
-    def connect(self) -> "JamulusServerRpc":
+    def connect(self) -> JamulusServerRpc:
         try:
             self._sock = socket.create_connection(
                 (self._host, self._port), timeout=self.CONNECT_TIMEOUT_S
@@ -140,7 +139,7 @@ class JamulusServerRpc:
             self._sock.settimeout(remaining)
             try:
                 chunk = self._sock.recv(4096)
-            except socket.timeout as exc:
+            except TimeoutError as exc:
                 raise _CallTimeout() from exc
             if chunk == b"":
                 raise ServerRpcError("The band server closed the RPC connection.")

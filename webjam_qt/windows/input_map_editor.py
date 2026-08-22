@@ -15,8 +15,6 @@ a later addition; the model here is forward-compatible with it.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -149,8 +147,8 @@ class _InputMapRow(QWidget):
 
     def __init__(
         self,
-        entry: Optional[dict] = None,
-        parent: Optional[QWidget] = None,
+        entry: dict | None = None,
+        parent: QWidget | None = None,
         *,
         creator_profile: CreatorProfile | str | None = None,
     ) -> None:
@@ -209,8 +207,8 @@ class InputMapEditorDialog(QDialog):
 
     def __init__(
         self,
-        input_maps: Optional[list] = None,
-        parent: Optional[QWidget] = None,
+        input_maps: list | None = None,
+        parent: QWidget | None = None,
         *,
         creator_profile: CreatorProfile | str | None = None,
     ) -> None:
@@ -286,7 +284,7 @@ class InputMapEditorDialog(QDialog):
         root.addLayout(footer)
         self.resize(760, 560)
 
-    def _add_row(self, entry: Optional[dict] = None) -> None:
+    def _add_row(self, entry: dict | None = None) -> None:
         if len(self._rows) >= _MAX_ROWS:
             self._show_error(self._profile_copy["row_limit"])
             return

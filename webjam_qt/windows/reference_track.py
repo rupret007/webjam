@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from enum import StrEnum
 from time import monotonic
-from typing import Optional
 
-from PySide6.QtCore import QUrl, Qt, Signal
+from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import (
     QAccessible,
     QAccessibleEvent,
@@ -16,6 +15,7 @@ from PySide6.QtGui import (
     QDropEvent,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QDialog,
     QDoubleSpinBox,
@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLabel,
-    QApplication,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -90,7 +89,7 @@ class ReferenceTrackDialog(QDialog):
     # was rejected or the operation lock was busy.
     _PENDING_HOLD_SECONDS = 1.0
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._snapshot = None
         self._syncing = False
@@ -415,7 +414,7 @@ class ReferenceTrackDialog(QDialog):
             return ""
         return path
 
-    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if (
             self._rendered_state in {"idle", "ready", "failed", "unavailable"}
             and self._dropped_audio_path(event.mimeData())
@@ -424,7 +423,7 @@ class ReferenceTrackDialog(QDialog):
             return
         event.ignore()
 
-    def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # noqa: N802
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
         if (
             self._rendered_state in {"idle", "ready", "failed", "unavailable"}
             and self._dropped_audio_path(event.mimeData())
@@ -433,7 +432,7 @@ class ReferenceTrackDialog(QDialog):
             return
         event.ignore()
 
-    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
+    def dropEvent(self, event: QDropEvent) -> None:
         path = self._dropped_audio_path(event.mimeData())
         if not path or self._rendered_state not in {
             "idle",
@@ -989,10 +988,7 @@ class ReferenceTrackDialog(QDialog):
             float(getattr(snapshot, "count_in_bpm", 120.0) or 120.0),
         )
 
-        if state != "paused" or duration <= 0.0:
-            self._pending_seek_value = None
-            self._pending_seek_value_deadline = 0.0
-        elif (
+        if state != "paused" or duration <= 0.0 or (
             self._pending_seek_value is not None
             and snapshot_seek_value == self._pending_seek_value
         ):
@@ -1115,11 +1111,9 @@ class ReferenceTrackDialog(QDialog):
             "Checking…" if self._route_checking else "Recheck Route"
         )
         self._recheck_route.setAccessibleName(
-            (
-                "Checking the Shared Track playback route"
-                if self._route_checking
-                else "Recheck the Shared Track playback route"
-            )
+            "Checking the Shared Track playback route"
+            if self._route_checking
+            else "Recheck the Shared Track playback route"
         )
         if self._snapshot is not None:
             self.set_snapshot(self._snapshot)
@@ -1139,18 +1133,16 @@ class ReferenceTrackDialog(QDialog):
             else "Add Track…"
         )
         self._load.setAccessibleName(
-            (
-                "Selected Shared Track is waiting to load"
-                if self._source_load_queued
-                else "Replace the loaded Shared Track audio file"
-                if loaded
-                else "Add a Shared Track audio file"
-            )
+            "Selected Shared Track is waiting to load"
+            if self._source_load_queued
+            else "Replace the loaded Shared Track audio file"
+            if loaded
+            else "Add a Shared Track audio file"
         )
         if self._snapshot is not None:
             self.set_snapshot(self._snapshot)
 
-    def showEvent(self, event) -> None:  # noqa: N802 - Qt naming
+    def showEvent(self, event) -> None:
         """Open clear of the stage the first time, then respect the host.
 
         A dialog parented to the session window opens centred on it, which

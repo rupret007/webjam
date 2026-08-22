@@ -9,16 +9,15 @@ handoff separate from its explicitly labeled native Webex app controls.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAccessible, QAccessibleEvent
 from PySide6.QtWidgets import (
+    QApplication,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QApplication,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
@@ -43,7 +42,7 @@ class WebexEmbed(QFrame):
     copy_link_requested = Signal()
     recheck_webex_requested = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("WebexEmbed")
         self.setMinimumHeight(112)
@@ -131,9 +130,10 @@ class WebexEmbed(QFrame):
         self._fallback_btn.setAccessibleDescription(
             "Explicitly open the configured link in its meeting service or a browser."
         )
+        # No advice line until detection has run. Until then WebJam does not
+        # know whether Show Webex App can do anything on this computer.
         self._fallback_btn.setToolTip(
-            "Open the configured meeting link once in its service or your browser.\n"
-            "Use Show Webex App to bring the app forward without reopening the link."
+            "Open the configured meeting link once in its service or your browser."
         )
         self._fallback_btn.clicked.connect(self.open_meeting_requested.emit)
         self._fallback_btn.setEnabled(False)
@@ -382,6 +382,10 @@ class WebexEmbed(QFrame):
         )
         self._native_action_busy = False
         self._sync_native_actions()
+        # Detection is what decides whether pointing at Show Webex App is
+        # true, so the meeting tooltip is re-rendered rather than left with
+        # whatever the previous platform answer implied.
+        self._render_launch_status()
         self._restore_native_focus()
         self._announce_description_change(self._app_status_label)
 
@@ -484,8 +488,8 @@ class WebexEmbed(QFrame):
             "its service or your browser"
         )
         self._fallback_btn.setToolTip(
-            f"Open the configured meeting link once in {destination}.\n"
-            "Use Show Webex App to bring Webex forward without reopening the link."
+            f"Open the configured meeting link once in {destination}."
+            f"{self._show_webex_advice()}"
         )
 
     def _render_link_accessibility(self) -> None:
@@ -518,11 +522,9 @@ class WebexEmbed(QFrame):
             )
         )
         self._change_link_btn.setToolTip(
-            (
-                f"Open Settings to add or change the {service} meeting link."
-                if service
-                else "Open Settings to add or change the meeting link."
-            )
+            f"Open Settings to add or change the {service} meeting link."
+            if service
+            else "Open Settings to add or change the meeting link."
         )
 
     def focus_primary_action(self) -> None:
@@ -574,6 +576,23 @@ class WebexEmbed(QFrame):
         """Name only the application activation WebJam can actually prove."""
 
         return "Show Webex App"
+
+    def _show_webex_advice(self) -> str:
+        """Point at Show Webex App only where it can actually be honoured.
+
+        ADR 0004 keeps native focus disabled on Windows and Linux, because
+        their detection does not establish publisher proof. The button is
+        correctly disabled there -- but advice is a claim too, and telling
+        someone to use a control that cannot do what the sentence says is the
+        same overclaim as enabling it.
+        """
+
+        if not self._native_app_available:
+            return ""
+        return (
+            "\nUse Show Webex App to bring Webex forward without reopening "
+            "the link."
+        )
 
     def _sync_native_actions(self) -> None:
         enabled = self._native_app_available and not self._native_action_busy

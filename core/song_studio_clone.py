@@ -60,7 +60,6 @@ from core.studio_project import (
     default_song_studio_document,
 )
 
-
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -416,8 +415,7 @@ def _clean_stage_state(stage: Path) -> None:
             "Could not verify the Save As staging bundle."
         ) from exc
     if any(
-        name.startswith(".webjam-song-studio.corrupt-")
-        or name.startswith(".webjam-project.corrupt-")
+        name.startswith((".webjam-song-studio.corrupt-", ".webjam-project.corrupt-"))
         for name in names
     ):
         raise SongStudioSaveAsError(

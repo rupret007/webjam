@@ -18,14 +18,14 @@ must stop the audio stream before resetting or replacing a ring.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import math
-import os
 import operator
-from pathlib import Path
+import os
 import stat
 import threading
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Final
 
 import numpy as np
@@ -36,7 +36,6 @@ from core.mp3_scan import (
     Mp3ScanError,
     scan_mp3_descriptor,
 )
-
 
 PROJECT_AUDIO_SAMPLE_RATE: Final = 48_000
 PROJECT_AUDIO_MAX_DECODE_FRAMES: Final = 4_096
@@ -124,7 +123,7 @@ class GenerationToken:
 
     __slots__ = ("_gate", "generation")
 
-    def __init__(self, gate: "GenerationGate", generation: int) -> None:
+    def __init__(self, gate: GenerationGate, generation: int) -> None:
         self._gate = gate
         self.generation = int(generation)
 
@@ -330,12 +329,11 @@ class ProjectAudioDecoder:
                 "Project audio decoding is unavailable in this build."
             ) from None
 
-        if suffix == ".mp3":
-            if not project_audio_mp3_available():
-                raise ProjectAudioError(
-                    "MP3 decoding is unavailable in this build. Convert the "
-                    "file to WAV, AIFF, FLAC, or OGG and try again."
-                )
+        if suffix == ".mp3" and not project_audio_mp3_available():
+            raise ProjectAudioError(
+                "MP3 decoding is unavailable in this build. Convert the "
+                "file to WAV, AIFF, FLAC, or OGG and try again."
+            )
 
         descriptor = -1
         source_file = None
@@ -461,7 +459,7 @@ class ProjectAudioDecoder:
         ratio = source_rate / PROJECT_AUDIO_SAMPLE_RATE
         maximum_source_window = min(
             source_frames,
-            int(math.ceil((PROJECT_AUDIO_MAX_DECODE_FRAMES - 1) * ratio)) + 2,
+            math.ceil((PROJECT_AUDIO_MAX_DECODE_FRAMES - 1) * ratio) + 2,
         )
         self._source_scratch = np.empty(
             (max(1, maximum_source_window), channels),
@@ -1117,9 +1115,6 @@ class CaptureBlockRing:
 
 
 __all__ = [
-    "CaptureBlockRing",
-    "GenerationGate",
-    "GenerationToken",
     "PROJECT_AUDIO_MAX_DECODE_FRAMES",
     "PROJECT_AUDIO_MAX_DURATION_SECONDS",
     "PROJECT_AUDIO_MAX_OUTPUT_FRAMES",
@@ -1127,6 +1122,9 @@ __all__ = [
     "PROJECT_AUDIO_MAX_SOURCE_FRAMES",
     "PROJECT_AUDIO_MAX_SOURCE_RATE",
     "PROJECT_AUDIO_SAMPLE_RATE",
+    "CaptureBlockRing",
+    "GenerationGate",
+    "GenerationToken",
     "PlaybackBlockRing",
     "ProjectAudioCancelled",
     "ProjectAudioDecoder",

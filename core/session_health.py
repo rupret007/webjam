@@ -7,8 +7,8 @@ meters are still missing; the UI should expose that distinction.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import time
+from dataclasses import dataclass
 from typing import Any
 
 

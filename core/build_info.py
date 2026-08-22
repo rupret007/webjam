@@ -9,12 +9,11 @@ returned to diagnostics.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import platform
 import re
 import subprocess
 import sys
-
+from pathlib import Path
 
 _COMMIT_RE = re.compile(r"^[0-9a-f]{7,64}$", re.IGNORECASE)
 

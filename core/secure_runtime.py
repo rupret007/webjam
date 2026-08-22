@@ -12,13 +12,12 @@ Public failures deliberately contain no filesystem path and suppress raw
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import os
-from pathlib import Path
 import secrets
 import stat
-from typing import Callable
-
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
 
 _PRIVATE_DIRECTORY_MODE = 0o700
 _PRIVATE_FILE_MODE = 0o600
@@ -161,7 +160,7 @@ class SecureRuntimeDirectory:
         home: Path,
         directory: Path,
         mode: int = _PRIVATE_DIRECTORY_MODE,
-    ) -> "SecureRuntimeDirectory":
+    ) -> SecureRuntimeDirectory:
         if mode != _PRIVATE_DIRECTORY_MODE:
             raise SecureRuntimeError(
                 "WebJam refused non-private runtime directory permissions."

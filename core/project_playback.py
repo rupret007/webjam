@@ -8,21 +8,22 @@ waits, allocates NumPy buffers, or touches Jamulus configuration.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
-from fractions import Fraction
 import math
 import operator
 import threading
-from typing import Callable, Protocol
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import Enum
+from fractions import Fraction
+from typing import Protocol
 
 import numpy as np
 
 from core.project_audio import (
+    PROJECT_AUDIO_SAMPLE_RATE,
     GenerationGate,
     GenerationToken,
     PlaybackBlockRing,
-    PROJECT_AUDIO_SAMPLE_RATE,
 )
 from core.studio_renderer import (
     StudioRenderer,
@@ -557,7 +558,7 @@ class ProjectPlaybackEngine:
         token.require_current()
         if not len(block):
             return False
-        frame_count = int(len(block))
+        frame_count = len(block)
         if self._click_enabled:
             self._mix_clicks(block, start_frame)
         delivered, clipped = studio_delivery_block(block)

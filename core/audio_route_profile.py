@@ -14,15 +14,15 @@ hearing remains the final acoustic confirmation on every platform.
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass, replace
-from enum import Enum, IntEnum
 import hashlib
 import json
 import os
-from pathlib import Path
 import stat
 import tempfile
-from typing import Mapping
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
+from enum import Enum, IntEnum
+from pathlib import Path
 from xml.etree import ElementTree
 
 from core.jamulus_name import validate_jamulus_name
