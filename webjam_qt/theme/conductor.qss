@@ -669,6 +669,29 @@ QLineEdit#CanvasChatInput {
     padding-top: ${SPACE_XS}px;
 }
 
+QPushButton#LaunchMoreRooms {
+    background: transparent;
+    color: ${COLOR_TEXT_MUTED};
+    border: none;
+    font-size: ${FONT_SIZE_SM}px;
+    font-weight: ${FONT_WEIGHT_NORMAL};
+    min-height: 32px;
+    padding: ${SPACE_XS}px ${SPACE_SM}px;
+}
+
+QPushButton#LaunchMoreRooms:hover {
+    color: ${COLOR_TEXT_PRIMARY};
+}
+
+QPushButton#LaunchMoreRooms:focus {
+    border: 2px solid ${COLOR_BORDER_FOCUS};
+    border-radius: ${RADIUS_SM}px;
+}
+
+QPushButton#LaunchMoreRooms:disabled {
+    color: ${COLOR_TEXT_MUTED};
+}
+
 QPushButton#LaunchPrimary {
     background-color: ${COLOR_ACCENT_PRIMARY};
     color: ${COLOR_TEXT_PRIMARY};

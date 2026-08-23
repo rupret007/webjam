@@ -1,4 +1,4 @@
-"""The focused startup experience for WebJam's three creator profiles.
+"""The focused startup experience for WebJam's creator profiles.
 
 This dialog is intentionally just the creator/role decision (and one pasted
 invite when joining). It does not ask WebJam to choose an audio device:
@@ -45,7 +45,6 @@ from core.jamulus_name import (
     JamulusNameError,
     validate_jamulus_name,
 )
-from core.meeting_link import MEETING_DIRECT_CAPTURE_BOUNDARY
 from core.network_invite import BandInvite
 from core.remote_invitation import RemoteInvitation
 from core.settings import (
@@ -123,25 +122,14 @@ _CREATOR_LAUNCH_COPY = {
         host="Host Review",
         join="Join Review",
         local="Standalone Review Unavailable",
-        host_description=(
-            "Start a live review session and create an invitation link. This Preview "
-            "does not synchronize visual media, shared notes, or media timecode. "
-            f"{MEETING_DIRECT_CAPTURE_BOUNDARY}"
-        ),
-        join_description=(
-            "Join a live review using one WebJam invitation link. This Preview does "
-            "not synchronize visual media, shared notes, or media timecode. "
-            f"{MEETING_DIRECT_CAPTURE_BOUNDARY}"
-        ),
+        host_description="Start a live review and create an invitation.",
+        join_description="Join a live review using one invitation.",
         local_description=(
-            "Standalone visual review projects are not available in this Preview."
+            "Standalone visual review projects are not on this door."
         ),
-        helper=(
-            "Preview: host or join a review. Standalone visual projects are not "
-            "available yet."
-        ),
+        helper="Host or join a review.",
         join_title="Join Review.",
-        join_subtitle="Paste the WebJam review invitation your host sent you.",
+        join_subtitle="Paste the invitation your host sent you.",
     ),
     "art": _CreatorLaunchCopy(
         host="Host",
@@ -351,6 +339,10 @@ class LaunchDialog(QDialog):
         self._jamulus_installer = _windows_jamulus_installer(settings)
         if self._jamulus_installer:
             LOGGER.info("Verified bundled Jamulus installer is available")
+        # Music keeps Host / Join as the only primaries. This flag is the
+        # quiet way onto Art, podcast, or review without leaving the picker
+        # on the default door.
+        self._rooms_picker_revealed = False
         self.selected_role = ""
         self.session_name = "Band Rehearsal"
         self.band_invite: BandInvite | None = None
@@ -433,6 +425,7 @@ class LaunchDialog(QDialog):
         self.setTabOrder(self._host_button, self._join_button)
         self.setTabOrder(self._join_button, self._studio_button)
         self.setTabOrder(self._studio_button, self._install_jamulus_button)
+        self.setTabOrder(self._install_jamulus_button, self._more_rooms_button)
 
         if initial_invitation is not None and initial_invite_url:
             raise ValueError("provide one initial invitation")
@@ -489,10 +482,7 @@ class LaunchDialog(QDialog):
         )
         self._creator_profile_label.setBuddy(self._creator_profile_selector)
         for profile in CREATOR_PROFILES:
-            status = "Preview" if profile.is_preview else "Ready"
-            self._creator_profile_selector.addItem(
-                f"{profile.label} ({status})", profile.key
-            )
+            self._creator_profile_selector.addItem(profile.label, profile.key)
         saved_profile = get_creator_profile_by_key_or_default(
             getattr(self._settings, "last_creator_profile_key", "music")
         )
@@ -534,6 +524,17 @@ class LaunchDialog(QDialog):
         self._install_jamulus_button.clicked.connect(self._install_jamulus)
         self._install_jamulus_button.setVisible(bool(self._jamulus_installer))
         layout.addWidget(self._install_jamulus_button)
+
+        self._more_rooms_button = QPushButton("Art, podcast, or review")
+        self._more_rooms_button.setObjectName("LaunchMoreRooms")
+        self._more_rooms_button.setAutoDefault(False)
+        self._more_rooms_button.setDefault(False)
+        self._more_rooms_button.setAccessibleName("Art, podcast, or review")
+        self._more_rooms_button.setAccessibleDescription(
+            "Choose Art, Podcast and Voice, or Review and Rehearsal."
+        )
+        self._more_rooms_button.clicked.connect(self._reveal_other_rooms)
+        layout.addWidget(self._more_rooms_button, 0, Qt.AlignmentFlag.AlignHCenter)
 
         self._choice_helper = QLabel()
         self._choice_helper.setObjectName("LaunchHelper")
@@ -781,6 +782,8 @@ class LaunchDialog(QDialog):
         # Music's live door is Host / Join only. Local studio stays a
         # capability, not a third button on the first screen.
         music_door = profile.key == "music"
+        if not music_door:
+            self._rooms_picker_revealed = False
         local_available = profile.capabilities.local_multitrack and not music_door
         self._studio_button.setText(copy.local)
         self._studio_button.setAccessibleName(copy.local)
@@ -795,9 +798,15 @@ class LaunchDialog(QDialog):
         self._name_preview.setVisible(not hide_name)
         self._name_error.setVisible(bool(self._name_error.text()))
 
-        # Music door: no profile combo. Art and others keep the picker.
-        self._creator_profile_label.setVisible(not music_door)
-        self._creator_profile_selector.setVisible(not music_door)
+        # Music door: picker stays off until the quiet line is used.
+        show_picker = (not music_door) or self._rooms_picker_revealed
+        self._creator_profile_label.setVisible(show_picker)
+        self._creator_profile_selector.setVisible(show_picker)
+        if hasattr(self, "_more_rooms_button"):
+            self._more_rooms_button.setEnabled(not self._submitting)
+            self._more_rooms_button.setVisible(
+                music_door and not self._rooms_picker_revealed
+            )
 
         helper = copy.helper
         if not self._host_available:
@@ -811,7 +820,9 @@ class LaunchDialog(QDialog):
             # the top already carries the identity.
             has_cards = bool(self._visible_start_cards())
             self._choice_title.setVisible(not has_cards)
-            self._choice_subtitle.setVisible(not has_cards)
+            # Music Host / Join already is the workflow. The leftover
+            # "choose a workflow" line is chrome on that door.
+            self._choice_subtitle.setVisible(not has_cards and not music_door)
             self._refresh_start_presentation()
         if hasattr(self, "_join_title"):
             self._join_title.setText(copy.join_title)
@@ -820,12 +831,24 @@ class LaunchDialog(QDialog):
             self._join_button_primary.setAccessibleName(copy.join)
             self._join_button_primary.setAccessibleDescription(copy.join_description)
 
+    def _reveal_other_rooms(self) -> None:
+        """Show the existing picker without adding a third primary action."""
+
+        if self._submitting:
+            return
+        self._rooms_picker_revealed = True
+        self._apply_creator_profile_presentation()
+        self._creator_profile_selector.setFocus(Qt.FocusReason.OtherFocusReason)
+
     def show_choices(self) -> None:
         self._restore_submission()
         self._invite_input.clear()
         self._pages.setCurrentWidget(self._choice_page)
-        # Music door hides the picker; do not park focus on a hidden widget.
-        if self._selected_creator_profile.key == "music":
+        # Music door hides the picker until the quiet line is used.
+        if (
+            self._selected_creator_profile.key == "music"
+            and not self._rooms_picker_revealed
+        ):
             self._host_button.setFocus()
         else:
             self._creator_profile_selector.setFocus()
@@ -1006,6 +1029,8 @@ class LaunchDialog(QDialog):
         self._host_button.setEnabled(False)
         self._join_button.setEnabled(False)
         self._studio_button.setEnabled(False)
+        if hasattr(self, "_more_rooms_button"):
+            self._more_rooms_button.setEnabled(False)
         self._join_button_primary.setEnabled(False)
         self._creator_profile_selector.setEnabled(False)
         for cards in self._start_cards.values():
