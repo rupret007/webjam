@@ -170,18 +170,25 @@ class RoomClockCoordinator:
         if publish is None:
             return
         try:
-            publish(
-                source=facts.source.value,
-                running=bool(facts.running),
-                position_s=float(facts.position_s),
-                duration_s=float(facts.duration_s),
-                bar=int(facts.bar),
-                beat=int(facts.beat),
-                section_label=str(facts.section_label),
-                tempo_bpm=float(facts.tempo_bpm),
-                meter_numerator=int(facts.meter_numerator),
-                meter_denominator=int(facts.meter_denominator),
-            )
+            payload = {
+                "source": facts.source.value,
+                "running": bool(facts.running),
+                "position_s": float(facts.position_s),
+                "duration_s": float(facts.duration_s),
+                "bar": int(facts.bar),
+                "beat": int(facts.beat),
+                "section_label": str(facts.section_label),
+                "tempo_bpm": float(facts.tempo_bpm),
+                "meter_numerator": int(facts.meter_numerator),
+                "meter_denominator": int(facts.meter_denominator),
+            }
+            if facts.source is RoomClockSource.SONG_FORM:
+                payload["follows_shared_track"] = bool(facts.follows_shared_track)
+                payload["section_lengths_assumed"] = bool(
+                    facts.section_lengths_assumed
+                )
+                payload["form_shape"] = str(facts.form_shape)
+            publish(**payload)
         except Exception:  # noqa: BLE001 - peer boundary stays UI-optional
             if not self._publish_failed:
                 LOGGER.warning("The room clock could not be published")

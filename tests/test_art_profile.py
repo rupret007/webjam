@@ -617,15 +617,15 @@ def test_a_live_art_session_addresses_artists_and_offers_no_recording():
     live = derive_session_conductor(_live_facts(ART))
     copy = _visible_copy(live)
 
-    assert live.title == "Artists connected · Preview"
+    assert live.title == "Artists connected"
+    assert live.message == "Hear each other, then make what you came to make."
     assert live.creator_profile_key == ART
     # Recording is not part of this profile, so the host is offered nothing.
     assert live.primary_action is SessionPrimaryAction.NONE
-    assert "Hear each other, then make." in live.message
-    assert "Session Check (F2)" in live.message
     assert "musician" not in copy
     assert "band" not in copy
     assert "studio visit" not in copy
+    assert "preview" not in copy
     assert re.search(r"\bjam\b", copy) is None
     assert re.search(r"\btrack\b", copy) is None
 
@@ -667,19 +667,22 @@ def test_art_host_and_join_have_one_next_step():
 
 
 def test_a_live_art_session_states_its_own_limits_not_reviews():
-    copy = _visible_copy(derive_session_conductor(_live_facts(ART)))
+    """The HUD is one next step, not a Drawpile / meeting-capture lecture."""
 
-    assert "never directly or automatically taps a meeting app" in copy
-    assert "notes stay local and are not shared" in copy
-    assert "not frame-accurate or timecoded" in copy
-    assert "this session is not recorded" in copy
-    # Art paints in Drawpile, and must say where the canvas actually lives.
-    assert "painted in drawpile, not in webjam" in copy
-    # Art does synchronize one host-clocked video and does point the room at
-    # one canvas, so it must never borrow Review's blanket claim that visual
-    # media is not synchronized.
+    live = derive_session_conductor(_live_facts(ART))
+    copy = _visible_copy(live)
+
+    assert "make what you came to make" in copy
+    assert "this room is not recorded" in copy
+    assert "drawpile" not in copy
+    assert "jamulus" not in copy
+    assert "meeting app" not in copy
+    assert "host-clocked" not in copy
+    # Art does synchronize one video and does point the room at one canvas,
+    # so it must never borrow Review's blanket claim or its stems lecture.
     assert "visual media and timecode are not synchronized" not in copy
     assert "arrangement editing and track export are unavailable" not in copy
+    assert "record session captures jamulus server stems" not in copy
 
 
 def test_review_and_rehearsal_keeps_its_own_unchanged_limits():
@@ -697,8 +700,42 @@ def test_setup_phases_use_the_artists_own_words():
     assert "artists" in _visible_copy(waiting)
 
     idle = derive_session_conductor(SessionConductorFacts(creator_profile_key=ART))
-    assert "art session" in idle.message.casefold()
+    assert idle.message == "Choose Host or Join to open the room."
     assert "artist" in idle.evidence_limit.casefold()
+
+
+def test_art_host_and_join_have_one_next_step():
+    """A painter gets the same one-step clarity a songwriter already has."""
+
+    invite = derive_session_conductor(
+        replace(
+            _ready_facts(ART),
+            host_server_process=ProcessState.RUNNING,
+            host_server_rpc=EvidenceState.VERIFIED,
+            host_listener=EvidenceState.VERIFIED,
+            invite=EvidenceState.VERIFIED,
+            music_path=MusicPathState.AUTHENTICATED,
+            local_participant=EvidenceState.VERIFIED,
+        )
+    )
+    assert invite.phase is SessionConductorPhase.INVITE_READY
+    assert invite.primary_action is SessionPrimaryAction.COPY_INVITE
+    assert "Copy the invite. That is the next step." in invite.message
+    assert "drawpile" not in invite.evidence_limit.casefold()
+    assert "preview" not in invite.title.casefold()
+
+    connected = derive_session_conductor(
+        replace(
+            _ready_facts(ART),
+            role=SessionRole.GUEST,
+            guest_enrollment=EvidenceState.VERIFIED,
+            music_path=MusicPathState.AUTHENTICATED,
+            local_participant=EvidenceState.VERIFIED,
+            had_authenticated_connection=True,
+        )
+    )
+    assert connected.phase is SessionConductorPhase.CONNECTED
+    assert connected.message == "You are in. Wait for the others, then start making."
 
 
 def test_the_art_action_labels_are_not_music_labels():

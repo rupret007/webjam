@@ -28,10 +28,7 @@ from core.creative_modes import (
     CreatorProfile,
     get_creator_profile_by_key_or_default,
 )
-from core.meeting_link import (
-    MEETING_DIRECT_CAPTURE_BOUNDARY,
-    RECORD_SESSION_MEETING_CAPTURE_NOTICE,
-)
+from core.meeting_link import RECORD_SESSION_MEETING_CAPTURE_NOTICE
 
 
 class SessionRole(str, Enum):
@@ -651,24 +648,10 @@ def _presentation(
         *,
         retry_safe: bool = False,
     ) -> SessionConductorPresentation:
-        if profile.key == "art":
-            title = f"{title} · Preview"
-            # Art does synchronize one host-clocked video and does point the
-            # room at one shared canvas, so it must not borrow Review's
-            # "visual media is not synchronized" line. It states the narrower
-            # truth instead: host transport only, a canvas WebJam brokers but
-            # does not draw, and no take to review afterwards.
-            policy_limit = (
-                f"{MEETING_DIRECT_CAPTURE_BOUNDARY} Notes stay local and are "
-                "not shared. An optional reference video follows the host's "
-                "play, pause, stop, and position on each artist's own copy of "
-                "the same file; that is not frame-accurate or timecoded "
-                "review. An optional shared canvas is painted in Drawpile, "
-                "not in WebJam, and WebJam cannot see it. This session is not "
-                "recorded."
-            )
-            evidence_limit = f"{evidence_limit} {policy_limit}".strip()
-        elif profile.is_preview:
+        if profile.is_preview and profile.key != "art":
+            # Art is Preview in the registry. Its HUD still must not grow a
+            # Preview suffix or a Drawpile / meeting-capture lecture — those
+            # names belong on the chip or in Help, at the moment they matter.
             title = f"{title} · Preview"
             policy_limit = (
                 f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE} Notes stay local and "
@@ -695,11 +678,12 @@ def _presentation(
         )
 
     if phase is SessionConductorPhase.IDLE:
-        message = (
-            "Choose Host or Join to begin a rehearsal."
-            if profile.key == "music"
-            else f"Choose Host or Join to begin a {vocabulary.session_noun}."
-        )
+        if profile.key == "music":
+            message = "Choose Host or Join to begin a rehearsal."
+        elif profile.key == "art":
+            message = "Choose Host or Join to open the room."
+        else:
+            message = f"Choose Host or Join to begin a {vocabulary.session_noun}."
         evidence = (
             "WebJam has not checked a live music path or another musician yet."
             if profile.key == "music"
@@ -775,32 +759,19 @@ def _presentation(
             f"WebJam has not yet confirmed an authenticated, reachable {reachable_path}.",
         )
     if phase is SessionConductorPhase.INVITE_READY:
-        if profile.key == "music":
-            invite_message = (
-                "Copy the invite. That is the next step. Send it when you "
-                "want them in."
-            )
-            invite_evidence = (
-                "WebJam is ready to invite; it cannot confirm a bandmate is "
-                "connected yet."
-            )
-        elif profile.key == "art":
-            invite_message = (
-                "Copy the invite. That is the next step. Send it when you "
-                "want them in."
-            )
-            invite_evidence = (
-                "WebJam is ready to invite; it cannot confirm another artist "
-                "is in yet."
-            )
-        else:
-            invite_message = (
-                f"Share the invite when {waiting_counterpart} is ready to join."
-            )
-            invite_evidence = (
+        invite_message = (
+            "Copy the invite. That is the next step. Send it when you want them in."
+            if profile.key in {"music", "art"}
+            else f"Share the invite when {waiting_counterpart} is ready to join."
+        )
+        invite_evidence = (
+            "WebJam is ready to invite; it cannot confirm a bandmate is connected yet."
+            if profile.key == "music"
+            else (
                 "WebJam is ready to invite; it cannot confirm that "
                 f"{waiting_counterpart} is connected yet."
             )
+        )
         return present(
             SessionPrimaryAction.COPY_INVITE,
             "Invite ready",
@@ -821,7 +792,7 @@ def _presentation(
             )
         elif profile.key == "art":
             connected_message = (
-                "You are in. Wait for the other artist, then listen."
+                "You are in. Wait for the others, then start making."
             )
         else:
             connected_message = (
@@ -874,12 +845,9 @@ def _presentation(
             )
         elif profile.key == "art":
             title = "Artists connected"
-            message = (
-                "Hear each other, then make. Session Check (F2) is there if "
-                "you need help."
-            )
+            message = "Hear each other, then make what you came to make."
             evidence = (
-                "Only artists can confirm two-way audibility; meters do not prove it."
+                "Only you can confirm you hear each other. This room is not recorded."
             )
         else:
             title = "Participants connected"

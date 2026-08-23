@@ -1243,7 +1243,7 @@ def test_native_sound_setup_watches_connection_without_a_completion_click() -> N
             "invite_ready",
             "host",
             "Your room is ready",
-            ("Copy the invite", "someone else in"),
+            ("Copy the invite", "next step"),
         ),
         (
             "art",

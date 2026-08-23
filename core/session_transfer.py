@@ -2439,6 +2439,7 @@ class SharedCanvasSessionSnapshot:
 
 _ROOM_CLOCK_SCHEMA = 1
 _MAX_ROOM_CLOCK_GENERATION = (1 << 63) - 1
+_ROOM_CLOCK_MAX_FORM_SHAPE_CHARS = 80
 
 
 def _room_clock_count(value: object, label: str, maximum: int) -> int:
@@ -2491,6 +2492,17 @@ def _room_clock_section(value: object) -> str:
     return normalized
 
 
+def _room_clock_form_shape(value: object) -> str:
+    if type(value) is not str:
+        raise ValueError("form_shape must be text.")
+    if any(not character.isprintable() for character in value):
+        raise ValueError("form_shape contains unsupported characters.")
+    normalized = " ".join(value.split())
+    if len(normalized) > _ROOM_CLOCK_MAX_FORM_SHAPE_CHARS:
+        raise ValueError("form_shape is too long.")
+    return normalized
+
+
 class RoomClockSourceValue(str, Enum):
     """Who owns the room's pulse, named on the wire so nothing is inferred."""
 
@@ -2527,6 +2539,13 @@ class RoomClockSessionSnapshot:
     tempo_bpm: float = 0.0
     meter_numerator: int = 0
     meter_denominator: int = 0
+    # Additive honesty. Older peers omit these keys; absence means "not
+    # stated", which is the same as the defaults. A song clock that does not
+    # follow the live playing stays a count; a file with no written parts
+    # never reaches this snapshot.
+    follows_shared_track: bool = False
+    section_lengths_assumed: bool = False
+    form_shape: str = ""
 
     def __post_init__(self) -> None:
         generation = self.generation
@@ -2550,15 +2569,31 @@ class RoomClockSessionSnapshot:
         denominator = _room_clock_count(
             self.meter_denominator, "meter_denominator", _ROOM_CLOCK_MAX_BEAT
         )
+        if type(self.follows_shared_track) is not bool:
+            raise ValueError("follows_shared_track must be a boolean.")
+        if type(self.section_lengths_assumed) is not bool:
+            raise ValueError("section_lengths_assumed must be a boolean.")
+        form_shape = _room_clock_form_shape(self.form_shape)
 
         states_music = bool(
             bar or beat or section or tempo or numerator or denominator
         )
+        song_honesty = bool(
+            self.follows_shared_track
+            or self.section_lengths_assumed
+            or form_shape
+        )
         if source is RoomClockSourceValue.NONE:
-            if self.running or position or duration or states_music:
+            if (
+                self.running
+                or position
+                or duration
+                or states_music
+                or song_honesty
+            ):
                 raise ValueError("An absent room clock cannot expose a position.")
         elif source is RoomClockSourceValue.REFERENCE_VIDEO:
-            if states_music:
+            if states_music or song_honesty:
                 raise ValueError(
                     "A reference video clock cannot state a musical position; "
                     "a file offset is not a bar."
@@ -2584,6 +2619,7 @@ class RoomClockSessionSnapshot:
         object.__setattr__(self, "tempo_bpm", tempo)
         object.__setattr__(self, "meter_numerator", numerator)
         object.__setattr__(self, "meter_denominator", denominator)
+        object.__setattr__(self, "form_shape", form_shape)
 
     @classmethod
     def from_mapping(cls, value: object) -> "RoomClockSessionSnapshot":
@@ -2610,10 +2646,18 @@ class RoomClockSessionSnapshot:
         }
         if not required.issubset(value):
             raise ValueError("room_clock is incomplete.")
-        return cls(**{key: value[key] for key in required})
+        parsed = {key: value[key] for key in required}
+        for optional in (
+            "follows_shared_track",
+            "section_lengths_assumed",
+            "form_shape",
+        ):
+            if optional in value:
+                parsed[optional] = value[optional]
+        return cls(**parsed)
 
     def to_mapping(self) -> dict[str, object]:
-        return {
+        mapping: dict[str, object] = {
             "schema": _ROOM_CLOCK_SCHEMA,
             "generation": self.generation,
             "source": self.source.value,
@@ -2627,6 +2671,14 @@ class RoomClockSessionSnapshot:
             "meter_numerator": self.meter_numerator,
             "meter_denominator": self.meter_denominator,
         }
+        # Additive: older guests ignore unknown keys. Only emit honesty
+        # when a song owner actually stated it, so a video clock stays
+        # a file offset.
+        if self.source is RoomClockSourceValue.SONG_FORM:
+            mapping["follows_shared_track"] = self.follows_shared_track
+            mapping["section_lengths_assumed"] = self.section_lengths_assumed
+            mapping["form_shape"] = self.form_shape
+        return mapping
 
 
 @dataclass(frozen=True)
@@ -3471,6 +3523,9 @@ class SessionControlState:
         tempo_bpm: float = 0.0,
         meter_numerator: int = 0,
         meter_denominator: int = 0,
+        follows_shared_track: bool = False,
+        section_lengths_assumed: bool = False,
+        form_shape: str = "",
     ) -> RoomClockSessionSnapshot:
         """Publish one idempotent, memory-only pulse for the whole room.
 
@@ -3498,6 +3553,9 @@ class SessionControlState:
                 tempo_bpm=tempo_bpm,
                 meter_numerator=meter_numerator,
                 meter_denominator=meter_denominator,
+                follows_shared_track=follows_shared_track,
+                section_lengths_assumed=section_lengths_assumed,
+                form_shape=form_shape,
             )
             if candidate == current:
                 return current

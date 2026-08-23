@@ -85,12 +85,8 @@ _CREATOR_LAUNCH_COPY = {
         host="Host",
         join="Join",
         local="New Music Project",
-        host_description=(
-            "Start a live music session on this Mac and create an invitation link."
-        ),
-        join_description=(
-            "Join a live music session using one WebJam invitation link."
-        ),
+        host_description="Start the room and copy an invite.",
+        join_description="Paste the invite you were sent.",
         local_description=(
             "Create a local multitrack music project without starting or joining "
             "a live session."

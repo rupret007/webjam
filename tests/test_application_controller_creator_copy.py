@@ -538,7 +538,7 @@ def test_art_startup_copy_does_not_talk_like_a_band() -> None:
     spoken = " ".join(copy.values()).casefold()
     assert copy["host_ready_title"] == "Your room is ready"
     assert copy["confirm_title"] == "Listen for the room"
-    assert "copy the invite" in copy["host_ready_detail"].casefold()
+    assert copy["host_ready_detail"] == "Copy the invite. That is the next step."
     for banned in ("band", "instrument", "jamulus", "studio visit"):
         assert banned not in spoken, banned
     assert re.search(r"\bjam\b", spoken) is None

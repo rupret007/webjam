@@ -9,6 +9,13 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the immutable v0.26.0 release boundary belongs here. Every
 > published tag, release, and asset remains immutable historical evidence.
 
+### Form honesty and Art's one next step
+
+- A Shared Track with no written parts is not a song clock. Painters ride bars and named sections only when the room wrote them; a timer is not dressed up as form.
+- The published song clock no longer invents 4/4 from the count's default. Assumed section lengths, "this is a count, not the playing", and the written shape (Verse → Chorus) travel with the pulse so Art sees the same honesty Music already shows.
+- Art's HUD is one next step: **Copy the invite** after Host, **You are in** after Join, **make what you came to make** once people are here. The Drawpile / meeting-capture lecture left the HUD; tool names still appear on the chip when something is missing.
+- Music's first-screen Host/Join descriptions dropped "this Mac" / invitation-link chrome.
+
 ### In-room next step, Shared Track pulse, start-UX CI hold
 
 - Art after Host/Join now has one next step: **Copy the invite**, then **You are in. Wait for the other artist, then listen.** Once connected: **Hear each other, then make.** Music guests are told to play, not to Record.
