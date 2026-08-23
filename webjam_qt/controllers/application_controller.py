@@ -1641,24 +1641,38 @@ class ApplicationController(QObject):
     def _session_recording_control_available(self, *, hosting: bool | None = None) -> bool:
         """Host Record chrome only when this profile may start a take."""
 
+        settings = getattr(self, "settings", None)
         if hosting is None:
-            hosting = bool(getattr(self.settings, "host_server_enabled", False))
+            hosting = bool(getattr(settings, "host_server_enabled", False))
         if getattr(self, "_conductor_studio_reviewing", False):
             return False
+        profile = get_creator_profile_by_key_or_default(
+            getattr(
+                self,
+                "_active_creator_profile_key",
+                getattr(settings, "last_creator_profile_key", "music"),
+            )
+        )
         return bool(
             hosting
             and getattr(self, "_jamulus_connected", False)
-            and self.creator_profile.capabilities.session_recording
+            and profile.capabilities.session_recording
         )
 
     def _shared_track_host_available(self, *, hosting: bool | None = None) -> bool:
         """Host Shared Track chrome only when this profile has that route."""
 
+        settings = getattr(self, "settings", None)
         if hosting is None:
-            hosting = bool(getattr(self.settings, "host_server_enabled", False))
-        return bool(
-            hosting and self.creator_profile.capabilities.shared_reference_audio
+            hosting = bool(getattr(settings, "host_server_enabled", False))
+        profile = get_creator_profile_by_key_or_default(
+            getattr(
+                self,
+                "_active_creator_profile_key",
+                getattr(settings, "last_creator_profile_key", "music"),
+            )
         )
+        return bool(hosting and profile.capabilities.shared_reference_audio)
 
     #: What to say once, per start that promises an add-on, when a room exists.
     def _tick_creator_start(self) -> None:
@@ -1767,10 +1781,18 @@ class ApplicationController(QObject):
         setter = getattr(self.window, "set_creator_profile", None)
         if callable(setter):
             setter(self.creator_profile, locked=self._creator_profile_host_owned)
+        # Unbound-method tests pass a stub strip. Only a real SessionStrip
+        # owns these setters; the HUD path still refreshes them on a live
+        # controller.
         strip = getattr(getattr(self, "window", None), "session_strip", None)
-        if strip is not None:
-            strip.set_recording_available(self._session_recording_control_available())
-            strip.set_reference_track_available(self._shared_track_host_available())
+        set_recording = getattr(strip, "set_recording_available", None)
+        recording_available = getattr(self, "_session_recording_control_available", None)
+        if callable(set_recording) and callable(recording_available):
+            set_recording(recording_available())
+        set_shared_track = getattr(strip, "set_reference_track_available", None)
+        shared_track_available = getattr(self, "_shared_track_host_available", None)
+        if callable(set_shared_track) and callable(shared_track_available):
+            set_shared_track(shared_track_available())
 
     def _guest_media_state(self) -> tuple[GuestMediaState, EvidenceState]:
         """Map the guest transfer owner's finite facts without exposing errors."""
