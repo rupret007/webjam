@@ -9,6 +9,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the immutable v0.26.0 release boundary belongs here. Every
 > published tag, release, and asset remains immutable historical evidence.
 
+### Music door path to Art
+
+- Default Music launch stays **Host** / **Join** only. A quiet **Art, podcast, or review** line reveals the existing room picker, so a first-run musician can reach Art without an integration wall, a profile combo on the Music door, or a third primary action. Returning to Music hides the picker again.
+- First-screen picker labels are now just the room names — no `(Preview)` / `(Ready)` chrome. Review’s door is **Host Review** / **Join Review** and “Host or join a review.”, not a Preview or meeting-capture caveat wall.
+
 ### Quality review fail-closed chrome
 
 - Art live chrome no longer offers **Record Session**, **Shared Track**, **Recording Setup**, or **Studio** when the profile forbids those capabilities. Switching back to Music/Podcast/Review restores them. Art strip copy addresses artists, not a Review session.

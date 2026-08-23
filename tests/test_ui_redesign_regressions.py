@@ -134,6 +134,9 @@ def test_launch_hierarchy_is_one_primary_then_two_clear_alternatives(
         assert not dialog._name_preview.isVisibleTo(dialog)
         assert not dialog._creator_profile_label.isVisibleTo(dialog)
         assert not dialog._creator_profile_selector.isVisibleTo(dialog)
+        assert dialog._more_rooms_button.isVisibleTo(dialog)
+        assert dialog._more_rooms_button.objectName() == "LaunchMoreRooms"
+        assert not dialog._choice_subtitle.isVisibleTo(dialog)
         assert (
             dialog._host_button.geometry().top()
             < dialog._join_button.geometry().top()
@@ -168,6 +171,7 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
             dialog._logo,
             dialog._host_button,
             dialog._join_button,
+            dialog._more_rooms_button,
             dialog._choice_helper,
         ):
             assert control.isVisibleTo(dialog)
@@ -179,6 +183,7 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
             dialog._studio_button,
             dialog._creator_profile_label,
             dialog._creator_profile_selector,
+            dialog._choice_subtitle,
         ):
             assert not hidden.isVisibleTo(dialog)
         assert dialog._choice_helper.text() == "Play live together."
@@ -227,6 +232,7 @@ def test_windows_launch_name_roles_and_installer_do_not_overlap_at_default_size(
             dialog._host_button,
             dialog._join_button,
             dialog._install_jamulus_button,
+            dialog._more_rooms_button,
             dialog._choice_helper,
         )
         rects = [_rect_in(control, dialog) for control in controls]

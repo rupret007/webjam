@@ -7,6 +7,7 @@ and they hold the other three profiles to the shape they already had.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -52,6 +53,49 @@ def _visible_buttons(dialog: LaunchDialog) -> list[QPushButton]:
         for button in dialog._choice_page.findChildren(QPushButton)
         if not button.isHidden()
     ]
+
+
+def _first_screen_spoken(dialog: LaunchDialog) -> str:
+    selector = dialog._creator_profile_selector
+    picker_items = [selector.itemText(index) for index in range(selector.count())]
+    return " ".join(
+        [
+            dialog._creator_profile_label.text(),
+            selector.accessibleDescription(),
+            *picker_items,
+            dialog._name_preview.text(),
+            dialog._name_label.text(),
+            dialog._host_button.text(),
+            dialog._host_button.accessibleDescription(),
+            dialog._join_button.text(),
+            dialog._join_button.accessibleDescription(),
+            dialog._choice_title.text(),
+            dialog._choice_subtitle.text(),
+            dialog._choice_helper.text(),
+            dialog._more_rooms_button.text(),
+            dialog._more_rooms_button.accessibleDescription(),
+        ]
+        + [card.text() for card in _visible_cards(dialog)]
+        + [card.description() for card in _visible_cards(dialog)]
+        + [card.accessibleDescription() for card in _visible_cards(dialog)]
+    ).casefold()
+
+
+def _assert_first_screen_has_no_banned_words(spoken: str) -> None:
+    for component in (
+        "drawpile",
+        "krita",
+        "jamulus",
+        "webex",
+        "moises",
+        "byok",
+        "comfyui",
+        "host-clocked",
+        "studio visit",
+    ):
+        assert component not in spoken, component
+    for word in ("preview", "ready"):
+        assert not re.search(rf"\b{word}\b", spoken), word
 
 
 # ---------------------------------------------------------------------------
@@ -188,36 +232,7 @@ def test_the_first_screen_names_no_component(qapp, tmp_path: Path):
 
     dialog = _dialog(tmp_path)
     try:
-        spoken = " ".join(
-            [
-                dialog._creator_profile_label.text(),
-                dialog._creator_profile_selector.accessibleDescription(),
-                dialog._name_preview.text(),
-                dialog._host_button.text(),
-                dialog._host_button.accessibleDescription(),
-                dialog._join_button.text(),
-                dialog._join_button.accessibleDescription(),
-                dialog._choice_helper.text(),
-            ]
-            + [card.text() for card in _visible_cards(dialog)]
-            + [card.description() for card in _visible_cards(dialog)]
-            + [
-                card.accessibleDescription()
-                for card in _visible_cards(dialog)
-            ]
-        ).casefold()
-
-        for component in (
-            "drawpile",
-            "krita",
-            "jamulus",
-            "webex",
-            "moises",
-            "byok",
-            "comfyui",
-            "host-clocked",
-        ):
-            assert component not in spoken, component
+        _assert_first_screen_has_no_banned_words(_first_screen_spoken(dialog))
     finally:
         dialog.deleteLater()
 
@@ -278,10 +293,73 @@ def test_a_profile_without_cards_keeps_its_headline_and_helper(
     dialog = _dialog(tmp_path, "music")
     try:
         assert dialog._choice_title.isVisibleTo(dialog._choice_page) is True
-        assert dialog._choice_subtitle.isVisibleTo(dialog._choice_page) is True
+        assert dialog._choice_subtitle.isVisibleTo(dialog._choice_page) is False
         assert dialog._choice_helper.text() == "Play live together."
         assert dialog._creator_profile_label.isVisibleTo(dialog._choice_page) is False
         assert dialog._creator_profile_selector.isVisibleTo(dialog._choice_page) is False
+        assert dialog._more_rooms_button.isVisibleTo(dialog._choice_page) is True
+    finally:
+        dialog.deleteLater()
+
+
+def test_music_door_keeps_host_join_and_offers_a_quiet_path_to_art(
+    qapp, tmp_path: Path
+):
+    """Default Music is Host / Join. Art is one quiet line away."""
+
+    dialog = _dialog(tmp_path, "music")
+    try:
+        role_buttons = [
+            button
+            for button in _visible_buttons(dialog)
+            if button.objectName() in {"LaunchPrimary", "LaunchSecondary"}
+        ]
+        assert [button.text() for button in role_buttons] == ["Host", "Join"]
+        assert dialog._studio_button.isHidden() is True
+        assert dialog._more_rooms_button.isVisibleTo(dialog._choice_page) is True
+        assert dialog._more_rooms_button.autoDefault() is False
+        assert dialog._more_rooms_button.isDefault() is False
+        assert dialog._host_button.isDefault() is True
+        _assert_first_screen_has_no_banned_words(_first_screen_spoken(dialog))
+
+        dialog._more_rooms_button.click()
+        assert dialog._rooms_picker_revealed is True
+        assert dialog._more_rooms_button.isVisibleTo(dialog._choice_page) is False
+        assert dialog._creator_profile_label.isVisibleTo(dialog._choice_page) is True
+        assert dialog._creator_profile_selector.isVisibleTo(dialog._choice_page) is True
+        assert [
+            dialog._creator_profile_selector.itemText(index)
+            for index in range(dialog._creator_profile_selector.count())
+        ] == [profile.label for profile in CREATOR_PROFILES]
+        assert [button.text() for button in role_buttons] == ["Host", "Join"]
+
+        selector = dialog._creator_profile_selector
+        selector.setCurrentIndex(selector.findData("art"))
+        assert dialog.selected_creator_profile_key == "art"
+        assert [card.start_key for card in _visible_cards(dialog)] == [
+            "talk_and_make",
+            "paint_together",
+            "paint_along",
+        ]
+        assert dialog._more_rooms_button.isVisibleTo(dialog._choice_page) is False
+        _assert_first_screen_has_no_banned_words(_first_screen_spoken(dialog))
+
+        selector.setCurrentIndex(selector.findData("music"))
+        assert dialog._rooms_picker_revealed is False
+        assert dialog._more_rooms_button.isVisibleTo(dialog._choice_page) is True
+        assert dialog._creator_profile_selector.isVisibleTo(dialog._choice_page) is False
+        assert _visible_cards(dialog) == []
+    finally:
+        dialog.deleteLater()
+
+
+def test_review_door_is_host_join_not_a_caveat_wall(qapp, tmp_path: Path):
+    dialog = _dialog(tmp_path, "review_rehearsal")
+    try:
+        assert dialog._host_button.text() == "Host Review"
+        assert dialog._join_button.text() == "Join Review"
+        assert dialog._choice_helper.text() == "Host or join a review."
+        _assert_first_screen_has_no_banned_words(_first_screen_spoken(dialog))
     finally:
         dialog.deleteLater()
 
@@ -392,6 +470,7 @@ def test_a_profile_without_starts_shows_no_cards(
         hide_profile = profile_key == "music"
         assert dialog._creator_profile_label.isHidden() is hide_profile
         assert dialog._creator_profile_selector.isHidden() is hide_profile
+        assert dialog._more_rooms_button.isHidden() is not hide_profile
     finally:
         dialog.deleteLater()
 
@@ -439,3 +518,4 @@ def test_no_launch_copy_still_says_studio_visit():
             )
         ).casefold()
         assert "studio visit" not in spoken, key
+        assert not re.search(r"\bpreview\b", spoken), key

@@ -111,11 +111,10 @@ def test_the_only_visible_workflow_choice_is_the_creator_profile(qapp, tmp_path)
         selector.setCurrentIndex(selector.findData("art"))
         qapp.processEvents()
         offered = _visible_combo_items(dialog)
-        assert PROFILE_LABELS <= offered or all(
-            any(label in item for item in offered) for label in PROFILE_LABELS
-        )
+        assert offered == PROFILE_LABELS
         assert not (offered & LEGACY_LABELS)
         assert not any("Visual Studio" == item for item in offered)
+        assert not any("Preview" in item or "Ready" in item for item in offered)
     finally:
         dialog.deleteLater()
 

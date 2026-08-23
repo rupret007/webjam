@@ -90,10 +90,17 @@ def test_launch_shows_live_and_offline_music_paths(qapp, tmp_path):
         for button in dialog.findChildren(QAbstractButton)
         if button.isVisibleTo(dialog)
     ]
-    assert [button.accessibleName() for button in visible_actions] == [
+    role_actions = [
+        button
+        for button in visible_actions
+        if button.objectName() in {"LaunchPrimary", "LaunchSecondary"}
+    ]
+    assert [button.accessibleName() for button in role_actions] == [
         "Host",
         "Join",
     ]
+    assert dialog._more_rooms_button.isVisibleTo(dialog) is True
+    assert dialog._more_rooms_button.accessibleName() == "Art, podcast, or review"
     assert dialog.selected_creator_profile_key == "music"
     assert dialog._name_label.isVisibleTo(dialog) is False
     assert dialog._name_input.isVisibleTo(dialog) is False
@@ -120,10 +127,10 @@ def test_launch_creator_selector_uses_canonical_profiles_and_truthful_actions(
             profile.key for profile in CREATOR_PROFILES
         ]
         assert [selector.itemText(index) for index in range(selector.count())] == [
-            "Music (Ready)",
-            "Podcast & Voice (Ready)",
-            "Review & Rehearsal (Preview)",
-            "Art (Preview)",
+            "Music",
+            "Podcast & Voice",
+            "Review & Rehearsal",
+            "Art",
         ]
         assert dialog.selected_creator_profile_key == "music"
         assert dialog._host_button.text() == "Host"
@@ -134,6 +141,7 @@ def test_launch_creator_selector_uses_canonical_profiles_and_truthful_actions(
         # widget, but the picker is not a first-screen control.
         assert selector.isVisibleTo(dialog) is False
         assert dialog._creator_profile_label.isVisibleTo(dialog) is False
+        assert dialog._more_rooms_button.isVisibleTo(dialog) is True
         for control in (
             dialog._host_button,
             dialog._join_button,
@@ -165,7 +173,8 @@ def test_launch_creator_selector_uses_canonical_profiles_and_truthful_actions(
         assert dialog._join_button.text() == "Join Review"
         assert not dialog._studio_button.isVisibleTo(dialog)
         assert not dialog._studio_button.isEnabled()
-        assert "Preview" in dialog._choice_helper.text()
+        assert dialog._choice_helper.text() == "Host or join a review."
+        assert "Preview" not in dialog._choice_helper.text()
         assert "visual" in dialog._studio_button.accessibleDescription().lower()
 
         dialog.show_join()
