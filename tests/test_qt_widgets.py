@@ -1074,6 +1074,26 @@ class TestConductorWindow(unittest.TestCase):
         self.assertIn("no visual-media sync", w.session_canvas._notes.placeholderText())
         self.assertIn("media timecode", w.session_canvas.accessibleDescription())
 
+        art = get_creator_profile_by_key_or_default("art")
+        w.set_creator_profile(art, locked=True)
+        self.assertIn("Art", w.windowTitle())
+        self.assertNotIn("Preview", w.windowTitle())
+        self.assertEqual(w.session_strip._subtitle.text(), "Art · Host profile")
+        self.assertEqual(w.session_canvas._header.text(), "Art Notes")
+        self.assertIn("what you're making", w.session_canvas._notes.placeholderText())
+        self.assertNotIn("chord progressions", w.session_canvas._notes.placeholderText())
+        self.assertNotIn("Preview", w.session_canvas._header.text())
+        self.assertNotIn("Jamulus", w.session_canvas._chat_input.placeholderText())
+        self.assertEqual(
+            w.session_canvas.accessibleDescription(),
+            "These notes stay on this computer. Live chat is separate.",
+        )
+        self.assertNotIn("media timecode", w.session_canvas.accessibleDescription())
+        self.assertEqual(
+            w._status_recording.toolTip(),
+            "This room is not recorded.",
+        )
+
     def test_supported_narrow_minimum_size(self):
         w = self._window()
         # Leave room for native frame/title-bar chrome inside a physical

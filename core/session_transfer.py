@@ -2601,13 +2601,18 @@ class RoomClockSessionSnapshot:
             if duration and position > duration:
                 raise ValueError("position_s must not exceed duration_s.")
         else:
-            # Shared Track may own the pulse with only elapsed time. That is
-            # still a named song clock; do not invent a bar to satisfy the
-            # wire. A beat still needs the bar it belongs to.
+            # A song clock is a written form: a bar or a named section.
+            # Elapsed time alone is a timer, not a song. Do not invent a
+            # bar to dress a Shared Track up as form. A beat still needs
+            # the bar it belongs to.
             if beat and not bar:
                 raise ValueError("A beat needs the bar it belongs to.")
             if bool(numerator) != bool(denominator):
                 raise ValueError("A meter needs both of its numbers.")
+            if not bar and not section:
+                raise ValueError(
+                    "A song-form clock needs a written bar or section."
+                )
 
         object.__setattr__(self, "generation", generation)
         object.__setattr__(self, "source", source)
@@ -2654,7 +2659,14 @@ class RoomClockSessionSnapshot:
         ):
             if optional in value:
                 parsed[optional] = value[optional]
-        return cls(**parsed)
+        try:
+            return cls(**parsed)
+        except ValueError as exc:
+            # A #25-era elapsed-only song clock is not a form. Drop the
+            # pulse rather than take down the room.
+            if "written bar or section" in str(exc):
+                return cls()
+            raise
 
     def to_mapping(self) -> dict[str, object]:
         mapping: dict[str, object] = {

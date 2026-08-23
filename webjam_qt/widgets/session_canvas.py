@@ -209,14 +209,23 @@ class SessionCanvas(QFrame):
 
         if not isinstance(profile, CreatorProfile):
             raise TypeError("profile must be a CreatorProfile")
-        preview = " · Preview" if profile.is_preview else ""
+        preview = (
+            " · Preview"
+            if profile.is_preview and profile.key != "art"
+            else ""
+        )
         self._header.setText(f"{profile.label} Notes{preview}")
         self.setAccessibleName(f"{profile.label} local notes")
-        self.setAccessibleDescription(
-            "These notes are part of the local session record and stay on this "
-            "computer. Live chat is separate. There is no shared-note "
-            "synchronization or media timecode."
-        )
+        if profile.key == "art":
+            self.setAccessibleDescription(
+                "These notes stay on this computer. Live chat is separate."
+            )
+        else:
+            self.setAccessibleDescription(
+                "These notes are part of the local session record and stay on this "
+                "computer. Live chat is separate. There is no shared-note "
+                "synchronization or media timecode."
+            )
         if profile.key == "podcast_voice":
             placeholder = (
                 "Local production notes:\n"
@@ -233,6 +242,14 @@ class SessionCanvas(QFrame):
                 "  · owners and next pass\n"
                 "  · no visual-media sync"
             )
+        elif profile.key == "art":
+            placeholder = (
+                "Local notes:\n"
+                "  · what you're making\n"
+                "  · what to try next\n"
+                "  · who needs what\n"
+                "  · next time"
+            )
         else:
             placeholder = (
                 "Local session notes:\n"
@@ -246,9 +263,14 @@ class SessionCanvas(QFrame):
         self._chat_input.setAccessibleName(
             f"Shared chat message for session {participants}"
         )
-        self._chat_input.setPlaceholderText(
-            f"Message {participants} in Jamulus chat… (Enter to send)"
-        )
+        if profile.key == "art":
+            self._chat_input.setPlaceholderText(
+                f"Message {participants}… (Enter to send)"
+            )
+        else:
+            self._chat_input.setPlaceholderText(
+                f"Message {participants} in Jamulus chat… (Enter to send)"
+            )
 
     def set_notes(self, text: str) -> None:
         if self._notes.toPlainText() == text:

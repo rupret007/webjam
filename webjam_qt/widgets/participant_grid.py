@@ -641,7 +641,9 @@ class ParticipantGrid(QScrollArea):
         eyebrow = self._profile_text(
             phase_labels.get(state, state.replace("_", " ").upper())
         )
-        if self._creator_profile.is_preview:
+        if self._creator_profile.is_preview and self._creator_profile.key != "art":
+            # Art is Preview in the registry. The empty stage still must not
+            # grow a Preview lecture — the HUD already dropped that suffix.
             eyebrow = f"PREVIEW · {eyebrow}"
         self._empty_eyebrow.setText(eyebrow)
         self._empty_title.setText(title)
@@ -656,7 +658,7 @@ class ParticipantGrid(QScrollArea):
         self._empty_hint.setText(hint)
         self._empty_hint.setVisible(bool(hint))
         accessible_parts = [title, message]
-        if self._creator_profile.is_preview:
+        if self._creator_profile.is_preview and self._creator_profile.key != "art":
             accessible_parts.insert(0, f"{self._creator_profile.label} Preview")
             if hint:
                 accessible_parts.append(hint)

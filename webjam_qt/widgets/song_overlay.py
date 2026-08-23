@@ -489,7 +489,11 @@ class SongOverlay(QFrame):
 
         if not isinstance(profile, CreatorProfile):
             raise TypeError("profile must be a CreatorProfile")
-        preview = " · Preview" if profile.is_preview else ""
+        preview = (
+            " · Preview"
+            if profile.is_preview and profile.key != "art"
+            else ""
+        )
         self.setAccessibleDescription(
             f"{profile.label} song tools and meeting panel{preview}. "
             "Suggestions are generated on this computer."

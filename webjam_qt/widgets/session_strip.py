@@ -542,7 +542,9 @@ class SessionStrip(QFrame):
         self._creator_profile_key = profile.key
         self._creator_profile_label = profile.label
         self._creator_profile_locked = bool(locked)
-        self._creator_profile_preview = profile.is_preview
+        self._creator_profile_preview = (
+            profile.is_preview and profile.key != "art"
+        )
         self._participant_singular = profile.vocabulary.participant_singular
         self._participant_plural = profile.vocabulary.participant_plural
         self._session_noun = profile.vocabulary.session_noun

@@ -101,6 +101,8 @@ def test_art_strip_copy_addresses_artists_not_a_review(qapp):
         assert "studio visit" not in rendered
         assert "host-clocked" not in rendered
         assert "jamulus" not in strip._reference_track_button.accessibleDescription().casefold()
+        assert "preview" not in strip._subtitle.text().casefold()
+        assert strip._subtitle.text() == "Art · Ready"
     finally:
         strip.deleteLater()
 

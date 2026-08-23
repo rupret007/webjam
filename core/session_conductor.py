@@ -760,7 +760,7 @@ def _presentation(
         )
     if phase is SessionConductorPhase.INVITE_READY:
         invite_message = (
-            "Copy the invite. That is the next step. Send it when you want them in."
+            "Copy the invite. That is the next step."
             if profile.key in {"music", "art"}
             else f"Share the invite when {waiting_counterpart} is ready to join."
         )
@@ -821,15 +821,9 @@ def _presentation(
         if profile.key == "music":
             title = "Band connected"
             if host:
-                message = (
-                    "Hear each other, then Record when you are ready. "
-                    "Band Check (F2) is there if you need help."
-                )
+                message = "Hear each other, then Record when you are ready."
             else:
-                message = (
-                    "Hear each other, then play. "
-                    "Band Check (F2) is there if you need help."
-                )
+                message = "Hear each other, then play."
             evidence = (
                 "Only musicians can confirm two-way audibility; meters do not prove it."
             )

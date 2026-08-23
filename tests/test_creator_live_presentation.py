@@ -72,8 +72,8 @@ def test_music_profile_retains_the_existing_live_vocabulary() -> None:
 
     live = derive_session_conductor(_live_facts("music"))
     assert live.title == "Band connected"
-    assert "Hear each other, then Record when you are ready." in live.message
-    assert "Band Check (F2)" in live.message
+    assert live.message == "Hear each other, then Record when you are ready."
+    assert "Band Check (F2)" not in live.message
     assert live.creator_profile_key == "music"
     assert live.action_label == "Record"
     assert SessionPrimaryAction.RUN_BAND_CHECK.label_for("music") == "Run Band Check"
@@ -323,7 +323,10 @@ def test_participant_grid_applies_profile_vocabulary_and_preview_truth() -> None
         assert "visual media and media timecode" not in art_visible
         assert "stems" not in art_visible
         assert "separate tracks" not in art_visible
+        assert "preview" not in art_visible
+        assert grid._empty_eyebrow.text() == "READY"
         assert grid._empty_hint.text() == ""
+        assert "preview" not in grid._empty_state.accessibleDescription().casefold()
         assert re.search(r"\bjam\b", art_visible) is None
     finally:
         grid.close()
