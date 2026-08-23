@@ -380,6 +380,47 @@ def test_a_beat_never_appears_without_its_bar():
         )
 
 
+def test_a_song_form_clock_without_written_parts_is_refused():
+    """Elapsed time alone is a timer. Painters must not ride it as form."""
+
+    with pytest.raises(ValueError, match="written bar or section"):
+        RoomClockSessionSnapshot(
+            source=RoomClockSourceValue.SONG_FORM,
+            running=True,
+            position_s=8.5,
+        )
+    with pytest.raises(ValueError, match="written bar or section"):
+        RoomClockSessionSnapshot(
+            source=RoomClockSourceValue.SONG_FORM,
+            tempo_bpm=120.0,
+        )
+
+
+def test_a_peer_elapsed_only_song_clock_reads_as_no_clock():
+    """An older host that published a timer must not knock the guest offline."""
+
+    parsed = RoomClockSessionSnapshot.from_mapping(
+        {
+            "schema": 1,
+            "generation": 2,
+            "source": RoomClockSourceValue.SONG_FORM.value,
+            "running": True,
+            "position_s": 8.5,
+            "duration_s": 0.0,
+            "bar": 0,
+            "beat": 0,
+            "section_label": "",
+            "tempo_bpm": 0.0,
+            "meter_numerator": 0,
+            "meter_denominator": 0,
+        }
+    )
+
+    assert parsed.source is RoomClockSourceValue.NONE
+    assert parsed.running is False
+    assert parsed.position_s == 0.0
+
+
 def test_a_lost_owner_stops_the_clock_instead_of_drifting():
     view = render_room_clock(
         _video(position_s=100.0), age_s=DEFAULT_STALE_AFTER_S + 1.0

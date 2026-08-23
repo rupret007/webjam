@@ -5240,8 +5240,8 @@ class ApplicationController(QObject):
                 "host_ready_detail": (
                     "Copy the invite. That is the next step."
                 ),
-                "guest_ready_title": "You're in",
-                "guest_ready_detail": "The room is ready. Enter when you are.",
+                "guest_ready_title": "The room is ready",
+                "guest_ready_detail": "Enter the room. That is the next step.",
                 "closing_detail": "WebJam is closing this room.",
                 "failure_title": "The room needs attention",
                 "failure_detail": (

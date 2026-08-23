@@ -225,9 +225,9 @@ def test_guest_join_and_live_require_authenticated_path_and_unique_roster_truth(
     assert live.primary_action is SessionPrimaryAction.NONE
     assert live.title == "Band connected"
     assert "ready to play" not in live.title.lower()
-    assert "Hear each other, then play." in live.message
+    assert live.message == "Hear each other, then play."
     assert "Record when you are ready" not in live.message
-    assert "Band Check (F2)" in live.message
+    assert "Band Check (F2)" not in live.message
     assert "only musicians" in live.limitation.lower()
 
     duplicate_identity = derive_session_conductor(

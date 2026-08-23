@@ -759,7 +759,11 @@ class ConductorWindow(QMainWindow):
         from webjam_qt import __version__
 
         self._creator_profile = profile
-        suffix = " · Preview" if profile.is_preview else ""
+        suffix = (
+            " · Preview"
+            if profile.is_preview and profile.key != "art"
+            else ""
+        )
         self.setWindowTitle(f"WebJam — {profile.label}{suffix} (v{__version__})")
         self.setAccessibleName(f"WebJam {profile.label} workspace{suffix}")
         self.session_strip.set_creator_profile(profile, locked=locked)
@@ -789,6 +793,8 @@ class ConductorWindow(QMainWindow):
                 "The Jamulus server is recording WebJam audio — every participant "
                 f"gets a synchronized track. {RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
             )
+        elif profile.key == "art":
+            recording_tip = "This room is not recorded."
         else:
             recording_tip = (
                 "The Jamulus server is recording this session — every musician "

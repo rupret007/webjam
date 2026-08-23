@@ -630,42 +630,6 @@ def test_a_live_art_session_addresses_artists_and_offers_no_recording():
     assert re.search(r"\btrack\b", copy) is None
 
 
-def test_art_host_and_join_have_one_next_step():
-    """After Host/Join the room says what to do, in artist words."""
-
-    invite_ready = derive_session_conductor(
-        replace(
-            _ready_facts(ART),
-            host_server_process=ProcessState.RUNNING,
-            host_server_rpc=EvidenceState.VERIFIED,
-            host_listener=EvidenceState.VERIFIED,
-            invite=EvidenceState.VERIFIED,
-            music_path=MusicPathState.AUTHENTICATED,
-            local_participant=EvidenceState.VERIFIED,
-        )
-    )
-    assert invite_ready.phase is SessionConductorPhase.INVITE_READY
-    assert invite_ready.primary_action is SessionPrimaryAction.COPY_INVITE
-    assert "Copy the invite" in invite_ready.message
-    assert "next step" in invite_ready.message
-
-    connected = derive_session_conductor(
-        replace(
-            _ready_facts(ART),
-            role=SessionRole.GUEST,
-            guest_enrollment=EvidenceState.VERIFIED,
-            music_path=MusicPathState.AUTHENTICATED,
-            local_participant=EvidenceState.VERIFIED,
-        )
-    )
-    assert connected.phase is SessionConductorPhase.CONNECTED
-    assert "You are in" in connected.message
-    assert "other artist" in connected.message
-    spoken = _visible_copy(connected)
-    assert "authenticated" not in spoken
-    assert "bandmate" not in spoken
-
-
 def test_a_live_art_session_states_its_own_limits_not_reviews():
     """The HUD is one next step, not a Drawpile / meeting-capture lecture."""
 
@@ -720,7 +684,8 @@ def test_art_host_and_join_have_one_next_step():
     )
     assert invite.phase is SessionConductorPhase.INVITE_READY
     assert invite.primary_action is SessionPrimaryAction.COPY_INVITE
-    assert "Copy the invite. That is the next step." in invite.message
+    assert invite.message == "Copy the invite. That is the next step."
+    assert "send it when you want" not in invite.message.casefold()
     assert "drawpile" not in invite.evidence_limit.casefold()
     assert "preview" not in invite.title.casefold()
 
@@ -736,6 +701,10 @@ def test_art_host_and_join_have_one_next_step():
     )
     assert connected.phase is SessionConductorPhase.CONNECTED
     assert connected.message == "You are in. Wait for the others, then start making."
+    spoken = _visible_copy(connected)
+    assert "authenticated" not in spoken
+    assert "bandmate" not in spoken
+    assert "preview" not in spoken
 
 
 def test_the_art_action_labels_are_not_music_labels():

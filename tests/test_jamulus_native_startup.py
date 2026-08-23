@@ -1247,6 +1247,13 @@ def test_native_sound_setup_watches_connection_without_a_completion_click() -> N
         ),
         (
             "art",
+            "invite_ready",
+            "guest",
+            "The room is ready",
+            ("Enter the room", "next step"),
+        ),
+        (
+            "art",
             "confirm_sound",
             "guest",
             "Listen for the room",
