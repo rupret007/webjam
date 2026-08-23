@@ -356,9 +356,9 @@ def _song_view(projection: object, *, running: bool, stale: bool) -> RoomClockVi
     if section:
         parts.append(section)
     if not parts:
-        # A song-form clock without a bar or a section is unpublishable.
+        # A song-form clock without a stated bar or section is no clock.
         # Host-local facts should not reach here; if they do, stay blank
-        # rather than dress a timer up as a form.
+        # rather than dress a timer or an outline up as a form.
         return RoomClockView()
     headline = " · ".join(parts)
 
@@ -397,11 +397,11 @@ def song_form_facts(snapshot: object) -> RoomClockFacts | None:
     """Read a song-clock snapshot as room-clock facts, or ``None``.
 
     This is the seam a music surface publishes into. It translates only a
-    written form: named parts, and the bar or section the owner already
-    stated. A file playing with no written parts is not a song form — the
-    wire refuses that combination, and dressing the timer up as form would
-    be the lie this module exists to prevent. Art never calls this with
-    invented bars.
+    written position: the bar or section the owner already stated. A file
+    playing with no written parts is not a song form. A written outline
+    with no current bar or section is not a position either — dressing the
+    first part, or the file's elapsed time, up as form would be the lie
+    this module exists to prevent. Art never calls this with invented bars.
     """
 
     if snapshot is None:
@@ -413,12 +413,9 @@ def song_form_facts(snapshot: object) -> RoomClockFacts | None:
     bar = _counted(getattr(snapshot, "bar", 0), MAX_ROOM_CLOCK_BAR)
     beat = _counted(getattr(snapshot, "beat", 0), MAX_ROOM_CLOCK_BEAT)
     section = _label(getattr(snapshot, "section_label", ""))
-    if not section:
-        first = sections[0]
-        if isinstance(first, str):
-            section = _label(first)
-        else:
-            section = _label(getattr(first, "name", ""))
+    # A list of parts is the song's shape, not where we are. #27's wire
+    # already refuses elapsed-only; do not satisfy it by inventing Verse
+    # from the outline while Shared Track is only a timer.
     if not bar and not section:
         return None
     numerator, denominator = _stated_meter(snapshot)
