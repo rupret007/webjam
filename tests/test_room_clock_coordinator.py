@@ -21,7 +21,10 @@ from core.room_clock import (  # noqa: E402
     RoomClockFacts,
     RoomClockSource,
     reference_video_facts,
+    song_form_facts,
 )
+from core.song_clock import SongClock  # noqa: E402
+from core.song_form import parse_song_form  # noqa: E402
 from core.session_transfer import (  # noqa: E402
     RecordingSignal,
     RoomClockSessionSnapshot,
@@ -259,6 +262,30 @@ def test_an_outline_without_a_place_does_not_take_over_a_video():
     assert view.source is RoomClockSource.REFERENCE_VIDEO
     assert view.headline == "1:30 / 10:00"
     assert peer.published[-1]["source"] == "reference_video"
+
+
+def test_a_parked_clock_with_a_tempo_publishes_the_named_outline():
+    """Constructor refuse stays. The publish path must not dress parked Verse."""
+
+    clock = SongClock()
+    clock.set_form(parse_song_form("[Verse]\n[Chorus]\n"))
+    clock.set_tempo(120.0)
+    peer = FakeHostPeer()
+    coordinator = _coordinator(peer=peer, song=lambda: song_form_facts(clock.snapshot()))
+    coordinator.begin_host()
+
+    view = coordinator.tick()
+
+    assert view.headline == NO_CLOCK_HEADLINE
+    assert view.detail == f"Verse → Chorus is written. {NO_PLACE_DETAIL}"
+    assert view.musical is False
+    published = peer.published[-1]
+    assert published["source"] == "song_form"
+    assert published["form_shape"] == "Verse → Chorus"
+    assert published["bar"] == 0
+    assert published["section_label"] == ""
+    assert published["running"] is False
+    assert published["tempo_bpm"] == 0.0
 
 
 def test_an_outline_without_a_place_is_named_when_nothing_else_speaks():

@@ -1,9 +1,9 @@
-"""Exact in-room honesty goldens after #29.
+"""Exact in-room honesty goldens after #30.
 
 Door law is unchanged and held by the start-UX suite. These goldens hold the
-one leftover lie this pass closes: a leftover peer pulse that names a written
-outline and still carries a timer must keep the shape and must not ride as a
-place. Elapsed-only without a shape is still no clock.
+one leftover lie this pass closes: a stopped clock that already has a tempo
+must not publish the parked first part as where we are. #29/#30 still name
+an outline without riding it. Elapsed-only without a shape is still no clock.
 """
 
 from __future__ import annotations
@@ -161,6 +161,35 @@ def test_real_clock_outline_without_tempo_is_no_clock_golden():
     assert view.headline == NO_CLOCK_HEADLINE
     assert "Verse" not in view.headline
     assert NO_PLACE_DETAIL in view.detail
+
+
+def test_real_clock_outline_with_tempo_still_parked_is_named_not_ridden_golden():
+    """A tempo lets the count sit on Verse. That is not a stated place."""
+
+    clock = SongClock()
+    clock.set_form(parse_song_form("[Verse]\n[Chorus]\n"))
+    clock.set_tempo(120.0)
+    snapshot = clock.snapshot()
+
+    assert snapshot.has_form is True
+    assert snapshot.running is False
+    assert snapshot.bar == 1
+    assert snapshot.section_label == "Verse"
+    facts = song_form_facts(snapshot)
+    view = render_room_clock(facts)
+
+    assert facts is not None
+    assert facts.states_place is False
+    assert facts.running is False
+    assert facts.bar == 0
+    assert facts.section_label == ""
+    assert facts.tempo_bpm == 0.0
+    assert facts.form_shape == "Verse → Chorus"
+    assert view.headline == NO_CLOCK_HEADLINE
+    assert view.detail == f"Verse → Chorus is written. {NO_PLACE_DETAIL}"
+    assert "Verse" not in view.headline
+    assert "Bar" not in view.headline
+    assert view.musical is False
 
 
 def test_a_peer_outline_without_a_place_is_named_golden():

@@ -260,6 +260,70 @@ def test_song_form_facts_do_not_invent_a_meter_from_the_count_default():
     assert facts.meter_denominator == 0
 
 
+def test_song_form_facts_do_not_publish_a_parked_count_as_the_first_part():
+    """Form plus tempo, still stopped, must not ride Verse on the wire."""
+
+    from core.song_clock import SongClock
+    from core.song_form import parse_song_form
+
+    clock = SongClock()
+    clock.set_form(parse_song_form("[Verse]\n[Chorus]\n"))
+    clock.set_tempo(120.0)
+    facts = song_form_facts(clock.snapshot())
+    view = render_room_clock(facts)
+
+    assert facts is not None
+    assert facts.states_place is False
+    assert facts.form_shape == "Verse → Chorus"
+    assert view.headline == NO_CLOCK_HEADLINE
+    assert view.detail == f"Verse → Chorus is written. {NO_PLACE_DETAIL}"
+    assert "Verse" not in view.headline
+
+
+def test_song_form_facts_keep_a_located_part_while_the_clock_is_stopped():
+    """Jumping to Chorus is a where. The parked-top rule must not erase it."""
+
+    from core.song_clock import SongClock
+    from core.song_form import parse_song_form
+
+    clock = SongClock()
+    clock.set_form(parse_song_form("[Verse]\n[Chorus]\n"))
+    clock.set_tempo(120.0)
+    assert clock.locate_section("Chorus") is True
+    facts = song_form_facts(clock.snapshot())
+    view = render_room_clock(facts)
+
+    assert facts is not None
+    assert facts.states_place is True
+    assert facts.section_label == "Chorus"
+    assert view.headline.endswith("Chorus")
+    assert "Verse → Chorus" in view.detail
+
+
+def test_song_form_facts_keep_a_paused_or_shared_track_place():
+    """Pause and Shared Track still state a where. ADR 0011 stays put."""
+
+    from core.song_clock import SongClock
+    from core.song_form import parse_song_form
+
+    clock = SongClock()
+    clock.set_form(parse_song_form("[Verse]\n[Chorus]\n"))
+    clock.set_tempo(120.0)
+    clock.start()
+    clock.pause()
+    paused = song_form_facts(clock.snapshot())
+    assert paused is not None
+    assert paused.states_place is True
+    assert paused.section_label == "Verse"
+
+    clock.follow_shared_track(loaded=True, position_s=8.5, playing=True)
+    tracked = song_form_facts(clock.snapshot())
+    assert tracked is not None
+    assert tracked.states_place is True
+    assert tracked.follows_shared_track is True
+    assert tracked.running is True
+
+
 def test_song_form_facts_do_not_invent_the_first_part_as_the_position():
     """A written outline without a stated bar or section is not a position."""
 

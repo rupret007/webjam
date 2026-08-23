@@ -413,6 +413,26 @@ def _song_view(projection: object, *, running: bool, stale: bool) -> RoomClockVi
     )
 
 
+def _parked_count_is_not_a_place(snapshot: object) -> bool:
+    """Return whether the clock is sitting at the top without a stated place.
+
+    A live ``SongClock`` with a tempo always reports bar 1 and the first
+    part while it is stopped. That is where the count parks, not a place
+    anyone said. Starting, pausing, locating a part, or following Shared
+    Track still states a where. Snapshots that do not carry ``state``
+    (legacy test seams and already-published pulses) are left alone.
+    """
+
+    if str(getattr(snapshot, "state", "") or "") != "stopped":
+        return False
+    if bool(getattr(snapshot, "follows_shared_track", False)):
+        return False
+    return (
+        _positive(getattr(snapshot, "position_s", 0.0), MAX_ROOM_CLOCK_POSITION_S)
+        <= 0.0
+    )
+
+
 def song_form_facts(snapshot: object) -> RoomClockFacts | None:
     """Read a song-clock snapshot as room-clock facts, or ``None``.
 
@@ -421,9 +441,10 @@ def song_form_facts(snapshot: object) -> RoomClockFacts | None:
     playing with no written parts is not a song form. A written outline
     with no current bar or section is not a position either — dressing the
     first part, or the file's elapsed time, up as form would be the lie
-    this module exists to prevent. That outline is still named, so the
-    room does not claim the song is absent. Art never calls this with
-    invented bars.
+    this module exists to prevent. A stopped count that only has a tempo
+    still parks on that first part; publishing it as Verse would be the
+    same lie. That outline is still named, so the room does not claim the
+    song is absent. Art never calls this with invented bars.
     """
 
     if snapshot is None:
@@ -436,6 +457,11 @@ def song_form_facts(snapshot: object) -> RoomClockFacts | None:
     beat = _counted(getattr(snapshot, "beat", 0), MAX_ROOM_CLOCK_BEAT)
     section = _label(getattr(snapshot, "section_label", ""))
     form_shape = _form_shape(snapshot)
+    # A stopped clock with a tempo still reports bar 1 and the first
+    # part. That parked count is not a place. Drop it so the publish
+    # path names the outline the same way a tempo-less outline does.
+    if _parked_count_is_not_a_place(snapshot):
+        bar, beat, section = 0, 0, ""
     # A list of parts is the song's shape, not where we are. Do not
     # invent Verse from the outline, and do not carry the file's timer
     # as if it were a running clock.

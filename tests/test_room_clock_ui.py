@@ -392,6 +392,39 @@ def test_a_shared_track_without_a_form_does_not_publish_a_song_clock():
     controller.host_peer.publish_room_clock_state.assert_not_called()
 
 
+def test_a_stopped_clock_with_a_tempo_publishes_the_outline_not_verse():
+    """The peer publish path must not lift parked bar 1 · Verse onto the wire."""
+
+    from core.song_clock import SongClock
+    from core.song_form import parse_song_form
+
+    clock = SongClock()
+    clock.set_form(parse_song_form("[Verse]\n[Chorus]\n"))
+    clock.set_tempo(120.0)
+    controller = _controller("music")
+    _as_host(controller)
+    controller._song_tools = SimpleNamespace(
+        is_available=lambda: True,
+        workbench=SimpleNamespace(clock_snapshot=clock.snapshot),
+    )
+
+    facts = controller._room_clock_song_form()
+    assert facts is not None
+    assert facts.states_place is False
+    assert facts.form_shape == "Verse → Chorus"
+    controller._tick_room_clock()
+    published = controller.host_peer.publish_room_clock_state.call_args.kwargs
+    assert published["source"] == "song_form"
+    assert published["bar"] == 0
+    assert published["section_label"] == ""
+    assert published["running"] is False
+    assert published["tempo_bpm"] == 0.0
+    assert published["form_shape"] == "Verse → Chorus"
+    snapshot = RoomClockSessionSnapshot(**published)
+    assert snapshot.form_shape == "Verse → Chorus"
+    assert snapshot.bar == 0
+
+
 def test_a_shared_track_with_an_outline_but_no_position_publishes_honesty():
     """Elapsed time plus [Verse] [Chorus] is named, not ridden as a place."""
 
