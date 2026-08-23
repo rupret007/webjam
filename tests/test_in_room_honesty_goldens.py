@@ -1,8 +1,9 @@
-"""Exact in-room honesty goldens after #28.
+"""Exact in-room honesty goldens after #29.
 
 Door law is unchanged and held by the start-UX suite. These goldens hold the
-one leftover lie this pass closes: a written outline without a stated bar or
-section is still not a place, but the room must not claim the song is absent.
+one leftover lie this pass closes: a leftover peer pulse that names a written
+outline and still carries a timer must keep the shape and must not ride as a
+place. Elapsed-only without a shape is still no clock.
 """
 
 from __future__ import annotations
@@ -189,6 +190,47 @@ def test_a_peer_outline_without_a_place_is_named_golden():
     assert view.headline == NO_CLOCK_HEADLINE
     assert view.detail == f"Verse → Chorus is written. {NO_PLACE_DETAIL}"
     assert "Verse" not in view.headline
+
+
+def test_leftover_peer_outline_with_a_timer_is_named_not_ridden_golden():
+    """A leftover pulse may name the shape. It must not dress the timer as Verse."""
+
+    parsed = RoomClockSessionSnapshot.from_mapping(
+        {
+            "schema": 1,
+            "generation": 5,
+            "source": RoomClockSourceValue.SONG_FORM.value,
+            "running": True,
+            "position_s": 8.5,
+            "duration_s": 0.0,
+            "bar": 0,
+            "beat": 0,
+            "section_label": "",
+            "tempo_bpm": 120.0,
+            "meter_numerator": 0,
+            "meter_denominator": 0,
+            "follows_shared_track": True,
+            "section_lengths_assumed": True,
+            "form_shape": "Verse → Chorus",
+        }
+    )
+    view = render_room_clock(parsed)
+
+    assert parsed.source is RoomClockSourceValue.SONG_FORM
+    assert parsed.form_shape == "Verse → Chorus"
+    assert parsed.running is False
+    assert parsed.position_s == 0.0
+    assert parsed.tempo_bpm == 0.0
+    assert parsed.follows_shared_track is False
+    assert parsed.section_lengths_assumed is False
+    assert parsed.generation == 5
+    assert view.headline == NO_CLOCK_HEADLINE
+    assert view.detail == f"Verse → Chorus is written. {NO_PLACE_DETAIL}"
+    assert "Verse" not in view.headline
+    assert "0:08" not in view.headline
+    assert "0:08" not in view.detail
+    assert view.musical is False
+    assert view.present is True
 
 
 def test_leftover_peer_timer_reads_as_no_clock_golden():

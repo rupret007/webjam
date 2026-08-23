@@ -326,6 +326,41 @@ def test_an_owner_returning_nonsense_is_treated_as_owning_nothing():
 # ---------------------------------------------------------------------------
 
 
+def test_a_guest_keeps_a_leftover_outline_without_riding_the_timer():
+    """A leftover timer on a named outline must not look like Verse or vanish."""
+
+    views: list = []
+    coordinator = _coordinator(views=views)
+    coordinator.begin_guest()
+
+    leftover = RoomClockSessionSnapshot.from_mapping(
+        {
+            "schema": 1,
+            "generation": 5,
+            "source": RoomClockSourceValue.SONG_FORM.value,
+            "running": True,
+            "position_s": 8.5,
+            "duration_s": 0.0,
+            "bar": 0,
+            "beat": 0,
+            "section_label": "",
+            "tempo_bpm": 120.0,
+            "meter_numerator": 0,
+            "meter_denominator": 0,
+            "follows_shared_track": True,
+            "form_shape": "Verse → Chorus",
+        }
+    )
+    coordinator.observe_host_state(_state(leftover))
+
+    assert leftover.form_shape == "Verse → Chorus"
+    assert leftover.running is False
+    assert views[-1].headline == NO_CLOCK_HEADLINE
+    assert views[-1].detail == f"Verse → Chorus is written. {NO_PLACE_DETAIL}"
+    assert views[-1].musical is False
+    assert "Verse" not in views[-1].headline
+
+
 def test_a_guest_renders_whatever_the_owner_published():
     views: list = []
     coordinator = _coordinator(views=views)
