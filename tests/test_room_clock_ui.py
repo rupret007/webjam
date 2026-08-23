@@ -357,6 +357,33 @@ def test_a_shared_track_without_a_form_does_not_publish_a_song_clock():
     controller.host_peer.publish_room_clock_state.assert_not_called()
 
 
+def test_a_shared_track_with_an_outline_but_no_position_does_not_publish():
+    """Elapsed time plus [Verse] [Chorus] is still a timer, not a form."""
+
+    controller = _controller("music")
+    _as_host(controller)
+    controller._song_tools = SimpleNamespace(
+        is_available=lambda: True,
+        workbench=SimpleNamespace(
+            clock_snapshot=lambda: SimpleNamespace(
+                has_form=True,
+                sections=("Verse", "Chorus"),
+                follows_shared_track=True,
+                running=True,
+                position_s=34.0,
+                bar=0,
+                beat=0,
+                section_label="",
+                tempo_bpm=0,
+            )
+        ),
+    )
+
+    assert controller._room_clock_song_form() is None
+    controller._tick_room_clock()
+    controller.host_peer.publish_room_clock_state.assert_not_called()
+
+
 def test_a_non_music_room_never_invents_a_song_form():
     controller = _controller("art")
     controller._song_tools = SimpleNamespace(is_available=lambda: False)

@@ -242,10 +242,10 @@ def test_song_form_facts_do_not_invent_a_meter_from_the_count_default():
             has_form=True,
             sections=("Verse",),
             follows_shared_track=False,
-            running=False,
-            bar=0,
-            beat=0,
-            section_label="",
+            running=True,
+            bar=1,
+            beat=1,
+            section_label="Verse",
             beats_per_bar=4,
             meter_numerator=0,
             meter_denominator=0,
@@ -254,8 +254,30 @@ def test_song_form_facts_do_not_invent_a_meter_from_the_count_default():
 
     assert facts is not None
     assert facts.section_label == "Verse"
+    assert facts.bar == 1
     assert facts.meter_numerator == 0
     assert facts.meter_denominator == 0
+
+
+def test_song_form_facts_do_not_invent_the_first_part_as_the_position():
+    """A written outline without a stated bar or section is not a position."""
+
+    assert (
+        song_form_facts(
+            SimpleNamespace(
+                has_form=True,
+                sections=("Verse", "Chorus"),
+                follows_shared_track=True,
+                running=True,
+                position_s=8.5,
+                bar=0,
+                beat=0,
+                section_label="",
+                tempo_bpm=0,
+            )
+        )
+        is None
+    )
 
 
 def test_a_song_form_clock_reads_as_music():

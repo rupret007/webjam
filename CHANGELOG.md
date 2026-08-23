@@ -9,6 +9,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the immutable v0.26.0 release boundary belongs here. Every
 > published tag, release, and asset remains immutable historical evidence.
 
+### Song-clock honesty: outline is not a position
+
+- A written song outline without a stated bar or section is **no clock**. The first part is no longer invented as where the room is, so an elapsed-only Shared Track cannot ride as form. Painters still see bars and named sections when the owner actually stated them.
+
 ### In-room next step, no leftover Preview lecture
 
 - After Host, Music and Art say one thing: **Copy the invite. That is the next step.** The extra "send it when you want them in" sentence is gone.
