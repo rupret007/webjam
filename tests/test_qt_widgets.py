@@ -1084,6 +1084,10 @@ class TestConductorWindow(unittest.TestCase):
         self.assertNotIn("chord progressions", w.session_canvas._notes.placeholderText())
         self.assertNotIn("Preview", w.session_canvas._header.text())
         self.assertNotIn("Jamulus", w.session_canvas._chat_input.placeholderText())
+        self.assertEqual(
+            w.session_canvas.accessibleDescription(),
+            "These notes stay on this computer. Live chat is separate.",
+        )
         self.assertNotIn("media timecode", w.session_canvas.accessibleDescription())
         self.assertEqual(
             w._status_recording.toolTip(),
