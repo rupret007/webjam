@@ -9,6 +9,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the immutable v0.26.0 release boundary belongs here. Every
 > published tag, release, and asset remains immutable historical evidence.
 
+### Song-clock honesty: a leftover timer must not erase a named outline
+
+- A leftover peer pulse that names `[Verse] [Chorus]` and still carries a timer, a tempo, or a Shared Track flag no longer wipes the shape. Guests still see **Verse → Chorus is written. Nobody has said where we are.** They do not ride Verse, and they do not see elapsed time as form. A timer with no shape is still **no clock**.
+
 ### Song-clock honesty: an outline is named, not a place
 
 - A written `[Verse] [Chorus]` without a stated bar or section is still **no clock**. Painters now see that shape and **Nobody has said where we are.** — not a silent strip, and not "this room has no song form." Elapsed time still never becomes the headline. A reference video still speaks when the outline has no place.

@@ -451,6 +451,84 @@ def test_a_written_outline_without_a_place_may_travel_as_honesty():
     assert "Verse" not in view.headline
 
 
+def test_a_leftover_peer_outline_with_a_timer_keeps_the_shape():
+    """Transfer must not erase #29's named outline just to drop a leftover timer."""
+
+    parsed = RoomClockSessionSnapshot.from_mapping(
+        {
+            "schema": 1,
+            "generation": 5,
+            "source": RoomClockSourceValue.SONG_FORM.value,
+            "running": True,
+            "position_s": 8.5,
+            "duration_s": 0.0,
+            "bar": 0,
+            "beat": 0,
+            "section_label": "",
+            "tempo_bpm": 120.0,
+            "meter_numerator": 0,
+            "meter_denominator": 0,
+            "follows_shared_track": True,
+            "section_lengths_assumed": True,
+            "form_shape": "Verse → Chorus",
+        }
+    )
+    view = render_room_clock(parsed)
+
+    assert parsed.source is RoomClockSourceValue.SONG_FORM
+    assert parsed.form_shape == "Verse → Chorus"
+    assert parsed.running is False
+    assert parsed.position_s == 0.0
+    assert parsed.bar == 0
+    assert parsed.section_label == ""
+    assert parsed.tempo_bpm == 0.0
+    assert parsed.follows_shared_track is False
+    assert view.headline == NO_CLOCK_HEADLINE
+    assert view.detail == f"Verse → Chorus is written. {NO_PLACE_DETAIL}"
+    assert view.musical is False
+    assert "Verse" not in view.headline
+    assert "0:08" not in view.headline
+
+
+def test_a_session_state_transfer_keeps_form_shape_honesty():
+    """A guest reading session state must not invent a place or drop the shape."""
+
+    payload = {
+        "session_id": str(uuid.uuid4()),
+        "generation": 3,
+        "signal": RecordingSignal.IDLE.value,
+        "room_clock": {
+            "schema": 1,
+            "generation": 6,
+            "source": RoomClockSourceValue.SONG_FORM.value,
+            "running": True,
+            "position_s": 8.5,
+            "duration_s": 0.0,
+            "bar": 0,
+            "beat": 0,
+            "section_label": "",
+            "tempo_bpm": 0.0,
+            "meter_numerator": 0,
+            "meter_denominator": 0,
+            "form_shape": "Verse → Chorus",
+        },
+    }
+    state = SessionStateSnapshot(
+        session_id=payload["session_id"],
+        generation=payload["generation"],
+        signal=RecordingSignal.IDLE,
+        room_clock=payload["room_clock"],
+    )
+    view = render_room_clock(state.room_clock)
+
+    assert state.room_clock.source is RoomClockSourceValue.SONG_FORM
+    assert state.room_clock.form_shape == "Verse → Chorus"
+    assert state.room_clock.running is False
+    assert state.room_clock.position_s == 0.0
+    assert view.headline == NO_CLOCK_HEADLINE
+    assert "Verse" not in view.headline
+
+
 def test_a_peer_elapsed_only_song_clock_reads_as_no_clock():
     """An older host that published a timer must not knock the guest offline."""
 

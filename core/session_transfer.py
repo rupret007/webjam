@@ -2672,11 +2672,37 @@ class RoomClockSessionSnapshot:
         try:
             return cls(**parsed)
         except ValueError as exc:
-            # A #25-era elapsed-only song clock is not a form. Drop the
-            # pulse rather than take down the room.
+            # A leftover song pulse that is not a place must not take the
+            # room down. Keep a written shape so the guest is not told the
+            # song is absent. Drop a timer that has no shape.
             if "written bar or section" in str(exc):
-                return cls()
+                return cls._named_outline_from_unplaced_pulse(parsed)
             raise
+
+    @classmethod
+    def _named_outline_from_unplaced_pulse(
+        cls, parsed: Mapping[str, object]
+    ) -> "RoomClockSessionSnapshot":
+        """Keep the written shape; strip leftover timer and count fields.
+
+        A #25-era elapsed-only pulse has no shape, so it stays no clock. A
+        later pulse that named the outline and still carried a timer, a
+        tempo, or a Shared Track flag must not ride as a place — and must
+        not erase the shape #29 just made honest.
+        """
+
+        shape = parsed.get("form_shape", "")
+        if type(shape) is not str:
+            return cls()
+        generation = parsed.get("generation", 0)
+        try:
+            return cls(
+                generation=generation if type(generation) is int else 0,
+                source=RoomClockSourceValue.SONG_FORM,
+                form_shape=shape,
+            )
+        except ValueError:
+            return cls()
 
     def to_mapping(self) -> dict[str, object]:
         mapping: dict[str, object] = {
