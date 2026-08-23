@@ -161,6 +161,32 @@ def test_settings_offers_the_keys_collapsed_and_last(app, store):
         dialog.deleteLater()
 
 
+def test_moving_a_legacy_music_ai_key_then_saving_settings_leaves_no_plaintext(
+    app, store, tmp_path
+):
+    """Save key + dialog Save must not write the migrated Music AI key back."""
+
+    config = tmp_path / "settings.json"
+    settings = AppSettings(
+        config_file=str(config),
+        musician_name="Jeff",
+        music_ai_api_key="from-the-old-file",
+    )
+    dialog = SimpleSettingsDialog(settings, show_band_check_action=False)
+    try:
+        dialog._keys_panel.field("music_ai").setText("from-the-old-file")
+        dialog._keys_panel._save("music_ai")
+        assert settings.music_ai_api_key == ""
+        assert store.items["music_ai"] == "from-the-old-file"
+        assert dialog._save() is True
+    finally:
+        dialog.deleteLater()
+
+    written = json.loads(config.read_text())
+    assert written.get("music_ai_api_key", "") == ""
+    assert "from-the-old-file" not in config.read_text()
+
+
 def test_the_dialog_save_writes_settings_without_any_key(app, store, tmp_path):
     """Typing a key and pressing the dialog's Save must not persist it."""
 

@@ -209,6 +209,30 @@ def test_saving_puts_the_key_in_the_os_store(clean_env):
     assert store.items["openai"] == "sk-abc123"
 
 
+def test_saving_a_legacy_music_ai_key_clears_it_from_settings(clean_env, tmp_path):
+    """Moving the key to the store must not leave a plaintext copy to re-save."""
+
+    config = tmp_path / "settings.json"
+    settings = AppSettings(
+        config_file=str(config),
+        musician_name="Jeff",
+        music_ai_api_key="from-the-old-file",
+    )
+    store = FakeSecretStore()
+    credentials = ProviderCredentials(store=store, settings=settings)
+
+    result = credentials.save("music_ai", "from-the-old-file")
+
+    assert result.saved
+    assert store.items["music_ai"] == "from-the-old-file"
+    assert settings.music_ai_api_key == ""
+    written = json.loads(config.read_text())
+    assert written.get("music_ai_api_key", "") == ""
+    with patch.dict(os.environ, {}, clear=True):
+        assert credentials.api_key("music_ai") == "from-the-old-file"
+        assert credentials.resolve("music_ai").source == SOURCE_STORE
+
+
 def test_saving_without_a_store_refuses_and_names_the_environment_variable(clean_env):
     store = NoSecretStore("This computer has no credential store WebJam can use.")
 
