@@ -461,7 +461,7 @@ def test_a_painter_sees_the_pulse_on_the_strip_without_opening_the_canvas():
 
 
 def test_a_painter_sees_a_written_outline_on_the_strip_without_a_place():
-    from core.room_clock import RoomClockView, RoomClockSource
+    from core.room_clock import RoomClockSource
 
     controller = _controller("art")
     strip = SimpleNamespace(set_song_line=MagicMock())
