@@ -275,12 +275,104 @@ def _as_guest(controller: ApplicationController) -> None:
     )
 
 
-def test_art_ships_no_song_form_owner_so_the_seam_is_unwired():
+def test_art_still_has_no_song_form_when_music_has_not_opened_one():
     """Art must work with no musical pulse, and it does."""
 
     controller = _controller()
 
     assert controller._room_clock_song_form() is None
+
+
+def test_a_music_song_clock_publishes_into_the_room_clock():
+    """Painters ride the same pulse musicians already count."""
+
+    from core.room_clock import RoomClockSource
+
+    controller = _controller("music")
+    _as_host(controller)
+    controller._song_tools = SimpleNamespace(
+        is_available=lambda: True,
+        workbench=SimpleNamespace(
+            clock_snapshot=lambda: SimpleNamespace(
+                has_form=True,
+                sections=("Chorus",),
+                follows_shared_track=True,
+                running=True,
+                position_s=24.0,
+                bar=17,
+                beat=1,
+                section_label="Chorus",
+                tempo_bpm=124.0,
+                beats_per_bar=4,
+                meter_denominator=4,
+            )
+        ),
+    )
+
+    facts = controller._room_clock_song_form()
+    assert facts is not None
+    assert facts.source is RoomClockSource.SONG_FORM
+    assert facts.bar == 17
+    assert facts.section_label == "Chorus"
+
+    controller._tick_room_clock()
+    published = controller.host_peer.publish_room_clock_state.call_args.kwargs
+    assert published["source"] == "song_form"
+    assert published["bar"] == 17
+
+
+def test_a_non_music_room_never_invents_a_song_form():
+    controller = _controller("art")
+    controller._song_tools = SimpleNamespace(is_available=lambda: False)
+
+    assert controller._room_clock_song_form() is None
+
+
+def test_a_painter_sees_the_pulse_on_the_strip_without_opening_the_canvas():
+    from core.room_clock import RoomClockView, RoomClockSource
+
+    controller = _controller("art")
+    strip = SimpleNamespace(set_song_line=MagicMock())
+    controller.window = SimpleNamespace(
+        flash_message=MagicMock(), session_strip=strip
+    )
+
+    controller._on_room_clock_view(
+        RoomClockView(
+            source=RoomClockSource.SONG_FORM,
+            headline="Bar 17.1 · Chorus",
+            detail="Following the room's song form.",
+            running=True,
+            musical=True,
+        )
+    )
+
+    strip.set_song_line.assert_called_once_with(
+        "Bar 17.1 · Chorus",
+        description="Following the room's song form.",
+    )
+
+
+def test_music_keeps_its_own_song_line_owner():
+    from core.room_clock import RoomClockView, RoomClockSource
+
+    controller = _controller("music")
+    strip = SimpleNamespace(set_song_line=MagicMock())
+    controller.window = SimpleNamespace(
+        flash_message=MagicMock(), session_strip=strip
+    )
+
+    controller._on_room_clock_view(
+        RoomClockView(
+            source=RoomClockSource.SONG_FORM,
+            headline="Bar 17.1 · Chorus",
+            detail="Following the room's song form.",
+            running=True,
+            musical=True,
+        )
+    )
+
+    strip.set_song_line.assert_not_called()
 
 
 def test_the_clock_binds_for_a_host_and_for_a_guest():

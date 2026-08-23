@@ -185,6 +185,9 @@ def test_running_host_process_is_not_invite_ready_or_connected_without_proof():
     assert invite_ready.phase is SessionConductorPhase.INVITE_READY
     assert invite_ready.primary_action is SessionPrimaryAction.COPY_INVITE
     assert invite_ready.primary_enabled
+    assert invite_ready.action_label == "Copy Invite"
+    assert "Copy the invite" in invite_ready.message
+    assert "next step" in invite_ready.message
     assert _host_ready_facts().host_ready
     assert _host_ready_facts().invite_available
 
@@ -208,6 +211,8 @@ def test_guest_join_and_live_require_authenticated_path_and_unique_roster_truth(
     connected = derive_session_conductor(connected_facts)
     assert connected.phase is SessionConductorPhase.CONNECTED
     assert connected.primary_action is SessionPrimaryAction.NONE
+    assert "You are in" in connected.message
+    assert "play a note" in connected.message.casefold()
 
     live = derive_session_conductor(
         replace(
@@ -220,6 +225,7 @@ def test_guest_join_and_live_require_authenticated_path_and_unique_roster_truth(
     assert live.primary_action is SessionPrimaryAction.NONE
     assert live.title == "Band connected"
     assert "ready to play" not in live.title.lower()
+    assert "Hear each other, then Record when you are ready." in live.message
     assert "Band Check (F2)" in live.message
     assert "only musicians" in live.limitation.lower()
 

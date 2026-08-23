@@ -9,6 +9,12 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the immutable v0.26.0 release boundary belongs here. Every
 > published tag, release, and asset remains immutable historical evidence.
 
+### In-room next step, quieter Art, shared song clock
+
+- After Host, Music's one next step is **Copy the invite**. After Join, the room says you are in and to wait, then play. Once the band is connected, the host's one action is **Record** — hear each other first, then press it.
+- Art no longer inherits Music startup copy ("jam", "band", "instrument") or Review's empty-stage meeting-capture lecture. After Host/Join the room speaks to artists: **Enter the room**, not Enter Studio.
+- Music's existing song clock (form or Shared Track) now publishes into the room clock, so a painter can ride the same pulse without a second stack or a new launch card.
+
 ### Music door path to Art
 
 - Default Music launch stays **Host** / **Join** only. A quiet **Art, podcast, or review** line reveals the existing room picker, so a first-run musician can reach Art without an integration wall, a profile combo on the Music door, or a third primary action. Returning to Music hides the picker again.

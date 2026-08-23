@@ -157,7 +157,7 @@ class SessionPrimaryAction(str, Enum):
         if resolved.key == "art":
             return {
                 SessionPrimaryAction.RUN_BAND_CHECK: "Run Session Check",
-                SessionPrimaryAction.ENTER_JAM: "Enter Studio",
+                SessionPrimaryAction.ENTER_JAM: "Enter the room",
             }.get(self, self.label)
         return self.label
 
@@ -776,7 +776,7 @@ def _presentation(
         )
     if phase is SessionConductorPhase.INVITE_READY:
         invite_message = (
-            "Share the invite when your bandmate is ready to join."
+            "Copy the invite. That is the next step. Send it when you want them in."
             if profile.key == "music"
             else f"Share the invite when {waiting_counterpart} is ready to join."
         )
@@ -802,13 +802,18 @@ def _presentation(
             f"Opening an invite is not proof that the {authenticated_path} is authenticated.",
         )
     if phase is SessionConductorPhase.CONNECTED:
+        connected_message = (
+            "You are in. Wait for your bandmate, then play a note."
+            if profile.key == "music"
+            else (
+                f"Your {authenticated_path} is authenticated. Waiting for "
+                f"{waiting_counterpart} to appear."
+            )
+        )
         return present(
             SessionPrimaryAction.NONE,
             f"Connected to the {session_short}",
-            (
-                f"Your {authenticated_path} is authenticated. Waiting for "
-                f"{waiting_counterpart} to appear."
-            ),
+            connected_message,
             (
                 "A connection alone does not prove that either "
                 f"{vocabulary.participant_singular} heard the other."
@@ -827,8 +832,8 @@ def _presentation(
         if profile.key == "music":
             title = "Band connected"
             message = (
-                "Your band is connected. Play a note, then make sure you can hear "
-                "each other before recording. Use Band Check (F2) if you need help."
+                "Hear each other, then Record when you are ready. "
+                "Band Check (F2) is there if you need help."
             )
             evidence = (
                 "Only musicians can confirm two-way audibility; meters do not prove it."

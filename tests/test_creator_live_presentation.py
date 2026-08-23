@@ -72,6 +72,7 @@ def test_music_profile_retains_the_existing_live_vocabulary() -> None:
 
     live = derive_session_conductor(_live_facts("music"))
     assert live.title == "Band connected"
+    assert "Hear each other, then Record when you are ready." in live.message
     assert "Band Check (F2)" in live.message
     assert live.creator_profile_key == "music"
     assert live.action_label == "Record"
@@ -213,6 +214,7 @@ def test_profile_key_is_canonicalized_without_expanding_protocol_values() -> Non
     (
         ("podcast_voice", "Run Sound Check", "Enter Session"),
         ("review_rehearsal", "Run Session Check", "Enter Review"),
+        ("art", "Run Session Check", "Enter the room"),
     ),
 )
 def test_unified_guidance_uses_profile_aware_action_labels(
@@ -297,6 +299,32 @@ def test_participant_grid_applies_profile_vocabulary_and_preview_truth() -> None
         assert "review & rehearsal preview" in accessible
         assert "never directly or automatically taps a meeting app" in accessible
         assert "do not route meeting or system audio into those inputs" in accessible
+
+        art = get_creator_profile_by_key_or_default("art")
+        grid.set_creator_profile(art)
+        grid.set_session_state(SessionUiState.idle())
+        art_visible = " ".join(
+            (
+                grid._empty_eyebrow.text(),
+                grid._empty_title.text(),
+                grid._empty_message.text(),
+                grid._empty_hint.text(),
+                grid._empty_practice.text(),
+                grid._empty_ready.text(),
+            )
+        ).casefold()
+        assert grid._empty_practice.text() == "Private Room"
+        assert grid._empty_ready.text() == "Run Session Check"
+        assert "enter the room" in grid._profile_text("Enter Jam").casefold()
+        assert "review session" not in art_visible
+        assert "studio visit" not in art_visible
+        assert "jamulus" not in art_visible
+        assert "record session captures" not in art_visible
+        assert "visual media and media timecode" not in art_visible
+        assert "stems" not in art_visible
+        assert "separate tracks" not in art_visible
+        assert grid._empty_hint.text() == ""
+        assert re.search(r"\bjam\b", art_visible) is None
     finally:
         grid.close()
         grid.deleteLater()

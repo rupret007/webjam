@@ -99,6 +99,8 @@ def test_art_strip_copy_addresses_artists_not_a_review(qapp):
         assert "band" not in rendered
         assert "musician" not in rendered
         assert "studio visit" not in rendered
+        assert "host-clocked" not in rendered
+        assert "jamulus" not in strip._reference_track_button.accessibleDescription().casefold()
     finally:
         strip.deleteLater()
 

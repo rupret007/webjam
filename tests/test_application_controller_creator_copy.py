@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -528,3 +529,16 @@ def test_copy_invite_still_works_when_there_is_no_song() -> None:
     copied = clipboard.setText.call_args.args[0]
     assert "webjam://join?v=3" in copied
     assert "Song:" not in copied
+
+
+def test_art_startup_copy_does_not_talk_like_a_band() -> None:
+    """A painter who clicked Host must not land in musician leftover copy."""
+
+    copy = ApplicationController._startup_creator_copy("art")
+    spoken = " ".join(copy.values()).casefold()
+    assert copy["host_ready_title"] == "Your room is ready"
+    assert copy["confirm_title"] == "Listen for the room"
+    assert "copy the invite" in copy["host_ready_detail"].casefold()
+    for banned in ("band", "instrument", "jamulus", "studio visit"):
+        assert banned not in spoken, banned
+    assert re.search(r"\bjam\b", spoken) is None

@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QComboBox, QPushButton, QWidget
 
 from core.creative_modes import CREATOR_PROFILES, get_creator_profile_by_key
 from core.settings import AppSettings, load_settings
@@ -56,29 +56,46 @@ def _visible_buttons(dialog: LaunchDialog) -> list[QPushButton]:
 
 
 def _first_screen_spoken(dialog: LaunchDialog) -> str:
+    """Harvest what a person can actually read or hear on the choice page.
+
+    Hidden fail-closed recovery (the Windows Jamulus installer) stays out.
+    Picker labels are included even while Music hides the combo, because those
+    words become the first screen the moment Art, podcast, or review is
+    revealed.
+    """
+
+    page = dialog._choice_page
+    parts: list[str] = []
     selector = dialog._creator_profile_selector
-    picker_items = [selector.itemText(index) for index in range(selector.count())]
-    return " ".join(
-        [
-            dialog._creator_profile_label.text(),
-            selector.accessibleDescription(),
-            *picker_items,
-            dialog._name_preview.text(),
-            dialog._name_label.text(),
-            dialog._host_button.text(),
-            dialog._host_button.accessibleDescription(),
-            dialog._join_button.text(),
-            dialog._join_button.accessibleDescription(),
-            dialog._choice_title.text(),
-            dialog._choice_subtitle.text(),
-            dialog._choice_helper.text(),
-            dialog._more_rooms_button.text(),
-            dialog._more_rooms_button.accessibleDescription(),
-        ]
-        + [card.text() for card in _visible_cards(dialog)]
-        + [card.description() for card in _visible_cards(dialog)]
-        + [card.accessibleDescription() for card in _visible_cards(dialog)]
-    ).casefold()
+    parts.extend(selector.itemText(index) for index in range(selector.count()))
+    parts.append(selector.accessibleDescription())
+    for widget in page.findChildren(QWidget):
+        if not widget.isVisibleTo(page):
+            continue
+        for attr in (
+            "text",
+            "description",
+            "placeholderText",
+            "accessibleName",
+            "accessibleDescription",
+            "toolTip",
+        ):
+            getter = getattr(widget, attr, None)
+            if callable(getter):
+                value = getter()
+                if value:
+                    parts.append(str(value))
+        if isinstance(widget, QComboBox):
+            parts.extend(
+                widget.itemText(index) for index in range(widget.count())
+            )
+    # Cards chosen for this profile are first-screen copy even if a test
+    # inspects them before Qt finishes showing the page.
+    parts.extend(card.text() for card in _visible_cards(dialog))
+    parts.extend(card.description() for card in _visible_cards(dialog))
+    parts.extend(card.accessibleDescription() for card in _visible_cards(dialog))
+    parts.extend(card.toolTip() for card in _visible_cards(dialog))
+    return " ".join(parts).casefold()
 
 
 def _assert_first_screen_has_no_banned_words(spoken: str) -> None:
@@ -88,13 +105,15 @@ def _assert_first_screen_has_no_banned_words(spoken: str) -> None:
         "jamulus",
         "webex",
         "moises",
+        "music ai",
         "byok",
         "comfyui",
         "host-clocked",
         "studio visit",
+        "stems",
     ):
         assert component not in spoken, component
-    for word in ("preview", "ready"):
+    for word in ("preview", "ready", "api"):
         assert not re.search(rf"\b{word}\b", spoken), word
 
 
@@ -249,7 +268,15 @@ def test_the_name_field_asks_for_a_name(qapp, tmp_path: Path):
         )
         assert label.text() == "Your name"
         assert dialog._name_input.accessibleName() == "Your name"
-        assert "jamulus" not in dialog._name_preview.text().casefold()
+        spoken_name = " ".join(
+            (
+                dialog._name_preview.text(),
+                dialog._name_preview.accessibleName(),
+                dialog._name_preview.accessibleDescription(),
+                dialog._name_input.accessibleDescription(),
+            )
+        ).casefold()
+        assert "jamulus" not in spoken_name
 
         # The same validation still refuses a name the mixer cannot show.
         dialog._name_input.setText("")
@@ -519,3 +546,48 @@ def test_no_launch_copy_still_says_studio_visit():
         ).casefold()
         assert "studio visit" not in spoken, key
         assert not re.search(r"\bpreview\b", spoken), key
+        _assert_first_screen_has_no_banned_words(spoken)
+
+
+@pytest.mark.parametrize(
+    "profile_key", ["music", "podcast_voice", "review_rehearsal", "art"]
+)
+def test_every_first_screen_has_no_banned_words(
+    qapp, tmp_path: Path, profile_key: str
+):
+    """A painter, sculptor, songwriter, and talk-only person share one door law."""
+
+    dialog = _dialog(tmp_path, profile_key)
+    try:
+        _assert_first_screen_has_no_banned_words(_first_screen_spoken(dialog))
+    finally:
+        dialog.deleteLater()
+
+
+def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
+    """Exactly these words. A person should know what to click immediately."""
+
+    dialog = _dialog(tmp_path)
+    try:
+        cards = _visible_cards(dialog)
+        assert [
+            (card.accessibleName(), card.description()) for card in cards
+        ] == [
+            (
+                "Talk & make",
+                "Just the room and your voices. Make whatever you're making.",
+            ),
+            ("Paint together", "The room, plus one canvas you all draw on."),
+            (
+                "Paint along",
+                "The room, plus one video you all watch in step.",
+            ),
+        ]
+        others = [
+            button.text()
+            for button in _visible_buttons(dialog)
+            if not isinstance(button, StartCard)
+        ]
+        assert others == ["Host", "Join"]
+    finally:
+        dialog.deleteLater()
