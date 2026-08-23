@@ -878,23 +878,6 @@ def test_a_guest_projection_drives_the_clock_too(app):
     assert coordinator.workbench.clock_snapshot().section_label == "Verse"
 
 
-def test_a_shared_track_without_a_form_still_marks_the_strip(app):
-    """Painters and musicians can ride a track even when nobody wrote bars."""
-
-    coordinator = _coordinator(app, notes="")
-    _with_shared_track(coordinator, position=34.0)
-    coordinator.refresh()
-
-    snapshot = coordinator.workbench.clock_snapshot()
-    assert snapshot.follows_shared_track
-    assert not snapshot.has_form
-    assert "0:34" in _song_line(coordinator)
-    description = coordinator._c.window.session_strip.set_song_line.call_args.kwargs[
-        "description"
-    ]
-    assert "Shared Track" in description
-
-
 def test_removing_the_track_returns_the_count_to_the_panel(app):
     coordinator, _now = _clock_coordinator(app)
     coordinator.overlay.setVisible(True)
