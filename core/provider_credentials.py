@@ -312,6 +312,21 @@ class ProviderCredentials:
             return SaveResult(saved=False, reason=str(exc))
         if outcome.failed:
             return SaveResult(saved=False, reason=outcome.reason)
+        # The store is now the owner. Leave an empty legacy field so the next
+        # Host/Join or Settings save cannot write the plaintext copy back.
+        if spec.legacy_settings_field and self._settings is not None:
+            setattr(self._settings, spec.legacy_settings_field, "")
+            config_file = str(getattr(self._settings, "config_file", "") or "")
+            if config_file:
+                try:
+                    from core.settings import save_settings
+
+                    save_settings(self._settings)
+                except (OSError, TypeError, ValueError):
+                    # The store write already succeeded. The next persist drops
+                    # the file copy; do not turn a name/disk hiccup into a
+                    # failed key save.
+                    pass
         return SaveResult(saved=True)
 
     def clear(self, provider_id: str) -> bool:

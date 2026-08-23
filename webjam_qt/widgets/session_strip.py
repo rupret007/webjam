@@ -89,6 +89,10 @@ class SessionStrip(QFrame):
         self._shared_track_transport_enabled = False
         self._shared_track_stop_enabled = False
         self._recording_control_available = False
+        self._recording_control_requested = False
+        self._session_recording_supported = True
+        self._shared_reference_audio_supported = True
+        self._shared_track_host_requested = False
         self._recording_seen_active = False
         self._recording_phase = "idle"
         self._compact_control_labels = False
@@ -543,6 +547,19 @@ class SessionStrip(QFrame):
         self._participant_plural = profile.vocabulary.participant_plural
         self._session_noun = profile.vocabulary.session_noun
         self._reference_audio_noun = profile.vocabulary.reference_audio_noun
+        self._session_recording_supported = bool(
+            profile.capabilities.session_recording
+        )
+        self._shared_reference_audio_supported = bool(
+            profile.capabilities.shared_reference_audio
+        )
+        self._studio_button.setVisible(
+            bool(
+                profile.capabilities.take_review
+                or profile.capabilities.local_multitrack
+            )
+        )
+        self._recording_setup_action.setVisible(self._session_recording_supported)
         reference_video = bool(profile.capabilities.shared_reference_video)
         self._reference_video_action.setVisible(reference_video)
         self._reference_video_action.setEnabled(reference_video)
@@ -667,6 +684,44 @@ class SessionStrip(QFrame):
             pocket_stage_tip = (
                 "Pair an iPhone as a secure recording-session remote."
             )
+        elif profile_key == "art":
+            audio_name = "Start or end the art session"
+            audio_tip = (
+                "Start or end the artists' live room. WebJam handles the engine."
+            )
+            record_name = "Session recording is unavailable"
+            record_tip = (
+                "Art rooms are not recorded. There is no take to start or stop."
+            )
+            invite_name = "Copy room invite"
+            invite_tip = "Copy one complete link to send to another artist."
+            studio_name = "Studio is unavailable"
+            studio_description = (
+                "Art rooms have no take review and no local Studio project."
+            )
+            studio_tip = "Art has no Studio take or local project."
+            conversation_name = "Show conversation controls"
+            check_label = "Session Check"
+            check_menu_label = "Session Check / Verify Audio"
+            practice_label = "Private Room Audio"
+            practice_tip = "Start a private local audio session for this room"
+            audio_settings_tip = (
+                "Bring Jamulus forward. Jamulus owns your audio input, headphones, "
+                "and buffer."
+            )
+            recording_setup_tip = "Art rooms are not recorded."
+            reference_description = (
+                "Art has no Shared Track route. A host-clocked reference video "
+                "is a separate in-room layer."
+            )
+            reference_tip = (
+                "Art does not route a backing track through the live audio path."
+            )
+            reference_action_tip = (
+                "Art has no Shared Track. Use Reference Video when the room "
+                "needs a picture everyone watches in step."
+            )
+            pocket_stage_tip = "Pair an iPhone as a secure room remote."
         else:
             audio_name = "Start or end the review session"
             audio_tip = (
@@ -760,6 +815,10 @@ class SessionStrip(QFrame):
         self._sync_conversation_presentation()
         self._sync_audio_action_accessibility()
         self._sync_recording_profile_accessibility()
+        # Re-apply requested host chrome so leftover Record / Shared Track
+        # cannot survive a profile that forbids them.
+        self.set_recording_available(self._recording_control_requested)
+        self.set_reference_track_available(self._shared_track_host_requested)
 
     def _conversation_policy_copy(self) -> str:
         if self._creator_profile_key == "podcast_voice":
@@ -1072,7 +1131,10 @@ class SessionStrip(QFrame):
 
     def set_recording_available(self, available: bool) -> None:
         """Only the host owns the synchronized take; joiners are recorded there."""
-        self._recording_control_available = bool(available)
+        self._recording_control_requested = bool(available)
+        self._recording_control_available = (
+            self._recording_control_requested and self._session_recording_supported
+        )
         self._record_button.setVisible(self._recording_control_available)
         if not self._recording_control_available and not self._recording_seen_active:
             self._record_elapsed.setVisible(False)
@@ -1088,7 +1150,10 @@ class SessionStrip(QFrame):
     def set_reference_track_available(self, host: bool) -> None:
         """Grant host controls while retaining bounded guest-visible state."""
 
-        self._shared_track_host = bool(host)
+        self._shared_track_host_requested = bool(host)
+        self._shared_track_host = (
+            self._shared_track_host_requested and self._shared_reference_audio_supported
+        )
         if self._shared_track_host and not self._shared_track_snapshot_seen:
             self._shared_track_source_change_allowed = True
         self._reference_track_action.setVisible(self._shared_track_host)

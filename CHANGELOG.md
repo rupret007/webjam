@@ -9,6 +9,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the immutable v0.26.0 release boundary belongs here. Every
 > published tag, release, and asset remains immutable historical evidence.
 
+### Quality review fail-closed chrome
+
+- Art live chrome no longer offers **Record Session**, **Shared Track**, **Recording Setup**, or **Studio** when the profile forbids those capabilities. Switching back to Music/Podcast/Review restores them. Art strip copy addresses artists, not a Review session.
+- Saving a Music AI key into the OS credential store now clears the legacy `music_ai_api_key` settings field so a later Host/Join or Settings save cannot write the plaintext copy back.
+
 ### Recording recovery and multitrack proof lab
 
 - Landed via [#14](https://github.com/rupret007/webjam/pull/14): recording recovery hardening, guest capture finalization, Studio toolbar readability, local alignment confidence bounds, platform capability test guards, updater catalog time fixtures, exact multitrack proof lab (`tests/support/multitrack_proof_lab.py`, `tools/run_multitrack_proof_lab.py`), annotation-only runtime dependency removal, and auditable Jamulus soak recording preservation.
