@@ -335,7 +335,7 @@ class SessionStrip(QFrame):
         # stays on. It is never a control and never a spinner.
         self._song_line = QLabel("")
         self._song_line.setObjectName("SessionStripSongLine")
-        self._song_line.setAccessibleName("Song position")
+        self._song_line.setAccessibleName("Where the room is")
         self._song_line.setMaximumWidth(230)
         self._song_line.setVisible(False)
 
@@ -711,15 +711,15 @@ class SessionStrip(QFrame):
             )
             recording_setup_tip = "Art rooms are not recorded."
             reference_description = (
-                "Art has no Shared Track route. A host-clocked reference video "
-                "is a separate in-room layer."
+                "Art has no Shared Track. The host can play one video everyone "
+                "watches in step."
             )
             reference_tip = (
                 "Art does not route a backing track through the live audio path."
             )
             reference_action_tip = (
-                "Art has no Shared Track. Use Reference Video when the room "
-                "needs a picture everyone watches in step."
+                "Art has no Shared Track. Use the room's video when everyone "
+                "should watch the same picture in step."
             )
             pocket_stage_tip = "Pair an iPhone as a secure room remote."
         else:
@@ -1183,11 +1183,12 @@ class SessionStrip(QFrame):
         return self._art_room_chip
 
     def set_song_line(self, text: str, *, description: str = "") -> None:
-        """Show one quiet line about the song, or nothing at all.
+        """Show one quiet line about where the room is, or nothing at all.
 
-        Read-only by contract: this reports where the song is or that a Song
-        tools job is working. It never becomes a button, so it cannot compete
-        with the HUD's primary action.
+        Read-only by contract: this reports the shared pulse (song form,
+        Shared Track, or the host's video) or that a Song tools job is
+        working. It never becomes a button, so it cannot compete with the
+        HUD's primary action.
         """
 
         line = " ".join(str(text or "").split())

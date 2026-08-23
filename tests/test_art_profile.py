@@ -665,7 +665,7 @@ def test_setup_phases_use_the_artists_own_words():
 
 def test_the_art_action_labels_are_not_music_labels():
     assert SessionPrimaryAction.RUN_BAND_CHECK.label_for(ART) == "Run Session Check"
-    assert SessionPrimaryAction.ENTER_JAM.label_for(ART) == "Enter Studio"
+    assert SessionPrimaryAction.ENTER_JAM.label_for(ART) == "Enter the room"
     assert SessionPrimaryAction.RUN_BAND_CHECK.label_for("music") == "Run Band Check"
 
 

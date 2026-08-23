@@ -410,25 +410,111 @@ def test_music_ai_never_runs_on_the_jamulus_realtime_path():
         assert audio not in imported
 
 
-def test_the_session_pulse_stays_local_and_untouched():
-    """ADR 0002 keeps SessionPulse the creative authority; nothing rewires it."""
+# SessionPulse / conductor / studio arrangement stay the creative and
+# operational authorities. Music AI and song-tools PRs must not rewire them.
+# Operational copy in the conductor (one next step after Host/Join) is not a
+# rewire; the pairing check below still fails if those files change together
+# with the Music AI / song-tools surface. The import check always runs.
+_PULSE_OWNED_FILES = (
+    "core/session_intelligence.py",
+    "core/session_conductor.py",
+    "core/musician_guidance.py",
+    "core/studio_project.py",
+    "core/studio_sections.py",
+)
+_MUSIC_AI_IMPORTS = {
+    "core.music_ai_client",
+    "core.music_ai_catalog",
+    "core.music_ai_results",
+    "core.song_workbench",
+    "core.stem_bench",
+    "core.song_clock",
+    "core.song_form",
+    "core.song_help",
+    "core.song_sections",
+    "core.song_model_help",
+    "core.text_model_client",
+    "core.provider_credentials",
+    "core.secret_store",
+    "webjam_qt.controllers.song_tools_coordinator",
+}
 
+
+def _is_music_ai_surface(path: str) -> bool:
+    return path in SONG_MODULES or path.startswith("core/music_ai")
+
+
+def _changed_paths_against_master() -> list[str]:
     import subprocess
 
-    changed = subprocess.run(
-        ["git", "diff", "--name-only", "origin/master...HEAD"],
-        capture_output=True,
-        text=True,
-        cwd=str(REPO_ROOT),
-    ).stdout.split()
-    for owned_elsewhere in (
-        "core/session_intelligence.py",
-        "core/session_conductor.py",
-        "core/musician_guidance.py",
-        "core/studio_project.py",
-        "core/studio_sections.py",
-    ):
-        assert owned_elsewhere not in changed, owned_elsewhere
+    for spec in ("origin/master...HEAD", "origin/main...HEAD", "master...HEAD"):
+        result = subprocess.run(
+            ["git", "diff", "--name-only", spec],
+            capture_output=True,
+            text=True,
+            cwd=str(REPO_ROOT),
+        )
+        if result.returncode == 0:
+            return [line for line in result.stdout.splitlines() if line]
+    return []
+
+
+def _music_ai_and_pulse_paths(changed: list[str]) -> tuple[list[str], list[str]]:
+    music_ai = [path for path in changed if _is_music_ai_surface(path)]
+    pulse = [path for path in changed if path in _PULSE_OWNED_FILES]
+    return music_ai, pulse
+
+
+def _imported_modules(relative: str) -> set[str]:
+    tree = ast.parse((REPO_ROOT / relative).read_text())
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
+        elif isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+    return imported
+
+
+def test_the_session_pulse_stays_local_and_untouched():
+    """ADR 0002: Music AI / song-tools work must not rewire SessionPulse.
+
+    Pulse-owned files may change for operational copy. A PR that also
+    touches the Music AI / song-tools surface may not change them. Those
+    files also must never import Music AI or song-workbench.
+    """
+
+    music_ai, pulse = _music_ai_and_pulse_paths(_changed_paths_against_master())
+    assert not (music_ai and pulse), (
+        "Music AI / song-tools files must not rewire SessionPulse / "
+        f"conductor: {music_ai} vs {pulse}"
+    )
+    for owned in _PULSE_OWNED_FILES:
+        imported = _imported_modules(owned)
+        for module in imported:
+            assert not module.startswith("core.music_ai"), f"{owned} imports {module}"
+            assert module not in _MUSIC_AI_IMPORTS, f"{owned} imports {module}"
+
+
+def test_a_music_ai_change_that_also_edits_the_conductor_is_still_rejected():
+    """The pairing gate is not dropped; only copy-only conductor PRs pass."""
+
+    music_ai, pulse = _music_ai_and_pulse_paths(
+        ["core/music_ai_client.py", "core/session_conductor.py"]
+    )
+    assert music_ai == ["core/music_ai_client.py"]
+    assert pulse == ["core/session_conductor.py"]
+    copy_only_music, copy_only_pulse = _music_ai_and_pulse_paths(
+        ["core/session_conductor.py", "webjam_qt/widgets/session_strip.py"]
+    )
+    assert copy_only_music == []
+    assert copy_only_pulse == ["core/session_conductor.py"]
+    for path in _PULSE_OWNED_FILES:
+        assert not _is_music_ai_surface(path), path
+    for path in SONG_MODULES:
+        assert _is_music_ai_surface(path), path
+    assert _is_music_ai_surface("core/music_ai_client.py")
+    assert _is_music_ai_surface("core/music_ai_catalog.py")
 
 
 def test_song_help_is_labelled_a_suggestion_everywhere_it_is_offered():

@@ -9,6 +9,7 @@ extrapolates only elapsed time, and it can never turn a file offset into a bar.
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
@@ -26,6 +27,7 @@ from core.room_clock import (
     format_clock,
     reference_video_facts,
     render_room_clock,
+    song_form_facts,
     stronger_facts,
 )
 from core.session_transfer import (
@@ -146,6 +148,69 @@ def test_no_clock_is_a_first_class_answer():
         assert view.present is False
         assert view.headline == NO_CLOCK_HEADLINE
         assert view.detail == NO_CLOCK_DETAIL
+
+
+def test_song_form_facts_translates_a_stated_form():
+    facts = song_form_facts(
+        SimpleNamespace(
+            has_form=True,
+            sections=("Verse",),
+            follows_shared_track=False,
+            running=True,
+            position_s=12.0,
+            bar=17,
+            beat=3,
+            section_label="Chorus",
+            tempo_bpm=124.0,
+            beats_per_bar=4,
+            meter_denominator=4,
+        )
+    )
+
+    assert facts is not None
+    assert facts.source is RoomClockSource.SONG_FORM
+    assert facts.bar == 17
+    assert facts.beat == 3
+    assert facts.section_label == "Chorus"
+    assert facts.tempo_bpm == pytest.approx(124.0)
+    assert facts.meter_numerator == 4
+    assert facts.meter_denominator == 4
+
+
+def test_song_form_facts_ignore_an_empty_clock():
+    assert song_form_facts(None) is None
+    assert (
+        song_form_facts(
+            SimpleNamespace(
+                has_form=False, sections=(), follows_shared_track=False
+            )
+        )
+        is None
+    )
+
+
+def test_song_form_facts_follow_a_shared_track_without_a_written_form():
+    """Shared Track is already the host's clock; painters should ride it."""
+
+    facts = song_form_facts(
+        SimpleNamespace(
+            has_form=False,
+            sections=(),
+            follows_shared_track=True,
+            running=True,
+            position_s=8.5,
+            bar=0,
+            beat=0,
+            section_label="",
+            tempo_bpm=0,
+        )
+    )
+
+    assert facts is not None
+    assert facts.source is RoomClockSource.SONG_FORM
+    assert facts.position_s == pytest.approx(8.5)
+    assert facts.running is True
+    assert facts.bar == 0
 
 
 def test_a_song_form_clock_reads_as_music():

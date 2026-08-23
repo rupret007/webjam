@@ -5219,6 +5219,39 @@ class ApplicationController(QObject):
                     "and reopen WebJam before trying again."
                 ),
             }
+        if canonical == "art":
+            return {
+                "starting_title": "Starting your room",
+                "starting_detail": (
+                    "WebJam is opening the room. Sound setup comes next."
+                ),
+                "setup_title": "Set up your sound",
+                "verify_title": "Checking the room",
+                "verify_detail": "WebJam is confirming you are in the room.",
+                "confirm_title": "Listen for the room",
+                "confirm_detail": (
+                    "Can you hear yourself coming back from the room?"
+                ),
+                "conversation_detail": (
+                    "A meeting app is optional for faces. The room already "
+                    "has voices."
+                ),
+                "host_ready_title": "Your room is ready",
+                "host_ready_detail": (
+                    "Copy the invite when you want someone else in."
+                ),
+                "guest_ready_title": "You're in",
+                "guest_ready_detail": "The room is ready. Enter when you are.",
+                "closing_detail": "WebJam is closing this room.",
+                "failure_title": "The room needs attention",
+                "failure_detail": (
+                    "WebJam couldn't finish opening this room. Try again."
+                ),
+                "safe_failure_detail": (
+                    "WebJam couldn't finish opening this room safely. Quit "
+                    "and reopen WebJam before trying again."
+                ),
+            }
         if canonical == "review_rehearsal":
             return {
                 "starting_title": "Starting your review session (Preview)",
@@ -12087,13 +12120,25 @@ class ApplicationController(QObject):
     def _room_clock_song_form(self):
         """Return the room's song form, or ``None`` when nothing owns one.
 
-        This is the published seam. Art has no song engine and must not
-        pretend to: it returns nothing, and every Art surface works exactly as
-        well without a musical pulse. A music surface replaces this with a
-        real owner and the painting surfaces do not change.
+        Art has no song engine and must not invent one. Music already owns a
+        host clock (song form, or Shared Track when that holds the song). This
+        reads that existing owner when it is present so a painter can ride the
+        same pulse. It never constructs song tools just to look.
         """
 
-        return None
+        coordinator = getattr(self, "_song_tools", None)
+        if coordinator is None:
+            return None
+        try:
+            if not coordinator.is_available():
+                return None
+            snapshot = coordinator.workbench.clock_snapshot()
+        except Exception:  # noqa: BLE001 - a missing owner is no clock
+            LOGGER.debug("Song-form owner could not be read", exc_info=True)
+            return None
+        from core.room_clock import song_form_facts
+
+        return song_form_facts(snapshot)
 
     def _room_clock_video_facts(self):
         """Read Art's host-clocked reference video as room-clock facts."""
@@ -12129,6 +12174,23 @@ class ApplicationController(QObject):
         dialog = getattr(self, "_shared_canvas_dialog", None)
         if dialog is not None:
             dialog.set_room_clock(view)
+        # Painters who never open the canvas still need the pulse. Music already
+        # owns the strip line from Song tools, so this only fills it for the
+        # other rooms.
+        profile = getattr(self, "creator_profile", None)
+        if profile is None or getattr(profile, "key", "") == "music":
+            return
+        strip = getattr(getattr(self, "window", None), "session_strip", None)
+        setter = getattr(strip, "set_song_line", None)
+        if setter is None:
+            return
+        if view is not None and getattr(view, "present", False):
+            setter(
+                getattr(view, "headline", ""),
+                description=getattr(view, "detail", ""),
+            )
+        else:
+            setter("")
 
     # ------------------------------------------------------------------
     # Art AI image

@@ -1238,6 +1238,20 @@ def test_native_sound_setup_watches_connection_without_a_completion_click() -> N
             "Listen for your microphone",
             ("your voice", "returning cleanly"),
         ),
+        (
+            "art",
+            "invite_ready",
+            "host",
+            "Your room is ready",
+            ("Copy the invite", "someone else in"),
+        ),
+        (
+            "art",
+            "confirm_sound",
+            "guest",
+            "Listen for the room",
+            ("coming back from the room",),
+        ),
     ),
 )
 def test_creator_profile_drives_truthful_native_startup_copy(

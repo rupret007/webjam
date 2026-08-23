@@ -324,6 +324,45 @@ def _song_view(projection: object, *, running: bool, stale: bool) -> RoomClockVi
     )
 
 
+def song_form_facts(snapshot: object) -> RoomClockFacts | None:
+    """Read a song-clock snapshot as room-clock facts, or ``None``.
+
+    This is the seam a music surface publishes into. It translates only what
+    an owner already stated: a written form, or a Shared Track the host is
+    already running. Art never calls this with invented bars.
+    """
+
+    if snapshot is None:
+        return None
+    sections = getattr(snapshot, "sections", ()) or ()
+    has_form = bool(getattr(snapshot, "has_form", False) or sections)
+    follows_track = bool(getattr(snapshot, "follows_shared_track", False))
+    if not has_form and not follows_track:
+        return None
+    return RoomClockFacts(
+        source=RoomClockSource.SONG_FORM,
+        running=bool(getattr(snapshot, "running", False)),
+        position_s=_positive(
+            getattr(snapshot, "position_s", 0.0), MAX_ROOM_CLOCK_POSITION_S
+        ),
+        bar=_counted(getattr(snapshot, "bar", 0), MAX_ROOM_CLOCK_BAR),
+        beat=_counted(getattr(snapshot, "beat", 0), MAX_ROOM_CLOCK_BEAT),
+        section_label=_label(getattr(snapshot, "section_label", "")),
+        tempo_bpm=_positive(getattr(snapshot, "tempo_bpm", 0.0), MAX_TEMPO_BPM),
+        meter_numerator=_counted(
+            getattr(
+                snapshot,
+                "beats_per_bar",
+                getattr(snapshot, "meter_numerator", 0),
+            ),
+            MAX_ROOM_CLOCK_BEAT,
+        ),
+        meter_denominator=_counted(
+            getattr(snapshot, "meter_denominator", 0), MAX_ROOM_CLOCK_BEAT
+        ),
+    )
+
+
 def reference_video_facts(
     snapshot: object, *, playing_state: object = "playing"
 ) -> RoomClockFacts | None:
@@ -391,5 +430,6 @@ __all__ = [
     "format_clock",
     "reference_video_facts",
     "render_room_clock",
+    "song_form_facts",
     "stronger_facts",
 ]

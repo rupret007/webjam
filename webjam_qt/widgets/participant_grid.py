@@ -322,6 +322,10 @@ class ParticipantGrid(QScrollArea):
             practice_text = "Solo Voice"
             practice_accessible = "Start a private solo voice session"
             check_text = "Run Sound Check"
+        elif profile.key == "art":
+            practice_text = "Private Room"
+            practice_accessible = "Start a private room audio session"
+            check_text = "Run Session Check"
         else:
             practice_text = "Private Review"
             practice_accessible = "Start a private review session"
@@ -365,8 +369,10 @@ class ParticipantGrid(QScrollArea):
                 ),
                 (
                     "Your band needs to hear your instrument. macOS will ask for access next.",
-                    ("Other speakers need to hear your microphone. macOS will ask "
-                    "for access next."),
+                    (
+                        "Other speakers need to hear your microphone. macOS will ask "
+                        "for access next."
+                    ),
                 ),
                 ("Try Leave Jam", "Try Leave Session"),
                 ("Leave Jam", "Leave Session"),
@@ -393,6 +399,54 @@ class ParticipantGrid(QScrollArea):
                 ("private practice", "private solo voice"),
                 ("Private practice", "Private solo voice"),
                 ("PRIVATE PRACTICE", "SOLO VOICE"),
+            )
+        elif profile.key == "art":
+            replacements = (
+                (
+                    "Start the session and invite your band.",
+                    "Start the room and invite other artists.",
+                ),
+                (
+                    "Start the session to join your band.",
+                    "Start the session to join the room.",
+                ),
+                ("Connecting to your band…", "Connecting to the artists…"),
+                (
+                    "This local session is private and does not connect to your band.",
+                    "This local session is private and does not connect to other artists.",
+                ),
+                (
+                    "Your band needs to hear your instrument. macOS will ask for access next.",
+                    (
+                        "Other artists need to hear you. macOS will ask for "
+                        "access next."
+                    ),
+                ),
+                ("Try Leave Jam", "Try Leave Room"),
+                ("Leave Jam", "Leave Room"),
+                ("Enter Jam", "Enter the room"),
+                ("Band Check", "Session Check"),
+                ("band audio", "room audio"),
+                ("Band audio", "Room audio"),
+                ("private band session", "private art session"),
+                ("Private band session", "Private art session"),
+                ("your band", "the artists"),
+                ("Your band", "The artists"),
+                ("the band", "the artists"),
+                ("The band", "The artists"),
+                ("bandmate", "artist"),
+                ("Bandmate", "Artist"),
+                ("musicians", "artists"),
+                ("Musicians", "Artists"),
+                ("musician", "artist"),
+                ("Musician", "Artist"),
+                ("the jam", "the room"),
+                ("The jam", "The room"),
+                ("this jam", "this room"),
+                ("This jam", "This room"),
+                ("private practice", "private room"),
+                ("Private practice", "Private room"),
+                ("PRIVATE PRACTICE", "PRIVATE ROOM"),
             )
         else:
             replacements = (
@@ -552,10 +606,22 @@ class ParticipantGrid(QScrollArea):
         message = self._profile_text(message)
         primary_text = self._profile_text(primary_text)
         hint = self._profile_text(hint)
-        if self._creator_profile.is_preview and (
+        if self._creator_profile.key == "art" and (
             not hint
             or "separate tracks" in hint.casefold()
             or "multitrack" in hint.casefold()
+        ):
+            # Art rooms are not recorded. Do not keep Music's track hint or
+            # borrow Review's meeting-capture lecture.
+            hint = ""
+        elif (
+            self._creator_profile.key == "review_rehearsal"
+            and self._creator_profile.is_preview
+            and (
+                not hint
+                or "separate tracks" in hint.casefold()
+                or "multitrack" in hint.casefold()
+            )
         ):
             hint = (
                 f"Preview: {RECORD_SESSION_MEETING_CAPTURE_NOTICE} Notes stay "
