@@ -2566,10 +2566,9 @@ class RoomClockSessionSnapshot:
             if duration and position > duration:
                 raise ValueError("position_s must not exceed duration_s.")
         else:
-            if not bar and not section:
-                raise ValueError(
-                    "A song form clock must state a bar or a section."
-                )
+            # Shared Track may own the pulse with only elapsed time. That is
+            # still a named song clock; do not invent a bar to satisfy the
+            # wire. A beat still needs the bar it belongs to.
             if beat and not bar:
                 raise ValueError("A beat needs the bar it belongs to.")
             if bool(numerator) != bool(denominator):

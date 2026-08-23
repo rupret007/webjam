@@ -225,7 +225,8 @@ def test_guest_join_and_live_require_authenticated_path_and_unique_roster_truth(
     assert live.primary_action is SessionPrimaryAction.NONE
     assert live.title == "Band connected"
     assert "ready to play" not in live.title.lower()
-    assert "Hear each other, then Record when you are ready." in live.message
+    assert "Hear each other, then play." in live.message
+    assert "Record when you are ready" not in live.message
     assert "Band Check (F2)" in live.message
     assert "only musicians" in live.limitation.lower()
 
@@ -237,7 +238,9 @@ def test_guest_join_and_live_require_authenticated_path_and_unique_roster_truth(
 
 def test_recording_take_transfer_review_and_export_are_truthful_separate_phases():
     live = _live_host_facts()
-    assert derive_session_conductor(live).primary_action is SessionPrimaryAction.RECORD
+    host_live = derive_session_conductor(live)
+    assert host_live.primary_action is SessionPrimaryAction.RECORD
+    assert "Hear each other, then Record when you are ready." in host_live.message
 
     starting = derive_session_conductor(replace(live, recorder=RecorderState.REQUESTED))
     assert starting.phase is SessionConductorPhase.RECORDING_STARTING

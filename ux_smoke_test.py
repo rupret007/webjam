@@ -37,6 +37,8 @@ def main() -> int:
     checklist_file = ROOT / "UX_ACCEPTANCE_CHECKLIST.md"
     help_map_file = ROOT / "HELP_ROUTING_MAP.md"
     launch_file = ROOT / "webjam_qt" / "windows" / "launch_dialog.py"
+    start_ux_file = ROOT / "tests" / "support" / "start_ux.py"
+    start_ux_test = ROOT / "tests" / "test_art_start_ux.py"
     session_state_file = ROOT / "webjam_qt" / "session_state.py"
     permission_file = ROOT / "webjam_qt" / "platform_permissions.py"
     invite_file = ROOT / "core" / "network_invite.py"
@@ -52,6 +54,8 @@ def main() -> int:
         checklist_file,
         help_map_file,
         launch_file,
+        start_ux_file,
+        start_ux_test,
         session_state_file,
         permission_file,
         invite_file,
@@ -91,6 +95,16 @@ def main() -> int:
         'join="Join Review"',
     ):
         require_contains(launch_file, marker, failures)
+    for marker in (
+        "FIRST_SCREEN_BANNED_PHRASES",
+        "jamulus",
+        "studio visit",
+        "host-clocked",
+        "assert_no_banned_first_screen_words",
+    ):
+        require_contains(start_ux_file, marker, failures)
+    require_contains(start_ux_test, "from tests.support.start_ux import", failures)
+    require_contains(start_ux_test, "test_the_banned_word_gate_fails_closed", failures)
     require_contains(session_state_file, "PERMISSION_DENIED", failures)
     require_contains(tokens_file, '#BF5700', failures)
     require_contains(studio_file, "Export Tracks", failures)

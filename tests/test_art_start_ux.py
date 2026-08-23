@@ -14,10 +14,17 @@ from unittest.mock import patch
 
 import pytest
 
-from PySide6.QtWidgets import QApplication, QComboBox, QPushButton, QWidget
+from PySide6.QtWidgets import QApplication, QPushButton
 
 from core.creative_modes import CREATOR_PROFILES, get_creator_profile_by_key
 from core.settings import AppSettings, load_settings
+from tests.support.start_ux import (
+    FIRST_SCREEN_BANNED_PHRASES,
+    FIRST_SCREEN_BANNED_WORDS,
+    assert_no_banned_first_screen_words,
+    harvest_first_screen,
+    harvest_join_page,
+)
 from webjam_qt.windows.launch_dialog import (
     _CREATOR_LAUNCH_COPY,
     LaunchDialog,
@@ -56,65 +63,11 @@ def _visible_buttons(dialog: LaunchDialog) -> list[QPushButton]:
 
 
 def _first_screen_spoken(dialog: LaunchDialog) -> str:
-    """Harvest what a person can actually read or hear on the choice page.
-
-    Hidden fail-closed recovery (the Windows Jamulus installer) stays out.
-    Picker labels are included even while Music hides the combo, because those
-    words become the first screen the moment Art, podcast, or review is
-    revealed.
-    """
-
-    page = dialog._choice_page
-    parts: list[str] = []
-    selector = dialog._creator_profile_selector
-    parts.extend(selector.itemText(index) for index in range(selector.count()))
-    parts.append(selector.accessibleDescription())
-    for widget in page.findChildren(QWidget):
-        if not widget.isVisibleTo(page):
-            continue
-        for attr in (
-            "text",
-            "description",
-            "placeholderText",
-            "accessibleName",
-            "accessibleDescription",
-            "toolTip",
-        ):
-            getter = getattr(widget, attr, None)
-            if callable(getter):
-                value = getter()
-                if value:
-                    parts.append(str(value))
-        if isinstance(widget, QComboBox):
-            parts.extend(
-                widget.itemText(index) for index in range(widget.count())
-            )
-    # Cards chosen for this profile are first-screen copy even if a test
-    # inspects them before Qt finishes showing the page.
-    parts.extend(card.text() for card in _visible_cards(dialog))
-    parts.extend(card.description() for card in _visible_cards(dialog))
-    parts.extend(card.accessibleDescription() for card in _visible_cards(dialog))
-    parts.extend(card.toolTip() for card in _visible_cards(dialog))
-    return " ".join(parts).casefold()
+    return harvest_first_screen(dialog)
 
 
 def _assert_first_screen_has_no_banned_words(spoken: str) -> None:
-    for component in (
-        "drawpile",
-        "krita",
-        "jamulus",
-        "webex",
-        "moises",
-        "music ai",
-        "byok",
-        "comfyui",
-        "host-clocked",
-        "studio visit",
-        "stems",
-    ):
-        assert component not in spoken, component
-    for word in ("preview", "ready", "api"):
-        assert not re.search(rf"\b{word}\b", spoken), word
+    assert_no_banned_first_screen_words(spoken)
 
 
 # ---------------------------------------------------------------------------
@@ -591,3 +544,47 @@ def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
         assert others == ["Host", "Join"]
     finally:
         dialog.deleteLater()
+
+
+@pytest.mark.parametrize(
+    "profile_key", ["music", "podcast_voice", "review_rehearsal", "art"]
+)
+def test_every_join_page_has_no_banned_words(
+    qapp, tmp_path: Path, profile_key: str
+):
+    """Join is still the first screen a guest reads."""
+
+    dialog = _dialog(tmp_path, profile_key)
+    try:
+        dialog.show_join()
+        _assert_first_screen_has_no_banned_words(harvest_join_page(dialog))
+    finally:
+        dialog.deleteLater()
+
+
+def test_a_tooltip_with_a_banned_word_fails_the_harvest(qapp, tmp_path: Path):
+    """The harvest is what CI sees. A quiet tooltip cannot hide Jamulus."""
+
+    dialog = _dialog(tmp_path, "music")
+    try:
+        dialog._host_button.setToolTip("Install Jamulus first")
+        spoken = _first_screen_spoken(dialog)
+        assert "jamulus" in spoken
+        with pytest.raises(AssertionError, match="jamulus"):
+            _assert_first_screen_has_no_banned_words(spoken)
+    finally:
+        dialog.deleteLater()
+
+
+def test_the_banned_word_gate_fails_closed():
+    """A planted engine word cannot pass, or the CI hold is decorative."""
+
+    for phrase in FIRST_SCREEN_BANNED_PHRASES:
+        with pytest.raises(AssertionError, match=re.escape(phrase)):
+            _assert_first_screen_has_no_banned_words(f"please open {phrase} now")
+    for word in FIRST_SCREEN_BANNED_WORDS:
+        with pytest.raises(AssertionError, match=word):
+            _assert_first_screen_has_no_banned_words(f"this door says {word} here")
+    _assert_first_screen_has_no_banned_words(
+        "already creating together. host or join."
+    )

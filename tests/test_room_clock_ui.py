@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (  # noqa: E402
 from core.creative_modes import CREATOR_PROFILES  # noqa: E402
 from core.room_clock import (  # noqa: E402
     NO_CLOCK_HEADLINE,
+    SONG_DETAIL,
     RoomClockSource,
     RoomClockView,
     render_room_clock,
@@ -89,7 +90,7 @@ def test_the_readout_shows_the_pulse_and_where_it_came_from():
         label.set_view(_song_view())
 
         assert label._headline.text() == "Bar 17.3 · Chorus"
-        assert "song form" in label._detail.text()
+        assert SONG_DETAIL in label._detail.text()
         assert "124 BPM" in label._detail.text()
         assert label.property("clock") == "song_form"
     finally:
@@ -165,7 +166,7 @@ def test_the_readout_announces_itself_to_assistive_technology():
 
         announced = label.accessibleDescription()
         assert "Bar 17.3 · Chorus" in announced
-        assert "song form" in announced
+        assert SONG_DETAIL in announced
     finally:
         label.deleteLater()
 
@@ -321,6 +322,50 @@ def test_a_music_song_clock_publishes_into_the_room_clock():
     assert published["bar"] == 17
 
 
+def test_a_shared_track_without_a_form_still_publishes_the_pulse():
+    """A backing track is already the host clock; do not invent bars for it."""
+
+    from core.room_clock import RoomClockSource, SHARED_TRACK_DETAIL, format_clock
+
+    controller = _controller("music")
+    _as_host(controller)
+    controller._song_tools = SimpleNamespace(
+        is_available=lambda: True,
+        workbench=SimpleNamespace(
+            clock_snapshot=lambda: SimpleNamespace(
+                has_form=False,
+                sections=(),
+                follows_shared_track=True,
+                running=True,
+                position_s=34.0,
+                bar=0,
+                beat=0,
+                section_label="",
+                tempo_bpm=0,
+            )
+        ),
+    )
+
+    facts = controller._room_clock_song_form()
+    assert facts is not None
+    assert facts.source is RoomClockSource.SONG_FORM
+    assert facts.bar == 0
+    assert facts.position_s == pytest.approx(34.0)
+
+    controller._tick_room_clock()
+    published = controller.host_peer.publish_room_clock_state.call_args.kwargs
+    assert published["source"] == "song_form"
+    assert published["bar"] == 0
+    assert published["position_s"] == pytest.approx(34.0)
+    assert published["section_label"] == ""
+
+    from core.room_clock import render_room_clock
+
+    view = render_room_clock(facts, age_s=0.0)
+    assert view.headline == format_clock(34.0)
+    assert view.detail == SHARED_TRACK_DETAIL
+
+
 def test_a_non_music_room_never_invents_a_song_form():
     controller = _controller("art")
     controller._song_tools = SimpleNamespace(is_available=lambda: False)
@@ -341,7 +386,7 @@ def test_a_painter_sees_the_pulse_on_the_strip_without_opening_the_canvas():
         RoomClockView(
             source=RoomClockSource.SONG_FORM,
             headline="Bar 17.1 · Chorus",
-            detail="Following the room's song form.",
+            detail=SONG_DETAIL,
             running=True,
             musical=True,
         )
@@ -349,7 +394,7 @@ def test_a_painter_sees_the_pulse_on_the_strip_without_opening_the_canvas():
 
     strip.set_song_line.assert_called_once_with(
         "Bar 17.1 · Chorus",
-        description="Following the room's song form.",
+        description=SONG_DETAIL,
     )
 
 
@@ -366,7 +411,7 @@ def test_music_keeps_its_own_song_line_owner():
         RoomClockView(
             source=RoomClockSource.SONG_FORM,
             headline="Bar 17.1 · Chorus",
-            detail="Following the room's song form.",
+            detail=SONG_DETAIL,
             running=True,
             musical=True,
         )

@@ -59,6 +59,7 @@ NO_CLOCK_DETAIL = (
 )
 VIDEO_DETAIL = "Following the host's reference video."
 SONG_DETAIL = "Following the room's song form."
+SHARED_TRACK_DETAIL = "Following the Shared Track."
 STALE_DETAIL = (
     "The room clock is out of date, so WebJam stopped advancing it. It picks "
     "up again when the owner is heard from."
@@ -302,11 +303,14 @@ def _song_view(projection: object, *, running: bool, stale: bool) -> RoomClockVi
         parts.append(format_clock(position))
     headline = " · ".join(parts)
 
-    detail = SONG_DETAIL
+    # A Shared Track may own the pulse with only elapsed time. Do not call
+    # that a written form, and do not invent a bar to make it look like one.
+    song_detail = SONG_DETAIL if (bar or section) else SHARED_TRACK_DETAIL
+    detail = song_detail
     if stale:
         detail = STALE_DETAIL
     elif not running:
-        detail = f"{SONG_DETAIL} {PAUSED_SUFFIX}"
+        detail = f"{song_detail} {PAUSED_SUFFIX}"
     if not stale and (tempo or (numerator and denominator)):
         stated: list[str] = []
         if tempo:
@@ -420,6 +424,7 @@ __all__ = [
     "MIN_TEMPO_BPM",
     "NO_CLOCK_DETAIL",
     "NO_CLOCK_HEADLINE",
+    "SHARED_TRACK_DETAIL",
     "SONG_DETAIL",
     "STALE_DETAIL",
     "VIDEO_DETAIL",

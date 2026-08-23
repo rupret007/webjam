@@ -466,19 +466,28 @@ class SongToolsCoordinator:
             return
 
         snapshot = self.workbench.clock_snapshot()
+        if snapshot.follows_shared_track:
+            from core.room_clock import format_clock
+
+            line = snapshot.position_label or format_clock(snapshot.position_s)
+            chords = " ".join(snapshot.chords_now[:4])
+            setter(
+                f"{line} · {chords}" if chords else line,
+                description=(
+                    "Where the Shared Track is. Painters and musicians read "
+                    "the same pulse."
+                ),
+            )
+            return
+
         if snapshot.running and snapshot.position_label:
             chords = " ".join(snapshot.chords_now[:4])
             line = snapshot.position_label
             setter(
                 f"{line} · {chords}" if chords else line,
                 description=(
-                    "Where the song is. "
-                    + (
-                        "Counting with the Shared Track."
-                        if snapshot.follows_shared_track
-                        else "A shared reference the host runs; it does not "
-                        "follow the band."
-                    )
+                    "Where the song is. A shared reference the host runs; it "
+                    "does not follow the band."
                 ),
             )
             return
