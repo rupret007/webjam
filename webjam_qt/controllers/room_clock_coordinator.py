@@ -10,8 +10,9 @@ The song-form provider is the point of this whole file. It is a callable that
 returns :class:`core.room_clock.RoomClockFacts` or ``None``, and today nothing
 in Art supplies it: Art has no song engine and must not pretend to have one. A
 music surface can supply it later without a single painting surface changing,
-and when it does, a song outranks a reference video because a painter riding a
-band should be riding bars rather than a file offset.
+and when it does, a stated place outranks a reference video because a painter
+riding a band should be riding bars rather than a file offset. A written
+outline without a bar or section is not a place, so the video still speaks.
 
 It holds no Qt types, so it can be exercised headlessly with fake providers
 and a fake host peer.

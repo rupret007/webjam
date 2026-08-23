@@ -12124,8 +12124,9 @@ class ApplicationController(QObject):
         host clock over a written form (position may come from the song
         playing in the room). This reads that existing owner when it is
         present so a painter can ride the same pulse. A file with no written
-        parts is not a song form, and a written outline with no stated bar or
-        section is not a position. It never constructs song tools just to look.
+        parts is not a song form. A written outline with no stated bar or
+        section is not a position — it is named so the room does not claim
+        the song is absent. It never constructs song tools just to look.
         """
 
         coordinator = getattr(self, "_song_tools", None)

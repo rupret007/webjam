@@ -55,8 +55,9 @@ DEFAULT_STALE_AFTER_S = 5.0
 
 NO_CLOCK_HEADLINE = "No shared clock"
 NO_CLOCK_DETAIL = (
-    "This room has no song form and no reference video running. Work freely."
+    "This room has no bar, section, or reference video to follow. Work freely."
 )
+NO_PLACE_DETAIL = "Nobody has said where we are."
 VIDEO_DETAIL = "Following the host's reference video."
 SONG_DETAIL = "Following the song the room wrote."
 SONG_COUNT_LIMIT = "This is a count, not what anyone is playing."
@@ -115,6 +116,16 @@ class RoomClockFacts:
             or self.meter_numerator
             or self.meter_denominator
         )
+
+    @property
+    def states_place(self) -> bool:
+        """Whether a bar or named section was actually stated.
+
+        A list of parts is the song's shape, not where we are. Painters ride
+        a place; they do not ride an outline.
+        """
+
+        return bool(self.bar or self.section_label)
 
 
 @runtime_checkable
@@ -356,9 +367,18 @@ def _song_view(projection: object, *, running: bool, stale: bool) -> RoomClockVi
     if section:
         parts.append(section)
     if not parts:
-        # A song-form clock without a stated bar or section is no clock.
-        # Host-local facts should not reach here; if they do, stay blank
-        # rather than dress a timer or an outline up as a form.
+        # A written shape without a stated bar or section is still no
+        # clock. Name the outline so a painter is not told the song is
+        # absent; never put a part, a bar, or elapsed time in the headline.
+        if form_shape:
+            return RoomClockView(
+                source=RoomClockSource.SONG_FORM,
+                headline=NO_CLOCK_HEADLINE,
+                detail=f"{form_shape} is written. {NO_PLACE_DETAIL}",
+                running=False,
+                stale=False,
+                musical=False,
+            )
         return RoomClockView()
     headline = " · ".join(parts)
 
@@ -401,7 +421,9 @@ def song_form_facts(snapshot: object) -> RoomClockFacts | None:
     playing with no written parts is not a song form. A written outline
     with no current bar or section is not a position either — dressing the
     first part, or the file's elapsed time, up as form would be the lie
-    this module exists to prevent. Art never calls this with invented bars.
+    this module exists to prevent. That outline is still named, so the
+    room does not claim the song is absent. Art never calls this with
+    invented bars.
     """
 
     if snapshot is None:
@@ -413,11 +435,17 @@ def song_form_facts(snapshot: object) -> RoomClockFacts | None:
     bar = _counted(getattr(snapshot, "bar", 0), MAX_ROOM_CLOCK_BAR)
     beat = _counted(getattr(snapshot, "beat", 0), MAX_ROOM_CLOCK_BEAT)
     section = _label(getattr(snapshot, "section_label", ""))
-    # A list of parts is the song's shape, not where we are. #27's wire
-    # already refuses elapsed-only; do not satisfy it by inventing Verse
-    # from the outline while Shared Track is only a timer.
+    form_shape = _form_shape(snapshot)
+    # A list of parts is the song's shape, not where we are. Do not
+    # invent Verse from the outline, and do not carry the file's timer
+    # as if it were a running clock.
     if not bar and not section:
-        return None
+        if not form_shape:
+            return None
+        return RoomClockFacts(
+            source=RoomClockSource.SONG_FORM,
+            form_shape=form_shape,
+        )
     numerator, denominator = _stated_meter(snapshot)
     return RoomClockFacts(
         source=RoomClockSource.SONG_FORM,
@@ -437,7 +465,7 @@ def song_form_facts(snapshot: object) -> RoomClockFacts | None:
         section_lengths_assumed=bool(
             getattr(snapshot, "section_lengths_assumed", False)
         ),
-        form_shape=_form_shape(snapshot),
+        form_shape=form_shape,
     )
 
 
@@ -474,17 +502,24 @@ def stronger_facts(
 ) -> RoomClockFacts:
     """Choose which owner speaks for the room.
 
-    A song in the room is the stronger pulse: when a band is playing, the
-    painter should be riding bars, not a file offset. A reference video speaks
-    only when no song does, and when neither does the room honestly has no
-    clock.
+    A stated place in a song is the stronger pulse: when a band is playing,
+    the painter should be riding bars, not a file offset. A written outline
+    without a bar or section is not a place — a reference video still speaks
+    then, because a file offset is a where and an outline is only a shape.
+    When neither a place nor a video exists, the outline may still be named
+    so the room does not claim the song is absent.
     """
 
-    for candidate in (song_form, video):
-        if isinstance(candidate, RoomClockFacts) and (
-            candidate.source is not RoomClockSource.NONE
-        ):
-            return candidate
+    if isinstance(song_form, RoomClockFacts) and song_form.states_place:
+        return song_form
+    if isinstance(video, RoomClockFacts) and (
+        video.source is RoomClockSource.REFERENCE_VIDEO
+    ):
+        return video
+    if isinstance(song_form, RoomClockFacts) and (
+        song_form.source is RoomClockSource.SONG_FORM
+    ):
+        return song_form
     return RoomClockFacts()
 
 
@@ -499,6 +534,7 @@ __all__ = [
     "MAX_FORM_SHAPE_CHARS",
     "NO_CLOCK_DETAIL",
     "NO_CLOCK_HEADLINE",
+    "NO_PLACE_DETAIL",
     "SONG_ASSUMED",
     "SONG_COUNT_LIMIT",
     "SONG_DETAIL",

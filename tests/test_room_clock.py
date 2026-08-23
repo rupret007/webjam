@@ -18,6 +18,7 @@ from core.room_clock import (
     DEFAULT_STALE_AFTER_S,
     NO_CLOCK_DETAIL,
     NO_CLOCK_HEADLINE,
+    NO_PLACE_DETAIL,
     SONG_ASSUMED,
     SONG_COUNT_LIMIT,
     SONG_DETAIL,
@@ -262,22 +263,27 @@ def test_song_form_facts_do_not_invent_a_meter_from_the_count_default():
 def test_song_form_facts_do_not_invent_the_first_part_as_the_position():
     """A written outline without a stated bar or section is not a position."""
 
-    assert (
-        song_form_facts(
-            SimpleNamespace(
-                has_form=True,
-                sections=("Verse", "Chorus"),
-                follows_shared_track=True,
-                running=True,
-                position_s=8.5,
-                bar=0,
-                beat=0,
-                section_label="",
-                tempo_bpm=0,
-            )
+    facts = song_form_facts(
+        SimpleNamespace(
+            has_form=True,
+            sections=("Verse", "Chorus"),
+            follows_shared_track=True,
+            running=True,
+            position_s=8.5,
+            bar=0,
+            beat=0,
+            section_label="",
+            tempo_bpm=0,
         )
-        is None
     )
+
+    assert facts is not None
+    assert facts.states_place is False
+    assert facts.section_label == ""
+    assert facts.bar == 0
+    assert facts.running is False
+    assert facts.position_s == 0.0
+    assert facts.form_shape == "Verse → Chorus"
 
 
 def test_a_song_form_clock_reads_as_music():
@@ -416,6 +422,33 @@ def test_a_song_form_clock_without_written_parts_is_refused():
             source=RoomClockSourceValue.SONG_FORM,
             tempo_bpm=120.0,
         )
+    with pytest.raises(ValueError, match="written bar or section"):
+        RoomClockSessionSnapshot(
+            source=RoomClockSourceValue.SONG_FORM,
+            running=True,
+            position_s=8.5,
+            form_shape="Verse → Chorus",
+        )
+
+
+def test_a_written_outline_without_a_place_may_travel_as_honesty():
+    """The shape may be named. It must not look like a running clock."""
+
+    snapshot = RoomClockSessionSnapshot(
+        source=RoomClockSourceValue.SONG_FORM,
+        form_shape="Verse → Chorus",
+    )
+    view = render_room_clock(snapshot)
+
+    assert snapshot.running is False
+    assert snapshot.position_s == 0.0
+    assert snapshot.bar == 0
+    assert snapshot.section_label == ""
+    assert snapshot.tempo_bpm == 0.0
+    assert view.headline == NO_CLOCK_HEADLINE
+    assert view.detail == f"Verse → Chorus is written. {NO_PLACE_DETAIL}"
+    assert view.musical is False
+    assert "Verse" not in view.headline
 
 
 def test_a_peer_elapsed_only_song_clock_reads_as_no_clock():
@@ -517,6 +550,20 @@ def test_a_song_in_the_room_outranks_a_reference_video():
     assert stronger_facts(None, video) is video
     assert stronger_facts(song, None) is song
     assert stronger_facts(None, None).source is RoomClockSource.NONE
+
+
+def test_an_outline_without_a_place_does_not_outrank_a_reference_video():
+    """A shape is not a where. The file offset still speaks."""
+
+    outline = RoomClockFacts(
+        source=RoomClockSource.SONG_FORM, form_shape="Verse → Chorus"
+    )
+    video = RoomClockFacts(
+        source=RoomClockSource.REFERENCE_VIDEO, running=True, position_s=90.0
+    )
+
+    assert stronger_facts(outline, video) is video
+    assert stronger_facts(outline, None) is outline
 
 
 def test_the_video_translation_carries_no_musical_position():

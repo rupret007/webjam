@@ -16,6 +16,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from core.reference_video import ReferenceVideoSnapshot, ReferenceVideoState  # noqa: E402
 from core.room_clock import (  # noqa: E402
+    NO_CLOCK_HEADLINE,
+    NO_PLACE_DETAIL,
     RoomClockFacts,
     RoomClockSource,
     reference_video_facts,
@@ -237,6 +239,47 @@ def test_a_song_form_owner_takes_over_the_room_without_art_changing():
     assert peer.published[-1]["bar"] == 17
     # The video is still running; the song simply speaks for the room.
     assert peer.published[-1]["source"] == "song_form"
+
+
+def test_an_outline_without_a_place_does_not_take_over_a_video():
+    """A written shape is not a where. Painters still ride the file."""
+
+    peer = FakeHostPeer()
+    coordinator = _coordinator(
+        peer=peer,
+        song=lambda: RoomClockFacts(
+            source=RoomClockSource.SONG_FORM, form_shape="Verse → Chorus"
+        ),
+        video=lambda: _playing_video(90.0),
+    )
+    coordinator.begin_host()
+
+    view = coordinator.tick()
+
+    assert view.source is RoomClockSource.REFERENCE_VIDEO
+    assert view.headline == "1:30 / 10:00"
+    assert peer.published[-1]["source"] == "reference_video"
+
+
+def test_an_outline_without_a_place_is_named_when_nothing_else_speaks():
+    peer = FakeHostPeer()
+    coordinator = _coordinator(
+        peer=peer,
+        song=lambda: RoomClockFacts(
+            source=RoomClockSource.SONG_FORM, form_shape="Verse → Chorus"
+        ),
+    )
+    coordinator.begin_host()
+
+    view = coordinator.tick()
+
+    assert view.headline == NO_CLOCK_HEADLINE
+    assert view.detail == f"Verse → Chorus is written. {NO_PLACE_DETAIL}"
+    assert view.musical is False
+    assert peer.published[-1]["source"] == "song_form"
+    assert peer.published[-1]["form_shape"] == "Verse → Chorus"
+    assert peer.published[-1]["bar"] == 0
+    assert peer.published[-1]["running"] is False
 
 
 def test_a_song_that_stops_hands_the_room_back_to_the_video():

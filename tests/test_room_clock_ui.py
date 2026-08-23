@@ -26,10 +26,12 @@ from PySide6.QtWidgets import (  # noqa: E402
 from core.creative_modes import CREATOR_PROFILES  # noqa: E402
 from core.room_clock import (  # noqa: E402
     NO_CLOCK_HEADLINE,
+    NO_PLACE_DETAIL,
     SONG_DETAIL,
     RoomClockSource,
     RoomClockView,
     render_room_clock,
+    song_form_facts,
 )
 from core.session_transfer import (  # noqa: E402
     RecordingSignal,
@@ -206,6 +208,39 @@ def test_the_canvas_panel_stays_quiet_when_the_room_has_no_pulse():
         dialog.deleteLater()
 
 
+def test_the_canvas_panel_names_a_written_outline_without_inventing_a_place():
+    """Painters see the shape. They do not ride Verse."""
+
+    view = render_room_clock(
+        song_form_facts(
+            SimpleNamespace(
+                has_form=True,
+                sections=("Verse", "Chorus"),
+                follows_shared_track=True,
+                running=True,
+                position_s=34.0,
+                bar=0,
+                beat=0,
+                section_label="",
+                tempo_bpm=0,
+            )
+        )
+    )
+    dialog = SharedCanvasDialog(hosting=False)
+    try:
+        dialog.set_room_clock(view)
+
+        assert dialog._room_clock.isHidden() is False
+        assert dialog._room_clock._headline.text() == NO_CLOCK_HEADLINE
+        assert (
+            dialog._room_clock._detail.text()
+            == f"Verse → Chorus is written. {NO_PLACE_DETAIL}"
+        )
+        assert "Verse" not in dialog._room_clock._headline.text()
+    finally:
+        dialog.deleteLater()
+
+
 def test_the_clock_adds_no_control_to_the_canvas_panel():
     dialog = SharedCanvasDialog(hosting=False)
     try:
@@ -357,8 +392,8 @@ def test_a_shared_track_without_a_form_does_not_publish_a_song_clock():
     controller.host_peer.publish_room_clock_state.assert_not_called()
 
 
-def test_a_shared_track_with_an_outline_but_no_position_does_not_publish():
-    """Elapsed time plus [Verse] [Chorus] is still a timer, not a form."""
+def test_a_shared_track_with_an_outline_but_no_position_publishes_honesty():
+    """Elapsed time plus [Verse] [Chorus] is named, not ridden as a place."""
 
     controller = _controller("music")
     _as_host(controller)
@@ -379,9 +414,18 @@ def test_a_shared_track_with_an_outline_but_no_position_does_not_publish():
         ),
     )
 
-    assert controller._room_clock_song_form() is None
+    facts = controller._room_clock_song_form()
+    assert facts is not None
+    assert facts.states_place is False
+    assert facts.form_shape == "Verse → Chorus"
     controller._tick_room_clock()
-    controller.host_peer.publish_room_clock_state.assert_not_called()
+    published = controller.host_peer.publish_room_clock_state.call_args.kwargs
+    assert published["source"] == "song_form"
+    assert published["bar"] == 0
+    assert published["section_label"] == ""
+    assert published["running"] is False
+    assert published["position_s"] == 0.0
+    assert published["form_shape"] == "Verse → Chorus"
 
 
 def test_a_non_music_room_never_invents_a_song_form():
@@ -414,6 +458,36 @@ def test_a_painter_sees_the_pulse_on_the_strip_without_opening_the_canvas():
         "Bar 17.1 · Chorus",
         description=SONG_DETAIL,
     )
+
+
+def test_a_painter_sees_a_written_outline_on_the_strip_without_a_place():
+    from core.room_clock import RoomClockView, RoomClockSource
+
+    controller = _controller("art")
+    strip = SimpleNamespace(set_song_line=MagicMock())
+    controller.window = SimpleNamespace(
+        flash_message=MagicMock(), session_strip=strip
+    )
+    view = render_room_clock(
+        song_form_facts(
+            SimpleNamespace(
+                has_form=True,
+                sections=("Verse", "Chorus"),
+                bar=0,
+                beat=0,
+                section_label="",
+            )
+        )
+    )
+
+    controller._on_room_clock_view(view)
+
+    strip.set_song_line.assert_called_once_with(
+        NO_CLOCK_HEADLINE,
+        description=f"Verse → Chorus is written. {NO_PLACE_DETAIL}",
+    )
+    assert view.source is RoomClockSource.SONG_FORM
+    assert view.musical is False
 
 
 def test_music_keeps_its_own_song_line_owner():
