@@ -18,6 +18,7 @@ from core.room_clock import (
     DEFAULT_STALE_AFTER_S,
     NO_CLOCK_DETAIL,
     NO_CLOCK_HEADLINE,
+    SHARED_TRACK_DETAIL,
     SONG_DETAIL,
     STALE_DETAIL,
     VIDEO_DETAIL,
@@ -211,6 +212,17 @@ def test_song_form_facts_follow_a_shared_track_without_a_written_form():
     assert facts.position_s == pytest.approx(8.5)
     assert facts.running is True
     assert facts.bar == 0
+    view = render_room_clock(facts, age_s=0.0)
+    assert view.headline == "0:08"
+    assert view.detail == SHARED_TRACK_DETAIL
+    published = RoomClockSessionSnapshot(
+        source=RoomClockSourceValue.SONG_FORM,
+        running=True,
+        position_s=8.5,
+    )
+    assert published.bar == 0
+    assert published.section_label == ""
+    assert render_room_clock(published, age_s=0.0).detail == SHARED_TRACK_DETAIL
 
 
 def test_a_song_form_clock_reads_as_music():

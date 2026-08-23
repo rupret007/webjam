@@ -775,19 +775,32 @@ def _presentation(
             f"WebJam has not yet confirmed an authenticated, reachable {reachable_path}.",
         )
     if phase is SessionConductorPhase.INVITE_READY:
-        invite_message = (
-            "Copy the invite. That is the next step. Send it when you want them in."
-            if profile.key == "music"
-            else f"Share the invite when {waiting_counterpart} is ready to join."
-        )
-        invite_evidence = (
-            "WebJam is ready to invite; it cannot confirm a bandmate is connected yet."
-            if profile.key == "music"
-            else (
+        if profile.key == "music":
+            invite_message = (
+                "Copy the invite. That is the next step. Send it when you "
+                "want them in."
+            )
+            invite_evidence = (
+                "WebJam is ready to invite; it cannot confirm a bandmate is "
+                "connected yet."
+            )
+        elif profile.key == "art":
+            invite_message = (
+                "Copy the invite. That is the next step. Send it when you "
+                "want them in."
+            )
+            invite_evidence = (
+                "WebJam is ready to invite; it cannot confirm another artist "
+                "is in yet."
+            )
+        else:
+            invite_message = (
+                f"Share the invite when {waiting_counterpart} is ready to join."
+            )
+            invite_evidence = (
                 "WebJam is ready to invite; it cannot confirm that "
                 f"{waiting_counterpart} is connected yet."
             )
-        )
         return present(
             SessionPrimaryAction.COPY_INVITE,
             "Invite ready",
@@ -802,14 +815,19 @@ def _presentation(
             f"Opening an invite is not proof that the {authenticated_path} is authenticated.",
         )
     if phase is SessionConductorPhase.CONNECTED:
-        connected_message = (
-            "You are in. Wait for your bandmate, then play a note."
-            if profile.key == "music"
-            else (
+        if profile.key == "music":
+            connected_message = (
+                "You are in. Wait for your bandmate, then play a note."
+            )
+        elif profile.key == "art":
+            connected_message = (
+                "You are in. Wait for the other artist, then listen."
+            )
+        else:
+            connected_message = (
                 f"Your {authenticated_path} is authenticated. Waiting for "
                 f"{waiting_counterpart} to appear."
             )
-        )
         return present(
             SessionPrimaryAction.NONE,
             f"Connected to the {session_short}",
@@ -831,10 +849,16 @@ def _presentation(
     if phase is SessionConductorPhase.LIVE:
         if profile.key == "music":
             title = "Band connected"
-            message = (
-                "Hear each other, then Record when you are ready. "
-                "Band Check (F2) is there if you need help."
-            )
+            if host:
+                message = (
+                    "Hear each other, then Record when you are ready. "
+                    "Band Check (F2) is there if you need help."
+                )
+            else:
+                message = (
+                    "Hear each other, then play. "
+                    "Band Check (F2) is there if you need help."
+                )
             evidence = (
                 "Only musicians can confirm two-way audibility; meters do not prove it."
             )
@@ -851,9 +875,8 @@ def _presentation(
         elif profile.key == "art":
             title = "Artists connected"
             message = (
-                "The artists are connected through WebJam. Confirm everyone can "
-                "hear the WebJam audio, then work as usual. Use Session Check "
-                "(F2) if you need help."
+                "Hear each other, then make. Session Check (F2) is there if "
+                "you need help."
             )
             evidence = (
                 "Only artists can confirm two-way audibility; meters do not prove it."

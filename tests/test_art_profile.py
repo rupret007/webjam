@@ -621,11 +621,49 @@ def test_a_live_art_session_addresses_artists_and_offers_no_recording():
     assert live.creator_profile_key == ART
     # Recording is not part of this profile, so the host is offered nothing.
     assert live.primary_action is SessionPrimaryAction.NONE
+    assert "Hear each other, then make." in live.message
+    assert "Session Check (F2)" in live.message
     assert "musician" not in copy
     assert "band" not in copy
     assert "studio visit" not in copy
     assert re.search(r"\bjam\b", copy) is None
     assert re.search(r"\btrack\b", copy) is None
+
+
+def test_art_host_and_join_have_one_next_step():
+    """After Host/Join the room says what to do, in artist words."""
+
+    invite_ready = derive_session_conductor(
+        replace(
+            _ready_facts(ART),
+            host_server_process=ProcessState.RUNNING,
+            host_server_rpc=EvidenceState.VERIFIED,
+            host_listener=EvidenceState.VERIFIED,
+            invite=EvidenceState.VERIFIED,
+            music_path=MusicPathState.AUTHENTICATED,
+            local_participant=EvidenceState.VERIFIED,
+        )
+    )
+    assert invite_ready.phase is SessionConductorPhase.INVITE_READY
+    assert invite_ready.primary_action is SessionPrimaryAction.COPY_INVITE
+    assert "Copy the invite" in invite_ready.message
+    assert "next step" in invite_ready.message
+
+    connected = derive_session_conductor(
+        replace(
+            _ready_facts(ART),
+            role=SessionRole.GUEST,
+            guest_enrollment=EvidenceState.VERIFIED,
+            music_path=MusicPathState.AUTHENTICATED,
+            local_participant=EvidenceState.VERIFIED,
+        )
+    )
+    assert connected.phase is SessionConductorPhase.CONNECTED
+    assert "You are in" in connected.message
+    assert "other artist" in connected.message
+    spoken = _visible_copy(connected)
+    assert "authenticated" not in spoken
+    assert "bandmate" not in spoken
 
 
 def test_a_live_art_session_states_its_own_limits_not_reviews():
