@@ -2601,18 +2601,28 @@ class RoomClockSessionSnapshot:
             if duration and position > duration:
                 raise ValueError("position_s must not exceed duration_s.")
         else:
-            # A song clock is a written form: a bar or a named section.
-            # Elapsed time alone is a timer, not a song. Do not invent a
-            # bar to dress a Shared Track up as form. A beat still needs
-            # the bar it belongs to.
+            # A song clock is a written place: a bar or a named section.
+            # Elapsed time alone is a timer, not a song. A written outline
+            # without a place may travel as honesty (the shape exists) but
+            # must not carry a timer, a tempo, or a meter — those would
+            # dress a count up as if someone had said where we are.
             if beat and not bar:
                 raise ValueError("A beat needs the bar it belongs to.")
             if bool(numerator) != bool(denominator):
                 raise ValueError("A meter needs both of its numbers.")
             if not bar and not section:
-                raise ValueError(
-                    "A song-form clock needs a written bar or section."
-                )
+                if (
+                    not form_shape
+                    or states_music
+                    or self.running
+                    or position
+                    or duration
+                    or self.follows_shared_track
+                    or self.section_lengths_assumed
+                ):
+                    raise ValueError(
+                        "A song-form clock needs a written bar or section."
+                    )
 
         object.__setattr__(self, "generation", generation)
         object.__setattr__(self, "source", source)

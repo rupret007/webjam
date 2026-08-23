@@ -154,7 +154,9 @@ can keep painting and still know where everyone is:
   its bars.
 - **2:14 / 5:30** — the host's reference video is running, and that is the
   position in the file.
-- **No shared clock** — the room has neither. That is normal; work freely.
+- **No shared clock** — no bar, section, or reference video to follow. That is
+  normal; work freely. If a song's shape is written but nobody has said where
+  you are, the line names that shape and stops there.
 
 Things worth knowing:
 
