@@ -90,7 +90,8 @@ def test_the_readout_shows_the_pulse_and_where_it_came_from():
         label.set_view(_song_view())
 
         assert label._headline.text() == "Bar 17.3 · Chorus"
-        assert SONG_DETAIL in label._detail.text()
+        assert "song the room wrote" in label._detail.text()
+        assert "not what anyone is playing" in label._detail.text()
         assert "124 BPM" in label._detail.text()
         assert label.property("clock") == "song_form"
     finally:
@@ -166,7 +167,8 @@ def test_the_readout_announces_itself_to_assistive_technology():
 
         announced = label.accessibleDescription()
         assert "Bar 17.3 · Chorus" in announced
-        assert SONG_DETAIL in announced
+        assert "song the room wrote" in announced
+        assert "not what anyone is playing" in announced
     finally:
         label.deleteLater()
 
@@ -296,7 +298,7 @@ def test_a_music_song_clock_publishes_into_the_room_clock():
         workbench=SimpleNamespace(
             clock_snapshot=lambda: SimpleNamespace(
                 has_form=True,
-                sections=("Chorus",),
+                sections=("Verse", "Chorus"),
                 follows_shared_track=True,
                 running=True,
                 position_s=24.0,
@@ -304,8 +306,9 @@ def test_a_music_song_clock_publishes_into_the_room_clock():
                 beat=1,
                 section_label="Chorus",
                 tempo_bpm=124.0,
-                beats_per_bar=4,
-                meter_denominator=4,
+                meter_numerator=0,
+                meter_denominator=0,
+                section_lengths_assumed=True,
             )
         ),
     )
@@ -320,12 +323,15 @@ def test_a_music_song_clock_publishes_into_the_room_clock():
     published = controller.host_peer.publish_room_clock_state.call_args.kwargs
     assert published["source"] == "song_form"
     assert published["bar"] == 17
+    assert published["follows_shared_track"] is True
+    assert published["section_lengths_assumed"] is True
+    assert published["form_shape"] == "Verse → Chorus"
+    assert published["meter_numerator"] == 0
+    assert published["meter_denominator"] == 0
 
 
-def test_a_shared_track_without_a_form_still_publishes_the_pulse():
-    """A backing track is already the host clock; do not invent bars for it."""
-
-    from core.room_clock import RoomClockSource, SHARED_TRACK_DETAIL, format_clock
+def test_a_shared_track_without_a_form_does_not_publish_a_song_clock():
+    """A file playing with no written parts is not a song form for painters."""
 
     controller = _controller("music")
     _as_host(controller)
@@ -346,24 +352,9 @@ def test_a_shared_track_without_a_form_still_publishes_the_pulse():
         ),
     )
 
-    facts = controller._room_clock_song_form()
-    assert facts is not None
-    assert facts.source is RoomClockSource.SONG_FORM
-    assert facts.bar == 0
-    assert facts.position_s == pytest.approx(34.0)
-
+    assert controller._room_clock_song_form() is None
     controller._tick_room_clock()
-    published = controller.host_peer.publish_room_clock_state.call_args.kwargs
-    assert published["source"] == "song_form"
-    assert published["bar"] == 0
-    assert published["position_s"] == pytest.approx(34.0)
-    assert published["section_label"] == ""
-
-    from core.room_clock import render_room_clock
-
-    view = render_room_clock(facts, age_s=0.0)
-    assert view.headline == format_clock(34.0)
-    assert view.detail == SHARED_TRACK_DETAIL
+    controller.host_peer.publish_room_clock_state.assert_not_called()
 
 
 def test_a_non_music_room_never_invents_a_song_form():

@@ -18,8 +18,10 @@ from core.room_clock import (
     DEFAULT_STALE_AFTER_S,
     NO_CLOCK_DETAIL,
     NO_CLOCK_HEADLINE,
-    SHARED_TRACK_DETAIL,
+    SONG_ASSUMED,
+    SONG_COUNT_LIMIT,
     SONG_DETAIL,
+    SONG_WITH_TRACK,
     STALE_DETAIL,
     VIDEO_DETAIL,
     RoomClockFacts,
@@ -70,6 +72,24 @@ def _video(**changes) -> RoomClockSessionSnapshot:
 # ---------------------------------------------------------------------------
 # The line this must not cross
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "honesty",
+    [
+        {"follows_shared_track": True},
+        {"section_lengths_assumed": True},
+        {"form_shape": "Verse → Chorus"},
+    ],
+)
+def test_a_reference_video_clock_can_never_carry_song_honesty(honesty: dict):
+    with pytest.raises(ValueError, match="not a bar"):
+        RoomClockSessionSnapshot(
+            source=RoomClockSourceValue.REFERENCE_VIDEO,
+            running=True,
+            position_s=10.0,
+            **honesty,
+        )
 
 
 @pytest.mark.parametrize(
@@ -155,7 +175,7 @@ def test_song_form_facts_translates_a_stated_form():
     facts = song_form_facts(
         SimpleNamespace(
             has_form=True,
-            sections=("Verse",),
+            sections=("Verse", "Chorus"),
             follows_shared_track=False,
             running=True,
             position_s=12.0,
@@ -163,8 +183,9 @@ def test_song_form_facts_translates_a_stated_form():
             beat=3,
             section_label="Chorus",
             tempo_bpm=124.0,
-            beats_per_bar=4,
+            meter_numerator=4,
             meter_denominator=4,
+            section_lengths_assumed=True,
         )
     )
 
@@ -176,6 +197,8 @@ def test_song_form_facts_translates_a_stated_form():
     assert facts.tempo_bpm == pytest.approx(124.0)
     assert facts.meter_numerator == 4
     assert facts.meter_denominator == 4
+    assert facts.section_lengths_assumed is True
+    assert facts.form_shape == "Verse → Chorus"
 
 
 def test_song_form_facts_ignore_an_empty_clock():
@@ -190,39 +213,49 @@ def test_song_form_facts_ignore_an_empty_clock():
     )
 
 
-def test_song_form_facts_follow_a_shared_track_without_a_written_form():
-    """Shared Track is already the host's clock; painters should ride it."""
+def test_song_form_facts_ignore_a_shared_track_without_a_written_form():
+    """A file playing is not a song form. Painters must not ride a timer."""
+
+    assert (
+        song_form_facts(
+            SimpleNamespace(
+                has_form=False,
+                sections=(),
+                follows_shared_track=True,
+                running=True,
+                position_s=8.5,
+                bar=0,
+                beat=0,
+                section_label="",
+                tempo_bpm=0,
+            )
+        )
+        is None
+    )
+
+
+def test_song_form_facts_do_not_invent_a_meter_from_the_count_default():
+    """beats_per_bar=4 is how the clock counts, not a 4/4 the room wrote."""
 
     facts = song_form_facts(
         SimpleNamespace(
-            has_form=False,
-            sections=(),
-            follows_shared_track=True,
-            running=True,
-            position_s=8.5,
+            has_form=True,
+            sections=("Verse",),
+            follows_shared_track=False,
+            running=False,
             bar=0,
             beat=0,
             section_label="",
-            tempo_bpm=0,
+            beats_per_bar=4,
+            meter_numerator=0,
+            meter_denominator=0,
         )
     )
 
     assert facts is not None
-    assert facts.source is RoomClockSource.SONG_FORM
-    assert facts.position_s == pytest.approx(8.5)
-    assert facts.running is True
-    assert facts.bar == 0
-    view = render_room_clock(facts, age_s=0.0)
-    assert view.headline == "0:08"
-    assert view.detail == SHARED_TRACK_DETAIL
-    published = RoomClockSessionSnapshot(
-        source=RoomClockSourceValue.SONG_FORM,
-        running=True,
-        position_s=8.5,
-    )
-    assert published.bar == 0
-    assert published.section_label == ""
-    assert render_room_clock(published, age_s=0.0).detail == SHARED_TRACK_DETAIL
+    assert facts.section_label == "Verse"
+    assert facts.meter_numerator == 0
+    assert facts.meter_denominator == 0
 
 
 def test_a_song_form_clock_reads_as_music():
@@ -232,6 +265,7 @@ def test_a_song_form_clock_reads_as_music():
     assert view.musical is True
     assert view.headline == "Bar 17.3 · Chorus"
     assert SONG_DETAIL in view.detail
+    assert SONG_COUNT_LIMIT in view.detail
     assert "124 BPM" in view.detail
     assert "4/4" in view.detail
 
@@ -246,7 +280,95 @@ def test_a_song_form_clock_states_only_what_it_was_given():
         _song(bar=0, beat=0, section_label="Verse", tempo_bpm=0.0,
               meter_numerator=0, meter_denominator=0)
     )
-    assert bare.detail == SONG_DETAIL
+    assert SONG_DETAIL in bare.detail
+    assert SONG_COUNT_LIMIT in bare.detail
+
+
+def test_a_painter_sees_the_same_form_honesty_musicians_already_see():
+    view = render_room_clock(
+        RoomClockSessionSnapshot(
+            source=RoomClockSourceValue.SONG_FORM,
+            running=True,
+            bar=3,
+            beat=1,
+            section_label="Chorus",
+            follows_shared_track=True,
+            section_lengths_assumed=True,
+            form_shape="Verse → Chorus",
+        )
+    )
+
+    assert view.headline == "Bar 3.1 · Chorus"
+    assert SONG_DETAIL in view.detail
+    assert "Verse → Chorus" in view.detail
+    assert SONG_WITH_TRACK in view.detail
+    assert SONG_ASSUMED in view.detail
+    assert SONG_COUNT_LIMIT in view.detail
+
+
+def test_a_written_form_publishes_through_the_real_peer_snapshot(tmp_path):
+    """#24's publish used beats_per_bar as 4/0 and the wire refused it."""
+
+    from core.song_clock import FormSection, SongClockSnapshot
+
+    snapshot = SongClockSnapshot(
+        state="running",
+        position_s=12.0,
+        section_label="Chorus",
+        bar=9,
+        beat=2,
+        tempo_bpm=120.0,
+        beats_per_bar=4,
+        sections=(
+            FormSection("Verse", "verse", 8, True),
+            FormSection("Chorus", "chorus", 8, False),
+        ),
+        section_lengths_assumed=True,
+        position_source="shared_track",
+    )
+    facts = song_form_facts(snapshot)
+    assert facts is not None
+    assert facts.meter_numerator == 0
+    assert facts.follows_shared_track is True
+
+    control = SessionControlState(
+        tmp_path, str(uuid.uuid4()), creator_profile_key="music"
+    )
+    published = control.publish_room_clock(
+        source=facts.source.value,
+        running=facts.running,
+        position_s=facts.position_s,
+        bar=facts.bar,
+        beat=facts.beat,
+        section_label=facts.section_label,
+        tempo_bpm=facts.tempo_bpm,
+        meter_numerator=facts.meter_numerator,
+        meter_denominator=facts.meter_denominator,
+        follows_shared_track=facts.follows_shared_track,
+        section_lengths_assumed=facts.section_lengths_assumed,
+        form_shape=facts.form_shape,
+    )
+
+    assert published.source is RoomClockSourceValue.SONG_FORM
+    assert published.bar == 9
+    assert published.section_label == "Chorus"
+    assert published.follows_shared_track is True
+    assert published.section_lengths_assumed is True
+    assert published.form_shape == "Verse → Chorus"
+    assert "4/4" not in render_room_clock(published).detail
+
+
+def test_a_legacy_song_payload_without_honesty_keys_still_parses():
+    payload = _song().to_mapping()
+    payload.pop("follows_shared_track", None)
+    payload.pop("section_lengths_assumed", None)
+    payload.pop("form_shape", None)
+
+    parsed = RoomClockSessionSnapshot.from_mapping(payload)
+
+    assert parsed.bar == 17
+    assert parsed.follows_shared_track is False
+    assert parsed.form_shape == ""
 
 
 def test_a_beat_never_appears_without_its_bar():

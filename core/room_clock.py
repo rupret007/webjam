@@ -58,13 +58,16 @@ NO_CLOCK_DETAIL = (
     "This room has no song form and no reference video running. Work freely."
 )
 VIDEO_DETAIL = "Following the host's reference video."
-SONG_DETAIL = "Following the room's song form."
-SHARED_TRACK_DETAIL = "Following the Shared Track."
+SONG_DETAIL = "Following the song the room wrote."
+SONG_COUNT_LIMIT = "This is a count, not what anyone is playing."
+SONG_ASSUMED = "Section lengths are assumed."
+SONG_WITH_TRACK = "Counted with the song playing in the room."
 STALE_DETAIL = (
     "The room clock is out of date, so WebJam stopped advancing it. It picks "
     "up again when the owner is heard from."
 )
 PAUSED_SUFFIX = "Holding."
+MAX_FORM_SHAPE_CHARS = 80
 
 
 class RoomClockSource(str, Enum):
@@ -95,6 +98,12 @@ class RoomClockFacts:
     tempo_bpm: float = 0.0
     meter_numerator: int = 0
     meter_denominator: int = 0
+    # Honesty the Music overlay already states. A painter riding this pulse
+    # must see the same limits: a written form, assumed lengths, and whether
+    # position is coming from the song playing in the room.
+    follows_shared_track: bool = False
+    section_lengths_assumed: bool = False
+    form_shape: str = ""
 
     @property
     def states_music(self) -> bool:
@@ -212,6 +221,56 @@ def _label(value: object) -> str:
     return cleaned[:MAX_SECTION_LABEL_CHARS]
 
 
+def _shape_text(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    cleaned = " ".join(value.split())
+    if not cleaned or not all(character.isprintable() for character in cleaned):
+        return ""
+    return cleaned[:MAX_FORM_SHAPE_CHARS]
+
+
+def _form_shape(snapshot: object) -> str:
+    """Name the written parts, or stay blank when nobody wrote any."""
+
+    existing = _shape_text(getattr(snapshot, "form_shape", ""))
+    if existing:
+        return existing
+    sections = getattr(snapshot, "sections", ()) or ()
+    names: list[str] = []
+    for section in sections:
+        if isinstance(section, str):
+            name = _label(section)
+        else:
+            name = _label(getattr(section, "name", ""))
+        if name and name not in names:
+            names.append(name)
+        if len(names) >= 5:
+            break
+    if not names:
+        return ""
+    return " → ".join(names)[:MAX_FORM_SHAPE_CHARS]
+
+
+def _stated_meter(snapshot: object) -> tuple[int, int]:
+    """Return a meter only when both numbers were stated.
+
+    The song clock counts in four when nobody wrote a time signature. That
+    default is a counting assumption, not a 4/4 the room decided, so it must
+    not be published as a meter. A 4-over-0 pair also cannot go on the wire.
+    """
+
+    numerator = _counted(
+        getattr(snapshot, "meter_numerator", 0), MAX_ROOM_CLOCK_BEAT
+    )
+    denominator = _counted(
+        getattr(snapshot, "meter_denominator", 0), MAX_ROOM_CLOCK_BEAT
+    )
+    if numerator and denominator:
+        return numerator, denominator
+    return 0, 0
+
+
 def _source(value: object) -> RoomClockSource:
     try:
         return RoomClockSource(value)
@@ -285,10 +344,10 @@ def _song_view(projection: object, *, running: bool, stale: bool) -> RoomClockVi
     beat = _counted(getattr(projection, "beat", 0), MAX_ROOM_CLOCK_BEAT)
     section = _label(getattr(projection, "section_label", ""))
     tempo = _positive(getattr(projection, "tempo_bpm", 0.0), MAX_TEMPO_BPM)
-    numerator = _counted(getattr(projection, "meter_numerator", 0), MAX_ROOM_CLOCK_BEAT)
-    denominator = _counted(
-        getattr(projection, "meter_denominator", 0), MAX_ROOM_CLOCK_BEAT
-    )
+    numerator, denominator = _stated_meter(projection)
+    follows_track = bool(getattr(projection, "follows_shared_track", False))
+    assumed = bool(getattr(projection, "section_lengths_assumed", False))
+    form_shape = _form_shape(projection)
 
     parts: list[str] = []
     if bar:
@@ -297,73 +356,91 @@ def _song_view(projection: object, *, running: bool, stale: bool) -> RoomClockVi
     if section:
         parts.append(section)
     if not parts:
-        position = _positive(
-            getattr(projection, "position_s", 0.0), MAX_ROOM_CLOCK_POSITION_S
-        )
-        parts.append(format_clock(position))
+        # A song-form clock without a bar or a section is unpublishable.
+        # Host-local facts should not reach here; if they do, stay blank
+        # rather than dress a timer up as a form.
+        return RoomClockView()
     headline = " · ".join(parts)
 
-    # A Shared Track may own the pulse with only elapsed time. Do not call
-    # that a written form, and do not invent a bar to make it look like one.
-    song_detail = SONG_DETAIL if (bar or section) else SHARED_TRACK_DETAIL
-    detail = song_detail
     if stale:
         detail = STALE_DETAIL
-    elif not running:
-        detail = f"{song_detail} {PAUSED_SUFFIX}"
-    if not stale and (tempo or (numerator and denominator)):
-        stated: list[str] = []
-        if tempo:
-            stated.append(f"{tempo:g} BPM")
-        if numerator and denominator:
-            stated.append(f"{numerator}/{denominator}")
-        detail = f"{detail} {' · '.join(stated)}."
+    else:
+        clauses = [SONG_DETAIL]
+        if form_shape and form_shape != section:
+            clauses.append(form_shape + ".")
+        if follows_track:
+            clauses.append(SONG_WITH_TRACK)
+        if assumed:
+            clauses.append(SONG_ASSUMED)
+        if not running:
+            clauses.append(PAUSED_SUFFIX)
+        clauses.append(SONG_COUNT_LIMIT)
+        if tempo or (numerator and denominator):
+            stated: list[str] = []
+            if tempo:
+                stated.append(f"{tempo:g} BPM")
+            if numerator and denominator:
+                stated.append(f"{numerator}/{denominator}")
+            clauses.append(" · ".join(stated) + ".")
+        detail = " ".join(clauses)
     return RoomClockView(
         source=RoomClockSource.SONG_FORM,
         headline=headline,
         detail=detail,
         running=running and not stale,
         stale=stale,
-        musical=bool(bar or section),
+        musical=True,
     )
 
 
 def song_form_facts(snapshot: object) -> RoomClockFacts | None:
     """Read a song-clock snapshot as room-clock facts, or ``None``.
 
-    This is the seam a music surface publishes into. It translates only what
-    an owner already stated: a written form, or a Shared Track the host is
-    already running. Art never calls this with invented bars.
+    This is the seam a music surface publishes into. It translates only a
+    written form: named parts, and the bar or section the owner already
+    stated. A file playing with no written parts is not a song form — the
+    wire refuses that combination, and dressing the timer up as form would
+    be the lie this module exists to prevent. Art never calls this with
+    invented bars.
     """
 
     if snapshot is None:
         return None
     sections = getattr(snapshot, "sections", ()) or ()
     has_form = bool(getattr(snapshot, "has_form", False) or sections)
-    follows_track = bool(getattr(snapshot, "follows_shared_track", False))
-    if not has_form and not follows_track:
+    if not has_form:
         return None
+    bar = _counted(getattr(snapshot, "bar", 0), MAX_ROOM_CLOCK_BAR)
+    beat = _counted(getattr(snapshot, "beat", 0), MAX_ROOM_CLOCK_BEAT)
+    section = _label(getattr(snapshot, "section_label", ""))
+    if not section:
+        first = sections[0]
+        if isinstance(first, str):
+            section = _label(first)
+        else:
+            section = _label(getattr(first, "name", ""))
+    if not bar and not section:
+        return None
+    numerator, denominator = _stated_meter(snapshot)
     return RoomClockFacts(
         source=RoomClockSource.SONG_FORM,
         running=bool(getattr(snapshot, "running", False)),
         position_s=_positive(
             getattr(snapshot, "position_s", 0.0), MAX_ROOM_CLOCK_POSITION_S
         ),
-        bar=_counted(getattr(snapshot, "bar", 0), MAX_ROOM_CLOCK_BAR),
-        beat=_counted(getattr(snapshot, "beat", 0), MAX_ROOM_CLOCK_BEAT),
-        section_label=_label(getattr(snapshot, "section_label", "")),
+        bar=bar,
+        beat=beat if bar else 0,
+        section_label=section,
         tempo_bpm=_positive(getattr(snapshot, "tempo_bpm", 0.0), MAX_TEMPO_BPM),
-        meter_numerator=_counted(
-            getattr(
-                snapshot,
-                "beats_per_bar",
-                getattr(snapshot, "meter_numerator", 0),
-            ),
-            MAX_ROOM_CLOCK_BEAT,
+        meter_numerator=numerator,
+        meter_denominator=denominator,
+        follows_shared_track=bool(
+            getattr(snapshot, "follows_shared_track", False)
         ),
-        meter_denominator=_counted(
-            getattr(snapshot, "meter_denominator", 0), MAX_ROOM_CLOCK_BEAT
+        section_lengths_assumed=bool(
+            getattr(snapshot, "section_lengths_assumed", False)
         ),
+        form_shape=_form_shape(snapshot),
     )
 
 
@@ -422,10 +499,13 @@ __all__ = [
     "MAX_SECTION_LABEL_CHARS",
     "MAX_TEMPO_BPM",
     "MIN_TEMPO_BPM",
+    "MAX_FORM_SHAPE_CHARS",
     "NO_CLOCK_DETAIL",
     "NO_CLOCK_HEADLINE",
-    "SHARED_TRACK_DETAIL",
+    "SONG_ASSUMED",
+    "SONG_COUNT_LIMIT",
     "SONG_DETAIL",
+    "SONG_WITH_TRACK",
     "STALE_DETAIL",
     "VIDEO_DETAIL",
     "RoomClockFacts",

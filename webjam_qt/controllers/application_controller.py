@@ -5238,7 +5238,7 @@ class ApplicationController(QObject):
                 ),
                 "host_ready_title": "Your room is ready",
                 "host_ready_detail": (
-                    "Copy the invite when you want someone else in."
+                    "Copy the invite. That is the next step."
                 ),
                 "guest_ready_title": "You're in",
                 "guest_ready_detail": "The room is ready. Enter when you are.",
@@ -12121,9 +12121,10 @@ class ApplicationController(QObject):
         """Return the room's song form, or ``None`` when nothing owns one.
 
         Art has no song engine and must not invent one. Music already owns a
-        host clock (song form, or Shared Track when that holds the song). This
-        reads that existing owner when it is present so a painter can ride the
-        same pulse. It never constructs song tools just to look.
+        host clock over a written form (position may come from the song
+        playing in the room). This reads that existing owner when it is
+        present so a painter can ride the same pulse. A file with no written
+        parts is not a song form. It never constructs song tools just to look.
         """
 
         coordinator = getattr(self, "_song_tools", None)

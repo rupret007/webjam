@@ -1757,6 +1757,9 @@ class HostPeerSession:
         tempo_bpm: float = 0.0,
         meter_numerator: int = 0,
         meter_denominator: int = 0,
+        follows_shared_track: bool = False,
+        section_lengths_assumed: bool = False,
+        form_shape: str = "",
     ) -> RoomClockSessionSnapshot | None:
         """Offer authenticated peers one pulse for the whole room.
 
@@ -1782,6 +1785,9 @@ class HostPeerSession:
             tempo_bpm=tempo_bpm,
             meter_numerator=meter_numerator,
             meter_denominator=meter_denominator,
+            follows_shared_track=follows_shared_track,
+            section_lengths_assumed=section_lengths_assumed,
+            form_shape=form_shape,
         )
 
     def finish_take(
