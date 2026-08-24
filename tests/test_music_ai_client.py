@@ -278,6 +278,20 @@ def test_content_type_guess_only_claims_media_types(name, expected):
     assert guess_content_type(name) == expected
 
 
+@pytest.mark.parametrize("platform_guess", ["audio/flac", "audio/x-flac"])
+def test_flac_upload_type_is_canonical_across_platform_mime_tables(
+    monkeypatch, platform_guess
+):
+    """The signed upload contract must not change between Linux and macOS."""
+
+    monkeypatch.setattr(
+        "core.music_ai_client.mimetypes.guess_type",
+        lambda _path: (platform_guess, None),
+    )
+
+    assert guess_content_type("song.FLAC") == "audio/flac"
+
+
 # ----------------------------------------------------------------------
 # Jobs
 # ----------------------------------------------------------------------

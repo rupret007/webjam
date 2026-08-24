@@ -598,7 +598,15 @@ def missing_key_message() -> str:
 
 
 def guess_content_type(path: str | Path) -> str:
-    """Return a content type for the signed upload PUT."""
+    """Return a stable media type for the signed upload PUT.
+
+    macOS's system MIME table calls FLAC ``audio/x-flac`` while Linux calls it
+    ``audio/flac``.  The file and API contract are the same on both machines,
+    so keep that one known platform alias out of the request boundary.
+    """
+
+    if Path(str(path)).suffix.casefold() == ".flac":
+        return "audio/flac"
 
     guessed, _encoding = mimetypes.guess_type(str(path))
     if guessed and guessed.startswith(("audio/", "video/")):

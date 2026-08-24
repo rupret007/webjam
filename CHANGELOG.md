@@ -9,6 +9,14 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the immutable v0.26.0 release boundary belongs here. Every
 > published tag, release, and asset remains immutable historical evidence.
 
+### Room-clock delivery: retry truth the room did not receive
+
+- A host no longer treats a locally rendered room clock as delivered when the private peer plane is not ready or rejects one update. The same bounded pulse is retried on the next tick, then returns to change-only publishing after a successful delivery; live audio and transport ownership are unchanged.
+
+### Music AI upload portability: one FLAC type on every desktop
+
+- FLAC uploads now use the canonical `audio/flac` content type on both macOS and Linux instead of inheriting the host operating system's `audio/x-flac` alias. The upload remains explicit, host-confirmed, and otherwise unchanged.
+
 ### Song-clock honesty: a parked count is not Verse
 
 - A written `[Verse] [Chorus]` plus a tempo, while the clock is still stopped, no longer publishes as **Bar 1 · Verse**. Guests see **Verse → Chorus is written. Nobody has said where we are.** Starting, pausing, locating a part, or following Shared Track still states a place.
