@@ -156,7 +156,8 @@ can keep painting and still know where everyone is:
   position in the file.
 - **No shared clock** — no bar, section, or reference video to follow. That is
   normal; work freely. If a song's shape is written but nobody has said where
-  you are, the line names that shape and stops there.
+  you are, the line names that shape and stops there — even when a tempo is
+  already written and the count is only sitting on the first part.
 
 Things worth knowing:
 
