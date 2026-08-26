@@ -655,12 +655,30 @@ def test_the_clock_says_what_it_needs_before_it_can_run(overlay):
 
 def test_assumed_section_lengths_are_admitted_on_the_surface(overlay):
     workbench = SongWorkbench(notes="Tempo: 100\n[Verse]\nG D\n")
+    workbench.clock.start()
     overlay.set_song_state(clock=workbench.clock_snapshot())
     assert "lengths assumed" in overlay._clock_line.text()
 
 
+def test_a_parked_clock_names_the_outline_and_asks_to_start(overlay):
+    """A stopped count with a tempo is not Verse. The next step is start."""
+
+    workbench = SongWorkbench(notes="Tempo: 120\n[Verse]\nG D\n[Chorus]\nC G\n")
+    overlay.set_song_state(
+        form_rows=workbench.form_overlay(), clock=workbench.clock_snapshot()
+    )
+
+    assert workbench.clock_snapshot().parked is True
+    assert overlay._clock_line.text() == "Verse → Chorus is written. Start the clock."
+    assert "bar" not in overlay._clock_line.text().casefold()
+    assert all(not line.startswith("▸") for line in overlay._form_rows.text().splitlines())
+    assert overlay._clock_button.text() == "▶"
+    assert "does not follow" in overlay._clock_line.toolTip()
+
+
 def test_the_clock_never_claims_to_follow_the_band_in_its_copy(overlay):
     workbench = _clocked(lambda: 0.0)
+    workbench.clock.start()
     overlay.set_song_state(clock=workbench.clock_snapshot())
 
     tip = overlay._clock_line.toolTip() + overlay._clock_button.toolTip()

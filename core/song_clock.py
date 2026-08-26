@@ -132,6 +132,35 @@ class SongClockSnapshot:
         return bool(self.sections)
 
     @property
+    def parked(self) -> bool:
+        """Whether the count is sitting at the top without a stated place.
+
+        A live clock with a tempo always reports bar 1 and the first part
+        while it is stopped. That is where the count parks, not a place
+        anyone said. Starting, pausing, locating a later part, or following
+        Shared Track still states a where.
+        """
+
+        if self.follows_shared_track:
+            return False
+        if self.state != STATE_STOPPED:
+            return False
+        return self.position_s <= 0.0
+
+    @property
+    def form_shape(self) -> str:
+        """Name the written parts, or stay blank when nobody wrote any."""
+
+        names: list[str] = []
+        for section in self.sections:
+            name = " ".join(str(section.name or "").split())
+            if name and name not in names:
+                names.append(name)
+            if len(names) >= 5:
+                break
+        return " → ".join(names)
+
+    @property
     def position_label(self) -> str:
         """Return "Chorus · bar 3 of 8" style text, or an honest blank."""
 

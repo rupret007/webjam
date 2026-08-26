@@ -274,7 +274,8 @@ class SongToolsCoordinator:
 
         form = self.workbench.form
         lyric = ""
-        section_label = self.workbench.clock_snapshot().section_label
+        clock = self.workbench.clock_snapshot()
+        section_label = "" if clock.parked else clock.section_label
         for section in form.sections:
             if section.label == section_label and section.lyrics:
                 lyric = section.lyrics[0]
@@ -283,7 +284,7 @@ class SongToolsCoordinator:
         return self._with_revision(build_snapshot(
             revision=0,
             is_music_session=True,
-            clock=self.workbench.clock_snapshot(),
+            clock=clock,
             form_rows=self.workbench.form_overlay(),
             lyric_line=lyric,
             shared_track_loaded=bool(self._shared_track_path()),

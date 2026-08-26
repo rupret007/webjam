@@ -58,6 +58,19 @@ def test_a_stopped_clock_sits_at_the_top_of_the_form(clock):
     assert snapshot.section_label == "Intro"
     assert snapshot.bar == 1
     assert snapshot.bars_total == 20
+    assert snapshot.parked is True
+    assert snapshot.form_shape == "Intro → Verse → Chorus"
+
+
+def test_locating_or_starting_is_a_stated_place(clock):
+    clock.locate_section("Chorus")
+    located = clock.snapshot()
+    assert located.parked is False
+    assert located.section_label == "Chorus"
+
+    clock.stop()
+    clock.start()
+    assert clock.snapshot().parked is False
 
 
 def test_the_clock_counts_bars_and_sections_from_the_stated_tempo(clock):
