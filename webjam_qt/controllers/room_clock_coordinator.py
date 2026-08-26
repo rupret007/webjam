@@ -192,7 +192,12 @@ class RoomClockCoordinator:
                     facts.section_lengths_assumed
                 )
                 payload["form_shape"] = str(facts.form_shape)
-            publish(**payload)
+            accepted = publish(**payload)
+            if accepted is None:
+                # HostPeerSession uses None to say that no authenticated
+                # session control accepted the projection yet.  A callable
+                # publisher is therefore not, by itself, delivery evidence.
+                return False
         except Exception:  # noqa: BLE001 - peer boundary stays UI-optional
             if not self._publish_failed:
                 LOGGER.warning("The room clock could not be published")

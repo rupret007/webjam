@@ -38,14 +38,19 @@ from webjam_qt.controllers.room_clock_coordinator import (  # noqa: E402
 
 
 class FakeHostPeer:
-    def __init__(self, *, active: bool = True, explode: bool = False) -> None:
+    def __init__(
+        self, *, active: bool = True, explode: bool = False, accept: bool = True
+    ) -> None:
         self.active = active
         self.explode = explode
+        self.accept = accept
         self.published: list[dict] = []
 
     def publish_room_clock_state(self, **kwargs):
         if self.explode:
             raise RuntimeError("peer plane is unhappy")
+        if not self.accept:
+            return None
         self.published.append(kwargs)
         # Prove every publication is a legal projection, not just a dict.
         return RoomClockSessionSnapshot(**kwargs)
@@ -516,6 +521,25 @@ def test_a_transient_peer_failure_retries_the_same_pulse_once():
     assert len(peer.published) == 1
     assert peer.published[0]["source"] == "song_form"
     assert peer.published[0]["bar"] == 17
+
+
+def test_a_peer_rejection_is_retried_until_session_control_accepts_the_pulse():
+    """A callable peer without session control has not delivered anything."""
+
+    peer = FakeHostPeer(accept=False)
+    coordinator = _coordinator(peer=peer, video=lambda: _playing_video(90.0))
+    coordinator.begin_host()
+
+    assert coordinator.tick().source is RoomClockSource.REFERENCE_VIDEO
+    assert peer.published == []
+
+    peer.accept = True
+    coordinator.tick()
+    coordinator.tick()
+
+    assert len(peer.published) == 1
+    assert peer.published[0]["source"] == "reference_video"
+    assert peer.published[0]["position_s"] == 90.0
 
 
 def test_rebinding_releases_the_previous_role():
