@@ -546,3 +546,17 @@ def test_art_startup_copy_does_not_talk_like_a_band() -> None:
     assert re.search(r"\bjam\b", spoken) is None
     assert "preview" not in spoken
     assert "you're in" not in spoken
+
+
+def test_music_startup_copy_is_one_next_step() -> None:
+    """After Host/Join the HUD the musician reads must match the conductor."""
+
+    copy = ApplicationController._startup_creator_copy("music")
+    spoken = " ".join(
+        (copy["host_ready_detail"], copy["guest_ready_detail"])
+    ).casefold()
+    assert copy["host_ready_detail"] == "Copy the invite. That is the next step."
+    assert copy["guest_ready_detail"] == "Enter the jam. That is the next step."
+    assert "jamulus" not in spoken
+    assert "when you are ready" not in spoken
+    assert "send it when you want" not in spoken

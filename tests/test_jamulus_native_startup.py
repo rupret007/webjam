@@ -1253,6 +1253,20 @@ def test_native_sound_setup_watches_connection_without_a_completion_click() -> N
             ("Enter the room", "next step"),
         ),
         (
+            "music",
+            "invite_ready",
+            "host",
+            "Your jam is ready",
+            ("Copy the invite", "next step"),
+        ),
+        (
+            "music",
+            "invite_ready",
+            "guest",
+            "Ready to play",
+            ("Enter the jam", "next step"),
+        ),
+        (
             "art",
             "confirm_sound",
             "guest",
@@ -1286,6 +1300,49 @@ def test_creator_profile_drives_truthful_native_startup_copy(
     assert call.args[0] == expected_title
     for token in detail_tokens:
         assert token in call.args[1]
+
+
+@pytest.mark.parametrize(
+    ("profile_key", "role", "expected_enter"),
+    (
+        ("music", "host", "Enter Jam"),
+        ("music", "guest", "Enter Jam"),
+        ("art", "host", "Enter the room"),
+        ("art", "guest", "Enter the room"),
+    ),
+)
+def test_invite_ready_enter_button_uses_profile_words(
+    profile_key, role, expected_enter
+) -> None:
+    """The button the person clicks must say the same next step as the sentence."""
+
+    controller = _controller(hosting=role == "host")
+    controller.settings.last_creator_profile_key = profile_key
+    controller._startup_attempt = {
+        "generation": 1,
+        "role": role,
+        "phase": "invite_ready",
+    }
+    controller._session_conductor_facts = mock.Mock(
+        return_value=SessionConductorFacts(
+            role=SessionRole.HOST if role == "host" else SessionRole.GUEST
+        )
+    )
+    controller._observe_session_conductor_facts = mock.Mock()
+    controller._focus_initial_hud_action = mock.Mock()
+    controller._persist_startup_attempt = mock.Mock()
+
+    ApplicationController._render_startup_journey(controller)
+
+    call = controller.window.session_hud.set_state.call_args
+    if role == "host":
+        assert call.kwargs["action_text"] == "Copy Invite"
+        assert call.kwargs["secondary_action_text"] == expected_enter
+    else:
+        assert call.kwargs["action_text"] == expected_enter
+    spoken = " ".join((call.args[0], call.args[1])).casefold()
+    assert "jamulus" not in spoken
+    assert "next step" in spoken
 
 
 @pytest.mark.parametrize(
