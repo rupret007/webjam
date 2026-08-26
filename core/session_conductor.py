@@ -759,11 +759,7 @@ def _presentation(
             f"WebJam has not yet confirmed an authenticated, reachable {reachable_path}.",
         )
     if phase is SessionConductorPhase.INVITE_READY:
-        invite_message = (
-            "Copy the invite. That is the next step."
-            if profile.key in {"music", "art"}
-            else f"Share the invite when {waiting_counterpart} is ready to join."
-        )
+        invite_message = "Copy the invite. That is the next step."
         invite_evidence = (
             "WebJam is ready to invite; it cannot confirm a bandmate is connected yet."
             if profile.key == "music"

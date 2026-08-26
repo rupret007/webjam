@@ -5198,15 +5198,9 @@ class ApplicationController(QObject):
                     f"conversation or video. {RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
                 ),
                 "host_ready_title": "Your recording session is ready",
-                "host_ready_detail": (
-                    "Invite your speakers when you are ready. "
-                    f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
-                ),
+                "host_ready_detail": "Copy the invite. That is the next step.",
                 "guest_ready_title": "Ready to record",
-                "guest_ready_detail": (
-                    "Your WebJam/Jamulus recording path is ready. Enter the "
-                    "session when you are ready."
-                ),
+                "guest_ready_detail": "Enter the session. That is the next step.",
                 "closing_detail": (
                     "WebJam is safely releasing the private recording session."
                 ),
@@ -5274,16 +5268,9 @@ class ApplicationController(QObject):
                     f"conversation or video. {RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
                 ),
                 "host_ready_title": "Your review session is ready (Preview)",
-                "host_ready_detail": (
-                    "Invite collaborators when you are ready. Review Preview "
-                    "provides live audio and local notes only—no visual-media "
-                    "sync or media timecode."
-                ),
+                "host_ready_detail": "Copy the invite. That is the next step.",
                 "guest_ready_title": "Ready to review (Preview)",
-                "guest_ready_detail": (
-                    "Your live-audio path is ready. Review notes stay local and "
-                    "are not media-timecode synchronized."
-                ),
+                "guest_ready_detail": "Enter Review. That is the next step.",
                 "closing_detail": (
                     "WebJam is safely releasing the private review session."
                 ),

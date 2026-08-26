@@ -1229,7 +1229,28 @@ def test_native_sound_setup_watches_connection_without_a_completion_click() -> N
             "invite_ready",
             "host",
             "Your review session is ready (Preview)",
-            ("local notes only", "no visual-media sync", "media timecode"),
+            ("Copy the invite", "next step"),
+        ),
+        (
+            "review_rehearsal",
+            "invite_ready",
+            "guest",
+            "Ready to review (Preview)",
+            ("Enter Review", "next step"),
+        ),
+        (
+            "podcast_voice",
+            "invite_ready",
+            "host",
+            "Your recording session is ready",
+            ("Copy the invite", "next step"),
+        ),
+        (
+            "podcast_voice",
+            "invite_ready",
+            "guest",
+            "Ready to record",
+            ("Enter the session", "next step"),
         ),
         (
             "podcast_voice",
@@ -1309,6 +1330,10 @@ def test_creator_profile_drives_truthful_native_startup_copy(
         ("music", "guest", "Enter Jam"),
         ("art", "host", "Enter the room"),
         ("art", "guest", "Enter the room"),
+        ("podcast_voice", "host", "Enter Session"),
+        ("podcast_voice", "guest", "Enter Session"),
+        ("review_rehearsal", "host", "Enter Review"),
+        ("review_rehearsal", "guest", "Enter Review"),
     ),
 )
 def test_invite_ready_enter_button_uses_profile_words(
@@ -1343,6 +1368,18 @@ def test_invite_ready_enter_button_uses_profile_words(
     spoken = " ".join((call.args[0], call.args[1])).casefold()
     assert "jamulus" not in spoken
     assert "next step" in spoken
+    for banned in (
+        "invite your speakers",
+        "invite collaborators",
+        "when you are ready",
+        "local notes only",
+        "visual-media",
+        "media timecode",
+        "media-timecode",
+        "record session captures",
+        "live-audio path",
+    ):
+        assert banned not in spoken, banned
 
 
 @pytest.mark.parametrize(
