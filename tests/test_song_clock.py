@@ -59,6 +59,7 @@ def test_a_stopped_clock_sits_at_the_top_of_the_form(clock):
     assert snapshot.bar == 1
     assert snapshot.bars_total == 20
     assert snapshot.parked is True
+    assert snapshot.states_place is False
     assert snapshot.form_shape == "Intro → Verse → Chorus"
 
 
@@ -66,11 +67,13 @@ def test_locating_or_starting_is_a_stated_place(clock):
     clock.locate_section("Chorus")
     located = clock.snapshot()
     assert located.parked is False
+    assert located.states_place is True
     assert located.section_label == "Chorus"
 
     clock.stop()
     clock.start()
     assert clock.snapshot().parked is False
+    assert clock.snapshot().states_place is True
 
 
 def test_the_clock_counts_bars_and_sections_from_the_stated_tempo(clock):
@@ -375,6 +378,29 @@ def test_the_clock_view_of_a_form_uses_stated_lengths_where_given():
 # ----------------------------------------------------------------------
 # Shared Track is the session's clock for audio
 # ----------------------------------------------------------------------
+def test_a_loaded_shared_track_at_the_top_is_not_a_place(clock):
+    """Loading the file parks the transport. That is not Verse."""
+
+    clock.follow_shared_track(loaded=True, position_s=0.0, playing=False)
+    snapshot = clock.snapshot()
+
+    assert snapshot.follows_shared_track is True
+    assert snapshot.parked is False
+    assert snapshot.states_place is False
+    assert snapshot.count_in is False
+
+
+def test_a_count_in_is_not_a_place_even_at_a_later_bar(clock):
+    clock.follow_shared_track(
+        loaded=True, position_s=20.0, playing=False, count_in=True
+    )
+    snapshot = clock.snapshot()
+
+    assert snapshot.count_in is True
+    assert snapshot.section_label == "Verse"
+    assert snapshot.states_place is False
+
+
 def test_a_loaded_shared_track_takes_over_the_position(clock):
     """One host transport for audio; the panel must not count separately."""
 

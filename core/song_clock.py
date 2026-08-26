@@ -116,6 +116,9 @@ class SongClockSnapshot:
     following_audio: bool = False
     section_lengths_assumed: bool = False
     position_source: str = POSITION_HOST_COUNT
+    # The click before bar one. Holding through it must not ride the part
+    # everyone is counting toward.
+    count_in: bool = False
 
     @property
     def follows_shared_track(self) -> bool:
@@ -133,12 +136,14 @@ class SongClockSnapshot:
 
     @property
     def parked(self) -> bool:
-        """Whether the count is sitting at the top without a stated place.
+        """Whether the host count is sitting at the top without a stated place.
 
         A live clock with a tempo always reports bar 1 and the first part
         while it is stopped. That is where the count parks, not a place
-        anyone said. Starting, pausing, locating a later part, or following
-        Shared Track still states a where.
+        anyone said. Starting, pausing, or locating a later part still
+        states a where. A Shared Track that is actually playing, or paused
+        after the file has moved, still states a where. Loading the file,
+        or holding through its count-in, does not — see ``states_place``.
         """
 
         if self.follows_shared_track:
@@ -146,6 +151,22 @@ class SongClockSnapshot:
         if self.state != STATE_STOPPED:
             return False
         return self.position_s <= 0.0
+
+    @property
+    def states_place(self) -> bool:
+        """Whether a bar or named section is actually where we are.
+
+        A parked host count, a Shared Track sitting at the top, and a
+        count-in name the written song. They do not say we are in Verse.
+        """
+
+        if self.count_in:
+            return False
+        if self.follows_shared_track:
+            if self.state == STATE_RUNNING:
+                return bool(self.section_label or self.bar)
+            return self.position_s > 0.0
+        return not self.parked
 
     @property
     def form_shape(self) -> str:
@@ -271,6 +292,7 @@ class SongClock:
         self._generation = 0
         self._shared_track_position: float | None = None
         self._shared_track_playing = False
+        self._count_in = False
 
     # ------------------------------------------------------------------
     # Form and tempo
@@ -329,6 +351,7 @@ class SongClock:
         loaded: bool,
         position_s: float = 0.0,
         playing: bool = False,
+        count_in: bool = False,
     ) -> None:
         """Read position off the Shared Track instead of counting separately.
 
@@ -337,12 +360,18 @@ class SongClock:
         second time from a start button would drift against the thing everyone
         can actually hear. Releasing the Shared Track hands the count back.
 
+        A count-in is the click before the song. The clock still holds the
+        downbeat everyone is counting toward, but that is not a place yet.
+
         The bar mapping still assumes the file begins at bar one and runs at
         the room's stated tempo. That assumption is reported, not hidden.
         """
 
         with self._lock:
             if not loaded:
+                changed = (
+                    self._shared_track_position is not None or self._count_in
+                )
                 if self._shared_track_position is not None:
                     # Keep the musical position the room just heard rather
                     # than snapping back to the top of the form.
@@ -350,19 +379,24 @@ class SongClock:
                     self._started_at = self._monotonic()
                     self._shared_track_position = None
                     self._shared_track_playing = False
+                self._count_in = False
+                if changed:
                     self._generation += 1
                 return
 
             position = max(0.0, float(position_s or 0.0))
             playing = bool(playing)
+            counting_in = bool(count_in)
             if (
                 self._shared_track_position is None
                 or abs(position - self._shared_track_position) > 0.02
                 or playing != self._shared_track_playing
+                or counting_in != self._count_in
             ):
                 self._generation += 1
             self._shared_track_position = position
             self._shared_track_playing = playing
+            self._count_in = counting_in
 
     # ------------------------------------------------------------------
     # Transport
@@ -441,6 +475,7 @@ class SongClock:
                     bars_total=total_bars,
                     section_lengths_assumed=self._lengths_assumed(),
                     position_source=source,
+                    count_in=self._count_in,
                 )
 
             beats = self._beats_at_locked(position)
@@ -473,6 +508,7 @@ class SongClock:
                 sections=self._sections,
                 section_lengths_assumed=self._lengths_assumed(),
                 position_source=source,
+                count_in=self._count_in,
             )
 
     # ------------------------------------------------------------------

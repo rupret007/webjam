@@ -171,9 +171,10 @@ class SongToolsCoordinator:
             return
         self._sync_workbench()
         self._sync_clock_to_shared_track()
+        clock = self.workbench.clock_snapshot()
         overlay.set_sections(
             self.workbench.section_names(),
-            current=self.workbench.clock_snapshot().section_label,
+            current=clock.section_label if clock.states_place else "",
         )
         overlay.set_song_state(
             catch_up=self.workbench.catch_up(
@@ -275,7 +276,7 @@ class SongToolsCoordinator:
         form = self.workbench.form
         lyric = ""
         clock = self.workbench.clock_snapshot()
-        section_label = "" if clock.parked else clock.section_label
+        section_label = clock.section_label if clock.states_place else ""
         for section in form.sections:
             if section.label == section_label and section.lyrics:
                 lyric = section.lyrics[0]
@@ -590,9 +591,10 @@ class SongToolsCoordinator:
         if overlay is None:
             return
         self._sync_workbench()
+        clock = self.workbench.clock_snapshot()
         overlay.set_sections(
             self.workbench.section_names(),
-            current=self.workbench.clock_snapshot().section_label,
+            current=clock.section_label if clock.states_place else "",
         )
         overlay.set_song_state(
             catch_up=None,
@@ -1101,6 +1103,7 @@ class SongToolsCoordinator:
             loaded=view.loaded,
             position_s=view.position_s,
             playing=view.carries_the_form,
+            count_in=view.count_in,
         )
         # A musician who joined late is watching a song that is already
         # moving. Nobody pressed start here, so nothing would repaint their

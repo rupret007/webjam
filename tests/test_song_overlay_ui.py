@@ -676,6 +676,37 @@ def test_a_parked_clock_names_the_outline_and_asks_to_start(overlay):
     assert "does not follow" in overlay._clock_line.toolTip()
 
 
+def test_a_count_in_names_the_outline_and_does_not_ride_verse(overlay):
+    """The click before the song is not Verse. #35's parked host count stays."""
+
+    workbench = SongWorkbench(notes="Tempo: 120\n[Verse]\nG D\n[Chorus]\nC G\n")
+    workbench.clock.follow_shared_track(
+        loaded=True, position_s=0.0, playing=False, count_in=True
+    )
+    overlay.set_song_state(
+        form_rows=workbench.form_overlay(), clock=workbench.clock_snapshot()
+    )
+
+    assert workbench.clock_snapshot().states_place is False
+    assert overlay._clock_line.text() == "Verse → Chorus is written. Counting in."
+    assert "bar" not in overlay._clock_line.text().casefold()
+    assert all(not line.startswith("▸") for line in overlay._form_rows.text().splitlines())
+    assert "count-in" in overlay._clock_line.toolTip().casefold()
+
+
+def test_a_loaded_track_at_the_top_names_the_outline(overlay):
+    workbench = SongWorkbench(notes="Tempo: 120\n[Verse]\nG D\n[Chorus]\nC G\n")
+    workbench.clock.follow_shared_track(loaded=True, position_s=0.0, playing=False)
+    overlay.set_song_state(
+        form_rows=workbench.form_overlay(), clock=workbench.clock_snapshot()
+    )
+
+    assert overlay._clock_line.text() == (
+        "Verse → Chorus is written. Nobody has said where we are."
+    )
+    assert all(not line.startswith("▸") for line in overlay._form_rows.text().splitlines())
+
+
 def test_the_clock_never_claims_to_follow_the_band_in_its_copy(overlay):
     workbench = _clocked(lambda: 0.0)
     workbench.clock.start()

@@ -157,7 +157,9 @@ can keep painting and still know where everyone is:
 - **No shared clock** — no bar, section, or reference video to follow. That is
   normal; work freely. If a song's shape is written but nobody has said where
   you are, the line names that shape and stops there — even when a tempo is
-  already written and the count is only sitting on the first part.
+  already written and the count is only sitting on the first part. Loading a
+  Shared Track, or holding through its count-in, is the same: the shape is
+  named, not ridden as Verse.
 
 Things worth knowing:
 
@@ -521,7 +523,9 @@ The clock counts bars and sections across your form at your stated tempo. It is
 a shared reference, not a follower: WebJam does not listen to the band, so it
 will not correct if the room rushes. When a Shared Track holds a song, that
 transport owns the position instead and the panel's own transport steps aside —
-there is one clock, not two. A count-in is held through rather than counted.
+there is one clock, not two. A count-in is held through rather than counted,
+and it is not published as the part everyone is counting toward. A Shared
+Track sitting at the top is named, not ridden, until someone plays it.
 
 ### Music AI
 

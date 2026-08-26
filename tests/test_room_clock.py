@@ -324,6 +324,47 @@ def test_song_form_facts_keep_a_paused_or_shared_track_place():
     assert tracked.running is True
 
 
+def test_song_form_facts_do_not_publish_a_loaded_track_at_the_top():
+    """A Shared Track sitting at 0:00 is not Bar 1 · Verse."""
+
+    from core.song_clock import SongClock
+    from core.song_form import parse_song_form
+
+    clock = SongClock()
+    clock.set_form(parse_song_form("[Verse]\n[Chorus]\n"))
+    clock.set_tempo(120.0)
+    clock.follow_shared_track(loaded=True, position_s=0.0, playing=False)
+    facts = song_form_facts(clock.snapshot())
+    view = render_room_clock(facts)
+
+    assert facts is not None
+    assert facts.states_place is False
+    assert facts.form_shape == "Verse → Chorus"
+    assert view.headline == NO_CLOCK_HEADLINE
+    assert "Verse" not in view.headline
+
+
+def test_song_form_facts_do_not_publish_a_count_in_as_the_target_part():
+    """The click before the song must not ride Chorus."""
+
+    from core.song_clock import SongClock
+    from core.song_form import parse_song_form
+
+    clock = SongClock()
+    clock.set_form(parse_song_form("[Verse]\n[Chorus]\n"))
+    clock.set_tempo(120.0)
+    clock.follow_shared_track(
+        loaded=True, position_s=30.0, playing=False, count_in=True
+    )
+    facts = song_form_facts(clock.snapshot())
+    view = render_room_clock(facts)
+
+    assert facts is not None
+    assert facts.states_place is False
+    assert view.headline == NO_CLOCK_HEADLINE
+    assert "Chorus" not in view.headline
+
+
 def test_song_form_facts_do_not_invent_the_first_part_as_the_position():
     """A written outline without a stated bar or section is not a position."""
 

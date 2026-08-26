@@ -1,10 +1,9 @@
-"""Exact in-room honesty goldens after #31 / #34.
+"""Exact in-room honesty goldens after #31 / #34 / #35.
 
 Door law is unchanged and held by the start-UX suite. These goldens hold the
-leftover lie this pass closes: a parked count that already has a tempo must
-not ride the first part on Song tools or the companion. The room clock still
-names an outline without riding it. Elapsed-only without a shape is still no
-clock.
+leftover lie this pass closes: a Shared Track sitting at the top, or held
+through its count-in, must not ride Verse. A parked host count still names
+the outline. Elapsed-only without a shape is still no clock.
 """
 
 from __future__ import annotations
@@ -192,6 +191,70 @@ def test_real_clock_outline_with_tempo_still_parked_is_named_not_ridden_golden()
     assert view.headline == NO_CLOCK_HEADLINE
     assert view.detail == f"Verse → Chorus is written. {NO_PLACE_DETAIL}"
     assert "Verse" not in view.headline
+    assert "Bar" not in view.headline
+    assert view.musical is False
+
+    companion = build_snapshot(is_music_session=True, clock=snapshot)
+    assert companion.position_known is False
+    assert companion.section == ""
+    assert companion.bar == 0
+
+
+def test_a_loaded_shared_track_at_the_top_is_named_not_ridden_golden():
+    """Loading the file is not Verse. Play it to say where we are."""
+
+    clock = SongClock()
+    clock.set_form(parse_song_form("[Verse]\n[Chorus]\n"))
+    clock.set_tempo(120.0)
+    clock.follow_shared_track(loaded=True, position_s=0.0, playing=False)
+    snapshot = clock.snapshot()
+
+    assert snapshot.follows_shared_track is True
+    assert snapshot.parked is False
+    assert snapshot.states_place is False
+    assert snapshot.section_label == "Verse"
+    facts = song_form_facts(snapshot)
+    view = render_room_clock(facts)
+
+    assert facts is not None
+    assert facts.states_place is False
+    assert facts.form_shape == "Verse → Chorus"
+    assert view.headline == NO_CLOCK_HEADLINE
+    assert view.detail == f"Verse → Chorus is written. {NO_PLACE_DETAIL}"
+    assert "Verse" not in view.headline
+    assert "Bar" not in view.headline
+    assert view.musical is False
+
+    companion = build_snapshot(is_music_session=True, clock=snapshot)
+    assert companion.position_known is False
+    assert companion.section == ""
+    assert companion.bar == 0
+
+
+def test_a_count_in_is_named_not_ridden_golden():
+    """The click before the song must not publish Chorus as where we are."""
+
+    clock = SongClock()
+    clock.set_form(parse_song_form("[Verse]\n[Chorus]\n"))
+    clock.set_tempo(120.0)
+    clock.follow_shared_track(
+        loaded=True, position_s=30.0, playing=False, count_in=True
+    )
+    snapshot = clock.snapshot()
+
+    assert snapshot.count_in is True
+    assert snapshot.follows_shared_track is True
+    assert snapshot.states_place is False
+    assert snapshot.section_label == "Chorus"
+    facts = song_form_facts(snapshot)
+    view = render_room_clock(facts)
+
+    assert facts is not None
+    assert facts.states_place is False
+    assert facts.form_shape == "Verse → Chorus"
+    assert view.headline == NO_CLOCK_HEADLINE
+    assert view.detail == f"Verse → Chorus is written. {NO_PLACE_DETAIL}"
+    assert "Chorus" not in view.headline
     assert "Bar" not in view.headline
     assert view.musical is False
 
