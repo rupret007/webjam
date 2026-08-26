@@ -108,6 +108,13 @@ standalone workflow is not implemented.
 | Jamulus | Live interface, input/output channels, buffer, jitter, participant mix, and WebJam audio connection |
 | Meeting service | Optional talking/video meeting and its own microphone, camera, speaker, participant state, and recording; WebJam never directly or automatically taps the meeting app, browser, or system output |
 
+Room-clock delivery is fail-closed. A host may render its own current song or
+reference-video position immediately, but WebJam records that pulse as shared
+only after the authenticated private-session control accepts it. An inactive,
+not-yet-attached, or temporarily failing peer plane is retried on the next
+clock tick; it is never presented as proof that another participant received
+or heard anything.
+
 ## Live collaboration flow
 
 1. Open WebJam, choose a creator profile, then choose its Host or Join action.

@@ -11,7 +11,7 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ### Room-clock delivery: retry truth the room did not receive
 
-- A host no longer treats a locally rendered room clock as delivered when the private peer plane is not ready or rejects one update. The same bounded pulse is retried on the next tick, then returns to change-only publishing after a successful delivery; live audio and transport ownership are unchanged.
+- A host no longer treats a locally rendered room clock as delivered when the private peer plane is inactive, rejects one update, or has not attached authenticated session control yet. The same bounded pulse is retried on the next tick, then returns to change-only publishing after a successful delivery; live audio and transport ownership are unchanged.
 
 ### Music AI upload portability: one FLAC type on every desktop
 
