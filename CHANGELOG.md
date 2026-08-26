@@ -9,6 +9,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the immutable v0.26.0 release boundary belongs here. Every
 > published tag, release, and asset remains immutable historical evidence.
 
+### Song-clock honesty: catch-up does not dress a parked sheet as a where
+
+- A parked host count, a Shared Track sitting at the top, or a count-in no longer headlines **Where the session is** on Song tools catch-up, and no longer lists **Verse → Chorus** as that where. The clock line still says **Start the clock.** / **Counting in.** / **Nobody has said where we are.** Starting, pausing after a start, locating a later part, or playing the file still names a where. Late arrivals still see the sheet.
+
 ### Song-clock honesty: the published where is named, not ridden
 
 - A parked host count, a Shared Track sitting at the top, or a count-in no longer publishes **Verse · bar 1** on the clock's own public dict, position label, or conductor line. Those surfaces name the written shape. Starting, pausing after a start, locating a later part, or playing the file still states a place. Song tools still say **Start the clock.** / **Counting in.** Painters still see **Nobody has said where we are.**

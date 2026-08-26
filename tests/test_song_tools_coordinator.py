@@ -593,6 +593,8 @@ def test_a_parked_clock_names_the_outline_on_the_panel(app):
         == "Intro → Verse is written. Start the clock."
     )
     assert coordinator.overlay._clock_button.text() == "▶"
+    assert coordinator.overlay._catch_up_headline.isHidden()
+    assert coordinator.overlay._catch_up_headline.text() != "Where the session is"
 
 
 def test_starting_and_stopping_the_clock_is_one_control(app):
@@ -1882,6 +1884,9 @@ def test_the_clock_holds_through_a_count_in(app):
         not line.startswith("▸")
         for line in coordinator.overlay._form_rows.text().splitlines()
     )
+    assert coordinator.overlay._catch_up_headline.isHidden()
+    assert coordinator.overlay._catch_up_headline.text() != "Where the session is"
+    assert "Verse" not in coordinator.overlay._catch_up_lines.text()
     companion = coordinator.companion_snapshot()
     assert companion.position_known is False
     assert companion.section == ""

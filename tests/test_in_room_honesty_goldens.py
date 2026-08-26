@@ -1,10 +1,11 @@
-"""Exact in-room honesty goldens after #31 / #34 / #35 / #36.
+"""Exact in-room honesty goldens after #31 / #34 / #35 / #36 / #38.
 
 Door law is unchanged and held by the start-UX suite. These goldens hold the
-leftover lie this pass closes: the clock's published where — the public
-dict, the position label, and the conductor line — must not ride Verse
+leftover lie this pass closes: Song tools catch-up must not headline
+**Where the session is** — or list the written parts as that where —
 while the count is only parked, loaded at the top, or counting in.
-#35's parked host-count copy and #36's count-in copy stay.
+#35's parked host-count copy, #36's count-in copy, and #38's published
+where stay.
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ from core.session_conductor import (
 from core.session_transfer import RoomClockSessionSnapshot, RoomClockSourceValue
 from core.song_clock import SongClock
 from core.song_form import parse_song_form
+from core.song_workbench import SharedTrackView, SongWorkbench
 
 
 def _outline_timer(**changes) -> SimpleNamespace:
@@ -290,6 +292,45 @@ def test_a_count_in_is_named_not_ridden_golden():
     assert snapshot.position_label == ""
     assert snapshot.describe().startswith("Verse → Chorus is written")
     assert "Chorus ·" not in snapshot.describe()
+
+
+def test_a_parked_catch_up_is_not_where_the_session_is_golden():
+    """The leftover after #38: catch-up still dressed the sheet as a where."""
+
+    workbench = SongWorkbench(notes="Tempo: 120\n[Verse]\n[Chorus]\n")
+    snapshot = workbench.clock_snapshot()
+    catch_up = workbench.catch_up(elapsed_seconds=10)
+
+    assert snapshot.parked is True
+    assert snapshot.states_place is False
+    assert catch_up.headline != "Where the session is"
+    assert "where" not in catch_up.headline.casefold()
+    assert not catch_up.has_content
+    assert all("Verse" not in line for line in catch_up.lines)
+
+
+def test_a_count_in_catch_up_is_not_where_the_session_is_golden():
+    """The click before the song must not headline the written parts as a where."""
+
+    workbench = SongWorkbench(notes="Tempo: 120\n[Verse]\n[Chorus]\n")
+    workbench.clock.follow_shared_track(
+        loaded=True, position_s=30.0, playing=False, count_in=True
+    )
+    catch_up = workbench.catch_up(
+        shared_track=SharedTrackView(
+            loaded=True,
+            playing=True,
+            source_name="demo.wav",
+            count_in=True,
+        )
+    )
+
+    assert workbench.clock_snapshot().states_place is False
+    assert catch_up.headline != "Where the session is"
+    assert "where" not in catch_up.headline.casefold()
+    assert "demo.wav — counting in" in catch_up.lines
+    assert all("Verse" not in line for line in catch_up.lines)
+    assert all("Chorus" not in line for line in catch_up.lines)
 
 
 def test_a_peer_outline_without_a_place_is_named_golden():

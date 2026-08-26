@@ -317,9 +317,59 @@ def test_a_late_arrival_is_told_how_far_in_they_joined():
 
 
 def test_arriving_at_the_start_is_not_reported_as_a_late_join():
-    catch_up = SongWorkbench(notes=SHEET).catch_up(elapsed_seconds=10)
+    workbench = SongWorkbench(notes=SHEET)
+    catch_up = workbench.catch_up(elapsed_seconds=10)
     assert not catch_up.joined_late
+    assert workbench.clock_snapshot().states_place is False
+    assert catch_up.headline == ""
+    assert "Where the session is" not in catch_up.headline
+    assert all("Verse" not in line for line in catch_up.lines)
+
+
+def test_a_parked_sheet_is_not_dressed_as_where_the_session_is():
+    """Writing [Verse] [Chorus] is the sheet. It is not a place."""
+
+    workbench = SongWorkbench(notes=SHEET)
+    catch_up = workbench.catch_up(elapsed_seconds=10)
+
+    assert workbench.clock_snapshot().parked is True
+    assert workbench.clock_snapshot().states_place is False
+    assert not catch_up.has_content
+    assert catch_up.headline != "Where the session is"
+    assert catch_up.sheet_available
+
+
+def test_a_count_in_catch_up_does_not_claim_a_where():
+    """The click before the song must not headline Where the session is."""
+
+    workbench = SongWorkbench(notes=SHEET)
+    workbench.clock.follow_shared_track(
+        loaded=True, position_s=0.0, playing=False, count_in=True
+    )
+    catch_up = workbench.catch_up(
+        shared_track=SharedTrackView(
+            loaded=True,
+            playing=True,
+            source_name="demo.wav",
+            count_in=True,
+        )
+    )
+
+    assert workbench.clock_snapshot().states_place is False
+    assert catch_up.headline == ""
+    assert "Where the session is" not in catch_up.headline
+    assert "demo.wav — counting in" in catch_up.lines
+    assert all("Verse" not in line for line in catch_up.lines)
+
+
+def test_a_stated_place_still_names_where_the_session_is():
+    workbench = SongWorkbench(notes=SHEET)
+    workbench.clock.start()
+    catch_up = workbench.catch_up(elapsed_seconds=10)
+
+    assert workbench.clock_snapshot().states_place is True
     assert catch_up.headline == "Where the session is"
+    assert any("Verse" in line for line in catch_up.lines)
 
 
 def test_a_guest_with_no_local_sheet_is_told_why_it_is_empty():

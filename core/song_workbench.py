@@ -543,17 +543,32 @@ class SongWorkbench:
         joined_late_after_seconds: float = 120.0,
         is_host: bool = False,
     ) -> CatchUp:
-        """Return what someone who just arrived should be shown, if anything."""
+        """Return what someone who just arrived should be shown, if anything.
+
+        A parked count, a loaded file at the top, or a count-in is not a
+        where. The clock line already names that hold. This sheet must not
+        dress the written parts as **Where the session is**.
+        """
 
         elapsed = max(0.0, float(elapsed_seconds))
         joined_late = elapsed >= max(0.0, float(joined_late_after_seconds))
         form = self.form
+        snapshot = self._clock.snapshot()
+        # Playing the song itself is a where even if this clock has not
+        # been told yet. A count-in, or a file sitting at the top, is not.
+        place = bool(snapshot.states_place)
+        if shared_track is not None and shared_track.carries_the_form:
+            place = True
         lines: list[str] = []
 
         if shared_track is not None and shared_track.loaded:
             lines.append(shared_track.status_line())
         if form.has_content:
-            lines.append(form.summary_line())
+            # The written shape is the sheet, not the place. Name it here
+            # only when someone stated a where, or a late arrival needs
+            # the page. The clock line already names a parked hold.
+            if place or joined_late:
+                lines.append(form.summary_line())
         elif not is_host:
             # Notes never leave the computer that typed them, so a guest with
             # an empty canvas genuinely has no sheet. Say that rather than
@@ -565,11 +580,12 @@ class SongWorkbench:
         for run in reversed(self._runs[-2:]):
             lines.append(run.summary_line())
 
-        headline = (
-            f"You joined {_minutes(elapsed)} in"
-            if joined_late
-            else "Where the session is"
-        )
+        if joined_late:
+            headline = f"You joined {_minutes(elapsed)} in"
+        elif place:
+            headline = "Where the session is"
+        else:
+            headline = ""
         return CatchUp(
             joined_late=joined_late,
             headline=headline,
