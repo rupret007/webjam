@@ -560,3 +560,39 @@ def test_music_startup_copy_is_one_next_step() -> None:
     assert "jamulus" not in spoken
     assert "when you are ready" not in spoken
     assert "send it when you want" not in spoken
+
+
+@pytest.mark.parametrize(
+    ("profile_key", "guest_ready"),
+    (
+        ("podcast_voice", "Enter the session. That is the next step."),
+        ("review_rehearsal", "Enter Review. That is the next step."),
+    ),
+)
+def test_podcast_and_review_startup_copy_is_one_next_step(
+    profile_key: str,
+    guest_ready: str,
+) -> None:
+    """First Host/Join HUD names one next step, not a how-it-works wall."""
+
+    copy = ApplicationController._startup_creator_copy(profile_key)
+    spoken = " ".join(
+        (copy["host_ready_detail"], copy["guest_ready_detail"])
+    ).casefold()
+    assert copy["host_ready_detail"] == "Copy the invite. That is the next step."
+    assert copy["guest_ready_detail"] == guest_ready
+    for banned in (
+        "invite your speakers",
+        "invite collaborators",
+        "when you are ready",
+        "jamulus",
+        "local notes only",
+        "visual-media",
+        "media timecode",
+        "media-timecode",
+        "record session captures",
+        "never directly or automatically",
+        "share the invite",
+        "live-audio path",
+    ):
+        assert banned not in spoken, banned

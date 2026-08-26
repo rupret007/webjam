@@ -192,6 +192,22 @@ def test_running_host_process_is_not_invite_ready_or_connected_without_proof():
     assert _host_ready_facts().invite_available
 
 
+def test_podcast_and_review_host_invite_is_one_next_step():
+    """First Host screen names Copy the invite, not a how-it-works wall."""
+
+    for profile_key in ("podcast_voice", "review_rehearsal"):
+        invite = derive_session_conductor(
+            replace(_host_ready_facts(), creator_profile_key=profile_key)
+        )
+        spoken = invite.message.casefold()
+        assert invite.phase is SessionConductorPhase.INVITE_READY
+        assert invite.message == "Copy the invite. That is the next step."
+        assert "share the invite" not in spoken
+        assert "when you are ready" not in spoken
+        assert "invite your speakers" not in spoken
+        assert "invite collaborators" not in spoken
+
+
 def test_guest_join_and_live_require_authenticated_path_and_unique_roster_truth():
     joining_facts = replace(
         _ready_facts(SessionRole.GUEST),
