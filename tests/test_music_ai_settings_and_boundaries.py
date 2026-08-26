@@ -292,6 +292,9 @@ def test_the_published_clock_contract_is_stable_and_declared():
         "sections",
         "following_audio",
         "section_lengths_assumed",
+        "form_shape",
+        "count_in",
+        "states_place",
     }
 
 
