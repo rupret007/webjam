@@ -1694,6 +1694,15 @@ class ApplicationController(QObject):
             if timer is not None:
                 timer.stop()
             return
+        # Sharing may happen before authenticated session control is ready.
+        # The one-second Art cadence retries only an undelivered projection;
+        # the coordinator becomes quiet as soon as the peer plane accepts it.
+        canvas = getattr(self, "_shared_canvas", None)
+        if canvas is not None:
+            try:
+                canvas.tick()
+            except Exception:  # noqa: BLE001 - optional Art state is best effort
+                LOGGER.debug("Shared canvas publication tick failed", exc_info=True)
         try:
             self._sync_art_room_presence()
         except Exception:  # noqa: BLE001 - room chrome never breaks the room
