@@ -418,14 +418,28 @@ def _parked_count_is_not_a_place(snapshot: object) -> bool:
 
     A live ``SongClock`` with a tempo always reports bar 1 and the first
     part while it is stopped. That is where the count parks, not a place
-    anyone said. Starting, pausing, locating a part, or following Shared
-    Track still states a where. Snapshots that do not carry ``state``
-    (legacy test seams and already-published pulses) are left alone.
+    anyone said. Starting, pausing, or locating a part still states a
+    where. A Shared Track that is playing, or paused after the file has
+    moved, still states a where. Loading the file, or holding through its
+    count-in, does not. Snapshots that do not carry ``state`` (legacy test
+    seams and already-published pulses) are left alone.
     """
 
-    if str(getattr(snapshot, "state", "") or "") != "stopped":
-        return False
+    states_place = getattr(snapshot, "states_place", None)
+    if isinstance(states_place, bool):
+        return not states_place
+    if bool(getattr(snapshot, "count_in", False)):
+        return True
     if bool(getattr(snapshot, "follows_shared_track", False)):
+        if bool(getattr(snapshot, "running", False)):
+            return False
+        return (
+            _positive(
+                getattr(snapshot, "position_s", 0.0), MAX_ROOM_CLOCK_POSITION_S
+            )
+            <= 0.0
+        )
+    if str(getattr(snapshot, "state", "") or "") != "stopped":
         return False
     return (
         _positive(getattr(snapshot, "position_s", 0.0), MAX_ROOM_CLOCK_POSITION_S)
@@ -443,8 +457,10 @@ def song_form_facts(snapshot: object) -> RoomClockFacts | None:
     first part, or the file's elapsed time, up as form would be the lie
     this module exists to prevent. A stopped count that only has a tempo
     still parks on that first part; publishing it as Verse would be the
-    same lie. That outline is still named, so the room does not claim the
-    song is absent. Art never calls this with invented bars.
+    same lie. A Shared Track sitting at the top, or held through its
+    count-in, is the same lie. That outline is still named, so the room
+    does not claim the song is absent. Art never calls this with invented
+    bars.
     """
 
     if snapshot is None:

@@ -124,6 +124,23 @@ def test_a_parked_clock_with_a_tempo_does_not_publish_verse():
     assert snapshot.chord_overlay[0].startswith("Verse")
 
 
+def test_a_count_in_does_not_publish_the_target_part():
+    """The leftover after #35: Shared Track follow still rode the first part."""
+
+    workbench, _now = _workbench()
+    workbench.clock.follow_shared_track(
+        loaded=True, position_s=30.0, playing=False, count_in=True
+    )
+    clock = workbench.clock_snapshot()
+    snapshot = build_snapshot(is_music_session=True, clock=clock)
+
+    assert clock.count_in is True
+    assert clock.states_place is False
+    assert snapshot.position_known is False
+    assert snapshot.section == ""
+    assert snapshot.bar == 0
+
+
 def test_a_non_music_session_publishes_nothing_about_a_song():
     snapshot = build_snapshot(is_music_session=False)
 

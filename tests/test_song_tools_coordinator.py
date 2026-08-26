@@ -1870,8 +1870,21 @@ def test_the_clock_holds_through_a_count_in(app):
 
     snapshot = coordinator.workbench.clock_snapshot()
     assert snapshot.follows_shared_track
+    assert snapshot.count_in is True
+    assert snapshot.states_place is False
     assert not snapshot.running          # the click is not the song
     assert coordinator.overlay._now_chord.isHidden()
+    assert (
+        coordinator.overlay._clock_line.text()
+        == "Intro → Verse is written. Counting in."
+    )
+    assert all(
+        not line.startswith("▸")
+        for line in coordinator.overlay._form_rows.text().splitlines()
+    )
+    companion = coordinator.companion_snapshot()
+    assert companion.position_known is False
+    assert companion.section == ""
 
 
 def test_the_clock_starts_when_the_count_in_ends(app):

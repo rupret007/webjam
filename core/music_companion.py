@@ -132,7 +132,8 @@ class MusicCompanionSnapshot:
     is_music_session: bool = False
 
     # Position. ``position_known`` is false until a clock or Shared Track says.
-    # A parked count that only has a tempo is not a place.
+    # A parked count, a loaded file sitting at the top, or a count-in is not
+    # a place.
     section: str = ""
     section_index: int = -1
     bar: int = 0
@@ -299,19 +300,29 @@ def evaluate_command(
 
 
 def _clock_is_parked(clock: object) -> bool:
-    """Return whether a clock is sitting at the top without a stated place.
+    """Return whether a clock is sitting without a stated place.
 
     Kept here so this module stays stdlib-only. The rule matches
-    ``SongClockSnapshot.parked`` / the room-clock publish path: a stopped
-    count at position 0 is not a where. Starting, pausing, locating a later
-    part, or following Shared Track still states one.
+    ``SongClockSnapshot.states_place`` / the room-clock publish path: a
+    stopped host count, a Shared Track sitting at the top, or a count-in
+    is not a where. Starting, pausing after the file has moved, locating a
+    later part, or playing the Shared Track still states one.
     """
 
+    states_place = getattr(clock, "states_place", None)
+    if isinstance(states_place, bool):
+        return not states_place
+    if bool(getattr(clock, "count_in", False)):
+        return True
     parked = getattr(clock, "parked", None)
-    if isinstance(parked, bool):
+    if isinstance(parked, bool) and not bool(
+        getattr(clock, "follows_shared_track", False)
+    ):
         return parked
     if bool(getattr(clock, "follows_shared_track", False)):
-        return False
+        if bool(getattr(clock, "running", False)):
+            return False
+        return float(getattr(clock, "position_s", 0.0) or 0.0) <= 0.0
     if str(getattr(clock, "state", "") or "") != "stopped":
         return False
     return float(getattr(clock, "position_s", 0.0) or 0.0) <= 0.0
@@ -358,8 +369,9 @@ def build_snapshot(
         key_source = _clean(getattr(clock, "key_source", ""), MAX_LABEL_CHARS)
         bpm = max(0.0, float(getattr(clock, "tempo_bpm", 0.0) or 0.0))
         bpm_source = _clean(getattr(clock, "tempo_source", ""), MAX_LABEL_CHARS)
-        # A parked count always sits on bar 1 / the first part. That is not a
-        # place, so the companion names the written song and does not ride it.
+        # A parked count, a loaded file at the top, or a count-in always
+        # sits on a part. That is not a place, so the companion names the
+        # written song and does not ride it.
         if not _clock_is_parked(clock):
             section = _clean(getattr(clock, "section_label", ""), MAX_LABEL_CHARS)
             # Index 0 is the first part, not "unknown", so this cannot use ``or``.
@@ -467,7 +479,7 @@ def describe_contract() -> dict:
             "a command cannot name a file; tools act on the host's Shared Track",
             "the desktop decides; a companion press is only a request",
             "position is a host reference, never audio-followed",
-            "a parked count is named, not ridden as a place",
+            "a parked count, a loaded file at the top, or a count-in is named, not ridden as a place",
             "write-help results are labelled suggestions",
         ),
     }

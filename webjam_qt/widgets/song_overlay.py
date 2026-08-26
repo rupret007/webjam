@@ -647,7 +647,7 @@ class SongOverlay(QFrame):
         self._form_summary.setVisible(summary not in catch_up_lines)
         here = (
             ""
-            if clock is None or clock.parked
+            if clock is None or not clock.states_place
             else clock.section_label
         )
         self._form_rows.setText(
@@ -844,6 +844,22 @@ class SongOverlay(QFrame):
         if snapshot.tempo_bpm <= 0:
             self._clock_line.setText("Write a tempo to start the clock.")
             return
+        if snapshot.count_in:
+            shape = snapshot.form_shape
+            line = (
+                f"{shape} is written. Counting in."
+                if shape
+                else "Counting in."
+            )
+            self._clock_line.setText(line)
+            self._clock_line.setAccessibleName(
+                f"Song position: {line}. Read on request; not announced."
+            )
+            self._clock_line.setToolTip(
+                "A count-in is the click before the song. It is not Verse. "
+                "WebJam does not follow the live audio."
+            )
+            return
         if snapshot.parked:
             shape = snapshot.form_shape
             line = (
@@ -858,6 +874,23 @@ class SongOverlay(QFrame):
             self._clock_line.setToolTip(
                 "A written outline is not a place. Start the clock to say "
                 "where you are. WebJam does not follow the live audio."
+            )
+            return
+        if snapshot.follows_shared_track and not snapshot.states_place:
+            shape = snapshot.form_shape
+            line = (
+                f"{shape} is written. Nobody has said where we are."
+                if shape
+                else "Nobody has said where we are."
+            )
+            self._clock_line.setText(line)
+            self._clock_line.setAccessibleName(
+                f"Song position: {line}. Read on request; not announced."
+            )
+            self._clock_line.setToolTip(
+                "A loaded Shared Track sitting at the top is not a place. "
+                "Play it to say where you are. WebJam does not follow the "
+                "live audio."
             )
             return
         line = snapshot.position_label or "Not started"
