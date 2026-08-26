@@ -645,7 +645,11 @@ class SongOverlay(QFrame):
         # The catch-up already leads with the song line for a late arrival;
         # repeating it directly underneath just costs height in a narrow pane.
         self._form_summary.setVisible(summary not in catch_up_lines)
-        here = clock.section_label if clock is not None else ""
+        here = (
+            ""
+            if clock is None or clock.parked
+            else clock.section_label
+        )
         self._form_rows.setText(
             "\n".join(
                 # The playhead marks where the room is, so the form reads like
@@ -839,6 +843,22 @@ class SongOverlay(QFrame):
             return
         if snapshot.tempo_bpm <= 0:
             self._clock_line.setText("Write a tempo to start the clock.")
+            return
+        if snapshot.parked:
+            shape = snapshot.form_shape
+            line = (
+                f"{shape} is written. Start the clock."
+                if shape
+                else "Start the clock."
+            )
+            self._clock_line.setText(line)
+            self._clock_line.setAccessibleName(
+                f"Song position: {line}. Read on request; not announced."
+            )
+            self._clock_line.setToolTip(
+                "A written outline is not a place. Start the clock to say "
+                "where you are. WebJam does not follow the live audio."
+            )
             return
         line = snapshot.position_label or "Not started"
         if follows_track:

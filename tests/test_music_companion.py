@@ -101,6 +101,29 @@ def test_a_session_with_no_song_publishes_no_position():
     assert snapshot.bar == 0
 
 
+def test_a_parked_clock_with_a_tempo_does_not_publish_verse():
+    """Writing [Verse] [Chorus] and 120 BPM is not a place until someone starts."""
+
+    workbench, _now = _workbench()
+    clock = workbench.clock_snapshot()
+    snapshot = build_snapshot(
+        is_music_session=True,
+        clock=clock,
+        form_rows=workbench.form_overlay(),
+    )
+
+    assert clock.parked is True
+    assert clock.section_label == "Verse"
+    assert clock.bar == 1
+    assert snapshot.position_known is False
+    assert snapshot.section == ""
+    assert snapshot.bar == 0
+    assert snapshot.chords_now == ()
+    assert snapshot.key == "G major"
+    assert snapshot.bpm == 120.0
+    assert snapshot.chord_overlay[0].startswith("Verse")
+
+
 def test_a_non_music_session_publishes_nothing_about_a_song():
     snapshot = build_snapshot(is_music_session=False)
 
@@ -364,6 +387,7 @@ def test_the_contract_is_declared_for_the_companion_track():
     assert contract["requestable_verbs"] == REQUESTABLE_VERBS
     assert any("cannot name a file" in item for item in contract["guarantees"])
     assert any("only a request" in item for item in contract["guarantees"])
+    assert any("parked count" in item for item in contract["guarantees"])
 
 
 def test_the_snapshot_field_list_is_pinned():

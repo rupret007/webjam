@@ -132,6 +132,7 @@ class MusicCompanionSnapshot:
     is_music_session: bool = False
 
     # Position. ``position_known`` is false until a clock or Shared Track says.
+    # A parked count that only has a tempo is not a place.
     section: str = ""
     section_index: int = -1
     bar: int = 0
@@ -297,6 +298,25 @@ def evaluate_command(
     return MusicCompanionDecision(STATUS_ACCEPTED, command=command)
 
 
+def _clock_is_parked(clock: object) -> bool:
+    """Return whether a clock is sitting at the top without a stated place.
+
+    Kept here so this module stays stdlib-only. The rule matches
+    ``SongClockSnapshot.parked`` / the room-clock publish path: a stopped
+    count at position 0 is not a where. Starting, pausing, locating a later
+    part, or following Shared Track still states one.
+    """
+
+    parked = getattr(clock, "parked", None)
+    if isinstance(parked, bool):
+        return parked
+    if bool(getattr(clock, "follows_shared_track", False)):
+        return False
+    if str(getattr(clock, "state", "") or "") != "stopped":
+        return False
+    return float(getattr(clock, "position_s", 0.0) or 0.0) <= 0.0
+
+
 def build_snapshot(
     *,
     revision: int = 0,
@@ -334,30 +354,33 @@ def build_snapshot(
     chords_now: tuple[str, ...] = ()
 
     if clock is not None:
-        section = _clean(getattr(clock, "section_label", ""), MAX_LABEL_CHARS)
-        # Index 0 is the first part, not "unknown", so this cannot use ``or``.
-        raw_index = getattr(clock, "section_index", -1)
-        section_index = int(raw_index) if isinstance(raw_index, int) else -1
-        bar = max(0, int(getattr(clock, "bar", 0) or 0))
-        bar_in_section = max(0, int(getattr(clock, "bar_in_section", 0) or 0))
-        bars_total = max(0, int(getattr(clock, "bars_total", 0) or 0))
-        beat = max(0, int(getattr(clock, "beat", 0) or 0))
-        position_s = max(0.0, float(getattr(clock, "position_s", 0.0) or 0.0))
-        position_source = _clean(
-            getattr(clock, "position_source", ""), MAX_LABEL_CHARS
-        )
-        following_audio = bool(getattr(clock, "following_audio", False))
-        lengths_assumed = bool(getattr(clock, "section_lengths_assumed", False))
         key = _clean(getattr(clock, "key", ""), MAX_LABEL_CHARS)
         key_source = _clean(getattr(clock, "key_source", ""), MAX_LABEL_CHARS)
         bpm = max(0.0, float(getattr(clock, "tempo_bpm", 0.0) or 0.0))
         bpm_source = _clean(getattr(clock, "tempo_source", ""), MAX_LABEL_CHARS)
-        chords_now = tuple(
-            _clean(chord, 12)
-            for chord in tuple(getattr(clock, "chords_now", ()))[:MAX_CHORD_SYMBOLS]
-        )
-        chords_now = tuple(chord for chord in chords_now if chord)
-        position_known = bool(section and bar)
+        # A parked count always sits on bar 1 / the first part. That is not a
+        # place, so the companion names the written song and does not ride it.
+        if not _clock_is_parked(clock):
+            section = _clean(getattr(clock, "section_label", ""), MAX_LABEL_CHARS)
+            # Index 0 is the first part, not "unknown", so this cannot use ``or``.
+            raw_index = getattr(clock, "section_index", -1)
+            section_index = int(raw_index) if isinstance(raw_index, int) else -1
+            bar = max(0, int(getattr(clock, "bar", 0) or 0))
+            bar_in_section = max(0, int(getattr(clock, "bar_in_section", 0) or 0))
+            bars_total = max(0, int(getattr(clock, "bars_total", 0) or 0))
+            beat = max(0, int(getattr(clock, "beat", 0) or 0))
+            position_s = max(0.0, float(getattr(clock, "position_s", 0.0) or 0.0))
+            position_source = _clean(
+                getattr(clock, "position_source", ""), MAX_LABEL_CHARS
+            )
+            following_audio = bool(getattr(clock, "following_audio", False))
+            lengths_assumed = bool(getattr(clock, "section_lengths_assumed", False))
+            chords_now = tuple(
+                _clean(chord, 12)
+                for chord in tuple(getattr(clock, "chords_now", ()))[:MAX_CHORD_SYMBOLS]
+            )
+            chords_now = tuple(chord for chord in chords_now if chord)
+            position_known = bool(section and bar)
 
     overlay: list[str] = []
     for row in tuple(form_rows)[:MAX_OVERLAY_ROWS]:
@@ -444,6 +467,7 @@ def describe_contract() -> dict:
             "a command cannot name a file; tools act on the host's Shared Track",
             "the desktop decides; a companion press is only a request",
             "position is a host reference, never audio-followed",
+            "a parked count is named, not ridden as a place",
             "write-help results are labelled suggestions",
         ),
     }

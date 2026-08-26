@@ -1,9 +1,10 @@
-"""Exact in-room honesty goldens after #30.
+"""Exact in-room honesty goldens after #31 / #34.
 
 Door law is unchanged and held by the start-UX suite. These goldens hold the
-one leftover lie this pass closes: a stopped clock that already has a tempo
-must not publish the parked first part as where we are. #29/#30 still name
-an outline without riding it. Elapsed-only without a shape is still no clock.
+leftover lie this pass closes: a parked count that already has a tempo must
+not ride the first part on Song tools or the companion. The room clock still
+names an outline without riding it. Elapsed-only without a shape is still no
+clock.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from core.music_companion import build_snapshot
 from core.room_clock import (
     NO_CLOCK_DETAIL,
     NO_CLOCK_HEADLINE,
@@ -173,6 +175,8 @@ def test_real_clock_outline_with_tempo_still_parked_is_named_not_ridden_golden()
 
     assert snapshot.has_form is True
     assert snapshot.running is False
+    assert snapshot.parked is True
+    assert snapshot.form_shape == "Verse → Chorus"
     assert snapshot.bar == 1
     assert snapshot.section_label == "Verse"
     facts = song_form_facts(snapshot)
@@ -190,6 +194,11 @@ def test_real_clock_outline_with_tempo_still_parked_is_named_not_ridden_golden()
     assert "Verse" not in view.headline
     assert "Bar" not in view.headline
     assert view.musical is False
+
+    companion = build_snapshot(is_music_session=True, clock=snapshot)
+    assert companion.position_known is False
+    assert companion.section == ""
+    assert companion.bar == 0
 
 
 def test_a_peer_outline_without_a_place_is_named_golden():

@@ -581,6 +581,20 @@ def _clock_coordinator(app):
     return coordinator, now
 
 
+def test_a_parked_clock_names_the_outline_on_the_panel(app):
+    coordinator, _now = _clock_coordinator(app)
+    coordinator.overlay.setVisible(True)
+
+    coordinator.refresh()
+
+    assert coordinator.workbench.clock_snapshot().parked is True
+    assert (
+        coordinator.overlay._clock_line.text()
+        == "Intro → Verse is written. Start the clock."
+    )
+    assert coordinator.overlay._clock_button.text() == "▶"
+
+
 def test_starting_and_stopping_the_clock_is_one_control(app):
     coordinator, now = _clock_coordinator(app)
     coordinator.overlay.setVisible(True)
@@ -1197,6 +1211,24 @@ def test_the_companion_snapshot_carries_the_live_song(app):
     assert snapshot.key == "G major"
     assert snapshot.bpm == 120.0
     assert snapshot.position_known
+
+
+def test_a_parked_clock_does_not_publish_verse_to_a_companion(app):
+    """The leftover after #31: Song tools still rode the parked first part."""
+
+    coordinator, _now = _clock_coordinator(app)
+
+    snapshot = coordinator.companion_snapshot()
+    clock = coordinator.workbench.clock_snapshot()
+
+    assert clock.parked is True
+    assert clock.section_label == "Intro"
+    assert snapshot.position_known is False
+    assert snapshot.section == ""
+    assert snapshot.bar == 0
+    assert snapshot.lyric_line == ""
+    assert snapshot.key == "G major"
+    assert snapshot.bpm == 120.0
 
 
 def test_a_non_music_session_publishes_an_empty_projection(app):
