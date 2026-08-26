@@ -183,9 +183,14 @@ class SongClockSnapshot:
 
     @property
     def position_label(self) -> str:
-        """Return "Chorus · bar 3 of 8" style text, or an honest blank."""
+        """Return "Chorus · bar 3 of 8" style text, or an honest blank.
 
-        if not self.section_label:
+        A parked count, a loaded file at the top, or a count-in still
+        sits on a part internally. That is not a place, so this stays
+        blank until someone actually said where we are.
+        """
+
+        if not self.states_place or not self.section_label:
             return ""
         section = next(
             (item for item in self.sections if item.name == self.section_label),
@@ -200,13 +205,18 @@ class SongClockSnapshot:
 
         if not self.has_form:
             return "No song form yet."
-        where = self.position_label or "Not started"
+        if self.states_place:
+            where = self.position_label or "Not started"
+        elif self.form_shape:
+            where = f"{self.form_shape} is written"
+        else:
+            where = "Not started"
         parts = [where]
         if self.tempo_bpm:
             parts.append(f"{int(round(self.tempo_bpm))} BPM")
         if self.key:
             parts.append(self.key)
-        if self.chords_now:
+        if self.states_place and self.chords_now:
             parts.append(" ".join(self.chords_now[:4]))
         return " · ".join(parts)
 
@@ -215,26 +225,29 @@ class SongClockSnapshot:
 
         Other creator profiles consume this rather than the dataclass, so the
         contract stays explicit and additive. No audio, no file paths, no
-        participant identity ever enters it.
+        participant identity ever enters it. A parked count, a loaded file
+        at the top, or a count-in names the written song and does not
+        publish the first part as where we are.
         """
 
+        place = self.states_place
         return {
             "generation": self.generation,
             "state": self.state,
-            "position_s": round(self.position_s, 3),
-            "section": self.section_label,
-            "section_index": self.section_index,
-            "section_role": self.section_role,
-            "bar": self.bar,
-            "bar_in_section": self.bar_in_section,
-            "beat": self.beat,
+            "position_s": round(self.position_s, 3) if place else 0.0,
+            "section": self.section_label if place else "",
+            "section_index": self.section_index if place else -1,
+            "section_role": self.section_role if place else "",
+            "bar": self.bar if place else 0,
+            "bar_in_section": self.bar_in_section if place else 0,
+            "beat": self.beat if place else 0,
             "bars_total": self.bars_total,
             "beats_per_bar": self.beats_per_bar,
             "key": self.key,
             "key_source": self.key_source,
             "bpm": round(self.tempo_bpm, 3) if self.tempo_bpm else 0.0,
             "bpm_source": self.tempo_source,
-            "chords_now": list(self.chords_now),
+            "chords_now": list(self.chords_now) if place else [],
             "sections": [
                 {
                     "name": section.name,
@@ -247,6 +260,9 @@ class SongClockSnapshot:
             "following_audio": self.following_audio,
             "section_lengths_assumed": self.section_lengths_assumed,
             "position_source": self.position_source,
+            "form_shape": self.form_shape,
+            "count_in": self.count_in,
+            "states_place": place,
         }
 
 
@@ -654,6 +670,7 @@ def describe_contract() -> dict:
             "position is a host-run reference, not audio-followed",
             "every musical fact carries its source",
             "no audio, file path, or participant identity is published",
+            "a parked count, a loaded file at the top, or a count-in is named, not ridden as a place",
         ),
     }
 

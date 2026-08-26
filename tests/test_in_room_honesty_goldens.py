@@ -1,9 +1,10 @@
-"""Exact in-room honesty goldens after #31 / #34 / #35.
+"""Exact in-room honesty goldens after #31 / #34 / #35 / #36.
 
 Door law is unchanged and held by the start-UX suite. These goldens hold the
-leftover lie this pass closes: a Shared Track sitting at the top, or held
-through its count-in, must not ride Verse. A parked host count still names
-the outline. Elapsed-only without a shape is still no clock.
+leftover lie this pass closes: the clock's published where — the public
+dict, the position label, and the conductor line — must not ride Verse
+while the count is only parked, loaded at the top, or counting in.
+#35's parked host-count copy and #36's count-in copy stay.
 """
 
 from __future__ import annotations
@@ -199,6 +200,15 @@ def test_real_clock_outline_with_tempo_still_parked_is_named_not_ridden_golden()
     assert companion.section == ""
     assert companion.bar == 0
 
+    published = snapshot.to_public_dict()
+    assert published["section"] == ""
+    assert published["bar"] == 0
+    assert published["states_place"] is False
+    assert published["form_shape"] == "Verse → Chorus"
+    assert snapshot.position_label == ""
+    assert snapshot.describe().startswith("Verse → Chorus is written")
+    assert "bar" not in snapshot.describe().casefold()
+
 
 def test_a_loaded_shared_track_at_the_top_is_named_not_ridden_golden():
     """Loading the file is not Verse. Play it to say where we are."""
@@ -229,6 +239,14 @@ def test_a_loaded_shared_track_at_the_top_is_named_not_ridden_golden():
     assert companion.position_known is False
     assert companion.section == ""
     assert companion.bar == 0
+
+    published = snapshot.to_public_dict()
+    assert published["section"] == ""
+    assert published["bar"] == 0
+    assert published["states_place"] is False
+    assert published["form_shape"] == "Verse → Chorus"
+    assert snapshot.position_label == ""
+    assert snapshot.describe().startswith("Verse → Chorus is written")
 
 
 def test_a_count_in_is_named_not_ridden_golden():
@@ -262,6 +280,16 @@ def test_a_count_in_is_named_not_ridden_golden():
     assert companion.position_known is False
     assert companion.section == ""
     assert companion.bar == 0
+
+    published = snapshot.to_public_dict()
+    assert published["section"] == ""
+    assert published["bar"] == 0
+    assert published["position_s"] == 0.0
+    assert published["count_in"] is True
+    assert published["states_place"] is False
+    assert snapshot.position_label == ""
+    assert snapshot.describe().startswith("Verse → Chorus is written")
+    assert "Chorus ·" not in snapshot.describe()
 
 
 def test_a_peer_outline_without_a_place_is_named_golden():
