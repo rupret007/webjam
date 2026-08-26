@@ -5317,13 +5317,9 @@ class ApplicationController(QObject):
                 "optional for talking or video."
             ),
             "host_ready_title": "Your jam is ready",
-            "host_ready_detail": (
-                "Invite your band when you are ready. Jamulus carries the music."
-            ),
+            "host_ready_detail": "Copy the invite. That is the next step.",
             "guest_ready_title": "Ready to play",
-            "guest_ready_detail": (
-                "Your Jamulus connection is ready. Enter the jam when you are ready."
-            ),
+            "guest_ready_detail": "Enter the jam. That is the next step.",
             "closing_detail": ("WebJam is safely releasing the private music session."),
             "failure_title": "Music setup needs attention",
             "failure_detail": ("WebJam couldn't finish this music setup. Try again."),
@@ -5354,6 +5350,7 @@ class ApplicationController(QObject):
         role = str(attempt.get("role", "guest"))
         phase = str(attempt.get("phase", ""))
         creator_copy = self._startup_creator_copy(self.creator_profile.key)
+        enter_label = SessionPrimaryAction.ENTER_JAM.label_for(self.creator_profile)
         end_label = "End Session" if role == "host" else "Leave Jam"
         self.window.session_strip.set_audio_state(
             end_label,
@@ -5444,7 +5441,7 @@ class ApplicationController(QObject):
                     action_visible=True,
                     action_kind="copy_invite",
                     ready=True,
-                    secondary_action_text="Enter Jam",
+                    secondary_action_text=enter_label,
                     secondary_action_visible=True,
                     secondary_action_kind="enter_jam",
                 )
@@ -5452,7 +5449,7 @@ class ApplicationController(QObject):
                 self.window.session_hud.set_state(
                     creator_copy["guest_ready_title"],
                     creator_copy["guest_ready_detail"],
-                    action_text="Enter Jam",
+                    action_text=enter_label,
                     action_visible=True,
                     action_kind="enter_jam",
                     ready=True,
