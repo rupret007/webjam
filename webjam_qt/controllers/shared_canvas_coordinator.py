@@ -191,6 +191,21 @@ class SharedCanvasCoordinator:
             return self.host_snapshot
         return self._attempt_publication(pending)
 
+    def tick(self) -> None:
+        """Retry only the currently pending publication, if any.
+
+        Hosts can offer a canvas before authenticated peer control is ready.
+        The Art cadence calls this method to retry undelivered publication
+        until the peer plane accepts it, without republishing after success.
+        """
+
+        if not self.hosting:
+            return
+        pending = self._pending
+        if pending is None or pending is self._inflight:
+            return
+        self._attempt_publication(pending)
+
     def open_canvas_as_host(self) -> SharedCanvasSnapshot:
         return self._host_operation(lambda host: host.open_canvas())
 
