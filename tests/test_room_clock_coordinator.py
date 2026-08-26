@@ -472,12 +472,50 @@ def test_publication_is_skipped_while_the_peer_plane_is_inactive():
     assert view.source is RoomClockSource.REFERENCE_VIDEO
 
 
+def test_a_pulse_waiting_for_the_peer_plane_is_published_when_it_becomes_active():
+    """A local readout is not proof that the joiners received the pulse."""
+
+    peer = FakeHostPeer(active=False)
+    coordinator = _coordinator(peer=peer, video=lambda: _playing_video(90.0))
+    coordinator.begin_host()
+
+    coordinator.tick()
+    assert peer.published == []
+
+    peer.active = True
+    coordinator.tick()
+    coordinator.tick()
+
+    assert len(peer.published) == 1
+    assert peer.published[0]["source"] == "reference_video"
+    assert peer.published[0]["position_s"] == 90.0
+
+
 def test_a_peer_failure_never_breaks_the_readout():
     peer = FakeHostPeer(explode=True)
     coordinator = _coordinator(peer=peer, video=lambda: _playing_video())
     coordinator.begin_host()
 
     assert coordinator.tick().source is RoomClockSource.REFERENCE_VIDEO
+
+
+def test_a_transient_peer_failure_retries_the_same_pulse_once():
+    """A failed send must not be recorded as delivered to the joiners."""
+
+    peer = FakeHostPeer(explode=True)
+    coordinator = _coordinator(peer=peer, song=lambda: _song_form(bar=17))
+    coordinator.begin_host()
+
+    assert coordinator.tick().source is RoomClockSource.SONG_FORM
+    assert peer.published == []
+
+    peer.explode = False
+    coordinator.tick()
+    coordinator.tick()
+
+    assert len(peer.published) == 1
+    assert peer.published[0]["source"] == "song_form"
+    assert peer.published[0]["bar"] == 17
 
 
 def test_rebinding_releases_the_previous_role():

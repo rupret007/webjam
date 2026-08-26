@@ -150,8 +150,11 @@ class RoomClockCoordinator:
             return self._notify(self.view)
         facts = self._current_facts()
         if facts != self._published:
-            self._publish(facts)
-            self._published = facts
+            # Remember only a pulse the peer plane actually accepted.  If the
+            # publisher is not ready yet, or one write fails, keeping the last
+            # delivered facts makes the next tick retry the current truth.
+            if self._publish(facts):
+                self._published = facts
         return self._notify(self.view)
 
     def _current_facts(self) -> RoomClockFacts:
@@ -166,10 +169,10 @@ class RoomClockCoordinator:
             return None
         return facts if isinstance(facts, RoomClockFacts) else None
 
-    def _publish(self, facts: RoomClockFacts) -> None:
+    def _publish(self, facts: RoomClockFacts) -> bool:
         publish = self._peer_publisher()
         if publish is None:
-            return
+            return False
         try:
             payload = {
                 "source": facts.source.value,
@@ -194,8 +197,10 @@ class RoomClockCoordinator:
             if not self._publish_failed:
                 LOGGER.warning("The room clock could not be published")
             self._publish_failed = True
+            return False
         else:
             self._publish_failed = False
+            return True
 
     def _publish_absent(self) -> None:
         publish = self._peer_publisher()
