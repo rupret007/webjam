@@ -673,10 +673,12 @@ def test_a_parked_clock_names_the_outline_and_asks_to_start(overlay):
     assert "bar" not in overlay._clock_line.text().casefold()
     assert all(not line.startswith("▸") for line in overlay._form_rows.text().splitlines())
     assert overlay._clock_button.text() == "▶"
+    assert "does not follow" in overlay._clock_line.toolTip()
 
 
 def test_the_clock_never_claims_to_follow_the_band_in_its_copy(overlay):
     workbench = _clocked(lambda: 0.0)
+    workbench.clock.start()
     overlay.set_song_state(clock=workbench.clock_snapshot())
 
     tip = overlay._clock_line.toolTip() + overlay._clock_button.toolTip()
