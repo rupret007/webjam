@@ -583,6 +583,7 @@ def _clock_coordinator(app):
 
 def test_a_parked_clock_names_the_outline_on_the_panel(app):
     coordinator, _now = _clock_coordinator(app)
+    coordinator._c.window.session_strip._elapsed_seconds = 10
     coordinator.overlay.setVisible(True)
 
     coordinator.refresh()
@@ -1859,6 +1860,7 @@ def test_song_tools_never_start_a_second_player(app):
 
 def test_the_clock_holds_through_a_count_in(app):
     coordinator, _now = _clock_coordinator(app)
+    coordinator._c.window.session_strip._elapsed_seconds = 10
     coordinator.overlay.setVisible(True)
     coordinator._c.window.session_strip._shared_track_last_snapshot = SimpleNamespace(
         state="playing",
