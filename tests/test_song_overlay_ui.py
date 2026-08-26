@@ -362,6 +362,51 @@ def test_the_song_line_is_not_repeated_underneath_the_catch_up(overlay):
     assert not overlay._form_summary.isVisible()
 
 
+def test_a_parked_sheet_does_not_headline_where_the_session_is(overlay):
+    """The leftover after #38: catch-up still named a where for a parked count."""
+
+    workbench = SongWorkbench(notes="Tempo: 120\n[Verse]\nG D\n[Chorus]\nC G\n")
+    overlay.set_song_state(
+        catch_up=workbench.catch_up(elapsed_seconds=10),
+        form_summary=workbench.conductor_line(),
+        form_rows=workbench.form_overlay(),
+        clock=workbench.clock_snapshot(),
+    )
+
+    assert workbench.clock_snapshot().states_place is False
+    assert overlay._catch_up_headline.isHidden()
+    assert overlay._catch_up_headline.text() != "Where the session is"
+    assert overlay._clock_line.text() == "Verse → Chorus is written. Start the clock."
+    assert all(not line.startswith("▸") for line in overlay._form_rows.text().splitlines())
+
+
+def test_a_count_in_does_not_headline_where_the_session_is(overlay):
+    workbench = SongWorkbench(notes="Tempo: 120\n[Verse]\nG D\n[Chorus]\nC G\n")
+    workbench.clock.follow_shared_track(
+        loaded=True, position_s=0.0, playing=False, count_in=True
+    )
+    overlay.set_song_state(
+        catch_up=workbench.catch_up(
+            shared_track=SharedTrackView(
+                loaded=True,
+                playing=True,
+                source_name="demo.wav",
+                count_in=True,
+            )
+        ),
+        form_summary=workbench.conductor_line(),
+        form_rows=workbench.form_overlay(),
+        clock=workbench.clock_snapshot(),
+    )
+
+    assert workbench.clock_snapshot().states_place is False
+    assert overlay._catch_up_headline.isHidden()
+    assert overlay._catch_up_headline.text() != "Where the session is"
+    assert "demo.wav — counting in" in overlay._catch_up_lines.text()
+    assert "Verse" not in overlay._catch_up_lines.text()
+    assert overlay._clock_line.text() == "Verse → Chorus is written. Counting in."
+
+
 def test_sharing_the_sheet_is_disabled_until_there_is_one(overlay):
     overlay.set_song_state(form_summary="", sheet_shareable=False)
     assert not overlay._share_button.isEnabled()

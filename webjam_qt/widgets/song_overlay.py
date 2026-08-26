@@ -630,7 +630,10 @@ class SongOverlay(QFrame):
         catch_up_lines = tuple(catch_up.lines) if catch_up is not None else ()
         if catch_up is not None and catch_up.has_content:
             self._catch_up_headline.setText(catch_up.headline)
-            self._catch_up_headline.setVisible(True)
+            # A parked count, a loaded file at the top, or a count-in may
+            # still have a status line. That is not a where, so the
+            # headline stays off unless someone actually said one.
+            self._catch_up_headline.setVisible(bool(catch_up.headline))
             self._catch_up_lines.setText("\n".join(catch_up_lines))
             self._catch_up_lines.setVisible(True)
         else:

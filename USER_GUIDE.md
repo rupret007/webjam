@@ -161,7 +161,9 @@ can keep painting and still know where everyone is:
   Shared Track, or holding through its count-in, is the same: the shape is
   named, not ridden as Verse. The clock's own published where — the line a
   conductor reads, and the dict another profile subscribes to — names that
-  shape too, and does not dress the first part as the place.
+  shape too, and does not dress the first part as the place. Song tools
+  catch-up follows the same rule: it does not headline **Where the session
+  is** until someone stated a place.
 
 Things worth knowing:
 
@@ -529,7 +531,9 @@ there is one clock, not two. A count-in is held through rather than counted,
 and it is not published as the part everyone is counting toward. A Shared
 Track sitting at the top is named, not ridden, until someone plays it. The
 clock's published where follows the same rule: it names the written shape
-instead of riding the first part.
+instead of riding the first part. Catch-up on the Song panel does not
+claim **Where the session is** while the count is only parked or counting
+in.
 
 ### Music AI
 
