@@ -528,7 +528,7 @@ class SongWorkbench:
         if not form.has_content:
             return ""
         snapshot = self._clock.snapshot()
-        if snapshot.running and snapshot.position_label:
+        if snapshot.states_place and snapshot.position_label:
             return snapshot.describe()
         return form.summary_line()
 

@@ -241,6 +241,26 @@ def test_the_description_is_one_readable_line(clock):
     assert "G major" in described
 
 
+def test_a_parked_clock_does_not_describe_the_first_part_as_where(clock):
+    """The published where must not ride Intro while the count is only sitting."""
+
+    snapshot = clock.snapshot()
+
+    assert snapshot.parked is True
+    assert snapshot.states_place is False
+    assert snapshot.position_label == ""
+    assert snapshot.describe().startswith("Intro → Verse → Chorus is written")
+    assert "bar" not in snapshot.describe().casefold()
+    published = snapshot.to_public_dict()
+    assert published["section"] == ""
+    assert published["bar"] == 0
+    assert published["beat"] == 0
+    assert published["chords_now"] == []
+    assert published["states_place"] is False
+    assert published["form_shape"] == "Intro → Verse → Chorus"
+    assert published["count_in"] is False
+
+
 def test_an_empty_clock_describes_itself_without_pretending():
     assert SongClock().snapshot().describe() == "No song form yet."
 
@@ -289,7 +309,10 @@ def test_the_contract_is_declared_for_other_profiles_to_assert_against():
 
     assert contract["version"] == 1
     assert "section" in contract["fields"]
+    assert "states_place" in contract["fields"]
+    assert "form_shape" in contract["fields"]
     assert any("not audio-followed" in item for item in contract["guarantees"])
+    assert any("named, not ridden" in item for item in contract["guarantees"])
 
 
 def test_a_subscriber_receives_the_position(clock):
@@ -399,6 +422,15 @@ def test_a_count_in_is_not_a_place_even_at_a_later_bar(clock):
     assert snapshot.count_in is True
     assert snapshot.section_label == "Verse"
     assert snapshot.states_place is False
+    assert snapshot.position_label == ""
+    published = snapshot.to_public_dict()
+    assert published["section"] == ""
+    assert published["bar"] == 0
+    assert published["position_s"] == 0.0
+    assert published["count_in"] is True
+    assert published["states_place"] is False
+    assert snapshot.describe().startswith("Intro → Verse → Chorus is written")
+    assert "bar" not in snapshot.describe().casefold()
 
 
 def test_a_loaded_shared_track_takes_over_the_position(clock):

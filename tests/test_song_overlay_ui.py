@@ -1033,6 +1033,24 @@ def test_no_chord_is_shown_when_the_position_is_unknown(overlay):
     assert overlay._now_chord.isHidden()
 
 
+def test_a_playing_count_in_does_not_draw_the_target_chord(overlay):
+    """The click can be playing. That is still not Verse on the big chord."""
+
+    workbench = SongWorkbench(notes="Tempo: 120\n[Verse]\nG D\n[Chorus]\nC G\n")
+    workbench.clock.follow_shared_track(
+        loaded=True, position_s=0.0, playing=True, count_in=True
+    )
+    overlay.set_song_state(
+        form_rows=workbench.form_overlay(), clock=workbench.clock_snapshot()
+    )
+
+    assert workbench.clock_snapshot().running is True
+    assert workbench.clock_snapshot().states_place is False
+    assert overlay._now_chord.isHidden()
+    assert overlay._clock_line.text() == "Verse → Chorus is written. Counting in."
+    assert all(not line.startswith("▸") for line in overlay._form_rows.text().splitlines())
+
+
 def test_a_stem_chip_never_reads_as_a_band_or_meeting_mute(overlay):
     workbench = _bench_workbench()
     bench = workbench.stem_bench

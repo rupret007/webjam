@@ -681,12 +681,15 @@ class SongOverlay(QFrame):
     def _render_now_chord(self, clock: SongClockSnapshot | None) -> None:
         """Show the chord the room is on, or nothing.
 
-        Only shown while the position is actually known. A large chord that is
-        a guess would be the most confident wrong thing on the screen.
+        Only shown while the position is actually known. A parked count, a
+        loaded file at the top, or a count-in still sits on a part. That is
+        not a place. A large chord that is a guess would be the most
+        confident wrong thing on the screen.
         """
 
         if (
             clock is None
+            or not clock.states_place
             or not clock.running
             or not clock.section_label
             or not clock.chords_now

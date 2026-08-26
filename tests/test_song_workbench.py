@@ -513,6 +513,8 @@ def test_re_reading_identical_notes_does_not_disturb_a_running_clock():
 def test_the_conductor_line_leads_with_position_once_the_clock_runs():
     workbench, now = _clocked_workbench()
     assert "from your notes" in workbench.conductor_line()
+    assert not workbench.conductor_line().startswith("Verse ·")
+    assert not workbench.conductor_line().startswith("Intro ·")
 
     workbench.clock.start()
     now["value"] = 10.0

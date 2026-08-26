@@ -159,7 +159,9 @@ can keep painting and still know where everyone is:
   you are, the line names that shape and stops there — even when a tempo is
   already written and the count is only sitting on the first part. Loading a
   Shared Track, or holding through its count-in, is the same: the shape is
-  named, not ridden as Verse.
+  named, not ridden as Verse. The clock's own published where — the line a
+  conductor reads, and the dict another profile subscribes to — names that
+  shape too, and does not dress the first part as the place.
 
 Things worth knowing:
 
@@ -525,7 +527,9 @@ will not correct if the room rushes. When a Shared Track holds a song, that
 transport owns the position instead and the panel's own transport steps aside —
 there is one clock, not two. A count-in is held through rather than counted,
 and it is not published as the part everyone is counting toward. A Shared
-Track sitting at the top is named, not ridden, until someone plays it.
+Track sitting at the top is named, not ridden, until someone plays it. The
+clock's published where follows the same rule: it names the written shape
+instead of riding the first part.
 
 ### Music AI
 

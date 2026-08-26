@@ -468,7 +468,7 @@ class SongToolsCoordinator:
             return
 
         snapshot = self.workbench.clock_snapshot()
-        if snapshot.running and snapshot.position_label:
+        if snapshot.running and snapshot.states_place and snapshot.position_label:
             chords = " ".join(snapshot.chords_now[:4])
             line = snapshot.position_label
             setter(
