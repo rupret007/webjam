@@ -298,7 +298,8 @@ def test_the_contract_publishes_no_audio_paths_or_people(clock):
 
     clock.start()
     clock.advance(10.0)
-    encoded = json.dumps(clock.snapshot().to_public_dict()).lower()
+    # ensure_ascii=False so a written form_shape arrow is not a false "\\" leak.
+    encoded = json.dumps(clock.snapshot().to_public_dict(), ensure_ascii=False).lower()
 
     for leak in ("path", "/", "\\", "musician", "participant", "token", "secret"):
         assert leak not in encoded
