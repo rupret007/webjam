@@ -9,6 +9,13 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the immutable v0.26.0 release boundary belongs here. Every
 > published tag, release, and asset remains immutable historical evidence.
 
+### Conversation decision: one next step, not a capture lecture
+
+- After Podcast or Review audio setup, the optional meeting decision now says
+  **Choose Add Conversation or Not Now. That is the next step.**
+  The capture boundary remains in Conversation, Studio, and help where it can
+  be reviewed without taking over this decision.
+
 ### In-room next step: Podcast/Review Host HUD names one next step
 
 - After Host, Podcast and Review now say **Copy the invite. That is the next step.** The leftover meeting-capture / Preview how-it-works wall is gone. After Join, Podcast says **Enter the session.** Review says **Enter Review.** Music and Art Host/Join copy is held.

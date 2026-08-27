@@ -41,7 +41,6 @@ from core.jamulus_rpc_client import (
 )
 from core.local_capture import LocalCaptureTrack, check_local_capture_preflight
 from core.meeting_companion import build_invite_message
-from core.meeting_link import RECORD_SESSION_MEETING_CAPTURE_NOTICE
 from core.musician_guidance import (
     GuidanceDisplayOverride,
     StudioGuidanceFacts,
@@ -5194,8 +5193,8 @@ class ApplicationController(QObject):
                     "Can you hear your voice returning cleanly from the session?"
                 ),
                 "conversation_detail": (
-                    "A meeting service is an optional external handoff for "
-                    f"conversation or video. {RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+                    "Choose Add Conversation or Not Now. "
+                    "That is the next step."
                 ),
                 "host_ready_title": "Your recording session is ready",
                 "host_ready_detail": "Copy the invite. That is the next step.",
@@ -5264,8 +5263,8 @@ class ApplicationController(QObject):
                     "Can you hear your audio returning cleanly from the session?"
                 ),
                 "conversation_detail": (
-                    "A meeting service is an optional external handoff for "
-                    f"conversation or video. {RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+                    "Choose Add Conversation or Not Now. "
+                    "That is the next step."
                 ),
                 "host_ready_title": "Your review session is ready (Preview)",
                 "host_ready_detail": "Copy the invite. That is the next step.",

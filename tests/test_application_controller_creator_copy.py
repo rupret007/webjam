@@ -596,3 +596,33 @@ def test_podcast_and_review_startup_copy_is_one_next_step(
         "live-audio path",
     ):
         assert banned not in spoken, banned
+
+
+@pytest.mark.parametrize("profile_key", ("podcast_voice", "review_rehearsal"))
+def test_podcast_and_review_conversation_step_is_one_decision(
+    profile_key: str,
+) -> None:
+    """The optional meeting choice is one next step, not a capture lecture."""
+
+    detail = ApplicationController._startup_creator_copy(profile_key)[
+        "conversation_detail"
+    ]
+    assert detail == (
+        "Choose Add Conversation or Not Now. "
+        "That is the next step."
+    )
+    guidance = ApplicationController._startup_guidance_override(
+        {"phase": "conversation", "role": "host"},
+        profile_key,
+    )
+    assert guidance.message == detail
+    assert guidance.action_label == "Add Conversation"
+    spoken = detail.casefold()
+    for banned in (
+        "never directly or automatically",
+        "record session captures",
+        "jamulus server stems",
+        "studio records",
+        "do not route meeting or system audio",
+    ):
+        assert banned not in spoken, banned
