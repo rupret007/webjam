@@ -6,14 +6,12 @@
 > record every v0.27 physical gate as **NOT RUN** until it is observed against
 > exact future release bytes.
 
-Before Host or Join, choose what you are creating: **Music** (GA), **Podcast &
-Voice** (GA), or **Review & Rehearsal** (Preview). The chosen profile changes
-language and safe defaults, not the recorder's evidence rules. Review &
-Rehearsal supports live WebJam-audio Host/Join, Record Session, local notes,
-and playback/read-only review of completed session takes. It blocks standalone
-projects, take editing/comp/mix mutation, track export, shared notes, visual
-sync, and media timecode. No profile directly or automatically taps a meeting
-app, browser, or system output.
+Before Host or Join, choose **Art** or **Music**. Those are the equal first
+clicks. Art then offers **Talk & make**, **Paint together**, or **Paint
+along**, then **Host** or **Join**. Music is **Host** or **Join** only. The
+chosen profile changes language and safe defaults, not the recorder's evidence
+rules. Podcast and Review stay off that first screen. No profile directly or
+automatically taps a meeting app, browser, or system output.
 
 ## Host
 

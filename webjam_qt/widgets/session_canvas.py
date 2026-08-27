@@ -44,6 +44,7 @@ class SessionCanvas(QFrame):
     notes_changed = Signal(str)
     chat_submitted = Signal(str)   # user pressed Enter in the chat box
     brief_export_requested = Signal()
+    suggestion_requested = Signal()  # Art: Suggestion on these notes/canvas
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -87,14 +88,30 @@ class SessionCanvas(QFrame):
         clear_btn.setToolTip("Clear all notes")
         clear_btn.clicked.connect(self._on_clear)
 
+        self._suggestion_button = QPushButton("Suggestion")
+        self._suggestion_button.setObjectName("GhostButton")
+        self._suggestion_button.setAccessibleName("Suggestion for these notes")
+        self._suggestion_button.setToolTip(
+            "A suggestion for what you're making. Not a detected fact. "
+            "Nothing is uploaded."
+        )
+        self._suggestion_button.clicked.connect(self.suggestion_requested.emit)
+        self._suggestion_button.setVisible(False)
+
         btn_row = QHBoxLayout()
         btn_row.setSpacing(Space.XS)
         btn_row.setContentsMargins(Space.MD, 0, Space.MD, 0)
         btn_row.addWidget(ts_btn)
+        btn_row.addWidget(self._suggestion_button)
         btn_row.addWidget(self._export_button)
         btn_row.addStretch(1)
         btn_row.addWidget(clear_btn)
-        self._toolbar_buttons = (ts_btn, self._export_button, clear_btn)
+        self._toolbar_buttons = (
+            ts_btn,
+            self._suggestion_button,
+            self._export_button,
+            clear_btn,
+        )
 
         self._guidance = QFrame()
         self._guidance.setObjectName("MusicianGuidance")
@@ -271,6 +288,8 @@ class SessionCanvas(QFrame):
             self._chat_input.setPlaceholderText(
                 f"Message {participants} in Jamulus chat… (Enter to send)"
             )
+        self._suggestion_button.setVisible(profile.key == "art")
+        self._suggestion_button.setEnabled(profile.key == "art")
 
     def set_notes(self, text: str) -> None:
         if self._notes.toPlainText() == text:

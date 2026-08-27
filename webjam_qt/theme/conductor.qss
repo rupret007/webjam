@@ -746,6 +746,37 @@ QPushButton#LaunchSecondary:focus {
 /* An unchosen card recedes: same shape, quieter surface and text, so the
    chosen one reads as the room you are about to open rather than as one of
    three equally loud settings. */
+QCommandLinkButton#LaunchProfileCard {
+    background-color: ${COLOR_BG_PANEL};
+    color: ${COLOR_TEXT_MUTED};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+    text-align: left;
+    padding: ${SPACE_XS}px ${SPACE_MD}px;
+}
+
+QCommandLinkButton#LaunchProfileCard:hover {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_SECONDARY};
+    border-color: ${COLOR_BORDER_STRONG};
+}
+
+QCommandLinkButton#LaunchProfileCard:checked {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 2px solid ${COLOR_ACCENT_PRIMARY};
+}
+
+QCommandLinkButton#LaunchProfileCard:focus {
+    border: 2px solid ${COLOR_BORDER_FOCUS};
+}
+
+QCommandLinkButton#LaunchProfileCard:disabled {
+    background-color: ${COLOR_BG_PANEL};
+    color: ${COLOR_TEXT_MUTED};
+    border-color: ${COLOR_BORDER_SUBTLE};
+}
+
 QCommandLinkButton#LaunchStartCard {
     background-color: ${COLOR_BG_PANEL};
     color: ${COLOR_TEXT_MUTED};

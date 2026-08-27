@@ -8,8 +8,10 @@ would pull a musician out of the meeting mid-take. Nothing here calls
 ``raise_``, ``activateWindow``, ``exec``, or ``setFocus``; the overlay appears
 in place, and the musician keeps whatever they were typing in.
 
-The three pages answer the three questions that actually come up in a live
-room: what is this song, what can I run on it, and which mute am I touching.
+The visible pages answer the questions that come up in a live room: what is
+this song, and what are its stems. Tools and Meeting stay in the stack for
+the paths that still call them, but they are not tabs. Suggestion sits on
+the section. Conversation owns the meeting.
 """
 
 from __future__ import annotations
@@ -84,7 +86,7 @@ class SongOverlay(QFrame):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName("SongOverlay")
-        self.setAccessibleName("Song tools and meeting panel")
+        self.setAccessibleName("Song panel")
         self.setFixedWidth(OVERLAY_WIDTH)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
         # Clicks must not fall through to the mixer underneath.
@@ -142,6 +144,11 @@ class SongOverlay(QFrame):
             button.clicked.connect(lambda _checked, page=key: self.show_page(page))
             self._page_buttons[key] = button
             row.addWidget(button)
+            # Tools is a Music AI catalog home. Meeting is Conversation's
+            # job. Suggestion sits on the song section, so those tabs are
+            # not first-class places to look.
+            if key in {PAGE_TOOLS, PAGE_MEETING}:
+                button.setVisible(False)
         row.addStretch(1)
         return row
 
@@ -219,30 +226,21 @@ class SongOverlay(QFrame):
         )
         self._section_picker.addItem("Next part", "")
 
-        self._write_button = QPushButton("Help write")
-        self._write_button.setObjectName("GhostButton")
-        self._write_button.setAccessibleName("Suggest what to write next")
-        self._write_button.setToolTip(
-            "Suggests the next section and lyric moves from the song on this "
-            "computer. Nothing is uploaded."
+        self._suggestion_button = QPushButton("Suggestion")
+        self._suggestion_button.setObjectName("GhostButton")
+        self._suggestion_button.setAccessibleName("Suggestion for this part")
+        self._suggestion_button.setToolTip(
+            "Suggests the next section or chords for the part chosen above. "
+            "Nothing is uploaded."
         )
-        self._write_button.clicked.connect(self.write_help_requested.emit)
-
-        self._chords_button = QPushButton("Suggest chords")
-        self._chords_button.setObjectName("GhostButton")
-        self._chords_button.setAccessibleName("Suggest chords for another part")
-        self._chords_button.setToolTip(
-            "Suggests changes for a part the song does not have yet, in its "
-            "key. Nothing is uploaded."
-        )
-        self._chords_button.clicked.connect(
-            lambda: self.chords_requested.emit(self.selected_section())
-        )
+        self._suggestion_button.clicked.connect(self._emit_section_suggestion)
+        # One control on the section. Older tests still ask for these names.
+        self._write_button = self._suggestion_button
+        self._chords_button = self._suggestion_button
 
         buttons = QHBoxLayout()
         buttons.setSpacing(Space.XS)
-        buttons.addWidget(self._write_button)
-        buttons.addWidget(self._chords_button)
+        buttons.addWidget(self._suggestion_button)
 
         # Asking a model is an extra a musician opts into by bringing a key.
         # It sits under WebJam's own help rather than above it, because the
@@ -332,9 +330,7 @@ class SongOverlay(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(Space.XS)
 
-        self._stem_status = _body_label(
-            "No stems yet. Run Split stems on a file you own."
-        )
+        self._stem_status = _body_label("No stems yet.")
         # These chips sit beside the reference; the musicians' faders are a
         # different mix and nothing here moves them.
         self._stem_boundary = _body_label(
@@ -346,6 +342,17 @@ class SongOverlay(QFrame):
         self._stem_layout.setContentsMargins(0, 0, 0, 0)
         self._stem_layout.setSpacing(Space.XS)
         self._stem_rows: list[QWidget] = []
+
+        self._split_button = QPushButton("Split a file you own")
+        self._split_button.setObjectName("GhostButton")
+        self._split_button.setAccessibleName("Split a file you own into stems")
+        self._split_button.setToolTip(
+            "Separates one file you own into stems. You confirm the file "
+            "before anything runs."
+        )
+        self._split_button.clicked.connect(
+            lambda: self.song_tool_requested.emit("stems")
+        )
 
         self._sing_button = QPushButton("Sing this one")
         self._sing_button.setObjectName("GhostButton")
@@ -373,6 +380,7 @@ class SongOverlay(QFrame):
         layout.addWidget(self._stem_boundary)
         layout.addWidget(self._stem_container)
         layout.addStretch(1)
+        layout.addWidget(self._split_button)
         layout.addWidget(self._sing_button)
         layout.addWidget(self._send_stems_button)
         layout.addWidget(self._stem_note)
@@ -495,14 +503,23 @@ class SongOverlay(QFrame):
             else ""
         )
         self.setAccessibleDescription(
-            f"{profile.label} song tools and meeting panel{preview}. "
-            "Suggestions are generated on this computer."
+            f"{profile.label} song panel{preview}. "
+            "A Suggestion is generated on this computer."
         )
 
     def selected_section(self) -> str:
         """Return the part help was asked for; ``""`` means the next one."""
 
         return str(self._section_picker.currentData() or "")
+
+    def _emit_section_suggestion(self) -> None:
+        """Attach Suggestion to the part being written, never a chatbot home."""
+
+        section = self.selected_section()
+        if section:
+            self.chords_requested.emit(section)
+        else:
+            self.write_help_requested.emit()
 
     def selected_model_provider(self) -> str:
         """Return the provider to ask, chosen here rather than at launch.
@@ -536,9 +553,11 @@ class SongOverlay(QFrame):
         self._model_provider.setCurrentIndex(max(0, index))
         self._model_provider.blockSignals(False)
 
-        self._model_row.setVisible(bool(providers))
-        self._model_button.setVisible(bool(providers))
-        self._model_provider.setVisible(len(providers) > 1)
+        # Suggestion on the section is the only ask. A model row is a
+        # chatbot home; keep it off the song page even when a key exists.
+        self._model_row.setVisible(False)
+        self._model_button.setVisible(False)
+        self._model_provider.setVisible(False)
         if providers:
             only = providers[0][1] if len(providers) == 1 else ""
             self._model_button.setText(f"Ask {only}" if only else "Ask")
@@ -553,7 +572,7 @@ class SongOverlay(QFrame):
             )
             self._model_button.setEnabled(bool(enabled))
         self._model_note.setText(note)
-        self._model_note.setVisible(bool(note) and not providers)
+        self._model_note.setVisible(False)
 
     def set_model_busy(self, provider_label: str = "") -> None:
         """Show that a model was asked, without covering anything."""
@@ -981,12 +1000,15 @@ class SongOverlay(QFrame):
             self._stem_layout.addWidget(row)
             self._stem_rows.append(row)
 
-        self._stem_status.setText(
-            mix.describe()
-            if mix is not None
-            else "No stems yet. Run Split stems on a file you own."
-        )
-        self._sing_button.setEnabled(bool(stems))
+        has_stems = bool(stems)
+        if mix is not None:
+            self._stem_status.setText(mix.describe())
+        else:
+            self._stem_status.setText("No stems yet.")
+        # Split lives here, not on a hidden Tools tab. Once stems exist the
+        # next actions are sing and send, so the empty-state button goes.
+        self._split_button.setVisible(not has_stems)
+        self._sing_button.setEnabled(has_stems)
         self._send_stems_button.setEnabled(bool(can_send))
         self._stem_note.setText(note)
         self._stem_note.setVisible(bool(note))

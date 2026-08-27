@@ -151,6 +151,40 @@ if set(_CREATOR_LAUNCH_COPY) != {profile.key for profile in CREATOR_PROFILES}:
     # without copy at import time instead of as a KeyError mid-selection.
     raise RuntimeError("Every creator profile requires launch copy.")
 
+# Art and Music are the only first-screen rooms. Podcast and Review stay
+# reachable after Music, never as equal first clicks.
+_FIRST_SCREEN_PROFILE_KEYS = ("art", "music")
+_ART_PROFILE_SUMMARY = "Paint, sculpt, print, or talk."
+_MUSIC_PROFILE_SUMMARY = "Play live together."
+
+
+class ProfileCard(QCommandLinkButton):
+    """One equal first-screen choice: Art or Music.
+
+    These are the ten-second doors. They sit side by side so a painter and a
+    songwriter both know what to click. Podcast and Review are not here.
+    """
+
+    def __init__(
+        self,
+        profile_key: str,
+        title: str,
+        summary: str,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(title, summary, parent)
+        self.profile_key = profile_key
+        self.setObjectName("LaunchProfileCard")
+        self.setCheckable(True)
+        self.setAutoDefault(False)
+        self.setDefault(False)
+        self.setIcon(QIcon())
+        self.setIconSize(QSize(0, 0))
+        self.setMinimumHeight(54)
+        self.setMaximumHeight(64)
+        self.setAccessibleName(title)
+        self.setAccessibleDescription(summary)
+
 
 class StartCard(QCommandLinkButton):
     """One large, checkable card describing a way to begin.
@@ -336,8 +370,8 @@ class LaunchDialog(QDialog):
         if self._jamulus_installer:
             LOGGER.info("Verified bundled Jamulus installer is available")
         # Music keeps Host / Join as the only primaries. This flag is the
-        # quiet way onto Art, podcast, or review without leaving the picker
-        # on the default door.
+        # quiet way onto podcast or review after Music is already chosen.
+        # Art is a first-screen card, not a more-rooms leftover.
         self._rooms_picker_revealed = False
         self.selected_role = ""
         self.session_name = "Band Rehearsal"
@@ -409,8 +443,9 @@ class LaunchDialog(QDialog):
         self._pages.addWidget(self._choice_page)
         self._pages.addWidget(self._join_page)
         root.addWidget(self._pages, 1)
-        self.setTabOrder(self._name_input, self._creator_profile_selector)
-        previous: QWidget = self._creator_profile_selector
+        self.setTabOrder(self._name_input, self._art_profile_card)
+        self.setTabOrder(self._art_profile_card, self._music_profile_card)
+        previous: QWidget = self._music_profile_card
         # Hidden cards are skipped by Qt, so chaining every profile's cards
         # keeps one correct order without rebuilding it on each selection.
         for cards in self._start_cards.values():
@@ -465,6 +500,8 @@ class LaunchDialog(QDialog):
         layout.addWidget(title)
         layout.addWidget(self._choice_subtitle)
 
+        layout.addWidget(self._build_profile_cards())
+
         creator_row = QHBoxLayout()
         creator_row.setContentsMargins(0, 0, 0, 0)
         creator_row.setSpacing(Space.SM)
@@ -482,7 +519,14 @@ class LaunchDialog(QDialog):
         saved_profile = get_creator_profile_by_key_or_default(
             getattr(self._settings, "last_creator_profile_key", "music")
         )
-        saved_index = self._creator_profile_selector.findData(saved_profile.key)
+        # First screen is Art or Music. A leftover podcast/review visit
+        # must not bury Art behind a combo or open on those rooms.
+        door_key = (
+            saved_profile.key
+            if saved_profile.key in _FIRST_SCREEN_PROFILE_KEYS
+            else "music"
+        )
+        saved_index = self._creator_profile_selector.findData(door_key)
         if saved_index >= 0:
             self._creator_profile_selector.setCurrentIndex(saved_index)
         self._creator_profile_selector.currentIndexChanged.connect(
@@ -491,7 +535,9 @@ class LaunchDialog(QDialog):
         creator_row.addWidget(self._creator_profile_label)
         creator_row.addWidget(self._creator_profile_selector, 1)
         layout.addLayout(creator_row)
-        layout.addStretch(1)
+        # Do not stretch here. A spacer above the Art cards pushes Host and
+        # Join off the supported 760×600 floor. Music has no cards, so the
+        # stretch at the bottom of this page is enough.
         layout.addWidget(self._build_start_cards())
 
         self._host_button = QPushButton()
@@ -521,13 +567,13 @@ class LaunchDialog(QDialog):
         self._install_jamulus_button.setVisible(bool(self._jamulus_installer))
         layout.addWidget(self._install_jamulus_button)
 
-        self._more_rooms_button = QPushButton("Art, podcast, or review")
+        self._more_rooms_button = QPushButton("Podcast or review")
         self._more_rooms_button.setObjectName("LaunchMoreRooms")
         self._more_rooms_button.setAutoDefault(False)
         self._more_rooms_button.setDefault(False)
-        self._more_rooms_button.setAccessibleName("Art, podcast, or review")
+        self._more_rooms_button.setAccessibleName("Podcast or review")
         self._more_rooms_button.setAccessibleDescription(
-            "Choose Art, Podcast and Voice, or Review and Rehearsal."
+            "Choose Podcast and Voice or Review and Rehearsal."
         )
         self._more_rooms_button.clicked.connect(self._reveal_other_rooms)
         layout.addWidget(self._more_rooms_button, 0, Qt.AlignmentFlag.AlignHCenter)
@@ -536,6 +582,7 @@ class LaunchDialog(QDialog):
         self._choice_helper.setObjectName("LaunchHelper")
         self._choice_helper.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._choice_helper.setWordWrap(True)
+        self._choice_helper.setVisible(False)
         layout.addWidget(self._choice_helper)
 
         self._choice_error = QLabel("")
@@ -548,6 +595,45 @@ class LaunchDialog(QDialog):
         layout.addStretch(1)
         self._apply_creator_profile_presentation()
         return page
+
+    def _build_profile_cards(self) -> QWidget:
+        """Art and Music as equal first clicks, Art first so it is not buried."""
+
+        container = QWidget()
+        container.setObjectName("LaunchProfileCards")
+        row = QHBoxLayout(container)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(Space.SM)
+
+        self._profile_group = QButtonGroup(self)
+        # Podcast and Review are not first-screen cards. Exclusive would
+        # force Art or Music to stay checked when those rooms are selected.
+        self._profile_group.setExclusive(False)
+        self._art_profile_card = ProfileCard(
+            "art", "Art", _ART_PROFILE_SUMMARY, container
+        )
+        self._music_profile_card = ProfileCard(
+            "music", "Music", _MUSIC_PROFILE_SUMMARY, container
+        )
+        self._profile_cards = {
+            "art": self._art_profile_card,
+            "music": self._music_profile_card,
+        }
+        for card in (self._art_profile_card, self._music_profile_card):
+            card.toggled.connect(self._on_profile_card_toggled)
+            self._profile_group.addButton(card)
+            row.addWidget(card, 1)
+        return container
+
+    def _on_profile_card_toggled(self, checked: bool) -> None:
+        if not checked or self._submitting:
+            return
+        sender = self.sender()
+        key = getattr(sender, "profile_key", "")
+        self._rooms_picker_revealed = False
+        index = self._creator_profile_selector.findData(key)
+        if index >= 0 and self._creator_profile_selector.currentIndex() != index:
+            self._creator_profile_selector.setCurrentIndex(index)
 
     def _build_start_cards(self) -> QWidget:
         """Build one card group per profile that offers starts.
@@ -646,7 +732,7 @@ class LaunchDialog(QDialog):
         if start is None:
             return
         copy = _CREATOR_LAUNCH_COPY[self._selected_creator_profile.key]
-        self._choice_helper.setText(
+        self._set_choice_helper(
             "" if self._host_available else "Hosting is available in the macOS app."
         )
         self._host_button.setAccessibleDescription(
@@ -681,7 +767,7 @@ class LaunchDialog(QDialog):
             self._announce_error(self._choice_error)
             return
         self._install_jamulus_button.setEnabled(False)
-        self._choice_helper.setText(
+        self._set_choice_helper(
             "Finish the Jamulus installer, then return here and choose Join a Jam."
         )
 
@@ -778,7 +864,9 @@ class LaunchDialog(QDialog):
         # Music's live door is Host / Join only. Local studio stays a
         # capability, not a third button on the first screen.
         music_door = profile.key == "music"
-        if not music_door:
+        art_door = profile.key == "art"
+        first_screen_door = profile.key in _FIRST_SCREEN_PROFILE_KEYS
+        if art_door:
             self._rooms_picker_revealed = False
         local_available = profile.capabilities.local_multitrack and not music_door
         self._studio_button.setText(copy.local)
@@ -787,15 +875,19 @@ class LaunchDialog(QDialog):
         self._studio_button.setEnabled(local_available and not self._submitting)
         self._studio_button.setHidden(not local_available)
 
-        # first-screen identity: Music is Host or Join only
-        hide_name = music_door and not bool(self._name_error.text())
+        # First-screen identity: Art and Music hide the name until validation
+        # fails, so the two equal cards plus Host / Join stay on one screen.
+        hide_name = first_screen_door and not bool(self._name_error.text())
         self._name_label.setVisible(not hide_name)
         self._name_input.setVisible(not hide_name)
         self._name_preview.setVisible(not hide_name)
         self._name_error.setVisible(bool(self._name_error.text()))
 
-        # Music door: picker stays off until the quiet line is used.
-        show_picker = (not music_door) or self._rooms_picker_revealed
+        # Art and Music are the cards. The combo stays off until someone
+        # asks for podcast or review from the Music door.
+        show_picker = (not first_screen_door) or (
+            music_door and self._rooms_picker_revealed
+        )
         self._creator_profile_label.setVisible(show_picker)
         self._creator_profile_selector.setVisible(show_picker)
         if hasattr(self, "_more_rooms_button"):
@@ -803,29 +895,52 @@ class LaunchDialog(QDialog):
             self._more_rooms_button.setVisible(
                 music_door and not self._rooms_picker_revealed
             )
+        if hasattr(self, "_profile_cards"):
+            for key, card in self._profile_cards.items():
+                blocked = card.blockSignals(True)
+                card.setChecked(profile.key == key)
+                card.blockSignals(blocked)
+                card.setEnabled(not self._submitting)
+            self._art_profile_card.setVisible(True)
+            self._music_profile_card.setVisible(True)
 
         helper = copy.helper
         if not self._host_available:
             helper += " Hosting is available in the macOS app."
-        self._choice_helper.setText(helper)
+        # The Music card already says "Play live together." Repeating it
+        # under Host is chrome. Art cards already say what they do.
+        if first_screen_door:
+            helper = "" if self._host_available else "Hosting is available in the macOS app."
+        self._set_choice_helper(helper)
         if hasattr(self, "_start_cards"):
             self._apply_start_card_visibility()
-            # Three cards say "choose a workflow, then start with one clear
-            # action" better than a headline and a line of prose above them
-            # do, and they need the room those two were using. The wordmark at
-            # the top already carries the identity.
+            # The Art | Music cards are the first choice. A leftover
+            # "create together" headline is chrome above them.
             has_cards = bool(self._visible_start_cards())
-            self._choice_title.setVisible(not has_cards)
-            # Music Host / Join already is the workflow. The leftover
-            # "choose a workflow" line is chrome on that door.
-            self._choice_subtitle.setVisible(not has_cards and not music_door)
-            self._refresh_start_presentation()
+            self._choice_title.setVisible(not first_screen_door and not has_cards)
+            self._choice_subtitle.setVisible(
+                not first_screen_door and not has_cards and not music_door
+            )
+            if art_door:
+                self._refresh_start_presentation()
         if hasattr(self, "_join_title"):
             self._join_title.setText(copy.join_title)
             self._join_subtitle.setText(copy.join_subtitle)
             self._join_button_primary.setText(copy.join)
             self._join_button_primary.setAccessibleName(copy.join)
             self._join_button_primary.setAccessibleDescription(copy.join_description)
+
+    def _set_choice_helper(self, text: str) -> None:
+        """Show a helper line only when it has something to say.
+
+        An empty label still occupies a text-line of height. On the Art door
+        that is the difference between Host staying on screen and falling off
+        the supported window.
+        """
+
+        helper = str(text or "").strip()
+        self._choice_helper.setText(helper)
+        self._choice_helper.setVisible(bool(helper))
 
     def _reveal_other_rooms(self) -> None:
         """Show the existing picker without adding a third primary action."""
@@ -840,9 +955,9 @@ class LaunchDialog(QDialog):
         self._restore_submission()
         self._invite_input.clear()
         self._pages.setCurrentWidget(self._choice_page)
-        # Music door hides the picker until the quiet line is used.
+        # First-screen rooms hide the picker. Host is the next click.
         if (
-            self._selected_creator_profile.key == "music"
+            self._selected_creator_profile.key in _FIRST_SCREEN_PROFILE_KEYS
             and not self._rooms_picker_revealed
         ):
             self._host_button.setFocus()
@@ -1029,6 +1144,8 @@ class LaunchDialog(QDialog):
             self._more_rooms_button.setEnabled(False)
         self._join_button_primary.setEnabled(False)
         self._creator_profile_selector.setEnabled(False)
+        for card in getattr(self, "_profile_cards", {}).values():
+            card.setEnabled(False)
         for cards in self._start_cards.values():
             for card in cards:
                 card.setEnabled(False)

@@ -27,8 +27,8 @@ they see what to do, and do it, without being told.
 
 | Room | Doors on the first screen |
 | --- | --- |
-| Art | **Talk & make**, **Paint together**, **Paint along**, then **Host** / **Join** |
-| Music | **Host** / **Join**, nothing else |
+| Art | **Art** and **Music** as equal first choices; then **Talk & make**, **Paint together**, **Paint along**, then **Host** / **Join** |
+| Music | **Art** and **Music** as equal first choices; then **Host** / **Join**, nothing else |
 
 Banned on the first screen: Studio Visit, Drawpile, Jamulus, host-clocked,
 Moises, BYOK, Preview caveats, API. Tool and vendor names belong inside the
@@ -41,7 +41,8 @@ the first screen makes sense, so the human read happens before the merge.
 
 Art on `master` now has those three start cards from #19. #15 is not the Art
 door. #15 landed a Studio Visit Preview ahead of #14; #19 replaced that door.
-Music still has to keep **Host** / **Join** and nothing else.
+Art and Music are equal first choices. Music still has to keep **Host** /
+**Join** and nothing else after that choice.
 
 ## 2. Land order
 

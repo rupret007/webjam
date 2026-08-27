@@ -99,8 +99,12 @@ def test_launch_shows_live_and_offline_music_paths(qapp, tmp_path):
         "Host",
         "Join",
     ]
+    assert dialog._art_profile_card.isVisibleTo(dialog) is True
+    assert dialog._music_profile_card.isVisibleTo(dialog) is True
+    assert dialog._art_profile_card.accessibleName() == "Art"
+    assert dialog._music_profile_card.accessibleName() == "Music"
     assert dialog._more_rooms_button.isVisibleTo(dialog) is True
-    assert dialog._more_rooms_button.accessibleName() == "Art, podcast, or review"
+    assert dialog._more_rooms_button.accessibleName() == "Podcast or review"
     assert dialog.selected_creator_profile_key == "music"
     assert dialog._name_label.isVisibleTo(dialog) is False
     assert dialog._name_input.isVisibleTo(dialog) is False
@@ -142,6 +146,8 @@ def test_launch_creator_selector_uses_canonical_profiles_and_truthful_actions(
         assert selector.isVisibleTo(dialog) is False
         assert dialog._creator_profile_label.isVisibleTo(dialog) is False
         assert dialog._more_rooms_button.isVisibleTo(dialog) is True
+        assert dialog._art_profile_card.isVisibleTo(dialog) is True
+        assert dialog._music_profile_card.isVisibleTo(dialog) is True
         for control in (
             dialog._host_button,
             dialog._join_button,

@@ -297,9 +297,8 @@ def test_only_art_exposes_the_ai_image_entry_point(qapp):
     try:
         for profile in CREATOR_PROFILES:
             strip.set_creator_profile(profile)
-            expected = profile.key == "art"
-            assert strip._ai_image_action.isVisible() is expected, profile.key
-            assert strip._ai_image_action.isEnabled() is expected, profile.key
+            assert strip._ai_image_action.isVisible() is False, profile.key
+            assert strip._ai_image_action.isEnabled() is (profile.key == "art"), profile.key
     finally:
         strip.deleteLater()
 

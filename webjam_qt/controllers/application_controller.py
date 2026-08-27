@@ -3725,6 +3725,7 @@ class ApplicationController(QObject):
         self.window.session_canvas.brief_export_requested.connect(
             self._refresh_session_pulse
         )
+        self.window.session_canvas.suggestion_requested.connect(self._open_ai_image)
         studio = self.window.recording_studio
         studio.record_requested.connect(self._on_record_requested)
         studio.return_live_requested.connect(

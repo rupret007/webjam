@@ -533,7 +533,7 @@ def test_song_help_is_labelled_a_suggestion_everywhere_it_is_offered():
     overlay = (
         REPO_ROOT / "webjam_qt" / "widgets" / "song_overlay.py"
     ).read_text()
-    assert "Suggest chords" in overlay
+    assert "Suggestion" in overlay
     assert "Nothing is uploaded" in overlay
 
 

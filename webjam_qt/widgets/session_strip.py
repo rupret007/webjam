@@ -42,6 +42,59 @@ from webjam_qt.widgets.art_room_chip import ArtRoomChip
 from webjam_qt.widgets.shared_track_waveform import SharedTrackWaveform
 
 
+def shared_track_status_label(snapshot: object) -> str:
+    """Name the Shared Track next step in human words.
+
+    A loaded, paused, or playing song is not an alarm. A failed route must
+    say what to do. The generic badge "Needs attention" is never returned.
+    """
+
+    state_value = getattr(getattr(snapshot, "state", None), "value", "")
+    state = str(state_value or getattr(snapshot, "state", "idle")).lower()
+    loaded = bool(str(getattr(snapshot, "source_name", "") or ""))
+    cleanup_pending = bool(getattr(snapshot, "cleanup_pending", False))
+    count_in_active = bool(getattr(snapshot, "count_in_active", False))
+    error = str(getattr(snapshot, "error", "") or "").strip()
+    capability = getattr(snapshot, "capability", None)
+    reason = str(getattr(capability, "reason_code", "") or "").lower()
+    if cleanup_pending:
+        return "Cleanup pending"
+    if state == "failed":
+        return _failed_shared_track_next_step(error, reason, loaded)
+    labels = {
+        "unavailable": "Route locked",
+        "idle": "Not loaded",
+        "loading": "Loading…",
+        "ready": "Ready",
+        "routing": "Starting…",
+        "playing": "Count-in" if count_in_active else "Playing",
+        "paused": "Paused",
+        "stopping": "Stopping…",
+        "closed": "Closed",
+    }
+    return labels.get(state, "Checking…")
+
+
+def _failed_shared_track_next_step(error: str, reason: str, loaded: bool) -> str:
+    combined = f"{error} {reason}".casefold()
+    if (
+        "physical_certification" in reason
+        or "isolated audio" in combined
+        or "device set up" in combined
+    ):
+        return "Set up the audio device"
+    if "host attention" in combined or "needs host" in combined:
+        return "Host needs to fix play"
+    first = error.split(".", 1)[0].strip()
+    if (
+        first
+        and "needs attention" not in first.casefold()
+        and len(first) <= 48
+    ):
+        return first
+    return "Open Shared Track"
+
+
 class SessionStrip(QFrame):
     mode_changed = Signal(str)          # mode_key
     session_title_changed = Signal(str)
@@ -229,11 +282,11 @@ class SessionStrip(QFrame):
         self._song_button.setObjectName("GhostButton")
         self._song_button.setAccessibleName("Open Song tools")
         self._song_button.setAccessibleDescription(
-            "Chords, lyrics, stems, and writing help for the song in this "
-            "session. Suggestions are made on this computer."
+            "Chords, lyrics, stems, and a Suggestion for the part you pick. "
+            "Suggestions are made on this computer."
         )
         self._song_button.setToolTip(
-            "Chords, lyrics, and writing help for this song."
+            "Chords, lyrics, and a Suggestion for this song."
         )
         self._song_button.clicked.connect(
             lambda: self.tool_requested.emit("song_tools")
@@ -314,7 +367,8 @@ class SessionStrip(QFrame):
         self._shared_track_state = QLabel("Not loaded")
         self._shared_track_state.setObjectName("SharedTrackLiveState")
         self._shared_track_state.setAccessibleName("Shared Track status")
-        self._shared_track_state.setMaximumWidth(82)
+        self._shared_track_state.setWordWrap(True)
+        self._shared_track_state.setMaximumWidth(168)
         shared_layout.addWidget(self._shared_track_state)
         self._shared_track_surface.setVisible(False)
 
@@ -571,9 +625,9 @@ class SessionStrip(QFrame):
         shared_canvas = bool(profile.capabilities.shared_canvas)
         self._shared_canvas_action.setVisible(shared_canvas)
         self._shared_canvas_action.setEnabled(shared_canvas)
-        ai_image = bool(profile.capabilities.ai_image)
-        self._ai_image_action.setVisible(ai_image)
-        self._ai_image_action.setEnabled(ai_image)
+        # AI Image is a Suggestion on the Art notes, not a More-menu home.
+        self._ai_image_action.setVisible(False)
+        self._ai_image_action.setEnabled(bool(profile.capabilities.ai_image))
         # A profile without these layers has no room state to show, so the
         # chip is not merely empty for it -- it is gone.
         self._art_room_supported = reference_video or shared_canvas
@@ -1214,20 +1268,7 @@ class SessionStrip(QFrame):
         state = str(state_value or getattr(snapshot, "state", "idle")).lower()
         loaded = bool(str(getattr(snapshot, "source_name", "") or ""))
         cleanup_pending = bool(getattr(snapshot, "cleanup_pending", False))
-        count_in_active = bool(getattr(snapshot, "count_in_active", False))
-        labels = {
-            "unavailable": "Route locked",
-            "idle": "Not loaded",
-            "loading": "Loading…",
-            "ready": "Ready",
-            "routing": "Starting…",
-            "playing": "Count-in" if count_in_active else "Playing",
-            "paused": "Paused",
-            "stopping": "Stopping…",
-            "failed": "Needs attention",
-            "closed": "Closed",
-        }
-        label = "Cleanup pending" if cleanup_pending else labels.get(state, "Checking…")
+        label = shared_track_status_label(snapshot)
         self._shared_track_state.setText(label)
         self._shared_track_state.setAccessibleDescription(label)
         self._shared_track_waveform.set_snapshot(snapshot)

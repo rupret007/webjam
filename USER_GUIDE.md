@@ -19,8 +19,10 @@ notes. It can help decide what to do or arrange next, but it never changes
 WebJam's operational status. For example, typing “recording finished” cannot
 create a take or unlock export.
 
-At launch, choose **Music** (GA), **Podcast & Voice** (GA), **Review &
-Rehearsal** (Preview), or **Art** (Preview). The profile follows the
+At launch, choose **Art** or **Music**. Those are the equal first clicks.
+Art is **Talk & make**, **Paint together**, or **Paint along**, then **Host**
+or **Join**. Music is **Host** or **Join** only. Podcast and Review stay off
+that first screen. The profile follows the
 launch, live session, recording, Studio, local session metadata, and new
 standalone projects. Legacy content without a saved profile opens as Music.
 Review & Rehearsal allows live WebJam-audio Host/Join, Record Session, local
@@ -32,9 +34,9 @@ meeting app, browser, or system output.
 
 ## Art
 
-Art (Preview) opens a room where you talk while you work — painting, drawing,
-sculpting, anything at a table. When you choose Art at launch, you pick one of
-three ways to start, and nothing more:
+Art opens a room where you talk while you work — painting, drawing,
+sculpting, printing, or anything at a table. When you choose Art at launch,
+you pick one of three ways to start, and nothing more:
 
 - **Talk & make** — just the room and your voices. Make whatever you're making,
   on paper, in clay, or in whatever you already use. This is a completely
@@ -114,9 +116,9 @@ Things worth knowing:
 
 ### Making or editing an image with AI
 
-Once you are in the room, **More ▾ → AI Image…** offers two things and nothing
-else: **Make** a new image from a description, or **Edit** a photo you already
-have.
+Once you are in the room, **Suggestion** on the notes offers two things and
+nothing else: **Make** a new image from a description, or **Edit** a photo you
+already have.
 
 WebJam does not generate anything. Krita's **AI Image Generation** plugin does,
 on your own computer.
@@ -512,10 +514,11 @@ and a fact WebJam does not have stays blank.
 
 ### Writing help
 
-**Help write** suggests the next part and what to do with the one you have.
-**Suggest chords** answers for the part you pick, scored against the parts
-either side of it, and says why. Both run entirely on this computer: no audio
-and no text is sent anywhere to produce them.
+**Suggestion** on the song section does both jobs from one control. On
+**Next part** it suggests the next section. On a named part it suggests
+chords, scored against the parts either side of it, and says why. Both run
+entirely on this computer: no audio and no text is sent anywhere to produce
+them.
 
 Every result is labelled **Suggestion**. **Keep** writes one under its part in
 your notes. **Dismiss** clears it. Nothing is ever written into a Studio
