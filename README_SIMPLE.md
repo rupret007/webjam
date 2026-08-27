@@ -63,12 +63,13 @@ helper that removes quarantine from WebJam only.
 
 That is the whole live-session path.
 
-In **Paint along**, WebJam turns its existing window into the video workspace
-once the room exists—there is no third preview window beside WebJam and the
-optional meeting app. The host chooses **Share…** and controls play/pause; a
-guest chooses **Open my copy…** for the same local file. The video is always
-silent. **Back to room** or Escape returns to the conductor without ending the
-room.
+In **Paint along**, WebJam turns its existing window into a silent process-video
+companion once the room exists. Paint in Procreate, Clip Studio Paint, Krita,
+or on paper beside it; keep Webex or another meeting beside WebJam for
+conversation. There is no third preview window. The host chooses **Choose
+process video…** and controls play/pause; a guest chooses **Open my copy…** for
+the same local file. **Back to room** or Escape returns to the conductor
+without ending the room.
 
 WebJam keeps a known-good Jamulus copy for offline use. **More → Jamulus
 Updates** checks only WebJam-approved, signed update information. Downloads do

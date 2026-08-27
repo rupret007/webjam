@@ -154,7 +154,7 @@ if set(_CREATOR_LAUNCH_COPY) != {profile.key for profile in CREATOR_PROFILES}:
 # Art and Music are the only first-screen rooms. Podcast and Review stay
 # reachable after Music, never as equal first clicks.
 _FIRST_SCREEN_PROFILE_KEYS = ("art", "music")
-_ART_PROFILE_SUMMARY = "Paint, sculpt, print, or talk."
+_ART_PROFILE_SUMMARY = "Make art together."
 _MUSIC_PROFILE_SUMMARY = "Play live together."
 
 

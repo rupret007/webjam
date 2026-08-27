@@ -33,18 +33,26 @@ from core.reference_video import (
 )
 from webjam_qt.theme.tokens import Space
 
-_NO_VIDEO_HEADLINE = "No video yet"
+_HOST_EMPTY_HEADLINE = "Choose a process video"
+_GUEST_EMPTY_HEADLINE = "Waiting for a process video"
+_HOST_EMPTY_STATUS = (
+    "Paint in Procreate, Clip Studio Paint, Krita, or on paper beside WebJam."
+)
+_EMPTY_SURFACE = "Your silent process video appears here"
 _SYNC_HONESTY = (
-    "Silent in WebJam · each artist uses their own copy"
+    "Silent in WebJam · paint in your own app or on paper · talk in your meeting"
 )
 _SYNC_DETAIL = (
-    "Paint along follows the host to within about a second. It is not "
+    "Paint along is the process-video companion. Paint in Procreate, Clip "
+    "Studio Paint, Krita, or on paper beside WebJam, and keep your meeting "
+    "beside it for conversation. Each artist uses their own copy. "
+    "Playback follows the host to within about a second; it is not "
     "frame-accurate and carries no timecode. WebJam does not ship or download "
     "the video, and cannot confirm who has opened or watched it."
 )
 
 _FOLLOW_STATUS = {
-    ReferenceVideoFollowState.NO_VIDEO: "Waiting for the host to share a video.",
+    ReferenceVideoFollowState.NO_VIDEO: "The host will choose the process video.",
     ReferenceVideoFollowState.NEEDS_FILE: (
         "Open your own copy of the same file to follow along."
     ),
@@ -120,7 +128,7 @@ class ReferenceVideoDialog(QDialog):
         self._back_button.clicked.connect(self.return_requested.emit)
         self._back_button.setVisible(False)
         header.addWidget(self._back_button)
-        self._role = QLabel("HOST" if self._hosting else "GUEST")
+        self._role = QLabel("YOU CONTROL" if self._hosting else "YOU FOLLOW")
         self._role.setObjectName("PaintAlongRole")
         self._role.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._role.setFixedHeight(28)
@@ -130,13 +138,15 @@ class ReferenceVideoDialog(QDialog):
         header.addWidget(self._role)
         layout.addLayout(header)
 
-        self._headline = QLabel(_NO_VIDEO_HEADLINE)
+        self._headline = QLabel(
+            _HOST_EMPTY_HEADLINE if self._hosting else _GUEST_EMPTY_HEADLINE
+        )
         self._headline.setObjectName("PaintAlongHeadline")
         self._headline.setAccessibleName("Paint along video")
         layout.addWidget(self._headline)
 
         self._status = QLabel(
-            "Choose one local video to begin."
+            _HOST_EMPTY_STATUS
             if self._hosting
             else _FOLLOW_STATUS[ReferenceVideoFollowState.NO_VIDEO]
         )
@@ -181,8 +191,8 @@ class ReferenceVideoDialog(QDialog):
         if self._hosting:
             self._share_button = self._add_button(
                 controls,
-                "Share…",
-                "Choose one local video file to share with the room.",
+                "Choose process video…",
+                "Choose one local process video to share with the room.",
                 self._choose_shared_video,
             )
             self._play_button = self._add_button(
@@ -219,7 +229,7 @@ class ReferenceVideoDialog(QDialog):
         self._more_button.setMenu(self._more_menu)
         if self._hosting:
             self._change_action = self._add_action(
-                "Choose another video…", self._choose_shared_video
+                "Choose another process video…", self._choose_shared_video
             )
             self._stop_action = self._add_action(
                 "Restart from the beginning",
@@ -321,7 +331,7 @@ class ReferenceVideoDialog(QDialog):
 
     def _choose_shared_video(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Choose a video for Paint along", "", self._video_filter()
+            self, "Choose a process video for Paint along", "", self._video_filter()
         )
         if path:
             self.share_requested.emit(path)
@@ -355,15 +365,15 @@ class ReferenceVideoDialog(QDialog):
         state = snapshot.state
         self._duration_s = float(snapshot.duration_s or 0.0)
         self._headline.setText(
-            snapshot.source_display_name if shared else _NO_VIDEO_HEADLINE
+            snapshot.source_display_name if shared else _HOST_EMPTY_HEADLINE
         )
         self._surface_placeholder.setText(
-            "Video unavailable" if snapshot.error else "Share a video to begin"
+            "Video unavailable" if snapshot.error else _EMPTY_SURFACE
         )
         if snapshot.error:
             self._status.setText(snapshot.error)
         elif not shared:
-            self._status.setText("Choose one local video to begin.")
+            self._status.setText(_HOST_EMPTY_STATUS)
         else:
             # Deliberately states this computer's transport and nothing about
             # what anyone else is seeing, which WebJam cannot observe.
@@ -403,13 +413,13 @@ class ReferenceVideoDialog(QDialog):
         sharing = state is not ReferenceVideoFollowState.NO_VIDEO
         self._duration_s = float(snapshot.duration_s or 0.0)
         self._headline.setText(
-            snapshot.source_display_name if sharing else _NO_VIDEO_HEADLINE
+            snapshot.source_display_name if sharing else _GUEST_EMPTY_HEADLINE
         )
         self._status.setText(_FOLLOW_STATUS[state])
         self._surface_placeholder.setText(
             {
-                ReferenceVideoFollowState.NO_VIDEO: "Waiting for the host",
-                ReferenceVideoFollowState.NEEDS_FILE: "Open your copy to see the video",
+                ReferenceVideoFollowState.NO_VIDEO: _EMPTY_SURFACE,
+                ReferenceVideoFollowState.NEEDS_FILE: "Open your copy to see the process video",
                 ReferenceVideoFollowState.MISMATCHED_FILE: "Open the matching copy",
                 ReferenceVideoFollowState.FILE_UNAVAILABLE: "Open your copy again",
                 ReferenceVideoFollowState.HOST_ATTENTION: "Waiting for the host",

@@ -129,9 +129,7 @@ def test_launch_hierarchy_is_one_primary_then_two_clear_alternatives(
         assert not dialog._studio_button.isVisibleTo(dialog)
         assert dialog._choice_helper.text() == ""
         assert dialog._music_profile_card.description() == "Play live together."
-        assert dialog._art_profile_card.description() == (
-            "Paint, sculpt, print, or talk."
-        )
+        assert dialog._art_profile_card.description() == "Make art together."
         assert dialog._name_input.accessibleName() == "Your name"
         assert not dialog._name_label.isVisibleTo(dialog)
         assert not dialog._name_input.isVisibleTo(dialog)
