@@ -9,6 +9,21 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the v0.27.1 source candidate belongs here. Every published tag,
 > release, and asset remains immutable historical evidence.
 
+### Paint along is the video workspace
+
+- Landed via [#50](https://github.com/rupret007/webjam/pull/50): choosing
+  **Paint along** now opens a large video-first surface inside WebJam's existing
+  window once the room exists. **Back to room** or Escape returns to the
+  conductor, and the room's Paint along line is the way back; an optional
+  meeting app remains the only other top-level window.
+- The surface offers one useful action for the current role and state: host
+  **Share…**, **Play**, or **Pause**; guest **Open my copy…**, **Hide video**,
+  or **Show video**. Change, restart, stop-sharing, and close-copy utilities
+  stay under **More**.
+- Paint along is provably muted, keeps same-file/session-scoped identity and
+  host-clock fail-closed behavior, and still ships, uploads, downloads, or
+  records no video.
+
 ## [0.27.1] — Unpublished feel-pass source candidate
 
 > This source identity is not yet a GitHub release. GitHub **Latest** remains

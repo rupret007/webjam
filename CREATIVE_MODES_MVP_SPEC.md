@@ -128,6 +128,14 @@ a guest never needs the host's file. A reference video is **not routed
 anywhere**: each computer plays its own local copy of the same file, clocked by
 the host.
 
+- **One WebJam workspace, not a third window.** A chosen Paint along start
+  opens the large video surface inside WebJam once the authenticated room
+  exists. **Back to room** or Escape returns to the conductor, and the room's
+  Paint along line is the way back. The optional meeting app remains the only
+  other top-level window.
+- **One useful action per state.** A host sees Share, then Play or Pause; a
+  guest sees Open my copy, then Hide/Show. Change, restart, withdraw, and close
+  utilities stay under More instead of competing with the next action.
 - **The user brings the file.** WebJam ships no video, bundles none, downloads
   none, and ingests from no third-party service. The only source is a local
   file the person already has the right to play.
@@ -257,7 +265,10 @@ Art keeps `meeting_handoff` like every other profile. The conversation and the
 faces belong to a meeting app -- Webex primarily, any accepted provider
 otherwise -- and Art runs beside that window rather than replacing it.
 
-- Every Art panel is non-modal and narrow, and none opens on anyone's behalf.
+- Paint along is a large embedded surface in WebJam's existing window. Other
+  Art utilities remain non-modal. The chosen host start may reveal Paint along
+  once the room exists, and an authenticated host share may reveal it for a
+  guest; neither action raises or focuses the meeting app.
 - A reference video is **silent**. It is never routed anywhere, so each
   computer holds its own copy, and an unmuted one would lay a second
   soundtrack over the conversation on every machine. The live audio path and

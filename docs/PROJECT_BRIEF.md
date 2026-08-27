@@ -48,7 +48,7 @@ and truthful failure states.
 | Surface | Purpose | Owner of the critical truth |
 | --- | --- | --- |
 | Creator profile | Select Music, Podcast & Voice, Review & Rehearsal, or Art presentation and capability gates | WebJam profile registry |
-| Reference Video | Art only: host-clocked play/pause/stop/seek over one local file each computer holds its own proven copy of | WebJam reference video controller |
+| Paint along | Art only: a large in-WebJam workspace with host-clocked play/pause/seek over one local file each computer holds its own proven copy of | WebJam reference video controller |
 | Shared Canvas | Art only: one Drawpile session the host chooses and WebJam's invitation carries; Drawpile draws every stroke and WebJam cannot see the canvas | Drawpile |
 | Room clock | One named pulse any surface may read: a song form, a reference video position, or none. Exactly one owner at a time; readers cannot move it | Whoever owns the pulse |
 | AI Image | Art only, in session: Make a new image or Edit one the artist owns, in Krita's AI plugin against a loopback backend; results are local files, nothing is published to the room | Krita AI Diffusion + local ComfyUI |

@@ -34,7 +34,8 @@ keeps the product story and five-minute demo intentionally short.
   Track source identity, Local Originals, editing, export, recovery, and
   evidence boundaries.
 - [Creator profile contract](../CREATIVE_MODES_MVP_SPEC.md) — Music and Podcast
-  & Voice GA behavior plus the exact Review & Rehearsal Preview boundary.
+  & Voice GA behavior plus the exact Art and Review & Rehearsal Preview
+  boundaries, including Paint along.
 - [Reference Studio decision record](adr/0006-standalone-reference-studio-projects.md)
   — project and migration invariants.
 - [Reference Track decision record](adr/0005-reference-track-jamulus-participant.md)
@@ -69,7 +70,12 @@ keeps the product story and five-minute demo intentionally short.
   **NOT RUN**.
 - [v0.22.5 demo readiness](../WEBJAM_V0225_DEMO_READINESS.md) — the exact
   two-musician Reference Track/Webex scorecard in musician order.
-- [Merge and release map](MERGE_AND_RELEASE.md) — Art #19 is on `master`; #17 is the remaining product land, plus the required CI round and the gates that stay **NOT RUN**.
+- [Merge and release map](MERGE_AND_RELEASE.md) — historical landing and release
+  rules; use the changelog and the [post-#50 handoff](POST_50_HANDOFF.md) for
+  current `master` state and gates that remain **NOT RUN**.
+- [Post-#50 handoff](POST_50_HANDOFF.md) — exact merged commit, hosted build
+  evidence, completed Paint along behavior, and the remaining human/release
+  boundaries for the next agent.
 - [Desktop release runbook](DESKTOP_RELEASE_RUNBOOK.md) — draft-first,
   checksum-bound, immutable release process.
 - [Jamulus component catalog runbook](JAMULUS_COMPONENT_RELEASE_RUNBOOK.md) —
