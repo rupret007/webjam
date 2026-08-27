@@ -541,6 +541,20 @@ def test_art_startup_copy_does_not_talk_like_a_band() -> None:
     assert copy["host_ready_detail"] == "Copy the invite. That is the next step."
     assert copy["guest_ready_title"] == "The room is ready"
     assert copy["guest_ready_detail"] == "Enter the room. That is the next step."
+    assert copy["conversation_detail"] == (
+        "Choose Add Conversation or Not Now. That is the next step."
+    )
+    guidance = ApplicationController._startup_guidance_override(
+        {"phase": "conversation", "role": "host"},
+        "art",
+    )
+    assert guidance.message == copy["conversation_detail"]
+    assert guidance.action_label == "Add Conversation"
+    for banned in (
+        "a meeting app is optional",
+        "the room already has voices",
+    ):
+        assert banned not in copy["conversation_detail"].casefold()
     for banned in ("band", "instrument", "jamulus", "studio visit"):
         assert banned not in spoken, banned
     assert re.search(r"\bjam\b", spoken) is None

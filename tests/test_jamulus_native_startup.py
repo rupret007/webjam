@@ -1210,6 +1210,37 @@ def test_native_sound_setup_watches_connection_without_a_completion_click() -> N
     assert "secondary_action_text" not in call.kwargs
 
 
+def test_art_conversation_step_is_one_decision() -> None:
+    controller = _controller(hosting=True)
+    controller.settings.last_creator_profile_key = "art"
+    controller._startup_attempt = {
+        "generation": 1,
+        "role": "host",
+        "phase": "conversation",
+    }
+    controller._session_conductor_facts = mock.Mock(
+        return_value=SessionConductorFacts(role=SessionRole.HOST)
+    )
+    controller._observe_session_conductor_facts = mock.Mock()
+    controller._focus_initial_hud_action = mock.Mock()
+    controller._persist_startup_attempt = mock.Mock()
+
+    ApplicationController._render_startup_journey(controller)
+
+    call = controller.window.session_hud.set_state.call_args
+    assert call.args == (
+        "Add conversation if you use it",
+        "Choose Add Conversation or Not Now. That is the next step.",
+    )
+    assert call.kwargs["action_text"] == "Add Conversation"
+    assert call.kwargs["action_kind"] == "add_webex"
+    assert call.kwargs["secondary_action_text"] == "Not Now"
+    assert call.kwargs["secondary_action_kind"] == "skip_webex"
+    spoken = " ".join(call.args).casefold()
+    assert "meeting app is optional" not in spoken
+    assert "room already has voices" not in spoken
+
+
 @pytest.mark.parametrize(
     ("profile_key", "phase", "role", "expected_title", "detail_tokens"),
     (

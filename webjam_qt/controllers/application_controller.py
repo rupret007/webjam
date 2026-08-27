@@ -5226,8 +5226,8 @@ class ApplicationController(QObject):
                     "Can you hear yourself coming back from the room?"
                 ),
                 "conversation_detail": (
-                    "A meeting app is optional for faces. The room already "
-                    "has voices."
+                    "Choose Add Conversation or Not Now. "
+                    "That is the next step."
                 ),
                 "host_ready_title": "Your room is ready",
                 "host_ready_detail": (
