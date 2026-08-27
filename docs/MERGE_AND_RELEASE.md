@@ -1,5 +1,14 @@
 # Merge and release map
 
+> **Current source:** unpublished v0.27.0 (`webjam_qt.__version__`). This
+> checkout is not a GitHub release. Do not treat an untagged tree as Latest.
+>
+> **Latest download:** remains immutable v0.26.0 until an annotated `v0.27.0`
+> tag and unique successful tag CI are published with
+> `.github/workflows/publish-latest-release.yml`. No v0.27.0 release ID,
+> checksum, or pinned artifact hash exists. Do not restack #37. Do not add a
+> version-specific publisher with invented pins.
+
 The short plan for the remaining product land and one honest release round
 after it. #14 (audio core) and #19 (Art) are already on `master`. #17 (Music
 song tools) is the open product branch.
@@ -69,6 +78,14 @@ touch on `master` before the branch that has to be reworked around them.
 | #14 and #17 | none | — |
 
 ## 4. Release round
+
+This honesty close only bumps the packaged source identity to unpublished
+v0.27.0. It does not tag, dispatch the publisher, delete old unsigned test
+releases, or attach v0.26.0 binaries to a new tag. After Jeff merges, Bob
+waits for hosted CI on the landed `master` commit, then Jeff decides whether
+to cut the annotated `v0.27.0` tag. The post-tag publisher is the existing
+generic `.github/workflows/publish-latest-release.yml` after unique
+successful tag CI. Do not write a parallel runbook.
 
 Run after #17 is on `master`, on one `master` commit. Every job below must be
 green in the same round:

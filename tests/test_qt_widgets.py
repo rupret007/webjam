@@ -1605,7 +1605,9 @@ class TestConductorWindow(unittest.TestCase):
             w.show_about()
 
         body = set_text.call_args.args[0]
-        self.assertIn("WebJam v0.26.0", body)
+        from webjam_qt import __version__ as packaged_version
+
+        self.assertIn(f"WebJam v{packaged_version}", body)
         self.assertIn("multitrack collaboration for creators", body)
         self.assertIn("aaaaaaaaaaaa", body)
         self.assertIn("macos-arm64", body)

@@ -1,9 +1,9 @@
-WEBJAM v0.26.0 PRIVATE TEST CANDIDATE FOR LINUX x64
+WEBJAM v0.27.0 PRIVATE TEST CANDIDATE FOR LINUX x64
 ===================================================
 
 PRIVATE TEST CANDIDATE: use this package only when its exact filename appears
-in the v0.26.0 GitHub release and its SHA-256 matches that release's manifest.
-Do not use the immutable v0.25.0 checksum manifest for this build.
+in the v0.27.0 GitHub release and its SHA-256 matches that release's manifest.
+Do not use the immutable v0.26.0 checksum manifest for this build.
 Physical audio, hardware, signed-install, and distribution-policy gates
 remain NOT RUN unless the release evidence names this exact file and SHA-256.
 
@@ -46,8 +46,8 @@ always requires your explicit approval. WebJam never invokes hidden sudo and
 never installs while a jam, recording, Shared Track, reconnect, or Jamulus
 launch is active.
 
-The sealed v0.22.5 catalog does not authorize v0.26.0 and is rejected. Until a
-new signed v0.26 catalog exists, this candidate uses the embedded Jamulus
+The sealed v0.22.5 catalog does not authorize v0.27.0 and is rejected. Until a
+new signed v0.27 catalog exists, this candidate uses the embedded Jamulus
 3.12.2 fallback rather than offering a managed 3.12.3 download.
 
 1. When offline or when no approved update is ready, install the included,

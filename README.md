@@ -13,28 +13,25 @@ pretending to own systems that remain independent.
 [![Latest release](https://img.shields.io/github/v/release/rupret007/webjam?label=Latest%20test%20candidate)](https://github.com/rupret007/webjam/releases/latest)
 
 > **Testing download:** GitHub [**Latest**](https://github.com/rupret007/webjam/releases/latest)
-> is the only current downloadable-test pointer. It resolves to immutable
-> v0.26.0, published from exact tag commit
+> remains the only current downloadable-test pointer. Until the verified
+> publisher runs after this unpublished v0.27.0 source lands, it still
+> resolves to immutable v0.26.0, published from exact tag commit
 > `4b5208098981943df8ddaf1fac31aa36c15146bb` after four-platform CI,
 > eight-asset inventory, checksums, fallback proof, and protected promotion
-> passed. Windows is unsigned; macOS is ad-hoc signed and unnotarized.
+> passed. This checkout is not that download. Windows is unsigned; macOS is
+> ad-hoc signed and unnotarized.
 
-> **v0.26.0 private test release:** the exact annotated tag, tag CI, package
-> inventory, checksum manifest, fallback proof, and protected publication are
-> recorded release evidence. Publication does not create physical PASS
-> evidence; those gates remain **NOT RUN** until separately observed.
+> **v0.27.0 source candidate:** the current tree reports v0.27.0 and contains
+> the work described below, but it is not yet a GitHub release. No v0.27.0
+> tag, package, checksum manifest, release ID, or physical PASS evidence
+> exists until the exact release process records it.
 
 > **Download boundary:** use a v0.26.0 package only when its exact filename and
 > SHA-256 appear on the immutable
 > [v0.26.0 GitHub release](https://github.com/rupret007/webjam/releases/tag/v0.26.0).
 > Every physical v0.26.0 gate remains **NOT RUN** until testers exercise those
-> exact packages. Do not substitute this source checkout or a branch artifact.
-
-> **Current source and release line:** this checkout identifies itself as
-> v0.26.0 and contains the Record Session readiness, exact-source,
-> repeated-take, and creator-journey work described below. The downloadable
-> boundary is still only the checksum-verified release assets above; this
-> checkout is not physical package evidence.
+> exact packages. Do not substitute this unpublished checkout or a branch
+> artifact.
 
 New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 [First Jam](FIRST_JAM.md); this README is the complete technical story.
@@ -45,7 +42,7 @@ New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 | --- | --- |
 | Product | Creator-facing desktop conductor around Jamulus, optional external meeting conversation, Studio, and Pocket Stage |
 | Published line | Immutable v0.26.0 GitHub Latest private test release; verify its checksum manifest |
-| Current source line | v0.26.0; Music and Podcast & Voice are GA profiles, Review & Rehearsal is Preview |
+| Current source line | Unpublished v0.27.0; Music and Podcast & Voice are GA profiles, Review & Rehearsal is Preview |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -85,7 +82,7 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
 
 ## Creator profiles
 
-WebJam v0.26.0 applies one saved creator profile across launch,
+Unpublished v0.27.0 applies one saved creator profile across launch,
 Host/Join, readiness, the live surface, recording, Studio, session records, and
 new standalone projects:
 
@@ -448,7 +445,7 @@ preserves the compatible two-mono-input default. Disabling or opting out of
 every configured row records no host Local Original. The input-map editor never
 changes Jamulus music settings.
 
-After that choice, WebJam v0.26.0 opens one path-free **Record
+After that choice, unpublished v0.27.0 opens one path-free **Record
 Session Readiness** sheet before it arms anything. The sheet lists every exact
 planned server track, Local Original, and Shared Track with its source label,
 mono/stereo format, required/optional status, current readiness, and a bounded
@@ -531,7 +528,7 @@ inventing guest evidence. Studio adds an undoable **Reset Mix** that preserves
 export inclusion, keeps overload indicators latched for the playback epoch,
 and automatically selects and opens a durably finalized take.
 
-The v0.26.0 live Studio source view distinguishes plan-bound Jamulus server,
+The unpublished v0.27.0 live Studio source view distinguishes plan-bound Jamulus server,
 Local Original, and Shared Track lanes and can show their current state, level,
 reported dropouts, and overload warning. A malformed, legacy, or duplicate
 projection is cleared rather than presented as authoritative source truth.
@@ -608,15 +605,17 @@ successful protected promotion behind GitHub
 [Latest](https://github.com/rupret007/webjam/releases/latest) are downloadable
 evidence. Do not use an untagged checkout or ordinary branch build as a release.
 
-The current source tree reports **v0.26.0**. Its exact annotated tag peeled to
-`4b5208098981943df8ddaf1fac31aa36c15146bb`; four-platform tag CI and the
-protected publisher verified and published release ID `371442375` at
-`2026-08-16T22:40:56Z`. The immutable
-[v0.26.0 release](https://github.com/rupret007/webjam/releases/tag/v0.26.0)
-is GitHub Latest with seven packages plus
-`WebJam-v0.26.0-SHA256SUMS.txt`. Its dedicated physical checklist still has no
-physical PASS: every hardware, provider, accessibility, audibility, and release
-decision row remains **NOT RUN**.
+The current source tree reports **v0.27.0** and is unpublished. No v0.27.0
+tag, native package, checksum, or release ID exists. GitHub
+[Latest](https://github.com/rupret007/webjam/releases/latest) remains the
+immutable
+[v0.26.0 release](https://github.com/rupret007/webjam/releases/tag/v0.26.0).
+That published tag peeled to `4b5208098981943df8ddaf1fac31aa36c15146bb`;
+four-platform tag CI and the protected publisher verified and published
+release ID `371442375` at `2026-08-16T22:40:56Z`. Latest still has seven
+packages plus `WebJam-v0.26.0-SHA256SUMS.txt`. Its dedicated physical
+checklist still has no physical PASS: every hardware, provider,
+accessibility, audibility, and release decision row remains **NOT RUN**.
 
 The prior v0.25.0 is a new creator-multitrack source and package identity and
 never replaces v0.24.0 bytes. Its exact
@@ -766,7 +765,7 @@ promote a package or claim audibility.
 
 - [Documentation index](docs/README.md)
 - [Project brief for technical stakeholders](docs/PROJECT_BRIEF.md)
-- [v0.26.0 release notes and release history](CHANGELOG.md)
+- [Unpublished v0.27.0 source notes and release history](CHANGELOG.md)
 - [v0.26.0 creator-multitrack physical checklist — release identity verified; physical rows NOT RUN](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.25.0 creator-multitrack physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.24.0 recording-first physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)

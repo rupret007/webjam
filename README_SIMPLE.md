@@ -1,17 +1,18 @@
 # WebJam, simply
 
 > **Private test release:** GitHub
-> [Latest](https://github.com/rupret007/webjam/releases/latest) is the immutable,
-> checksum-verified v0.26.0 package set. Windows is unsigned; macOS is ad-hoc
-> signed and unnotarized.
+> [Latest](https://github.com/rupret007/webjam/releases/latest) remains the
+> immutable, checksum-verified v0.26.0 package set until the verified publisher
+> runs after this unpublished v0.27.0 source lands. This checkout is not that
+> download. Windows is unsigned; macOS is ad-hoc signed and unnotarized.
 
 > **Source note:** use the exact release tag and attached checksum manifest as
-> download evidence; an untagged checkout is not a substitute. The exact
-> v0.26.0 release is the current downloadable boundary.
+> download evidence; an untagged checkout is not a substitute. The current
+> v0.27.0 source candidate has not been published as a release.
 
-> **What this checkout is:** v0.26.0 is also the current source identity. The
-> exact published release assets—not this checkout or a branch artifact—are
-> package evidence. No physical PASS result is claimed.
+> **What this checkout is:** unpublished v0.27.0 source. The exact published
+> v0.26.0 release assets—not this checkout or a branch artifact—are package
+> evidence. No physical PASS result is claimed.
 
 WebJam helps creators start a live audio session and keep its separate tracks
 organized. Jamulus handles low-latency audio. Any meeting platform can be
@@ -21,7 +22,7 @@ the meeting app, browser, or system output. Local Originals record only the
 input devices you explicitly select, so do not route meeting or system audio
 into those inputs.
 
-WebJam v0.26.0 keeps Music and Podcast & Voice as GA
+The unpublished v0.27.0 source keeps Music and Podcast & Voice as GA
 creator profiles. Review & Rehearsal is visibly Preview: it supports live WebJam-audio
 Host/Join, Record Session, local notes, and playback/read-only review of a
 completed session take. It blocks standalone projects, take editing/comp/mix

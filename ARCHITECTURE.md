@@ -1,11 +1,10 @@
-# WebJam architecture — v0.26.0
+# WebJam architecture — v0.27.0 source candidate
 
-> This document describes the source behind the immutable v0.26.0 GitHub
-> **Latest** private test release, published from exact tag commit
+> This document describes the unpublished v0.27.0 source candidate. GitHub
+> **Latest** remains immutable v0.26.0, published from exact tag commit
 > `4b5208098981943df8ddaf1fac31aa36c15146bb`. Source text is not package
-> evidence; verify an exact release asset against
-> `WebJam-v0.26.0-SHA256SUMS.txt`. All v0.26.0 physical, credentialed, signing,
-> and platform-trust gates stay **NOT RUN**.
+> evidence. All v0.27.0 physical, credentialed, signing, and platform-trust
+> gates stay **NOT RUN**.
 
 ## Product boundary
 
@@ -176,7 +175,7 @@ needed. An unknown provider's URL and hostname are fully redacted from logs,
 mappings, diagnostics, and Support Bundles; generic acceptance never promotes
 it to natively verified status.
 
-The v0.26.0 source carries forward one canonical **Shared Track** workflow; existing
+The unpublished v0.27.0 source carries forward one canonical **Shared Track** workflow; existing
 `ReferenceTrack*` types, paths, tests, and the ADR remain compatibility names
 for the established route engine, not a second live feature. Shared Track
 separates source and route authority. A host can load, decode the first bounded
@@ -286,7 +285,7 @@ participants into session-local slots. Neither surface receives notes, titles,
 participant names, channel IDs, invitations, addresses, device names, paths,
 tokens, credentials, or raw exceptions.
 
-No model SDK or cloud assistant is part of v0.26.0. A future model-assisted
+No model SDK or cloud assistant is part of unpublished v0.27.0. A future model-assisted
 creative feature may be considered only as explicit opt-in, off the real-time
 path, read-only, privacy-gated, unable to issue session commands or create
 operational facts, and visibly labeled as a suggestion. The deterministic
@@ -499,7 +498,7 @@ of the same immutable take/project boundary. A finalized take is eligible for
 Studio only after its required manifest/media checks settle. Studio track
 headers distinguish participant, Shared Track, and Local Original sources while
 retaining the existing arrangement, comping, mixer, autosave, recovery, and
-export systems; v0.26.0 does not introduce another editor or duplicate audio
+export systems; unpublished v0.27.0 does not introduce another editor or duplicate audio
 engine.
 
 The guest projection is host-state continuity, not distributed local playback,

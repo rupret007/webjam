@@ -26,6 +26,7 @@ CURRENT_GUIDES = (
     "V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md",
     "CHANGELOG.md",
     "docs/README.md",
+    "docs/MERGE_AND_RELEASE.md",
     "docs/DESKTOP_RELEASE_RUNBOOK.md",
     "docs/JAMULUS_COMPONENT_RELEASE_RUNBOOK.md",
     "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md",
@@ -61,9 +62,11 @@ def test_current_guides_state_published_latest_and_physical_boundary_truthfully(
         "SECURITY.md",
         "TEST_PROCEDURE.md",
         "docs/README.md",
+        "docs/MERGE_AND_RELEASE.md",
         "docs/DESKTOP_RELEASE_RUNBOOK.md",
         "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md",
         "docs/PROJECT_BRIEF.md",
+        "CHANGELOG.md",
     ):
         text = _normalized(relative_path)
         assert "v0.26.0" in text, relative_path
@@ -88,8 +91,46 @@ def test_current_guides_state_published_latest_and_physical_boundary_truthfully(
         "v0.25.0 remains GitHub **Latest**",
         "GitHub **Latest** remains immutable v0.25.0",
         "Immutable v0.25.0 is the GitHub **Latest**",
+        "this checkout identifies itself as v0.26.0",
+        "v0.26.0 is also the current source identity",
+        "Current source line | v0.26.0",
     ):
         assert stale_claim.casefold() not in combined.casefold(), stale_claim
+
+    assert "unpublished v0.27.0" in combined.casefold()
+    assert "no v0.27.0" in combined.casefold()
+
+
+def test_required_honesty_docs_fail_closed_on_v026_source_or_latest_pin() -> None:
+    """Jeff-facing required pass: unpublished v0.27.0 source, Latest still v0.26.0."""
+
+    required = (
+        "README.md",
+        "CHANGELOG.md",
+        "docs/MERGE_AND_RELEASE.md",
+        "docs/DESKTOP_RELEASE_RUNBOOK.md",
+    )
+    forbidden = (
+        "this checkout identifies itself as v0.26.0",
+        "Current source line | v0.26.0",
+        "v0.26.0 is also the current source identity",
+        "the current source tree reports **v0.26.0**",
+        "Latest is this unpublished",
+        "this unpublished checkout is GitHub Latest",
+    )
+    for relative_path in required:
+        text = (ROOT / relative_path).read_text(encoding="utf-8")
+        normalized = " ".join(text.split())
+        folded = normalized.casefold()
+        assert "v0.27.0" in text, relative_path
+        assert "unpublished" in folded, relative_path
+        assert "latest" in folded and "v0.26.0" in text, relative_path
+        assert "until" in folded, relative_path
+        for claim in forbidden:
+            assert claim.casefold() not in folded, (relative_path, claim)
+        assert "no v0.27.0 release id" in folded or "no v0.27.0 tag" in folded, (
+            relative_path
+        )
 
 
 def test_v026_checklist_verifies_only_automated_release_identity() -> None:

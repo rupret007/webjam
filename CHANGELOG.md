@@ -6,8 +6,17 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-> Work after the immutable v0.26.0 release boundary belongs here. Every
-> published tag, release, and asset remains immutable historical evidence.
+> Work after the v0.27.0 source candidate belongs here. Every published tag,
+> release, and asset remains immutable historical evidence.
+
+## [0.27.0] — Unpublished source candidate
+
+> This source identity is not yet a GitHub release. GitHub **Latest** remains
+> immutable v0.26.0 until an exact annotated `v0.27.0` tag, unique successful
+> four-target tag CI, and protected dispatch of
+> `.github/workflows/publish-latest-release.yml` all complete. Windows remains
+> unsigned; macOS remains ad-hoc signed and unnotarized. Every v0.27 physical
+> and hardware result is **NOT RUN**. No v0.27.0 release ID, checksum, or pinned artifact hash exists.
 
 ### In-room meeting honesty: each app ends only itself
 
