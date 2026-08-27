@@ -98,29 +98,40 @@ class SessionCanvas(QFrame):
         self._suggestion_button.clicked.connect(self.suggestion_requested.emit)
         self._suggestion_button.setVisible(False)
 
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(Space.XS)
-        btn_row.setContentsMargins(Space.XS, 0, Space.XS, 0)
-        btn_row.addWidget(ts_btn)
-        btn_row.addWidget(self._suggestion_button)
-        btn_row.addWidget(self._export_button)
-        btn_row.addStretch(1)
-        btn_row.addWidget(clear_btn)
+        # Art puts Suggestion on its own row so the word stays whole at
+        # 280 px. Music keeps the original one-row chrome.
+        self._suggestion_row = QWidget()
+        suggestion_row = QHBoxLayout(self._suggestion_row)
+        suggestion_row.setContentsMargins(Space.XS, 0, Space.XS, 0)
+        suggestion_row.setSpacing(Space.XS)
+        suggestion_row.addWidget(self._suggestion_button)
+        suggestion_row.addStretch(1)
+        self._suggestion_row.setVisible(False)
+
+        chrome_row = QHBoxLayout()
+        chrome_row.setSpacing(Space.XS)
+        chrome_row.setContentsMargins(Space.XS, 0, Space.XS, 0)
+        chrome_row.addWidget(ts_btn)
+        chrome_row.addWidget(self._export_button)
+        chrome_row.addStretch(1)
+        chrome_row.addWidget(clear_btn)
         self._toolbar_buttons = (
             ts_btn,
             self._suggestion_button,
             self._export_button,
             clear_btn,
         )
-        # Four worded actions must still fit the supported 280 px notes
-        # rail, including Art's Suggestion. Let the labels shrink before
-        # they push Clear off the edge.
         for button in self._toolbar_buttons:
             button.setMinimumWidth(0)
             button.setSizePolicy(
                 QSizePolicy.Policy.Preferred,
                 QSizePolicy.Policy.Fixed,
             )
+        toolbar = QVBoxLayout()
+        toolbar.setContentsMargins(0, 0, 0, 0)
+        toolbar.setSpacing(Space.XS)
+        toolbar.addWidget(self._suggestion_row)
+        toolbar.addLayout(chrome_row)
 
         self._guidance = QFrame()
         self._guidance.setObjectName("MusicianGuidance")
@@ -218,7 +229,7 @@ class SessionCanvas(QFrame):
         layout.setContentsMargins(0, 0, 0, Space.MD)
         layout.setSpacing(Space.SM)
         layout.addWidget(self._header)
-        layout.addLayout(btn_row)
+        layout.addLayout(toolbar)
         layout.addWidget(self._guidance)
         layout.addWidget(self._pulse)
         layout.addWidget(self._notes, stretch=1)
@@ -297,8 +308,15 @@ class SessionCanvas(QFrame):
             self._chat_input.setPlaceholderText(
                 f"Message {participants} in Jamulus chat… (Enter to send)"
             )
-        self._suggestion_button.setVisible(profile.key == "art")
-        self._suggestion_button.setEnabled(profile.key == "art")
+        art = profile.key == "art"
+        self._suggestion_button.setVisible(art)
+        self._suggestion_button.setEnabled(art)
+        self._suggestion_row.setVisible(art)
+        # Default NOW copy is Music-shaped until the HUD writes. A painter
+        # should not read "live music path" on the notes.
+        if art and self._current_guidance is None:
+            self._guidance_why.setText("Why: WebJam has not checked this room yet.")
+            self._guidance_next.setText("Next: follow the session bar")
 
     def set_notes(self, text: str) -> None:
         if self._notes.toPlainText() == text:

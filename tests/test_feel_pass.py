@@ -399,6 +399,7 @@ def test_art_suggestion_sits_on_the_notes(qapp):
         canvas.set_creator_profile(art)
         assert canvas._suggestion_button.text() == "Suggestion"
         assert canvas._suggestion_button.isHidden() is False
+        assert "live music path" not in canvas._guidance_why.text().casefold()
         strip.set_creator_profile(art)
         assert strip._ai_image_action.isVisible() is False
         assert canvas._suggestion_button.toolTip() == (

@@ -73,6 +73,16 @@ class TestSessionCanvasAtomicExport(unittest.TestCase):
                 if profile_key == "art":
                     self.assertEqual(canvas._suggestion_button.text(), "Suggestion")
                     self.assertIn(canvas._suggestion_button, visible)
+                    needed = canvas._suggestion_button.fontMetrics().horizontalAdvance(
+                        "Suggestion"
+                    )
+                    self.assertGreaterEqual(
+                        canvas._suggestion_button.width(), needed
+                    )
+                    self.assertNotIn(
+                        "live music path",
+                        canvas._guidance_why.text().casefold(),
+                    )
                 else:
                     self.assertNotIn(canvas._suggestion_button, visible)
                 for button in visible:
