@@ -89,23 +89,35 @@ Things worth knowing:
 
 If you want a reference to work from, the host can share one video file:
 
-1. The host chooses **More ▾ → Reference Video…**, then **Share Video…**, and
-   picks a local video file they have the right to play. WebJam does not ship,
-   bundle, download, or fetch any video, and it will not open anything from a
-   streaming service.
-2. Everyone else opens the same panel and chooses **Open My Copy…**, pointing at
-   their own copy of that same file. WebJam checks that it really is the same
-   file. If it is not, it says so and plays nothing rather than showing you the
-   wrong thing.
-3. The host presses play, pause, stop, or drags the position. Everyone follows.
-   If you join partway through, you land where the host currently is.
+1. When a host chose **Paint along**, WebJam opens the large Paint along
+   workspace once the room exists. It replaces the conductor surface inside
+   the existing WebJam window; it does not create a third window beside WebJam
+   and an optional meeting app. If you returned to the room, choose its
+   **Paint along** line to come back.
+2. The host chooses **Share…** and picks a local video file they have the right
+   to play. WebJam does not ship, bundle, download, or fetch any video, and it
+   will not open anything from a streaming service.
+3. When the host shares, each guest is notified and the same workspace becomes
+   available. Choose **Open my copy…** and point at your own copy of the same
+   file. WebJam checks that it really is the same file. If it is not, it says
+   so and plays nothing rather than showing the wrong thing.
+4. The host gets one primary transport action at a time—**Play** or
+   **Pause**—and may drag the position. Change video, restart from the
+   beginning, and stop sharing stay under **More**. Everyone follows; a guest
+   joining partway through lands where the host currently is.
 
 Things worth knowing:
 
 - **Only the host controls playback.** Guests have no play, pause, stop, or
   scrub control, by design.
-- **You can hide the video** at any time and keep working. You stay in the room
-  and in the conversation.
+- **The video is silent from its first frame.** Jamulus and the optional
+  meeting app keep their own audio responsibilities; Paint along never adds a
+  second soundtrack.
+- **You can hide the video** at any time and keep working. A guest sees **Hide
+  video** / **Show video** as the useful action for that state. You stay in the
+  room and in the conversation.
+- **Back to room** or Escape returns to the conductor without withdrawing the
+  file, leaving the room, or closing the optional meeting app.
 - **If your copy moves, changes, or disappears**, WebJam stops following and
   tells you, instead of drifting silently.
 - **If WebJam loses track of the host's position**, it holds rather than

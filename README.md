@@ -61,25 +61,33 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
 
 ## Five-minute demo
 
-1. Open WebJam and choose **Music**, **Podcast & Voice**, or **Review &
-   Rehearsal (Preview)**.
-2. Use its profile-specific action: **Host** / **Join**, **Host Remote
-   Recording** / **Join Recording**, or **Host Review** / **Join Review**.
+1. Open WebJam and choose **Art** or **Music**. Use **Podcast or review** only
+   when that is the room you came to make.
+2. For Art, choose **Talk & make**, **Paint together**, or **Paint along**,
+   then **Host** / **Join**. Music uses **Host** / **Join**; Podcast & Voice
+   and Review & Rehearsal retain their profile-specific Host/Join labels.
 3. Configure interface, channels, headphones, and buffer in Jamulus. Confirm
    the authenticated audio connection, then use the profile-specific
    **Band Check**, **Sound Check**, or **Session Check** if needed.
 4. Open **Conversation** only when conversation or video is wanted; use
    **Join / Open Meeting** for an explicit meeting-link handoff.
-5. As host, choose **Add Shared Track** or drop supported reference audio on the live
-   surface; loading does not start playback, and Play remains fail-closed until
-   the isolated Jamulus route is proven.
-6. Choose **Record Session**, inspect every exact source in the readiness
+5. In an Art **Paint along** room, the video becomes the large WebJam
+   workspace once the room exists. The host chooses **Share…**; each guest
+   chooses **Open my copy…** for the same local file. **Back to room** returns
+   to the conductor without ending the room or the video.
+6. In a profile that supports Shared Track, choose **Add Shared Track** or
+   drop supported reference audio on the live surface; loading does not start
+   playback, and Play remains fail-closed until the isolated Jamulus route is
+   proven.
+7. In a recording-capable profile, choose **Record Session**, inspect every
+   exact source in the readiness
    sheet, and start only when its required sources, storage, and Shared Track
    are ready. Then wait through **Finalizing** before opening the ready take in
    **Studio**.
-7. For Music or Podcast & Voice, open the profile's local-project action for a
+8. For Music or Podcast & Voice, open the profile's local-project action for a
    separate creation and arrangement workspace. Review & Rehearsal correctly
-   keeps standalone projects unavailable in Preview.
+   keeps standalone projects unavailable in Preview; Art intentionally has no
+   recording or standalone-project path.
 
 ## Creator profiles
 
@@ -92,6 +100,7 @@ new standalone projects:
 | Music | GA | Jam/rehearsal language, Shared Track, authoritative session recording, completed-take Studio, and music-focused Reference Studio defaults |
 | Podcast & Voice | GA | Session/speaker/microphone language, episode/reference-audio vocabulary, voice-focused input defaults, authoritative recording, and local project workflow |
 | Review & Rehearsal | Preview | Live WebJam-audio Host/Join and Record Session plus playback/read-only completed-take review; no standalone project, take edit/comp/mix mutation, track export, shared notes, visual sync, or media timecode |
+| Art | Preview | Live room with Talk & make, Drawpile-backed Paint together, or an embedded host-clocked Paint along workspace; no recording, take, standalone project, shipped video, or frame-accurate/timecode claim |
 
 Profiles change presentation and safe defaults, not evidence rules. A legacy
 project, take, or session with no profile metadata migrates to Music. Review &
