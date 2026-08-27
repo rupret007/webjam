@@ -214,13 +214,30 @@ def test_pocket_stage_setup_kit_is_generated_compiled_and_carried_by_mac_package
     assert "Prepare self-contained Pocket Stage owner-device setup kit" in WORKFLOW
     assert 'packaging/ios/prepare-pocket-stage-kit.sh' in WORKFLOW
     assert 'name: webjam-pocket-stage-ios-setup-${{ github.sha }}' in WORKFLOW
-    assert "Download Pocket Stage owner-device setup kit" in WORKFLOW
+    assert "Prepare Pocket Stage owner-device setup kit for the Mac package" in WORKFLOW
+    assert "Download Pocket Stage owner-device setup kit" not in WORKFLOW
     assert (
         'ditto "$RUNNER_TEMP/pocket-stage-kit/Pocket Stage iPhone Setup"' in WORKFLOW
     )
     assert '"Pocket Stage iPhone Setup"' in DMG_SCRIPT
     assert "desktop_version=$expected_version" in WORKFLOW
     assert "desktop_build_id=$build_id" in WORKFLOW
+
+
+def test_macos_desktop_rebuilds_pocket_stage_kit_instead_of_downloading_it() -> None:
+    build = _workflow_job("build-desktop")
+    pocket = _workflow_job("pocket-stage-ios")
+    prepare = _workflow_step(
+        "Prepare Pocket Stage owner-device setup kit for the Mac package"
+    )
+    assert "actions/download-artifact@" not in build
+    assert "webjam-pocket-stage-ios-setup-${{ github.sha }}" not in build
+    assert "pocket-stage-kit-download" not in build
+    assert "090ec29491aad50aec10631bf6e62253fed733c50f3aab0f5ffc86bc170bdbef" in prepare
+    assert "packaging/ios/prepare-pocket-stage-kit.sh" in prepare
+    assert "reference-service, pocket-stage-ios]" in build
+    assert 'name: webjam-pocket-stage-ios-setup-${{ github.sha }}' in pocket
+    assert "Build full Pocket Stage app for iOS Simulator" in pocket
 
 
 def test_pocket_stage_owner_device_kit_has_a_bounded_non_privileged_open_path() -> None:

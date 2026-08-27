@@ -9,6 +9,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the v0.27.1 source candidate belongs here. Every published tag,
 > release, and asset remains immutable historical evidence.
 
+### CI: Mac desktop rebuilds the Pocket Stage kit
+
+- Build Desktop (macos-x64) and (macos-arm64) now generate **Pocket Stage iPhone Setup** on the Mac builder after the iOS compile job succeeds. They no longer download `webjam-pocket-stage-ios-setup-${{ github.sha }}`. GitHub can delete that artifact when a sibling pull_request run is cancelled, which failed PR Mac builds while the same-commit push stayed green. The iOS job still compiles Pocket Stage and still uploads the SHA-named kit for candidate binding.
+
 ## [0.27.1] — Unpublished feel-pass source candidate
 
 > This source identity is not yet a GitHub release. GitHub **Latest** remains
