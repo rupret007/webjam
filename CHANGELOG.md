@@ -13,6 +13,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted
 > by owner; git tags remain.
 
+### CI: Mac desktop rebuilds the Pocket Stage kit
+
+- Build Desktop (macos-x64) and (macos-arm64) now generate **Pocket Stage iPhone Setup** on the Mac builder after the iOS compile job succeeds. They no longer download `webjam-pocket-stage-ios-setup-${{ github.sha }}`. GitHub can delete that artifact when a sibling pull_request run is cancelled, which failed PR Mac builds while the same-commit push stayed green. The iOS job still compiles Pocket Stage and still uploads the SHA-named kit for candidate binding.
+
 ### Compact Studio and Art room guidance
 
 - Studio keeps recording, playback, export, and the current guidance visible
