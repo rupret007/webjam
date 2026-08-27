@@ -260,7 +260,10 @@ def test_the_panel_offers_the_keys_this_computer_actually_has(app, store):
 
     coordinator._render_model_help_state()
 
-    assert coordinator.overlay._model_provider.isHidden() is False
+    # Keys still load for Suggestion. The picker itself is not a home.
+    assert coordinator.overlay._model_row.isHidden() is True
+    assert coordinator.overlay._model_provider.isHidden() is True
+    assert coordinator.overlay._suggestion_button.text() == "Suggestion"
     assert [
         coordinator.overlay._model_provider.itemData(index)
         for index in range(coordinator.overlay._model_provider.count())

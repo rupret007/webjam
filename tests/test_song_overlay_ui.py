@@ -914,8 +914,10 @@ def test_the_stems_page_keeps_to_two_worded_actions(overlay):
     worded = [
         button
         for button in page.findChildren(QPushButton)
-        if len(button.text()) > 2
+        if not button.isHidden() and len(button.text()) > 2
     ]
+    # Split is the empty-state action. Once stems exist it is gone, and
+    # these two are the page.
     assert sorted(button.text() for button in worded) == [
         "Send to jam",
         "Sing this one",

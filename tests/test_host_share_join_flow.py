@@ -295,6 +295,16 @@ def test_launch_restores_last_creator_profile_and_local_project_persists_it(
     )
     dialog = LaunchDialog(settings)
 
+    # Podcast is not a first-screen room. A leftover visit opens Music,
+    # with Art still an equal card. Podcast stays one click behind
+    # "Podcast or review".
+    assert dialog.selected_creator_profile_key == "music"
+    assert dialog._art_profile_card.isVisibleTo(dialog)
+    assert dialog._music_profile_card.isVisibleTo(dialog)
+    dialog._more_rooms_button.click()
+    dialog._creator_profile_selector.setCurrentIndex(
+        dialog._creator_profile_selector.findData("podcast_voice")
+    )
     assert dialog.selected_creator_profile_key == "podcast_voice"
     dialog._studio_button.click()
 

@@ -297,8 +297,10 @@ def test_only_art_exposes_the_ai_image_entry_point(qapp):
     try:
         for profile in CREATOR_PROFILES:
             strip.set_creator_profile(profile)
+            # Suggestion lives on the notes. The leftover More entry stays
+            # hidden for every profile. Qt reports a hidden QAction as
+            # disabled, so visibility is the contract a person can see.
             assert strip._ai_image_action.isVisible() is False, profile.key
-            assert strip._ai_image_action.isEnabled() is (profile.key == "art"), profile.key
     finally:
         strip.deleteLater()
 
