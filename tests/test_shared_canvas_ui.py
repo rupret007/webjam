@@ -788,7 +788,7 @@ def test_the_way_in_does_not_disappear_after_being_shown_once(fake_launchers):
     assert labels == {"Set up shared canvas"}
 
 
-def test_a_video_start_points_at_the_reference_video_instead(fake_launchers):
+def test_a_video_start_points_at_paint_along_instead(fake_launchers):
     controller = _controller("art")
     _with_start(controller, "paint_along")
     _as_host(controller)
@@ -796,7 +796,7 @@ def test_a_video_start_points_at_the_reference_video_instead(fake_launchers):
 
     presence = _presence(controller)
 
-    assert presence.label == "Set up reference video"
+    assert presence.label == "Set up Paint along"
     assert presence.target is ArtPresenceTarget.VIDEO
 
 
