@@ -1071,10 +1071,11 @@ class SongOverlay(QFrame):
         *,
         mutes: MuteSurface | None,
         end_note: str = "",
+        departure_note: str = "",
         recording_note: str = "",
         meeting_configured: bool = False,
     ) -> None:
-        """Render both mutes and what ending the jam will not end."""
+        """Render both mutes and the separate exit boundary in each direction."""
 
         if mutes is None:
             self._mute_lines.setText("")
@@ -1094,14 +1095,16 @@ class SongOverlay(QFrame):
         self._meeting_owner.setVisible(bool(self._meeting_owner.text()))
         self._recording_note.setText(recording_note)
         self._recording_note.setVisible(bool(recording_note))
-        # Two separate facts, both worth saying, neither of them a button:
-        # ending the jam does not end the meeting, and the invite lives on the
-        # session bar.
+        # Three separate facts, all worth saying, none of them a button: each
+        # app ends only itself, and the invite lives on the session bar.
         invite_note = "Copy Invite on the session bar sends the jam link" + (
             " and the meeting link." if meeting_configured else "."
         )
+        separation_note = "\n".join(
+            note for note in (end_note, departure_note) if note
+        )
         self._end_note.setText(
-            f"{end_note}\n{invite_note}" if end_note else invite_note
+            f"{separation_note}\n{invite_note}" if separation_note else invite_note
         )
         self._end_note.setVisible(True)
 

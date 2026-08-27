@@ -187,7 +187,8 @@ the Conversation card's **Show Webex App** and **Join / Open Meeting** as in
 every other profile: a free or personal Webex account is enough, and Webex is a
 second window beside WebJam rather than something WebJam runs. Remember that
 WebJam's mute and Webex's mute are separate controls, and that leaving a WebJam
-room does not leave your meeting.
+room does not leave your meeting. Leaving or closing the meeting does not end
+the WebJam room either; each app ends only itself.
 
 Each profile has a separate local scratchpad on this computer. Switching
 profiles safely saves and loads the matching private file; reads refuse links
