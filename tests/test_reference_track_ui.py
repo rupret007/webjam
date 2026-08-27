@@ -938,7 +938,7 @@ def test_failure_snapshot_shows_safe_controller_message() -> None:
                 error="The isolated route was lost; playback stopped.",
             )
         )
-        assert "needs attention" in dialog._status.text().lower()
+        assert "needs attention" not in dialog._status.text().lower()
         assert "route was lost" in dialog._status.text()
         assert dialog._play.isEnabled() is False
         assert dialog._stop.isEnabled() is True

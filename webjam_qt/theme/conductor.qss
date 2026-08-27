@@ -312,10 +312,28 @@ QPushButton#SharedTrackTransportButton:disabled {
     background-color: ${COLOR_BG_PANEL};
 }
 
-#SharedTrackLiveState {
+QPushButton#SharedTrackLiveState {
     color: ${COLOR_TEXT_SECONDARY};
     font-size: ${FONT_SIZE_XS}px;
     font-weight: ${FONT_WEIGHT_SEMIBOLD};
+    border: none;
+    background: transparent;
+    padding: 0 ${SPACE_XS}px;
+    text-align: left;
+}
+
+QPushButton#SharedTrackLiveState[nextStep="true"] {
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_SM}px;
+    background-color: ${COLOR_BG_INPUT};
+    padding: 2px ${SPACE_SM}px;
+}
+
+QPushButton#SharedTrackLiveState[nextStep="true"]:hover,
+QPushButton#SharedTrackLiveState[nextStep="true"]:focus {
+    border-color: ${COLOR_BORDER_FOCUS};
+    background-color: ${COLOR_BG_CARD_HOVER};
 }
 
 #SessionControlBar {

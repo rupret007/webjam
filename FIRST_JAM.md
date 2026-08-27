@@ -43,9 +43,11 @@ automatically taps a meeting app, browser, or system output.
    want the same status plus output results, recent events, and your Creative
    Pulse in one session record.
 9. Hosts choose **Add Shared Track** or drop one supported file on the live
-   surface. Loading does not start playback. Use **Shared Track** for the full
-   waveform and transport; Play stays locked until its separate Jamulus route
-   is proven. Guests never receive transport authority.
+   surface. Loading does not start playback. If Play is not ready, the strip
+   says **Set up the audio device** and opens Shared Track so you can choose
+   **Set Up Shared Track…** and **Recheck Route**. That step does not need a
+   signed catalog. When the isolated route is already on this Mac, Play sends
+   the song to the room. Guests never receive transport authority.
 10. Choose **Record Session** when the session is ready. Review every exact
     planned server track, Local Original, and Shared Track in the readiness
     sheet. Confirm its mono/stereo format, required/optional status, storage,

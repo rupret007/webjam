@@ -438,15 +438,24 @@ transport authority. Older peer state may expose only the dedicated channel;
 WebJam does not infer synchronization, isolation, or audibility from roster
 presence.
 
-The v0.22.2 private test candidate keeps playback locked even on a Mac with
-BlackHole installed. CoreAudio has a reported device-switch failure where its
-process input query returns the output device instead, while Jamulus 3.12.2
-does not expose an independent live-device query. Physical BlackHole,
-direct-monitor, and two-endpoint evidence is also **NOT RUN**. WebJam therefore
-does not turn a saved profile, process, moving meter, or synthetic test into
-permission to route audio. Production refuses before scanning devices. There is
-no user or environment override, and installing BlackHole, running setup, or
-choosing **Recheck Route** cannot unlock downloaded v0.22.2.
+After a local file loads, Play is a separate question from the filename
+appearing. If this Mac does not yet have official BlackHole 16ch or 64ch at
+48 kHz, the strip says **Set up the audio device** and opens Shared Track.
+There you choose **Set Up Shared Track…**, then **Recheck Route**. That is
+the next step on an unsigned test build; it does not wait for a signed
+catalog or a newer `webjam_version` pin. A mute **Needs attention** badge is
+not the product. When the isolated device is present, Play uses the bundled
+headless Jamulus client already in the app — still without a catalog exact
+match.
+
+The v0.22.2 private test candidate kept playback locked even on a Mac with
+BlackHole installed. That leftover constant is gone. CoreAudio still has a
+reported device-switch failure where its process input query can return the
+output device instead, while Jamulus 3.12.2 does not expose an independent
+live-device query. Physical BlackHole, direct-monitor, and two-endpoint
+evidence remains **NOT RUN** until observed on the exact bytes under test.
+WebJam still does not turn a saved profile, process, moving meter, or
+synthetic test into permission to route audio.
 
 In published v0.22.4, the production Mac backend derives initial
 route authority from the machine. It requires macOS 14.2 or later and one

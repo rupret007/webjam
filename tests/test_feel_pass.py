@@ -29,6 +29,8 @@ from tests.support.start_ux import (
 from webjam_qt.widgets.session_canvas import SessionCanvas
 from webjam_qt.widgets.session_strip import (
     SessionStrip,
+    shared_track_next_step_label,
+    shared_track_play_is_locked,
     shared_track_status_label,
 )
 from webjam_qt.widgets.song_overlay import (
@@ -266,8 +268,32 @@ def test_shared_track_paused_is_paused_not_needs_attention():
         count_in_active=False,
         error="",
     )
+    assert shared_track_play_is_locked(snapshot) is False
     assert shared_track_status_label(snapshot) == "Paused"
     assert "Needs attention" not in shared_track_status_label(snapshot)
+
+
+def test_shared_track_loaded_without_a_route_names_the_setup_step():
+    snapshot = SimpleNamespace(
+        state="ready",
+        source_name="Taylor Swift - The Fate of Ophelia.mp3",
+        cleanup_pending=False,
+        count_in_active=False,
+        error="",
+        can_play=False,
+        capability=SimpleNamespace(
+            available=False,
+            reason_code="physical_certification_required",
+        ),
+    )
+    assert shared_track_play_is_locked(snapshot) is True
+    assert shared_track_status_label(snapshot) == "Set up the audio device"
+    assert shared_track_next_step_label(snapshot) == "Set up the audio device"
+    assert shared_track_status_label(snapshot) != "Ready"
+    assert shared_track_status_label(snapshot) != "Paused"
+    assert "Needs attention" not in shared_track_status_label(snapshot)
+    paused = SimpleNamespace(**{**snapshot.__dict__, "state": "paused"})
+    assert shared_track_status_label(paused) == "Set up the audio device"
 
 
 def test_shared_track_failed_names_the_next_step():
@@ -343,6 +369,34 @@ def test_shared_track_strip_renders_the_named_next_step(qapp):
         )
         assert strip._shared_track_state.text() == "Set up the audio device"
         assert "Needs attention" not in strip._shared_track_state.text()
+        opened: list[str] = []
+        strip.tool_requested.connect(opened.append)
+        strip.set_reference_track_available(True)
+        strip.set_shared_track_snapshot(
+            SimpleNamespace(
+                state="ready",
+                source_name="Taylor Swift - The Fate of Ophelia.mp3",
+                duration_s=90.0,
+                position_s=3.0,
+                loop_start_s=0.0,
+                loop_end_s=None,
+                count_in_active=False,
+                cleanup_pending=False,
+                error="",
+                can_play=False,
+                capability=SimpleNamespace(
+                    available=False,
+                    reason_code="physical_certification_required",
+                ),
+                waveform_peaks=(),
+                waveform_progress=0.0,
+            )
+        )
+        assert strip._shared_track_state.text() == "Set up the audio device"
+        assert strip._shared_track_state.isEnabled() is True
+        strip._shared_track_state.click()
+        strip._shared_track_transport.click()
+        assert opened == ["reference_track", "reference_track"]
     finally:
         strip.deleteLater()
 

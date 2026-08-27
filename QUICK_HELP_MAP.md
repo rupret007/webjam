@@ -27,7 +27,8 @@
 | Record meeting-app audio | Use the meeting service's own recorder. WebJam never directly or automatically taps a meeting app, browser, or system output. Local Originals record explicitly selected input devices, so do not route meeting or system-output audio into them. |
 | Copy or change the meeting link | Conversation → **Copy Link** or **Change Link** |
 | Update Jamulus | **More → Jamulus Updates…** |
-| Add a host Shared Track | Live session → **Add Shared Track** or drop one supported local file; loading validates and decodes a first bounded block but does not start or unlock playback |
+| Add a host Shared Track | Live session → **Add Shared Track** or drop one supported local file; loading validates and decodes a first bounded block but does not start playback |
+| Play a loaded Shared Track | If the strip says **Set up the audio device**, open that badge → **Set Up Shared Track…** → install official BlackHole 16ch or 64ch at 48 kHz → **Recheck Route**. No signed catalog is required. When the route is ready, choose Play |
 | Replace or remove a Shared Track | Stop playback first → **Shared Track** → **Replace…** or **Remove** |
 | Record the live session | Host → **Record Session** |
 | Prove the recording plan | **Record Session Readiness** → inspect every server, Local Original, and Shared Track row, mono/stereo format, required/optional status, storage, and blockers → **Start Recording** only when enabled → required guests open and ACK exact streams before Jamulus recording starts |

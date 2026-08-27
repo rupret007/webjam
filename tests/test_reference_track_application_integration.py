@@ -145,6 +145,24 @@ def _snapshot(state: ReferenceTrackState) -> ReferenceTrackSnapshot:
     )
 
 
+def _locked_local_snapshot() -> ReferenceTrackSnapshot:
+    return ReferenceTrackSnapshot(
+        state=ReferenceTrackState.READY,
+        capability=ReferenceTrackCapability(
+            False,
+            "macos",
+            "Shared Track needs the official BlackHole 16ch or 64ch "
+            "device at 48 kHz.",
+            backend="blackhole",
+            reason_code="physical_certification_required",
+        ),
+        source_name="Taylor Swift - The Fate of Ophelia.mp3",
+        duration_s=90.0,
+        position_s=3.0,
+        source_format="MP3",
+    )
+
+
 class _FakeReferenceTrack:
     def __init__(self, state: ReferenceTrackState = ReferenceTrackState.READY):
         self.snapshot = _snapshot(state)
@@ -257,6 +275,45 @@ def test_reference_track_menu_is_host_only() -> None:
     finally:
         guest.shutdown()
         host.shutdown()
+
+
+def test_loaded_song_without_a_route_opens_shared_track_setup() -> None:
+    controller = _controller(host=True)
+    fake = _FakeReferenceTrack()
+    fake.snapshot = _locked_local_snapshot()
+    controller._reference_track = fake
+    try:
+        controller._render_reference_track_snapshot(fake.snapshot)
+        dialog = controller._reference_track_dialog
+        assert dialog is not None
+        assert dialog.isVisible()
+        assert dialog._blackhole_setup.isHidden() is False
+        assert dialog._blackhole_setup.text() == "Set Up Shared Track…"
+        assert dialog._recheck_route.text() == "Recheck Route"
+        assert "Needs attention" not in dialog._status.text()
+        assert (
+            controller.window.session_strip._shared_track_state.text()
+            == "Set up the audio device"
+        )
+        assert _wait_until(lambda: fake.refreshes == [False])
+    finally:
+        controller.shutdown()
+
+
+def test_play_when_route_is_locked_opens_setup_instead_of_failing() -> None:
+    controller = _controller(host=True)
+    fake = _FakeReferenceTrack()
+    fake.snapshot = _locked_local_snapshot()
+    controller._reference_track = fake
+    try:
+        controller._play_reference_track()
+        assert fake.contexts == []
+        dialog = controller._reference_track_dialog
+        assert dialog is not None
+        assert dialog.isVisible()
+        assert dialog._blackhole_setup.text() == "Set Up Shared Track…"
+    finally:
+        controller.shutdown()
 
 
 def test_host_panel_renders_controller_snapshot_without_starting_audio() -> None:
