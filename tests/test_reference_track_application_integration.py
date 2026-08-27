@@ -294,6 +294,10 @@ def test_loaded_song_without_a_route_opens_shared_track_setup() -> None:
             controller.window.session_strip._shared_track_state.text()
             == "Set up the audio device"
         )
+        assert (
+            controller.window.session_strip._reference_track_button.text()
+            == "Set up the audio device"
+        )
         assert _wait_until(lambda: fake.refreshes == [False])
         assert _wait_until(lambda: dialog._recheck_route.text() == "Recheck Route")
     finally:

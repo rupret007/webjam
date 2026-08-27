@@ -332,6 +332,9 @@ def test_shared_track_strip_renders_the_named_next_step(qapp):
         initial_mode_key="music_jam",
     )
     try:
+        strip.resize(1100, 60)
+        strip.show()
+        qapp.processEvents()
         strip.set_reference_track_available(True)
         strip.set_shared_track_snapshot(
             SimpleNamespace(
@@ -393,8 +396,16 @@ def test_shared_track_strip_renders_the_named_next_step(qapp):
             )
         )
         assert strip._shared_track_state.text() == "Set up the audio device"
-        assert strip._shared_track_state.isEnabled() is True
-        strip._shared_track_state.click()
+        assert strip._reference_track_button.text() == "Set up the audio device"
+        assert strip._reference_track_button.isHidden() is False
+        assert "Set up the a" != strip._reference_track_button.text()
+        strip.show()
+        qapp.processEvents()
+        assert (
+            strip._reference_track_button.width()
+            >= strip._reference_track_button.sizeHint().width()
+        )
+        strip._reference_track_button.click()
         strip._shared_track_transport.click()
         assert opened == ["reference_track", "reference_track"]
     finally:

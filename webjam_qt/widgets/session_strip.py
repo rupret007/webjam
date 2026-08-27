@@ -382,7 +382,7 @@ class SessionStrip(QFrame):
         self._reference_track_button.clicked.connect(
             lambda: self.tool_requested.emit("reference_track")
         )
-        self._reference_track_button.setMaximumWidth(128)
+        self._reference_track_button.setMaximumWidth(260)
         self._reference_track_button.setVisible(False)
         shared_layout.addWidget(self._reference_track_button)
         self._shared_track_waveform = SharedTrackWaveform(
@@ -414,7 +414,7 @@ class SessionStrip(QFrame):
         self._shared_track_state.setObjectName("SharedTrackLiveState")
         self._shared_track_state.setAccessibleName("Shared Track status")
         self._shared_track_state.setFlat(True)
-        self._shared_track_state.setMaximumWidth(168)
+        self._shared_track_state.setMaximumWidth(240)
         self._shared_track_state.setEnabled(False)
         self._shared_track_state.clicked.connect(self._emit_shared_track_next_step)
         shared_layout.addWidget(self._shared_track_state)
@@ -1339,9 +1339,26 @@ class SessionStrip(QFrame):
             "failed",
             "unavailable",
         } and not cleanup_pending
-        self._reference_track_button.setText(
-            "Shared Track" if loaded else "＋ Shared Track"
-        )
+        if play_locked:
+            self._reference_track_button.setText(label)
+            self._reference_track_button.setAccessibleName(label)
+            self._reference_track_button.setToolTip(
+                f"{label}. Opens Shared Track so you can set up the device "
+                "and Recheck Route."
+            )
+            self._reference_track_button.setMaximumWidth(260)
+            self._shared_track_state.setVisible(False)
+        else:
+            self._reference_track_button.setText(
+                "Shared Track" if loaded else "＋ Shared Track"
+            )
+            self._reference_track_button.setAccessibleName("Open Shared Track")
+            self._reference_track_button.setToolTip(
+                "Open Shared Track to load and inspect a song.\n"
+                "Playback remains locked until its isolated Jamulus route is proven."
+            )
+            self._reference_track_button.setMaximumWidth(128)
+            self._shared_track_state.setVisible(True)
         self._shared_track_setup_instead_of_play = bool(
             play_locked and state in {"ready", "paused", "failed"}
         )
@@ -1430,6 +1447,9 @@ class SessionStrip(QFrame):
         self._shared_track_next_step_available = False
         self._shared_track_stop_enabled = False
         self._reference_track_button.setText("＋ Shared Track")
+        self._reference_track_button.setAccessibleName("Open Shared Track")
+        self._reference_track_button.setMaximumWidth(128)
+        self._shared_track_state.setVisible(True)
         self._shared_track_transport.setText("▶")
         self._shared_track_transport.setAccessibleName("Play Shared Track")
         self._shared_track_transport.setToolTip("Play Shared Track")
