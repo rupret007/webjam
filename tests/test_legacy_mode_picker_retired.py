@@ -106,9 +106,18 @@ def test_the_only_visible_workflow_choice_is_the_creator_profile(qapp, tmp_path)
         assert offered == set()
         assert not (offered & LEGACY_LABELS)
         assert not any("Visual Studio" == item for item in offered)
+        assert dialog._art_profile_card.isVisibleTo(dialog)
+        assert dialog._music_profile_card.isVisibleTo(dialog)
 
-        selector = dialog._creator_profile_selector
-        selector.setCurrentIndex(selector.findData("art"))
+        dialog._art_profile_card.click()
+        qapp.processEvents()
+        offered = _visible_combo_items(dialog)
+        assert offered == set()
+        assert dialog.selected_creator_profile_key == "art"
+
+        dialog._music_profile_card.click()
+        qapp.processEvents()
+        dialog._more_rooms_button.click()
         qapp.processEvents()
         offered = _visible_combo_items(dialog)
         assert offered == PROFILE_LABELS

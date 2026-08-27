@@ -6,14 +6,12 @@
 > record every v0.27 physical gate as **NOT RUN** until it is observed against
 > exact future release bytes.
 
-Before Host or Join, choose what you are creating: **Music** (GA), **Podcast &
-Voice** (GA), or **Review & Rehearsal** (Preview). The chosen profile changes
-language and safe defaults, not the recorder's evidence rules. Review &
-Rehearsal supports live WebJam-audio Host/Join, Record Session, local notes,
-and playback/read-only review of completed session takes. It blocks standalone
-projects, take editing/comp/mix mutation, track export, shared notes, visual
-sync, and media timecode. No profile directly or automatically taps a meeting
-app, browser, or system output.
+Before Host or Join, choose **Art** or **Music**. Those are the equal first
+clicks. Art then offers **Talk & make**, **Paint together**, or **Paint
+along**, then **Host** or **Join**. Music is **Host** or **Join** only. The
+chosen profile changes language and safe defaults, not the recorder's evidence
+rules. Podcast and Review stay off that first screen. No profile directly or
+automatically taps a meeting app, browser, or system output.
 
 ## Host
 
@@ -45,9 +43,11 @@ app, browser, or system output.
    want the same status plus output results, recent events, and your Creative
    Pulse in one session record.
 9. Hosts choose **Add Shared Track** or drop one supported file on the live
-   surface. Loading does not start playback. Use **Shared Track** for the full
-   waveform and transport; Play stays locked until its separate Jamulus route
-   is proven. Guests never receive transport authority.
+   surface. Loading does not start playback. If Play is not ready, the strip
+   says **Set up the audio device** and opens Shared Track so you can choose
+   **Set Up Shared Track…** and **Recheck Route**. That step does not need a
+   signed catalog. When the isolated route is already on this Mac, Play sends
+   the song to the room. Guests never receive transport authority.
 10. Choose **Record Session** when the session is ready. Review every exact
     planned server track, Local Original, and Shared Track in the readiness
     sheet. Confirm its mono/stereo format, required/optional status, storage,

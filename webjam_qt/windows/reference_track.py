@@ -37,6 +37,7 @@ from core.reference_track import (
     reference_track_supported_extensions,
 )
 from webjam_qt.theme.tokens import Space
+from webjam_qt.widgets.session_strip import shared_track_next_step_label
 from webjam_qt.widgets.shared_track_waveform import SharedTrackWaveform
 
 _BLACKHOLE_SETUP_URL = "https://existential.audio/blackhole/"
@@ -743,7 +744,7 @@ class ReferenceTrackDialog(QDialog):
             "playing": "Playing to the band",
             "paused": "Paused",
             "stopping": "Stopping the song…",
-            "failed": "Shared Track needs attention",
+            "failed": shared_track_next_step_label(snapshot),
             "closed": "Shared Track is closed",
         }
         status = state_labels.get(state, "Checking Shared Track state…")

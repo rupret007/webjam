@@ -635,6 +635,7 @@ class ApplicationController(QObject):
         self._reference_track_session_generation = 0
         self._shared_track_play_after_recording = ""
         self._shared_track_count_in_visible = False
+        self._shared_track_setup_offered_for = ""
         # Desktop integration checks begin only after the main window is
         # visible (see start_desktop_integrations). Keeping both services lazy
         # avoids network/subprocess work in constructor-only tests and lets the
@@ -3725,6 +3726,7 @@ class ApplicationController(QObject):
         self.window.session_canvas.brief_export_requested.connect(
             self._refresh_session_pulse
         )
+        self.window.session_canvas.suggestion_requested.connect(self._open_ai_image)
         studio = self.window.recording_studio
         studio.record_requested.connect(self._on_record_requested)
         studio.return_live_requested.connect(
@@ -6753,19 +6755,25 @@ class ApplicationController(QObject):
                 if callable(planner):
                     planner(required=False)
                 self._shared_track_play_after_recording = ""
+                from webjam_qt.widgets.session_strip import (
+                    shared_track_next_step_label,
+                )
+
+                next_step = shared_track_next_step_label(shared_snapshot)
                 self._show_actionable_error(
-                    "Shared Track Needs Attention",
+                    next_step,
                     what_failed=(
-                        "The loaded Shared Track has no available audio route. "
+                        "The loaded Shared Track cannot play in this room yet. "
                         "No recorder was started."
                     ),
                     likely_cause=(
-                        "The required playback device or audio backend is not "
-                        "available on this computer."
+                        "Play needs the official BlackHole 16ch or 64ch "
+                        "device at 48 kHz on this Mac. A signed catalog is "
+                        "not required."
                     ),
                     next_action=(
-                        "Restore the Shared Track audio route, or remove the "
-                        "track before recording if this take should not "
+                        f"Choose {next_step}, then Recheck Route. Or remove "
+                        "the track before recording if this take should not "
                         "include it."
                     ),
                 )
@@ -12410,6 +12418,36 @@ class ApplicationController(QObject):
         # compatibility flag for callers that inspect it, but never synthesize
         # a second UI-only lifecycle over the frozen Record Session state.
         self._shared_track_count_in_visible = recorder_phase == "count_in"
+        self._offer_shared_track_next_step(snapshot)
+
+    def _offer_shared_track_next_step(self, snapshot) -> None:
+        """Open Shared Track once after a local load that still cannot play.
+
+        A mute badge is not a next step. The host gets the panel that already
+        names Set Up Shared Track and Recheck Route — no signed catalog pin.
+        """
+
+        from webjam_qt.widgets.session_strip import shared_track_play_is_locked
+
+        if self._shutdown or not self._reference_track_is_host():
+            return
+        loaded = bool(
+            getattr(snapshot, "loaded", False)
+            or str(getattr(snapshot, "source_name", "") or "")
+        )
+        if not loaded:
+            self._shared_track_setup_offered_for = ""
+            return
+        if not shared_track_play_is_locked(snapshot):
+            return
+        key = str(getattr(snapshot, "source_name", "") or "")
+        if not key or key == self._shared_track_setup_offered_for:
+            return
+        self._shared_track_setup_offered_for = key
+        dialog = getattr(self, "_reference_track_dialog", None)
+        if dialog is not None and dialog.isVisible():
+            return
+        self._open_reference_track()
 
     def _publish_shared_track_peer_state(self, snapshot) -> None:
         """Project bounded host transport truth onto the private peer plane."""
@@ -13028,7 +13066,13 @@ class ApplicationController(QObject):
         if self._shutdown_cleanup_blocks_action():
             self._sync_reference_track_primary_gate()
             return
+        from webjam_qt.widgets.session_strip import shared_track_play_is_locked
         from webjam_qt.windows.reference_track import ReferenceTrackPrimaryGate
+
+        snapshot = getattr(getattr(self, "_reference_track", None), "snapshot", None)
+        if snapshot is not None and shared_track_play_is_locked(snapshot):
+            self._open_reference_track()
+            return
 
         primary_gate = self._reference_track_primary_gate()
         self._sync_reference_track_primary_gate()

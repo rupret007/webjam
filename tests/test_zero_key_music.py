@@ -228,9 +228,9 @@ def test_the_model_row_is_absent_and_one_line_stands_in_for_it(app):
 
     overlay = coordinator.overlay
     assert overlay._model_button.isHidden()
-    assert overlay._model_note.isHidden() is False
-    assert "Settings" in overlay._model_note.text()
-    assert overlay._write_button.isEnabled()
+    assert overlay._model_note.isHidden() is True
+    assert overlay._suggestion_button.isEnabled()
+    assert overlay._suggestion_button.text() == "Suggestion"
 
 
 def test_opening_the_panel_contacts_nobody(app):

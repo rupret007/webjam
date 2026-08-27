@@ -127,15 +127,22 @@ def test_launch_hierarchy_is_one_primary_then_two_clear_alternatives(
         # behind the door, not a third button, so its geometry is unused.
         assert dialog._studio_button.isHidden()
         assert not dialog._studio_button.isVisibleTo(dialog)
-        assert dialog._choice_helper.text() == "Play live together."
+        assert dialog._choice_helper.text() == ""
+        assert dialog._music_profile_card.description() == "Play live together."
+        assert dialog._art_profile_card.description() == (
+            "Paint, sculpt, print, or talk."
+        )
         assert dialog._name_input.accessibleName() == "Your name"
         assert not dialog._name_label.isVisibleTo(dialog)
         assert not dialog._name_input.isVisibleTo(dialog)
         assert not dialog._name_preview.isVisibleTo(dialog)
         assert not dialog._creator_profile_label.isVisibleTo(dialog)
         assert not dialog._creator_profile_selector.isVisibleTo(dialog)
+        assert dialog._art_profile_card.isVisibleTo(dialog)
+        assert dialog._music_profile_card.isVisibleTo(dialog)
         assert dialog._more_rooms_button.isVisibleTo(dialog)
         assert dialog._more_rooms_button.objectName() == "LaunchMoreRooms"
+        assert dialog._more_rooms_button.text() == "Podcast or review"
         assert not dialog._choice_subtitle.isVisibleTo(dialog)
         assert (
             dialog._host_button.geometry().top()
@@ -169,10 +176,11 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
         assert dialog.minimumHeight() <= 480
         for control in (
             dialog._logo,
+            dialog._art_profile_card,
+            dialog._music_profile_card,
             dialog._host_button,
             dialog._join_button,
             dialog._more_rooms_button,
-            dialog._choice_helper,
         ):
             assert control.isVisibleTo(dialog)
             assert dialog.rect().contains(_rect_in(control, dialog))
@@ -186,7 +194,8 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
             dialog._choice_subtitle,
         ):
             assert not hidden.isVisibleTo(dialog)
-        assert dialog._choice_helper.text() == "Play live together."
+        assert dialog._choice_helper.text() == ""
+        assert dialog._music_profile_card.description() == "Play live together."
         assert dialog._name_input.accessibleName() == "Your name"
 
         dialog.show_join()
@@ -198,6 +207,43 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
             assert control.isVisibleTo(dialog)
             assert dialog.rect().contains(_rect_in(control, dialog))
         assert not dialog._name_input.isVisibleTo(dialog)
+    finally:
+        _destroy(dialog)
+
+
+def test_art_door_keeps_three_starts_and_host_join_inside_760_by_600(
+    styled_qapp,
+    tmp_path,
+):
+    settings = _settings(tmp_path)
+    settings.last_creator_profile_key = "art"
+    with patch.object(sys, "platform", "darwin"):
+        dialog = LaunchDialog(settings)
+    dialog.show()
+    styled_qapp.processEvents()
+    try:
+        assert dialog.width() <= 760
+        assert dialog.height() + 40 <= 600
+        assert dialog._choice_helper.isVisibleTo(dialog) is False
+        for control in (
+            dialog._art_profile_card,
+            dialog._music_profile_card,
+            *dialog._visible_start_cards(),
+            dialog._host_button,
+            dialog._join_button,
+        ):
+            assert control.isVisibleTo(dialog)
+            assert dialog.rect().contains(_rect_in(control, dialog)), (
+                control.accessibleName()
+            )
+            assert control.height() >= 48
+        assert [card.accessibleName() for card in dialog._visible_start_cards()] == [
+            "Talk & make",
+            "Paint together",
+            "Paint along",
+        ]
+        assert dialog._more_rooms_button.isVisibleTo(dialog) is False
+        assert dialog._name_input.isVisibleTo(dialog) is False
     finally:
         _destroy(dialog)
 
@@ -227,18 +273,25 @@ def test_windows_launch_name_roles_and_installer_do_not_overlap_at_default_size(
         ):
             assert not hidden.isVisibleTo(dialog)
         assert dialog._name_input.accessibleName() == "Your name"
-        assert "Play live together." in dialog._choice_helper.text()
+        assert dialog._music_profile_card.description() == "Play live together."
+        art_rect = _rect_in(dialog._art_profile_card, dialog)
+        music_rect = _rect_in(dialog._music_profile_card, dialog)
+        assert dialog._art_profile_card.isVisibleTo(dialog)
+        assert dialog._music_profile_card.isVisibleTo(dialog)
+        assert dialog.rect().contains(art_rect)
+        assert dialog.rect().contains(music_rect)
+        assert art_rect.right() < music_rect.left()
         controls = (
             dialog._host_button,
             dialog._join_button,
             dialog._install_jamulus_button,
             dialog._more_rooms_button,
-            dialog._choice_helper,
         )
         rects = [_rect_in(control, dialog) for control in controls]
         for control, rect in zip(controls, rects):
             assert control.isVisibleTo(dialog)
             assert dialog.rect().contains(rect)
+        assert art_rect.bottom() < rects[0].top()
         for upper, lower in zip(rects, rects[1:]):
             assert upper.bottom() < lower.top()
     finally:

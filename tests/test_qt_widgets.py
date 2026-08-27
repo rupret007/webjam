@@ -1484,7 +1484,8 @@ class TestConductorWindow(unittest.TestCase):
         self.assertIn("Webex chooses which of its windows is shown", body)
         self.assertIn("Only <b>Join / Open Meeting</b> opens", body)
         self.assertIn("<b>Shared Track</b> to load", body)
-        self.assertIn("Play stays locked until", body)
+        self.assertIn("Set up the audio device", body)
+        self.assertIn("Recheck Route", body)
         self.assertNotIn("Multitrack Studio", body)
 
     def test_help_copy_uses_real_macos_shortcut_modifiers(self):

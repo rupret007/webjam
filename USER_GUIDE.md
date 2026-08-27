@@ -19,8 +19,10 @@ notes. It can help decide what to do or arrange next, but it never changes
 WebJam's operational status. For example, typing “recording finished” cannot
 create a take or unlock export.
 
-At launch, choose **Music** (GA), **Podcast & Voice** (GA), **Review &
-Rehearsal** (Preview), or **Art** (Preview). The profile follows the
+At launch, choose **Art** or **Music**. Those are the equal first clicks.
+Art is **Talk & make**, **Paint together**, or **Paint along**, then **Host**
+or **Join**. Music is **Host** or **Join** only. Podcast and Review stay off
+that first screen. The profile follows the
 launch, live session, recording, Studio, local session metadata, and new
 standalone projects. Legacy content without a saved profile opens as Music.
 Review & Rehearsal allows live WebJam-audio Host/Join, Record Session, local
@@ -32,9 +34,9 @@ meeting app, browser, or system output.
 
 ## Art
 
-Art (Preview) opens a room where you talk while you work — painting, drawing,
-sculpting, anything at a table. When you choose Art at launch, you pick one of
-three ways to start, and nothing more:
+Art opens a room where you talk while you work — painting, drawing,
+sculpting, printing, or anything at a table. When you choose Art at launch,
+you pick one of three ways to start, and nothing more:
 
 - **Talk & make** — just the room and your voices. Make whatever you're making,
   on paper, in clay, or in whatever you already use. This is a completely
@@ -114,9 +116,9 @@ Things worth knowing:
 
 ### Making or editing an image with AI
 
-Once you are in the room, **More ▾ → AI Image…** offers two things and nothing
-else: **Make** a new image from a description, or **Edit** a photo you already
-have.
+Once you are in the room, **Suggestion** on the notes offers two things and
+nothing else: **Make** a new image from a description, or **Edit** a photo you
+already have.
 
 WebJam does not generate anything. Krita's **AI Image Generation** plugin does,
 on your own computer.
@@ -436,15 +438,24 @@ transport authority. Older peer state may expose only the dedicated channel;
 WebJam does not infer synchronization, isolation, or audibility from roster
 presence.
 
-The v0.22.2 private test candidate keeps playback locked even on a Mac with
-BlackHole installed. CoreAudio has a reported device-switch failure where its
-process input query returns the output device instead, while Jamulus 3.12.2
-does not expose an independent live-device query. Physical BlackHole,
-direct-monitor, and two-endpoint evidence is also **NOT RUN**. WebJam therefore
-does not turn a saved profile, process, moving meter, or synthetic test into
-permission to route audio. Production refuses before scanning devices. There is
-no user or environment override, and installing BlackHole, running setup, or
-choosing **Recheck Route** cannot unlock downloaded v0.22.2.
+After a local file loads, Play is a separate question from the filename
+appearing. If this Mac does not yet have official BlackHole 16ch or 64ch at
+48 kHz, the strip says **Set up the audio device** and opens Shared Track.
+There you choose **Set Up Shared Track…**, then **Recheck Route**. That is
+the next step on an unsigned test build; it does not wait for a signed
+catalog or a newer `webjam_version` pin. A mute **Needs attention** badge is
+not the product. When the isolated device is present, Play uses the bundled
+headless Jamulus client already in the app — still without a catalog exact
+match.
+
+The v0.22.2 private test candidate kept playback locked even on a Mac with
+BlackHole installed. That leftover constant is gone. CoreAudio still has a
+reported device-switch failure where its process input query can return the
+output device instead, while Jamulus 3.12.2 does not expose an independent
+live-device query. Physical BlackHole, direct-monitor, and two-endpoint
+evidence remains **NOT RUN** until observed on the exact bytes under test.
+WebJam still does not turn a saved profile, process, moving meter, or
+synthetic test into permission to route audio.
 
 In published v0.22.4, the production Mac backend derives initial
 route authority from the machine. It requires macOS 14.2 or later and one
@@ -512,10 +523,11 @@ and a fact WebJam does not have stays blank.
 
 ### Writing help
 
-**Help write** suggests the next part and what to do with the one you have.
-**Suggest chords** answers for the part you pick, scored against the parts
-either side of it, and says why. Both run entirely on this computer: no audio
-and no text is sent anywhere to produce them.
+**Suggestion** on the song section does both jobs from one control. On
+**Next part** it suggests the next section. On a named part it suggests
+chords, scored against the parts either side of it, and says why. Both run
+entirely on this computer: no audio and no text is sent anywhere to produce
+them.
 
 Every result is labelled **Suggestion**. **Keep** writes one under its part in
 your notes. **Dismiss** clears it. Nothing is ever written into a Studio

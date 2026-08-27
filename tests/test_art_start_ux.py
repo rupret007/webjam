@@ -28,6 +28,7 @@ from tests.support.start_ux import (
 from webjam_qt.windows.launch_dialog import (
     _CREATOR_LAUNCH_COPY,
     LaunchDialog,
+    ProfileCard,
     StartCard,
 )
 
@@ -44,9 +45,14 @@ def _settings(tmp_path: Path) -> AppSettings:
 
 def _dialog(tmp_path: Path, profile_key: str = "art") -> LaunchDialog:
     settings = _settings(tmp_path)
-    settings.last_creator_profile_key = profile_key
+    settings.last_creator_profile_key = (
+        profile_key if profile_key in {"art", "music"} else "music"
+    )
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(settings)
+    if profile_key not in {"art", "music"}:
+        selector = dialog._creator_profile_selector
+        selector.setCurrentIndex(selector.findData(profile_key))
     return dialog
 
 
@@ -101,17 +107,21 @@ def test_art_adds_no_start_action_beyond_the_cards_and_host_join(
     try:
         buttons = _visible_buttons(dialog)
         cards = [b for b in buttons if isinstance(b, StartCard)]
-        others = [b for b in buttons if not isinstance(b, StartCard)]
+        profiles = [b for b in buttons if isinstance(b, ProfileCard)]
+        others = [
+            b for b in buttons if not isinstance(b, (StartCard, ProfileCard))
+        ]
 
         assert len(cards) == 3
+        assert [card.accessibleName() for card in profiles] == ["Art", "Music"]
         assert [button.text() for button in others] == ["Host", "Join"]
         # Art has no standalone Studio project, so that door stays shut
         # rather than being offered and then refused.
         assert dialog._studio_button.isHidden() is True
         assert dialog._studio_button.isEnabled() is False
-        # Art still needs a way onto this door; the profile picker stays.
-        assert dialog._creator_profile_label.isHidden() is False
-        assert dialog._creator_profile_selector.isHidden() is False
+        # Art is a first-screen card. The leftover combo is not the door.
+        assert dialog._creator_profile_label.isHidden() is True
+        assert dialog._creator_profile_selector.isHidden() is True
     finally:
         dialog.deleteLater()
 
@@ -272,20 +282,24 @@ def test_a_profile_without_cards_keeps_its_headline_and_helper(
 ):
     dialog = _dialog(tmp_path, "music")
     try:
-        assert dialog._choice_title.isVisibleTo(dialog._choice_page) is True
+        # Art | Music cards carry the first choice. The leftover headline
+        # and helper are chrome on that door.
+        assert dialog._choice_title.isVisibleTo(dialog._choice_page) is False
         assert dialog._choice_subtitle.isVisibleTo(dialog._choice_page) is False
-        assert dialog._choice_helper.text() == "Play live together."
+        assert dialog._choice_helper.text() == ""
+        assert dialog._music_profile_card.description() == "Play live together."
         assert dialog._creator_profile_label.isVisibleTo(dialog._choice_page) is False
         assert dialog._creator_profile_selector.isVisibleTo(dialog._choice_page) is False
         assert dialog._more_rooms_button.isVisibleTo(dialog._choice_page) is True
+        assert dialog._more_rooms_button.text() == "Podcast or review"
     finally:
         dialog.deleteLater()
 
 
-def test_music_door_keeps_host_join_and_offers_a_quiet_path_to_art(
+def test_music_door_keeps_host_join_and_offers_a_first_class_path_to_art(
     qapp, tmp_path: Path
 ):
-    """Default Music is Host / Join. Art is one quiet line away."""
+    """Default Music is Host / Join. Art is an equal first-screen card."""
 
     dialog = _dialog(tmp_path, "music")
     try:
@@ -296,25 +310,16 @@ def test_music_door_keeps_host_join_and_offers_a_quiet_path_to_art(
         ]
         assert [button.text() for button in role_buttons] == ["Host", "Join"]
         assert dialog._studio_button.isHidden() is True
+        assert dialog._art_profile_card.isVisibleTo(dialog._choice_page) is True
+        assert dialog._music_profile_card.isVisibleTo(dialog._choice_page) is True
         assert dialog._more_rooms_button.isVisibleTo(dialog._choice_page) is True
+        assert dialog._more_rooms_button.text() == "Podcast or review"
         assert dialog._more_rooms_button.autoDefault() is False
         assert dialog._more_rooms_button.isDefault() is False
         assert dialog._host_button.isDefault() is True
         _assert_first_screen_has_no_banned_words(_first_screen_spoken(dialog))
 
-        dialog._more_rooms_button.click()
-        assert dialog._rooms_picker_revealed is True
-        assert dialog._more_rooms_button.isVisibleTo(dialog._choice_page) is False
-        assert dialog._creator_profile_label.isVisibleTo(dialog._choice_page) is True
-        assert dialog._creator_profile_selector.isVisibleTo(dialog._choice_page) is True
-        assert [
-            dialog._creator_profile_selector.itemText(index)
-            for index in range(dialog._creator_profile_selector.count())
-        ] == [profile.label for profile in CREATOR_PROFILES]
-        assert [button.text() for button in role_buttons] == ["Host", "Join"]
-
-        selector = dialog._creator_profile_selector
-        selector.setCurrentIndex(selector.findData("art"))
+        dialog._art_profile_card.click()
         assert dialog.selected_creator_profile_key == "art"
         assert [card.start_key for card in _visible_cards(dialog)] == [
             "talk_and_make",
@@ -322,9 +327,10 @@ def test_music_door_keeps_host_join_and_offers_a_quiet_path_to_art(
             "paint_along",
         ]
         assert dialog._more_rooms_button.isVisibleTo(dialog._choice_page) is False
+        assert dialog._creator_profile_selector.isVisibleTo(dialog._choice_page) is False
         _assert_first_screen_has_no_banned_words(_first_screen_spoken(dialog))
 
-        selector.setCurrentIndex(selector.findData("music"))
+        dialog._music_profile_card.click()
         assert dialog._rooms_picker_revealed is False
         assert dialog._more_rooms_button.isVisibleTo(dialog._choice_page) is True
         assert dialog._creator_profile_selector.isVisibleTo(dialog._choice_page) is False
@@ -447,10 +453,12 @@ def test_a_profile_without_starts_shows_no_cards(
         assert _visible_cards(dialog) == []
         assert dialog.selected_start_key == ""
         assert dialog.selected_start is None
-        hide_profile = profile_key == "music"
-        assert dialog._creator_profile_label.isHidden() is hide_profile
-        assert dialog._creator_profile_selector.isHidden() is hide_profile
-        assert dialog._more_rooms_button.isHidden() is not hide_profile
+        first_screen = profile_key == "music"
+        assert dialog._creator_profile_label.isHidden() is first_screen
+        assert dialog._creator_profile_selector.isHidden() is first_screen
+        assert dialog._more_rooms_button.isHidden() is not first_screen
+        assert dialog._art_profile_card.isHidden() is False
+        assert dialog._music_profile_card.isHidden() is False
     finally:
         dialog.deleteLater()
 
@@ -539,7 +547,7 @@ def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
         others = [
             button.text()
             for button in _visible_buttons(dialog)
-            if not isinstance(button, StartCard)
+            if not isinstance(button, (StartCard, ProfileCard))
         ]
         assert others == ["Host", "Join"]
     finally:

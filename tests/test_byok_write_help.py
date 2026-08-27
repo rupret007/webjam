@@ -134,8 +134,8 @@ def test_with_no_key_the_ask_button_is_absent_and_one_line_explains(overlay):
 
     assert overlay._model_button.isHidden()
     assert overlay._model_provider.isHidden()
-    assert overlay._model_note.isHidden() is False
-    assert overlay._model_note.text().count(".") <= 2
+    assert overlay._model_note.isHidden() is True
+    assert overlay._suggestion_button.text() == "Suggestion"
 
 
 def test_webjam_s_own_write_help_is_offered_whether_or_not_a_key_exists(overlay):
@@ -143,18 +143,19 @@ def test_webjam_s_own_write_help_is_offered_whether_or_not_a_key_exists(overlay)
 
     overlay.set_model_help_state(providers=(), note="Add a model key in Settings.")
 
-    assert overlay._write_button.isHidden() is False
-    assert overlay._chords_button.isHidden() is False
-    assert overlay._write_button.isEnabled()
+    assert overlay._suggestion_button.isHidden() is False
+    assert overlay._suggestion_button.isEnabled()
+    assert overlay._suggestion_button.text() == "Suggestion"
+    assert overlay._model_row.isHidden() is True
 
 
 def test_one_key_names_that_provider_and_shows_no_picker(overlay):
     overlay.set_model_help_state(providers=(("openai", "OpenAI"),))
 
-    assert overlay._model_button.isHidden() is False
-    assert overlay._model_button.text() == "Ask OpenAI"
+    assert overlay._model_button.isHidden() is True
     assert overlay._model_provider.isHidden()
     assert overlay._model_note.isHidden()
+    assert overlay._suggestion_button.text() == "Suggestion"
 
 
 def test_two_keys_are_chosen_between_here_not_at_launch(overlay):
@@ -162,11 +163,8 @@ def test_two_keys_are_chosen_between_here_not_at_launch(overlay):
         providers=(("openai", "OpenAI"), ("anthropic", "Anthropic"))
     )
 
-    assert overlay._model_provider.isHidden() is False
-    assert [
-        overlay._model_provider.itemText(index)
-        for index in range(overlay._model_provider.count())
-    ] == ["OpenAI", "Anthropic"]
+    assert overlay._model_provider.isHidden() is True
+    assert overlay._suggestion_button.text() == "Suggestion"
     assert overlay.selected_model_provider() == "openai"
 
 
@@ -262,7 +260,10 @@ def test_the_panel_offers_the_keys_this_computer_actually_has(app, store):
 
     coordinator._render_model_help_state()
 
-    assert coordinator.overlay._model_provider.isHidden() is False
+    # Keys still load for Suggestion. The picker itself is not a home.
+    assert coordinator.overlay._model_row.isHidden() is True
+    assert coordinator.overlay._model_provider.isHidden() is True
+    assert coordinator.overlay._suggestion_button.text() == "Suggestion"
     assert [
         coordinator.overlay._model_provider.itemData(index)
         for index in range(coordinator.overlay._model_provider.count())

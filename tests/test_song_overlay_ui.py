@@ -437,8 +437,8 @@ def test_writing_help_and_chords_render_with_their_reasoning(overlay):
 
 
 def test_help_buttons_say_nothing_is_uploaded(overlay):
-    for button in (overlay._write_button, overlay._chords_button):
-        assert "Nothing is uploaded" in button.toolTip()
+    assert overlay._suggestion_button.text() == "Suggestion"
+    assert "Nothing is uploaded" in overlay._suggestion_button.toolTip()
 
 
 # ----------------------------------------------------------------------
@@ -567,7 +567,7 @@ def test_choosing_a_part_is_what_the_chords_button_asks_about(overlay):
 
     seen: list[str] = []
     overlay.chords_requested.connect(seen.append)
-    overlay._chords_button.click()
+    overlay._suggestion_button.click()
 
     assert seen == ["Chorus"]
 
@@ -623,12 +623,12 @@ def test_next_chord_candidates_render_with_their_reasons(overlay):
 
 
 def test_the_song_page_keeps_to_its_control_budget(overlay):
-    """Few words: three worded actions, two transport glyphs, one picker.
+    """Few words: two worded actions, two transport glyphs, one picker.
 
     This is the default page on a computer with no keys of any kind, which is
     the shape most musicians will ever see. The budget is split because a 28px
     transport glyph does not cost a musician the same attention as another
-    labelled button. Anything that adds a fourth worded action to this page
+    labelled button. Anything that adds a third worded action to this page
     should have to change this test.
     """
 
@@ -642,9 +642,8 @@ def test_the_song_page_keeps_to_its_control_budget(overlay):
     glyphs = [button for button in buttons if len(button.text()) <= 2]
 
     assert sorted(button.text() for button in worded) == [
-        "Help write",
         "Share sheet to chat",
-        "Suggest chords",
+        "Suggestion",
     ]
     assert len(glyphs) == 2
     assert all(button.width() <= 32 for button in glyphs)
@@ -873,13 +872,16 @@ def test_soloing_a_stem_is_a_separate_signal(overlay):
 def test_sing_this_one_is_offered_once_stems_exist(overlay):
     overlay.set_stems(stems=(), mix=None)
     assert not overlay._sing_button.isEnabled()
-    assert "Run Split stems" in overlay._stem_status.text()
+    assert overlay._stem_status.text() == "No stems yet."
+    assert overlay._split_button.text() == "Split a file you own"
+    assert overlay._split_button.isHidden() is False
 
     workbench = _bench_workbench()
     overlay.set_stems(
         stems=workbench.stem_bench.stems, mix=workbench.stem_bench.mix()
     )
     assert overlay._sing_button.isEnabled()
+    assert overlay._split_button.isHidden() is True
     assert "sings it" in overlay._sing_button.toolTip()
 
 
@@ -912,8 +914,10 @@ def test_the_stems_page_keeps_to_two_worded_actions(overlay):
     worded = [
         button
         for button in page.findChildren(QPushButton)
-        if len(button.text()) > 2
+        if not button.isHidden() and len(button.text()) > 2
     ]
+    # Split is the empty-state action. Once stems exist it is gone, and
+    # these two are the page.
     assert sorted(button.text() for button in worded) == [
         "Send to jam",
         "Sing this one",

@@ -9,6 +9,13 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the v0.27.0 source candidate belongs here. Every published tag,
 > release, and asset remains immutable historical evidence.
 
+### Feel pass: Art hits as hard as Music
+
+- The first screen is two equal cards: **Art** — **Paint, sculpt, print, or talk.** and **Music** — **Play live together.** Art is no longer last in a combo or buried behind **Art, podcast, or review**.
+- After **Art**: **Talk & make**, **Paint together**, **Paint along**, then **Host** / **Join**. After **Music**: **Host** / **Join** only. Podcast and Review stay off that first screen.
+- Shared Track no longer shows a mute **Needs attention** badge. A paused song that can play says **Paused**. A loaded song that cannot play names a doable next step: **Set up the audio device**, **Host needs to fix play**, or **Open Shared Track**. That badge opens Shared Track, where **Set Up Shared Track…** and **Recheck Route** are the actions. Play on an unsigned 0.27.0 build uses the bundled headless client and this Mac's BlackHole 16ch/64ch route — not a signed catalog pin.
+- Song help is one **Suggestion** on the section, not **Help write** plus **Suggest chords** plus a Tools/Ask-AI home. Art **Suggestion** sits on the notes. **More → AI Image…** is gone. Song tabs a person sees are **Song** and **Stems**. Stems empty state is **Split a file you own**, not a hidden Tools catalog. **Meeting** stays with Conversation.
+
 ## [0.27.0] — Unpublished source candidate
 
 > This source identity is not yet a GitHub release. GitHub **Latest** remains

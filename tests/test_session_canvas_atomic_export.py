@@ -48,14 +48,44 @@ class TestSessionCanvasAtomicExport(unittest.TestCase):
         self.assertFalse(canvas._export_notes_action.isEnabled())
 
     def test_toolbar_controls_fit_supported_canvas_widths(self):
-        for width in (280, 360, 900):
-            with self.subTest(width=width):
+        from core.creative_modes import get_creator_profile_by_key
+
+        for width, profile_key in (
+            (280, "music"),
+            (360, "music"),
+            (900, "music"),
+            (280, "art"),
+            (360, "art"),
+        ):
+            with self.subTest(width=width, profile=profile_key):
                 canvas = SessionCanvas()
+                canvas.set_creator_profile(get_creator_profile_by_key(profile_key))
                 canvas.resize(width, 700)
                 canvas.show()
                 _app.processEvents()
 
-                for button in canvas._toolbar_buttons:
+                visible = [
+                    button
+                    for button in canvas._toolbar_buttons
+                    if not button.isHidden()
+                ]
+                self.assertTrue(visible)
+                if profile_key == "art":
+                    self.assertEqual(canvas._suggestion_button.text(), "Suggestion")
+                    self.assertIn(canvas._suggestion_button, visible)
+                    needed = canvas._suggestion_button.fontMetrics().horizontalAdvance(
+                        "Suggestion"
+                    )
+                    self.assertGreaterEqual(
+                        canvas._suggestion_button.width(), needed
+                    )
+                    self.assertNotIn(
+                        "live music path",
+                        canvas._guidance_why.text().casefold(),
+                    )
+                else:
+                    self.assertNotIn(canvas._suggestion_button, visible)
+                for button in visible:
                     self.assertGreater(button.width(), 0)
                     self.assertGreaterEqual(button.geometry().left(), 0)
                     self.assertLessEqual(button.geometry().right(), width - 1)

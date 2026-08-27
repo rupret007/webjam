@@ -49,9 +49,9 @@ def harvest_spoken_page(
     """Harvest what a person can read or hear on one launch page.
 
     Hidden fail-closed recovery (the Windows Jamulus installer) stays out
-    because it is not on the door. Combo items are included even while Music
-    hides the picker: those words become the first screen the moment Art,
-    podcast, or review is revealed.
+    because it is not on the door. Hidden combo items stay out too: Podcast
+    and Review are not first-screen rooms, and harvesting them while the
+    picker is off would bury Art again.
     """
 
     skipped = {widget for widget in exclude if widget is not None}
@@ -68,33 +68,21 @@ def harvest_spoken_page(
                 value = getter()
                 if value:
                     parts.append(str(value))
-        if isinstance(widget, QComboBox):
+        if isinstance(widget, QComboBox) and widget.isVisibleTo(page):
             parts.extend(widget.itemText(index) for index in range(widget.count()))
     return " ".join(parts).casefold()
 
 
 def harvest_first_screen(dialog: QWidget) -> str:
-    """Harvest the choice page, including cards and the quiet rooms path."""
+    """Harvest the choice page a person actually sees."""
 
     page = getattr(dialog, "_choice_page", dialog)
     installer = getattr(dialog, "_install_jamulus_button", None)
-    parts = [harvest_spoken_page(page, exclude=(installer,) if installer else ())]
-    selector = getattr(dialog, "_creator_profile_selector", None)
-    if selector is not None:
-        parts.extend(selector.itemText(index) for index in range(selector.count()))
-        description = selector.accessibleDescription()
-        if description:
-            parts.append(description)
-    cards = getattr(dialog, "_visible_start_cards", None)
-    if callable(cards):
-        for card in cards():
-            for attr in _WIDGET_TEXT_ATTRS:
-                getter = getattr(card, attr, None)
-                if callable(getter):
-                    value = getter()
-                    if value:
-                        parts.append(str(value))
-    return " ".join(parts).casefold()
+    more_rooms = getattr(dialog, "_more_rooms_button", None)
+    exclude = tuple(
+        widget for widget in (installer, more_rooms) if widget is not None
+    )
+    return harvest_spoken_page(page, exclude=exclude)
 
 
 def harvest_join_page(dialog: QWidget) -> str:

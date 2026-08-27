@@ -14,7 +14,7 @@ Emits semantic signals; ApplicationController wires them to services.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QTime, QTimer, Signal
+from PySide6.QtCore import Qt, QTime, QTimer, Signal
 from PySide6.QtGui import QAction, QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtWidgets import (
     QComboBox,
@@ -40,6 +40,103 @@ from webjam_qt.theme.brand import BrandMark
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.art_room_chip import ArtRoomChip
 from webjam_qt.widgets.shared_track_waveform import SharedTrackWaveform
+
+
+def _shared_track_state_name(snapshot: object) -> str:
+    state_value = getattr(getattr(snapshot, "state", None), "value", "")
+    return str(state_value or getattr(snapshot, "state", "idle")).lower()
+
+
+def _shared_track_capability_reason(snapshot: object) -> str:
+    capability = getattr(snapshot, "capability", None)
+    return str(getattr(capability, "reason_code", "") or "").lower()
+
+
+def shared_track_play_is_locked(snapshot: object) -> bool:
+    """Whether a loaded song still needs a human step before Play.
+
+    A paused or ready song with a proven route is not locked. A failed
+    route, or a loaded song whose isolated device is not available, is.
+    Snapshots that omit capability (guest projections, older tests) keep
+    their transport words unless the state is already failed.
+    """
+
+    state = _shared_track_state_name(snapshot)
+    if state == "failed":
+        return True
+    loaded = bool(str(getattr(snapshot, "source_name", "") or ""))
+    if not loaded or state in {"playing", "routing", "stopping"}:
+        return False
+    capability = getattr(snapshot, "capability", None)
+    if capability is not None and not bool(getattr(capability, "available", True)):
+        return True
+    if hasattr(snapshot, "can_play"):
+        can_play = snapshot.can_play
+        if callable(can_play):
+            can_play = can_play()
+        if can_play is False and state in {"ready", "paused"}:
+            return True
+    return False
+
+
+def shared_track_next_step_label(snapshot: object) -> str:
+    """Name the doable Shared Track step. Never returns 'Needs attention'."""
+
+    error = str(getattr(snapshot, "error", "") or "").strip()
+    reason = _shared_track_capability_reason(snapshot)
+    loaded = bool(str(getattr(snapshot, "source_name", "") or ""))
+    return _locked_shared_track_next_step(error, reason, loaded)
+
+
+def shared_track_status_label(snapshot: object) -> str:
+    """Name the Shared Track next step in human words.
+
+    A loaded song that can play is not an alarm. A loaded song that cannot
+    play must say what to do, including after a quiet local load. The
+    generic badge "Needs attention" is never returned.
+    """
+
+    state = _shared_track_state_name(snapshot)
+    cleanup_pending = bool(getattr(snapshot, "cleanup_pending", False))
+    count_in_active = bool(getattr(snapshot, "count_in_active", False))
+    if cleanup_pending:
+        return "Cleanup pending"
+    if shared_track_play_is_locked(snapshot):
+        return shared_track_next_step_label(snapshot)
+    labels = {
+        "unavailable": "Route locked",
+        "idle": "Not loaded",
+        "loading": "Loading…",
+        "ready": "Ready",
+        "routing": "Starting…",
+        "playing": "Count-in" if count_in_active else "Playing",
+        "paused": "Paused",
+        "stopping": "Stopping…",
+        "closed": "Closed",
+    }
+    return labels.get(state, "Checking…")
+
+
+def _locked_shared_track_next_step(error: str, reason: str, loaded: bool) -> str:
+    del loaded
+    combined = f"{error} {reason}".casefold()
+    if (
+        "physical_certification" in reason
+        or "blackhole" in reason
+        or "isolated audio" in combined
+        or "device set up" in combined
+    ):
+        return "Set up the audio device"
+    if "host attention" in combined or "needs host" in combined:
+        return "Host needs to fix play"
+    first = error.split(".", 1)[0].strip()
+    if (
+        first
+        and "needs attention" not in first.casefold()
+        and len(first) <= 48
+    ):
+        return first
+    return "Open Shared Track"
 
 
 class SessionStrip(QFrame):
@@ -87,6 +184,8 @@ class SessionStrip(QFrame):
         self._shared_track_projection_visible = False
         self._shared_track_transport_action = "play"
         self._shared_track_transport_enabled = False
+        self._shared_track_setup_instead_of_play = False
+        self._shared_track_next_step_available = False
         self._shared_track_stop_enabled = False
         self._recording_control_available = False
         self._recording_control_requested = False
@@ -229,11 +328,11 @@ class SessionStrip(QFrame):
         self._song_button.setObjectName("GhostButton")
         self._song_button.setAccessibleName("Open Song tools")
         self._song_button.setAccessibleDescription(
-            "Chords, lyrics, stems, and writing help for the song in this "
-            "session. Suggestions are made on this computer."
+            "Chords, lyrics, stems, and a Suggestion for the part you pick. "
+            "Suggestions are made on this computer."
         )
         self._song_button.setToolTip(
-            "Chords, lyrics, and writing help for this song."
+            "Chords, lyrics, and a Suggestion for this song."
         )
         self._song_button.clicked.connect(
             lambda: self.tool_requested.emit("song_tools")
@@ -283,7 +382,7 @@ class SessionStrip(QFrame):
         self._reference_track_button.clicked.connect(
             lambda: self.tool_requested.emit("reference_track")
         )
-        self._reference_track_button.setMaximumWidth(128)
+        self._reference_track_button.setMaximumWidth(260)
         self._reference_track_button.setVisible(False)
         shared_layout.addWidget(self._reference_track_button)
         self._shared_track_waveform = SharedTrackWaveform(
@@ -311,10 +410,13 @@ class SessionStrip(QFrame):
         )
         self._shared_track_stop.setVisible(False)
         shared_layout.addWidget(self._shared_track_stop)
-        self._shared_track_state = QLabel("Not loaded")
+        self._shared_track_state = QPushButton("Not loaded")
         self._shared_track_state.setObjectName("SharedTrackLiveState")
         self._shared_track_state.setAccessibleName("Shared Track status")
-        self._shared_track_state.setMaximumWidth(82)
+        self._shared_track_state.setFlat(True)
+        self._shared_track_state.setMaximumWidth(240)
+        self._shared_track_state.setEnabled(False)
+        self._shared_track_state.clicked.connect(self._emit_shared_track_next_step)
         shared_layout.addWidget(self._shared_track_state)
         self._shared_track_surface.setVisible(False)
 
@@ -571,9 +673,9 @@ class SessionStrip(QFrame):
         shared_canvas = bool(profile.capabilities.shared_canvas)
         self._shared_canvas_action.setVisible(shared_canvas)
         self._shared_canvas_action.setEnabled(shared_canvas)
-        ai_image = bool(profile.capabilities.ai_image)
-        self._ai_image_action.setVisible(ai_image)
-        self._ai_image_action.setEnabled(ai_image)
+        # AI Image is a Suggestion on the Art notes, not a More-menu home.
+        self._ai_image_action.setVisible(False)
+        self._ai_image_action.setEnabled(bool(profile.capabilities.ai_image))
         # A profile without these layers has no room state to show, so the
         # chip is not merely empty for it -- it is gone.
         self._art_room_supported = reference_video or shared_canvas
@@ -1003,6 +1105,16 @@ class SessionStrip(QFrame):
         self._shared_track_stop.setEnabled(
             self._tools_enabled and self._shared_track_stop_enabled
         )
+        self._shared_track_state.setEnabled(
+            self._tools_enabled
+            and self._shared_track_host
+            and self._shared_track_next_step_available
+        )
+        self._shared_track_state.setEnabled(
+            self._tools_enabled
+            and self._shared_track_host
+            and self._shared_track_next_step_available
+        )
         self._studio_button.setEnabled(self._tools_enabled)
         self._song_button.setEnabled(
             self._tools_enabled and self._creator_profile_key == "music"
@@ -1214,22 +1326,12 @@ class SessionStrip(QFrame):
         state = str(state_value or getattr(snapshot, "state", "idle")).lower()
         loaded = bool(str(getattr(snapshot, "source_name", "") or ""))
         cleanup_pending = bool(getattr(snapshot, "cleanup_pending", False))
-        count_in_active = bool(getattr(snapshot, "count_in_active", False))
-        labels = {
-            "unavailable": "Route locked",
-            "idle": "Not loaded",
-            "loading": "Loading…",
-            "ready": "Ready",
-            "routing": "Starting…",
-            "playing": "Count-in" if count_in_active else "Playing",
-            "paused": "Paused",
-            "stopping": "Stopping…",
-            "failed": "Needs attention",
-            "closed": "Closed",
-        }
-        label = "Cleanup pending" if cleanup_pending else labels.get(state, "Checking…")
-        self._shared_track_state.setText(label)
-        self._shared_track_state.setAccessibleDescription(label)
+        label = shared_track_status_label(snapshot)
+        play_locked = shared_track_play_is_locked(snapshot)
+        self._shared_track_next_step_available = bool(
+            self._shared_track_host and play_locked
+        )
+        self._apply_shared_track_state_label(label)
         self._shared_track_waveform.set_snapshot(snapshot)
         self._shared_track_source_change_allowed = state in {
             "idle",
@@ -1237,8 +1339,28 @@ class SessionStrip(QFrame):
             "failed",
             "unavailable",
         } and not cleanup_pending
-        self._reference_track_button.setText(
-            "Shared Track" if loaded else "＋ Shared Track"
+        if play_locked:
+            self._reference_track_button.setText(label)
+            self._reference_track_button.setAccessibleName(label)
+            self._reference_track_button.setToolTip(
+                f"{label}. Opens Shared Track so you can set up the device "
+                "and Recheck Route."
+            )
+            self._reference_track_button.setMaximumWidth(260)
+            self._shared_track_state.setVisible(False)
+        else:
+            self._reference_track_button.setText(
+                "Shared Track" if loaded else "＋ Shared Track"
+            )
+            self._reference_track_button.setAccessibleName("Open Shared Track")
+            self._reference_track_button.setToolTip(
+                "Open Shared Track to load and inspect a song.\n"
+                "Playback remains locked until its isolated Jamulus route is proven."
+            )
+            self._reference_track_button.setMaximumWidth(128)
+            self._shared_track_state.setVisible(True)
+        self._shared_track_setup_instead_of_play = bool(
+            play_locked and state in {"ready", "paused", "failed"}
         )
         self._shared_track_transport_action = (
             "pause" if state == "playing" else "play"
@@ -1246,23 +1368,35 @@ class SessionStrip(QFrame):
         self._shared_track_transport.setText(
             "Ⅱ" if self._shared_track_transport_action == "pause" else "▶"
         )
-        transport_name = (
-            "Pause Shared Track"
-            if self._shared_track_transport_action == "pause"
-            else "Resume Shared Track"
-            if state == "paused"
-            else "Play Shared Track"
-        )
+        if self._shared_track_setup_instead_of_play:
+            transport_name = label
+        elif self._shared_track_transport_action == "pause":
+            transport_name = "Pause Shared Track"
+        elif state == "paused":
+            transport_name = "Resume Shared Track"
+        else:
+            transport_name = "Play Shared Track"
         self._shared_track_transport.setAccessibleName(transport_name)
         self._shared_track_transport.setToolTip(transport_name)
-        can_play = bool(getattr(snapshot, "can_play", state == "ready"))
+        can_play = bool(getattr(snapshot, "can_play", False))
+        if not hasattr(snapshot, "can_play"):
+            capability = getattr(snapshot, "capability", None)
+            can_play = bool(
+                loaded
+                and (
+                    capability is None
+                    or bool(getattr(capability, "available", True))
+                )
+                and state in {"ready", "paused"}
+            )
         self._shared_track_transport_enabled = bool(
             self._shared_track_host
             and loaded
             and not cleanup_pending
             and (
-                state in {"playing", "paused"}
-                or (state == "ready" and can_play)
+                state == "playing"
+                or (state in {"ready", "paused"} and can_play)
+                or self._shared_track_setup_instead_of_play
             )
         )
         self._shared_track_stop_enabled = bool(
@@ -1309,8 +1443,13 @@ class SessionStrip(QFrame):
         self._shared_track_source_change_allowed = self._shared_track_host
         self._shared_track_transport_action = "play"
         self._shared_track_transport_enabled = False
+        self._shared_track_setup_instead_of_play = False
+        self._shared_track_next_step_available = False
         self._shared_track_stop_enabled = False
         self._reference_track_button.setText("＋ Shared Track")
+        self._reference_track_button.setAccessibleName("Open Shared Track")
+        self._reference_track_button.setMaximumWidth(128)
+        self._shared_track_state.setVisible(True)
         self._shared_track_transport.setText("▶")
         self._shared_track_transport.setAccessibleName("Play Shared Track")
         self._shared_track_transport.setToolTip("Play Shared Track")
@@ -1318,8 +1457,7 @@ class SessionStrip(QFrame):
         self._shared_track_transport.setEnabled(False)
         self._shared_track_stop.setVisible(False)
         self._shared_track_stop.setEnabled(False)
-        self._shared_track_state.setText("Not loaded")
-        self._shared_track_state.setAccessibleDescription("Not loaded")
+        self._apply_shared_track_state_label("Not loaded")
         description = "No Shared Track is published for this session."
         self._shared_track_surface.setAccessibleDescription(description)
         self._shared_track_surface.setToolTip(description)
@@ -1346,8 +1484,8 @@ class SessionStrip(QFrame):
             )
             if self._shared_track_channel_present and not self._shared_track_snapshot_seen:
                 detail = "Channel visible"
-                self._shared_track_state.setText(detail)
-                self._shared_track_state.setAccessibleDescription(detail)
+                self._shared_track_next_step_available = False
+                self._apply_shared_track_state_label(detail)
                 description = (
                     "A Shared Track channel is visible in Jamulus. This client "
                     "does not claim that it is audible or currently playing."
@@ -1359,10 +1497,44 @@ class SessionStrip(QFrame):
     def _emit_shared_track_transport(self) -> None:
         if not self._shared_track_host or not self._shared_track_transport_enabled:
             return
+        if self._shared_track_setup_instead_of_play:
+            self.tool_requested.emit("reference_track")
+            return
         if self._shared_track_transport_action == "pause":
             self.shared_track_pause_requested.emit()
         else:
             self.shared_track_play_requested.emit()
+
+    def _emit_shared_track_next_step(self) -> None:
+        if not self._shared_track_host or not self._shared_track_next_step_available:
+            return
+        self.tool_requested.emit("reference_track")
+
+    def _apply_shared_track_state_label(self, label: str) -> None:
+        self._shared_track_state.setText(label)
+        self._shared_track_state.setAccessibleDescription(label)
+        self._shared_track_state.setToolTip(
+            f"{label}. Opens Shared Track."
+            if self._shared_track_next_step_available
+            else label
+        )
+        self._shared_track_state.setCursor(
+            Qt.CursorShape.PointingHandCursor
+            if self._shared_track_next_step_available
+            else Qt.CursorShape.ArrowCursor
+        )
+        self._shared_track_state.setProperty(
+            "nextStep",
+            "true" if self._shared_track_next_step_available else "false",
+        )
+        self._shared_track_state.setEnabled(
+            self._tools_enabled
+            and self._shared_track_host
+            and self._shared_track_next_step_available
+        )
+        style = self._shared_track_state.style()
+        style.unpolish(self._shared_track_state)
+        style.polish(self._shared_track_state)
 
     @staticmethod
     def _dropped_shared_track_path(mime_data) -> str:
