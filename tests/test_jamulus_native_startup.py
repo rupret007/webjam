@@ -1219,9 +1219,20 @@ def test_native_sound_setup_watches_connection_without_a_completion_click() -> N
             "host",
             "Add conversation if you use it",
             (
-                "never directly or automatically taps a meeting app",
-                "Record Session captures Jamulus server stems",
-                "Do not route meeting or system audio into those inputs",
+                "Choose Add Conversation",
+                "Not Now",
+                "next step",
+            ),
+        ),
+        (
+            "review_rehearsal",
+            "conversation",
+            "host",
+            "Add conversation if you use it",
+            (
+                "Choose Add Conversation",
+                "Not Now",
+                "next step",
             ),
         ),
         (
@@ -1321,6 +1332,13 @@ def test_creator_profile_drives_truthful_native_startup_copy(
     assert call.args[0] == expected_title
     for token in detail_tokens:
         assert token in call.args[1]
+    if phase == "conversation":
+        assert call.args[1] == (
+            "Choose Add Conversation or Not Now. "
+            "That is the next step."
+        )
+        assert call.kwargs["action_text"] == "Add Conversation"
+        assert call.kwargs["secondary_action_text"] == "Not Now"
 
 
 @pytest.mark.parametrize(
