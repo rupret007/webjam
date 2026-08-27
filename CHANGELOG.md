@@ -9,6 +9,12 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the immutable v0.26.0 release boundary belongs here. Every
 > published tag, release, and asset remains immutable historical evidence.
 
+### In-room meeting honesty: each app ends only itself
+
+- The Meeting page now states both directions of the boundary: ending WebJam
+  leaves the external meeting open, and leaving or closing that meeting does
+  not end the jam. Its two mute scopes and existing actions are unchanged.
+
 ### Art Conversation decision: one next step
 
 - After an Art start, including **Talk & make** and **Paint together**, the
