@@ -9,6 +9,13 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the immutable v0.26.0 release boundary belongs here. Every
 > published tag, release, and asset remains immutable historical evidence.
 
+### Art Conversation decision: one next step
+
+- After an Art start, including **Talk & make** and **Paint together**, the
+  optional Conversation choice now says **Choose Add Conversation or Not Now.
+  That is the next step.** The three start cards, door, and in-room Art controls
+  are unchanged.
+
 ### In-room next step: Podcast/Review Host HUD names one next step
 
 - After Host, Podcast and Review now say **Copy the invite. That is the next step.** The leftover meeting-capture / Preview how-it-works wall is gone. After Join, Podcast says **Enter the session.** Review says **Enter Review.** Music and Art Host/Join copy is held.
