@@ -1,9 +1,8 @@
-# Meeting-platform companion guidance — v0.26.0
+# Meeting-platform companion guidance — v0.27.0 source candidate
 
-> This document describes immutable v0.26.0, the GitHub **Latest** private test
-> release. Exact packages exist, but no physical meeting result is claimed;
-> every external meeting-app behavior remains a separate **NOT RUN** physical
-> gate.
+> This document describes unpublished v0.27.0 source. GitHub **Latest** remains
+> immutable v0.26.0. Every external meeting-app behavior remains a separate
+> physical gate.
 
 Any meeting service is optional for talking or video. Jamulus carries the
 music.

@@ -88,8 +88,14 @@ def test_current_guides_state_published_latest_and_physical_boundary_truthfully(
         "v0.25.0 remains GitHub **Latest**",
         "GitHub **Latest** remains immutable v0.25.0",
         "Immutable v0.25.0 is the GitHub **Latest**",
+        "this checkout identifies itself as v0.26.0",
+        "v0.26.0 is also the current source identity",
+        "Current source line | v0.26.0",
     ):
         assert stale_claim.casefold() not in combined.casefold(), stale_claim
+
+    assert "unpublished v0.27.0" in combined.casefold()
+    assert "no v0.27.0" in combined.casefold()
 
 
 def test_v026_checklist_verifies_only_automated_release_identity() -> None:

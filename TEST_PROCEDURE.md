@@ -1,9 +1,10 @@
-# WebJam v0.26.0 private-test-release procedure
+# WebJam v0.27.0 source-candidate test procedure
 
-> Immutable v0.26.0 is the GitHub **Latest** private test release. Its exact
-> tag, packages, checksum manifest, protected publication, and public redownload
-> are verified. No physical PASS is claimed: its physical, hardware, provider,
-> accessibility, production-trust, and release-decision rows remain **NOT RUN**.
+> v0.27.0 is unpublished source. GitHub **Latest** remains immutable v0.26.0.
+> No v0.27.0 physical result exists; every v0.27.0 physical, credentialed,
+> signing, and platform-trust gate is **NOT RUN**. Immutable v0.26.0 still has
+> exact tag, packages, checksum manifest, protected publication, and public
+> redownload evidence. Publication did not create physical PASS.
 
 ## Scope
 

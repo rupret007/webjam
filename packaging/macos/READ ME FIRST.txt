@@ -1,14 +1,14 @@
-WEBJAM v0.26.0 PRIVATE TEST CANDIDATE — PLEASE READ
+WEBJAM v0.27.0 PRIVATE TEST CANDIDATE — PLEASE READ
 
 PRIVATE TEST CANDIDATE: use this package only when its exact filename appears
-in the v0.26.0 GitHub release and its SHA-256 matches that release's manifest.
-Do not use the immutable v0.25.0 checksum manifest for this build.
+in the v0.27.0 GitHub release and its SHA-256 matches that release's manifest.
+Do not use the immutable v0.26.0 checksum manifest for this build.
 Physical audio, hardware, Gatekeeper, signing, and notarization gates remain
 NOT RUN unless the release evidence names this exact file and SHA-256.
 
 This WebJam build is ad-hoc signed and is NOT notarized or reviewed by Apple.
 Only install it when its exact local artifact identity and checksum are part of
-the current v0.26 physical-test handoff.
+the current v0.27 physical-test handoff.
 
 This candidate upgrades cryptography to 50.0.0 for CVE-2026-69247,
 CVE-2026-69248, and CVE-2026-69249. Apple-silicon uses an exact hash-locked
@@ -66,8 +66,8 @@ timecode are blocked. No profile directly or automatically taps a meeting app,
 browser, or system output. Local scratchpad notes remain profile-scoped on this
 Mac only; they are never shared or media-timecoded.
 
-The sealed v0.22.5 Jamulus catalog does not authorize v0.26.0 and is rejected.
-Until a new signed v0.26 catalog exists, this candidate uses the embedded
+The sealed v0.22.5 Jamulus catalog does not authorize v0.27.0 and is rejected.
+Until a new signed v0.27 catalog exists, this candidate uses the embedded
 Jamulus 3.12.2 fallback rather than offering a managed 3.12.3 download.
 
 macOS may separately ask for microphone access when you use an audio input.

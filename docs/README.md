@@ -9,11 +9,10 @@ keeps the product story and five-minute demo intentionally short.
 > unsigned; macOS is ad-hoc signed and unnotarized; every physical test remains
 > **NOT RUN** until recorded against those packages.
 
-> **Current source:** v0.26.0 is the published creator-multitrack line. It adds
-> plan-bound recording readiness, exact logical-source topology,
-> automatic exact repeated-take lanes, and completed creator journeys. Do not
-> use a checkout or branch artifact as package evidence. Exact packages exist,
-> but all v0.26 physical/hardware rows remain **NOT RUN**.
+> **Current source:** v0.27.0 is an unpublished creator-profile and
+> authoritative multitrack candidate. Do not use a checkout or branch artifact
+> as a release. All v0.27.0 physical/hardware rows remain **NOT RUN**. GitHub
+> **Latest** remains immutable v0.26.0.
 
 ## Start here
 

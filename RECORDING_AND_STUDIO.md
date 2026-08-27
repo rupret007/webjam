@@ -1,10 +1,10 @@
-# Recording and Studio — v0.26.0
+# Recording and Studio — v0.27.0 source candidate
 
-> This document describes immutable v0.26.0, the GitHub **Latest** private test
-> release. Use only exact checksum-verified release assets. Physical recording,
-> Shared Track audibility/isolation, playback, recovery, long-session, and
-> external-editor gates remain **NOT RUN** until separately observed against
-> those packages.
+> This document describes unpublished v0.27.0 source. GitHub **Latest** remains
+> the immutable v0.26.0 private test release.
+> Physical recording, Shared Track audibility/isolation, playback, recovery,
+> long-session, and external-editor gates remain **NOT RUN** until exact
+> v0.27.0 package evidence is recorded.
 
 Music and Podcast & Voice are GA creator profiles with live recording,
 completed-take editing/mixing/export, and standalone local projects. Review &
@@ -58,7 +58,7 @@ source count. Finalization rechecks those exact facts. A reconnect, changed
 topology, missing/extra source, or substituted Shared Track cannot be accepted
 as the planned take.
 
-WebJam v0.26.0 shows this frozen plan in one accessible,
+Unpublished v0.27.0 shows this frozen plan in one accessible,
 path-free **Record Session Readiness** sheet before any recorder, local input
 stream, or Shared Track playback is armed. Each exact server, Local Original,
 and Shared Track row identifies the participant/source, mono or stereo format,
@@ -245,7 +245,7 @@ select a comp range. A newer range cleanly splits prior overlapping selections
 and uses short equal-power boundaries. Removing a lane removes only its Studio
 inventory and comp choices; the repeated take remains unchanged in Takes.
 
-For a newly completed editable Music or Podcast & Voice take, v0.26.0 also
+For a newly completed editable Music or Podcast & Voice take, unpublished v0.27.0 also
 stacks every provably safe earlier counterpart automatically. The gate requires
 the same session and project sample rate, a different complete or explicitly
 recovered take, one unique stable logical-source ID on each side, matching
@@ -378,7 +378,7 @@ requested operation.
 
 Export never rewrites the original take.
 
-## v0.26.0 private-test-release evidence boundary
+## v0.27.0 source-candidate evidence boundary
 
 Automated source tests can establish state-machine, identity, source
 validation, timing-model, persistence/recovery, rendering, waveform, export,
@@ -386,7 +386,7 @@ privacy, and headless UI behavior. They cannot establish acoustic audibility,
 latency, direct-monitor isolation, interface recovery, or how a packaged build
 feels to creators.
 
-For v0.26.0, two-machine audio, Shared Track audibility and independent mix,
+For unpublished v0.27.0, two-machine audio, Shared Track audibility and independent mix,
 count-in/record alignment, authoritative server stems, Local Original transfer,
 hardware interruption, long recording, Studio playback, external-editor
 import, packaged accessibility, SmartScreen, Gatekeeper, signing, and

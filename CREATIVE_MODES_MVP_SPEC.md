@@ -1,13 +1,12 @@
-# Creator profiles — v0.26.0 release contract
+# Creator profiles — v0.27.0 implemented contract
 
-> Status: Music, Podcast & Voice, and Review & Rehearsal are implemented in
-> immutable v0.26.0, the GitHub **Latest** private test release. The exact tag,
-> packages, checksum manifest, and protected publication are verified release
-> evidence; no physical PASS is claimed. **Art is added after v0.26.0
-> and has no release evidence yet**: it is covered by automated tests only, and
-> its two-computer behavior is **NOT RUN**. This document supersedes the earlier
-> speculative cross-discipline MVP and describes only bounded current behavior.
-> Physical and platform-trust results remain **NOT RUN**.
+> Status: unpublished v0.27.0 source candidate. GitHub **Latest** remains
+> immutable v0.26.0. Music, Podcast & Voice, and Review & Rehearsal are
+> implemented here; **Art is added after v0.26.0 and has no published release
+> evidence yet**: it is covered by automated tests only, and its two-computer
+> behavior is **NOT RUN**. This document supersedes the earlier speculative
+> cross-discipline MVP and describes only bounded current behavior. Physical
+> and platform-trust results remain **NOT RUN**.
 
 ## Product decision
 

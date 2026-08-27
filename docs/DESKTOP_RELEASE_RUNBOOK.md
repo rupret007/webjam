@@ -33,6 +33,14 @@
 > Immutable v0.26.0 is GitHub **Latest** release `371442375`. Every v0.26
 > physical and hardware gate remains **NOT RUN**.
 
+> **v0.27.0 source-candidate boundary:** the current tree reports v0.27.0 but
+> no annotated tag, tag object/commit, successful tag CI run, draft release,
+> body digest, inventory digest, asset IDs/sizes/digests, checksum manifest, or
+> promotion result exists yet. GitHub Latest remains v0.26.0. After an
+> annotated `v0.27.0` tag and unique successful tag CI, dispatch the existing
+> generic `.github/workflows/publish-latest-release.yml`. Do not invent
+> v0.27.0 pins, and do not add a version-specific publisher.
+
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version
 tags may promote its explicitly unsigned/ad-hoc outputs as a private test
@@ -60,6 +68,15 @@ recognizes the unchanged audited Jamulus 3.12.2/3.12.3 identities through
 0.25.0 and rejects 0.25.1; that baked policy is not a signed managed-update
 catalog. The candidate therefore remains fallback-only unless a new immutable
 signed version-specific component channel is separately completed.
+
+For unpublished v0.27.0, the sealed v3 catalog must likewise be proved valid
+for historical v0.22.5 and rejected for exact v0.27.0. The source registry
+narrowly recognizes the unchanged audited Jamulus 3.12.2/3.12.3 identities
+through 0.27.0 and rejects 0.27.1; that baked policy is not a signed
+managed-update catalog. The candidate therefore remains fallback-only unless
+a new immutable signed version-specific component channel is separately
+completed. jamulus-components-v1/v2/v3 stay. Do not invent a v0.27 catalog
+tag, sequence, asset, signature, or PASS.
 
 ## v0.25.0 pinned promotion status — completed
 

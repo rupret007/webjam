@@ -1,10 +1,10 @@
-# First Session — WebJam v0.26.0
+# First Session — WebJam v0.27.0 source candidate
 
-> This guide describes immutable, checksum-verified v0.26.0, the GitHub
-> **Latest** private test release. Windows is unsigned and macOS is ad-hoc
-> signed and unnotarized. Do not treat this checkout or a branch artifact as a
-> package. Every v0.26 physical gate remains **NOT RUN** until separately
-> observed against an exact release asset.
+> This guide describes the unpublished v0.27.0 source candidate. GitHub
+> **Latest** remains the immutable, checksum-verified v0.26.0 private test
+> release. Do not treat a checkout or branch artifact as a v0.27 package, and
+> record every v0.27 physical gate as **NOT RUN** until it is observed against
+> exact future release bytes.
 
 Before Host or Join, choose what you are creating: **Music** (GA), **Podcast &
 Voice** (GA), or **Review & Rehearsal** (Preview). The chosen profile changes
