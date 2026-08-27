@@ -88,10 +88,20 @@ def test_the_host_panel_opens_on_the_no_video_path(host_dialog):
     assert host_dialog.windowTitle() == "Paint along"
     assert host_dialog.minimumWidth() == 720
     assert host_dialog.minimumHeight() == 520
-    assert host_dialog._headline.text() == "No video yet"
-    assert host_dialog._status.text() == "Choose one local video to begin."
+    assert host_dialog._headline.text() == "Choose a process video"
+    assert host_dialog._status.text() == (
+        "Paint in Procreate, Clip Studio Paint, Krita, or on paper beside WebJam."
+    )
     assert host_dialog._surface_holder.isHidden() is False
-    assert host_dialog._surface_placeholder.text() == "Share a video to begin"
+    assert host_dialog._surface_placeholder.text() == (
+        "Your silent process video appears here"
+    )
+    assert host_dialog._role.text() == "YOU CONTROL"
+    assert "silent in webjam" in host_dialog._hint.text().casefold()
+    assert "talk in your meeting" in host_dialog._hint.text().casefold()
+    process_detail = host_dialog._hint.accessibleDescription().casefold()
+    for painting_place in ("procreate", "clip studio paint", "krita", "paper"):
+        assert painting_place in process_detail
     assert host_dialog._share_button.isEnabled() is True
     for disabled in (
         host_dialog._play_button,
@@ -140,7 +150,7 @@ def test_the_host_panel_shows_a_failure_instead_of_a_stale_source(host_dialog):
         )
     )
 
-    assert host_dialog._headline.text() == "No video yet"
+    assert host_dialog._headline.text() == "Choose a process video"
     assert "couldn't open that video" in host_dialog._status.text()
     assert host_dialog._play_button.isEnabled() is False
     assert host_dialog._clock.text() == "0:00 / 0:00"
@@ -209,9 +219,12 @@ def test_a_follower_panel_offers_no_transport_at_all(guest_dialog):
 
 def test_a_follower_panel_starts_on_the_no_video_path(guest_dialog):
     assert guest_dialog.windowTitle() == "Paint along"
-    assert guest_dialog._headline.text() == "No video yet"
-    assert guest_dialog._status.text() == "Waiting for the host to share a video."
-    assert guest_dialog._surface_placeholder.text() == "Waiting for the host"
+    assert guest_dialog._headline.text() == "Waiting for a process video"
+    assert guest_dialog._status.text() == "The host will choose the process video."
+    assert guest_dialog._surface_placeholder.text() == (
+        "Your silent process video appears here"
+    )
+    assert guest_dialog._role.text() == "YOU FOLLOW"
     assert guest_dialog._open_button.isEnabled() is False
     assert guest_dialog._hide_button.isEnabled() is False
 
@@ -348,8 +361,8 @@ def test_the_launch_dialog_offers_art_without_a_local_project(qapp, tmp_path):
         paint_along = cards["paint_along"].accessibleDescription().casefold()
         assert "already own" in paint_along
         assert "own copy of the same file" in paint_along
-        assert "only one able to move it" in paint_along
-        assert "brings no videos of its own" in paint_along
+        assert "host keeps it in step" in paint_along
+        assert "supplies no videos" in paint_along
     finally:
         dialog.deleteLater()
 
@@ -388,7 +401,9 @@ def test_a_guest_in_a_room_with_no_video_is_offered_nothing(qapp):
         dialog.set_follow_snapshot(ReferenceVideoFollowSnapshot())
 
         assert dialog._surface_holder.isHidden() is False
-        assert dialog._surface_placeholder.text() == "Waiting for the host"
+        assert dialog._surface_placeholder.text() == (
+            "Your silent process video appears here"
+        )
         for button in (
             dialog._open_button,
             dialog._hide_button,
@@ -456,7 +471,7 @@ def test_each_role_state_offers_one_plain_primary_action(qapp):
     host = ReferenceVideoDialog(hosting=True)
     guest = ReferenceVideoDialog(hosting=False)
     try:
-        assert host._share_button.text() == "Share…"
+        assert host._share_button.text() == "Choose process video…"
         assert host._share_button.isHidden() is False
 
         host.set_host_snapshot(_shared(state=ReferenceVideoState.READY))
@@ -512,6 +527,15 @@ def test_paint_along_reuses_webjams_single_top_level_window(qapp):
 
     from webjam_qt.windows.conductor_window import ConductorWindow
 
+    # Other UI modules share this QApplication in the repository-wide run.
+    # Hide any leftover top-level test windows before proving a WindowShortcut;
+    # the real app has one WebJam window, and the test should model that truth.
+    # Hiding avoids invoking another test window's product close confirmation.
+    for stale_window in QApplication.topLevelWidgets():
+        stale_window.hide()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    qapp.processEvents()
+
     entries = [(profile.key, profile.label) for profile in CREATOR_PROFILES]
     window = ConductorWindow(
         mode_entries=entries,
@@ -532,7 +556,12 @@ def test_paint_along_reuses_webjams_single_top_level_window(qapp):
         assert panel._back_button.isHidden() is False
         assert window.windowTitle() == original_title
 
+        # The full suite deliberately reuses one QApplication. Re-activate
+        # this window before exercising its WindowShortcut so a hidden window
+        # from an earlier module cannot own Escape in an offscreen run.
+        window.activateWindow()
         panel.setFocus()
+        qapp.processEvents()
         QTest.keyClick(panel, Qt.Key.Key_Escape)
         qapp.processEvents()
         assert window.workspace_stack.currentWidget() is window.center_splitter

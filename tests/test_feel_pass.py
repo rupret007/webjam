@@ -83,7 +83,7 @@ def test_art_and_music_are_equal_first_clicks(qapp, tmp_path: Path):
             if isinstance(button, ProfileCard)
         ]
         assert [(card.accessibleName(), card.description()) for card in cards] == [
-            ("Art", "Paint, sculpt, print, or talk."),
+            ("Art", "Make art together."),
             ("Music", "Play live together."),
         ]
         assert cards[0].isChecked() is False
@@ -91,7 +91,7 @@ def test_art_and_music_are_equal_first_clicks(qapp, tmp_path: Path):
         spoken = harvest_first_screen(dialog)
         assert "art" in spoken
         assert "music" in spoken
-        assert "paint, sculpt, print, or talk." in spoken
+        assert "make art together." in spoken
         assert "play live together." in spoken
         assert "podcast & voice" not in spoken
         assert "review & rehearsal" not in spoken
@@ -143,12 +143,12 @@ def test_art_door_is_three_starts_then_host_join(qapp, tmp_path: Path):
         ] == [
             (
                 "Talk & make",
-                "Just the room and your voices. Make whatever you're making.",
+                "Talk while everyone works in their own space.",
             ),
-            ("Paint together", "The room, plus one canvas you all draw on."),
+            ("Paint together", "Draw together on one shared canvas."),
             (
                 "Paint along",
-                "The room, plus one video you all watch in step.",
+                "Follow one silent process video while you paint.",
             ),
         ]
         assert others == ["Host", "Join"]

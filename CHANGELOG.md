@@ -9,6 +9,20 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Work after the v0.27.1 source candidate belongs here. Every published tag,
 > release, and asset remains immutable historical evidence.
 
+### Art says what the person does
+
+- The first Art choice now reads **Make art together.** Its three starts use
+  one short human line each: talk while everyone works in their own space,
+  draw on one shared canvas, or follow one silent process video while painting.
+  Product and engine names remain blocked from the first screen by CI.
+- Paint along now names its actual job once the room exists: it is the silent
+  process-video companion beside Procreate, Clip Studio Paint, Krita, or paper.
+  Webex or another meeting stays beside WebJam for conversation.
+- The empty host surface offers one action, **Choose process video…**. Repeated
+  “no video / choose / share” instructions are replaced by one headline, one
+  making cue, and a quiet empty video surface. Playback, same-file proof,
+  role ownership, and fail-closed behavior are unchanged.
+
 ### Paint along is the video workspace
 
 - Landed via [#50](https://github.com/rupret007/webjam/pull/50): choosing
@@ -17,7 +31,7 @@ All notable improvements and features for the WebJam creator collaboration platf
   conductor, and the room's Paint along line is the way back; an optional
   meeting app remains the only other top-level window.
 - The surface offers one useful action for the current role and state: host
-  **Share…**, **Play**, or **Pause**; guest **Open my copy…**, **Hide video**,
+  **Choose process video…**, **Play**, or **Pause**; guest **Open my copy…**, **Hide video**,
   or **Show video**. Change, restart, stop-sharing, and close-copy utilities
   stay under **More**.
 - Paint along is provably muted, keeps same-file/session-scoped identity and

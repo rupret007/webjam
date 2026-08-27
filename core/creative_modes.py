@@ -410,34 +410,33 @@ _ART_STARTS = (
     CreatorStart(
         key="talk_and_make",
         label="Talk & make",
-        summary="Just the room and your voices. Make whatever you're making.",
+        summary="Talk while everyone works in their own space.",
         detail=(
-            "Opens a room where you talk while you work, on paper, in clay, "
-            "or in whatever you already use. Nothing to set up, and nothing "
-            "shared but the conversation."
+            "Open a room for conversation while each person paints, draws, "
+            "sculpts, or works on paper in their own space. There is nothing "
+            "to set up and nothing shared but the conversation."
         ),
     ),
     CreatorStart(
         key="paint_together",
         label="Paint together",
-        summary="The room, plus one canvas you all draw on.",
+        summary="Draw together on one shared canvas.",
         detail=(
-            "Opens the room and one canvas everyone can draw on at the same "
-            "time. WebJam does not draw it. It opens the painting program on "
-            "your computer and passes the canvas around, and it says plainly "
-            "if that program is not installed yet."
+            "Open the room with one canvas everyone can draw on at the same "
+            "time. WebJam opens the painting program on your computer and "
+            "says plainly if it is not installed yet."
         ),
         shared_canvas=True,
     ),
     CreatorStart(
         key="paint_along",
         label="Paint along",
-        summary="The room, plus one video you all watch in step.",
+        summary="Follow one silent process video while you paint.",
         detail=(
-            "Opens the room and lets whoever is hosting play one video they "
-            "already own. Everyone watches their own copy of the same file, "
-            "kept in step by the person hosting, who is the only one able to "
-            "move it. WebJam brings no videos of its own."
+            "Open the room with one silent process video the host already "
+            "owns or may use. Paint in your usual app or on paper beside "
+            "WebJam. Each artist opens their own copy of the same file; the "
+            "host keeps it in step. WebJam supplies no videos."
         ),
         reference_video=True,
     ),

@@ -37,11 +37,9 @@ Art opens a room where you talk while you work — painting, drawing,
 sculpting, printing, or anything at a table. When you choose Art at launch,
 you pick one of three ways to start, and nothing more:
 
-- **Talk & make** — just the room and your voices. Make whatever you're making,
-  on paper, in clay, or in whatever you already use. This is a completely
-  normal room; nothing asks you to share anything.
-- **Paint together** — the room, plus one canvas you all draw on.
-- **Paint along** — the room, plus one video you all watch in step.
+- **Talk & make** — talk while everyone works in their own space.
+- **Paint together** — draw together on one shared canvas.
+- **Paint along** — follow one silent process video while you paint.
 
 The first screen deliberately does not name the programs behind those last two.
 You find out which one to install at the moment you need it, in the room, and
@@ -87,16 +85,18 @@ Things worth knowing:
 
 ### Painting along to a video
 
-If you want a reference to work from, the host can share one video file:
+Paint along is the process-video companion, not a painting program. Paint in
+Procreate, Clip Studio Paint, Krita, or on paper beside WebJam. Keep Webex or
+another meeting beside it for conversation. The host can choose one video file:
 
 1. When a host chose **Paint along**, WebJam opens the large Paint along
    workspace once the room exists. It replaces the conductor surface inside
    the existing WebJam window; it does not create a third window beside WebJam
    and an optional meeting app. If you returned to the room, choose its
    **Paint along** line to come back.
-2. The host chooses **Share…** and picks a local video file they have the right
-   to play. WebJam does not ship, bundle, download, or fetch any video, and it
-   will not open anything from a streaming service.
+2. The host chooses **Choose process video…** and picks a local video file they
+   have the right to play. WebJam does not ship, bundle, download, or fetch any
+   video, and it will not open anything from a streaming service.
 3. When the host shares, each guest is notified and the same workspace becomes
    available. Choose **Open my copy…** and point at your own copy of the same
    file. WebJam checks that it really is the same file. If it is not, it says

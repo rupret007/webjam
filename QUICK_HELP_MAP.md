@@ -15,9 +15,9 @@
 | See where the room is while painting | Art → **More → Shared Canvas…**; the panel shows **Bar 17.3 · Chorus**, a video position, or **No shared clock**. It is a readout, not a control |
 | Make an image with AI | Art, in session → notes **Suggestion** → **Make**; Krita opens a new canvas and its AI Image Generation docker takes your prompt. WebJam generates nothing and uploads nothing |
 | Edit a photo with AI | Art, in session → notes **Suggestion** → **Edit…** and pick an image you own; Krita opens it for fill, extend, or remove |
-| Share a reference video | Art host → **More → Reference Video… → Share Video…** and pick one local file you have the right to play; WebJam ships and downloads none |
-| Follow the host's video | Art guest → **More → Reference Video… → Open My Copy…** and pick your own copy of the host's exact file; a different file is refused rather than played |
-| Ignore a shared video | Art → **Reference Video… → Hide Video**; you stay in the room and in the conversation |
+| Start a process video | Art host → **Paint along → Choose process video…** and pick one local file you have the right to play; paint in your usual app or on paper beside WebJam |
+| Follow the host's process video | Art guest → **Paint along → Open my copy…** and pick your own copy of the host's exact file; a different file is refused rather than played |
+| Ignore a process video | Art → **Paint along → Hide video**; you stay in the room and in the conversation |
 | Start a supported local project | Music → **New Music Project** or Podcast & Voice → **New Local Recording** |
 | Change live sound | **More → Audio Settings in Jamulus** |
 | Invite a collaborator | Host setup → **Copy Invite** |

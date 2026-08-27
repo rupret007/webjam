@@ -17,6 +17,8 @@ from PySide6.QtWidgets import QComboBox, QWidget
 FIRST_SCREEN_BANNED_PHRASES = (
     "drawpile",
     "krita",
+    "procreate",
+    "clip studio",
     "jamulus",
     "webex",
     "moises",

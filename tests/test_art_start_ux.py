@@ -536,12 +536,12 @@ def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
         ] == [
             (
                 "Talk & make",
-                "Just the room and your voices. Make whatever you're making.",
+                "Talk while everyone works in their own space.",
             ),
-            ("Paint together", "The room, plus one canvas you all draw on."),
+            ("Paint together", "Draw together on one shared canvas."),
             (
                 "Paint along",
-                "The room, plus one video you all watch in step.",
+                "Follow one silent process video while you paint.",
             ),
         ]
         others = [
