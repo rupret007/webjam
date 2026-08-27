@@ -92,7 +92,9 @@ action unavailable in Preview.
   it launches the verified app itself with no URL or browser; Webex chooses its
   own screen. Only **Join / Open Meeting** performs the one explicit
   meeting-link handoff. **Open Webex to Mute** shows the verified app so you can use
-  its own Mute control; WebJam never claims it changed Webex or Jamulus.
+  its own Mute control; WebJam never claims it changed Webex or Jamulus. Ending
+  or leaving WebJam leaves that meeting open, and leaving or closing the
+  meeting does not end the WebJam session; each app ends only itself.
   FaceTime links are Mac-only. Windows and Linux use **Join / Open Meeting**
   because their current packages
   do not verify the native app publisher. If the app is missing, WebJam can

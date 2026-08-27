@@ -14,7 +14,11 @@ import pytest
 from PySide6.QtWidgets import QApplication, QPushButton
 
 from core.creative_modes import get_creator_profile_by_key_or_default
-from core.meeting_companion import describe_mutes, end_session_prompt
+from core.meeting_companion import (
+    describe_mutes,
+    end_session_prompt,
+    meeting_departure_note,
+)
 from core.music_ai_catalog import failed_catalog, resolve_song_tools
 from core.music_ai_client import MusicAIWorkflow, missing_key_message
 from core.music_ai_results import SongArtifact, SongToolRun
@@ -450,6 +454,7 @@ def test_both_mutes_are_shown_on_the_meeting_page(overlay):
         end_note=end_session_prompt(
             hosting=True, meeting_configured=True
         ).meeting_note,
+        departure_note=meeting_departure_note(),
         meeting_configured=True,
     )
 
@@ -459,6 +464,7 @@ def test_both_mutes_are_shown_on_the_meeting_page(overlay):
     assert "Neither stops your instrument" in overlay._mute_caution.text()
     assert "from Conversation" in overlay._meeting_owner.text()
     assert "stays open" in overlay._end_note.text()
+    assert "does not end the jam" in overlay._end_note.text()
 
 
 def test_with_no_meeting_the_page_makes_no_claim_about_one(overlay):
@@ -473,6 +479,7 @@ def test_with_no_meeting_the_page_makes_no_claim_about_one(overlay):
     # Explains where the action lives; never offers a second Copy Invite.
     assert "Copy Invite on the session bar" in overlay._end_note.text()
     assert "and the meeting link" not in overlay._end_note.text()
+    assert "does not end the jam" not in overlay._end_note.text()
 
 
 # ----------------------------------------------------------------------
