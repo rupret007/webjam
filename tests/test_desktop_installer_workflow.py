@@ -71,7 +71,7 @@ def test_current_candidate_identity_cannot_be_confused_with_old_release() -> Non
     match = re.search(r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$', VERSION_SOURCE, re.M)
     assert match is not None
     version = match.group(1)
-    assert version == "0.27.0"
+    assert version == "0.27.1"
     assert version != "0.22.5"  # Immutable historical release.
     assert PROJECT_README.startswith(
         "# WebJam\n\n## Native creator collaboration and multitrack recording"

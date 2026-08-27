@@ -30,17 +30,28 @@
 > annotated tag, unique successful four-target tag CI attempt, eight-asset
 > inventory, release body, checksum manifest, release-control CI, protected
 > promotion, deployment, and public redownload verification all passed.
-> Immutable v0.26.0 is GitHub **Latest** release `371442375`. Every v0.26
+> Immutable v0.26.0 is historical GitHub release `371442375`. Every v0.26
 > physical and hardware gate remains **NOT RUN**.
 
-> **v0.27.0 source-candidate boundary:** the current tree reports v0.27.0 but
-> no annotated tag, tag object/commit, successful tag CI run, draft release,
-> body digest, inventory digest, asset IDs/sizes/digests, checksum manifest, or
-> promotion result exists yet. GitHub Latest remains v0.26.0. After an
-> annotated `v0.27.0` tag and unique successful tag CI, dispatch the existing
-> generic `.github/workflows/publish-latest-release.yml`. No v0.27.0 tag,
-> release ID, checksum, or pinned artifact hash exists. Do not invent
-> v0.27.0 pins, and do not add a version-specific publisher.
+> **v0.27.0 published testing boundary:** immutable unsigned private test
+> release `377546932` is GitHub **Latest** until v0.27.1 is published. Annotated
+> tag object `72a825915722f9c08bd66de7720bcaba55aa3be4` peeled to
+> `27530d8216db04d706b6e5a1a5906ba6030fa7be`. Unique successful tag CI
+> `33035065141` created the eight-asset draft. Generic publisher run
+> `33036413984` failed because sealed v3 does not target this exact WebJam
+> version. Do not retag v0.27.0. Every v0.27 physical gate remains **NOT RUN**.
+
+> **v0.27.1 source-candidate boundary:** the current tree reports v0.27.1 and
+> includes the #47 feel wrap, but no annotated tag, tag object/commit,
+> successful tag CI run, draft release, checksum manifest, or Latest result
+> exists yet. GitHub Latest remains v0.27.0. After an annotated `v0.27.1` tag
+> and unique successful tag CI, publish that unsigned/ad-hoc draft as Latest.
+> The generic `.github/workflows/publish-latest-release.yml` still requires a
+> catalog that authorizes this exact WebJam version. Do not invent a signed
+> catalog. Catalog pin remains sealed v0.22.5. Shared Track play uses this
+> Mac's BlackHole + bundled headless. No v0.27.1 release ID, checksum, or
+> pinned artifact hash exists. Do not add a version-specific publisher. Do
+> not restack #37.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version
@@ -70,14 +81,14 @@ recognizes the unchanged audited Jamulus 3.12.2/3.12.3 identities through
 catalog. The candidate therefore remains fallback-only unless a new immutable
 signed version-specific component channel is separately completed.
 
-For unpublished v0.27.0, the sealed v3 catalog must likewise be proved valid
-for historical v0.22.5 and rejected for exact v0.27.0. The source registry
-narrowly recognizes the unchanged audited Jamulus 3.12.2/3.12.3 identities
-through 0.27.0 and rejects 0.27.1; that baked policy is not a signed
-managed-update catalog. The candidate therefore remains fallback-only unless
-a new immutable signed version-specific component channel is separately
-completed. jamulus-components-v1/v2/v3 stay. Do not invent a v0.27 catalog
-tag, sequence, asset, signature, or PASS.
+For unpublished v0.27.1, the sealed v3 catalog remains valid for historical
+v0.22.5 and rejected for exact v0.27.1. The source registry narrowly
+recognizes the unchanged audited Jamulus 3.12.2/3.12.3 identities through
+0.27.1 and rejects 0.27.2; that baked policy is not a signed managed-update
+catalog. Shared Track play uses this Mac's official BlackHole 16ch/64ch route
+at 48 kHz and the bundled headless client; it does not wait for a signed
+catalog pin. jamulus-components-v1/v2/v3 stay. Do not invent a v0.27.1
+catalog tag, sequence, asset, signature, or PASS.
 
 ## v0.25.0 pinned promotion status — completed
 
@@ -182,6 +193,10 @@ identity, state, body, and `{id,name,size,digest}` inventory immediately before
 the PATCH. Afterward it required v0.26.0 to be immutable GitHub Latest and
 redownloaded and checked every byte again. It contained no asset upload,
 replacement, or deletion path.
+
+The publisher's recorded postcondition was: Immutable v0.26.0 is GitHub
+**Latest**. That Latest pointer later moved to unsigned v0.27.0; v0.26.0
+remains immutable historical release `371442375`.
 
 Do not rerun the publisher to mutate or recreate this release. Do not edit the
 published body or assets. Never move or rebuild v0.26.0, v0.25.0, or any earlier

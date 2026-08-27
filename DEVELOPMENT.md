@@ -1,12 +1,12 @@
-# Developing WebJam v0.27.0
+# Developing WebJam v0.27.1
 
-> **Current source line:** this guide describes the unpublished v0.27.0
-> creator-profile and authoritative multitrack candidate. The exact v0.26.0
-> tag remains the immutable GitHub **Latest** private test release.
+> **Current source line:** this guide describes the unpublished v0.27.1
+> feel-pass candidate. The exact v0.27.0 tag remains the immutable GitHub
+> **Latest** private test release and does not include #47.
 
-> **Release boundary:** only the exact tagged v0.26.0 assets and attached
-> `WebJam-v0.26.0-SHA256SUMS.txt` manifest are authoritative for the current
-> download. No v0.27.0 tag, asset, checksum, or release identity exists yet;
+> **Release boundary:** only the exact tagged v0.27.0 assets and attached
+> `WebJam-v0.27.0-SHA256SUMS.txt` manifest are authoritative for the current
+> download. No v0.27.1 tag, asset, checksum, or release identity exists yet;
 > every v0.27 physical result is **NOT RUN**.
 
 ## Local setup
@@ -24,7 +24,7 @@ Use the repository virtual environment:
 For Studio arrangement changes, run the focused model, persistence, history,
 controller, renderer, comping, waveform, export, and Qt integration modules in
 addition to the full suite. The physical-output and external-editor gates in
-`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.27.0.
+`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.27.1.
 
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
@@ -197,14 +197,14 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree's package identity is `0.27.0` and is unpublished. GitHub
-Latest remains the exact annotated v0.26.0 tag and its eight-asset release.
+The source tree's package identity is `0.27.1` and is unpublished. GitHub
+Latest remains the exact annotated v0.27.0 tag and its eight-asset release.
 Do not change that tag, release, or assets, and never create a publisher with
 guessed tag objects, commits, CI runs, release IDs, body digests, inventory
-digests, asset IDs, sizes, or hashes. After an annotated `v0.27.0` tag and
-unique successful tag CI, use the existing
-`.github/workflows/publish-latest-release.yml`. Windows remains unsigned and
-macOS remains ad-hoc signed and unnotarized.
+digests, asset IDs, sizes, or hashes. After an annotated `v0.27.1` tag and
+unique successful tag CI, publish that unsigned/ad-hoc draft as Latest.
+Do not invent a signed catalog; sealed v3 still authorizes 0.22.5 only.
+Windows remains unsigned and macOS remains ad-hoc signed and unnotarized.
 
 The v0.24.0 tag, asset inventory, checksums, tag CI, and protected promotion
 remain immutable historical release evidence and must not be reused.

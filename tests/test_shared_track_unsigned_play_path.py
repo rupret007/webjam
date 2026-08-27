@@ -1,4 +1,4 @@
-"""Unsigned 0.27.0 Shared Track play path: no catalog pin, a doable next step.
+"""Unsigned 0.27.1 Shared Track play path: no catalog pin, a doable next step.
 
 The live jamulus-components catalog's webjam_version is not the Shared Track
 play gate. A host can play a local file once the isolated BlackHole route is

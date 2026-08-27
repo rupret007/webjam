@@ -6,24 +6,39 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-> Work after the v0.27.0 source candidate belongs here. Every published tag,
+> Work after the v0.27.1 source candidate belongs here. Every published tag,
 > release, and asset remains immutable historical evidence.
+
+## [0.27.1] — Unpublished feel-pass source candidate
+
+> This source identity is not yet a GitHub release. GitHub **Latest** remains
+> immutable v0.27.0 until an exact annotated `v0.27.1` tag and unique successful
+> four-target tag CI publish the unsigned/ad-hoc draft as Latest. The generic
+> publisher cannot authorize this version: sealed v3 still targets exact
+> WebJam 0.22.5 only. Do not invent a signed catalog. Shared Track play uses
+> this Mac's BlackHole + bundled headless, not a catalog pin. Windows remains
+> unsigned; macOS remains ad-hoc signed and unnotarized. Every v0.27 physical
+> and hardware result is **NOT RUN**. No v0.27.1 release ID, checksum, or pinned artifact hash exists.
+> Do not retag v0.27.0. Do not restack #37.
 
 ### Feel pass: Art hits as hard as Music
 
 - The first screen is two equal cards: **Art** — **Paint, sculpt, print, or talk.** and **Music** — **Play live together.** Art is no longer last in a combo or buried behind **Art, podcast, or review**.
 - After **Art**: **Talk & make**, **Paint together**, **Paint along**, then **Host** / **Join**. After **Music**: **Host** / **Join** only. Podcast and Review stay off that first screen.
-- Shared Track no longer shows a mute **Needs attention** badge. A paused song that can play says **Paused**. A loaded song that cannot play names a doable next step: **Set up the audio device**, **Host needs to fix play**, or **Open Shared Track**. That badge opens Shared Track, where **Set Up Shared Track…** and **Recheck Route** are the actions. Play on an unsigned 0.27.0 build uses the bundled headless client and this Mac's BlackHole 16ch/64ch route — not a signed catalog pin.
+- Shared Track no longer shows a mute **Needs attention** badge. A paused song that can play says **Paused**. A loaded song that cannot play names a doable next step: **Set up the audio device**, **Host needs to fix play**, or **Open Shared Track**. That badge opens Shared Track, where **Set Up Shared Track…** and **Recheck Route** are the actions. Play on an unsigned 0.27.1 build uses the bundled headless client and this Mac's BlackHole 16ch/64ch route — not a signed catalog pin.
 - Song help is one **Suggestion** on the section, not **Help write** plus **Suggest chords** plus a Tools/Ask-AI home. Art **Suggestion** sits on the notes. **More → AI Image…** is gone. Song tabs a person sees are **Song** and **Stems**. Stems empty state is **Split a file you own**, not a hidden Tools catalog. **Meeting** stays with Conversation.
 
-## [0.27.0] — Unpublished source candidate
+## [0.27.0] — Unsigned private test release (2026-08-27)
 
-> This source identity is not yet a GitHub release. GitHub **Latest** remains
-> immutable v0.26.0 until an exact annotated `v0.27.0` tag, unique successful
-> four-target tag CI, and protected dispatch of
-> `.github/workflows/publish-latest-release.yml` all complete. Windows remains
+> Published on 2026-08-27 as immutable GitHub **Latest** release `377546932`
+> at https://github.com/rupret007/webjam/releases/tag/v0.27.0. Annotated tag
+> object `72a825915722f9c08bd66de7720bcaba55aa3be4` peeled to
+> `27530d8216db04d706b6e5a1a5906ba6030fa7be`. Unique successful tag CI
+> `33035065141` created the eight-asset draft. Generic publisher run
+> `33036413984` failed because the live catalog does not target this exact
+> WebJam version. This package does **not** include #47. Windows remains
 > unsigned; macOS remains ad-hoc signed and unnotarized. Every v0.27 physical
-> and hardware result is **NOT RUN**. No v0.27.0 release ID, checksum, or pinned artifact hash exists.
+> and hardware result is **NOT RUN**.
 
 ### In-room meeting honesty: each app ends only itself
 

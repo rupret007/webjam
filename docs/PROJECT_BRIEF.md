@@ -1,8 +1,8 @@
 # WebJam project brief
 
 **Review date:** 2026-08-27
-**Status:** v0.27.0 is an unpublished creator-multitrack source candidate.
-v0.26.0 remains immutable GitHub Latest; every v0.27 physical/hardware gate is
+**Status:** v0.27.1 is an unpublished feel-pass source candidate.
+v0.27.0 remains immutable GitHub Latest; every v0.27 physical/hardware gate is
 **NOT RUN**.
 
 ## Executive summary
@@ -106,7 +106,7 @@ the full contract.
 
 ## Current product line
 
-The unpublished v0.27.0 source builds on immutable v0.26.0 with an accessible,
+The unpublished v0.27.1 source builds on immutable v0.27.0 with an accessible,
 path-free Record Session Readiness sheet and stable logical-source identity
 from the frozen plan through capture, transfer, manifest, recovery, Studio, and
 exact repeated-take lanes. Every server, host, guest, and Shared Track source is

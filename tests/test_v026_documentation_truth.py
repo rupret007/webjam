@@ -69,7 +69,7 @@ def test_current_guides_state_published_latest_and_physical_boundary_truthfully(
         "CHANGELOG.md",
     ):
         text = _normalized(relative_path)
-        assert "v0.26.0" in text, relative_path
+        assert "v0.27.0" in text, relative_path
         assert "Latest" in text, relative_path
         assert "NOT RUN" in text, relative_path
 
@@ -92,17 +92,20 @@ def test_current_guides_state_published_latest_and_physical_boundary_truthfully(
         "GitHub **Latest** remains immutable v0.25.0",
         "Immutable v0.25.0 is the GitHub **Latest**",
         "this checkout identifies itself as v0.26.0",
+        "this checkout identifies itself as v0.27.0",
         "v0.26.0 is also the current source identity",
+        "v0.27.0 is also the current source identity",
         "Current source line | v0.26.0",
+        "Current source line | v0.27.0",
     ):
         assert stale_claim.casefold() not in combined.casefold(), stale_claim
 
-    assert "unpublished v0.27.0" in combined.casefold()
-    assert "no v0.27.0" in combined.casefold()
+    assert "unpublished v0.27.1" in combined.casefold()
+    assert "no v0.27.1" in combined.casefold()
 
 
 def test_required_honesty_docs_fail_closed_on_v026_source_or_latest_pin() -> None:
-    """Jeff-facing required pass: unpublished v0.27.0 source, Latest still v0.26.0."""
+    """Jeff-facing required pass: unpublished v0.27.1 source, Latest still v0.27.0."""
 
     required = (
         "README.md",
@@ -112,9 +115,13 @@ def test_required_honesty_docs_fail_closed_on_v026_source_or_latest_pin() -> Non
     )
     forbidden = (
         "this checkout identifies itself as v0.26.0",
+        "this checkout identifies itself as v0.27.0",
         "Current source line | v0.26.0",
+        "Current source line | v0.27.0",
         "v0.26.0 is also the current source identity",
+        "v0.27.0 is also the current source identity",
         "the current source tree reports **v0.26.0**",
+        "the current source tree reports **v0.27.0**",
         "Latest is this unpublished",
         "this unpublished checkout is GitHub Latest",
     )
@@ -122,13 +129,13 @@ def test_required_honesty_docs_fail_closed_on_v026_source_or_latest_pin() -> Non
         text = (ROOT / relative_path).read_text(encoding="utf-8")
         normalized = " ".join(text.split())
         folded = normalized.casefold()
-        assert "v0.27.0" in text, relative_path
+        assert "v0.27.1" in text, relative_path
         assert "unpublished" in folded, relative_path
-        assert "latest" in folded and "v0.26.0" in text, relative_path
+        assert "latest" in folded and "v0.27.0" in text, relative_path
         assert "until" in folded, relative_path
         for claim in forbidden:
             assert claim.casefold() not in folded, (relative_path, claim)
-        assert "no v0.27.0 release id" in folded or "no v0.27.0 tag" in folded, (
+        assert "no v0.27.1 release id" in folded or "no v0.27.1 tag" in folded, (
             relative_path
         )
 
