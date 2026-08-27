@@ -100,7 +100,7 @@ class SessionCanvas(QFrame):
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(Space.XS)
-        btn_row.setContentsMargins(Space.MD, 0, Space.MD, 0)
+        btn_row.setContentsMargins(Space.XS, 0, Space.XS, 0)
         btn_row.addWidget(ts_btn)
         btn_row.addWidget(self._suggestion_button)
         btn_row.addWidget(self._export_button)
@@ -112,6 +112,15 @@ class SessionCanvas(QFrame):
             self._export_button,
             clear_btn,
         )
+        # Four worded actions must still fit the supported 280 px notes
+        # rail, including Art's Suggestion. Let the labels shrink before
+        # they push Clear off the edge.
+        for button in self._toolbar_buttons:
+            button.setMinimumWidth(0)
+            button.setSizePolicy(
+                QSizePolicy.Policy.Preferred,
+                QSizePolicy.Policy.Fixed,
+            )
 
         self._guidance = QFrame()
         self._guidance.setObjectName("MusicianGuidance")
