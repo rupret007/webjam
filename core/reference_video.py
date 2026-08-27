@@ -64,14 +64,14 @@ DEFAULT_SYNC_TOLERANCE_S = 0.75
 DEFAULT_STALE_AFTER_S = 5.0
 
 HOST_ONLY_TRANSPORT_MESSAGE = (
-    "Only the session host can play, pause, stop, or move the reference video."
+    "Only the session host can control Paint along."
 )
-NO_VIDEO_MESSAGE = "No reference video is shared. Talk and work as usual."
+NO_VIDEO_MESSAGE = "No Paint along video is shared. Talk and work as usual."
 HIDDEN_MESSAGE = (
-    "The reference video is hidden on this computer. You are still in the room."
+    "Paint along is hidden on this computer. You are still in the room."
 )
 NEEDS_FILE_MESSAGE = (
-    "The host is sharing a reference video. Open your own copy of the same "
+    "The host shared a Paint along video. Open your own copy of the same "
     "file to follow along, or keep it hidden and stay in the room."
 )
 MISMATCHED_FILE_MESSAGE = (
@@ -79,18 +79,18 @@ MISMATCHED_FILE_MESSAGE = (
     "it. Open the host's exact file, or keep the video hidden."
 )
 FILE_UNAVAILABLE_MESSAGE = (
-    "Your copy of the reference video moved, changed, or became unreadable. "
+    "Your Paint along copy moved, changed, or became unreadable. "
     "Open it again to follow the host."
 )
 HOST_ATTENTION_MESSAGE = (
-    "The host's reference video needs attention on their computer. Nothing is "
+    "The host's Paint along video needs attention. Nothing is "
     "playing here until the host recovers it."
 )
 STALLED_MESSAGE = (
     "WebJam stopped following because the host's position is out of date. "
     "Playback resumes when the host's transport is heard from again."
 )
-FOLLOWING_MESSAGE = "Following the host's reference video."
+FOLLOWING_MESSAGE = "Following the host in Paint along."
 
 
 class ReferenceVideoError(RuntimeError):
@@ -248,7 +248,7 @@ def _require_content_hash(content_sha256: object) -> str:
     if len(text) != _SHA256_HEX_CHARS or any(
         character not in "0123456789abcdef" for character in text
     ):
-        raise ReferenceVideoError("A reference video needs a proven content hash.")
+        raise ReferenceVideoError("Paint along needs a proven content hash.")
     return text
 
 
@@ -266,7 +266,7 @@ def session_identity_signer(*, session_id: str, session_key: str) -> IdentitySig
     key = str(session_key or "")
     if not identifier or not key:
         raise ReferenceVideoError(
-            "A reference video can only be shared inside a started session."
+            "Paint along can only be shared inside a started session."
         )
     key_bytes = key.encode("utf-8")
 
@@ -298,6 +298,13 @@ def identities_match(left: object, right: object) -> bool:
 @runtime_checkable
 class ReferenceVideoPlayer(Protocol):
     """The local rendering seam a real Qt player and test fakes both satisfy."""
+
+    @property
+    def muted(self) -> bool:
+        """Whether this picture-only player has proven its audio is muted."""
+
+    def set_muted(self, muted: bool) -> None:
+        """Set the local audio mute state."""
 
     def load(self, path: Path) -> float:
         """Open ``path`` and return its duration in seconds."""
@@ -461,11 +468,11 @@ class ReferenceVideoHostController:
 
     def _require_loaded(self) -> None:
         if self._state not in _HOST_LOADED_STATES or self._source is None:
-            raise ReferenceVideoError("No reference video is shared yet.")
+            raise ReferenceVideoError("No Paint along video is shared yet.")
 
     def _fail_locked(self, message: str) -> ReferenceVideoSnapshot:
         self._state = ReferenceVideoState.FAILED
-        self._error = str(message).strip() or "The reference video couldn't continue."
+        self._error = str(message).strip() or "Paint along couldn't continue."
         self._position_s = 0.0
         self._duration_s = 0.0
         self._identity_digest = ""
@@ -480,7 +487,7 @@ class ReferenceVideoHostController:
         self._require_host()
         with self._lock:
             if self._state is ReferenceVideoState.CLOSED:
-                raise ReferenceVideoError("This reference video session has ended.")
+                raise ReferenceVideoError("This Paint along session has ended.")
             try:
                 source = load_reference_video_source(path)
                 digest = self._identity_signer(source.content_sha256)
@@ -751,7 +758,7 @@ class ReferenceVideoFollower:
         with self._lock:
             if self._local_identity:
                 raise ReferenceVideoError(
-                    "Close the current reference video before changing players."
+                    "Close the current Paint along video before changing players."
                 )
             self._player = player
 
@@ -873,6 +880,17 @@ class ReferenceVideoFollower:
     # -- derivation ----------------------------------------------------
 
     def _clear_local_locked(self) -> None:
+        # Clearing proof while its picture keeps moving would make the model
+        # claim NEEDS_FILE even though the old file is still on screen. Stop
+        # first, and leave the proven copy intact if the player cannot honor
+        # that stop.
+        if self._playing_locally and self._player is not None:
+            try:
+                self._player.pause()
+            except Exception as exc:
+                raise ReferenceVideoPlayerError(
+                    "WebJam couldn't stop that video on this computer."
+                ) from exc
         self._local_identity = ""
         self._local_path = None
         self._local_token = None

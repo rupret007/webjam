@@ -307,6 +307,7 @@ def test_no_art_surface_raises_itself_outside_an_explicit_open():
         "_tick_reference_video",
         "_tick_room_clock",
         "_tick_creator_start",
+        "_maybe_open_paint_along",
         "_announce_shared_canvas_follow_state",
         "_announce_reference_video_follow_state",
     }
@@ -329,25 +330,21 @@ def test_no_art_surface_raises_itself_outside_an_explicit_open():
     assert seen == background, sorted(background - seen)
 
 
-def test_every_art_panel_is_a_window_that_can_sit_beside_another():
-    """Compact and non-modal, so a meeting window is never blocked."""
+def test_auxiliary_art_panels_can_sit_beside_the_single_webjam_window():
+    """Optional tools stay compact; Paint along lives inside WebJam itself."""
 
     from webjam_qt.windows.ai_image import AiImageDialog
-    from webjam_qt.windows.reference_video import ReferenceVideoDialog
     from webjam_qt.windows.shared_canvas import SharedCanvasDialog
 
     panels = [
         AiImageDialog(),
         SharedCanvasDialog(hosting=True),
         SharedCanvasDialog(hosting=False),
-        ReferenceVideoDialog(hosting=True),
-        ReferenceVideoDialog(hosting=False),
     ]
     try:
         for panel in panels:
             # Modal would freeze the meeting window behind it.
             assert panel.isModal() is False, panel.windowTitle()
-            # Narrow enough to leave room for a conversation beside it.
             assert panel.minimumWidth() <= 520, panel.windowTitle()
     finally:
         for panel in panels:
@@ -362,7 +359,10 @@ def test_a_talk_only_room_leaves_no_empty_video_window_open():
     dialog = ReferenceVideoDialog(hosting=True)
     try:
         assert dialog.isVisible() is False
-        assert dialog._surface_holder.isHidden() is True
+        # The prepared surface exists inside the unopened window, but a
+        # talk-only room never presents that window on the artist's behalf.
+        assert dialog._surface_holder.isHidden() is False
+        assert dialog._surface_placeholder.text() == "Share a video to begin"
     finally:
         dialog.deleteLater()
 

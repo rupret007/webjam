@@ -21,7 +21,6 @@ from core.creative_modes import (  # noqa: E402
     get_creator_profile_by_key,
 )
 from core.reference_video import (  # noqa: E402
-    NO_VIDEO_MESSAGE,
     REFERENCE_VIDEO_SUFFIXES,
     ReferenceVideoFollowSnapshot,
     ReferenceVideoFollowState,
@@ -86,16 +85,20 @@ def _follow(state, **changes) -> ReferenceVideoFollowSnapshot:
 
 
 def test_the_host_panel_opens_on_the_no_video_path(host_dialog):
-    assert host_dialog._headline.text() == "No reference video"
-    assert host_dialog._status.text() == NO_VIDEO_MESSAGE
+    assert host_dialog.windowTitle() == "Paint along"
+    assert host_dialog.minimumWidth() == 720
+    assert host_dialog.minimumHeight() == 520
+    assert host_dialog._headline.text() == "No video yet"
+    assert host_dialog._status.text() == "Choose one local video to begin."
+    assert host_dialog._surface_holder.isHidden() is False
+    assert host_dialog._surface_placeholder.text() == "Share a video to begin"
     assert host_dialog._share_button.isEnabled() is True
     for disabled in (
         host_dialog._play_button,
         host_dialog._pause_button,
-        host_dialog._stop_button,
-        host_dialog._withdraw_button,
     ):
         assert disabled.isEnabled() is False
+    assert host_dialog._more_button.isHidden() is True
     assert host_dialog._position.isEnabled() is False
 
 
@@ -105,8 +108,9 @@ def test_the_host_panel_enables_transport_only_once_a_file_is_shared(host_dialog
     assert host_dialog._headline.text() == "lesson.mp4"
     assert host_dialog._play_button.isEnabled() is True
     assert host_dialog._pause_button.isEnabled() is False
-    assert host_dialog._stop_button.isEnabled() is True
-    assert host_dialog._withdraw_button.isEnabled() is True
+    assert host_dialog._stop_action.isVisible() is True
+    assert host_dialog._withdraw_action.isVisible() is True
+    assert host_dialog._more_button.isHidden() is False
     assert host_dialog._position.isEnabled() is True
     assert host_dialog._position.maximum() == 600
 
@@ -136,7 +140,7 @@ def test_the_host_panel_shows_a_failure_instead_of_a_stale_source(host_dialog):
         )
     )
 
-    assert host_dialog._headline.text() == "No reference video"
+    assert host_dialog._headline.text() == "No video yet"
     assert "couldn't open that video" in host_dialog._status.text()
     assert host_dialog._play_button.isEnabled() is False
     assert host_dialog._clock.text() == "0:00 / 0:00"
@@ -170,9 +174,12 @@ def test_the_host_panel_never_claims_the_room_is_watching(host_dialog):
         widget.text()
         for widget in host_dialog.findChildren(type(host_dialog._status))
     ).casefold()
+    detail = host_dialog._hint.accessibleDescription().casefold()
 
     assert "everyone in the room watches" not in surfaced
-    assert "cannot confirm who has opened the file" in surfaced
+    assert "everyone" not in surfaced
+    assert "cannot confirm who has opened or watched it" in detail
+    assert "silent in webjam" in surfaced
 
 
 def test_a_host_panel_ignores_follower_snapshots(host_dialog):
@@ -201,8 +208,10 @@ def test_a_follower_panel_offers_no_transport_at_all(guest_dialog):
 
 
 def test_a_follower_panel_starts_on_the_no_video_path(guest_dialog):
-    assert guest_dialog._headline.text() == "No reference video"
-    assert guest_dialog._status.text() == NO_VIDEO_MESSAGE
+    assert guest_dialog.windowTitle() == "Paint along"
+    assert guest_dialog._headline.text() == "No video yet"
+    assert guest_dialog._status.text() == "Waiting for the host to share a video."
+    assert guest_dialog._surface_placeholder.text() == "Waiting for the host"
     assert guest_dialog._open_button.isEnabled() is False
     assert guest_dialog._hide_button.isEnabled() is False
 
@@ -213,8 +222,9 @@ def test_a_follower_panel_asks_for_the_hosts_file(guest_dialog):
     assert guest_dialog._headline.text() == "lesson.mp4"
     assert "open your own copy" in guest_dialog._status.text().casefold()
     assert guest_dialog._open_button.isEnabled() is True
-    assert guest_dialog._hide_button.isEnabled() is True
-    assert guest_dialog._close_button.isEnabled() is False
+    assert guest_dialog._hide_button.isHidden() is True
+    assert guest_dialog._hide_action.isVisible() is True
+    assert guest_dialog._close_action.isVisible() is False
 
 
 def test_a_follower_panel_names_a_mismatched_file_as_the_reason(guest_dialog):
@@ -222,7 +232,7 @@ def test_a_follower_panel_names_a_mismatched_file_as_the_reason(guest_dialog):
         _follow(ReferenceVideoFollowState.MISMATCHED_FILE)
     )
     assert "not the same file" in guest_dialog._status.text().casefold()
-    assert guest_dialog._close_button.isEnabled() is True
+    assert guest_dialog._close_action.isVisible() is True
 
 
 def test_a_follower_panel_says_when_it_stopped_following(guest_dialog):
@@ -234,13 +244,13 @@ def test_hiding_the_video_flips_the_control_and_keeps_the_panel_usable(guest_dia
     requests: list[bool] = []
     guest_dialog.hide_requested.connect(requests.append)
     guest_dialog.set_follow_snapshot(_follow(ReferenceVideoFollowState.FOLLOWING))
-    assert guest_dialog._hide_button.text() == "Hide Video"
+    assert guest_dialog._hide_button.text() == "Hide video"
 
     guest_dialog._toggle_hidden()
     assert requests == [True]
 
     guest_dialog.set_follow_snapshot(_follow(ReferenceVideoFollowState.HIDDEN))
-    assert guest_dialog._hide_button.text() == "Show Video"
+    assert guest_dialog._hide_button.text() == "Show video"
     assert guest_dialog._hide_button.isEnabled() is True
     guest_dialog._toggle_hidden()
     assert requests == [True, False]
@@ -276,10 +286,15 @@ def test_the_panel_embeds_and_releases_a_player_surface(host_dialog, qapp):
 
     surface = QWidget()
     host_dialog.attach_surface(surface)
-    assert host_dialog._surface_layout.count() == 1
+    assert host_dialog._attached_surface is surface
+    assert host_dialog._surface_placeholder.isHidden() is True
 
     host_dialog.attach_surface(None)
-    assert host_dialog._surface_layout.count() == 0
+    assert host_dialog._attached_surface is None
+    assert host_dialog._surface_placeholder.isHidden() is False
+    assert surface.isWindow() is False
+    assert surface.parent() is host_dialog._surface_holder
+    assert surface not in QApplication.topLevelWidgets()
     surface.deleteLater()
 
 
@@ -300,7 +315,7 @@ def test_only_art_exposes_the_reference_video_entry_point(qapp):
             assert strip._reference_video_action.isVisible() is expected, profile.key
             assert strip._reference_video_action.isEnabled() is expected, profile.key
         strip.set_creator_profile(get_creator_profile_by_key("art"))
-        assert strip._reference_video_action.text() == "Reference Video…"
+        assert strip._reference_video_action.text() == "Paint along…"
     finally:
         strip.deleteLater()
 
@@ -339,12 +354,8 @@ def test_the_launch_dialog_offers_art_without_a_local_project(qapp, tmp_path):
         dialog.deleteLater()
 
 
-def test_a_room_with_no_video_shows_no_empty_picture_frame(qapp):
-    """An empty box where a picture might go makes a room look unfinished.
-
-    Talk-only is a state someone chose, so the panel reads as finished: no
-    ghosted surface, and no transport greyed out beside it.
-    """
+def test_paint_along_starts_as_a_deliberate_video_surface(qapp):
+    """The chosen Paint along door lands on the making surface, not settings."""
 
     from webjam_qt.windows.reference_video import ReferenceVideoDialog
 
@@ -352,18 +363,19 @@ def test_a_room_with_no_video_shows_no_empty_picture_frame(qapp):
     try:
         dialog.set_host_snapshot(ReferenceVideoSnapshot())
 
-        assert dialog._surface_holder.isHidden() is True
+        assert dialog._surface_holder.isHidden() is False
+        assert dialog._surface_holder.minimumHeight() >= 360
+        assert dialog._surface_placeholder.isHidden() is False
         assert dialog._position.isHidden() is True
         assert dialog._clock.isHidden() is True
-        # One verb: choose a video. The transport is absent, not disabled.
+        # One verb: share a video. Utilities and transport stay out of the way.
         assert dialog._share_button.isHidden() is False
         for button in (
             dialog._play_button,
             dialog._pause_button,
-            dialog._stop_button,
-            dialog._withdraw_button,
         ):
             assert button.isHidden() is True
+        assert dialog._more_button.isHidden() is True
     finally:
         dialog.deleteLater()
 
@@ -375,13 +387,14 @@ def test_a_guest_in_a_room_with_no_video_is_offered_nothing(qapp):
     try:
         dialog.set_follow_snapshot(ReferenceVideoFollowSnapshot())
 
-        assert dialog._surface_holder.isHidden() is True
+        assert dialog._surface_holder.isHidden() is False
+        assert dialog._surface_placeholder.text() == "Waiting for the host"
         for button in (
             dialog._open_button,
-            dialog._close_button,
             dialog._hide_button,
         ):
             assert button.isHidden() is True
+        assert dialog._more_button.isHidden() is True
     finally:
         dialog.deleteLater()
 
@@ -439,7 +452,38 @@ def test_play_and_pause_are_never_both_offered(qapp):
         dialog.deleteLater()
 
 
-def test_the_surface_appears_only_when_a_player_is_attached(qapp):
+def test_each_role_state_offers_one_plain_primary_action(qapp):
+    host = ReferenceVideoDialog(hosting=True)
+    guest = ReferenceVideoDialog(hosting=False)
+    try:
+        assert host._share_button.text() == "Share…"
+        assert host._share_button.isHidden() is False
+
+        host.set_host_snapshot(_shared(state=ReferenceVideoState.READY))
+        assert host._play_button.text() == "Play"
+        assert host._play_button.isHidden() is False
+
+        host.set_host_snapshot(_shared(state=ReferenceVideoState.PLAYING))
+        assert host._pause_button.text() == "Pause"
+        assert host._pause_button.isHidden() is False
+
+        guest.set_follow_snapshot(_follow(ReferenceVideoFollowState.NEEDS_FILE))
+        assert guest._open_button.text() == "Open my copy…"
+        assert guest._open_button.isHidden() is False
+
+        guest.set_follow_snapshot(_follow(ReferenceVideoFollowState.FOLLOWING))
+        assert guest._hide_button.text() == "Hide video"
+        assert guest._hide_button.isHidden() is False
+
+        guest.set_follow_snapshot(_follow(ReferenceVideoFollowState.HIDDEN))
+        assert guest._hide_button.text() == "Show video"
+        assert guest._hide_button.isHidden() is False
+    finally:
+        host.deleteLater()
+        guest.deleteLater()
+
+
+def test_the_surface_swaps_its_placeholder_for_the_one_player(qapp):
     from PySide6.QtWidgets import QWidget
 
     from webjam_qt.windows.reference_video import ReferenceVideoDialog
@@ -447,16 +491,100 @@ def test_the_surface_appears_only_when_a_player_is_attached(qapp):
     dialog = ReferenceVideoDialog(hosting=True)
     surface = QWidget()
     try:
-        assert dialog._surface_holder.isHidden() is True
+        assert dialog._surface_holder.isHidden() is False
+        assert dialog._surface_placeholder.isHidden() is False
 
         dialog.attach_surface(surface)
         assert dialog._surface_holder.isHidden() is False
+        assert dialog._surface_placeholder.isHidden() is True
 
         dialog.attach_surface(None)
-        assert dialog._surface_holder.isHidden() is True
+        assert dialog._surface_holder.isHidden() is False
+        assert dialog._surface_placeholder.isHidden() is False
     finally:
         surface.deleteLater()
         dialog.deleteLater()
+
+
+def test_paint_along_reuses_webjams_single_top_level_window(qapp):
+    from PySide6.QtCore import QCoreApplication, QEvent, Qt
+    from PySide6.QtTest import QTest
+
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    entries = [(profile.key, profile.label) for profile in CREATOR_PROFILES]
+    window = ConductorWindow(
+        mode_entries=entries,
+        initial_mode_key="art",
+        initial_title="Art",
+    )
+    panel = ReferenceVideoDialog(hosting=True, parent=window)
+    original_title = window.windowTitle()
+    try:
+        panel.return_requested.connect(lambda: window.hide_paint_along(panel))
+        window.show_paint_along(panel)
+        window.show()
+        qapp.processEvents()
+
+        assert window.workspace_stack.currentWidget() is panel
+        assert panel.isWindow() is False
+        assert panel not in QApplication.topLevelWidgets()
+        assert panel._back_button.isHidden() is False
+        assert window.windowTitle() == original_title
+
+        panel.setFocus()
+        QTest.keyClick(panel, Qt.Key.Key_Escape)
+        qapp.processEvents()
+        assert window.workspace_stack.currentWidget() is window.center_splitter
+
+        window.show_paint_along(panel)
+        window.release_paint_along(panel)
+        assert window.workspace_stack.currentWidget() is window.center_splitter
+        assert window._paint_along_widget is None
+        assert window.workspace_stack.indexOf(panel) == -1
+        panel.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+        replacement = ReferenceVideoDialog(hosting=True, parent=window)
+        window.show_paint_along(replacement)
+        assert window.workspace_stack.currentWidget() is replacement
+        assert replacement.isWindow() is False
+        window.release_paint_along(replacement)
+        replacement.deleteLater()
+    finally:
+        window.deleteLater()
+
+
+def test_embedded_paint_along_fits_the_supported_compact_window(qapp):
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    entries = [(profile.key, profile.label) for profile in CREATOR_PROFILES]
+    window = ConductorWindow(
+        mode_entries=entries,
+        initial_mode_key="art",
+        initial_title="Art",
+    )
+    panel = ReferenceVideoDialog(hosting=True, parent=window)
+    try:
+        panel.set_host_snapshot(
+            _shared(state=ReferenceVideoState.PLAYING, position_s=61.0)
+        )
+        window.show_paint_along(panel)
+        window.resize(760, 600)
+        window.show()
+        qapp.processEvents()
+
+        assert window.size().width() == 760
+        assert window.size().height() == 600
+        assert panel.minimumHeight() == 0
+        assert panel._surface_holder.minimumHeight() == 220
+        assert panel.geometry().bottom() <= window.workspace_stack.rect().bottom()
+        assert panel._hint.isVisible() is True
+        assert window.session_controls.isVisible() is True
+    finally:
+        window.release_paint_along(panel)
+        panel.deleteLater()
+        window.deleteLater()
 
 
 def test_every_profile_has_launch_copy():
