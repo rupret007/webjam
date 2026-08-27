@@ -79,24 +79,23 @@ ABSENT = ArtRoomPresence()
 #: that the panel is where to go.
 _VIDEO_ATTENTION = {
     VideoCompanionState.NEEDS_FILE: (
-        "Open your copy of the video",
-        "The host is showing a video. Open your own copy of the same file to "
-        "follow along.",
+        "Open your Paint along copy",
+        "Open your own copy of the same video to follow along.",
     ),
     VideoCompanionState.MISMATCHED_FILE: (
-        "Video needs a look",
+        "Paint along needs a look",
         "The copy open here is a different file than the host's.",
     ),
     VideoCompanionState.FILE_UNAVAILABLE: (
-        "Video needs a look",
+        "Paint along needs a look",
         "The copy open here moved or changed, so it stopped following.",
     ),
     VideoCompanionState.STALLED: (
-        "Video is out of step",
+        "Paint along is out of step",
         "The host's position is too old to follow honestly.",
     ),
     VideoCompanionState.HOST_ATTENTION: (
-        "Video needs a look",
+        "Paint along needs a look",
         "The host's own player needs attention.",
     ),
 }
@@ -165,7 +164,7 @@ def art_room_presence(
         # Hiding is a choice, and the room is the only route back to it. A
         # quiet line is the difference between reversible and one-way.
         return ArtRoomPresence(
-            label="Reference video (hidden)",
+            label="Paint along (hidden)",
             description="You hid the video. Open the panel to show it again.",
             target=ArtPresenceTarget.VIDEO,
         )
@@ -175,8 +174,11 @@ def art_room_presence(
         VideoCompanionState.PAUSED,
     }:
         return ArtRoomPresence(
-            label="Reference video",
-            description="This room has a video everyone follows in step.",
+            label="Paint along",
+            description=(
+                "The host shared a video. Each artist can follow using their "
+                "own copy."
+            ),
             target=ArtPresenceTarget.VIDEO,
         )
 
@@ -192,10 +194,10 @@ def art_room_presence(
         )
     if hosting and intended_video:
         return ArtRoomPresence(
-            label="Set up reference video",
+            label="Set up Paint along",
             description=(
-                "You chose to paint along. Open the panel to share one local "
-                "video everyone follows on their own copy."
+                "Open the panel to share one local "
+                "video each artist can follow on their own copy."
             ),
             target=ArtPresenceTarget.VIDEO,
         )

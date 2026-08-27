@@ -731,11 +731,10 @@ class ApplicationController(QObject):
         self._reference_video_timer.setInterval(500)
         self._reference_video_timer.timeout.connect(self._tick_reference_video)
 
-        # Art's start card is chosen before there is a room to act on, so the
-        # room carries one small line about its canvas or its video: the way
-        # in while a host has not set theirs up, and the status once they
-        # have. A card that opened a window instead would steal focus from
-        # the meeting beside WebJam.
+        # Art's start card is chosen before there is a room to act on. Once a
+        # real room binding exists, Paint along opens its large video surface
+        # once without taking focus; the room's small line remains the quiet
+        # way back after the artist closes it.
         self._art_start_timer = QTimer(self)
         self._art_start_timer.setInterval(1000)
         self._art_start_timer.timeout.connect(self._tick_creator_start)
@@ -1447,6 +1446,10 @@ class ApplicationController(QObject):
         # guest object after an unproved stop would orphan a private listener
         # while the UI falsely returned to idle.
         if cleanup_ok:
+            # The room is now proven stopped. Retire its session-keyed video
+            # signer, player, and embedded page synchronously instead of
+            # waiting for the next one-second Art presence tick.
+            ApplicationController._release_reference_video(self)
             self.guest_peer = None
             if clear_invite:
                 self._guest_invite = None
@@ -1685,8 +1688,9 @@ class ApplicationController(QObject):
         is the way in when a host has chosen a layer and not set it up yet,
         and it is the room's status once they have.
 
-        Nothing here opens or focuses a window. The chip is a control the
-        artist presses when they are ready.
+        Paint along may show its companion surface once after the room has a
+        real identity. That presentation never raises, activates, or focuses
+        the window, and a manually closed surface stays closed for that room.
         """
 
         if getattr(self, "_shutdown", False):
@@ -1696,6 +1700,7 @@ class ApplicationController(QObject):
             return
         try:
             self._sync_art_room_presence()
+            self._maybe_open_paint_along()
         except Exception:  # noqa: BLE001 - room chrome never breaks the room
             # Reported once at warning so a real fault is discoverable, then
             # quietly: this runs every second, and a repeating stack trace
@@ -1735,6 +1740,35 @@ class ApplicationController(QObject):
             intended_video=bool(start is not None and start.reference_video),
         )
         strip.set_art_room_presence(presence)
+
+    def _maybe_open_paint_along(self, snapshot=None) -> None:
+        """Show Paint along once when room truth makes it actionable.
+
+        Hosts may act on the start they chose. A guest's saved start is never
+        room truth, so a guest waits for an authenticated host snapshot that
+        asks for their copy. The binding is remembered before presentation so
+        the one-second room tick cannot reopen a surface the artist closed.
+        """
+
+        role, session_id, _session_key = self._reference_video_identity()
+        binding = (role, session_id) if role and session_id else ()
+        if not binding:
+            self._announced_creator_start = ()
+            return
+        if binding == getattr(self, "_announced_creator_start", ()):
+            return
+        if role == "host":
+            start = self.creator_start
+            actionable = bool(start is not None and start.reference_video)
+        else:
+            state = str(
+                getattr(getattr(snapshot, "state", None), "value", "") or ""
+            )
+            actionable = state == "needs_file"
+        if not actionable:
+            return
+        self._announced_creator_start = binding
+        self._open_reference_video(take_focus=False)
 
     def _apply_creator_profile_key(
         self,
@@ -11327,6 +11361,11 @@ class ApplicationController(QObject):
             self.window.side_rail.set_active_key(prev)
             self._open_settings_wizard()
         elif key in _CONTENT_KEYS:
+            hide_paint_along = getattr(self.window, "hide_paint_along", None)
+            if callable(hide_paint_along):
+                hide_paint_along(
+                    getattr(self, "_reference_video_dialog", None)
+                )
             self._last_content_key = key
             self._conductor_studio_reviewing = key == "takes"
             self.window.session_strip.set_recording_available(
@@ -11681,6 +11720,28 @@ class ApplicationController(QObject):
             timer.start()
         return coordinator
 
+    @staticmethod
+    def _paint_along_surface(coordinator, snapshot=None):
+        """Return the sole player surface only while its picture is truthful."""
+
+        if coordinator is None:
+            return None
+        if coordinator.hosting:
+            current = snapshot if snapshot is not None else coordinator.host_snapshot
+            state = str(getattr(getattr(current, "state", None), "value", "") or "")
+            usable = bool(getattr(current, "shared", False)) and state in {
+                "ready",
+                "playing",
+                "paused",
+            }
+        else:
+            current = snapshot if snapshot is not None else coordinator.follow_snapshot
+            state = str(getattr(getattr(current, "state", None), "value", "") or "")
+            # STALLED retains a proven local copy and intentionally holds its
+            # last honest frame. Hidden and blocked copies expose no picture.
+            usable = state in {"following", "stalled"}
+        return coordinator.player_surface if usable else None
+
     def _release_reference_video(self) -> None:
         """Return this computer to the no-video path and free its player."""
 
@@ -11690,6 +11751,13 @@ class ApplicationController(QObject):
         dialog = getattr(self, "_reference_video_dialog", None)
         if dialog is not None:
             dialog.attach_surface(None)
+            release_paint_along = getattr(self.window, "release_paint_along", None)
+            if callable(release_paint_along):
+                release_paint_along(dialog)
+            else:
+                hide_paint_along = getattr(self.window, "hide_paint_along", None)
+                if callable(hide_paint_along):
+                    hide_paint_along(dialog)
             dialog.close()
             dialog.deleteLater()
             self._reference_video_dialog = None
@@ -11699,22 +11767,23 @@ class ApplicationController(QObject):
         self._reference_video = None
         self._reference_video_binding = ()
         self._reference_video_notified_state = ""
+        self._announced_creator_start = ()
 
-    def _open_reference_video(self) -> None:
-        """Open the reference video panel for whichever role this computer has."""
+    def _open_reference_video(self, *, take_focus: bool = True) -> None:
+        """Open Paint along for this computer's authenticated room role."""
 
         if self._shutdown or self._shutdown_cleanup_blocks_action():
             return
         if not self._reference_video_supported():
             self.window.flash_message(
-                "A shared reference video is part of Art.",
+                "Paint along is part of Art.",
                 ms=6000,
             )
             return
         coordinator = self._reference_video_coordinator()
         if coordinator is None:
             self.window.flash_message(
-                "Start or join an art session before sharing a reference video.",
+                "Start or join an art session before using Paint along.",
                 ms=6000,
             )
             return
@@ -11762,13 +11831,44 @@ class ApplicationController(QObject):
                         lambda: coordinator.set_hidden(bool(hidden))
                     )
                 )
+            dialog.return_requested.connect(
+                lambda: self._hide_paint_along(dialog)
+            )
             self._reference_video_dialog = dialog
         if coordinator.hosting:
             dialog.set_host_snapshot(coordinator.host_snapshot)
         else:
             dialog.set_follow_snapshot(coordinator.follow_snapshot)
-        dialog.attach_surface(coordinator.player_surface)
-        self._present_art_panel(dialog)
+        dialog.attach_surface(self._paint_along_surface(coordinator))
+        role, session_id, _session_key = self._reference_video_identity()
+        if role and session_id:
+            self._announced_creator_start = (role, session_id)
+        show_in_window = getattr(self.window, "show_paint_along", None)
+        if callable(show_in_window):
+            show_in_window(dialog)
+            if take_focus:
+                self._present_art_panel(self.window)
+        elif take_focus:
+            dialog.setAttribute(
+                Qt.WidgetAttribute.WA_ShowWithoutActivating,
+                False,
+            )
+            self._present_art_panel(dialog)
+        else:
+            dialog.setAttribute(
+                Qt.WidgetAttribute.WA_ShowWithoutActivating,
+                True,
+            )
+            dialog.show()
+
+    def _hide_paint_along(self, dialog) -> None:
+        """Leave the picture without ending the room or forgetting its file."""
+
+        hide_in_window = getattr(self.window, "hide_paint_along", None)
+        if callable(hide_in_window):
+            hide_in_window(dialog)
+        else:
+            dialog.close()
 
     def _run_reference_video(self, operation) -> None:
         """Run one reference video intent, surfacing bounded failure text."""
@@ -11782,14 +11882,14 @@ class ApplicationController(QObject):
         except Exception:  # noqa: BLE001 - never let a panel kill the room
             LOGGER.exception("A reference video operation failed safely")
             self.window.flash_message(
-                "WebJam couldn't complete that reference video request. The "
+                "WebJam couldn't complete that Paint along request. The "
                 "room is still running.",
                 ms=8000,
             )
         dialog = getattr(self, "_reference_video_dialog", None)
         coordinator = getattr(self, "_reference_video", None)
         if dialog is not None and coordinator is not None:
-            dialog.attach_surface(coordinator.player_surface)
+            dialog.attach_surface(self._paint_along_surface(coordinator))
 
     def _tick_reference_video(self) -> None:
         coordinator = getattr(self, "_reference_video", None)
@@ -11807,11 +11907,22 @@ class ApplicationController(QObject):
         dialog = getattr(self, "_reference_video_dialog", None)
         if dialog is not None:
             dialog.set_host_snapshot(snapshot)
+            dialog.attach_surface(
+                self._paint_along_surface(
+                    getattr(self, "_reference_video", None), snapshot
+                )
+            )
 
     def _on_reference_video_follow_snapshot(self, snapshot) -> None:
         dialog = getattr(self, "_reference_video_dialog", None)
         if dialog is not None:
             dialog.set_follow_snapshot(snapshot)
+            dialog.attach_surface(
+                self._paint_along_surface(
+                    getattr(self, "_reference_video", None), snapshot
+                )
+            )
+        self._maybe_open_paint_along(snapshot)
         self._announce_reference_video_follow_state(snapshot)
 
     #: Follow states worth interrupting an artist for, and what to say. A
@@ -11820,7 +11931,7 @@ class ApplicationController(QObject):
     #: says what to do about it, so none of them names a menu path any more.
     _REFERENCE_VIDEO_NOTICES = {
         "needs_file": (
-            "The host is sharing a reference video. Open your own copy of the "
+            "The host shared a Paint along video. Open your own copy of the "
             "same file to follow along, or keep working."
         ),
         "mismatched_file": (
@@ -11828,7 +11939,7 @@ class ApplicationController(QObject):
             "not follow it. Open the host's exact file, or hide the video."
         ),
         "file_unavailable": (
-            "Your copy of the reference video moved, changed, or became "
+            "Your Paint along copy moved, changed, or became "
             "unreadable, so WebJam stopped following the host."
         ),
     }

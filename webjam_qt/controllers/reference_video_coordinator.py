@@ -33,10 +33,10 @@ from core.reference_video import (
 LOGGER = logging.getLogger("webjam.qt.reference_video_coordinator")
 
 PLAYER_UNAVAILABLE_MESSAGE = (
-    "This computer cannot play video in WebJam, so the reference video is "
+    "This computer cannot play video in WebJam, so Paint along is "
     "unavailable here. You can still talk and work in the room."
 )
-NOT_HOSTING_MESSAGE = "Only the session host can share a reference video."
+NOT_HOSTING_MESSAGE = "Only the session host can share a Paint along video."
 NOT_FOLLOWING_MESSAGE = "Only a guest opens their own copy of the host's video."
 
 # Maps host lifecycle onto the bounded projection guests may render. CLOSED
@@ -129,6 +129,15 @@ class ReferenceVideoCoordinator:
                 follower.close_local_copy()
             except Exception:  # noqa: BLE001 - teardown must not raise
                 LOGGER.debug("Reference video follower close failed", exc_info=True)
+        # A guest player is parented to the main window, so dropping the
+        # coordinator is not enough to stop decoding or release its surface.
+        # Host teardown already closes through ``host.close()``.
+        player = self._player
+        if host is None and player is not None:
+            try:
+                player.close()
+            except Exception:  # noqa: BLE001 - teardown must not raise
+                LOGGER.debug("Reference video guest player close failed", exc_info=True)
         self._host = None
         self._follower = None
         self._player = None
@@ -323,12 +332,20 @@ class ReferenceVideoCoordinator:
         # A reference video is the picture. Because the file is never routed
         # anywhere, every computer holds its own copy, so an unmuted one would
         # put a second soundtrack on top of the conversation on every machine.
-        mute = getattr(player, "set_muted", None)
-        if callable(mute):
+        try:
+            player.set_muted(True)
+            if player.muted is not True:
+                raise ReferenceVideoError(PLAYER_UNAVAILABLE_MESSAGE)
+        except Exception as exc:
+            # Silence is a hard boundary, not a best-effort preference. Close
+            # an adapter that cannot prove it before any local file is loaded.
             try:
-                mute(True)
-            except Exception:  # noqa: BLE001 - a silent player is the default
-                LOGGER.debug("Reference video mute failed", exc_info=True)
+                player.close()
+            except Exception:  # noqa: BLE001 - preserve the mute failure
+                LOGGER.debug("Reference video player cleanup failed", exc_info=True)
+            if isinstance(exc, ReferenceVideoError):
+                raise
+            raise ReferenceVideoError(PLAYER_UNAVAILABLE_MESSAGE) from exc
         self._player = player
         return player
 

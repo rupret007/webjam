@@ -113,7 +113,7 @@ def test_art_speaks_to_artists_not_to_a_band(profile):
     assert vocabulary.participant_singular == "artist"
     assert vocabulary.participant_plural == "artists"
     assert vocabulary.session_noun == "art session"
-    assert vocabulary.reference_video_noun == "reference video"
+    assert vocabulary.reference_video_noun == "paint along"
 
     spoken = " ".join(
         (

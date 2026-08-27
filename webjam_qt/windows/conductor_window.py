@@ -191,6 +191,8 @@ class ConductorWindow(QMainWindow):
         self.workspace_stack.addWidget(self.center_splitter)
         self.workspace_stack.addWidget(self.reference_studio)
         self.workspace_stack.setCurrentWidget(self.center_splitter)
+        self._paint_along_widget: QWidget | None = None
+        self._paint_along_return_widget: QWidget = self.center_splitter
 
         body_container = QWidget()
         body_layout = QHBoxLayout(body_container)
@@ -314,8 +316,11 @@ class ConductorWindow(QMainWindow):
         self._ready_check_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F2), self)
         # F11 — fullscreen toggle
         QShortcut(QKeySequence(Qt.Key.Key_F11), self, self._toggle_fullscreen)
-        # Escape — exit fullscreen
-        QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self._exit_fullscreen)
+        # Escape returns from an embedded making surface before it falls back
+        # to its ordinary job of leaving full screen.
+        self._escape_shortcut = QShortcut(
+            QKeySequence(Qt.Key.Key_Escape), self, self._handle_escape
+        )
         # Cmd/Ctrl+, — open settings wizard (signal consumed by controller)
         self._settings_shortcut = QShortcut(QKeySequence("Ctrl+,"), self)
         # Cmd/Ctrl+S — save mix; Cmd/Ctrl+O — load mix (consumed by controller)
@@ -744,9 +749,66 @@ class ConductorWindow(QMainWindow):
         if self.isFullScreen():
             self.showNormal()
 
+    def _handle_escape(self) -> None:
+        panel = self._paint_along_widget
+        if panel is not None and self.workspace_stack.currentWidget() is panel:
+            self.hide_paint_along(panel)
+            return
+        self._exit_fullscreen()
+
     # ------------------------------------------------------------------
     # Public helpers for ApplicationController
     # ------------------------------------------------------------------
+    def show_paint_along(self, panel: QWidget) -> None:
+        """Use WebJam's existing window as the Paint along surface.
+
+        The meeting already owns the other top-level window. Embedding this
+        panel keeps the promised two-window layout and makes the video the
+        WebJam workspace instead of opening a third preview beside it.
+        """
+
+        if panel is not self._paint_along_widget:
+            previous = self._paint_along_widget
+            if previous is not None and self.workspace_stack.indexOf(previous) >= 0:
+                self.workspace_stack.removeWidget(previous)
+            panel.setParent(self.workspace_stack)
+            panel.setWindowFlags(Qt.WindowType.Widget)
+            self.workspace_stack.addWidget(panel)
+            self._paint_along_widget = panel
+        current = self.workspace_stack.currentWidget()
+        if current is not panel:
+            self._paint_along_return_widget = current or self.center_splitter
+        set_embedded = getattr(panel, "set_embedded", None)
+        if callable(set_embedded):
+            set_embedded(True)
+        self.workspace_stack.setCurrentWidget(panel)
+        panel.show()
+
+    def hide_paint_along(self, panel: QWidget | None = None) -> None:
+        """Return from the embedded Paint along surface to the prior workspace."""
+
+        active = self._paint_along_widget
+        if active is None or (panel is not None and panel is not active):
+            return
+        if self.workspace_stack.currentWidget() is active:
+            target = self._paint_along_return_widget
+            if self.workspace_stack.indexOf(target) < 0:
+                target = self.center_splitter
+            self.workspace_stack.setCurrentWidget(target)
+        active.hide()
+
+    def release_paint_along(self, panel: QWidget | None = None) -> None:
+        """Forget an embedded surface before its deferred Qt deletion."""
+
+        active = self._paint_along_widget
+        if active is None or (panel is not None and panel is not active):
+            return
+        self.hide_paint_along(active)
+        if self.workspace_stack.indexOf(active) >= 0:
+            self.workspace_stack.removeWidget(active)
+        self._paint_along_widget = None
+        self._paint_along_return_widget = self.center_splitter
+
     def set_creator_profile(
         self,
         profile: CreatorProfile,

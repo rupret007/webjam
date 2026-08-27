@@ -40,6 +40,10 @@ class FakePlayer:
         self.state = "idle"
         self.seeks: list[float] = []
         self.surface = object()
+        self.muted = False
+
+    def set_muted(self, muted: bool) -> None:
+        self.muted = bool(muted)
 
     def load(self, path: Path) -> float:
         self.state = "ready"
@@ -406,6 +410,31 @@ def test_a_computer_without_a_video_player_says_so_and_stays_in_the_room(tmp_pat
     assert coordinator.set_hidden(True).state is ReferenceVideoFollowState.HIDDEN
 
 
+@pytest.mark.parametrize("failure", ["missing", "raising", "unproven"])
+def test_a_player_must_prove_it_is_silent_before_loading(tmp_path, failure):
+    player = FakePlayer()
+    if failure == "missing":
+        player.set_muted = None  # type: ignore[assignment]
+    elif failure == "raising":
+        def refuse_mute(_muted: bool) -> None:
+            raise RuntimeError("audio output refused mute")
+
+        player.set_muted = refuse_mute  # type: ignore[method-assign]
+    else:
+        def ignore_mute(_muted: bool) -> None:
+            return None
+
+        player.set_muted = ignore_mute  # type: ignore[method-assign]
+    coordinator = ReferenceVideoCoordinator(player_factory=lambda: player)
+    coordinator.begin_guest(session_id=SESSION_ID, session_key=SESSION_KEY)
+    coordinator.observe_host_state(HostState(_host_projection(_digest_for(tmp_path))))
+
+    with pytest.raises(ReferenceVideoError, match="cannot play video"):
+        coordinator.open_local_copy(str(write_video(tmp_path / "mine.mp4")))
+
+    assert player.state == "closed"
+
+
 def test_ending_a_room_releases_players_and_forgets_the_role(tmp_path):
     peer = FakeHostPeer()
     player = FakePlayer()
@@ -420,6 +449,22 @@ def test_ending_a_room_releases_players_and_forgets_the_role(tmp_path):
     assert coordinator.player_surface is None
     assert player.state == "closed"
     assert peer.published[-1] == {"state": "idle", "shared": False}
+
+
+def test_ending_a_guest_room_stops_and_closes_its_player(tmp_path):
+    player = FakePlayer()
+    coordinator, _, _, _ = make_coordinator(players=[player])
+    coordinator.begin_guest(session_id=SESSION_ID, session_key=SESSION_KEY)
+    coordinator.observe_host_state(HostState(_host_projection(_digest_for(tmp_path))))
+    coordinator.open_local_copy(str(write_video(tmp_path / "mine.mp4")))
+    coordinator.tick()
+    assert player.state == "playing"
+
+    coordinator.end()
+
+    assert coordinator.role == ""
+    assert coordinator.player_surface is None
+    assert player.state == "closed"
 
 
 def test_the_player_surface_is_reused_for_one_room(tmp_path):

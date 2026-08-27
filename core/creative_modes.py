@@ -580,7 +580,7 @@ CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
             session_noun="art session",
             reference_audio_noun="reference audio",
             section_noun="stage",
-            reference_video_noun="reference video",
+            reference_video_noun="paint along",
         ),
         starts=_ART_STARTS,
     ),

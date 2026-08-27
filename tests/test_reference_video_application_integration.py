@@ -15,10 +15,12 @@ from unittest.mock import MagicMock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402
 
 from core.creative_modes import get_creator_profile_by_key  # noqa: E402
 from core.reference_video import (  # noqa: E402
+    ReferenceVideoError,
     ReferenceVideoFollowState,
     load_reference_video_source,
     session_identity_signer,
@@ -72,6 +74,8 @@ def _controller(profile_key: str) -> ApplicationController:
     controller._reference_video = None
     controller._reference_video_dialog = None
     controller._reference_video_binding = ()
+    controller._reference_video_notified_state = ""
+    controller._announced_creator_start = ()
     controller.window = SimpleNamespace(
         session_strip=SimpleNamespace(
             set_recording_phase=MagicMock(),
@@ -339,6 +343,41 @@ def test_a_host_share_reaches_the_peer_plane_through_the_controller(
     assert len(published[-1].kwargs["identity_digest"]) == 64
 
 
+def test_the_host_surface_detaches_when_sharing_stops(tmp_path, fake_players):
+    controller = _controller("art")
+    _as_host(controller)
+    coordinator = controller._reference_video_coordinator()
+    dialog = SimpleNamespace(
+        set_host_snapshot=MagicMock(),
+        attach_surface=MagicMock(),
+    )
+    controller._reference_video_dialog = dialog
+
+    coordinator.share(str(_write(tmp_path / "lesson.mp4")))
+    assert dialog.attach_surface.call_args.args[0] is fake_players[0].surface
+
+    coordinator.withdraw()
+    assert dialog.attach_surface.call_args.args == (None,)
+
+
+def test_a_guest_wrong_copy_never_becomes_the_visible_surface(
+    tmp_path, fake_players
+):
+    controller = _controller("art")
+    _as_guest(controller)
+    coordinator = controller._reference_video_coordinator()
+    digest = _digest(tmp_path)
+    coordinator.observe_host_state(_peer_state(_shared_video(digest)))
+
+    with pytest.raises(ReferenceVideoError, match="not the same file"):
+        coordinator.open_local_copy(
+            str(_write(tmp_path / "wrong.mp4", b"different bytes"))
+        )
+
+    assert coordinator.player_surface is fake_players[0].surface
+    assert controller._paint_along_surface(coordinator) is None
+
+
 def test_releasing_a_room_publishes_nothing_shared_and_forgets_the_binding(
     tmp_path, fake_players
 ):
@@ -354,6 +393,46 @@ def test_releasing_a_room_publishes_nothing_shared_and_forgets_the_binding(
     assert fake_players[0].state == "closed"
     final = controller.host_peer.publish_reference_video_state.call_args
     assert final.kwargs == {"state": "idle", "shared": False}
+
+
+def test_successful_end_releases_paint_along_synchronously(
+    tmp_path, fake_players
+):
+    controller = _controller("art")
+    _as_host(controller)
+    controller.host_peer.stop = MagicMock(return_value=True)
+    controller.window.release_paint_along = MagicMock()
+    coordinator = controller._reference_video_coordinator()
+    coordinator.share(str(_write(tmp_path / "lesson.mp4")))
+    coordinator.play()
+    dialog = SimpleNamespace(
+        attach_surface=MagicMock(),
+        close=MagicMock(),
+        deleteLater=MagicMock(),
+    )
+    controller._reference_video_dialog = dialog
+
+    assert controller._stop_session_peer(clear_invite=True) is True
+
+    assert controller._reference_video is None
+    assert controller._reference_video_dialog is None
+    assert fake_players[0].state == "closed"
+    controller.window.release_paint_along.assert_called_once_with(dialog)
+    dialog.close.assert_called_once_with()
+
+
+def test_failed_end_keeps_paint_along_reachable_for_retry(tmp_path, fake_players):
+    controller = _controller("art")
+    _as_host(controller)
+    controller.host_peer.stop = MagicMock(return_value=False)
+    coordinator = controller._reference_video_coordinator()
+    coordinator.share(str(_write(tmp_path / "lesson.mp4")))
+
+    assert controller._stop_session_peer(clear_invite=True) is False
+
+    assert controller._reference_video is coordinator
+    assert coordinator.role == "host"
+    assert fake_players[0].state == "ready"
 
 
 def test_a_failing_intent_shows_bounded_text_and_keeps_the_room(tmp_path):
@@ -402,6 +481,7 @@ def test_an_artist_is_told_once_when_the_host_starts_sharing():
 
     controller = _controller("art")
     _as_guest(controller)
+    controller._open_reference_video = MagicMock()
 
     controller._on_reference_video_follow_snapshot(
         _follow(ReferenceVideoFollowState.NO_VIDEO)
@@ -412,7 +492,8 @@ def test_an_artist_is_told_once_when_the_host_starts_sharing():
         _follow(ReferenceVideoFollowState.NEEDS_FILE)
     )
     message = controller.window.flash_message.call_args.args[0]
-    assert "host is sharing a reference video" in message
+    assert "host shared a Paint along video" in message
+    controller._open_reference_video.assert_called_once_with(take_focus=False)
     # It names the event and what the artist can do about it. It does not
     # route them through a menu: the room's own chip carries the control, and
     # a notice telling someone which menu to open is a sign the thing is not
@@ -439,6 +520,7 @@ def test_an_artist_is_told_once_when_the_host_starts_sharing():
 def test_an_artist_is_told_when_their_copy_stops_matching(state, marker):
     controller = _controller("art")
     _as_guest(controller)
+    controller._open_reference_video = MagicMock()
     controller._on_reference_video_follow_snapshot(
         _follow(ReferenceVideoFollowState.FOLLOWING)
     )
@@ -471,6 +553,7 @@ def test_states_an_artist_chose_or_cannot_act_on_stay_quiet(state):
 def test_leaving_a_room_lets_the_next_one_speak_again():
     controller = _controller("art")
     _as_guest(controller)
+    controller._open_reference_video = MagicMock()
     controller._on_reference_video_follow_snapshot(
         _follow(ReferenceVideoFollowState.NEEDS_FILE)
     )
@@ -482,6 +565,98 @@ def test_leaving_a_room_lets_the_next_one_speak_again():
     )
 
     assert controller.window.flash_message.call_count == 2
+    assert controller._open_reference_video.call_count == 2
+
+
+def test_a_host_paint_along_start_opens_once_without_taking_focus():
+    controller = _controller("art")
+    _as_host(controller)
+    controller.settings = SimpleNamespace(last_creator_start_key="paint_along")
+    controller._sync_art_room_presence = MagicMock()
+    controller._open_reference_video = MagicMock()
+
+    controller._tick_creator_start()
+    controller._tick_creator_start()
+
+    controller._open_reference_video.assert_called_once_with(take_focus=False)
+    assert controller._announced_creator_start == ("host", SESSION_ID)
+
+
+def test_a_host_talk_and_make_start_never_opens_paint_along():
+    controller = _controller("art")
+    _as_host(controller)
+    controller.settings = SimpleNamespace(last_creator_start_key="talk_and_make")
+    controller._sync_art_room_presence = MagicMock()
+    controller._open_reference_video = MagicMock()
+
+    controller._tick_creator_start()
+
+    controller._open_reference_video.assert_not_called()
+
+
+def test_automatic_presentation_is_shown_without_activation(fake_players):
+    controller = _controller("art")
+    _as_host(controller)
+    window = QWidget()
+    window.flash_message = MagicMock()
+    controller.window = window
+    controller._present_art_panel = MagicMock()
+    try:
+        controller._open_reference_video(take_focus=False)
+        dialog = controller._reference_video_dialog
+
+        assert dialog is not None
+        assert dialog.isVisible() is True
+        assert dialog.testAttribute(
+            Qt.WidgetAttribute.WA_ShowWithoutActivating
+        ) is True
+        controller._present_art_panel.assert_not_called()
+
+        controller._open_reference_video(take_focus=True)
+        assert dialog.testAttribute(
+            Qt.WidgetAttribute.WA_ShowWithoutActivating
+        ) is False
+        controller._present_art_panel.assert_called_once_with(dialog)
+    finally:
+        controller._release_reference_video()
+        window.deleteLater()
+
+
+def test_production_window_route_embeds_without_presenting_a_new_dialog(
+    fake_players,
+):
+    controller = _controller("art")
+    _as_host(controller)
+    window = QWidget()
+    window.flash_message = MagicMock()
+    window.show_paint_along = MagicMock()
+    controller.window = window
+    controller._present_art_panel = MagicMock()
+    try:
+        controller._open_reference_video(take_focus=False)
+        dialog = controller._reference_video_dialog
+
+        window.show_paint_along.assert_called_once_with(dialog)
+        controller._present_art_panel.assert_not_called()
+    finally:
+        controller._release_reference_video()
+        window.deleteLater()
+
+
+def test_a_guests_saved_start_never_opens_before_authenticated_host_video():
+    controller = _controller("art")
+    _as_guest(controller)
+    controller.settings = SimpleNamespace(last_creator_start_key="paint_along")
+    controller._open_reference_video = MagicMock()
+
+    controller._maybe_open_paint_along(
+        _follow(ReferenceVideoFollowState.NO_VIDEO)
+    )
+    controller._maybe_open_paint_along(
+        _follow(ReferenceVideoFollowState.NEEDS_FILE)
+    )
+
+    controller._open_reference_video.assert_called_once_with(take_focus=False)
 
 
 def test_the_profile_capability_is_the_only_gate_on_the_menu_entry():

@@ -526,6 +526,28 @@ def test_a_different_file_is_refused_rather_than_played(tmp_path, signer):
     assert snapshot.can_follow is False
 
 
+def test_replacing_a_playing_copy_with_the_wrong_file_stops_the_old_picture(
+    tmp_path, signer
+):
+    player = FakePlayer()
+    follower = make_follower(player=player)
+    follower.observe(
+        shared_projection(tmp_path, signer, state="playing"),
+        received_monotonic_s=0.0,
+    )
+    follower.open_local_copy(write_video(tmp_path / "mine.mp4", b"the lesson"))
+    follower.apply(0.0)
+    assert player.state == "playing"
+
+    with pytest.raises(ReferenceVideoError, match="not the same file"):
+        follower.open_local_copy(
+            write_video(tmp_path / "wrong.mp4", b"different bytes")
+        )
+
+    assert player.state == "paused"
+    assert follower.resolve(0.0).state is ReferenceVideoFollowState.NEEDS_FILE
+
+
 def test_a_file_opened_before_the_host_shared_still_fails_closed_on_mismatch(
     tmp_path, signer
 ):
@@ -710,6 +732,43 @@ def test_closing_the_local_copy_returns_to_needing_one(tmp_path, signer):
     follower.open_local_copy(write_video(tmp_path / "mine.mp4", b"the lesson"))
     follower.observe(shared_projection(tmp_path, signer), received_monotonic_s=0.0)
     assert follower.close_local_copy().state is ReferenceVideoFollowState.NEEDS_FILE
+
+
+def test_closing_a_playing_copy_stops_its_picture_before_forgetting_it(
+    tmp_path, signer
+):
+    player = FakePlayer()
+    follower = make_follower(player=player)
+    follower.observe(
+        shared_projection(tmp_path, signer, state="playing"),
+        received_monotonic_s=0.0,
+    )
+    follower.open_local_copy(write_video(tmp_path / "mine.mp4", b"the lesson"))
+    follower.apply(0.0)
+
+    snapshot = follower.close_local_copy()
+
+    assert player.state == "paused"
+    assert snapshot.state is ReferenceVideoFollowState.NEEDS_FILE
+
+
+def test_a_failed_pause_keeps_the_proven_copy_instead_of_claiming_it_closed(
+    tmp_path, signer
+):
+    player = FakePlayer()
+    follower = make_follower(player=player)
+    follower.observe(
+        shared_projection(tmp_path, signer, state="playing"),
+        received_monotonic_s=0.0,
+    )
+    follower.open_local_copy(write_video(tmp_path / "mine.mp4", b"the lesson"))
+    follower.apply(0.0)
+    player.fail_on.add("pause")
+
+    with pytest.raises(ReferenceVideoPlayerError, match="couldn't stop"):
+        follower.close_local_copy()
+
+    assert follower.resolve(0.0).state is ReferenceVideoFollowState.FOLLOWING
 
 
 def test_a_follower_exposes_no_transport_at_all():

@@ -491,10 +491,10 @@ class SessionStrip(QFrame):
         self._reference_track_action.triggered.connect(
             lambda: self.tool_requested.emit("reference_track")
         )
-        self._reference_video_action = QAction("Reference Video…", tools_menu)
+        self._reference_video_action = QAction("Paint along…", tools_menu)
         self._reference_video_action.setToolTip(
-            "Optional. Watch one local video the host plays, paused and moved "
-            "for everyone. Each computer plays its own copy of the same file."
+            "Open the room's quiet video surface. Each artist uses their own "
+            "copy of the same local file."
         )
         self._reference_video_action.triggered.connect(
             lambda: self.tool_requested.emit("reference_video")
@@ -668,7 +668,7 @@ class SessionStrip(QFrame):
         self._reference_video_action.setVisible(reference_video)
         self._reference_video_action.setEnabled(reference_video)
         self._reference_video_action.setText(
-            f"{profile.vocabulary.reference_video_noun.title()}…"
+            f"{profile.vocabulary.reference_video_noun.capitalize()}…"
         )
         shared_canvas = bool(profile.capabilities.shared_canvas)
         self._shared_canvas_action.setVisible(shared_canvas)

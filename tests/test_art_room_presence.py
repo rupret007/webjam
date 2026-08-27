@@ -101,7 +101,7 @@ def test_a_host_who_chose_the_canvas_is_offered_the_way_in():
 def test_a_host_who_chose_the_video_is_offered_that_way_in_instead():
     presence = art_room_presence(_room(), hosting=True, intended_video=True)
 
-    assert presence.label == "Set up reference video"
+    assert presence.label == "Set up Paint along"
     assert presence.target is ArtPresenceTarget.VIDEO
 
 
@@ -141,11 +141,11 @@ def test_a_missing_painting_program_is_the_line_even_beside_a_live_video():
 @pytest.mark.parametrize(
     ("state", "label"),
     (
-        (VideoCompanionState.NEEDS_FILE, "Open your copy of the video"),
-        (VideoCompanionState.MISMATCHED_FILE, "Video needs a look"),
-        (VideoCompanionState.FILE_UNAVAILABLE, "Video needs a look"),
-        (VideoCompanionState.STALLED, "Video is out of step"),
-        (VideoCompanionState.HOST_ATTENTION, "Video needs a look"),
+        (VideoCompanionState.NEEDS_FILE, "Open your Paint along copy"),
+        (VideoCompanionState.MISMATCHED_FILE, "Paint along needs a look"),
+        (VideoCompanionState.FILE_UNAVAILABLE, "Paint along needs a look"),
+        (VideoCompanionState.STALLED, "Paint along is out of step"),
+        (VideoCompanionState.HOST_ATTENTION, "Paint along needs a look"),
     ),
 )
 def test_every_video_state_this_computer_cannot_follow_asks_for_attention(
@@ -204,7 +204,7 @@ def test_a_live_canvas_is_described_without_alarm(state):
 def test_a_live_video_is_described_without_alarm(state):
     presence = art_room_presence(_room(video=state))
 
-    assert presence.label == "Reference video"
+    assert presence.label == "Paint along"
     assert presence.tone is ArtPresenceTone.PRESENT
 
 
@@ -217,7 +217,7 @@ def test_a_hidden_video_keeps_one_quiet_route_back():
 
     presence = art_room_presence(_room(video=VideoCompanionState.HIDDEN))
 
-    assert presence.label == "Reference video (hidden)"
+    assert presence.label == "Paint along (hidden)"
     assert presence.tone is ArtPresenceTone.PRESENT
     assert presence.target is ArtPresenceTarget.VIDEO
 
