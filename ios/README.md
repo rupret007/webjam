@@ -1,8 +1,8 @@
 # Pocket Stage iPhone app
 
-> **v0.27.0 source candidate:** these setup instructions describe the kit
-> intended for exact future v0.27.0 Mac test assets. GitHub **Latest** remains
-> immutable v0.26.0; no v0.27.0 kit is published yet. Physical iPhone
+> **v0.27.1 source candidate:** these setup instructions describe the kit
+> intended for exact future v0.27.1 Mac test assets. GitHub **Latest** remains
+> immutable v0.27.0; no v0.27.1 kit is published yet. Physical iPhone
 > installation and pairing remain **NOT RUN**.
 
 This folder contains a reproducible XcodeGen app specification, the complete
@@ -46,7 +46,7 @@ transport.
 1. Install the full **Xcode** app from Apple and open it once. In **Xcode →
    Settings → Accounts**, add the Apple ID that will own the free Personal
    Team.
-2. From a matching unpublished v0.27.0 Mac source candidate, open **Pocket Stage iPhone
+2. From a matching unpublished v0.27.1 Mac source candidate, open **Pocket Stage iPhone
    Setup**, then open **WebJamPocketStage.xcodeproj** directly. If Finder does
    not associate it with Xcode, use **Xcode → File → Open** and select the
    project. **Open Pocket Stage in Xcode.command** is an optional convenience

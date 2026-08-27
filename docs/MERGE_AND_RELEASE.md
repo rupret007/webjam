@@ -1,13 +1,13 @@
 # Merge and release map
 
-> **Current source:** unpublished v0.27.0 (`webjam_qt.__version__`). This
+> **Current source:** unpublished v0.27.1 (`webjam_qt.__version__`). This
 > checkout is not a GitHub release. Do not treat an untagged tree as Latest.
 >
-> **Latest download:** remains immutable v0.26.0 until an annotated `v0.27.0`
-> tag and unique successful tag CI are published with
-> `.github/workflows/publish-latest-release.yml`. No v0.27.0 release ID,
-> checksum, or pinned artifact hash exists. Do not restack #37. Do not add a
-> version-specific publisher with invented pins.
+> **Latest download:** remains immutable v0.27.0 until an annotated `v0.27.1`
+> tag and unique successful tag CI publish the unsigned/ad-hoc draft as
+> Latest. No v0.27.1 release ID, checksum, or pinned artifact hash exists.
+> Do not retag v0.27.0. Do not restack #37. Do not invent a signed catalog.
+> Do not add a version-specific publisher with invented pins.
 
 The short plan for the remaining product land and one honest release round
 after it. #14 (audio core) and #19 (Art) are already on `master`. #17 (Music
@@ -81,12 +81,14 @@ touch on `master` before the branch that has to be reworked around them.
 ## 4. Release round
 
 This honesty close only bumps the packaged source identity to unpublished
-v0.27.0. It does not tag, dispatch the publisher, delete old unsigned test
-releases, or attach v0.26.0 binaries to a new tag. After Jeff merges, Bob
-waits for hosted CI on the landed `master` commit, then Jeff decides whether
-to cut the annotated `v0.27.0` tag. The post-tag publisher is the existing
-generic `.github/workflows/publish-latest-release.yml` after unique
-successful tag CI. Do not write a parallel runbook.
+v0.27.1 so Latest can become the already-merged #47 feel wrap. It does not
+retag v0.27.0, invent a signed catalog, delete old unsigned test releases,
+or restack #37. After unique successful `v0.27.1` tag CI, publish that
+unsigned/ad-hoc draft as Latest. The generic
+`.github/workflows/publish-latest-release.yml` still requires a catalog that
+authorizes this exact WebJam version; sealed v3 still targets 0.22.5 only
+(observed v0.27.0 failure `33036413984`). Do not invent that catalog. Do
+not write a parallel runbook.
 
 Run after #17 is on `master`, on one `master` commit. Every job below must be
 green in the same round:

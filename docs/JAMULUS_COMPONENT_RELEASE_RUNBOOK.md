@@ -45,18 +45,25 @@
 > 0.26.0 without moving the component channel. The v0.26.0 source registry
 > recognizes the unchanged audited 3.12.2/3.12.3 identities through exact
 > WebJam 0.26.0, but that is not signed managed-update authorization. Immutable
-> v0.26.0 is GitHub **Latest** desktop release `371442375`. No v0.26 component
+> v0.26.0 is historical desktop release `371442375`. No v0.26 component
 > tag, release, sequence, asset, signature, or PASS evidence exists. A future
 > managed update requires a new fixed channel and the complete procedure below.
 
-> **v0.27.0 source-candidate fallback-only state:** sealed v3 still authorizes
-> exact WebJam 0.22.5 only and cannot authorize 0.27.0. The source registry
+> **v0.27.0 published fallback-only desktop state:** sealed v3 still authorizes
+> exact WebJam 0.22.5 only and cannot authorize 0.27.0. Immutable v0.27.0 is
+> GitHub **Latest** desktop release `377546932`. Generic publisher run
+> `33036413984` failed on that catalog mismatch. No v0.27 component tag,
+> release, sequence, asset, signature, or PASS evidence exists.
+
+> **v0.27.1 source-candidate fallback-only state:** sealed v3 still authorizes
+> exact WebJam 0.22.5 only and cannot authorize 0.27.1. The source registry
 > extends the unchanged audited 3.12.2/3.12.3 identities through exact WebJam
-> 0.27.0 and rejects 0.27.1 so the embedded fallback remains known, but that is
-> not a signed managed-update authorization. No v0.27 component tag, release,
-> sequence, asset, signature, or PASS evidence exists. jamulus-components-v1/v2/v3
-> stay. A future managed update requires a new fixed channel and the complete
-> procedure below.
+> 0.27.1 and rejects 0.27.2 so the embedded fallback remains known, but that is
+> not a signed managed-update authorization. Shared Track play uses this Mac's
+> BlackHole route and the bundled headless client, not a catalog pin. No v0.27.1
+> component tag, release, sequence, asset, signature, or PASS evidence exists.
+> jamulus-components-v1/v2/v3 stay. A future managed update requires a new
+> fixed channel and the complete procedure below.
 
 This runbook records the sealed v1/v2 history and current v3 catalog channel. The
 catalog tells WebJam which exact

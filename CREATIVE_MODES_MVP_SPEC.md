@@ -1,9 +1,9 @@
-# Creator profiles — v0.27.0 implemented contract
+# Creator profiles — v0.27.1 implemented contract
 
-> Status: unpublished v0.27.0 source candidate. GitHub **Latest** remains
-> immutable v0.26.0. Music, Podcast & Voice, and Review & Rehearsal are
-> implemented here; **Art is added after v0.26.0 and has no published release
-> evidence yet**: it is covered by automated tests only, and its two-computer
+> Status: unpublished v0.27.1 source candidate. GitHub **Latest** remains
+> immutable v0.27.0. That download does not include the #47 feel wrap.
+> Music, Podcast & Voice, and Review & Rehearsal are implemented here; Art
+> is on this source line and covered by automated tests. Two-computer Art
 > behavior is **NOT RUN**. This document supersedes the earlier speculative
 > cross-discipline MVP and describes only bounded current behavior. Physical
 > and platform-trust results remain **NOT RUN**.

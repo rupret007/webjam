@@ -1,9 +1,9 @@
-# WebJam v0.27.0 UX acceptance checklist
+# WebJam v0.27.1 UX acceptance checklist
 
-> This checklist describes unpublished v0.27.0 source. Immutable v0.26.0
+> This checklist describes unpublished v0.27.1 source. Immutable v0.27.0
 > remains GitHub **Latest** for private testing.
 > Every physical and platform-trust gate stays **NOT RUN** until recorded
-> against an exact future v0.27.0 asset.
+> against an exact future v0.27.1 asset.
 
 ## Unified guidance
 
@@ -224,7 +224,7 @@
       extraction.
 - [ ] Physical two-Mac and hardware evidence is listed separately as PASS,
       FAIL, or NOT RUN.
-- [ ] No v0.27.0 physical or production-trust claim is made until the dedicated
+- [ ] No v0.27.1 physical or production-trust claim is made until the dedicated
       [physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
       records exact-asset results. Two-machine music, Shared Track, recording,
       Studio, external-editor, accessibility, signing, installation, and

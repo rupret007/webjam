@@ -1,9 +1,9 @@
-WebJam v0.27.0 private test candidate for Windows x64
+WebJam v0.27.1 private test candidate for Windows x64
 ======================================================
 
 PRIVATE TEST CANDIDATE: use this package only when its exact filename appears
-in the v0.27.0 GitHub release and its SHA-256 matches that release's manifest.
-Do not use the immutable v0.26.0 checksum manifest for this build.
+in the v0.27.1 GitHub release and its SHA-256 matches that release's manifest.
+Do not use the immutable v0.27.0 checksum manifest for this build.
 Physical audio, hardware, SmartScreen, publisher-signing, and managed-device
 gates remain NOT RUN unless the release evidence names this exact file and
 SHA-256.
@@ -45,9 +45,11 @@ explicit approval and may display UAC or SmartScreen. WebJam verifies the
 installed version after setup. It never hides elevation or installs while a
 jam, recording, Shared Track, reconnect, or Jamulus launch is active.
 
-The sealed v0.22.5 catalog does not authorize v0.27.0 and is rejected. Until a
-new signed v0.27 catalog exists, this candidate uses the embedded Jamulus
-3.12.2 fallback rather than offering a managed 3.12.3 download.
+The sealed v0.22.5 catalog does not authorize v0.27.1 and is rejected. That
+catalog pin is unchanged. Shared Track play uses this Mac's official BlackHole
+16ch/64ch route at 48 kHz and the bundled headless client; it does not wait
+for a signed catalog pin. This candidate uses the embedded Jamulus 3.12.2
+fallback rather than offering a managed 3.12.3 download.
 
 If an update is unavailable or you are offline, WebJam offers the exact
 bundled Jamulus 3.12.2 fallback installer from the Host/Join screen. Jamulus is
