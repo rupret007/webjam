@@ -517,6 +517,31 @@ def test_the_panel_points_at_conversation_for_the_meeting_mute(app):
     assert "from Conversation" in coordinator.overlay._meeting_owner.text()
 
 
+def test_the_panel_says_each_app_only_ends_itself(app):
+    coordinator = _coordinator(app, webex_url="https://band.webex.com/meet/jeff")
+    coordinator.overlay.setVisible(True)
+    coordinator.refresh()
+
+    copy = coordinator.overlay._end_note.text()
+    assert "stays open" in copy
+    assert "Leaving or closing the Webex meeting does not end the jam" in copy
+
+
+def test_the_departure_note_does_not_tell_a_guest_to_end_the_jam(app):
+    coordinator = _coordinator(
+        app,
+        is_host=False,
+        webex_url="https://band.webex.com/meet/jeff",
+    )
+    coordinator.overlay.setVisible(True)
+    coordinator.refresh()
+
+    copy = coordinator.overlay._end_note.text()
+    assert "does not end the jam" in copy
+    assert "Return to WebJam to leave or end the session here" in copy
+    assert "until you end the session" not in copy
+
+
 def test_the_key_action_opens_settings(app):
     coordinator = _coordinator(app)
     coordinator._open_settings()
@@ -1196,7 +1221,9 @@ def test_the_panel_copy_follows_whichever_meeting_service_is_configured(app):
     coordinator.refresh()
 
     assert "Zoom mute" in coordinator.overlay._mute_lines.text()
-    assert "Zoom" in coordinator.overlay._end_note.text()
+    copy = coordinator.overlay._end_note.text()
+    assert "Zoom" in copy
+    assert "Leaving or closing the Zoom meeting does not end the jam" in copy
 
 
 # ----------------------------------------------------------------------

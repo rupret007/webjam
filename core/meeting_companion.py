@@ -273,8 +273,8 @@ def meeting_departure_note(
         DEFAULT_MEETING_SERVICE
     )
     return (
-        f"Closing {service} does not end the jam. WebJam keeps playing until "
-        "you end the session here."
+        f"Leaving or closing the {service} meeting does not end the jam. "
+        "Return to WebJam to leave or end the session here."
     )
 
 

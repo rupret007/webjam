@@ -157,6 +157,7 @@ def test_the_existing_host_and_guest_wording_is_preserved():
 
 def test_the_other_half_of_end_is_not_end_is_also_stated():
     note = meeting_departure_note()
+    assert "Leaving or closing the Webex meeting" in note
     assert "does not end the jam" in note
 
 

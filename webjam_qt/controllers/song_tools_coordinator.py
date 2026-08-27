@@ -29,8 +29,9 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from core.meeting_companion import (
     describe_mutes,
-    meeting_recording_note,
     end_session_prompt,
+    meeting_departure_note,
+    meeting_recording_note,
     service_name_for_link,
 )
 from core.music_ai_catalog import SongToolCatalog, failed_catalog, resolve_song_tools
@@ -212,6 +213,11 @@ class SongToolsCoordinator:
                 meeting_configured=self._meeting_configured(),
                 meeting_service=service,
             ).meeting_note,
+            departure_note=(
+                meeting_departure_note(meeting_service=service)
+                if self._meeting_configured()
+                else ""
+            ),
             recording_note=(
                 meeting_recording_note(meeting_service=service)
                 if self._meeting_configured()
