@@ -47,10 +47,11 @@
 > exists yet. GitHub Latest remains v0.27.0. After an annotated `v0.27.1` tag
 > and unique successful tag CI, publish that unsigned/ad-hoc draft as Latest.
 > The generic `.github/workflows/publish-latest-release.yml` still requires a
-> catalog that authorizes this exact WebJam version; do not invent one. Catalog
-> pin remains sealed v0.22.5. Shared Track play uses this Mac's BlackHole +
-> bundled headless. No v0.27.1 release ID, checksum, or pinned artifact hash
-> exists. Do not add a version-specific publisher. Do not restack #37.
+> catalog that authorizes this exact WebJam version. Do not invent a signed
+> catalog. Catalog pin remains sealed v0.22.5. Shared Track play uses this
+> Mac's BlackHole + bundled headless. No v0.27.1 release ID, checksum, or
+> pinned artifact hash exists. Do not add a version-specific publisher. Do
+> not restack #37.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version

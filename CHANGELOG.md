@@ -18,8 +18,8 @@ All notable improvements and features for the WebJam creator collaboration platf
 > WebJam 0.22.5 only. Do not invent a signed catalog. Shared Track play uses
 > this Mac's BlackHole + bundled headless, not a catalog pin. Windows remains
 > unsigned; macOS remains ad-hoc signed and unnotarized. Every v0.27 physical
-> and hardware result is **NOT RUN**. No v0.27.1 release ID, checksum, or
-> pinned artifact hash exists. Do not retag v0.27.0. Do not restack #37.
+> and hardware result is **NOT RUN**. No v0.27.1 release ID, checksum, or pinned artifact hash exists.
+> Do not retag v0.27.0. Do not restack #37.
 
 ### Feel pass: Art hits as hard as Music
 
