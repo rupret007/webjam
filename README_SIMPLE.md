@@ -1,9 +1,10 @@
 # WebJam, simply
 
 > **Private test release:** GitHub
-> [Latest](https://github.com/rupret007/webjam/releases/latest) is the immutable,
-> checksum-verified v0.26.0 package set. Windows is unsigned; macOS is ad-hoc
-> signed and unnotarized.
+> [Latest](https://github.com/rupret007/webjam/releases/latest) remains the
+> immutable, checksum-verified v0.26.0 package set until the verified publisher
+> runs after this unpublished v0.27.0 source lands. This checkout is not that
+> download. Windows is unsigned; macOS is ad-hoc signed and unnotarized.
 
 > **Source note:** use the exact release tag and attached checksum manifest as
 > download evidence; an untagged checkout is not a substitute. The current

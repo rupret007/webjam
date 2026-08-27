@@ -38,7 +38,8 @@
 > body digest, inventory digest, asset IDs/sizes/digests, checksum manifest, or
 > promotion result exists yet. GitHub Latest remains v0.26.0. After an
 > annotated `v0.27.0` tag and unique successful tag CI, dispatch the existing
-> generic `.github/workflows/publish-latest-release.yml`. Do not invent
+> generic `.github/workflows/publish-latest-release.yml`. No v0.27.0 tag,
+> release ID, checksum, or pinned artifact hash exists. Do not invent
 > v0.27.0 pins, and do not add a version-specific publisher.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub

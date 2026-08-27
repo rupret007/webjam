@@ -13,11 +13,13 @@ pretending to own systems that remain independent.
 [![Latest release](https://img.shields.io/github/v/release/rupret007/webjam?label=Latest%20test%20candidate)](https://github.com/rupret007/webjam/releases/latest)
 
 > **Testing download:** GitHub [**Latest**](https://github.com/rupret007/webjam/releases/latest)
-> is the only current downloadable-test pointer. It resolves to immutable
-> v0.26.0, published from exact tag commit
+> remains the only current downloadable-test pointer. Until the verified
+> publisher runs after this unpublished v0.27.0 source lands, it still
+> resolves to immutable v0.26.0, published from exact tag commit
 > `4b5208098981943df8ddaf1fac31aa36c15146bb` after four-platform CI,
 > eight-asset inventory, checksums, fallback proof, and protected promotion
-> passed. Windows is unsigned; macOS is ad-hoc signed and unnotarized.
+> passed. This checkout is not that download. Windows is unsigned; macOS is
+> ad-hoc signed and unnotarized.
 
 > **v0.27.0 source candidate:** the current tree reports v0.27.0 and contains
 > the work described below, but it is not yet a GitHub release. No v0.27.0

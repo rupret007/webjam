@@ -171,7 +171,7 @@ def test_current_guides_name_v026_latest_and_keep_prior_history() -> None:
         "docs/MERGE_AND_RELEASE.md": "unpublished v0.27.0",
         "docs/PROJECT_BRIEF.md": "v0.26.0 remains immutable GitHub Latest",
         "docs/README.md": (
-            "Current testing release:** immutable GitHub **Latest** is v0.26.0"
+            "Current testing release:** immutable GitHub **Latest** remains v0.26.0"
         ),
         "ios/README.md": "v0.27.0 source candidate",
         "requirements-lock/README.md": "The v0.27.0 source candidate retains",
