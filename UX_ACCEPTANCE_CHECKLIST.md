@@ -1,9 +1,9 @@
 # WebJam v0.27.1 UX acceptance checklist
 
-> This checklist describes unpublished v0.27.1 source. Immutable v0.27.0
-> remains GitHub **Latest** for private testing.
+> This checklist describes current post-v0.27.1 source. The unsigned/ad-hoc
+> v0.27.1 release is GitHub **Latest** for private testing.
 > Every physical and platform-trust gate stays **NOT RUN** until recorded
-> against an exact future v0.27.1 asset.
+> against an exact v0.27.1 asset.
 
 ## Unified guidance
 

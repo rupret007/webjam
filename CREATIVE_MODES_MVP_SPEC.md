@@ -1,8 +1,8 @@
 # Creator profiles — v0.27.1 implemented contract
 
-> Status: unpublished v0.27.1 source candidate. GitHub **Latest** remains
-> immutable v0.27.0. That download does not include the #47 feel wrap.
-> Music, Podcast & Voice, and Review & Rehearsal are implemented here; Art
+> Status: current post-v0.27.1 source. GitHub **Latest** is the unsigned/ad-hoc
+> v0.27.1 private test release. That download includes #47 but not post-tag
+> #50–#52. Music, Podcast & Voice, and Review & Rehearsal are implemented here; Art
 > is on this source line and covered by automated tests. Two-computer Art
 > behavior is **NOT RUN**. This document supersedes the earlier speculative
 > cross-discipline MVP and describes only bounded current behavior. Physical

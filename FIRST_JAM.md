@@ -1,10 +1,10 @@
-# First Session — WebJam v0.27.1 source candidate
+# First Session — WebJam post-v0.27.1 source
 
-> This guide describes the unpublished v0.27.1 source candidate. GitHub
-> **Latest** remains the immutable, checksum-verified v0.27.0 private test
-> release, which does not include the #47 feel wrap. Do not treat a checkout
-> or branch artifact as a v0.27.1 package, and record every v0.27 physical
-> gate as **NOT RUN** until it is observed against exact future release bytes.
+> This guide describes current post-v0.27.1 source. GitHub **Latest** is the
+> unsigned/ad-hoc, checksum-verifiable v0.27.1 private test release. Current
+> `master` includes post-tag #50–#52 and is not that package. Record every
+> v0.27 physical gate as **NOT RUN** until it is observed against exact release
+> bytes.
 
 Before Host or Join, choose **Art** or **Music**. Those are the equal first
 clicks. Art then offers **Talk & make**, **Paint together**, or **Paint

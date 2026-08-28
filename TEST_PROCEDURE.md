@@ -1,9 +1,11 @@
-# WebJam v0.27.1 source-candidate test procedure
+# WebJam post-v0.27.1 source test procedure
 
-> v0.27.1 is unpublished source. GitHub **Latest** remains immutable v0.27.0.
-> No v0.27.1 physical result exists; every v0.27 physical, credentialed,
-> signing, and platform-trust gate is **NOT RUN**. Immutable v0.27.0 still has
-> exact tag, packages, and checksum manifest. Publication did not create
+> GitHub **Latest** is the unsigned/ad-hoc v0.27.1 private test release. Current
+> `master` is post-tag source, not that package. No v0.27.1 physical result
+> exists; every v0.27 physical, credentialed, signing, and platform-trust gate
+> is **NOT RUN**. Published v0.27.1 has exact tag, packages, and checksum
+> manifest; its tag workflow is red at the duplicate-release publisher.
+> Publication did not create
 > physical PASS.
 
 ## Scope

@@ -1,8 +1,8 @@
-# Meeting-platform companion guidance — v0.27.1 source candidate
+# Meeting-platform companion guidance — post-v0.27.1 source
 
-> This document describes unpublished v0.27.1 source. GitHub **Latest** remains
-> immutable v0.27.0. Every external meeting-app behavior remains a separate
-> physical gate.
+> This document describes current post-v0.27.1 source. GitHub **Latest** is the
+> unsigned/ad-hoc v0.27.1 private test release. Every external meeting-app
+> behavior remains a separate physical gate.
 
 Any meeting service is optional for talking or video. Jamulus carries the
 music.

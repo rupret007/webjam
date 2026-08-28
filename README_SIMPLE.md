@@ -1,18 +1,17 @@
 # WebJam, simply
 
 > **Private test release:** GitHub
-> [Latest](https://github.com/rupret007/webjam/releases/latest) remains the
-> immutable, checksum-verified v0.27.0 package set until unique successful tag
-> CI publishes this unpublished v0.27.1 feel build. That download does not
-> include #47. This checkout is not that download. Windows is unsigned; macOS
-> is ad-hoc signed and unnotarized.
+> [Latest](https://github.com/rupret007/webjam/releases/latest) is the
+> unsigned/ad-hoc v0.27.1 package set, release `377614785`. Verify
+> `WebJam-v0.27.1-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
+> and unnotarized.
 
 > **Source note:** use the exact release tag and attached checksum manifest as
-> download evidence; an untagged checkout is not a substitute. The current
-> v0.27.1 source candidate has not been published as a release.
+> download evidence; an untagged checkout is not a substitute. Current
+> `master` is three post-tag commits ahead and is not that package.
 
-> **What this checkout is:** unpublished v0.27.1 source. The exact published
-> v0.27.0 release assets—not this checkout or a branch artifact—are package
+> **What this checkout is:** post-release v0.27.1 source. The exact published
+> v0.27.1 release assets—not this checkout or a branch artifact—are package
 > evidence. No physical PASS result is claimed.
 
 WebJam helps creators start a live audio session and keep its separate tracks
@@ -23,7 +22,7 @@ the meeting app, browser, or system output. Local Originals record only the
 input devices you explicitly select, so do not route meeting or system audio
 into those inputs.
 
-The unpublished v0.27.1 source keeps Music and Podcast & Voice as GA
+The current post-v0.27.1 source keeps Music and Podcast & Voice as GA
 creator profiles. Art and Review & Rehearsal are visibly Preview. Art offers a
 live room for **Talk & make**, Drawpile-backed **Paint together**, or
 host-clocked **Paint along**, but no recording or standalone project. Review
@@ -187,7 +186,7 @@ autosaves choices to a separate file; a failed save keeps the edit pending and
 the recorded take safe. Real two-Mac output, hardware interruption/recovery,
 external-editor import, physical Reference Studio audio, and signed-install
 gates are **NOT RUN** for the v0.27.0 private test release and remain unclaimed
-for unpublished v0.27.1. Publishing a private candidate does not convert them to PASS. The
+for current post-v0.27.1 source. Publishing a private candidate does not convert them to PASS. The
 [v0.26 physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 is the all-NOT-RUN physical ledger for that earlier published package; do not
 execute it against this checkout. The

@@ -1,9 +1,9 @@
 # WebJam project brief
 
 **Review date:** 2026-08-27
-**Status:** v0.27.1 is an unpublished feel-pass source candidate.
-v0.27.0 remains immutable GitHub Latest; every v0.27 physical/hardware gate is
-**NOT RUN**.
+**Status:** unsigned/ad-hoc v0.27.1 is GitHub Latest release `377614785`.
+Current `master` includes post-tag #50–#52 and is not that package; every
+v0.27 physical/hardware gate is **NOT RUN**.
 
 ## Executive summary
 
@@ -106,7 +106,7 @@ the full contract.
 
 ## Current product line
 
-The unpublished v0.27.1 source builds on immutable v0.27.0 with an accessible,
+Current post-v0.27.1 source builds on the published v0.27.1 line with an accessible,
 path-free Record Session Readiness sheet and stable logical-source identity
 from the frozen plan through capture, transfer, manifest, recovery, Studio, and
 exact repeated-take lanes. Every server, host, guest, and Shared Track source is
@@ -148,8 +148,8 @@ claimed as implemented in this repository.
    the current downloadable candidate and verify its checksum manifest. Use
    immutable [v0.23.0](https://github.com/rupret007/webjam/releases/tag/v0.23.0)
    only when evaluating that historical baseline.
-3. Confirm Latest resolves to the immutable
-   [v0.26.0 release](https://github.com/rupret007/webjam/releases/tag/v0.26.0)
+3. Confirm Latest resolves to the unsigned/ad-hoc
+   [v0.27.1 release](https://github.com/rupret007/webjam/releases/tag/v0.27.1)
    and use only its exact checksum-verified assets; a branch artifact is not a
    release substitute.
 4. Choose a profile first, then exercise Shared Track, the exact-source

@@ -30,18 +30,19 @@ support bundles, or unredacted local paths.
 Jamulus, meeting services, Python dependencies, Qt, and operating-system trust systems
 have their own upstream security channels. WebJam-specific orchestration,
 privacy projection, package verification, updater, transport, and lifecycle
-issues belong here. Immutable v0.27.0 remains GitHub **Latest** private test
-download; v0.27.1 is currently source-only and unpublished. Use only an exact
-checksum-verified release asset. The published release and its immutable
+issues belong here. GitHub **Latest** is the unsigned/ad-hoc v0.27.1 private
+test release. Current `master` includes post-tag #50–#52 and is not that
+download. Use only an exact checksum-verified release asset. The published release and its immutable
 predecessors share this test-only trust boundary: Windows is unsigned and
 macOS is ad-hoc signed and unnotarized.
 
-Immutable v0.27.0 remains the GitHub **Latest** private test download; the
-exact release assets and `WebJam-v0.27.0-SHA256SUMS.txt` are the downloadable
-evidence. Publication did not create physical certification: every physical,
+The exact v0.27.1 release assets and `WebJam-v0.27.1-SHA256SUMS.txt` are the
+downloadable evidence. Tag workflow `33045632613` is not publish-green: its
+publisher refused to mutate an already-existing release. Publication did not
+create physical certification: every physical,
 hardware, provider, accessibility, signing, notarization, and release-decision
-row remains **NOT RUN**. Unpublished v0.27.1 has no tag, package, or release
-ID. Immutable v0.26.0 and earlier releases remain historical evidence and must
+row remains **NOT RUN**. Immutable v0.27.0 and earlier releases remain
+historical evidence and must
 not be rebuilt or replaced.
 
 The Conversation boundary accepts any meeting provider only through a

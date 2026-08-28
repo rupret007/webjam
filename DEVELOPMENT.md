@@ -1,13 +1,14 @@
 # Developing WebJam v0.27.1
 
-> **Current source line:** this guide describes the unpublished v0.27.1
-> feel-pass candidate. The exact v0.27.0 tag remains the immutable GitHub
-> **Latest** private test release and does not include #47.
+> **Current source line:** this guide describes post-release v0.27.1 source.
+> The exact v0.27.1 tag is the unsigned/ad-hoc GitHub **Latest** private test
+> release; current `master` includes post-tag #50–#52 and is not that package.
 
-> **Release boundary:** only the exact tagged v0.27.0 assets and attached
-> `WebJam-v0.27.0-SHA256SUMS.txt` manifest are authoritative for the current
-> download. No v0.27.1 tag, asset, checksum, or release identity exists yet;
-> every v0.27 physical result is **NOT RUN**.
+> **Release boundary:** only the exact tagged v0.27.1 assets and attached
+> `WebJam-v0.27.1-SHA256SUMS.txt` manifest are authoritative for the current
+> download. Release `377614785` exists, but tag run `33045632613` is red at
+> its duplicate-release publisher and is not publish-green. Every v0.27 physical
+> result is **NOT RUN**.
 
 ## Local setup
 
@@ -197,8 +198,9 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree's package identity is `0.27.1` and is unpublished. GitHub
-Latest remains the exact annotated v0.27.0 tag and its eight-asset release.
+The source tree's package identity remains `0.27.1`, but current `master` is
+post-tag source and is not the published v0.27.1 package. GitHub Latest is the
+exact annotated v0.27.1 tag and its eight-asset release.
 Do not change that tag, release, or assets, and never create a publisher with
 guessed tag objects, commits, CI runs, release IDs, body digests, inventory
 digests, asset IDs, sizes, or hashes. After an annotated `v0.27.1` tag and

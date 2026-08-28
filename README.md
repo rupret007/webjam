@@ -13,26 +13,27 @@ pretending to own systems that remain independent.
 [![Latest release](https://img.shields.io/github/v/release/rupret007/webjam?label=Latest%20test%20candidate)](https://github.com/rupret007/webjam/releases/latest)
 
 > **Testing download:** GitHub [**Latest**](https://github.com/rupret007/webjam/releases/latest)
-> remains the only current downloadable-test pointer. Until unique successful
-> tag CI publishes this unpublished v0.27.1 feel build, it still resolves to
-> immutable v0.27.0, published from exact tag commit
-> `27530d8216db04d706b6e5a1a5906ba6030fa7be`. That download does **not** include
-> the #47 feel wrap. This checkout is not that download. Windows is unsigned;
-> macOS is ad-hoc signed and unnotarized. Shared Track play uses this Mac's
-> official BlackHole 16ch/64ch route at 48 kHz and the bundled headless client;
-> it does not wait for a signed catalog pin. The catalog pin remains sealed
-> v0.22.5.
+> resolves to the published unsigned/ad-hoc
+> [v0.27.1 private test release](https://github.com/rupret007/webjam/releases/tag/v0.27.1),
+> release ID `377614785`, from exact tag commit
+> `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`. It has seven packages plus
+> `WebJam-v0.27.1-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
+> and unnotarized. Tag workflow `33045632613` built all four desktop targets,
+> but the workflow is **not publish-green**: its publisher failed closed because
+> a release already used `v0.27.1`. Do not retag or mutate that release.
 
-> **v0.27.1 source candidate:** the current tree reports v0.27.1 and contains
-> the #47 feel wrap, but it is not yet a GitHub release. No v0.27.1 tag,
-> package, checksum manifest, release ID, or physical PASS evidence exists
-> until the exact release process records it.
+> **Current source boundary:** `master` still reports v0.27.1 but
+> is three post-tag commits ahead (#50–#52). Those Paint Along changes are not in the
+> v0.27.1 download. This checkout and branch artifacts are source evidence, not
+> release packages. Shared Track play uses this Mac's official BlackHole
+> 16ch/64ch route at 48 kHz and the bundled headless client; it does not wait
+> for a signed catalog pin. The catalog remains sealed at exact WebJam v0.22.5.
 
-> **Download boundary:** use a v0.27.0 package only when its exact filename and
+> **Download boundary:** use a v0.27.1 package only when its exact filename and
 > SHA-256 appear on the immutable
-> [v0.27.0 GitHub release](https://github.com/rupret007/webjam/releases/tag/v0.27.0).
+> [v0.27.1 GitHub release](https://github.com/rupret007/webjam/releases/tag/v0.27.1).
 > Every physical v0.27 gate remains **NOT RUN**. Do not substitute this
-> unpublished checkout or a branch artifact. Do not retag v0.27.0.
+> post-release checkout or a branch artifact.
 
 New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 [First Jam](FIRST_JAM.md); this README is the complete technical story.
@@ -42,8 +43,8 @@ New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 | Area | Current state |
 | --- | --- |
 | Product | Creator-facing desktop conductor around Jamulus, optional external meeting conversation, Studio, and Pocket Stage |
-| Published line | Immutable v0.27.0 GitHub Latest private test release; verify its checksum manifest |
-| Current source line | Unpublished v0.27.1; Music and Podcast & Voice are GA profiles, Review & Rehearsal is Preview |
+| Published line | Unsigned/ad-hoc v0.27.1 GitHub Latest private test release; verify its checksum manifest |
+| Current source line | Post-v0.27.1 source (#50–#52); Music and Podcast & Voice are GA profiles, Review & Rehearsal is Preview |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -91,7 +92,7 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
 
 ## Creator profiles
 
-Unpublished v0.27.1 applies one saved creator profile across launch,
+Current post-v0.27.1 source applies one saved creator profile across launch,
 Host/Join, readiness, the live surface, recording, Studio, session records, and
 new standalone projects:
 
@@ -455,7 +456,7 @@ preserves the compatible two-mono-input default. Disabling or opting out of
 every configured row records no host Local Original. The input-map editor never
 changes Jamulus music settings.
 
-After that choice, unpublished v0.27.1 opens one path-free **Record
+After that choice, current post-v0.27.1 source opens one path-free **Record
 Session Readiness** sheet before it arms anything. The sheet lists every exact
 planned server track, Local Original, and Shared Track with its source label,
 mono/stereo format, required/optional status, current readiness, and a bounded
@@ -538,7 +539,7 @@ inventing guest evidence. Studio adds an undoable **Reset Mix** that preserves
 export inclusion, keeps overload indicators latched for the playback epoch,
 and automatically selects and opens a durably finalized take.
 
-The unpublished v0.27.1 live Studio source view distinguishes plan-bound Jamulus server,
+The current post-v0.27.1 Studio source view distinguishes plan-bound Jamulus server,
 Local Original, and Shared Track lanes and can show their current state, level,
 reported dropouts, and overload warning. A malformed, legacy, or duplicate
 projection is cleared rather than presented as authoritative source truth.
@@ -610,23 +611,42 @@ provider hostnames, credentials, device identifiers, raw paths, or notes.
 ## Published release and source state
 
 The published release and a development checkout are intentionally different
-identities. Only the exact tag, release assets, checksum manifest, and
-successful protected promotion behind GitHub
-[Latest](https://github.com/rupret007/webjam/releases/latest) are downloadable
-evidence. Do not use an untagged checkout or ordinary branch build as a release.
+identities. Only the exact tag, release assets, checksum manifest, and live
+GitHub release metadata are downloadable evidence. A protected-publisher
+success is required before calling a release round publish-green; a release
+existing on GitHub does not manufacture that proof. Do not use an untagged
+checkout or ordinary branch build as a release.
 
-The current source tree reports **v0.27.1** and is unpublished. No v0.27.1
-tag, native package, checksum, or release ID exists. GitHub
-[Latest](https://github.com/rupret007/webjam/releases/latest) remains the
-immutable
-[v0.27.0 release](https://github.com/rupret007/webjam/releases/tag/v0.27.0).
-That published tag peeled to `27530d8216db04d706b6e5a1a5906ba6030fa7be`;
-unique successful tag CI `33035065141` created the eight-asset draft, and
-immutable release ID `377546932` was published at `2026-08-27T04:17:19Z`.
-That download does not include the #47 feel wrap. Latest has seven packages
-plus `WebJam-v0.27.0-SHA256SUMS.txt`. Shared Track play uses this Mac's
-BlackHole route and the bundled headless client; the catalog pin remains
-sealed v0.22.5. Every physical result remains **NOT RUN**.
+GitHub [Latest](https://github.com/rupret007/webjam/releases/latest) is the
+published unsigned/ad-hoc
+[v0.27.1 release](https://github.com/rupret007/webjam/releases/tag/v0.27.1).
+Release ID `377614785` was published at `2026-08-27T06:56:11Z`. Annotated
+tag object `ba81f8ef65db1013f13773b1536c812af174d81f` peels to exact commit
+`1fc25f87c3386b1cd94303ecb407cdaff6509d1f`. The release has seven packages
+plus `WebJam-v0.27.1-SHA256SUMS.txt`; Windows is unsigned and macOS is ad-hoc
+signed and unnotarized.
+
+Tag workflow `33045632613` passed the four desktop builds and supporting
+automated jobs, then its **Publish GitHub Release** job failed closed because a
+draft or published release already used `v0.27.1`. The overall tag workflow is
+therefore red and is not protected-publisher or publish-green evidence. The
+release remains the current downloadable pointer, but neither that pointer nor
+the green post-tag `master` workflows may be rewritten as a successful release
+round.
+
+The current `master` tree still reports **v0.27.1** but is three commits ahead
+of the released tag: #50, #51, and #52 are post-release source and are not in
+the v0.27.1 packages. Shared Track play uses this Mac's BlackHole route and the
+bundled headless client; the signed catalog remains sealed at exact WebJam
+v0.22.5 and does not authorize v0.27.1. Every physical result remains
+**NOT RUN**.
+
+The prior
+[v0.27.0 release](https://github.com/rupret007/webjam/releases/tag/v0.27.0)
+is immutable historical evidence. Its tag peeled to
+`27530d8216db04d706b6e5a1a5906ba6030fa7be`, tag CI `33035065141` created
+the eight-asset draft, and release ID `377546932` was published at
+`2026-08-27T04:17:19Z`.
 
 The prior
 [v0.26.0 release](https://github.com/rupret007/webjam/releases/tag/v0.26.0)
@@ -785,7 +805,7 @@ promote a package or claim audibility.
 
 - [Documentation index](docs/README.md)
 - [Project brief for technical stakeholders](docs/PROJECT_BRIEF.md)
-- [Unpublished v0.27.1 source notes and release history](CHANGELOG.md)
+- [v0.27.1 release and post-release source notes](CHANGELOG.md)
 - [v0.26.0 creator-multitrack physical checklist — release identity verified; physical rows NOT RUN](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.25.0 creator-multitrack physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.24.0 recording-first physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)

@@ -30,9 +30,9 @@
 
 ## Boundaries still open
 
-- The successful workflow artifacts are CI evidence, not a published release.
-  GitHub Latest remains immutable v0.27.0; no v0.27.1 tag or release was
-  created by #50.
+- The successful #50 workflow artifacts are CI evidence, not release evidence.
+  GitHub Latest is the earlier unsigned/ad-hoc v0.27.1 release; #50 did not
+  create or alter it, and #50 is not included in those tagged packages.
 - Windows signing, Apple notarization, the manual one-hour certification, and
   HEADLESS evidence remain unclaimed/skipped as their workflows require.
 - Two-computer Paint along behavior and real meeting coexistence remain
