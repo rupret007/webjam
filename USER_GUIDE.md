@@ -1,8 +1,8 @@
-# WebJam creator guide — v0.27.1 source candidate
+# WebJam creator guide — post-v0.27.1 source
 
-> This guide describes unpublished v0.27.1 source. GitHub **Latest** remains the
-> exact immutable v0.27.0 private test release. No v0.27.1 package or physical
-> PASS result exists until exact tagged assets are built and published.
+> This guide describes current post-v0.27.1 source. GitHub **Latest** is the
+> exact unsigned/ad-hoc v0.27.1 private test release. Current `master` includes
+> post-tag #50–#52 and is not that package. No physical PASS result is claimed.
 
 ## Follow the current guide
 
@@ -628,7 +628,7 @@ source count. Finalization rechecks those facts and refuses source
 substitution, a changed map, or missing/extra delivery instead of calling the
 take Ready.
 
-Unpublished v0.27.1 presents that frozen plan in one accessible,
+Current post-v0.27.1 source presents that frozen plan in one accessible,
 path-free **Record Session Readiness** sheet. Every server track, Local
 Original, and Shared Track row shows its source label, exact mono/stereo format,
 required/optional status, readiness, and a bounded meter when available.
@@ -721,7 +721,7 @@ and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
 manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
-unpublished v0.27.1 source candidate.
+current post-v0.27.1 source.
 
 For a standalone Podcast & Voice episode, use the 48 kHz Host-mono +
 Guest-stereo preset, record the first pass, add a chapter marker, set a cycle

@@ -1,4 +1,4 @@
-"""Published v0.26 documentation and local-link truth contracts."""
+"""Published v0.27.1 and post-tag documentation truth contracts."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def _heading_anchors(text: str) -> set[str]:
     return anchors
 
 
-def test_current_guides_state_published_latest_and_physical_boundary_truthfully() -> (
+def test_current_guides_state_v0271_latest_and_physical_boundary_truthfully() -> (
     None
 ):
     for relative_path in (
@@ -69,16 +69,17 @@ def test_current_guides_state_published_latest_and_physical_boundary_truthfully(
         "CHANGELOG.md",
     ):
         text = _normalized(relative_path)
-        assert "v0.27.0" in text, relative_path
+        assert "v0.27.1" in text, relative_path
         assert "Latest" in text, relative_path
         assert "NOT RUN" in text, relative_path
 
     combined = " ".join(_normalized(path) for path in CURRENT_GUIDES)
     for marker in (
-        "https://github.com/rupret007/webjam/releases/tag/v0.26.0",
-        "371442375",
-        "2026-08-16T22:40:56Z",
-        "WebJam-v0.26.0-SHA256SUMS.txt",
+        "https://github.com/rupret007/webjam/releases/tag/v0.27.1",
+        "377614785",
+        "2026-08-27T06:56:11Z",
+        "WebJam-v0.27.1-SHA256SUMS.txt",
+        "1fc25f87c3386b1cd94303ecb407cdaff6509d1f",
     ):
         assert marker.casefold() in combined.casefold()
 
@@ -97,15 +98,21 @@ def test_current_guides_state_published_latest_and_physical_boundary_truthfully(
         "v0.27.0 is also the current source identity",
         "Current source line | v0.26.0",
         "Current source line | v0.27.0",
+        "GitHub **Latest** remains immutable v0.27.0",
+        "Immutable v0.27.0 remains GitHub **Latest**",
+        "unpublished v0.27.1",
+        "No v0.27.1 tag",
+        "No v0.27.1 release ID",
     ):
         assert stale_claim.casefold() not in combined.casefold(), stale_claim
 
-    assert "unpublished v0.27.1" in combined.casefold()
-    assert "no v0.27.1" in combined.casefold()
+    assert "post-v0.27.1" in combined.casefold()
+    assert "not publish-green" in combined.casefold()
+    assert "sealed at exact webjam v0.22.5" in combined.casefold()
 
 
-def test_required_honesty_docs_fail_closed_on_v026_source_or_latest_pin() -> None:
-    """Jeff-facing required pass: unpublished v0.27.1 source, Latest still v0.27.0."""
+def test_required_honesty_docs_separate_v0271_release_from_post_tag_source() -> None:
+    """Jeff-facing pass: v0.27.1 is Latest, but current master is post-tag source."""
 
     required = (
         "README.md",
@@ -124,20 +131,21 @@ def test_required_honesty_docs_fail_closed_on_v026_source_or_latest_pin() -> Non
         "the current source tree reports **v0.27.0**",
         "Latest is this unpublished",
         "this unpublished checkout is GitHub Latest",
+        "GitHub **Latest** remains immutable v0.27.0",
+        "unpublished v0.27.1",
+        "No v0.27.1 release ID",
+        "No v0.27.1 tag",
     )
     for relative_path in required:
         text = (ROOT / relative_path).read_text(encoding="utf-8")
         normalized = " ".join(text.split())
         folded = normalized.casefold()
         assert "v0.27.1" in text, relative_path
-        assert "unpublished" in folded, relative_path
-        assert "latest" in folded and "v0.27.0" in text, relative_path
-        assert "until" in folded, relative_path
+        assert "latest" in folded and "377614785" in text, relative_path
+        assert "publish-green" in folded, relative_path
+        assert "WebJam-v0.27.1-SHA256SUMS.txt" in text, relative_path
         for claim in forbidden:
             assert claim.casefold() not in folded, (relative_path, claim)
-        assert "no v0.27.1 release id" in folded or "no v0.27.1 tag" in folded, (
-            relative_path
-        )
 
 
 def test_v026_checklist_verifies_only_automated_release_identity() -> None:

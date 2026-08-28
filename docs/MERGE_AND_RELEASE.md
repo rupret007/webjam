@@ -1,12 +1,14 @@
 # Merge and release map
 
-> **Current source:** unpublished v0.27.1 (`webjam_qt.__version__`). This
-> checkout is not a GitHub release. Do not treat an untagged tree as Latest.
+> **Current source:** post-release v0.27.1 (`webjam_qt.__version__`). This
+> checkout is three commits ahead of the released tag and is not a package.
 >
-> **Latest download:** remains immutable v0.27.0 until an annotated `v0.27.1`
-> tag and unique successful tag CI publish the unsigned/ad-hoc draft as
-> Latest. No v0.27.1 release ID, checksum, or pinned artifact hash exists.
-> Do not retag v0.27.0. Do not restack #37. Do not invent a signed catalog.
+> **Latest download:** unsigned/ad-hoc v0.27.1 release `377614785`, exact tag
+> commit `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`, with seven packages plus
+> `WebJam-v0.27.1-SHA256SUMS.txt`. Tag run `33045632613` is red because its
+> publisher refused to mutate an already-existing release; do not call the
+> round publish-green. Do not retag or mutate v0.27.1. Do not restack #37.
+> Do not invent a signed catalog.
 > Do not add a version-specific publisher with invented pins.
 
 The short plan for the remaining product land and one honest release round
@@ -80,15 +82,15 @@ touch on `master` before the branch that has to be reworked around them.
 
 ## 4. Release round
 
-This honesty close only bumps the packaged source identity to unpublished
-v0.27.1 so Latest can become the already-merged #47 feel wrap. It does not
-retag v0.27.0, invent a signed catalog, delete old unsigned test releases,
-or restack #37. After unique successful `v0.27.1` tag CI, publish that
-unsigned/ad-hoc draft as Latest. The generic
+The v0.27.1 release published the already-merged #47 feel wrap. It did not
+retag v0.27.0, invent a signed catalog, delete old unsigned test releases, or
+restack #37. Its tag run `33045632613` built every desktop target, then failed
+closed at the publisher because the release already existed. Preserve that red
+result instead of rewriting the round as publish-green. The generic
 `.github/workflows/publish-latest-release.yml` still requires a catalog that
 authorizes this exact WebJam version; sealed v3 still targets 0.22.5 only
-(observed v0.27.0 failure `33036413984`). Do not invent that catalog. Do
-not write a parallel runbook.
+(observed v0.27.0 failure `33036413984`). Do not invent that catalog, mutate
+the v0.27.1 release, or write a parallel runbook.
 
 Run after #17 is on `master`, on one `master` commit. Every job below must be
 green in the same round:

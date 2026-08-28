@@ -33,25 +33,27 @@
 > Immutable v0.26.0 is historical GitHub release `371442375`. Every v0.26
 > physical and hardware gate remains **NOT RUN**.
 
-> **v0.27.0 published testing boundary:** immutable unsigned private test
-> release `377546932` is GitHub **Latest** until v0.27.1 is published. Annotated
+> **v0.27.0 historical testing boundary:** immutable unsigned private test
+> release `377546932` preceded v0.27.1 as GitHub **Latest**. Annotated
 > tag object `72a825915722f9c08bd66de7720bcaba55aa3be4` peeled to
 > `27530d8216db04d706b6e5a1a5906ba6030fa7be`. Unique successful tag CI
 > `33035065141` created the eight-asset draft. Generic publisher run
 > `33036413984` failed because sealed v3 does not target this exact WebJam
 > version. Do not retag v0.27.0. Every v0.27 physical gate remains **NOT RUN**.
 
-> **v0.27.1 source-candidate boundary:** the current tree reports v0.27.1 and
-> includes the #47 feel wrap, but no annotated tag, tag object/commit,
-> successful tag CI run, draft release, checksum manifest, or Latest result
-> exists yet. GitHub Latest remains v0.27.0. After an annotated `v0.27.1` tag
-> and unique successful tag CI, publish that unsigned/ad-hoc draft as Latest.
-> The generic `.github/workflows/publish-latest-release.yml` still requires a
-> catalog that authorizes this exact WebJam version. Do not invent a signed
-> catalog. Catalog pin remains sealed v0.22.5. Shared Track play uses this
-> Mac's BlackHole + bundled headless. No v0.27.1 release ID, checksum, or
-> pinned artifact hash exists. Do not add a version-specific publisher. Do
-> not restack #37.
+> **v0.27.1 published testing boundary:** GitHub **Latest** is unsigned/ad-hoc
+> release `377614785`, published at `2026-08-27T06:56:11Z` from annotated
+> tag object `ba81f8ef65db1013f13773b1536c812af174d81f` and exact commit
+> `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`. It has seven packages plus
+> `WebJam-v0.27.1-SHA256SUMS.txt`. Tag workflow `33045632613` built all four
+> desktop targets, but its publisher failed closed because the release already
+> existed; the overall run is red, not publish-green. The generic
+> `.github/workflows/publish-latest-release.yml` still requires a catalog that
+> authorizes this exact WebJam version. Do not invent a signed catalog. The
+> catalog remains sealed at v0.22.5. Shared Track play uses this Mac's BlackHole
+> + bundled headless. Every physical gate remains **NOT RUN**. Do not retag or
+> mutate v0.27.1, add a version-specific publisher, or restack #37. Current
+> `master` is three post-tag commits ahead and is not the release download.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version
@@ -81,7 +83,7 @@ recognizes the unchanged audited Jamulus 3.12.2/3.12.3 identities through
 catalog. The candidate therefore remains fallback-only unless a new immutable
 signed version-specific component channel is separately completed.
 
-For unpublished v0.27.1, the sealed v3 catalog remains valid for historical
+For published v0.27.1, the sealed v3 catalog remains valid for historical
 v0.22.5 and rejected for exact v0.27.1. The source registry narrowly
 recognizes the unchanged audited Jamulus 3.12.2/3.12.3 identities through
 0.27.1 and rejects 0.27.2; that baked policy is not a signed managed-update

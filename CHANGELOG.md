@@ -6,7 +6,7 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-> Work after the v0.27.1 source candidate belongs here. Every published tag,
+> Work after the published v0.27.1 tag belongs here. Every published tag,
 > release, and asset remains immutable historical evidence.
 
 ### Art says what the person does
@@ -38,17 +38,21 @@ All notable improvements and features for the WebJam creator collaboration platf
   host-clock fail-closed behavior, and still ships, uploads, downloads, or
   records no video.
 
-## [0.27.1] — Unpublished feel-pass source candidate
+## [0.27.1] — Unsigned/ad-hoc private test release (2026-08-27)
 
-> This source identity is not yet a GitHub release. GitHub **Latest** remains
-> immutable v0.27.0 until an exact annotated `v0.27.1` tag and unique successful
-> four-target tag CI publish the unsigned/ad-hoc draft as Latest. The generic
-> publisher cannot authorize this version: sealed v3 still targets exact
-> WebJam 0.22.5 only. Do not invent a signed catalog. Shared Track play uses
-> this Mac's BlackHole + bundled headless, not a catalog pin. Windows remains
-> unsigned; macOS remains ad-hoc signed and unnotarized. Every v0.27 physical
-> and hardware result is **NOT RUN**. No v0.27.1 release ID, checksum, or pinned artifact hash exists.
-> Do not retag v0.27.0. Do not restack #37.
+> Published as GitHub **Latest** release `377614785` at
+> https://github.com/rupret007/webjam/releases/tag/v0.27.1 at
+> `2026-08-27T06:56:11Z`. Annotated tag object
+> `ba81f8ef65db1013f13773b1536c812af174d81f` peeled to exact commit
+> `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`. The release has seven packages
+> plus `WebJam-v0.27.1-SHA256SUMS.txt`. Windows remains unsigned; macOS remains
+> ad-hoc signed and unnotarized. Tag workflow `33045632613` built all four
+> desktop targets, but its publisher failed closed because the release already
+> existed; the overall run is red and must not be called publish-green.
+> Sealed catalog v3 still authorizes exact WebJam 0.22.5 only. Shared Track play
+> uses this Mac's BlackHole + bundled headless, not a catalog pin. Every v0.27
+> physical and hardware result is **NOT RUN**. Do not retag or mutate v0.27.1.
+> Do not restack #37.
 
 ### Feel pass: Art hits as hard as Music
 

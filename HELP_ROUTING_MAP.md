@@ -1,7 +1,7 @@
-# WebJam help routing — v0.27.1 source candidate
+# WebJam help routing — post-v0.27.1 source
 
-> These labels describe unpublished v0.27.1 source. GitHub **Latest** remains
-> the immutable v0.27.0 private test release. No physical PASS is claimed;
+> These labels describe current post-v0.27.1 source. GitHub **Latest** is the
+> unsigned/ad-hoc v0.27.1 private test release. No physical PASS is claimed;
 > every v0.27 physical and release-decision row remains **NOT RUN**.
 
 | Creator says | Answer / action |

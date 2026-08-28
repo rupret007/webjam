@@ -3,7 +3,7 @@ WEBJAM v0.27.1 PRIVATE TEST CANDIDATE FOR LINUX x64
 
 PRIVATE TEST CANDIDATE: use this package only when its exact filename appears
 in the v0.27.1 GitHub release and its SHA-256 matches that release's manifest.
-Do not use the immutable v0.27.0 checksum manifest for this build.
+Do not use the published v0.27.1 checksum manifest for this post-tag build.
 Physical audio, hardware, signed-install, and distribution-policy gates
 remain NOT RUN unless the release evidence names this exact file and SHA-256.
 

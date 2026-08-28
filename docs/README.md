@@ -4,16 +4,16 @@ This index is the front door for WebJam's documentation. Start with the
 audience that matches what you are trying to do; the root [README](../README.md)
 keeps the product story and five-minute demo intentionally short.
 
-> **Current testing release:** immutable GitHub **Latest** remains v0.27.0
-> until unique successful tag CI publishes this unpublished v0.27.1 feel
-> build. Use only an exact release asset verified by
-> `WebJam-v0.27.0-SHA256SUMS.txt`. This checkout is not that download. Windows
-> is unsigned; macOS is ad-hoc signed and unnotarized; every physical test
-> remains **NOT RUN** until recorded against those packages.
+> **Current testing release:** GitHub **Latest** is the unsigned/ad-hoc v0.27.1
+> private test release `377614785`. Use only an exact release asset verified
+> by `WebJam-v0.27.1-SHA256SUMS.txt`. Tag run `33045632613` is red at its
+> duplicate-release publisher and must not be called publish-green. Windows is
+> unsigned; macOS is ad-hoc signed and unnotarized; every physical test remains
+> **NOT RUN** until recorded against those packages.
 
-> **Current source:** v0.27.1 is an unpublished feel-pass candidate. Do not
-> use a checkout or branch artifact as a release. All v0.27 physical/hardware
-> rows remain **NOT RUN**. GitHub **Latest** remains immutable v0.27.0.
+> **Current source:** `master` still reports v0.27.1 but includes post-tag
+> #50–#52 and is not the release. Do not use a checkout or branch artifact as a
+> package. All v0.27 physical/hardware rows remain **NOT RUN**.
 
 ## Start here
 
