@@ -16,21 +16,26 @@ class Color:
     # for people who cannot distinguish status colors.
 
     # Base surfaces
-    BG_BASE = "#080808"         # window background
-    BG_PANEL = "#101010"        # header, rails, status surfaces
-    BG_CARD = "#181818"         # participant card
-    BG_CARD_HOVER = "#222222"
-    BG_INPUT = "#0D0D0D"
+    # These neutrals are intentionally not pure black. The narrow luminance
+    # ladder gives stacked surfaces readable depth on ordinary displays
+    # without turning the room into a collection of high-contrast boxes.
+    BG_BASE = "#0A0A0A"         # window background
+    BG_PANEL = "#121212"        # header, rails, status surfaces
+    BG_CARD = "#1B1B1B"         # participant card
+    BG_CARD_HOVER = "#272727"
+    BG_INPUT = "#0F0F0F"
 
     # Borders
-    BORDER_SUBTLE = "#2C2C2C"
-    BORDER_STRONG = "#666666"
+    BORDER_SUBTLE = "#303030"
+    BORDER_STRONG = "#585858"
     BORDER_FOCUS = "#BF5700"
 
     # Text
+    # Pure white is deliberate here: it keeps normal-size labels on the
+    # official burnt-orange primary controls above the WCAG AA threshold.
     TEXT_PRIMARY = "#FFFFFF"
-    TEXT_SECONDARY = "#D0D0D0"
-    TEXT_MUTED = "#A0A0A0"
+    TEXT_SECONDARY = "#D8D8D8"
+    TEXT_MUTED = "#9D9D9D"
     TEXT_INVERSE = "#FFFFFF"
 
     # Accents

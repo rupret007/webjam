@@ -930,6 +930,30 @@ class TestParticipantGrid(unittest.TestCase):
         finally:
             g.close()
 
+    def test_three_participants_share_one_balanced_desktop_row(self):
+        from webjam_qt.widgets.participant_grid import ParticipantGrid
+        from webjam_qt.widgets.participant_card import ParticipantPresentation
+        g = ParticipantGrid()
+        g.resize(1200, 700)
+        g.set_participants([
+            ParticipantPresentation(channel_id=i, name=f"Person {i}")
+            for i in range(3)
+        ])
+        g.show()
+        _qapp().processEvents()
+        try:
+            geometries = [card.geometry() for card in g.cards()]
+            self.assertEqual(len({rect.y() for rect in geometries}), 1)
+            self.assertEqual(len({rect.x() for rect in geometries}), 3)
+            union = geometries[0]
+            for rect in geometries[1:]:
+                union = union.united(rect)
+            self.assertLessEqual(
+                abs(union.center().x() - g.viewport().rect().center().x()), 24
+            )
+        finally:
+            g.close()
+
     def test_set_participants_replaces_cards(self):
         from webjam_qt.widgets.participant_grid import ParticipantGrid
         from webjam_qt.widgets.participant_card import ParticipantPresentation

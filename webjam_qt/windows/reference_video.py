@@ -112,8 +112,8 @@ class ReferenceVideoDialog(QDialog):
         self.resize(1040, 720)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(Space.MD, Space.MD, Space.MD, Space.MD)
-        layout.setSpacing(Space.SM)
+        layout.setContentsMargins(Space.XL, Space.LG, Space.XL, Space.LG)
+        layout.setSpacing(Space.MD)
 
         header = QHBoxLayout()
         header.setSpacing(Space.SM)

@@ -32,6 +32,24 @@ def _approved_product_rgb(rgb: tuple[int, int, int]) -> bool:
     return 15.0 <= hue * 360.0 <= 35.0 and saturation >= 0.50
 
 
+def _relative_luminance(hex_color: str) -> float:
+    channels = [int(hex_color[index:index + 2], 16) / 255.0 for index in (1, 3, 5)]
+    linear = [
+        value / 12.92
+        if value <= 0.04045
+        else ((value + 0.055) / 1.055) ** 2.4
+        for value in channels
+    ]
+    return sum(weight * value for weight, value in zip((0.2126, 0.7152, 0.0722), linear))
+
+
+def _contrast_ratio(first: str, second: str) -> float:
+    brighter, darker = sorted(
+        (_relative_luminance(first), _relative_luminance(second)), reverse=True
+    )
+    return (brighter + 0.05) / (darker + 0.05)
+
+
 class TestStylesheet(unittest.TestCase):
     def setUp(self):
         self.qss = load_stylesheet()
@@ -80,6 +98,22 @@ class TestStrictProductPalette(unittest.TestCase):
                 getattr(Color, name).upper(),
                 "#BF5700",
                 f"{name} must communicate through wording/iconography, not a new hue",
+            )
+
+    def test_core_text_pairs_meet_wcag_aa_for_normal_text(self):
+        from webjam_qt.theme.tokens import Color
+
+        pairs = (
+            (Color.TEXT_PRIMARY, Color.BG_BASE),
+            (Color.TEXT_SECONDARY, Color.BG_CARD),
+            (Color.TEXT_MUTED, Color.BG_BASE),
+            (Color.TEXT_PRIMARY, Color.ACCENT_PRIMARY),
+        )
+        for foreground, background in pairs:
+            self.assertGreaterEqual(
+                _contrast_ratio(foreground, background),
+                4.5,
+                f"{foreground} on {background} must meet WCAG AA",
             )
 
     def test_every_authored_ui_color_is_neutral_or_burnt_orange(self):

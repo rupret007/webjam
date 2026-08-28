@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -106,6 +107,11 @@ class StudioProjectHome(QWidget):
 
         actions = QFrame()
         actions.setObjectName("StudioHomeActions")
+        self.actions_panel = actions
+        actions.setMaximumWidth(960)
+        actions.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
         action_layout = QVBoxLayout(actions)
         action_layout.setContentsMargins(Space.LG, Space.LG, Space.LG, Space.LG)
         action_layout.setSpacing(Space.SM)
@@ -134,7 +140,12 @@ class StudioProjectHome(QWidget):
         row.addWidget(self.new_button)
         row.addWidget(self.open_button)
         action_layout.addLayout(row)
-        outer.addWidget(actions)
+        actions_row = QHBoxLayout()
+        actions_row.setContentsMargins(0, 0, 0, 0)
+        actions_row.addStretch(1)
+        actions_row.addWidget(actions, 4)
+        actions_row.addStretch(1)
+        outer.addLayout(actions_row)
 
         self.recent_label = QLabel("Recent Projects")
         self.recent_label.setObjectName("StudioHomeRecentTitle")
