@@ -31,6 +31,7 @@ from webjam_qt.theme.generate_brand_icons import (  # noqa: E402
     _svg_source,
     generate_brand_assets,
 )
+from webjam_qt.theme.tokens import Color  # noqa: E402
 from webjam_qt.widgets.session_strip import SessionStrip  # noqa: E402
 from webjam_qt.windows.launch_dialog import LaunchDialog  # noqa: E402
 
@@ -47,6 +48,40 @@ def _qapp() -> QApplication:
     global _APP
     _APP = QApplication.instance() or QApplication(sys.argv[:1])
     return _APP
+
+
+def _assert_same_render(generated: Path, checked_in: Path) -> None:
+    """Compare icon content without depending on an OS PNG compressor.
+
+    Qt's PNG byte stream is deterministic within one runtime (checked above),
+    but zlib and raster backends differ slightly across macOS and Linux. The
+    checked-in asset contract is the visible identity: exact dimensions and
+    background token, plus a tightly bounded pixel delta for antialiasing.
+    """
+
+    first = QImage(str(generated)).convertToFormat(QImage.Format.Format_RGBA8888)
+    second = QImage(str(checked_in)).convertToFormat(QImage.Format.Format_RGBA8888)
+    assert not first.isNull(), generated
+    assert not second.isNull(), checked_in
+    assert first.size() == second.size()
+    background_sample = (max(1, first.width() // 8), first.height() // 2)
+    assert first.pixelColor(*background_sample).name().upper() == Color.BG_PANEL
+    assert second.pixelColor(*background_sample).name().upper() == Color.BG_PANEL
+
+    first_bytes = bytes(first.bits())
+    second_bytes = bytes(second.bits())
+    total_delta = sum(abs(a - b) for a, b in zip(first_bytes, second_bytes))
+    strong_delta_pixels = sum(
+        1
+        for offset in range(0, len(first_bytes), 4)
+        if max(
+            abs(first_bytes[offset + channel] - second_bytes[offset + channel])
+            for channel in range(4)
+        )
+        > 16
+    )
+    assert total_delta / len(first_bytes) <= 3.0
+    assert strong_delta_pixels / (first.width() * first.height()) <= 0.10
 
 
 def test_svg_is_a_portable_warm_trinity_companion():
@@ -253,9 +288,11 @@ def test_generator_is_deterministic_and_emits_pocket_stage_identity(tmp_path):
     assert set(checked_in) == set(expected)
     for relative, canonical in checked_in.items():
         assert canonical.is_file(), relative
-        assert (tmp_path / "first" / relative).read_bytes() == canonical.read_bytes(), (
-            relative
-        )
+        generated = tmp_path / "first" / relative
+        if relative.suffix.lower() in {".ico", ".icns", ".png"}:
+            _assert_same_render(generated, canonical)
+        else:
+            assert generated.read_bytes() == canonical.read_bytes(), relative
 
     app_icon = QImage(str(first_ios / "AppIcon.appiconset" / "AppIcon-1024.png"))
     assert not app_icon.isNull()
