@@ -88,7 +88,7 @@ class ParticipantCard(QFrame):
 
         self._avatar_label = QLabel(self._initials(presentation.name))
         self._avatar_label.setObjectName("ParticipantAvatar")
-        self._avatar_label.setFixedSize(64, 64)
+        self._avatar_label.setFixedSize(72, 72)
         self._avatar_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._avatar_label.setTextFormat(Qt.TextFormat.PlainText)
         self._video_tile = self._build_video_tile()

@@ -115,3 +115,17 @@ def test_home_fits_supported_compact_workspace_floor() -> None:
     assert home.minimumHeight() <= 430
     assert hint.width() <= 760
     assert hint.height() <= 600
+
+
+def test_home_actions_stay_prominent_without_spanning_a_wide_workspace(qapp) -> None:
+    home = StudioProjectHome()
+    home.resize(1280, 800)
+    home.show()
+    qapp.processEvents()
+    try:
+        assert 700 <= home.actions_panel.width() <= 960
+        assert home.actions_panel.geometry().center().x() == pytest.approx(
+            home.rect().center().x(), abs=2
+        )
+    finally:
+        home.close()

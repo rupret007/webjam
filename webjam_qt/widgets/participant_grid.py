@@ -113,7 +113,13 @@ class _FlowLayout(QLayout):
             target_columns, max_width, max_height = 1, 780, 440
         elif count == 2:
             target_columns, max_width, max_height = 2, 620, 390
-        elif count <= 4:
+        elif count == 3:
+            # A trio is the common small-band shape. On a desktop, one calm
+            # row keeps every person equally prominent and removes the
+            # visually stranded third card. Narrow windows still fall back
+            # to two columns through columns_that_fit below.
+            target_columns, max_width, max_height = 3, 460, 330
+        elif count == 4:
             target_columns, max_width, max_height = 2, 560, 320
         elif count <= 6:
             target_columns, max_width, max_height = 3, 440, 280
@@ -146,7 +152,10 @@ class _FlowLayout(QLayout):
             (available_width - self._h_space * (columns - 1)) // columns,
         )
         tile_width = max(minimum_tile_width, min(max_width, cell_width))
-        preferred_height = max(ParticipantCard.CARD_MIN_HEIGHT, int(tile_width * 0.58))
+        preferred_ratio = 0.72 if count == 3 else 0.58
+        preferred_height = max(
+            ParticipantCard.CARD_MIN_HEIGHT, int(tile_width * preferred_ratio)
+        )
         if effective.height() > 0:
             cell_height = max(
                 1,

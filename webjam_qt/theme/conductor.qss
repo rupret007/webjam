@@ -32,15 +32,16 @@ QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled {
 QPushButton, QToolButton {
     background-color: ${COLOR_BG_CARD};
     color: ${COLOR_TEXT_PRIMARY};
-    border: 1px solid ${COLOR_BORDER_STRONG};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
     border-radius: ${RADIUS_MD}px;
     padding: ${SPACE_SM}px ${SPACE_LG}px;
-    min-height: 32px;
+    min-height: 34px;
     font-weight: ${FONT_WEIGHT_SEMIBOLD};
 }
 
 QPushButton:hover, QToolButton:hover {
     background-color: ${COLOR_BG_CARD_HOVER};
+    border-color: ${COLOR_BORDER_STRONG};
 }
 
 QPushButton:focus, QToolButton:focus {
@@ -60,7 +61,7 @@ QPushButton:disabled, QToolButton:disabled {
 QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox {
     background-color: ${COLOR_BG_INPUT};
     color: ${COLOR_TEXT_PRIMARY};
-    border: 1px solid ${COLOR_BORDER_STRONG};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
     border-radius: ${RADIUS_MD}px;
     padding: ${SPACE_SM}px ${SPACE_MD}px;
     min-height: 28px;
@@ -249,8 +250,11 @@ QLabel#PaintAlongStatus, QLabel#PaintAlongHint, QLabel#PaintAlongClock {
 }
 
 QFrame#PaintAlongSurface {
-    background-color: #000000;
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    background: qlineargradient(
+        x1: 0, y1: 0, x2: 0, y2: 1,
+        stop: 0 ${COLOR_BG_PANEL}, stop: 1 ${COLOR_BG_INPUT}
+    );
+    border: 1px solid ${COLOR_BORDER_STRONG};
     border-radius: ${RADIUS_LG}px;
 }
 
@@ -289,7 +293,10 @@ QToolButton#PaintAlongMore:focus {
  * Session header and meeting controls
  * ---------------------------------------------------------------------- */
 #SessionStrip {
-    background-color: ${COLOR_BG_PANEL};
+    background: qlineargradient(
+        x1: 0, y1: 0, x2: 1, y2: 0,
+        stop: 0 ${COLOR_BG_PANEL}, stop: 1 ${COLOR_BG_BASE}
+    );
     border-bottom: 1px solid ${COLOR_BORDER_SUBTLE};
 }
 
@@ -407,7 +414,10 @@ QPushButton#SharedTrackLiveState[nextStep="true"]:focus {
 }
 
 #SessionControlBar {
-    background-color: ${COLOR_BG_PANEL};
+    background: qlineargradient(
+        x1: 0, y1: 0, x2: 0, y2: 1,
+        stop: 0 ${COLOR_BG_PANEL}, stop: 1 ${COLOR_BG_INPUT}
+    );
     border-top: 1px solid ${COLOR_BORDER_SUBTLE};
 }
 
@@ -416,6 +426,14 @@ QPushButton#SharedTrackLiveState[nextStep="true"]:focus {
     border-radius: 20px;
     min-height: 40px;
     padding: 0 18px;
+    background-color: ${COLOR_BG_CARD};
+    border-color: ${COLOR_BORDER_SUBTLE};
+}
+
+#SessionControlBar QPushButton#GhostButton:hover,
+#SessionControlBar QToolButton#GhostButton:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    border-color: ${COLOR_BORDER_STRONG};
 }
 
 /* The label supplies the one intentional More chevron. Suppress Qt's extra
@@ -446,12 +464,15 @@ QPushButton#SharedTrackLiveState[nextStep="true"]:focus {
  * Live stage and people
  * ---------------------------------------------------------------------- */
 #Stage {
-    background-color: ${COLOR_BG_BASE};
+    background: qlineargradient(
+        x1: 0, y1: 0, x2: 0, y2: 1,
+        stop: 0 ${COLOR_BG_INPUT}, stop: 1 ${COLOR_BG_BASE}
+    );
 }
 
 #StageEmptyState {
     background-color: ${COLOR_BG_CARD};
-    border: 1px solid ${COLOR_BORDER_STRONG};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
     border-radius: ${RADIUS_LG}px;
 }
 
@@ -495,7 +516,7 @@ QPushButton#SharedTrackLiveState[nextStep="true"]:focus {
 
 #ParticipantCard {
     background-color: ${COLOR_BG_CARD};
-    border: 1px solid ${COLOR_BORDER_STRONG};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
     border-radius: ${RADIUS_LG}px;
 }
 
@@ -504,7 +525,7 @@ QPushButton#SharedTrackLiveState[nextStep="true"]:focus {
 }
 
 #ParticipantCard[local="true"] {
-    border: 2px solid ${COLOR_TEXT_MUTED};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
 }
 
 #ParticipantCard[speaking="true"],
@@ -523,7 +544,10 @@ QPushButton#SharedTrackLiveState[nextStep="true"]:focus {
 }
 
 #VideoTile {
-    background-color: ${COLOR_BG_PANEL};
+    background: qlineargradient(
+        x1: 0, y1: 0, x2: 0, y2: 1,
+        stop: 0 ${COLOR_BG_CARD}, stop: 1 ${COLOR_BG_PANEL}
+    );
     border-top-left-radius: ${RADIUS_LG}px;
     border-top-right-radius: ${RADIUS_LG}px;
     border-bottom: 1px solid ${COLOR_BORDER_SUBTLE};
@@ -539,8 +563,8 @@ QLabel#ParticipantAvatar {
     background-color: ${COLOR_ACCENT_PRIMARY};
     color: ${COLOR_TEXT_PRIMARY};
     border: 2px solid ${COLOR_TEXT_PRIMARY};
-    border-radius: 32px;
-    font-size: 18px;
+    border-radius: 36px;
+    font-size: 20px;
     font-weight: ${FONT_WEIGHT_BOLD};
 }
 
@@ -563,6 +587,8 @@ QPushButton#PillButton {
     min-height: 32px;
     border-radius: 17px;
     padding: 0 ${SPACE_LG}px;
+    background-color: ${COLOR_BG_INPUT};
+    border-color: ${COLOR_BORDER_STRONG};
 }
 
 QPushButton#PillButton[state="active-mute"] {
@@ -622,9 +648,9 @@ QSlider:focus {
  * Session truth, notes, and optional tools
  * ---------------------------------------------------------------------- */
 #SessionHud {
-    background-color: ${COLOR_BG_PANEL};
+    background-color: ${COLOR_BG_INPUT};
     border-bottom: 1px solid ${COLOR_BORDER_SUBTLE};
-    min-height: 56px;
+    min-height: 60px;
 }
 
 #SessionHud[ready="true"] {
@@ -726,7 +752,11 @@ QLineEdit#CanvasChatInput {
  * Host / Join launch
  * ---------------------------------------------------------------------- */
 #LaunchDialog {
-    background-color: ${COLOR_BG_BASE};
+    background: qlineargradient(
+        x1: 0, y1: 0, x2: 0, y2: 1,
+        stop: 0 ${COLOR_BG_PANEL}, stop: 0.34 ${COLOR_BG_BASE},
+        stop: 1 ${COLOR_BG_BASE}
+    );
 }
 
 #JamSignalGraphic {
@@ -784,7 +814,7 @@ QPushButton#LaunchPrimary {
     background-color: ${COLOR_ACCENT_PRIMARY};
     color: ${COLOR_TEXT_PRIMARY};
     border: 1px solid ${COLOR_ACCENT_PRIMARY};
-    border-radius: ${RADIUS_MD}px;
+    border-radius: ${RADIUS_LG}px;
     min-height: 52px;
     padding: 0 ${SPACE_XL}px;
     font-size: ${FONT_SIZE_MD}px;
@@ -814,8 +844,8 @@ QPushButton#LaunchPrimary:disabled {
 QPushButton#LaunchSecondary {
     background-color: ${COLOR_BG_CARD};
     color: ${COLOR_TEXT_PRIMARY};
-    border: 1px solid ${COLOR_BORDER_STRONG};
-    border-radius: ${RADIUS_MD}px;
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_LG}px;
     min-height: 52px;
     padding: 0 ${SPACE_XL}px;
     font-size: ${FONT_SIZE_MD}px;
@@ -835,10 +865,10 @@ QPushButton#LaunchSecondary:focus {
    chosen one reads as the room you are about to open rather than as one of
    three equally loud settings. */
 QCommandLinkButton#LaunchProfileCard {
-    background-color: ${COLOR_BG_PANEL};
+    background-color: ${COLOR_BG_INPUT};
     color: ${COLOR_TEXT_MUTED};
     border: 1px solid ${COLOR_BORDER_SUBTLE};
-    border-radius: ${RADIUS_MD}px;
+    border-radius: ${RADIUS_LG}px;
     text-align: left;
     padding: ${SPACE_XS}px ${SPACE_MD}px;
 }
@@ -850,7 +880,7 @@ QCommandLinkButton#LaunchProfileCard:hover {
 }
 
 QCommandLinkButton#LaunchProfileCard:checked {
-    background-color: ${COLOR_BG_CARD_HOVER};
+    background-color: ${COLOR_BG_CARD};
     color: ${COLOR_TEXT_PRIMARY};
     border: 2px solid ${COLOR_ACCENT_PRIMARY};
 }
@@ -866,10 +896,10 @@ QCommandLinkButton#LaunchProfileCard:disabled {
 }
 
 QCommandLinkButton#LaunchStartCard {
-    background-color: ${COLOR_BG_PANEL};
+    background-color: ${COLOR_BG_INPUT};
     color: ${COLOR_TEXT_MUTED};
     border: 1px solid ${COLOR_BORDER_SUBTLE};
-    border-radius: ${RADIUS_MD}px;
+    border-radius: ${RADIUS_LG}px;
     text-align: left;
     padding: ${SPACE_XS}px ${SPACE_MD}px;
     /* The control already sets its own title/description hierarchy. Forcing a
@@ -883,7 +913,7 @@ QCommandLinkButton#LaunchStartCard:hover {
 }
 
 QCommandLinkButton#LaunchStartCard:checked {
-    background-color: ${COLOR_BG_CARD_HOVER};
+    background-color: ${COLOR_BG_CARD};
     color: ${COLOR_TEXT_PRIMARY};
     border: 2px solid ${COLOR_ACCENT_PRIMARY};
 }
@@ -1112,7 +1142,11 @@ QPushButton#QuietAction:focus {
  * Reference Studio project home
  * ---------------------------------------------------------------------- */
 #StudioProjectHome {
-    background-color: ${COLOR_BG_BASE};
+    background: qlineargradient(
+        x1: 0, y1: 0, x2: 0, y2: 1,
+        stop: 0 ${COLOR_BG_PANEL}, stop: 0.38 ${COLOR_BG_BASE},
+        stop: 1 ${COLOR_BG_BASE}
+    );
 }
 
 #StudioHomeWordmark {
@@ -1134,8 +1168,8 @@ QPushButton#QuietAction:focus {
 }
 
 #StudioHomeActions {
-    background-color: ${COLOR_BG_PANEL};
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_STRONG};
     border-radius: ${RADIUS_LG}px;
 }
 
@@ -1170,7 +1204,26 @@ QPushButton#StudioHomeOpen:focus {
 }
 
 QListWidget#StudioHomeRecentList {
-    background-color: ${COLOR_BG_PANEL};
+    background-color: ${COLOR_BG_INPUT};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_XS}px;
+    outline: none;
+}
+
+QListWidget#StudioHomeRecentList::item {
+    border-radius: ${RADIUS_SM}px;
+    padding: ${SPACE_SM}px ${SPACE_MD}px;
+}
+
+QListWidget#StudioHomeRecentList::item:hover {
+    background-color: ${COLOR_BG_CARD};
+}
+
+QListWidget#StudioHomeRecentList::item:selected {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    color: ${COLOR_TEXT_PRIMARY};
+    border-left: 3px solid ${COLOR_ACCENT_PRIMARY};
 }
 
 #StudioHomeEmptyRecent {
