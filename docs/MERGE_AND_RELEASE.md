@@ -11,9 +11,10 @@
 > Do not invent a signed catalog.
 > Do not add a version-specific publisher with invented pins.
 
-The short plan for the remaining product land and one honest release round
-after it. #14 (audio core) and #19 (Art) are already on `master`. #17 (Music
-song tools) is the open product branch.
+The record of the finished product land and the honest boundaries that remain.
+#14 (audio core), #15, #16, #19 (Art), and #17 (Music song tools) are all
+already on `master`; #17 merged 2026-08-22 as `5ca6ba5`. There is no open
+product branch.
 
 `master` is the default branch and the only ship target; `main` was
 fast-forwarded to it. Nothing is released until this repository's own suite is
@@ -48,20 +49,24 @@ Art and Music are equal first choices. Music still has to keep **Host** /
 
 ## 2. Land order
 
-Already on `master`: [#14](https://github.com/rupret007/webjam/pull/14)
+The product land is complete. Already on `master`:
+[#14](https://github.com/rupret007/webjam/pull/14)
 `codex/v027-multitrack-proof-lab`, [#15](https://github.com/rupret007/webjam/pull/15),
-[#16](https://github.com/rupret007/webjam/pull/16), and
+[#16](https://github.com/rupret007/webjam/pull/16),
 [#19](https://github.com/rupret007/webjam/pull/19)
-`cursor/art-drawpile-shared-canvas-cd87`. Jeff merges those. They are done.
+`cursor/art-drawpile-shared-canvas-cd87`, and
+[#17](https://github.com/rupret007/webjam/pull/17)
+`cursor/music-ai-song-tools-in-jam-1eca`, merged 2026-08-22. Jeff merges every
+product PR through the attended button; all five are merged and done. Nothing
+is left to rebase, and nothing is waiting to land.
+
+What remains:
 
 | Step | Action | Who | Gate before it happens |
 | --- | --- | --- | --- |
-| 1 | Rebase [#17](https://github.com/rupret007/webjam/pull/17) `cursor/music-ai-song-tools-in-jam-1eca` on current `master` | Bob prepares | resolve the leftover #19 overlap; do not rewrite Music door chrome another worker owns |
-| 2 | Land #17 | Jeff merges | required CI green **after** the rebase, plus the section 1 Music doors |
-| 3 | Open one docs-only release PR if section 5 leaves anything unfixed | Bob prepares, Jeff merges | no product code in it |
-
-#17 stays last because it is the remaining room. It is still a draft. Leave the
-door-chrome work on that branch to the worker already on it.
+| 1 | #37 and #49 stay parked | nobody | they are parked outlines, not scheduled work — do not restack, rebase, or "fix" them |
+| 2 | Leave the published v0.27.1 release alone | nobody | do not retag or mutate it; the boundaries in the header hold |
+| 3 | Open one docs-only leftover PR only if a page still lies | Bob prepares, Jeff merges | no product code in it |
 
 ## 3. Why this order
 
@@ -72,12 +77,12 @@ each room was rebased once instead of resolving the same core twice.
 
 #19 landed before #17 because Art was the room that failed the section 1 gate
 on `master`, and because landing it first put the shared UI files both rooms
-touch on `master` before the branch that has to be reworked around them.
+touch on `master` before the branch that had to be reworked around them.
 
 | Pair | Overlapping files | Resolved in |
 | --- | --- | --- |
 | #14 and #19 | `core/session_conductor.py`, `core/session_intelligence.py`, `core/session_transfer.py`, `core/session_transfer_runtime.py` | done on `master` |
-| #19 and #17 | `core/settings.py`, `webjam_qt/controllers/application_controller.py`, `webjam_qt/widgets/session_strip.py`, `tests/test_host_share_join_flow.py`, `tests/test_offline_invitation_gate.py` | step 1 |
+| #19 and #17 | `core/settings.py`, `webjam_qt/controllers/application_controller.py`, `webjam_qt/widgets/session_strip.py`, `tests/test_host_share_join_flow.py`, `tests/test_offline_invitation_gate.py` | done on `master` |
 | #14 and #17 | none | — |
 
 ## 4. Release round
@@ -92,8 +97,10 @@ authorizes this exact WebJam version; sealed v3 still targets 0.22.5 only
 (observed v0.27.0 failure `33036413984`). Do not invent that catalog, mutate
 the v0.27.1 release, or write a parallel runbook.
 
-Run after #17 is on `master`, on one `master` commit. Every job below must be
-green in the same round:
+No next round is scheduled. A later release waits until Jeff names it; it does
+not wait on #17, which is already on `master`. When Jeff names one, run it on
+one `master` commit — Jeff merges any PR that round needs first. Every job
+below must be green in the same round:
 
 - `test` — ruff, dependency audits, `compileall`, the UX smoke gate, and every
   `tests/test_*.py` module
@@ -131,7 +138,8 @@ One docs-only pass over `USER_GUIDE.md`, `README.md`, `QUICK_HELP_MAP.md`,
    Art door in those guides plus `ARCHITECTURE.md` and `docs/PROJECT_BRIEF.md`.
    `CREATIVE_MODES_MVP_SPEC.md` keeps one historical line that Art shipped its
    Preview under the name Studio Visit; that is history, not leftover door copy.
-   The pass finishes any Music names #17 still owns.
+   The Music names landed with #17; the pass only fixes a page that still
+   reads otherwise.
 2. Webex stays native, external, and optional. No add-on, no embedded-app
    promise.
 3. KISS. No integration wall and no feature matrix a musician has to read
