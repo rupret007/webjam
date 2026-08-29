@@ -2,9 +2,9 @@
 
 **Review date:** 2026-08-27
 **Status:** unsigned/ad-hoc v0.27.1 is GitHub Latest release `377614785`.
-Current v0.27.2 source is post-tag, is not that package, and is blocked from
-live Jamulus Host/Join because approved compatibility stops at v0.27.1; every
-v0.27 physical/hardware gate is **NOT RUN**.
+Current v0.27.2 source is post-tag and is not that package. Live Jamulus
+Host/Join reuses the existing exact 3.12.2 and 3.12.3 records; every v0.27
+physical/hardware gate is **NOT RUN**.
 
 ## Executive summary
 

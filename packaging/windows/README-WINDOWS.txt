@@ -1,18 +1,18 @@
-WebJam v0.27.2 unsigned source candidate — not build-eligible
-==============================================================
+WebJam v0.27.2 unsigned source candidate — no package published
+================================================================
 
-NO PACKAGE IS AUTHORIZED: v0.27.2 source is not GitHub Latest. Every approved
-Jamulus compatibility range ends at v0.27.1, so required package CI and live
-Host/Join fail closed. Do not build or use this candidate until separate
-compatibility evidence is reviewed and an exact release manifest exists.
+NO PACKAGE IS AUTHORIZED: v0.27.2 source is not GitHub Latest. The existing
+exact Jamulus 3.12.2 and 3.12.3 records are approved through v0.27.2, so
+required package CI and live Host/Join are source-eligible. Do not use a build
+as a package until an exact release manifest exists.
 Do not use the published v0.27.1 checksum manifest for this post-tag build.
 Physical audio, hardware, SmartScreen, publisher-signing, and managed-device
 gates remain NOT RUN unless the release evidence names this exact file and
 SHA-256.
 
-Everything below describes a future package only after the blocked
-compatibility boundary is resolved. That future artifact would remain
-unsigned; its exact filename and published SHA-256 would require verification.
+Everything below describes a future package only after exact release evidence
+exists. That future artifact would remain unsigned; its exact filename and
+published SHA-256 would require verification.
 Windows SmartScreen or organizational policy may block it; WebJam does not
 bypass those controls.
 
@@ -34,9 +34,9 @@ standalone Reference Studio for local songwriting, recording, arranging,
 mixing, and WAV/FLAC bounce without joining Jamulus.
 
 The source retains Music and Podcast & Voice as GA creator profiles. Review &
-Rehearsal is Preview. Only after compatibility authorization would live
-WebJam-audio Join, participation in a host-controlled Record Session, and
-playback/read-only completed-take review be available; meanwhile
+Rehearsal is Preview. Live WebJam-audio Join, participation in a host-controlled
+Record Session, and playback/read-only completed-take review are source-eligible;
+meanwhile
 standalone projects, take edit/comp/mix mutation, track export, shared notes,
 visual sync, and media timecode are blocked. No profile directly or
 automatically taps a meeting app, browser, or system output. Local scratchpad
@@ -51,16 +51,16 @@ explicit approval and may display UAC or SmartScreen. WebJam verifies the
 installed version after setup. It never hides elevation or installs while a
 jam, recording, Shared Track, reconnect, or Jamulus launch is active.
 
-The sealed v0.22.5 catalog does not authorize v0.27.2 and is rejected. Every
-immutable Jamulus range also ends at v0.27.1. Presence of embedded 3.12.2 bytes
-does not authorize them for this source identity. Shared Track uses a separate
-headless path, but live client/server selection and package builds remain
-blocked until separate compatibility evidence exists.
+The sealed v0.22.5 catalog does not authorize v0.27.2 and is rejected. The baked
+registry separately authorizes the existing exact Jamulus 3.12.2 and 3.12.3
+records through v0.27.2. Presence of embedded 3.12.2 bytes does not authorize
+an identity mismatch. Shared Track uses its separate approved headless path;
+unlisted client/server versions still fail closed.
 
-After separate compatibility authorization, WebJam may offer the exact bundled
-Jamulus 3.12.2 installer from Host/Join. Jamulus is a separate application. On
-a managed work PC, your organization's application policy may require IT
-approval even though WebJam itself installs per user.
+With exact release evidence, WebJam may offer the bundled Jamulus 3.12.2
+installer from Host/Join. Jamulus is a separate application. On a managed work
+PC, your organization's application policy may require IT approval even though
+WebJam itself installs per user.
 Installation may require IT approval.
 
 Conversation/video is optional and is not bundled. Any meeting platform can

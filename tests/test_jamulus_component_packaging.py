@@ -370,7 +370,7 @@ def test_release_catalog_payload_is_exact_expiring_and_excludes_headless() -> No
     assert all(item["activation_mode"] == "platform-approval" for item in components)
     assert all(item["variant"] == "official" for item in components)
     assert all(
-        item["webjam_range"]["maximum"] == "0.27.1" for item in components
+        item["webjam_range"]["maximum"] == "0.27.2" for item in components
     )
     for item in components:
         target = item["target"]

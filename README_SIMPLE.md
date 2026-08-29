@@ -12,9 +12,9 @@
 
 > **What this checkout is:** an unsigned v0.27.2 source candidate after the
 > v0.27.1 release. The exact published v0.27.1 release assets—not this checkout
-> or a branch artifact—are package evidence. Approved Jamulus compatibility
-> stops at v0.27.1, so live Host/Join and package builds intentionally fail
-> closed here. No physical PASS result is claimed.
+> or a branch artifact—are package evidence. Live Host/Join and package builds
+> reuse the exact baked Jamulus 3.12.2 and 3.12.3 records through v0.27.2; the
+> signed public catalog is unchanged. No physical PASS result is claimed.
 
 WebJam helps creators start a live audio session and keep its separate tracks
 organized. Jamulus handles low-latency audio. Any meeting platform can be

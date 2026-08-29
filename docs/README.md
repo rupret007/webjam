@@ -13,8 +13,8 @@ keeps the product story and five-minute demo intentionally short.
 
 > **Candidate source:** unsigned v0.27.2 in this checkout, after the published
 > v0.27.1 tag. It is not a release. Do not use a checkout or branch artifact
-> as a package. Its Jamulus compatibility set is empty because approved ranges
-> end at v0.27.1, so live Host/Join and required package-build CI fail closed.
+> as a package. Its baked Jamulus 3.12.2 and 3.12.3 records are approved through
+> v0.27.2, so live Host/Join and required package-build CI are source-eligible.
 > All v0.27 physical/hardware rows remain **NOT RUN**.
 
 ## Start here

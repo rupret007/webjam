@@ -3,9 +3,9 @@
 > **Current source:** unsigned v0.27.2 (`webjam_qt.__version__`). This checkout
 > is post-v0.27.1-tag source and is not a package. No v0.27.2 tag, draft,
 > release, checksum manifest, or physical PASS exists.
-> Every approved Jamulus range ends at v0.27.1, so v0.27.2 live Host/Join and
-> required component-input CI fail closed. This change is not mergeable or
-> build-eligible until separate compatibility evidence is reviewed.
+> The existing exact Jamulus 3.12.2 and 3.12.3 records are explicitly approved
+> through v0.27.2, so Host/Join and required component-input CI are
+> source-eligible. No merge, tag, package, or release is authorized here.
 >
 > **Latest download:** unsigned/ad-hoc v0.27.1 release `377614785`, exact tag
 > commit `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`, with seven packages plus

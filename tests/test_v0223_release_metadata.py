@@ -120,12 +120,14 @@ def test_component_sbom_names_the_exact_desktop_version() -> None:
         for item in COMPONENT_SBOM["metadata"]["properties"]
     }
     assert properties["webjam:current-source-authorization"] == (
-        "blocked-for-webjam-0.27.2-no-compatible-range"
+        "baked-jamulus-records-approved-through-webjam-0.27.2"
     )
-    assert properties["webjam:build-eligibility"] == "blocked"
+    assert properties["webjam:build-eligibility"] == (
+        "source-eligible-no-package-published"
+    )
 
 
-def test_candidate_payload_exposes_blocked_v0272_range_mismatch() -> None:
+def test_candidate_payload_reuses_the_approved_v0272_records() -> None:
     # Exercise deterministic source metadata with an unpublished, synthetic
     # next sequence. Sequence 6 remains the sealed v0.22.5 public catalog and
     # is never reused for this in-memory payload.
@@ -152,16 +154,20 @@ def test_candidate_payload_exposes_blocked_v0272_range_mismatch() -> None:
     assert all(component["version"] == "3.12.3" for component in components)
     assert all(component["variant"] == "official" for component in components)
     assert all(
-        component["webjam_range"]["maximum"] == "0.27.1" for component in components
+        component["webjam_range"]["maximum"] == "0.27.2" for component in components
     )
-    assert not any(
+    assert all(
         entry.supports_webjam(payload["webjam_version"])
         for entry in official_jamulus_compatibility_registry().entries
     )
+    assert not any(
+        entry.supports_webjam("0.27.3")
+        for entry in official_jamulus_compatibility_registry().entries
+    )
     assert "assert all(entry.supports_webjam(__version__)" in CI_WORKFLOW
-    assert "not build-eligible" in (
+    assert "no package published" in (
         ROOT / "packaging" / "windows" / "README-WINDOWS.txt"
-    ).read_text(encoding="utf-8")
+    ).read_text(encoding="utf-8").casefold()
 
 
 def test_current_guides_separate_v0272_source_from_v0271_latest() -> None:
@@ -206,13 +212,13 @@ def test_current_guides_separate_v0272_source_from_v0271_latest() -> None:
         "ios/README.md": "v0.27.2 source candidate",
         "requirements-lock/README.md": "The published v0.27.1 tag bound",
         "packaging/windows/README-WINDOWS.txt": (
-            "WebJam v0.27.2 unsigned source candidate — not build-eligible"
+            "WebJam v0.27.2 unsigned source candidate — no package published"
         ),
         "packaging/linux/README-LINUX.txt": (
-            "WEBJAM v0.27.2 UNSIGNED SOURCE CANDIDATE — NOT BUILD-ELIGIBLE"
+            "WEBJAM v0.27.2 UNSIGNED SOURCE CANDIDATE — NO PACKAGE PUBLISHED"
         ),
         "packaging/macos/READ ME FIRST.txt": (
-            "WEBJAM v0.27.2 UNSIGNED SOURCE CANDIDATE — NOT BUILD-ELIGIBLE"
+            "WEBJAM v0.27.2 UNSIGNED SOURCE CANDIDATE — NO PACKAGE PUBLISHED"
         ),
         "WEBJAM_V0225_DEMO_READINESS.md": "# WebJam v0.22.5 two-musician demo readiness",
         "V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md": (
@@ -862,7 +868,7 @@ def test_v0240_publication_evidence_is_exact_and_current_guides_are_post_release
         assert not any(marker in content for marker in forbidden), relative_path
 
 
-def test_blocked_source_copy_is_explicit_about_platform_trust() -> None:
+def test_source_eligible_copy_is_explicit_about_platform_trust() -> None:
     windows_readme = (ROOT / "packaging" / "windows" / "README-WINDOWS.txt").read_text(
         encoding="utf-8"
     )
@@ -870,7 +876,7 @@ def test_blocked_source_copy_is_explicit_about_platform_trust() -> None:
         encoding="utf-8"
     )
     runbook = (ROOT / "docs" / "DESKTOP_RELEASE_RUNBOOK.md").read_text(encoding="utf-8")
-    assert "unsigned source candidate — not build-eligible" in windows_readme
+    assert "unsigned source candidate — no package published" in windows_readme
     assert "ad-hoc signed" in macos_readme
     assert "NOT notarized" in macos_readme
     for package_copy in (windows_readme, macos_readme):

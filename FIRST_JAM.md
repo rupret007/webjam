@@ -5,8 +5,8 @@
 > candidate checkout is post-tag source and is not that package. Record every
 > v0.27 physical gate as **NOT RUN** until it is observed against exact release
 > bytes.
-> Do not use unsigned v0.27.2 source for this walkthrough: its Jamulus
-> compatibility range is intentionally empty, so Host/Join fails closed.
+> Host/Join is source-eligible through the exact baked Jamulus 3.12.2 and 3.12.3
+> records, but do not treat this checkout as a package or physical-test result.
 
 Before Host or Join, choose **Art** or **Music**. Those are the equal first
 clicks. Art then offers **Talk & make**, **Paint together**, or **Paint

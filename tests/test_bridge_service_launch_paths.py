@@ -67,10 +67,9 @@ def _make_bridge():
         },
         component_store_root=isolated_component_store_root(),
     )
-    # These launch-path tests exercise the immutable v0.27.1 component
-    # contract. Unsigned v0.27.2 source deliberately remains outside that
-    # published compatibility range and is covered by the release tests.
-    bridge._runtime_webjam_version = MagicMock(return_value="0.27.1")
+    # Exercise the approved v0.27.2 baked-component boundary. The sealed
+    # public catalog remains independently pinned to exact WebJam v0.22.5.
+    bridge._runtime_webjam_version = MagicMock(return_value="0.27.2")
     return bridge
 
 
@@ -853,7 +852,7 @@ class TestBundledJamulusInstaller(unittest.TestCase):
 
 
 class TestFindJamulusFallback(unittest.TestCase):
-    def test_unsigned_source_rejects_published_client_compatibility(self):
+    def test_v0272_source_resolves_the_bundled_client(self):
         bridge = _make_bridge()
         del bridge._runtime_webjam_version
         bridge._jamulus_component_target = ComponentTarget.WINDOWS_X64
@@ -868,6 +867,26 @@ class TestFindJamulusFallback(unittest.TestCase):
             ),
         ):
             self.assertEqual(bridge._runtime_webjam_version(), "0.27.2")
+            self.assertEqual(
+                bridge._approved_embedded_runtime_versions(JamulusRole.CLIENT),
+                frozenset({"3.12.2", "3.12.3"}),
+            )
+            self.assertEqual(
+                bridge.find_jamulus(),
+                (
+                    "/Applications/WebJam.app/Contents/Resources/"
+                    "Jamulus.app/Contents/MacOS/Jamulus"
+                ),
+            )
+
+    def test_future_source_still_rejects_the_bundled_client(self):
+        bridge = _make_bridge()
+        bridge._runtime_webjam_version = MagicMock(return_value="0.27.3")
+        bridge._jamulus_component_target = ComponentTarget.WINDOWS_X64
+        with patch(
+            "services.bridge_service._bundled_jamulus_candidate",
+            return_value="/bundled/Jamulus",
+        ):
             self.assertEqual(
                 bridge._approved_embedded_runtime_versions(JamulusRole.CLIENT),
                 frozenset(),

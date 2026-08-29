@@ -4,9 +4,10 @@
 > candidate after the published v0.27.1 tag. The exact v0.27.1 tag is the
 > unsigned/ad-hoc GitHub **Latest** private test release; this candidate
 > checkout is source evidence and is not that package.
-> The Jamulus compatibility registry ends at v0.27.1. Current v0.27.2 source
-> therefore rejects live client/server selection and the component-input build
-> gate until a separate review authorizes the new version.
+> The existing Jamulus 3.12.2 and 3.12.3 compatibility records are explicitly
+> approved through v0.27.2. Live client/server selection and the component-input
+> build gate reuse those exact baked identities; the signed public catalog stays
+> sealed at exact WebJam v0.22.5.
 
 > **Release boundary:** only the exact tagged v0.27.1 assets and attached
 > `WebJam-v0.27.1-SHA256SUMS.txt` manifest are authoritative for the current

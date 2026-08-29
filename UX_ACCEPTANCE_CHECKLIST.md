@@ -5,8 +5,9 @@
 > Historical v0.27.1 results remain bound to exact v0.27.1 assets. Every
 > v0.27.2 physical and platform-trust gate is **NOT RUN** and cannot inherit
 > that evidence.
-> Unsigned v0.27.2 is source-only and compatibility-blocked for live Host/Join;
-> this is not a runnable-candidate checklist until that evidence changes.
+> Unsigned v0.27.2 is source-only. Host/Join is compatible with the existing
+> exact Jamulus 3.12.2 and 3.12.3 records, but this is not a package checklist
+> until exact release evidence exists.
 
 ## Unified guidance
 

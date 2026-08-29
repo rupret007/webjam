@@ -7,9 +7,9 @@
 > manifest; its tag workflow is red at the duplicate-release publisher.
 > Publication did not create
 > physical PASS.
-> Required component-input CI also fails closed for unsigned v0.27.2 because
-> every approved Jamulus range ends at v0.27.1. Do not run live or physical
-> steps until separate compatibility evidence is reviewed.
+> Required component-input CI exercises the existing exact Jamulus 3.12.2 and
+> 3.12.3 records now approved through v0.27.2. Physical steps still require an
+> exact package handoff and remain **NOT RUN**.
 
 ## Scope
 

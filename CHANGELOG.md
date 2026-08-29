@@ -18,11 +18,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 > `377614785`. Existing tag CI may create a reviewable unsigned draft only
 > after an annotated `v0.27.2` tag matches `webjam_qt.__version__` and exact
 > `origin/master`; this source change does not create or push that tag.
-> The immutable Jamulus compatibility records currently stop at WebJam
-> v0.27.1. Consequently this unsigned source candidate intentionally rejects
-> every Jamulus client/server runtime and the required component-input CI job
-> stays red. It is not build-, Host-, or Join-eligible until separate reviewed
-> compatibility evidence authorizes v0.27.2.
+> Jeff explicitly approved extending the existing immutable Jamulus 3.12.2 and
+> 3.12.3 records through WebJam v0.27.2. Host/Join and the required
+> component-input CI therefore reuse those exact baked identities. The signed
+> public catalog remains sealed at exact WebJam v0.22.5; no catalog, signer,
+> publisher, pin, package, or release was created or changed.
 
 ### Art says what the person does
 

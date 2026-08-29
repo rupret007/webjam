@@ -4,8 +4,9 @@
 > unsigned/ad-hoc v0.27.1 release from exact tag commit
 > `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`. This candidate checkout is
 > post-tag source and is not that download. Source text is not package evidence.
-> Approved Jamulus compatibility stops at v0.27.1, so v0.27.2 source rejects
-> client/server runtime selection and cannot pass the package build gate.
+> The existing Jamulus 3.12.2 and 3.12.3 records are approved through v0.27.2,
+> so baked Host/Join selection and the package build gate are source-eligible.
+> The signed public catalog remains sealed at exact WebJam v0.22.5.
 > All v0.27 physical, credentialed, signing, and platform-trust gates stay
 > **NOT RUN**.
 
@@ -69,9 +70,10 @@ The desktop package always contains its reviewed Jamulus 3.12.2 fallback.
 Independently updated Jamulus client/server packages are executable supply-chain
 inputs, so availability alone is never approval:
 
-For unsigned v0.27.2 source, presence is specifically not approval: every
-immutable registry range ends at v0.27.1, leaving client/server resolution
-empty until separate compatibility evidence is reviewed.
+For unsigned v0.27.2 source, the baked registry authorizes only the existing
+exact Jamulus 3.12.2 and 3.12.3 records. Presence of any other version is not
+approval. The sealed v0.22.5 catalog does not authorize a managed v0.27.2
+component.
 
 ```text
 separate component release

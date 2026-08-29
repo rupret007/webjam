@@ -65,10 +65,9 @@ def _make_bridge(tmp: str):
     # binaries are executable; upstream macOS apps are source evidence only.
     # Dedicated tests cover the release-integrated Mac fallback.
     bridge._jamulus_component_target = ComponentTarget.WINDOWS_X64
-    # Keep process-supervision fixtures on the published catalog-supported
-    # identity. Unsigned v0.27.2 source must fail closed until separately
-    # authorized compatibility evidence exists.
-    bridge._runtime_webjam_version = MagicMock(return_value="0.27.1")
+    # Exercise the approved v0.27.2 baked-component boundary. The sealed
+    # public catalog remains independently pinned to exact WebJam v0.22.5.
+    bridge._runtime_webjam_version = MagicMock(return_value="0.27.2")
     bridge.find_jamulus_server = MagicMock(
         return_value="/Applications/JamulusServer.app/Contents/MacOS/JamulusServer"
     )
@@ -591,7 +590,7 @@ class TestHostedServerDiscovery(unittest.TestCase):
             self.assertEqual(result, ("/bundled/JamulusServer", "bundled"))
             bundled.assert_called_once()
 
-    def test_unsigned_source_rejects_published_server_compatibility(self):
+    def test_v0272_source_resolves_the_bundled_server(self):
         with tempfile.TemporaryDirectory() as tmp:
             bridge = self._real_discovery_bridge(tmp)
             del bridge._runtime_webjam_version
@@ -600,6 +599,25 @@ class TestHostedServerDiscovery(unittest.TestCase):
                 return_value="/bundled/JamulusServer",
             ):
                 self.assertEqual(bridge._runtime_webjam_version(), "0.27.2")
+                self.assertEqual(
+                    bridge._approved_embedded_runtime_versions(
+                        JamulusRole.SERVER
+                    ),
+                    frozenset({"3.12.2", "3.12.3"}),
+                )
+                self.assertEqual(
+                    bridge.find_jamulus_server_with_source(),
+                    ("/bundled/JamulusServer", "bundled"),
+                )
+
+    def test_future_source_still_rejects_the_bundled_server(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = self._real_discovery_bridge(tmp)
+            bridge._runtime_webjam_version = MagicMock(return_value="0.27.3")
+            with patch.object(Path, "is_file", return_value=True), patch(
+                "services.bridge_service._bundled_jamulus_server_candidate",
+                return_value="/bundled/JamulusServer",
+            ):
                 self.assertEqual(
                     bridge._approved_embedded_runtime_versions(
                         JamulusRole.SERVER

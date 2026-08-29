@@ -3,8 +3,8 @@
 > This guide describes current unsigned v0.27.2 source. GitHub **Latest** is the
 > exact unsigned/ad-hoc v0.27.1 private test release. This candidate checkout
 > is post-tag source and is not that package. No physical PASS result is claimed.
-> The unsigned v0.27.2 source cannot authorize a Jamulus client/server, so use
-> verified v0.27.1 release bytes for live Host/Join.
+> The unsigned v0.27.2 source authorizes the existing exact Jamulus 3.12.2 and
+> 3.12.3 records for Host/Join. It is still not a package or physical PASS.
 
 ## Follow the current guide
 

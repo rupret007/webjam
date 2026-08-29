@@ -3,8 +3,8 @@
 > These labels describe current unsigned v0.27.2 source. GitHub **Latest** is the
 > unsigned/ad-hoc v0.27.1 private test release. No physical PASS is claimed;
 > every v0.27 physical and release-decision row remains **NOT RUN**.
-> For runnable live-audio help, use verified v0.27.1 release bytes. Unsigned
-> v0.27.2 source rejects Jamulus client/server selection by design.
+> Unsigned v0.27.2 source reuses the existing exact Jamulus 3.12.2 and 3.12.3
+> records for Host/Join. A checkout remains source evidence, not a package.
 
 | Creator says | Answer / action |
 | --- | --- |

@@ -7,8 +7,9 @@
 > Two-computer Art behavior is **NOT RUN**. This document supersedes the
 > earlier speculative cross-discipline MVP and describes only bounded current behavior. Physical
 > and platform-trust results remain **NOT RUN**.
-> These are implemented source contracts, not a usable v0.27.2 package claim:
-> live Host/Join is compatibility-blocked until Jamulus evidence is extended.
+> These are implemented source contracts, not a usable v0.27.2 package claim.
+> Live Host/Join is source-eligible through the existing exact Jamulus 3.12.2
+> and 3.12.3 records; no v0.27.2 package or physical PASS exists.
 
 ## Product decision
 

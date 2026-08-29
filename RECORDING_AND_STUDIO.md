@@ -3,9 +3,9 @@
 > This document describes current unsigned v0.27.2 source. GitHub **Latest** is the
 > unsigned/ad-hoc v0.27.1 private test release; this candidate checkout is not that
 > package.
-> Live Jamulus recording is compatibility-blocked in unsigned v0.27.2 source;
-> the immutable approved ranges end at v0.27.1. Standalone local Studio is a
-> separate audio path, but no v0.27.2 package evidence exists.
+> Live Jamulus recording is source-eligible through the existing exact 3.12.2
+> and 3.12.3 compatibility records. Standalone local Studio is a separate audio
+> path, and no v0.27.2 package evidence exists.
 > Historical v0.27.1 results remain bound to exact v0.27.1 packages. Every
 > v0.27.2 physical recording, Shared Track audibility/isolation, playback,
 > recovery, long-session, and external-editor gate is **NOT RUN** and cannot

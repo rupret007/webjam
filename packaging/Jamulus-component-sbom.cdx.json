@@ -22,11 +22,11 @@
       },
       {
         "name": "webjam:current-source-authorization",
-        "value": "blocked-for-webjam-0.27.2-no-compatible-range"
+        "value": "baked-jamulus-records-approved-through-webjam-0.27.2"
       },
       {
         "name": "webjam:build-eligibility",
-        "value": "blocked"
+        "value": "source-eligible-no-package-published"
       }
     ]
   },

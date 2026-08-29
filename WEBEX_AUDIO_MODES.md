@@ -3,8 +3,9 @@
 > This document describes current unsigned v0.27.2 source. GitHub **Latest** is the
 > unsigned/ad-hoc v0.27.1 private test release. Every external meeting-app
 > behavior remains a separate physical gate.
-> Unsigned v0.27.2 cannot authorize the separate Jamulus live-audio runtime;
-> use verified v0.27.1 release bytes for an actual session.
+> Unsigned v0.27.2 authorizes the existing exact Jamulus 3.12.2 and 3.12.3
+> records for live audio, but the checkout itself is not a package or physical
+> session result.
 
 Any meeting service is optional for talking or video. Jamulus carries the
 music.
