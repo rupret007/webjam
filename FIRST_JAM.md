@@ -2,7 +2,7 @@
 
 > This guide describes current post-v0.27.1 source. GitHub **Latest** is the
 > unsigned/ad-hoc, checksum-verifiable v0.27.1 private test release. Current
-> `master` includes post-tag #50–#52 and is not that package. Record every
+> `master` is post-tag source and is not that package. Record every
 > v0.27 physical gate as **NOT RUN** until it is observed against exact release
 > bytes.
 

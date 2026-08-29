@@ -62,8 +62,9 @@ def test_v0271_is_published_latest_while_master_is_post_tag_source() -> None:
     assert "v0.24.0 bytes" in normalized
     assert "Unsigned/ad-hoc v0.27.1 GitHub Latest private test release" in normalized
     assert "Current source boundary:" in normalized
-    assert "three post-tag commits ahead" in normalized
-    assert "#50" in normalized and "#52" in normalized
+    assert "post-tag source" in normalized
+    assert "not in the v0.27.1 download" in normalized
+    assert "commits ahead" not in normalized
     assert "release ID `377614785`" in normalized
     assert "WebJam-v0.27.1-SHA256SUMS.txt" in normalized
     assert "1fc25f87c3386b1cd94303ecb407cdaff6509d1f" in normalized

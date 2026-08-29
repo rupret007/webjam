@@ -11,9 +11,9 @@ keeps the product story and five-minute demo intentionally short.
 > unsigned; macOS is ad-hoc signed and unnotarized; every physical test remains
 > **NOT RUN** until recorded against those packages.
 
-> **Current source:** `master` still reports v0.27.1 but includes post-tag
-> #50–#52 and is not the release. Do not use a checkout or branch artifact as a
-> package. All v0.27 physical/hardware rows remain **NOT RUN**.
+> **Current source:** `master` still reports v0.27.1 but is post-tag source and
+> is not the release. Do not use a checkout or branch artifact as a package.
+> All v0.27 physical/hardware rows remain **NOT RUN**.
 
 ## Start here
 

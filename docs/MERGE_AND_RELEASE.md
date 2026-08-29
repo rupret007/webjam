@@ -1,7 +1,7 @@
 # Merge and release map
 
 > **Current source:** post-release v0.27.1 (`webjam_qt.__version__`). This
-> checkout is three commits ahead of the released tag and is not a package.
+> checkout is post-tag source and is not a package.
 >
 > **Latest download:** unsigned/ad-hoc v0.27.1 release `377614785`, exact tag
 > commit `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`, with seven packages plus

@@ -8,7 +8,7 @@
 
 > **Source note:** use the exact release tag and attached checksum manifest as
 > download evidence; an untagged checkout is not a substitute. Current
-> `master` is three post-tag commits ahead and is not that package.
+> `master` is post-tag source and is not that package.
 
 > **What this checkout is:** post-release v0.27.1 source. The exact published
 > v0.27.1 release assets—not this checkout or a branch artifact—are package
@@ -33,8 +33,8 @@ mutation, track export, shared notes, visual sync, and media timecode. No
 profile directly or automatically taps a meeting app, browser, or system
 output.
 
-Current private test release: **v0.27.0**. Use only the exact assets attached to
-the immutable v0.27.0 GitHub release and verify them with its checksum manifest.
+Current private test release: **v0.27.1**. Use only the exact assets attached to
+the immutable v0.27.1 GitHub release and verify them with its checksum manifest.
 The four-platform release covers
 Windows, Ubuntu 22.04, Intel Mac, and
 Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc

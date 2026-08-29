@@ -1,11 +1,11 @@
 # Creator profiles — v0.27.1 implemented contract
 
 > Status: current post-v0.27.1 source. GitHub **Latest** is the unsigned/ad-hoc
-> v0.27.1 private test release. That download includes #47 but not post-tag
-> #50–#52. Music, Podcast & Voice, and Review & Rehearsal are implemented here; Art
-> is on this source line and covered by automated tests. Two-computer Art
-> behavior is **NOT RUN**. This document supersedes the earlier speculative
-> cross-discipline MVP and describes only bounded current behavior. Physical
+> v0.27.1 private test release. That download includes #47 but not later
+> post-tag source changes. Music, Podcast & Voice, and Review & Rehearsal are
+> implemented here; Art is on this source line and covered by automated tests.
+> Two-computer Art behavior is **NOT RUN**. This document supersedes the
+> earlier speculative cross-discipline MVP and describes only bounded current behavior. Physical
 > and platform-trust results remain **NOT RUN**.
 
 ## Product decision

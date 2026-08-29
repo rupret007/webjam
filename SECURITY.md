@@ -31,9 +31,9 @@ Jamulus, meeting services, Python dependencies, Qt, and operating-system trust s
 have their own upstream security channels. WebJam-specific orchestration,
 privacy projection, package verification, updater, transport, and lifecycle
 issues belong here. GitHub **Latest** is the unsigned/ad-hoc v0.27.1 private
-test release. Current `master` includes post-tag #50–#52 and is not that
-download. Use only an exact checksum-verified release asset. The published release and its immutable
-predecessors share this test-only trust boundary: Windows is unsigned and
+test release. Current `master` is post-tag source and is not that download.
+Use only an exact checksum-verified release asset. The published release and
+its immutable predecessors share this test-only trust boundary: Windows is unsigned and
 macOS is ad-hoc signed and unnotarized.
 
 The exact v0.27.1 release assets and `WebJam-v0.27.1-SHA256SUMS.txt` are the

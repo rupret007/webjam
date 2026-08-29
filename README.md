@@ -22,9 +22,10 @@ pretending to own systems that remain independent.
 > but the workflow is **not publish-green**: its publisher failed closed because
 > a release already used `v0.27.1`. Do not retag or mutate that release.
 
-> **Current source boundary:** `master` still reports v0.27.1 but
-> is three post-tag commits ahead (#50–#52). Those Paint Along changes are not in the
-> v0.27.1 download. This checkout and branch artifacts are source evidence, not
+> **Current source boundary:** `master` still reports v0.27.1 but is
+> post-tag source. Changes after the v0.27.1 tag are
+> not in the v0.27.1 download. This checkout and branch artifacts are source
+> evidence, not
 > release packages. Shared Track play uses this Mac's official BlackHole
 > 16ch/64ch route at 48 kHz and the bundled headless client; it does not wait
 > for a signed catalog pin. The catalog remains sealed at exact WebJam v0.22.5.
@@ -44,7 +45,7 @@ New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 | --- | --- |
 | Product | Creator-facing desktop conductor around Jamulus, optional external meeting conversation, Studio, and Pocket Stage |
 | Published line | Unsigned/ad-hoc v0.27.1 GitHub Latest private test release; verify its checksum manifest |
-| Current source line | Post-v0.27.1 source (#50–#52); Music and Podcast & Voice are GA profiles, Review & Rehearsal is Preview |
+| Current source line | Post-v0.27.1 source; Music and Podcast & Voice are GA profiles, Review & Rehearsal is Preview |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -634,9 +635,9 @@ release remains the current downloadable pointer, but neither that pointer nor
 the green post-tag `master` workflows may be rewritten as a successful release
 round.
 
-The current `master` tree still reports **v0.27.1** but is three commits ahead
-of the released tag: #50, #51, and #52 are post-release source and are not in
-the v0.27.1 packages. Shared Track play uses this Mac's BlackHole route and the
+The current `master` tree still reports **v0.27.1** but is post-tag source.
+Changes after the released tag are not in the v0.27.1 packages. Shared Track
+play uses this Mac's BlackHole route and the
 bundled headless client; the signed catalog remains sealed at exact WebJam
 v0.22.5 and does not authorize v0.27.1. Every physical result remains
 **NOT RUN**.

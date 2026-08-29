@@ -1,8 +1,8 @@
 # WebJam creator guide — post-v0.27.1 source
 
 > This guide describes current post-v0.27.1 source. GitHub **Latest** is the
-> exact unsigned/ad-hoc v0.27.1 private test release. Current `master` includes
-> post-tag #50–#52 and is not that package. No physical PASS result is claimed.
+> exact unsigned/ad-hoc v0.27.1 private test release. Current `master` is
+> post-tag source and is not that package. No physical PASS result is claimed.
 
 ## Follow the current guide
 

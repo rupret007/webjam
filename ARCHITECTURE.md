@@ -2,8 +2,8 @@
 
 > This document describes current post-v0.27.1 source. GitHub **Latest** is the
 > unsigned/ad-hoc v0.27.1 release from exact tag commit
-> `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`. Current `master` includes
-> post-tag #50–#52 and is not that download. Source text is not package evidence.
+> `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`. Current `master` is post-tag
+> source and is not that download. Source text is not package evidence.
 > All v0.27 physical, credentialed, signing, and platform-trust gates stay
 > **NOT RUN**.
 
