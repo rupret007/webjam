@@ -53,15 +53,30 @@ def _heading_anchors(text: str) -> set[str]:
     return anchors
 
 
-def test_map_lands_the_audio_core_then_each_room_after_a_rebase() -> None:
+def test_map_records_the_finished_land_and_the_parked_leftovers() -> None:
     positions = [FLAT_MAP_TEXT.index(f"| {step} |") for step in range(1, 4)]
-    assert positions == sorted(positions), "the remaining land-order steps must read in order"
-    for landed in ("#14", "#15", "#16", "#19"):
+    assert positions == sorted(positions), "the remaining steps must read in order"
+    for landed in ("#14", "#15", "#16", "#17", "#19"):
         assert landed in FLAT_MAP_TEXT, landed
     assert "already on `master`" in FLAT_MAP_TEXT
-    assert FLAT_MAP_TEXT.index("Rebase [#17]") < FLAT_MAP_TEXT.index(
-        "| 2 | Land #17"
-    )
+    assert "merged 2026-08-22" in FLAT_MAP_TEXT
+    assert "no open product branch" in FLAT_MAP_TEXT
+
+    # #17 merged as `5ca6ba5`; the map must not present it as open work.
+    assert "Rebase [#17]" not in FLAT_MAP_TEXT
+    assert "Land #17" not in FLAT_MAP_TEXT
+    assert "still a draft" not in FLAT_MAP_TEXT
+    assert "is the open product branch" not in FLAT_MAP_TEXT
+
+    # The only remaining steps: leave the parked branches alone, leave the
+    # published release alone, and fix a page only if it still lies.
+    assert "#37 and #49 stay parked" in FLAT_MAP_TEXT
+    assert "do not retag or mutate" in FLAT_MAP_TEXT
+    assert "docs-only leftover PR only if a page still lies" in FLAT_MAP_TEXT
+
+    # A later release waits on Jeff naming it, not on #17.
+    assert "waits until Jeff names it" in FLAT_MAP_TEXT
+    assert "does not wait on #17" in FLAT_MAP_TEXT
 
 
 def test_map_gates_landing_and_release_on_the_ten_second_read() -> None:
