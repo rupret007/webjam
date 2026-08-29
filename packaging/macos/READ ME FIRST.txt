@@ -1,14 +1,16 @@
-WEBJAM v0.27.1 PRIVATE TEST CANDIDATE — PLEASE READ
+WEBJAM v0.27.2 UNSIGNED SOURCE CANDIDATE — NO PACKAGE PUBLISHED
 
-PRIVATE TEST CANDIDATE: use this package only when its exact filename appears
-in the v0.27.1 GitHub release and its SHA-256 matches that release's manifest.
+NO PACKAGE IS AUTHORIZED: v0.27.2 source is not GitHub Latest. The existing
+exact Jamulus 3.12.2 and 3.12.3 records are approved through v0.27.2, so
+required package CI and live Host/Join are source-eligible. Do not use a build
+as a package until an exact release manifest exists.
 Do not use the published v0.27.1 checksum manifest for this post-tag build.
 Physical audio, hardware, Gatekeeper, signing, and notarization gates remain
 NOT RUN unless the release evidence names this exact file and SHA-256.
 
-This WebJam build is ad-hoc signed and is NOT notarized or reviewed by Apple.
-Only install it when its exact local artifact identity and checksum are part of
-the current v0.27.1 physical-test handoff.
+Everything below describes a future package only after exact release evidence
+exists. Such a package would be ad-hoc signed and NOT notarized or reviewed by
+Apple. No v0.27.2 physical-test handoff exists.
 
 This candidate upgrades cryptography to 50.0.0 for CVE-2026-69247,
 CVE-2026-69248, and CVE-2026-69249. Apple-silicon uses an exact hash-locked
@@ -58,19 +60,19 @@ Shared Track profile/control files under your own
 ~/Library/Application Support/WebJam folder. Host, Join, and Shared Track
 must not ask WebJam for permission to access data from other apps.
 
-Music and Podcast & Voice are GA creator profiles. Review & Rehearsal is
-Preview: live WebJam-audio Host/Join and Record Session plus playback/read-only
-completed-take review are available, while standalone projects, take
+The source retains Music and Podcast & Voice as GA creator profiles. Review &
+Rehearsal is Preview. Live WebJam-audio Host/Join, Record Session, and
+playback/read-only completed-take review are source-eligible; meanwhile standalone projects, take
 edit/comp/mix mutation, track export, shared notes, visual sync, and media
 timecode are blocked. No profile directly or automatically taps a meeting app,
 browser, or system output. Local scratchpad notes remain profile-scoped on this
 Mac only; they are never shared or media-timecoded.
 
-The sealed v0.22.5 Jamulus catalog does not authorize v0.27.1 and is rejected.
-That catalog pin is unchanged. Shared Track play uses this Mac's official
-BlackHole 16ch/64ch route at 48 kHz and the bundled headless client; it does
-not wait for a signed catalog pin. This candidate uses the embedded Jamulus
-3.12.2 fallback rather than offering a managed 3.12.3 download.
+The sealed v0.22.5 Jamulus catalog does not authorize v0.27.2 and is rejected.
+The baked registry separately authorizes the existing exact Jamulus 3.12.2 and
+3.12.3 records through v0.27.2. Presence of embedded 3.12.2 bytes does not
+authorize an identity mismatch. Shared Track uses its separate approved
+headless path; unlisted client/server versions still fail closed.
 
 macOS may separately ask for microphone access when you use an audio input.
 That expected audio permission is not an Other Application Data prompt. If
@@ -107,7 +109,7 @@ route meeting or system-output audio into those inputs.
 iPhone Pocket Stage setup
 -------------------------
 The "Pocket Stage iPhone Setup" folder contains the exact generated Xcode
-project compiled by this candidate's CI run. Install the full Xcode app, add
+project compiled by a future candidate CI run. Install the full Xcode app, add
 your Apple ID in Xcode > Settings > Accounts, then open
 "WebJamPocketStage.xcodeproj" directly. If Finder does not associate that file
 with Xcode, use Xcode > File > Open and select it. "Open Pocket Stage in

@@ -56,6 +56,9 @@ def make_bridge(tmp_path: Path) -> tuple[BridgeService, SimpleNamespace]:
     # artifact policy. Simulate a platform where an approved installed runtime
     # is executable; dedicated tests prove upstream Mac apps remain source-only.
     bridge._jamulus_component_target = ComponentTarget.WINDOWS_X64
+    # This suite verifies binding and ownership against the published v0.27.1
+    # component contract; unsigned v0.27.2 remains intentionally unsupported.
+    bridge._runtime_webjam_version = mock.Mock(return_value="0.27.1")
     return bridge, settings
 
 

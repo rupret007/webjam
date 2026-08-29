@@ -1,12 +1,15 @@
-# Creator profiles — v0.27.1 implemented contract
+# Creator profiles — v0.27.2 implemented contract
 
-> Status: current post-v0.27.1 source. GitHub **Latest** is the unsigned/ad-hoc
+> Status: current unsigned v0.27.2 source. GitHub **Latest** is the unsigned/ad-hoc
 > v0.27.1 private test release. That download includes #47 but not later
 > post-tag source changes. Music, Podcast & Voice, and Review & Rehearsal are
 > implemented here; Art is on this source line and covered by automated tests.
 > Two-computer Art behavior is **NOT RUN**. This document supersedes the
 > earlier speculative cross-discipline MVP and describes only bounded current behavior. Physical
 > and platform-trust results remain **NOT RUN**.
+> These are implemented source contracts, not a usable v0.27.2 package claim.
+> Live Host/Join is source-eligible through the existing exact Jamulus 3.12.2
+> and 3.12.3 records; no v0.27.2 package or physical PASS exists.
 
 ## Product decision
 

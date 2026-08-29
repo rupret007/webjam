@@ -1,8 +1,10 @@
-# WebJam quick help — post-v0.27.1 source
+# WebJam quick help — v0.27.2 source
 
-> These labels describe current post-v0.27.1 source. GitHub **Latest** is the
+> These labels describe current unsigned v0.27.2 source. GitHub **Latest** is the
 > unsigned/ad-hoc v0.27.1 private test release. No physical PASS is claimed;
 > every v0.27 physical and release-decision row remains **NOT RUN**.
+> This map describes implemented UI. Unsigned v0.27.2 reuses the existing
+> exact Jamulus 3.12.2 and 3.12.3 compatibility records for Host/Join.
 
 | Need | Use |
 | --- | --- |

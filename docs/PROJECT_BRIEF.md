@@ -2,7 +2,8 @@
 
 **Review date:** 2026-08-27
 **Status:** unsigned/ad-hoc v0.27.1 is GitHub Latest release `377614785`.
-Current `master` is post-tag source and is not that package; every v0.27
+Current v0.27.2 source is post-tag and is not that package. Live Jamulus
+Host/Join reuses the existing exact 3.12.2 and 3.12.3 records; every v0.27
 physical/hardware gate is **NOT RUN**.
 
 ## Executive summary
@@ -106,7 +107,7 @@ the full contract.
 
 ## Current product line
 
-Current post-v0.27.1 source builds on the published v0.27.1 line with an accessible,
+Current v0.27.2 source builds on the published v0.27.1 line with an accessible,
 path-free Record Session Readiness sheet and stable logical-source identity
 from the frozen plan through capture, transfer, manifest, recovery, Studio, and
 exact repeated-take lanes. Every server, host, guest, and Shared Track source is

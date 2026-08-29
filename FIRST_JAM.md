@@ -1,10 +1,12 @@
-# First Session — WebJam post-v0.27.1 source
+# First Session — WebJam v0.27.2 source
 
-> This guide describes current post-v0.27.1 source. GitHub **Latest** is the
-> unsigned/ad-hoc, checksum-verifiable v0.27.1 private test release. Current
-> `master` is post-tag source and is not that package. Record every
+> This guide describes current unsigned v0.27.2 source. GitHub **Latest** is the
+> unsigned/ad-hoc, checksum-verifiable v0.27.1 private test release. This
+> candidate checkout is post-tag source and is not that package. Record every
 > v0.27 physical gate as **NOT RUN** until it is observed against exact release
 > bytes.
+> Host/Join is source-eligible through the exact baked Jamulus 3.12.2 and 3.12.3
+> records, but do not treat this checkout as a package or physical-test result.
 
 Before Host or Join, choose **Art** or **Music**. Those are the equal first
 clicks. Art then offers **Talk & make**, **Paint together**, or **Paint

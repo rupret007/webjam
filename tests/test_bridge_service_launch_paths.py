@@ -15,7 +15,7 @@ import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
-from core.jamulus_compatibility import ComponentTarget
+from core.jamulus_compatibility import ComponentTarget, JamulusRole
 from tests.support.component_store import isolated_component_store_root
 
 
@@ -67,6 +67,9 @@ def _make_bridge():
         },
         component_store_root=isolated_component_store_root(),
     )
+    # Exercise the approved v0.27.2 baked-component boundary. The sealed
+    # public catalog remains independently pinned to exact WebJam v0.22.5.
+    bridge._runtime_webjam_version = MagicMock(return_value="0.27.2")
     return bridge
 
 
@@ -849,6 +852,47 @@ class TestBundledJamulusInstaller(unittest.TestCase):
 
 
 class TestFindJamulusFallback(unittest.TestCase):
+    def test_v0272_source_resolves_the_bundled_client(self):
+        bridge = _make_bridge()
+        del bridge._runtime_webjam_version
+        bridge._jamulus_component_target = ComponentTarget.WINDOWS_X64
+        bridge.settings.jamulus_candidates = ["/nonexistent/custom"]
+        default_settings = MagicMock()
+        default_settings.jamulus_candidates = ["/nonexistent/default"]
+        with patch("core.settings.AppSettings", return_value=default_settings), patch(
+            "services.bridge_service._bundled_jamulus_candidate",
+            return_value=(
+                "/Applications/WebJam.app/Contents/Resources/"
+                "Jamulus.app/Contents/MacOS/Jamulus"
+            ),
+        ):
+            self.assertEqual(bridge._runtime_webjam_version(), "0.27.2")
+            self.assertEqual(
+                bridge._approved_embedded_runtime_versions(JamulusRole.CLIENT),
+                frozenset({"3.12.2", "3.12.3"}),
+            )
+            self.assertEqual(
+                bridge.find_jamulus(),
+                (
+                    "/Applications/WebJam.app/Contents/Resources/"
+                    "Jamulus.app/Contents/MacOS/Jamulus"
+                ),
+            )
+
+    def test_future_source_still_rejects_the_bundled_client(self):
+        bridge = _make_bridge()
+        bridge._runtime_webjam_version = MagicMock(return_value="0.27.3")
+        bridge._jamulus_component_target = ComponentTarget.WINDOWS_X64
+        with patch(
+            "services.bridge_service._bundled_jamulus_candidate",
+            return_value="/bundled/Jamulus",
+        ):
+            self.assertEqual(
+                bridge._approved_embedded_runtime_versions(JamulusRole.CLIENT),
+                frozenset(),
+            )
+            self.assertIsNone(bridge.find_jamulus())
+
     def test_user_candidate_wins_when_it_exists(self):
         import tempfile
         from pathlib import Path

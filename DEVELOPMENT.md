@@ -1,8 +1,13 @@
-# Developing WebJam v0.27.1
+# Developing WebJam v0.27.2
 
-> **Current source line:** this guide describes post-release v0.27.1 source.
-> The exact v0.27.1 tag is the unsigned/ad-hoc GitHub **Latest** private test
-> release; current `master` is post-tag source and is not that package.
+> **Current source line:** this guide describes the unsigned v0.27.2 source
+> candidate after the published v0.27.1 tag. The exact v0.27.1 tag is the
+> unsigned/ad-hoc GitHub **Latest** private test release; this candidate
+> checkout is source evidence and is not that package.
+> The existing Jamulus 3.12.2 and 3.12.3 compatibility records are explicitly
+> approved through v0.27.2. Live client/server selection and the component-input
+> build gate reuse those exact baked identities; the signed public catalog stays
+> sealed at exact WebJam v0.22.5.
 
 > **Release boundary:** only the exact tagged v0.27.1 assets and attached
 > `WebJam-v0.27.1-SHA256SUMS.txt` manifest are authoritative for the current
@@ -25,7 +30,7 @@ Use the repository virtual environment:
 For Studio arrangement changes, run the focused model, persistence, history,
 controller, renderer, comping, waveform, export, and Qt integration modules in
 addition to the full suite. The physical-output and external-editor gates in
-`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.27.1.
+`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.27.2.
 
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
@@ -198,13 +203,15 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree's package identity remains `0.27.1`, but current `master` is
-post-tag source and is not the published v0.27.1 package. GitHub Latest is the
-exact annotated v0.27.1 tag and its eight-asset release.
+This candidate checkout's package identity is unsigned `0.27.2`, but it is
+post-v0.27.1-tag source and is not the published v0.27.1 package. GitHub
+Latest is the exact annotated v0.27.1 tag and its eight-asset release.
 Do not change that tag, release, or assets, and never create a publisher with
 guessed tag objects, commits, CI runs, release IDs, body digests, inventory
-digests, asset IDs, sizes, or hashes. After an annotated `v0.27.1` tag and
-unique successful tag CI, publish that unsigned/ad-hoc draft as Latest.
+digests, asset IDs, sizes, or hashes. Existing tag CI may create a reviewable
+unsigned draft only after an annotated `v0.27.2` tag matches
+`webjam_qt.__version__` and exact `origin/master`. This source change does not
+create or push that tag.
 Do not invent a signed catalog; sealed v3 still authorizes 0.22.5 only.
 Windows remains unsigned and macOS remains ad-hoc signed and unnotarized.
 
