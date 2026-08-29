@@ -53,7 +53,7 @@
 > catalog remains sealed at v0.22.5. Shared Track play uses this Mac's BlackHole
 > + bundled headless. Every physical gate remains **NOT RUN**. Do not retag or
 > mutate v0.27.1, add a version-specific publisher, or restack #37. Current
-> `master` is three post-tag commits ahead and is not the release download.
+> `master` is post-tag source and is not the release download.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version

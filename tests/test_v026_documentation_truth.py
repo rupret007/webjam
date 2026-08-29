@@ -103,6 +103,10 @@ def test_current_guides_state_v0271_latest_and_physical_boundary_truthfully() ->
         "unpublished v0.27.1",
         "No v0.27.1 tag",
         "No v0.27.1 release ID",
+        "three commits ahead",
+        "three post-tag commits ahead",
+        "#50–#52",
+        "Current private test release: **v0.27.0**",
     ):
         assert stale_claim.casefold() not in combined.casefold(), stale_claim
 

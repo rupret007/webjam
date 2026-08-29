@@ -6,8 +6,8 @@ local playback and recording choices do not change the device, buffer, mix, or
 connection owned by Jamulus.
 
 > **Post-v0.27.1 source guide:** GitHub **Latest** is the unsigned/ad-hoc v0.27.1
-> private test release. Current `master` includes post-tag #50–#52 and is not
-> that package. Always verify an exact downloaded asset against its attached
+> private test release. Current `master` is post-tag source and is not that
+> package. Always verify an exact downloaded asset against its attached
 > checksum manifest before use.
 
 Windows packages are unsigned. Mac packages are ad-hoc signed and unnotarized.

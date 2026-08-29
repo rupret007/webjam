@@ -2,7 +2,7 @@
 
 > **Current source line:** this guide describes post-release v0.27.1 source.
 > The exact v0.27.1 tag is the unsigned/ad-hoc GitHub **Latest** private test
-> release; current `master` includes post-tag #50–#52 and is not that package.
+> release; current `master` is post-tag source and is not that package.
 
 > **Release boundary:** only the exact tagged v0.27.1 assets and attached
 > `WebJam-v0.27.1-SHA256SUMS.txt` manifest are authoritative for the current

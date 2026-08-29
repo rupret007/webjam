@@ -2,8 +2,8 @@
 
 **Review date:** 2026-08-27
 **Status:** unsigned/ad-hoc v0.27.1 is GitHub Latest release `377614785`.
-Current `master` includes post-tag #50–#52 and is not that package; every
-v0.27 physical/hardware gate is **NOT RUN**.
+Current `master` is post-tag source and is not that package; every v0.27
+physical/hardware gate is **NOT RUN**.
 
 ## Executive summary
 
