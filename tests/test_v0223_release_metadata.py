@@ -1,4 +1,4 @@
-"""Published v0.27.1 Latest plus post-tag source-identity contracts."""
+"""Published v0.27.1 Latest plus unsigned v0.27.2 source contracts."""
 
 from __future__ import annotations
 
@@ -7,7 +7,11 @@ import json
 import re
 from pathlib import Path
 
-from core.jamulus_compatibility import ComponentTarget, JamulusRole
+from core.jamulus_compatibility import (
+    ComponentTarget,
+    JamulusRole,
+    official_jamulus_compatibility_registry,
+)
 from tools.create_jamulus_component_catalog import build_payload
 from tools.runtime_dependency_policy import application_version
 
@@ -32,15 +36,15 @@ COMPONENT_UPDATE_SOURCE = (ROOT / "services" / "jamulus_component_update.py").re
 )
 
 
-def test_v0271_is_published_latest_while_master_is_post_tag_source() -> None:
+def test_v0271_is_latest_while_candidate_reports_unsigned_v0272_source() -> None:
     match = re.search(
         r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$',
         VERSION_SOURCE,
         re.MULTILINE,
     )
     assert match is not None
-    assert match.group(1) == "0.27.1"
-    assert application_version() == "0.27.1"
+    assert match.group(1) == "0.27.2"
+    assert application_version() == "0.27.2"
     assert README.startswith(
         "# WebJam\n\n## Native creator collaboration and multitrack recording"
     )
@@ -61,8 +65,10 @@ def test_v0271_is_published_latest_while_master_is_post_tag_source() -> None:
     )
     assert "v0.24.0 bytes" in normalized
     assert "Unsigned/ad-hoc v0.27.1 GitHub Latest private test release" in normalized
-    assert "Current source boundary:" in normalized
-    assert "post-tag source" in normalized
+    assert "Candidate source boundary:" in normalized
+    assert "reports unsigned v0.27.2" in normalized
+    assert "post-v0.27.1-tag source" in normalized
+    assert "No v0.27.2 tag, draft, release, package, checksum" in normalized
     assert "not in the v0.27.1 download" in normalized
     assert "commits ahead" not in normalized
     assert "release ID `377614785`" in normalized
@@ -91,27 +97,35 @@ def test_v0271_is_published_latest_while_master_is_post_tag_source() -> None:
 def test_runtime_sbom_names_the_exact_desktop_version() -> None:
     component = SBOM["metadata"]["component"]
     assert component == {
-        "bom-ref": "pkg:generic/webjam@0.27.1",
+        "bom-ref": "pkg:generic/webjam@0.27.2",
         "name": "WebJam",
-        "purl": "pkg:generic/webjam@0.27.1",
+        "purl": "pkg:generic/webjam@0.27.2",
         "type": "application",
-        "version": "0.27.1",
+        "version": "0.27.2",
     }
 
 
 def test_component_sbom_names_the_exact_desktop_version() -> None:
     component = COMPONENT_SBOM["metadata"]["component"]
     assert component == {
-        "bom-ref": "pkg:github/rupret007/webjam@0.27.1",
+        "bom-ref": "pkg:generic/webjam@0.27.2",
         "group": "rupret007",
         "name": "WebJam",
-        "purl": "pkg:github/rupret007/webjam@0.27.1",
+        "purl": "pkg:generic/webjam@0.27.2",
         "type": "application",
-        "version": "0.27.1",
+        "version": "0.27.2",
     }
+    properties = {
+        item["name"]: item["value"]
+        for item in COMPONENT_SBOM["metadata"]["properties"]
+    }
+    assert properties["webjam:current-source-authorization"] == (
+        "blocked-for-webjam-0.27.2-no-compatible-range"
+    )
+    assert properties["webjam:build-eligibility"] == "blocked"
 
 
-def test_candidate_catalog_payload_tracks_v0271_without_rewriting_v0225() -> None:
+def test_candidate_payload_exposes_blocked_v0272_range_mismatch() -> None:
     # Exercise deterministic source metadata with an unpublished, synthetic
     # next sequence. Sequence 6 remains the sealed v0.22.5 public catalog and
     # is never reused for this in-memory payload.
@@ -122,7 +136,7 @@ def test_candidate_catalog_payload_tracks_v0271_without_rewriting_v0225() -> Non
         validity_days=30,
     )
     components = payload["components"]
-    assert payload["webjam_version"] == "0.27.1"
+    assert payload["webjam_version"] == "0.27.2"
     assert payload["sequence"] == synthetic_sequence
     assert isinstance(components, list)
     expected = {
@@ -140,35 +154,43 @@ def test_candidate_catalog_payload_tracks_v0271_without_rewriting_v0225() -> Non
     assert all(
         component["webjam_range"]["maximum"] == "0.27.1" for component in components
     )
+    assert not any(
+        entry.supports_webjam(payload["webjam_version"])
+        for entry in official_jamulus_compatibility_registry().entries
+    )
+    assert "assert all(entry.supports_webjam(__version__)" in CI_WORKFLOW
+    assert "not build-eligible" in (
+        ROOT / "packaging" / "windows" / "README-WINDOWS.txt"
+    ).read_text(encoding="utf-8")
 
 
-def test_current_guides_name_v0271_latest_and_keep_prior_history() -> None:
+def test_current_guides_separate_v0272_source_from_v0271_latest() -> None:
     expected = {
-        "ARCHITECTURE.md": "# WebJam architecture — post-v0.27.1 source",
+        "ARCHITECTURE.md": "# WebJam architecture — v0.27.2 source",
         "CHANGELOG.md": (
             "## [0.25.0] — Creator profiles and authoritative multitrack "
             "private test candidate"
         ),
         "CLOSED_PILOT_PLAYBOOK.md": "v0.22.5 private test candidate",
         "CREATIVE_MODES_MVP_SPEC.md": (
-            "# Creator profiles — v0.27.1 implemented contract"
+            "# Creator profiles — v0.27.2 implemented contract"
         ),
-        "DEVELOPMENT.md": "# Developing WebJam v0.27.1",
-        "FIRST_JAM.md": "# First Session — WebJam post-v0.27.1 source",
-        "HELP_ROUTING_MAP.md": "# WebJam help routing — post-v0.27.1 source",
-        "QUICK_HELP_MAP.md": "# WebJam quick help — post-v0.27.1 source",
+        "DEVELOPMENT.md": "# Developing WebJam v0.27.2",
+        "FIRST_JAM.md": "# First Session — WebJam v0.27.2 source",
+        "HELP_ROUTING_MAP.md": "# WebJam help routing — v0.27.2 source",
+        "QUICK_HELP_MAP.md": "# WebJam quick help — v0.27.2 source",
         "README.md": "Unsigned/ad-hoc v0.27.1 GitHub Latest private test release",
-        "README_SIMPLE.md": "use the exact release tag and attached checksum manifest",
-        "RECORDING_AND_STUDIO.md": "# Recording and Studio — post-v0.27.1 source",
+        "README_SIMPLE.md": "unsigned v0.27.2 source candidate",
+        "RECORDING_AND_STUDIO.md": "# Recording and Studio — v0.27.2 source",
         "SECURITY.md": "GitHub **Latest** is the unsigned/ad-hoc v0.27.1",
-        "TEST_PROCEDURE.md": "# WebJam post-v0.27.1 source test procedure",
-        "USER_GUIDE.md": "# WebJam creator guide — post-v0.27.1 source",
-        "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.27.1 UX acceptance checklist",
+        "TEST_PROCEDURE.md": "# WebJam v0.27.2 source test procedure",
+        "USER_GUIDE.md": "# WebJam creator guide — v0.27.2 source",
+        "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.27.2 source UX acceptance checklist",
         "V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md": (
             "v0.25.0 was GitHub **Latest**"
         ),
         "WEBEX_AUDIO_MODES.md": (
-            "# Meeting-platform companion guidance — post-v0.27.1 source"
+            "# Meeting-platform companion guidance — v0.27.2 source"
         ),
         "docs/DESKTOP_RELEASE_RUNBOOK.md": (
             "v0.27.1 published testing boundary"
@@ -176,25 +198,27 @@ def test_current_guides_name_v0271_latest_and_keep_prior_history() -> None:
         "docs/JAMULUS_COMPONENT_RELEASE_RUNBOOK.md": (
             "v0.27.1 published fallback-only desktop state"
         ),
-        "docs/MERGE_AND_RELEASE.md": "Latest download:** unsigned/ad-hoc v0.27.1",
-        "docs/PROJECT_BRIEF.md": "v0.27.1 is GitHub Latest release `377614785`",
+        "docs/MERGE_AND_RELEASE.md": "Current source:** unsigned v0.27.2",
+        "docs/PROJECT_BRIEF.md": "Current v0.27.2 source",
         "docs/README.md": (
-            "Current testing release:** GitHub **Latest** is the unsigned/ad-hoc v0.27.1"
+            "Candidate source:** unsigned v0.27.2"
         ),
-        "ios/README.md": "Post-v0.27.1 source",
+        "ios/README.md": "v0.27.2 source candidate",
         "requirements-lock/README.md": "The published v0.27.1 tag bound",
         "packaging/windows/README-WINDOWS.txt": (
-            "WebJam v0.27.1 private test candidate for Windows x64"
+            "WebJam v0.27.2 unsigned source candidate — not build-eligible"
         ),
         "packaging/linux/README-LINUX.txt": (
-            "WEBJAM v0.27.1 PRIVATE TEST CANDIDATE FOR LINUX x64"
+            "WEBJAM v0.27.2 UNSIGNED SOURCE CANDIDATE — NOT BUILD-ELIGIBLE"
         ),
-        "packaging/macos/READ ME FIRST.txt": ("WEBJAM v0.27.1 PRIVATE TEST CANDIDATE"),
+        "packaging/macos/READ ME FIRST.txt": (
+            "WEBJAM v0.27.2 UNSIGNED SOURCE CANDIDATE — NOT BUILD-ELIGIBLE"
+        ),
         "WEBJAM_V0225_DEMO_READINESS.md": "# WebJam v0.22.5 two-musician demo readiness",
         "V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md": (
             "Immutable historical release `367773776`, tag `v0.23.0`"
         ),
-        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": "Post-v0.27.1 source guide",
+        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": "v0.27.2 source guide",
     }
     for relative_path, marker in expected.items():
         assert marker in (ROOT / relative_path).read_text(encoding="utf-8")
@@ -257,6 +281,9 @@ def test_v0271_uses_tag_ci_latest_without_invented_catalog() -> None:
 def test_changelog_marks_v0271_published_and_keeps_prior_history() -> None:
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "## [Unreleased]" in changelog
+    assert "## [0.27.2] — Unsigned source candidate (unreleased)" in changelog
+    assert "No annotated v0.27.2 tag" in changelog
+    assert "this source change does not create or push that tag" in changelog
     assert "## [0.27.1] — Unsigned/ad-hoc private test release (2026-08-27)" in changelog
     assert "release `377614785`" in changelog
     assert "WebJam-v0.27.1-SHA256SUMS.txt" in changelog
@@ -826,13 +853,16 @@ def test_v0240_publication_evidence_is_exact_and_current_guides_are_post_release
         "unpublished v0.27.1",
         "No v0.27.1 release ID",
         "No v0.27.1 tag",
+        "`master` still reports v0.27.1",
+        "source tree's package identity remains `0.27.1`",
+        "Current source:** post-release v0.27.1",
     )
     for relative_path in current_documents:
         content = (ROOT / relative_path).read_text(encoding="utf-8")
         assert not any(marker in content for marker in forbidden), relative_path
 
 
-def test_candidate_package_copy_is_explicit_about_platform_trust() -> None:
+def test_blocked_source_copy_is_explicit_about_platform_trust() -> None:
     windows_readme = (ROOT / "packaging" / "windows" / "README-WINDOWS.txt").read_text(
         encoding="utf-8"
     )
@@ -840,15 +870,16 @@ def test_candidate_package_copy_is_explicit_about_platform_trust() -> None:
         encoding="utf-8"
     )
     runbook = (ROOT / "docs" / "DESKTOP_RELEASE_RUNBOOK.md").read_text(encoding="utf-8")
-    assert "unsigned private test candidate" in windows_readme
-    assert "ad-hoc signed and is NOT notarized" in macos_readme
+    assert "unsigned source candidate — not build-eligible" in windows_readme
+    assert "ad-hoc signed" in macos_readme
+    assert "NOT notarized" in macos_readme
     for package_copy in (windows_readme, macos_readme):
         normalized = " ".join(package_copy.split())
-        assert "PRIVATE TEST CANDIDATE" in normalized
-        assert "exact filename appears" in normalized
+        assert "no package is authorized" in normalized.casefold()
+        assert "exact release manifest exists" in normalized
         assert "Do not use the published v0.27.1 checksum manifest" in normalized
         assert "sealed v0.22.5" in normalized
-        assert "embedded Jamulus 3.12.2 fallback" in normalized
+        assert "Presence of embedded 3.12.2 bytes does not authorize" in normalized
     inventory = runbook.split("The exact v0.22.4 published inventory is:\n", 1)[
         1
     ].split("\nThe separate `jamulus-components-v2`", 1)[0]

@@ -1,8 +1,10 @@
-# WebJam help routing — post-v0.27.1 source
+# WebJam help routing — v0.27.2 source
 
-> These labels describe current post-v0.27.1 source. GitHub **Latest** is the
+> These labels describe current unsigned v0.27.2 source. GitHub **Latest** is the
 > unsigned/ad-hoc v0.27.1 private test release. No physical PASS is claimed;
 > every v0.27 physical and release-decision row remains **NOT RUN**.
+> For runnable live-audio help, use verified v0.27.1 release bytes. Unsigned
+> v0.27.2 source rejects Jamulus client/server selection by design.
 
 | Creator says | Answer / action |
 | --- | --- |

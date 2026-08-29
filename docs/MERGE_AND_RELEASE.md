@@ -1,7 +1,11 @@
 # Merge and release map
 
-> **Current source:** post-release v0.27.1 (`webjam_qt.__version__`). This
-> checkout is post-tag source and is not a package.
+> **Current source:** unsigned v0.27.2 (`webjam_qt.__version__`). This checkout
+> is post-v0.27.1-tag source and is not a package. No v0.27.2 tag, draft,
+> release, checksum manifest, or physical PASS exists.
+> Every approved Jamulus range ends at v0.27.1, so v0.27.2 live Host/Join and
+> required component-input CI fail closed. This change is not mergeable or
+> build-eligible until separate compatibility evidence is reviewed.
 >
 > **Latest download:** unsigned/ad-hoc v0.27.1 release `377614785`, exact tag
 > commit `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`, with seven packages plus
@@ -16,8 +20,9 @@ The record of the finished product land and the honest boundaries that remain.
 already on `master`; #17 merged 2026-08-22 as `5ca6ba5`. There is no open
 product branch.
 
-`master` is the default branch and the only ship target; `main` was
-fast-forwarded to it. Nothing is released until this repository's own suite is
+`master` is the default branch and the only ship target. `main` is a stale,
+non-authoritative mirror and must not be described as synchronized. Nothing is
+released until this repository's own suite is
 green on the landed `master` commit. Fail closed: a red required job stops the
 round, and a gate with no evidence stays **NOT RUN**. **NOT RUN** is not a
 failure claim.
@@ -97,10 +102,13 @@ authorizes this exact WebJam version; sealed v3 still targets 0.22.5 only
 (observed v0.27.0 failure `33036413984`). Do not invent that catalog, mutate
 the v0.27.1 release, or write a parallel runbook.
 
-No next round is scheduled. A later release waits until Jeff names it; it does
-not wait on #17, which is already on `master`. When Jeff names one, run it on
-one `master` commit — Jeff merges any PR that round needs first. Every job
-below must be green in the same round:
+Jeff has named unsigned v0.27.2 as the next source identity. A later v0.27.2
+release still waits until Jeff names it and does not wait on #17, which is
+already on `master`. This source bump does not tag, draft, publish, or mutate a
+release. Existing tag CI may create a reviewable unsigned draft only after an
+annotated `v0.27.2` tag matches `webjam_qt.__version__` and exact
+`origin/master`; Bob handles that later, and Jeff merges any release PR before
+the tag is created. Every job below must be green in the same round:
 
 - `test` — ruff, dependency audits, `compileall`, the UX smoke gate, and every
   `tests/test_*.py` module

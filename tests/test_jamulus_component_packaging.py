@@ -355,7 +355,7 @@ def test_release_catalog_payload_is_exact_expiring_and_excludes_headless() -> No
         validity_days=30,
     )
     assert payload["sequence"] == 17
-    assert payload["webjam_version"] == "0.27.1"
+    assert payload["webjam_version"] == "0.27.2"
     assert payload["issued_at"] == "2026-07-28T20:00:00Z"
     assert payload["expires_at"] == "2026-08-27T20:00:00Z"
     components = payload["components"]

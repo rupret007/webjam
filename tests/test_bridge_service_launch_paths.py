@@ -15,7 +15,7 @@ import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
-from core.jamulus_compatibility import ComponentTarget
+from core.jamulus_compatibility import ComponentTarget, JamulusRole
 from tests.support.component_store import isolated_component_store_root
 
 
@@ -67,6 +67,10 @@ def _make_bridge():
         },
         component_store_root=isolated_component_store_root(),
     )
+    # These launch-path tests exercise the immutable v0.27.1 component
+    # contract. Unsigned v0.27.2 source deliberately remains outside that
+    # published compatibility range and is covered by the release tests.
+    bridge._runtime_webjam_version = MagicMock(return_value="0.27.1")
     return bridge
 
 
@@ -849,6 +853,27 @@ class TestBundledJamulusInstaller(unittest.TestCase):
 
 
 class TestFindJamulusFallback(unittest.TestCase):
+    def test_unsigned_source_rejects_published_client_compatibility(self):
+        bridge = _make_bridge()
+        del bridge._runtime_webjam_version
+        bridge._jamulus_component_target = ComponentTarget.WINDOWS_X64
+        bridge.settings.jamulus_candidates = ["/nonexistent/custom"]
+        default_settings = MagicMock()
+        default_settings.jamulus_candidates = ["/nonexistent/default"]
+        with patch("core.settings.AppSettings", return_value=default_settings), patch(
+            "services.bridge_service._bundled_jamulus_candidate",
+            return_value=(
+                "/Applications/WebJam.app/Contents/Resources/"
+                "Jamulus.app/Contents/MacOS/Jamulus"
+            ),
+        ):
+            self.assertEqual(bridge._runtime_webjam_version(), "0.27.2")
+            self.assertEqual(
+                bridge._approved_embedded_runtime_versions(JamulusRole.CLIENT),
+                frozenset(),
+            )
+            self.assertIsNone(bridge.find_jamulus())
+
     def test_user_candidate_wins_when_it_exists(self):
         import tempfile
         from pathlib import Path

@@ -1,9 +1,9 @@
 # Pocket Stage iPhone app
 
-> **Post-v0.27.1 source:** GitHub **Latest** is the unsigned/ad-hoc v0.27.1
-> desktop private test release, but it contains no installable iPhone kit.
-> Current setup source is post-tag; physical iPhone installation and pairing
-> remain **NOT RUN**.
+> **v0.27.2 source candidate:** GitHub **Latest** is the unsigned/ad-hoc
+> v0.27.1 desktop private test release, but it contains no installable iPhone
+> kit. Current setup source is post-tag; physical iPhone installation and
+> pairing remain **NOT RUN**.
 
 This folder contains a reproducible XcodeGen app specification, the complete
 iPhone SwiftUI source, and a strict cross-platform protocol package. Generated

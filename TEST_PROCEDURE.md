@@ -1,12 +1,15 @@
-# WebJam post-v0.27.1 source test procedure
+# WebJam v0.27.2 source test procedure
 
 > GitHub **Latest** is the unsigned/ad-hoc v0.27.1 private test release. Current
-> `master` is post-tag source, not that package. No v0.27.1 physical result
+> candidate source reports unsigned v0.27.2, not that package. No v0.27.2 physical result
 > exists; every v0.27 physical, credentialed, signing, and platform-trust gate
 > is **NOT RUN**. Published v0.27.1 has exact tag, packages, and checksum
 > manifest; its tag workflow is red at the duplicate-release publisher.
 > Publication did not create
 > physical PASS.
+> Required component-input CI also fails closed for unsigned v0.27.2 because
+> every approved Jamulus range ends at v0.27.1. Do not run live or physical
+> steps until separate compatibility evidence is reviewed.
 
 ## Scope
 

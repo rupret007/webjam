@@ -71,7 +71,7 @@ def test_current_candidate_identity_cannot_be_confused_with_old_release() -> Non
     match = re.search(r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$', VERSION_SOURCE, re.M)
     assert match is not None
     version = match.group(1)
-    assert version == "0.27.1"
+    assert version == "0.27.2"
     assert version != "0.22.5"  # Immutable historical release.
     assert PROJECT_README.startswith(
         "# WebJam\n\n## Native creator collaboration and multitrack recording"
@@ -709,9 +709,10 @@ def test_release_refuses_existing_matches_without_unavailable_admin_scope() -> N
     assert "GITHUB_TOKEN` has no Administration permission" in DESKTOP_RELEASE_RUNBOOK
 
 
-def test_linux_release_claims_only_the_certified_ubuntu_target() -> None:
+def test_linux_candidate_names_only_the_intended_ubuntu_target() -> None:
     claims = "\n".join((LINUX_README, PROJECT_README, THIRD_PARTY_NOTICES))
-    assert "certified only for 64-bit Ubuntu 22.04" in LINUX_README
+    assert "intended target is 64-bit Ubuntu" in LINUX_README
+    assert "22.04; no v0.27.2 Linux build is currently certified" in LINUX_README
     assert "Ubuntu 22.04 x64 ZIP" in PROJECT_README
     assert "certified only for Ubuntu 22.04 x64" in THIRD_PARTY_NOTICES
     assert "22.04 or newer" not in claims

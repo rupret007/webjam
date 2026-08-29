@@ -1,9 +1,11 @@
-# WebJam architecture — post-v0.27.1 source
+# WebJam architecture — v0.27.2 source
 
-> This document describes current post-v0.27.1 source. GitHub **Latest** is the
+> This document describes current unsigned v0.27.2 source. GitHub **Latest** is the
 > unsigned/ad-hoc v0.27.1 release from exact tag commit
-> `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`. Current `master` is post-tag
-> source and is not that download. Source text is not package evidence.
+> `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`. This candidate checkout is
+> post-tag source and is not that download. Source text is not package evidence.
+> Approved Jamulus compatibility stops at v0.27.1, so v0.27.2 source rejects
+> client/server runtime selection and cannot pass the package build gate.
 > All v0.27 physical, credentialed, signing, and platform-trust gates stay
 > **NOT RUN**.
 
@@ -66,6 +68,10 @@ migration, rendering, recording, and trust boundaries are defined in
 The desktop package always contains its reviewed Jamulus 3.12.2 fallback.
 Independently updated Jamulus client/server packages are executable supply-chain
 inputs, so availability alone is never approval:
+
+For unsigned v0.27.2 source, presence is specifically not approval: every
+immutable registry range ends at v0.27.1, leaving client/server resolution
+empty until separate compatibility evidence is reviewed.
 
 ```text
 separate component release
@@ -176,7 +182,7 @@ needed. An unknown provider's URL and hostname are fully redacted from logs,
 mappings, diagnostics, and Support Bundles; generic acceptance never promotes
 it to natively verified status.
 
-Current post-v0.27.1 source carries forward one canonical **Shared Track** workflow; existing
+Current v0.27.2 source carries forward one canonical **Shared Track** workflow; existing
 `ReferenceTrack*` types, paths, tests, and the ADR remain compatibility names
 for the established route engine, not a second live feature. Shared Track
 separates source and route authority. A host can load, decode the first bounded
@@ -286,7 +292,7 @@ participants into session-local slots. Neither surface receives notes, titles,
 participant names, channel IDs, invitations, addresses, device names, paths,
 tokens, credentials, or raw exceptions.
 
-No model SDK or cloud assistant is part of current post-v0.27.1 source. A future model-assisted
+No model SDK or cloud assistant is part of current v0.27.2 source. A future model-assisted
 creative feature may be considered only as explicit opt-in, off the real-time
 path, read-only, privacy-gated, unable to issue session commands or create
 operational facts, and visibly labeled as a suggestion. The deterministic
@@ -499,7 +505,7 @@ of the same immutable take/project boundary. A finalized take is eligible for
 Studio only after its required manifest/media checks settle. Studio track
 headers distinguish participant, Shared Track, and Local Original sources while
 retaining the existing arrangement, comping, mixer, autosave, recovery, and
-export systems; current post-v0.27.1 source does not introduce another editor or duplicate audio
+export systems; current v0.27.2 source does not introduce another editor or duplicate audio
 engine.
 
 The guest projection is host-state continuity, not distributed local playback,

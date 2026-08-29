@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.jamulus_compatibility import ComponentTarget
+from core.jamulus_compatibility import ComponentTarget, JamulusRole
 from tests.support.component_store import isolated_component_store_root
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -65,6 +65,10 @@ def _make_bridge(tmp: str):
     # binaries are executable; upstream macOS apps are source evidence only.
     # Dedicated tests cover the release-integrated Mac fallback.
     bridge._jamulus_component_target = ComponentTarget.WINDOWS_X64
+    # Keep process-supervision fixtures on the published catalog-supported
+    # identity. Unsigned v0.27.2 source must fail closed until separately
+    # authorized compatibility evidence exists.
+    bridge._runtime_webjam_version = MagicMock(return_value="0.27.1")
     bridge.find_jamulus_server = MagicMock(
         return_value="/Applications/JamulusServer.app/Contents/MacOS/JamulusServer"
     )
@@ -586,6 +590,26 @@ class TestHostedServerDiscovery(unittest.TestCase):
                 result = bridge.find_jamulus_server_with_source()
             self.assertEqual(result, ("/bundled/JamulusServer", "bundled"))
             bundled.assert_called_once()
+
+    def test_unsigned_source_rejects_published_server_compatibility(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = self._real_discovery_bridge(tmp)
+            del bridge._runtime_webjam_version
+            with patch.object(Path, "is_file", return_value=True), patch(
+                "services.bridge_service._bundled_jamulus_server_candidate",
+                return_value="/bundled/JamulusServer",
+            ):
+                self.assertEqual(bridge._runtime_webjam_version(), "0.27.2")
+                self.assertEqual(
+                    bridge._approved_embedded_runtime_versions(
+                        JamulusRole.SERVER
+                    ),
+                    frozenset(),
+                )
+                self.assertEqual(
+                    bridge.find_jamulus_server_with_source(),
+                    (None, "missing"),
+                )
 
     def test_bundled_server_is_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:

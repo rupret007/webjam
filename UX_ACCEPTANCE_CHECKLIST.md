@@ -1,9 +1,12 @@
-# WebJam v0.27.1 UX acceptance checklist
+# WebJam v0.27.2 source UX acceptance checklist
 
-> This checklist describes current post-v0.27.1 source. The unsigned/ad-hoc
+> This checklist describes current unsigned v0.27.2 source. The unsigned/ad-hoc
 > v0.27.1 release is GitHub **Latest** for private testing.
-> Every physical and platform-trust gate stays **NOT RUN** until recorded
-> against an exact v0.27.1 asset.
+> Historical v0.27.1 results remain bound to exact v0.27.1 assets. Every
+> v0.27.2 physical and platform-trust gate is **NOT RUN** and cannot inherit
+> that evidence.
+> Unsigned v0.27.2 is source-only and compatibility-blocked for live Host/Join;
+> this is not a runnable-candidate checklist until that evidence changes.
 
 ## Unified guidance
 

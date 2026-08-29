@@ -1,11 +1,15 @@
-# Recording and Studio — post-v0.27.1 source
+# Recording and Studio — v0.27.2 source
 
-> This document describes current post-v0.27.1 source. GitHub **Latest** is the
-> unsigned/ad-hoc v0.27.1 private test release; current `master` is not that
+> This document describes current unsigned v0.27.2 source. GitHub **Latest** is the
+> unsigned/ad-hoc v0.27.1 private test release; this candidate checkout is not that
 > package.
-> Physical recording, Shared Track audibility/isolation, playback, recovery,
-> long-session, and external-editor gates remain **NOT RUN** until exact
-> v0.27.1 package evidence is recorded.
+> Live Jamulus recording is compatibility-blocked in unsigned v0.27.2 source;
+> the immutable approved ranges end at v0.27.1. Standalone local Studio is a
+> separate audio path, but no v0.27.2 package evidence exists.
+> Historical v0.27.1 results remain bound to exact v0.27.1 packages. Every
+> v0.27.2 physical recording, Shared Track audibility/isolation, playback,
+> recovery, long-session, and external-editor gate is **NOT RUN** and cannot
+> inherit v0.27.1 evidence.
 
 Music and Podcast & Voice are GA creator profiles with live recording,
 completed-take editing/mixing/export, and standalone local projects. Review &
@@ -59,7 +63,7 @@ source count. Finalization rechecks those exact facts. A reconnect, changed
 topology, missing/extra source, or substituted Shared Track cannot be accepted
 as the planned take.
 
-Current post-v0.27.1 source shows this frozen plan in one accessible,
+Current v0.27.2 source shows this frozen plan in one accessible,
 path-free **Record Session Readiness** sheet before any recorder, local input
 stream, or Shared Track playback is armed. Each exact server, Local Original,
 and Shared Track row identifies the participant/source, mono or stereo format,
@@ -246,7 +250,7 @@ select a comp range. A newer range cleanly splits prior overlapping selections
 and uses short equal-power boundaries. Removing a lane removes only its Studio
 inventory and comp choices; the repeated take remains unchanged in Takes.
 
-For a newly completed editable Music or Podcast & Voice take, current post-v0.27.1 source also
+For a newly completed editable Music or Podcast & Voice take, current v0.27.2 source also
 stacks every provably safe earlier counterpart automatically. The gate requires
 the same session and project sample rate, a different complete or explicitly
 recovered take, one unique stable logical-source ID on each side, matching
@@ -379,7 +383,7 @@ requested operation.
 
 Export never rewrites the original take.
 
-## Post-v0.27.1 source evidence boundary
+## v0.27.2 source evidence boundary
 
 Automated source tests can establish state-machine, identity, source
 validation, timing-model, persistence/recovery, rendering, waveform, export,
@@ -387,7 +391,7 @@ privacy, and headless UI behavior. They cannot establish acoustic audibility,
 latency, direct-monitor isolation, interface recovery, or how a packaged build
 feels to creators.
 
-For current post-v0.27.1 source, two-machine audio, Shared Track audibility and independent mix,
+For current v0.27.2 source, two-machine audio, Shared Track audibility and independent mix,
 count-in/record alignment, authoritative server stems, Local Original transfer,
 hardware interruption, long recording, Studio playback, external-editor
 import, packaged accessibility, SmartScreen, Gatekeeper, signing, and

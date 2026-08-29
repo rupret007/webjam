@@ -22,8 +22,12 @@ pretending to own systems that remain independent.
 > but the workflow is **not publish-green**: its publisher failed closed because
 > a release already used `v0.27.1`. Do not retag or mutate that release.
 
-> **Current source boundary:** `master` still reports v0.27.1 but is
-> post-tag source. Changes after the v0.27.1 tag are
+> **Candidate source boundary:** this checkout reports unsigned v0.27.2 and is
+> post-v0.27.1-tag source. No v0.27.2 tag, draft, release, package, checksum,
+> or physical PASS exists. The approved Jamulus ranges stop at v0.27.1, so
+> v0.27.2 source deliberately fails closed for live Host/Join and the required
+> component-input build gate. It is not a usable package until separate
+> compatibility evidence is reviewed. Changes after the v0.27.1 tag are
 > not in the v0.27.1 download. This checkout and branch artifacts are source
 > evidence, not
 > release packages. Shared Track play uses this Mac's official BlackHole
@@ -45,7 +49,7 @@ New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 | --- | --- |
 | Product | Creator-facing desktop conductor around Jamulus, optional external meeting conversation, Studio, and Pocket Stage |
 | Published line | Unsigned/ad-hoc v0.27.1 GitHub Latest private test release; verify its checksum manifest |
-| Current source line | Post-v0.27.1 source; Music and Podcast & Voice are GA profiles, Review & Rehearsal is Preview |
+| Current source line | Unsigned v0.27.2 source candidate; live Host/Join and package builds are compatibility-blocked |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -93,7 +97,7 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
 
 ## Creator profiles
 
-Current post-v0.27.1 source applies one saved creator profile across launch,
+Current v0.27.2 source applies one saved creator profile across launch,
 Host/Join, readiness, the live surface, recording, Studio, session records, and
 new standalone projects:
 
@@ -198,6 +202,12 @@ recovery controls. On macOS, the verified current and previous managed copies
 remain available for rollback. Windows and Linux keep installation OS-owned
 and retain the embedded 3.12.2 fallback; they do not claim an app-managed
 previous-version rollback.
+
+That fallback statement applies to the released v0.27.1 line. The unsigned
+v0.27.2 source identity is outside every immutable approved WebJam range, so it
+must reject the bundled, installed, and managed Jamulus client/server until a
+separate compatibility review supplies new evidence. Presence of fallback
+bytes is not authorization.
 
 On macOS, WebJam shows the exact packaged Jamulus license before accepting the
 official disk image's agreement, then preserves and verifies the upstream
@@ -457,7 +467,7 @@ preserves the compatible two-mono-input default. Disabling or opting out of
 every configured row records no host Local Original. The input-map editor never
 changes Jamulus music settings.
 
-After that choice, current post-v0.27.1 source opens one path-free **Record
+After that choice, current v0.27.2 source opens one path-free **Record
 Session Readiness** sheet before it arms anything. The sheet lists every exact
 planned server track, Local Original, and Shared Track with its source label,
 mono/stereo format, required/optional status, current readiness, and a bounded
@@ -540,7 +550,7 @@ inventing guest evidence. Studio adds an undoable **Reset Mix** that preserves
 export inclusion, keeps overload indicators latched for the playback epoch,
 and automatically selects and opens a durably finalized take.
 
-The current post-v0.27.1 Studio source view distinguishes plan-bound Jamulus server,
+The current v0.27.2 Studio source view distinguishes plan-bound Jamulus server,
 Local Original, and Shared Track lanes and can show their current state, level,
 reported dropouts, and overload warning. A malformed, legacy, or duplicate
 projection is cleared rather than presented as authoritative source truth.
@@ -635,11 +645,13 @@ release remains the current downloadable pointer, but neither that pointer nor
 the green post-tag `master` workflows may be rewritten as a successful release
 round.
 
-The current `master` tree still reports **v0.27.1** but is post-tag source.
+This candidate checkout reports unsigned **v0.27.2** but is post-v0.27.1-tag source.
 Changes after the released tag are not in the v0.27.1 packages. Shared Track
 play uses this Mac's BlackHole route and the
 bundled headless client; the signed catalog remains sealed at exact WebJam
-v0.22.5 and does not authorize v0.27.1. Every physical result remains
+v0.22.5 and does not authorize v0.27.2. The immutable Jamulus compatibility
+registry also ends at v0.27.1, so live Host/Join and the required package-build
+gate fail closed for this source candidate. Every physical result remains
 **NOT RUN**.
 
 The prior
@@ -806,7 +818,7 @@ promote a package or claim audibility.
 
 - [Documentation index](docs/README.md)
 - [Project brief for technical stakeholders](docs/PROJECT_BRIEF.md)
-- [v0.27.1 release and post-release source notes](CHANGELOG.md)
+- [v0.27.1 release and unsigned v0.27.2 source notes](CHANGELOG.md)
 - [v0.26.0 creator-multitrack physical checklist — release identity verified; physical rows NOT RUN](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.25.0 creator-multitrack physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.24.0 recording-first physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)

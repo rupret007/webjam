@@ -1,4 +1,4 @@
-"""Published v0.27.1 and post-tag documentation truth contracts."""
+"""Published v0.27.1 and unsigned v0.27.2 source truth contracts."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def _heading_anchors(text: str) -> set[str]:
     return anchors
 
 
-def test_current_guides_state_v0271_latest_and_physical_boundary_truthfully() -> (
+def test_current_guides_separate_v0271_latest_from_v0272_source_truthfully() -> (
     None
 ):
     for relative_path in (
@@ -110,13 +110,13 @@ def test_current_guides_state_v0271_latest_and_physical_boundary_truthfully() ->
     ):
         assert stale_claim.casefold() not in combined.casefold(), stale_claim
 
-    assert "post-v0.27.1" in combined.casefold()
+    assert "v0.27.2 source" in combined.casefold()
     assert "not publish-green" in combined.casefold()
     assert "sealed at exact webjam v0.22.5" in combined.casefold()
 
 
-def test_required_honesty_docs_separate_v0271_release_from_post_tag_source() -> None:
-    """Jeff-facing pass: v0.27.1 is Latest, but current master is post-tag source."""
+def test_required_honesty_docs_separate_v0271_release_from_v0272_source() -> None:
+    """Jeff-facing pass: v0.27.1 is Latest; current source is v0.27.2."""
 
     required = (
         "README.md",
@@ -139,12 +139,17 @@ def test_required_honesty_docs_separate_v0271_release_from_post_tag_source() -> 
         "unpublished v0.27.1",
         "No v0.27.1 release ID",
         "No v0.27.1 tag",
+        "`master` still reports v0.27.1",
+        "source tree's package identity remains `0.27.1`",
+        "Current source:** post-release v0.27.1",
     )
     for relative_path in required:
         text = (ROOT / relative_path).read_text(encoding="utf-8")
         normalized = " ".join(text.split())
         folded = normalized.casefold()
         assert "v0.27.1" in text, relative_path
+        if relative_path != "docs/DESKTOP_RELEASE_RUNBOOK.md":
+            assert "v0.27.2" in text, relative_path
         assert "latest" in folded and "377614785" in text, relative_path
         assert "publish-green" in folded, relative_path
         assert "WebJam-v0.27.1-SHA256SUMS.txt" in text, relative_path

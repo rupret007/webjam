@@ -1,16 +1,20 @@
-WebJam v0.27.1 private test candidate for Windows x64
-======================================================
+WebJam v0.27.2 unsigned source candidate — not build-eligible
+==============================================================
 
-PRIVATE TEST CANDIDATE: use this package only when its exact filename appears
-in the v0.27.1 GitHub release and its SHA-256 matches that release's manifest.
+NO PACKAGE IS AUTHORIZED: v0.27.2 source is not GitHub Latest. Every approved
+Jamulus compatibility range ends at v0.27.1, so required package CI and live
+Host/Join fail closed. Do not build or use this candidate until separate
+compatibility evidence is reviewed and an exact release manifest exists.
 Do not use the published v0.27.1 checksum manifest for this post-tag build.
 Physical audio, hardware, SmartScreen, publisher-signing, and managed-device
 gates remain NOT RUN unless the release evidence names this exact file and
 SHA-256.
 
-This package is an unsigned private test candidate. Verify its filename and
-published SHA-256 before running it. Windows SmartScreen or organizational
-policy may block it; WebJam does not bypass those controls.
+Everything below describes a future package only after the blocked
+compatibility boundary is resolved. That future artifact would remain
+unsigned; its exact filename and published SHA-256 would require verification.
+Windows SmartScreen or organizational policy may block it; WebJam does not
+bypass those controls.
 
 This candidate upgrades cryptography to 50.0.0 for CVE-2026-69247,
 CVE-2026-69248, and CVE-2026-69249 using an exact hash-locked upstream
@@ -23,14 +27,16 @@ After installation, open WebJam from the Start menu. You may also choose the
 optional desktop shortcut during setup. WebJam does not start automatically
 when setup finishes.
 
-WebJam's Windows build can join a jam hosted by the macOS build. Hosting a jam
-is not supported by this Windows release. Music and Podcast & Voice retain
+The released v0.27.1 Windows package can join a jam hosted by the macOS build.
+No v0.27.2 package can currently join. Hosting a jam is not supported by the
+Windows line. Music and Podcast & Voice retain
 standalone Reference Studio for local songwriting, recording, arranging,
 mixing, and WAV/FLAC bounce without joining Jamulus.
 
-Music and Podcast & Voice are GA creator profiles. Review & Rehearsal is
-Preview: live WebJam-audio Join, participation in a host-controlled Record
-Session, and playback/read-only completed-take review are available, while
+The source retains Music and Podcast & Voice as GA creator profiles. Review &
+Rehearsal is Preview. Only after compatibility authorization would live
+WebJam-audio Join, participation in a host-controlled Record Session, and
+playback/read-only completed-take review be available; meanwhile
 standalone projects, take edit/comp/mix mutation, track export, shared notes,
 visual sync, and media timecode are blocked. No profile directly or
 automatically taps a meeting app, browser, or system output. Local scratchpad
@@ -45,23 +51,24 @@ explicit approval and may display UAC or SmartScreen. WebJam verifies the
 installed version after setup. It never hides elevation or installs while a
 jam, recording, Shared Track, reconnect, or Jamulus launch is active.
 
-The sealed v0.22.5 catalog does not authorize v0.27.1 and is rejected. That
-catalog pin is unchanged. Shared Track play uses this Mac's official BlackHole
-16ch/64ch route at 48 kHz and the bundled headless client; it does not wait
-for a signed catalog pin. This candidate uses the embedded Jamulus 3.12.2
-fallback rather than offering a managed 3.12.3 download.
+The sealed v0.22.5 catalog does not authorize v0.27.2 and is rejected. Every
+immutable Jamulus range also ends at v0.27.1. Presence of embedded 3.12.2 bytes
+does not authorize them for this source identity. Shared Track uses a separate
+headless path, but live client/server selection and package builds remain
+blocked until separate compatibility evidence exists.
 
-If an update is unavailable or you are offline, WebJam offers the exact
-bundled Jamulus 3.12.2 fallback installer from the Host/Join screen. Jamulus is
-a separate application. On a managed work PC, your organization's application
-policy may require IT approval even though WebJam itself installs per user.
+After separate compatibility authorization, WebJam may offer the exact bundled
+Jamulus 3.12.2 installer from Host/Join. Jamulus is a separate application. On
+a managed work PC, your organization's application policy may require IT
+approval even though WebJam itself installs per user.
+Installation may require IT approval.
 
 Conversation/video is optional and is not bundled. Any meeting platform can
 use the explicit Join / Open Meeting handoff when its link is public HTTPS with
 a DNS hostname and passes WebJam's safety checks. Known Webex, Zoom, Teams,
 Google Meet, and FaceTime links receive friendly labels; another accepted
 provider remains neutral and is not natively verified. FaceTime is Mac-only,
-and WebJam never claims join or mute. This Windows package can locate Webex but
+and WebJam never claims join or mute. A future authorized Windows package can locate Webex but
 does not yet perform the required Authenticode publisher verification, so the
 Webex-only Show Webex App and focus-based Mute in Webex guidance stay
 unavailable. Join / Open Meeting is the only saved-link handoff. If the native

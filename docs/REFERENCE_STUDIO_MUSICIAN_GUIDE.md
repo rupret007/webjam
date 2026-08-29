@@ -5,9 +5,9 @@ a backing track. It can open without a WebJam session, Webex, or Jamulus. Its
 local playback and recording choices do not change the device, buffer, mix, or
 connection owned by Jamulus.
 
-> **Post-v0.27.1 source guide:** GitHub **Latest** is the unsigned/ad-hoc v0.27.1
-> private test release. Current `master` is post-tag source and is not that
-> package. Always verify an exact downloaded asset against its attached
+> **v0.27.2 source guide:** GitHub **Latest** is the unsigned/ad-hoc v0.27.1
+> private test release. This candidate checkout is unsigned post-tag source and
+> is not that package. Always verify an exact downloaded asset against its attached
 > checksum manifest before use.
 
 Windows packages are unsigned. Mac packages are ad-hoc signed and unnotarized.
@@ -168,7 +168,7 @@ clipped-sample count, and deterministic RMS dBFS. RMS is not an integrated-LUFS
 mastering measurement. Treat clipping as a reason to lower track, effect, send,
 or master gain and bounce again.
 
-MP3 bounce is intentionally absent from current post-v0.27.1 source. It appears only
+MP3 bounce is intentionally absent from current v0.27.2 source. It appears only
 if a separate encoder adapter has passed the product's identity,
 output-decoding,
 and license-policy self-tests. Use WAV or FLAC for a lossless handoff.

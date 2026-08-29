@@ -8,11 +8,13 @@
 
 > **Source note:** use the exact release tag and attached checksum manifest as
 > download evidence; an untagged checkout is not a substitute. Current
-> `master` is post-tag source and is not that package.
+> candidate source is post-tag and is not that package.
 
-> **What this checkout is:** post-release v0.27.1 source. The exact published
-> v0.27.1 release assets—not this checkout or a branch artifact—are package
-> evidence. No physical PASS result is claimed.
+> **What this checkout is:** an unsigned v0.27.2 source candidate after the
+> v0.27.1 release. The exact published v0.27.1 release assets—not this checkout
+> or a branch artifact—are package evidence. Approved Jamulus compatibility
+> stops at v0.27.1, so live Host/Join and package builds intentionally fail
+> closed here. No physical PASS result is claimed.
 
 WebJam helps creators start a live audio session and keep its separate tracks
 organized. Jamulus handles low-latency audio. Any meeting platform can be
@@ -22,7 +24,7 @@ the meeting app, browser, or system output. Local Originals record only the
 input devices you explicitly select, so do not route meeting or system audio
 into those inputs.
 
-The current post-v0.27.1 source keeps Music and Podcast & Voice as GA
+The current v0.27.2 source keeps Music and Podcast & Voice as GA
 creator profiles. Art and Review & Rehearsal are visibly Preview. Art offers a
 live room for **Talk & make**, Drawpile-backed **Paint together**, or
 host-clocked **Paint along**, but no recording or standalone project. Review
@@ -78,6 +80,10 @@ before installation. If an update fails, WebJam keeps the current and previous
 managed copies available on macOS. On Windows and Linux, the operating system
 owns installation and WebJam retains its embedded 3.12.2 fallback instead of
 claiming it can roll back the system package.
+
+That fallback is authorized for the released v0.27.1 line, not unsigned
+v0.27.2 source. This candidate cannot start live Jamulus audio until a separate
+review extends the immutable compatibility evidence.
 
 Jamulus displays a name on a second line after eight characters and accepts no
 more than 16 UTF-16 units. WebJam shows that preview anywhere you enter your
@@ -186,7 +192,7 @@ autosaves choices to a separate file; a failed save keeps the edit pending and
 the recorded take safe. Real two-Mac output, hardware interruption/recovery,
 external-editor import, physical Reference Studio audio, and signed-install
 gates are **NOT RUN** for the v0.27.0 private test release and remain unclaimed
-for current post-v0.27.1 source. Publishing a private candidate does not convert them to PASS. The
+for current v0.27.2 source. Publishing a private candidate does not convert them to PASS. The
 [v0.26 physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 is the all-NOT-RUN physical ledger for that earlier published package; do not
 execute it against this checkout. The

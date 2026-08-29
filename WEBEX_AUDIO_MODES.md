@@ -1,8 +1,10 @@
-# Meeting-platform companion guidance — post-v0.27.1 source
+# Meeting-platform companion guidance — v0.27.2 source
 
-> This document describes current post-v0.27.1 source. GitHub **Latest** is the
+> This document describes current unsigned v0.27.2 source. GitHub **Latest** is the
 > unsigned/ad-hoc v0.27.1 private test release. Every external meeting-app
 > behavior remains a separate physical gate.
+> Unsigned v0.27.2 cannot authorize the separate Jamulus live-audio runtime;
+> use verified v0.27.1 release bytes for an actual session.
 
 Any meeting service is optional for talking or video. Jamulus carries the
 music.

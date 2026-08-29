@@ -6,8 +6,23 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-> Work after the published v0.27.1 tag belongs here. Every published tag,
-> release, and asset remains immutable historical evidence.
+> Future work after the named unsigned v0.27.2 source candidate belongs here.
+> Every published tag, release, and asset remains immutable historical
+> evidence.
+
+## [0.27.2] — Unsigned source candidate (unreleased)
+
+> The current source identity is v0.27.2 only. No annotated v0.27.2 tag,
+> draft, release, package, checksum manifest, or physical PASS exists. GitHub
+> **Latest** remains the immutable unsigned/ad-hoc v0.27.1 release
+> `377614785`. Existing tag CI may create a reviewable unsigned draft only
+> after an annotated `v0.27.2` tag matches `webjam_qt.__version__` and exact
+> `origin/master`; this source change does not create or push that tag.
+> The immutable Jamulus compatibility records currently stop at WebJam
+> v0.27.1. Consequently this unsigned source candidate intentionally rejects
+> every Jamulus client/server runtime and the required component-input CI job
+> stays red. It is not build-, Host-, or Join-eligible until separate reviewed
+> compatibility evidence authorizes v0.27.2.
 
 ### Art says what the person does
 
