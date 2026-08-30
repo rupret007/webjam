@@ -204,8 +204,10 @@ def test_current_guides_separate_v0272_source_from_v0271_latest() -> None:
         "docs/JAMULUS_COMPONENT_RELEASE_RUNBOOK.md": (
             "v0.27.1 published fallback-only desktop state"
         ),
-        "docs/MERGE_AND_RELEASE.md": "Current source:** unsigned v0.27.2",
-        "docs/PROJECT_BRIEF.md": "Current v0.27.2 source",
+        "docs/MERGE_AND_RELEASE.md": (
+            "Named candidate:** Jeff has named the full unsigned v0.27.2"
+        ),
+        "docs/PROJECT_BRIEF.md": "Jeff has named unsigned v0.27.2",
         "docs/README.md": (
             "Candidate source:** unsigned v0.27.2"
         ),
@@ -286,10 +288,13 @@ def test_v0271_uses_tag_ci_latest_without_invented_catalog() -> None:
 
 def test_changelog_marks_v0271_published_and_keeps_prior_history() -> None:
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    normalized = " ".join(
+        line.removeprefix("> ").strip() for line in changelog.splitlines()
+    )
     assert "## [Unreleased]" in changelog
     assert "## [0.27.2] — Unsigned source candidate (unreleased)" in changelog
     assert "No annotated v0.27.2 tag" in changelog
-    assert "this source change does not create or push that tag" in changelog
+    assert "this source change does not create or push that tag" in normalized
     assert "## [0.27.1] — Unsigned/ad-hoc private test release (2026-08-27)" in changelog
     assert "release `377614785`" in changelog
     assert "WebJam-v0.27.1-SHA256SUMS.txt" in changelog

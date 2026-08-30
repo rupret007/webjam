@@ -986,11 +986,12 @@ def test_stop_never_unlinks_replaced_primary_secret_target(
     target.write_text("outside-data", encoding="utf-8")
     target.chmod(0o600)
     secret = home / "Library" / "Application Support" / "WebJam" / "rpc.secret"
+    owned_secret = secret.with_name("owned-secret")
     bridge = _bridge(home=home)
     process = _live_process()
 
     _primary_launch(bridge, secret_path=secret, popen=lambda *_a, **_k: process)
-    secret.rename(secret.with_name("owned-secret"))
+    secret.rename(owned_secret)
     secret.symlink_to(target)
 
     assert bridge.stop_jamulus() is True
@@ -1001,6 +1002,12 @@ def test_stop_never_unlinks_replaced_primary_secret_target(
     _primary_launch(bridge, secret_path=secret, popen=replacement)
     replacement.assert_not_called()
     assert bridge.jamulus_state == "Launch failed"
+
+    # Leave no retained Bridge descriptor for a later test's global method
+    # patch to intercept during delayed cyclic garbage collection.
+    secret.unlink()
+    owned_secret.rename(secret)
+    assert bridge._release_client_runtime_paths(confirmed_stopped=True)
 
 
 def test_primary_ambiguous_preparation_cleanup_latches_and_preserves_retry_target(
@@ -1015,6 +1022,8 @@ def test_primary_ambiguous_preparation_cleanup_latches_and_preserves_retry_targe
     first_popen = mock.MagicMock()
 
     def replace_before_ambiguous_cleanup(_runtime, proof) -> bool:
+        if proof.path != secret:
+            return False
         proof.path.rename(retained_owned)
         proof.path.write_bytes(replacement_payload)
         proof.path.chmod(0o600)
@@ -1075,6 +1084,8 @@ def test_hosted_ambiguous_preparation_cleanup_latches_and_preserves_retry_target
     first_popen = mock.MagicMock()
 
     def replace_before_ambiguous_cleanup(_runtime, proof) -> bool:
+        if proof.path != secret:
+            return False
         proof.path.rename(retained_owned)
         proof.path.write_bytes(replacement_payload)
         proof.path.chmod(0o600)

@@ -10,6 +10,24 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+## [0.27.2] — Unsigned source candidate (unreleased)
+
+> Jeff named the full unsigned v0.27.2 release round from exact starting
+> `master` commit `dab7d803b7551e8dbec517a2e5945f0af76285c9`. The current
+> source identity is v0.27.2 only. No annotated v0.27.2 tag, GitHub release
+> draft, release, package, checksum manifest, or physical PASS exists. GitHub
+> **Latest** remains the immutable unsigned/ad-hoc v0.27.1 release
+> `377614785`. Karen PASS and Jeff's attended merge must precede Bob's later
+> tag of exact landed `master`. Existing tag CI may then create a reviewable
+> unsigned release draft only after an annotated `v0.27.2` tag matches
+> `webjam_qt.__version__` and exact `origin/master`; this source change does not
+> create or push that tag.
+> Jeff explicitly approved extending the existing immutable Jamulus 3.12.2 and
+> 3.12.3 records through WebJam v0.27.2. Host/Join and the required
+> component-input CI therefore reuse those exact baked identities. The signed
+> public catalog remains sealed at exact WebJam v0.22.5; no catalog, signer,
+> publisher, pin, package, or release was created or changed.
+
 ### Art starts with fewer choices
 
 - Art now shows exactly two start cards before **Host** / **Join**:
@@ -20,25 +38,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 - The squirrel-with-the-fro face is larger on Paint along. No third Art card or
   other animal icon was added.
 
-## [0.27.2] — Unsigned source candidate (unreleased)
-
-> The current source identity is v0.27.2 only. No annotated v0.27.2 tag,
-> draft, release, package, checksum manifest, or physical PASS exists. GitHub
-> **Latest** remains the immutable unsigned/ad-hoc v0.27.1 release
-> `377614785`. Existing tag CI may create a reviewable unsigned draft only
-> after an annotated `v0.27.2` tag matches `webjam_qt.__version__` and exact
-> `origin/master`; this source change does not create or push that tag.
-> Jeff explicitly approved extending the existing immutable Jamulus 3.12.2 and
-> 3.12.3 records through WebJam v0.27.2. Host/Join and the required
-> component-input CI therefore reuse those exact baked identities. The signed
-> public catalog remains sealed at exact WebJam v0.22.5; no catalog, signer,
-> publisher, pin, package, or release was created or changed.
-
 ### Art says what the person does
 
-- The first Art choice now reads **Make art together.** Its three starts use
-  one short human line each: talk while everyone works in their own space,
-  draw on one shared canvas, or follow one silent process video while painting.
+- The first Art choice now reads **Make art together.** Its two starts use
+  one short human line each: talk, make, or draw together in one room, or
+  follow one silent process video while painting.
   Product and engine names remain blocked from the first screen by CI.
 - Paint along now names its actual job once the room exists: it is the silent
   process-video companion beside Procreate, Clip Studio Paint, Krita, or paper.

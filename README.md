@@ -24,8 +24,13 @@ pretending to own systems that remain independent.
 
 > **Candidate source boundary:** this checkout reports unsigned v0.27.2 and is
 > post-v0.27.1-tag source. No v0.27.2 tag, draft, release, package, checksum,
-> or physical PASS exists. Jeff explicitly approved the existing Jamulus
-> 3.12.2 and 3.12.3 records through v0.27.2, so live Host/Join and the required
+> or physical PASS exists. In that list, “draft” means a GitHub release draft,
+> not the draft pull request used for source review. Jeff has named the full
+> unsigned v0.27.2 release round, but this remains an untagged candidate in an
+> unmerged draft PR; GitHub **Latest** stays v0.27.1 during this review. Jeff
+> explicitly approved
+> the existing Jamulus 3.12.2 and 3.12.3 records through v0.27.2, so live
+> Host/Join and the required
 > component-input build gate are source-eligible. This is still not a usable
 > package without exact release evidence. Changes after the v0.27.1 tag are
 > not in the v0.27.1 download. This checkout and branch artifacts are source
@@ -49,7 +54,7 @@ New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 | --- | --- |
 | Product | Creator-facing desktop conductor around Jamulus, optional external meeting conversation, Studio, and Pocket Stage |
 | Published line | Unsigned/ad-hoc v0.27.1 GitHub Latest private test release; verify its checksum manifest |
-| Current source line | Unsigned v0.27.2 source candidate; Host/Join reuses the exact baked Jamulus 3.12.2/3.12.3 compatibility records |
+| Current source line | Named, still-untagged unsigned v0.27.2 release candidate; Host/Join reuses the exact baked Jamulus 3.12.2/3.12.3 compatibility records |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -79,9 +84,9 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
 4. Open **Conversation** only when conversation or video is wanted; use
    **Join / Open Meeting** for an explicit meeting-link handoff.
 5. In an Art **Paint along** room, the video becomes the large WebJam
-   workspace once the room exists. The host chooses **Share…**; each guest
-   chooses **Open my copy…** for the same local file. **Back to room** returns
-   to the conductor without ending the room or the video.
+   workspace once the room exists. The host chooses **Choose process video…**;
+   each guest chooses **Open my copy…** for the same local file. **Back to
+   room** returns to the conductor without ending the room or the video.
 6. In a profile that supports Shared Track, choose **Add Shared Track** or
    drop supported reference audio on the live surface; loading does not start
    playback, and Play remains fail-closed until the isolated Jamulus route is
@@ -645,9 +650,11 @@ release remains the current downloadable pointer, but neither that pointer nor
 the green post-tag `master` workflows may be rewritten as a successful release
 round.
 
-This candidate checkout reports unsigned **v0.27.2** but is post-v0.27.1-tag source.
-Changes after the released tag are not in the v0.27.1 packages. Shared Track
-play uses this Mac's BlackHole route and the
+This candidate checkout reports unsigned **v0.27.2** but is post-v0.27.1-tag
+source. Jeff has named the full unsigned v0.27.2 release round, but the
+candidate remains untagged and unmerged; GitHub Latest remains v0.27.1 during
+this review. Changes after the released tag are not in the v0.27.1 packages.
+Shared Track play uses this Mac's BlackHole route and the
 bundled headless client; the signed catalog remains sealed at exact WebJam
 v0.22.5 and does not authorize a managed v0.27.2 component. The baked Jamulus
 3.12.2 and 3.12.3 records now extend through v0.27.2, so Host/Join and the
@@ -818,7 +825,7 @@ promote a package or claim audibility.
 
 - [Documentation index](docs/README.md)
 - [Project brief for technical stakeholders](docs/PROJECT_BRIEF.md)
-- [v0.27.1 release and unsigned v0.27.2 source notes](CHANGELOG.md)
+- [Unsigned v0.27.2 release-candidate and v0.27.1 Latest notes](CHANGELOG.md)
 - [v0.26.0 creator-multitrack physical checklist — release identity verified; physical rows NOT RUN](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.25.0 creator-multitrack physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.24.0 recording-first physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)
