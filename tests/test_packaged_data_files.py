@@ -203,7 +203,12 @@ class TestPackagedDataFiles(unittest.TestCase):
         self.assertTrue(readme.is_file())
         self.assertTrue(installer.is_file())
         self.assertTrue(installer.stat().st_mode & 0o111)
-        self.assertIn("join a jam hosted from the macOS build", readme.read_text())
+        readme_words = " ".join(readme.read_text().split())
+        self.assertIn(
+            "The v0.27.2 Linux and Windows packages are built for joining a jam "
+            "hosted from the macOS build",
+            readme_words,
+        )
         self.assertIn("jamulus_3.12.2_ubuntu_amd64.deb", installer.read_text())
 
     def test_spec_version_tracks_package_version(self):

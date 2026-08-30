@@ -709,10 +709,14 @@ def test_release_refuses_existing_matches_without_unavailable_admin_scope() -> N
     assert "GITHUB_TOKEN` has no Administration permission" in DESKTOP_RELEASE_RUNBOOK
 
 
-def test_linux_candidate_names_only_the_intended_ubuntu_target() -> None:
+def test_linux_release_names_only_the_intended_ubuntu_target() -> None:
     claims = "\n".join((LINUX_README, PROJECT_README, THIRD_PARTY_NOTICES))
-    assert "intended target is 64-bit Ubuntu" in LINUX_README
-    assert "22.04; no v0.27.2 Linux build is currently certified" in LINUX_README
+    normalized_linux_readme = " ".join(LINUX_README.split())
+    assert "intended target is 64-bit Ubuntu" in normalized_linux_readme
+    assert (
+        "22.04; no v0.27.2 Linux build is currently physically certified"
+        in normalized_linux_readme
+    )
     assert "Ubuntu 22.04 x64 ZIP" in PROJECT_README
     assert "certified only for Ubuntu 22.04 x64" in THIRD_PARTY_NOTICES
     assert "22.04 or newer" not in claims
