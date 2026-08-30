@@ -1,6 +1,6 @@
 """First-class feel pass: the words a person actually sees.
 
-A painter, sculptor, 3D-print person, songwriter, and talk-only person
+A painter, sculptor, 3D-print person, maker, and songwriter
 must know what to click in ten seconds. These tests lock those words.
 They do not lock engine names, Preview burial, or a chatbot home.
 """
@@ -17,6 +17,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import QSize
 from PySide6.QtWidgets import QApplication, QPushButton
 
 from core.creative_modes import get_creator_profile_by_key
@@ -125,7 +126,7 @@ def test_a_leftover_podcast_visit_still_shows_art_as_hard_as_music(
         dialog.deleteLater()
 
 
-def test_art_door_is_three_starts_then_host_join(qapp, tmp_path: Path):
+def test_art_door_is_two_starts_then_host_join(qapp, tmp_path: Path):
     dialog = _dialog(tmp_path, "art")
     try:
         starts = [
@@ -142,10 +143,9 @@ def test_art_door_is_three_starts_then_host_join(qapp, tmp_path: Path):
             (card.accessibleName(), card.description()) for card in starts
         ] == [
             (
-                "Talk & make",
-                "Talk while everyone works in their own space.",
+                "Make together",
+                "Talk, make, or draw together in one room.",
             ),
-            ("Paint together", "Draw together on one shared canvas."),
             (
                 "Paint along",
                 "Follow one silent process video while you paint.",
@@ -189,7 +189,7 @@ def test_music_door_is_host_join_only(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
-def test_clicking_art_shows_the_three_starts(qapp, tmp_path: Path):
+def test_clicking_art_shows_the_two_starts(qapp, tmp_path: Path):
     dialog = _dialog(tmp_path, "music")
     try:
         dialog._art_profile_card.click()
@@ -199,7 +199,7 @@ def test_clicking_art_shows_the_three_starts(qapp, tmp_path: Path):
             for card in dialog._visible_start_cards()
             if not card.isHidden()
         ]
-        assert starts == ["talk_and_make", "paint_together", "paint_along"]
+        assert starts == ["talk_and_make", "paint_along"]
         assert dialog._more_rooms_button.isHidden() is True
     finally:
         dialog.deleteLater()
@@ -210,8 +210,9 @@ def test_only_paint_along_keeps_the_squirrel_face(qapp, tmp_path: Path):
     try:
         cards = {card.start_key: card for card in dialog._visible_start_cards()}
         assert cards["paint_along"].icon().isNull() is False
+        assert cards["paint_along"].iconSize() == QSize(40, 40)
         assert cards["talk_and_make"].icon().isNull() is True
-        assert cards["paint_together"].icon().isNull() is True
+        assert set(cards) == {"talk_and_make", "paint_along"}
         assert dialog._art_profile_card.icon().isNull() is True
         assert dialog._music_profile_card.icon().isNull() is True
     finally:

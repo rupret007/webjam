@@ -91,17 +91,23 @@ def test_map_gates_landing_and_release_on_the_ten_second_read() -> None:
 
     doors = [line for line in gate_section.splitlines() if line.startswith("| ")]
     art, music = (line for line in doors if line.startswith(("| Art ", "| Music ")))
-    for door in ("**Talk & make**", "**Paint together**", "**Paint along**"):
+    for door in ("**Make together**", "**Paint along**"):
         assert door in art, door
+    assert "**Talk & make**" not in art
+    assert "**Paint together**" not in art
     assert "**Host** / **Join**" in art and "**Host** / **Join**" in music
     assert "nothing else" in music
 
     banned = (
         "Studio Visit",
         "Drawpile",
+        "Krita",
         "Jamulus",
+        "Webex",
         "host-clocked",
         "Moises",
+        "Music AI",
+        "stems",
         "BYOK",
         "Preview caveats",
         "API",

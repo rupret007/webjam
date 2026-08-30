@@ -1,6 +1,6 @@
 """The room's one line about Art, and the chip that shows it.
 
-A host who chose "Paint together" used to land in a room that said nothing
+A host who chose **Make together** used to land in a room that said nothing
 about a canvas, with the only mention being a nine-second message naming the
 menu to open. These tests pin the replacement: one small persistent control
 that is the way in before anything is set up, the room's status afterwards,
@@ -53,9 +53,8 @@ def test_outside_a_room_there_is_no_line():
     assert art_room_presence(ArtCompanionProjection()).offered is False
 
 
-def test_a_talk_only_room_shows_nothing_at_all():
-    """Not a greyed-out slot where a canvas could go. A person who chose to
-    talk and work has a finished room, and the chrome should agree."""
+def test_a_room_with_no_intended_layer_shows_nothing_at_all():
+    """No room fact means no invented or greyed-out feature slot."""
 
     presence = art_room_presence(_room(), hosting=True)
 
@@ -77,7 +76,7 @@ def test_a_guests_own_saved_choice_never_invents_a_line():
 
 def test_the_image_action_is_never_a_room_fact():
     """It is personal to whoever runs it. Putting it here would make the chip
-    permanent in every Art room, which would cost the talk-only room its
+    permanent in every Art room, which would cost an otherwise empty room its
     finished feel for something nobody shares."""
 
     presence = art_room_presence(_room(ai=AiCompanionState.IDLE), hosting=True)
@@ -94,6 +93,7 @@ def test_a_host_who_chose_the_canvas_is_offered_the_way_in():
     presence = art_room_presence(_room(), hosting=True, intended_canvas=True)
 
     assert presence.label == "Set up shared canvas"
+    assert "Make together" in presence.description
     assert presence.target is ArtPresenceTarget.CANVAS
     assert presence.tone is ArtPresenceTone.PRESENT
 

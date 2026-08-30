@@ -8,12 +8,12 @@
 
 | Need | Use |
 | --- | --- |
-| Choose a creator workflow | Launch → **Art** or **Music**. Art is **Talk & make** / **Paint together** / **Paint along**, then **Host** / **Join**. Music is **Host** / **Join** only |
+| Choose a creator workflow | Launch → **Art** or **Music**. Art is **Make together** / **Paint along**, then **Host** / **Join**. Music is **Host** / **Join** only |
 | Start a live session | Choose **Art** or **Music**, then **Host**; Art chooses a start card first |
 | Join a live session | Choose a profile → **Join**, **Join Recording**, or **Join Review** → paste one invite; the invite carries whatever the host started |
-| Talk while making art | Art → **Talk & make** → **Host** or **Join**; a room with no canvas and no video is normal and needs no setup |
-| Paint on one shared canvas | Art → **Paint together** → **Host**, then **More → Shared Canvas… → Host in Drawpile**; keep the Drawpile session **Personal** and paste its invitation back into WebJam |
-| Join the shared canvas | Art guest → **More → Shared Canvas… → Open shared canvas**; Drawpile must be installed, and WebJam says so plainly when it is not |
+| Talk or make together | Art → **Make together** → **Host** or **Join**; talk, make, or draw together in one room while everyone works locally |
+| Paint on one shared canvas | Art → **Make together** → **Host** → **Set up shared canvas** → **Host in Drawpile**; keep the Drawpile session **Personal** and paste its invitation back into WebJam |
+| Join the shared canvas | Art guest → **Open shared canvas**; Drawpile must be installed, and WebJam says so plainly when it is not |
 | See where the room is while painting | Art → **More → Shared Canvas…**; the panel shows **Bar 17.3 · Chorus**, a video position, or **No shared clock**. It is a readout, not a control |
 | Make an image with AI | Art, in session → notes **Suggestion** → **Make**; Krita opens a new canvas and its AI Image Generation docker takes your prompt. WebJam generates nothing and uploads nothing |
 | Edit a photo with AI | Art, in session → notes **Suggestion** → **Edit…** and pick an image you own; Krita opens it for fill, extend, or remove |

@@ -10,6 +10,16 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Art starts with fewer choices
+
+- Art now shows exactly two start cards before **Host** / **Join**:
+  **Make together** — **Talk, make, or draw together in one room.** — and
+  **Paint along**. People may keep working locally in Make together, and the
+  host may open one shared canvas from inside the room. Music remains
+  **Host** / **Join** only.
+- The squirrel-with-the-fro face is larger on Paint along. No third Art card or
+  other animal icon was added.
+
 ## [0.27.2] — Unsigned source candidate (unreleased)
 
 > The current source identity is v0.27.2 only. No annotated v0.27.2 tag,

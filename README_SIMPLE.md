@@ -25,9 +25,10 @@ input devices you explicitly select, so do not route meeting or system audio
 into those inputs.
 
 The current v0.27.2 source keeps Music and Podcast & Voice as GA
-creator profiles. Art and Review & Rehearsal are visibly Preview. Art offers a
-live room for **Talk & make**, Drawpile-backed **Paint together**, or
-host-clocked **Paint along**, but no recording or standalone project. Review
+creator profiles. Art and Review & Rehearsal are visibly Preview. Art offers
+**Make together**—a live room where people work locally and the host may open
+one shared canvas—or host-clocked **Paint along**, but no recording or
+standalone project. Review
 & Rehearsal supports live WebJam-audio
 Host/Join, Record Session, local notes, and playback/read-only review of a
 completed session take. It blocks standalone projects, take editing/comp/mix
@@ -52,8 +53,8 @@ helper that removes quarantine from WebJam only.
 
 1. Choose **Art** or **Music**. Choose **Podcast or review** only when you need
    one of those rooms.
-2. In Art, choose **Talk & make**, **Paint together**, or **Paint along**, then
-   Host/Join. Music uses Host/Join; Podcast uses Host Remote Recording/Join
+2. In Art, choose **Make together** or **Paint along**, then Host/Join. Music
+   uses Host/Join; Podcast uses Host Remote Recording/Join
    Recording; Review uses Host Review/Join Review.
 3. When Jamulus opens, choose your interface, input channels, headphones, and
    buffer there.

@@ -50,37 +50,36 @@ key remains only as a migrate-from alias so a saved choice survives the rename.
 legacy mode resolves today to a profile that can play it back, and Art records
 nothing.
 
-### The three starts
+### The two starts
 
-Launch shows exactly three cards for Art, in this order, and the registry
-refuses a fourth:
+Launch shows exactly two cards for Art, in this order, and the registry
+refuses a third:
 
 | Start | What it opens |
 | --- | --- |
-| **Talk & make** | Just the room and your voices. No canvas, no video. |
-| **Paint together** | The room, plus one canvas you all draw on. |
-| **Paint along** | The room, plus one video you all watch in step. |
+| **Make together** | Talk, make, or draw together in one room. |
+| **Paint along** | Follow one silent process video while you paint. |
 
 Those are the words on the cards. **No component names itself on the first
 screen** -- not the painting program, not the audio path, not the image
 generator. A person choosing a room should not have to learn what it is built
 on to decide whether they want it. Each component introduces itself in the
-room, at the moment it matters, and only if something is missing: "Install
-Drawpile to paint together" is a one-liner behind Paint together, never a word
-on the card.
+room, at the moment it matters, and only if something is missing. In **Make
+together**, people work locally and the host may open one shared canvas from
+inside the room. Its program name is never a word on the card.
 
 The name field asks for a name. Its validation is unchanged -- the mixer still
 refuses a name it cannot show -- but the field and its preview say so in plain
 words rather than naming the component.
 
-A start carries **at most one** add-on. Combining the canvas and the video is
-an in-room decision the host makes afterwards, not a fourth card, because the
-point of the list is that a person reads it once. **AI is not a start either**:
-nobody decides what they are making by choosing an image generator, so it is an
-in-session action available from any of the three starts, and the registry
-refuses a start that expresses it. A profile that offers starts
-must keep a talk-only one, so an add-on can never look required. No other
-profile offers start cards.
+**Make together** opens the room without automatically opening an add-on.
+Artists may keep working locally, or the host may open one shared canvas from
+inside the room. Combining that canvas with the Paint along video is also an
+in-room decision, not a third card, because the point of the list is that a
+person reads it once. **AI is not a start either**: nobody decides what they
+are making by choosing an image generator, so it is an in-session action
+available from either start, and the registry refuses a start that expresses
+it. No other profile offers start cards.
 
 Joining re-picks nothing. One pasted WebJam invitation carries whatever the
 host started, including to an artist who joins late.
@@ -345,8 +344,10 @@ prompt or model control because those belong to Krita.
   continues to migrate to Review & Rehearsal, so no recorded session silently
   becomes an unreviewable Art session.
 - The chosen start key is re-validated against the resolved profile on every
-  load and save. A start decides whether a canvas or a video is armed, so a
-  stale or foreign key falls back to the talk-only start.
+  load and save. A current start decides whether the Paint along video is
+  armed; the retired `paint_together` key migrates to **Make together**, which
+  preserves the saved shared-canvas intent. Any other stale or foreign key
+  also falls back to that current room-first choice.
 - `visual_studio` remains a valid legacy *mode* key in its own registry, so
   session metadata that records it keeps resolving.
 - The retired five-mode list is not offered anywhere as a picker. What someone

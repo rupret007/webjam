@@ -209,7 +209,7 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
         _destroy(dialog)
 
 
-def test_art_door_keeps_three_starts_and_host_join_inside_760_by_600(
+def test_art_door_keeps_two_starts_and_host_join_inside_760_by_600(
     styled_qapp,
     tmp_path,
 ):
@@ -236,8 +236,7 @@ def test_art_door_keeps_three_starts_and_host_join_inside_760_by_600(
             )
             assert control.height() >= 48
         assert [card.accessibleName() for card in dialog._visible_start_cards()] == [
-            "Talk & make",
-            "Paint together",
+            "Make together",
             "Paint along",
         ]
         assert dialog._more_rooms_button.isVisibleTo(dialog) is False

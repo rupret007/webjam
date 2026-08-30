@@ -44,10 +44,12 @@ to Music. Review & Rehearsal is always visibly Preview: it allows live
 WebJam-audio Host/Join, session recording, and playback/read-only completed-take
 review, while refusing standalone project create/open, take editing/comp/mix
 mutation, track export, shared notes, visual sync, and media-timecode behavior.
-Art is also visibly Preview. It offers exactly three starts -- a room alone, a
-room plus one shared Drawpile canvas, or a room plus one host-clocked reference
-video that each computer plays from its own copy of the same local file -- and
-the registry refuses a fourth. An in-session AI image action opens Krita's own
+Art is also visibly Preview. It offers exactly two visible starts: **Make
+together**, a room where people work locally and the host may open one shared
+Drawpile canvas from inside the room, or **Paint along**, a room plus one
+host-clocked reference video that each computer plays from its own copy of the
+same local file. The registry refuses a third visible start. An in-session AI
+image action opens Krita's own
 AI plugin against a loopback backend; it is deliberately not a start, publishes
 nothing to the room, and cannot reach off the machine. A room clock projection,
 deliberately ungated by profile, lets a painter read the bar a band is on

@@ -1634,7 +1634,7 @@ class ApplicationController(QObject):
 
         The value is re-resolved against the active profile every time, so a
         key saved under another profile can never arm a capability this one
-        does not have; it falls back to the plain talk-only door.
+        does not have; it falls back to the profile's room-first door.
         """
 
         return self.creator_profile.start_or_default(

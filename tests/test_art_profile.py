@@ -214,55 +214,58 @@ def test_the_reference_video_noun_defaults_without_breaking_older_profiles():
 
 
 # ---------------------------------------------------------------------------
-# The three starts
+# The two starts
 # ---------------------------------------------------------------------------
 
 
-def test_art_offers_exactly_three_starts_in_a_fixed_order(profile):
+def test_art_offers_exactly_two_starts_in_a_fixed_order(profile):
     assert [start.key for start in profile.starts] == [
         "talk_and_make",
-        "paint_together",
         "paint_along",
     ]
     assert [start.label for start in profile.starts] == [
-        "Talk & make",
-        "Paint together",
+        "Make together",
         "Paint along",
     ]
 
 
 def test_each_start_carries_at_most_one_add_on(profile):
-    talk, canvas, video = profile.starts
+    make, video = profile.starts
 
-    assert talk.talk_only is True
-    assert (talk.shared_canvas, talk.reference_video) == (False, False)
-    assert (canvas.shared_canvas, canvas.reference_video) == (True, False)
+    assert make.talk_only is False
+    assert (make.shared_canvas, make.reference_video) == (True, False)
     assert (video.shared_canvas, video.reference_video) == (False, True)
 
 
+def test_old_paint_together_choice_migrates_to_the_combined_default(profile):
+    assert profile.get_start("paint_together") is None
+    assert profile.start_or_default("paint_together").key == "talk_and_make"
+    assert profile.start_or_default("paint_together").shared_canvas is True
+
+
 def test_no_start_combines_a_canvas_and_a_video():
-    """Combining is an in-room decision, never a fourth card."""
+    """Combining is an in-room decision, never a third card."""
 
     with pytest.raises(ValueError, match="at most one optional add-on"):
         CreatorStart(
             key="everything",
             label="Everything",
             summary="Canvas and video at once.",
-            detail="A fourth card would undo the point of a short list.",
+            detail="A third card would undo the point of a short list.",
             shared_canvas=True,
             reference_video=True,
         )
 
 
 def test_ai_is_never_a_start_card(profile):
-    """Adding AI must not add a fourth door.
+    """Adding AI must not add a third door.
 
     Nobody decides what they are making by choosing an image generator, and a
-    fourth card would undo the point of a short list. AI stays an in-session
+    third card would undo the point of a short list. AI stays an in-session
     action, so no start expresses it and the start type has no field for it.
     """
 
-    assert len(profile.starts) == 3
+    assert len(profile.starts) == 2
     for start in profile.starts:
         assert not hasattr(start, "ai_image")
         assert "generat" not in start.label.casefold()
@@ -348,10 +351,10 @@ def test_a_start_cannot_promise_a_capability_the_profile_lacks():
         )
 
 
-def test_a_profile_offering_starts_must_keep_a_talk_only_door():
+def test_a_profile_offering_starts_must_keep_a_room_first_door():
     from core.creative_modes import CreatorProfile, CreatorVocabulary
 
-    with pytest.raises(ValueError, match="talk-only"):
+    with pytest.raises(ValueError, match="room-first"):
         CreatorProfile(
             key="example",
             label="Example",
@@ -370,7 +373,7 @@ def test_a_profile_offering_starts_must_keep_a_talk_only_door():
                 take_review=False,
                 take_editing=False,
                 track_export=False,
-                shared_canvas=True,
+                shared_reference_video=True,
             ),
             vocabulary=CreatorVocabulary(
                 participant_singular="person",
@@ -381,11 +384,11 @@ def test_a_profile_offering_starts_must_keep_a_talk_only_door():
             ),
             starts=(
                 CreatorStart(
-                    key="canvas_only",
-                    label="Canvas only",
-                    summary="The only way in is a canvas.",
-                    detail="Omitting the plain door makes an add-on look required.",
-                    shared_canvas=True,
+                    key="video_only",
+                    label="Video only",
+                    summary="The only way in is a video.",
+                    detail="A guided video cannot be the only way into the room.",
+                    reference_video=True,
                 ),
             ),
         )
@@ -438,7 +441,7 @@ def test_the_start_choice_round_trips_and_falls_back_safely(tmp_path: Path):
     settings.last_creator_profile_key = ART
     settings.last_creator_start_key = "paint_together"
     save_settings(settings)
-    assert load_settings(config).last_creator_start_key == "paint_together"
+    assert load_settings(config).last_creator_start_key == "talk_and_make"
 
     # A stale key decides whether a canvas or a video is armed, so it must
     # never survive into a profile that no longer offers it.
