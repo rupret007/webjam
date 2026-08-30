@@ -50,6 +50,14 @@ def qapp():
     return QApplication.instance() or QApplication(sys.argv[:1])
 
 
+@pytest.fixture(autouse=True)
+def _authorize_microphone_permission(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "webjam_qt.platform_permissions.microphone_permission_status",
+        lambda: "authorized",
+    )
+
+
 @pytest.fixture(scope="module")
 def styled_qapp(qapp):
     previous = qapp.styleSheet()

@@ -3,11 +3,24 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+from itertools import count
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+
+def _collected_sources_contain(request, *markers: str) -> bool:
+    paths = {Path(str(item.path)) for item in request.session.items}
+    for path in paths:
+        try:
+            source = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if any(marker in source for marker in markers):
+            return True
+    return False
 
 
 @pytest.fixture(autouse=True)
@@ -34,6 +47,93 @@ def isolate_provider_credentials():
     finally:
         set_default_secret_store(None)
         os.environ.update(saved)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def isolate_application_controller_repository(request, tmp_path_factory):
+    """Keep controller tests out of the developer's persistent database.
+
+    Many legacy Qt suites construct ``ApplicationController`` from
+    ``unittest.setUpClass``, before a function-scoped fixture could replace its
+    default repository. Several legacy modules import the controller inside
+    ``setUpClass``, after session fixtures have started, so import the
+    non-running controller module here and patch its repository factory before
+    any test setup. Give every default construction its own temporary database
+    so both combined and per-module runs stay order-independent without
+    rewriting HOME.
+    """
+
+    if not _collected_sources_contain(request, "ApplicationController"):
+        yield
+        return
+
+    from webjam_qt.controllers import (
+        application_controller as controller_module,
+    )
+
+    repository_type = controller_module.WebJamRepository
+    repository_root = tmp_path_factory.mktemp("webjam-controller-repository")
+    repository_sequence = count(1)
+
+    def isolated_repository(db_path=None):
+        selected_path = (
+            repository_root
+            / f"webjam-app-{next(repository_sequence):04d}.db"
+            if db_path is None
+            else Path(db_path)
+        )
+        return repository_type(str(selected_path))
+
+    controller_module.WebJamRepository = isolated_repository
+    try:
+        yield
+    finally:
+        controller_module.WebJamRepository = repository_type
+
+
+@pytest.fixture(scope="session", autouse=True)
+def isolate_jamulus_rpc_secret_path(request, tmp_path_factory):
+    """Redirect the import-time Jamulus RPC secret without changing HOME."""
+
+    if not _collected_sources_contain(
+        request,
+        "ApplicationController",
+        "BridgeService",
+        "DEFAULT_SECRET_PATH",
+        "launch_jamulus",
+    ):
+        yield
+        return
+
+    # Some legacy suites import BridgeService inside a test helper, after all
+    # session fixtures have started. Import these two non-UI modules here so
+    # their shared import-time constant can be redirected before any launch.
+    from core import jamulus_rpc_client
+    from services import bridge_service
+
+    target_modules = [jamulus_rpc_client, bridge_service]
+    bridge_module = bridge_service
+
+    runtime_home = tmp_path_factory.mktemp("webjam-native-runtime")
+    secret_path = (
+        runtime_home
+        / "Library"
+        / "Application Support"
+        / "WebJam"
+        / "JamulusClient"
+        / "webjam_client_rpc.secret"
+    )
+    original_paths = [module.DEFAULT_SECRET_PATH for module in target_modules]
+    for module in target_modules:
+        module.DEFAULT_SECRET_PATH = secret_path
+    original_runtime_home = bridge_module.BridgeService._runtime_home
+    bridge_module.BridgeService._runtime_home = lambda _bridge: runtime_home
+    try:
+        yield
+    finally:
+        bridge_module.BridgeService._runtime_home = original_runtime_home
+        for module, original_path in zip(target_modules, original_paths, strict=True):
+            module.DEFAULT_SECRET_PATH = original_path
 
 
 def make_temp_db() -> str:

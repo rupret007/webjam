@@ -9,8 +9,10 @@ automatically so users don't lose mid-session tweaks.
 from __future__ import annotations
 
 import os
+import tempfile
 import unittest
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -25,12 +27,26 @@ from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
 
 class TestMixDirtyAutosave(unittest.TestCase):
     def setUp(self):
+        self._temp_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp_directory.cleanup)
+        temp_root = Path(self._temp_directory.name)
+        self._mix_home_patch = patch(
+            "webjam_qt.controllers.mix_manager.Path.home",
+            return_value=temp_root,
+        )
+        self._mix_home_patch.start()
+        self.addCleanup(self._mix_home_patch.stop)
         self.window = ConductorWindow(
             mode_entries=ApplicationController.mode_entries(),
             initial_mode_key="music_jam",
             initial_title="Test",
         )
-        self.controller = ApplicationController(self.window, settings=AppSettings())
+        settings = AppSettings(
+            config_file=str(temp_root / "settings.json"),
+            mix_file=str(temp_root / "mix.json"),
+            log_file=str(temp_root / "webjam.log"),
+        )
+        self.controller = ApplicationController(self.window, settings=settings)
 
     def tearDown(self):
         # Avoid re-triggering auto-save during teardown by clearing the flag.
