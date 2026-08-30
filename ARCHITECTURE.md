@@ -1,12 +1,14 @@
 # WebJam architecture — v0.27.2 source
 
-> This document describes the named, still-untagged unsigned v0.27.2 release
-> candidate, based on exact starting `master` commit
-> `dab7d803b7551e8dbec517a2e5945f0af76285c9`. GitHub **Latest** remains the
-> unsigned/ad-hoc v0.27.1 release from exact tag commit
-> `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`. This candidate checkout is
-> post-v0.27.1-tag source and is not that download. Source text and branch CI
-> are not package evidence; no v0.27.2 tag or release exists yet.
+> This document describes v0.27.2 source. GitHub **Latest** is immutable
+> unsigned/ad-hoc private test release `379360694`, published
+> `2026-08-30T18:06:14Z` from lightweight tag `v0.27.2` at exact commit
+> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. It has seven packages plus
+> `WebJam-v0.27.2-SHA256SUMS.txt`. Source text, a later checkout, and branch CI
+> are not substitutes for those exact checksum-verified release assets.
+> Tag run `33327104322` passed its tests, integrations, and four desktop builds,
+> then failed its annotated-tag publisher gate. It is red, not publish-green;
+> do not rerun it, replace the lightweight tag, or mutate the immutable release.
 > The existing Jamulus 3.12.2 and 3.12.3 records are approved through v0.27.2,
 > so baked Host/Join selection and the package build gate are source-eligible.
 > The signed public catalog remains sealed at exact WebJam v0.22.5.

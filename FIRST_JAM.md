@@ -1,10 +1,11 @@
 # First Session — WebJam v0.27.2 source
 
-> This guide describes current unsigned v0.27.2 source. Jeff has named it as the
-> unsigned v0.27.2 release candidate, but it remains untagged source in an
-> unmerged draft PR. GitHub **Latest** is still the unsigned/ad-hoc,
-> checksum-verifiable v0.27.1 private test release. This post-v0.27.1-tag
-> candidate checkout is not that package. Record every
+> This guide describes current unsigned v0.27.2 source. GitHub **Latest** is
+> immutable unsigned/ad-hoc private test release `379360694`, published from
+> lightweight tag `v0.27.2` at exact commit
+> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`, with seven packages plus
+> `WebJam-v0.27.2-SHA256SUMS.txt`. A checkout or branch artifact is not a
+> substitute for one of those exact checksum-verified packages. Record every
 > v0.27 physical gate as **NOT RUN** until it is observed against exact release
 > bytes.
 > Host/Join is source-eligible through the exact baked Jamulus 3.12.2 and 3.12.3

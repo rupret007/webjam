@@ -1,13 +1,16 @@
 # WebJam v0.27.2 source UX acceptance checklist
 
-> This checklist describes current unsigned v0.27.2 source. The unsigned/ad-hoc
-> v0.27.1 release is GitHub **Latest** for private testing.
+> This checklist describes current unsigned v0.27.2 source. Immutable
+> unsigned/ad-hoc release `379360694` is GitHub **Latest** for private testing.
+> Its lightweight `v0.27.2` tag points to exact commit
+> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`; seven packages are covered by
+> `WebJam-v0.27.2-SHA256SUMS.txt`.
 > Historical v0.27.1 results remain bound to exact v0.27.1 assets. Every
 > v0.27.2 physical and platform-trust gate is **NOT RUN** and cannot inherit
 > that evidence.
-> Unsigned v0.27.2 is source-only. Host/Join is compatible with the existing
-> exact Jamulus 3.12.2 and 3.12.3 records, but this is not a package checklist
-> until exact release evidence exists.
+> Exact v0.27.2 assets are package evidence, but not physical evidence.
+> Host/Join is compatible with the existing exact Jamulus 3.12.2 and 3.12.3
+> records. Use only a checksum-verified release asset for packaged checks.
 
 ## Unified guidance
 
@@ -228,7 +231,7 @@
       extraction.
 - [ ] Physical two-Mac and hardware evidence is listed separately as PASS,
       FAIL, or NOT RUN.
-- [ ] No v0.27.1 physical or production-trust claim is made until the dedicated
+- [ ] No v0.27.2 physical or production-trust claim is made until the dedicated
       [physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
       records exact-asset results. Two-machine music, Shared Track, recording,
       Studio, external-editor, accessibility, signing, installation, and

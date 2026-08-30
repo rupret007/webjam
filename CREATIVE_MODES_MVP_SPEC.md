@@ -1,15 +1,18 @@
 # Creator profiles — v0.27.2 implemented contract
 
-> Status: current unsigned v0.27.2 source. GitHub **Latest** is the unsigned/ad-hoc
-> v0.27.1 private test release. That download includes #47 but not later
-> post-tag source changes. Music, Podcast & Voice, and Review & Rehearsal are
-> implemented here; Art is on this source line and covered by automated tests.
+> Status: current unsigned v0.27.2 source. GitHub **Latest** is immutable
+> unsigned/ad-hoc private test release `379360694`, published from lightweight
+> tag `v0.27.2` at exact commit
+> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Its seven packages are covered by
+> `WebJam-v0.27.2-SHA256SUMS.txt`. Music, Podcast & Voice, Review & Rehearsal,
+> and Art are implemented here and covered by automated tests.
 > Two-computer Art behavior is **NOT RUN**. This document supersedes the
 > earlier speculative cross-discipline MVP and describes only bounded current behavior. Physical
 > and platform-trust results remain **NOT RUN**.
-> These are implemented source contracts, not a usable v0.27.2 package claim.
+> These are implemented source contracts, not a claim about a later checkout
+> or branch artifact. Use only an exact checksum-verified release asset.
 > Live Host/Join is source-eligible through the existing exact Jamulus 3.12.2
-> and 3.12.3 records; no v0.27.2 package or physical PASS exists.
+> and 3.12.3 records. No v0.27.2 physical PASS exists.
 
 ## Product decision
 
@@ -32,7 +35,7 @@ Scratchpads are profile-scoped on one computer, stored through fixed
 private mode-0600 files with regular-file/no-follow reads bounded to 1 MiB.
 They are never shared, session-synchronized, or media-timecoded.
 
-## Art (added after v0.26.0, no release evidence)
+## Art (included in v0.27.2; physical evidence NOT RUN)
 
 Art is a room where artists in any medium — painting, drawing, sculpture,
 anything on a table — talk while they work. Conversation uses the same WebJam

@@ -1,18 +1,20 @@
-WEBJAM v0.27.2 UNSIGNED SOURCE CANDIDATE — NO PACKAGE PUBLISHED
+WEBJAM v0.27.2 AD-HOC PRIVATE TEST PACKAGE
 
-NO PACKAGE IS AUTHORIZED: v0.27.2 source is not GitHub Latest. The existing
-exact Jamulus 3.12.2 and 3.12.3 records are approved through v0.27.2, so
-required package CI and live Host/Join are source-eligible. Do not use a build
-as a package until an exact release manifest exists.
-Do not use the published v0.27.1 checksum manifest for this post-tag build.
+PACKAGE BOUNDARY: GitHub Latest is immutable release 379360694, published
+2026-08-30T18:06:14Z from lightweight tag v0.27.2 at exact commit
+9c6ca3de96aa7eb261c65b7dee768ab48144169c. It has seven packages plus
+WebJam-v0.27.2-SHA256SUMS.txt. Use this private test package only when its exact
+filename and SHA-256 appear in that manifest. A checkout or branch build is not
+a substitute. The existing exact Jamulus 3.12.2 and 3.12.3 records are approved
+through v0.27.2 for live Host/Join.
 Physical audio, hardware, Gatekeeper, signing, and notarization gates remain
 NOT RUN unless the release evidence names this exact file and SHA-256.
 
-Everything below describes a future package only after exact release evidence
-exists. Such a package would be ad-hoc signed and NOT notarized or reviewed by
-Apple. No v0.27.2 physical-test handoff exists.
+Everything below describes the published private test package. It is ad-hoc
+signed and NOT notarized or reviewed by Apple. No v0.27.2 physical-test result
+exists.
 
-This candidate upgrades cryptography to 50.0.0 for CVE-2026-69247,
+This release upgrades cryptography to 50.0.0 for CVE-2026-69247,
 CVE-2026-69248, and CVE-2026-69249. Apple-silicon uses an exact hash-locked
 upstream wheel. Because upstream no longer publishes an Intel macOS wheel,
 the Intel build uses WebJam's documented, hash-locked native x86_64
@@ -109,7 +111,7 @@ route meeting or system-output audio into those inputs.
 iPhone Pocket Stage setup
 -------------------------
 The "Pocket Stage iPhone Setup" folder contains the exact generated Xcode
-project compiled by a future candidate CI run. Install the full Xcode app, add
+project compiled by this package's CI run. Install the full Xcode app, add
 your Apple ID in Xcode > Settings > Accounts, then open
 "WebJamPocketStage.xcodeproj" directly. If Finder does not associate that file
 with Xcode, use Xcode > File > Open and select it. "Open Pocket Stage in

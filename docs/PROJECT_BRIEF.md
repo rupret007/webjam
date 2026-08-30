@@ -1,11 +1,12 @@
 # WebJam project brief
 
 **Review date:** 2026-08-30
-**Status:** unsigned/ad-hoc v0.27.1 is GitHub Latest release `377614785`.
-Jeff has named unsigned v0.27.2 as the next full release candidate, starting
-from exact `master` commit `dab7d803b7551e8dbec517a2e5945f0af76285c9`.
-It remains untagged source, not a package: Karen PASS and Jeff's attended merge
-must precede Bob's later tag of exact landed `master`. Live Jamulus Host/Join
+**Status:** immutable unsigned/ad-hoc v0.27.2 is GitHub Latest release
+`379360694`, published `2026-08-30T18:06:14Z`. Lightweight tag `v0.27.2`
+points directly to exact commit
+`9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Its seven packages are covered by
+`WebJam-v0.27.2-SHA256SUMS.txt`; a checkout or branch artifact is not a package.
+Live Jamulus Host/Join
 reuses the existing exact 3.12.2 and 3.12.3 records; every v0.27
 physical/hardware gate is **NOT RUN**.
 
@@ -86,15 +87,14 @@ the full contract.
 
 ## Verified status
 
-- GitHub Latest remains the immutable unsigned/ad-hoc v0.27.1 release
-  `377614785` from exact tag commit
-  `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`, with seven packages plus its
-  checksum manifest. Its tag workflow is red rather than publish-green because
-  the publisher correctly refused to replace the already-existing release.
-- The named v0.27.2 candidate starts from exact `dab7d803`. Hosted run
-  `33285848154` passed all 12 required jobs on that starting commit; it is
-  baseline evidence only. The later exact docs-and-tests head still needs the
-  complete local suite and its own complete hosted run before Karen PASS.
+- GitHub Latest is immutable unsigned/ad-hoc v0.27.2 release `379360694` from
+  lightweight tag `v0.27.2` and exact commit
+  `9c6ca3de96aa7eb261c65b7dee768ab48144169c`, with seven packages plus its
+  checksum manifest.
+- Tag run `33327104322` passed tests, integrations, and all four desktop builds,
+  then failed its annotated-tag publisher gate. It is red, not publish-green;
+  do not rerun it, replace the lightweight tag, or mutate the release. Immutable
+  v0.27.1 release `377614785` remains historical evidence.
 - The published v0.26.0 release contains Windows x64, Ubuntu 22.04 x64, Intel
   Mac, and Apple-silicon Mac packages plus an exact checksum manifest.
 - `cryptography` 50.0.0 remediates the three audited runtime CVEs; the Intel
@@ -139,9 +139,9 @@ services receive friendly labels; generic providers remain neutral and receive
 no native-verification claim. Exact Jamulus correlation, bounded guest
 observation, and fail-closed take/export evidence remain the authority.
 
-This is a distinct v0.27.2 source identity intended for a later package, not a
-rebuild, retag, or mutation of the v0.27.1 release or any earlier release.
-The untagged candidate is not package evidence. Familiar DAW interactions are
+This is the v0.27.2 source identity used by the current private test release,
+not a rebuild, retag, or mutation of the v0.27.1 release or any earlier
+release. A checkout or branch artifact is not package evidence. Familiar DAW interactions are
 used for clarity and musical flow without copying Apple
 artwork, exact layouts, assets, or trade dress. Physical audibility, isolation,
 alignment, recovery, output, and packaged UX remain **NOT RUN**.
@@ -160,12 +160,12 @@ claimed as implemented in this repository.
 
 1. Read the [root README](../README.md) and [creator guide](../USER_GUIDE.md).
 2. Use the immutable
-   [v0.27.1 GitHub Latest release](https://github.com/rupret007/webjam/releases/tag/v0.27.1)
+   [v0.27.2 GitHub Latest release](https://github.com/rupret007/webjam/releases/tag/v0.27.2)
    for the current downloadable candidate and verify its checksum manifest. Use
    immutable [v0.23.0](https://github.com/rupret007/webjam/releases/tag/v0.23.0)
    only when evaluating that historical baseline.
 3. Confirm Latest resolves to the unsigned/ad-hoc
-   [v0.27.1 release](https://github.com/rupret007/webjam/releases/tag/v0.27.1)
+   [v0.27.2 release](https://github.com/rupret007/webjam/releases/tag/v0.27.2)
    and use only its exact checksum-verified assets; a branch artifact is not a
    release substitute.
 4. Choose a profile first, then exercise Shared Track, the exact-source

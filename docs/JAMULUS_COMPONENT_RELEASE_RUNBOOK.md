@@ -55,16 +55,28 @@
 > `33036413984` failed on that catalog mismatch. No v0.27 component tag,
 > release, sequence, asset, signature, or PASS evidence exists.
 
-> **v0.27.1 published fallback-only desktop state:** sealed v3 still authorizes
+> **v0.27.1 historical fallback-only desktop state:** sealed v3 still authorizes
 > exact WebJam 0.22.5 only and cannot authorize 0.27.1. The source registry
 > extends the unchanged audited 3.12.2/3.12.3 identities through exact WebJam
 > 0.27.1 and rejects 0.27.2 so the embedded fallback remains known, but that is
 > not a signed managed-update authorization. Shared Track play uses this Mac's
 > BlackHole route and the bundled headless client, not a catalog pin. Desktop
-> release `377614785` is GitHub **Latest**, but no v0.27.1 component tag,
+> release `377614785` preceded v0.27.2 as GitHub **Latest**, but no v0.27.1 component tag,
 > release, sequence, asset, signature, or PASS evidence exists.
 > jamulus-components-v1/v2/v3 stay. A future managed update requires a new
 > fixed channel and the complete procedure below.
+
+> **v0.27.2 current fallback-only desktop state:** sealed v3 still authorizes
+> exact WebJam 0.22.5 only and cannot authorize a managed 0.27.2 component.
+> The source registry extends the unchanged audited 3.12.2/3.12.3 identities
+> through exact WebJam 0.27.2 and rejects 0.27.3, so the embedded fallback
+> remains known. Immutable desktop release `379360694` is GitHub **Latest** at
+> lightweight tag `v0.27.2` and exact commit
+> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`; this desktop release did not move
+> the component channel. No v0.27.2 component tag, release, sequence, asset,
+> signature, or PASS evidence exists. `jamulus-components-v1/v2/v3` stay
+> fixed. A future managed update requires a new fixed channel and the complete
+> procedure below.
 
 This runbook records the sealed v1/v2 history and current v3 catalog channel. The
 catalog tells WebJam which exact

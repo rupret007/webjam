@@ -41,8 +41,9 @@
 > `33036413984` failed because sealed v3 does not target this exact WebJam
 > version. Do not retag v0.27.0. Every v0.27 physical gate remains **NOT RUN**.
 
-> **v0.27.1 published testing boundary:** GitHub **Latest** is unsigned/ad-hoc
-> release `377614785`, published at `2026-08-27T06:56:11Z` from annotated
+> **v0.27.1 historical testing boundary:** immutable unsigned/ad-hoc release
+> `377614785` preceded v0.27.2 as GitHub **Latest**. It was published at
+> `2026-08-27T06:56:11Z` from annotated
 > tag object `ba81f8ef65db1013f13773b1536c812af174d81f` and exact commit
 > `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`. It has seven packages plus
 > `WebJam-v0.27.1-SHA256SUMS.txt`. Tag workflow `33045632613` built all four
@@ -52,8 +53,20 @@
 > authorizes this exact WebJam version. Do not invent a signed catalog. The
 > catalog remains sealed at v0.22.5. Shared Track play uses this Mac's BlackHole
 > + bundled headless. Every physical gate remains **NOT RUN**. Do not retag or
-> mutate v0.27.1, add a version-specific publisher, or restack #37. Current
-> `master` is post-tag source and is not the release download.
+> mutate v0.27.1, add a version-specific publisher, or restack #37.
+
+> **v0.27.2 current testing boundary:** GitHub **Latest** is immutable
+> unsigned/ad-hoc release `379360694`, published `2026-08-30T18:06:14Z` from
+> lightweight tag `v0.27.2` pointing directly to exact commit
+> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. It has seven packages plus
+> `WebJam-v0.27.2-SHA256SUMS.txt`. Tag run `33327104322` passed its tests,
+> integrations, and all four desktop builds, then failed **Publish GitHub
+> Release** at the annotated-tag verification gate. The run is red, not
+> publish-green. Do not rerun it, replace the lightweight tag with an annotated
+> tag, or mutate the immutable release or assets. Windows remains unsigned;
+> macOS remains ad-hoc signed and unnotarized. The signed catalog remains sealed
+> at exact WebJam v0.22.5, and every physical, credentialed, signing,
+> notarization, and platform-trust gate remains **NOT RUN**.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version

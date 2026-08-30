@@ -56,9 +56,9 @@ def make_bridge(tmp_path: Path) -> tuple[BridgeService, SimpleNamespace]:
     # artifact policy. Simulate a platform where an approved installed runtime
     # is executable; dedicated tests prove upstream Mac apps remain source-only.
     bridge._jamulus_component_target = ComponentTarget.WINDOWS_X64
-    # This suite verifies binding and ownership against the published v0.27.1
-    # component contract; unsigned v0.27.2 remains intentionally unsupported.
-    bridge._runtime_webjam_version = mock.Mock(return_value="0.27.1")
+    # This suite verifies binding and ownership against the published v0.27.2
+    # component contract and its explicitly approved baked compatibility range.
+    bridge._runtime_webjam_version = mock.Mock(return_value="0.27.2")
     return bridge, settings
 
 
@@ -346,6 +346,7 @@ def test_legacy_invite_replaces_armed_v3_owner_and_clears_loopback_mode(
     from core.network_invite import create_invite_link
     from core.settings import AppSettings, save_settings
     from PySide6.QtWidgets import QApplication
+    from storage.repository import WebJamRepository
     from webjam_qt.windows.conductor_window import ConductorWindow
 
     app = QApplication.instance() or QApplication([])
@@ -360,7 +361,12 @@ def test_legacy_invite_replaces_armed_v3_owner_and_clears_loopback_mode(
         initial_mode_key="music_jam",
         initial_title="Remote Host",
     )
-    controller = ApplicationController(window, settings=settings)
+    repository = WebJamRepository(str(tmp_path / "webjam_app.db"))
+    with mock.patch(
+        "webjam_qt.controllers.application_controller.WebJamRepository",
+        return_value=repository,
+    ):
+        controller = ApplicationController(window, settings=settings)
     controller.begin_startup_journey = mock.Mock()
     owner = mock.Mock()
     controller._install_remote_invite_owner(owner)

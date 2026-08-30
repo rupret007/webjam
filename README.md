@@ -14,36 +14,33 @@ pretending to own systems that remain independent.
 
 > **Testing download:** GitHub [**Latest**](https://github.com/rupret007/webjam/releases/latest)
 > resolves to the published unsigned/ad-hoc
-> [v0.27.1 private test release](https://github.com/rupret007/webjam/releases/tag/v0.27.1),
-> release ID `377614785`, from exact tag commit
-> `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`. It has seven packages plus
-> `WebJam-v0.27.1-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
-> and unnotarized. Tag workflow `33045632613` built all four desktop targets,
-> but the workflow is **not publish-green**: its publisher failed closed because
-> a release already used `v0.27.1`. Do not retag or mutate that release.
+> [v0.27.2 private test release](https://github.com/rupret007/webjam/releases/tag/v0.27.2),
+> release ID `379360694`, from exact tag commit
+> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. It has seven packages plus
+> `WebJam-v0.27.2-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
+> and unnotarized. Tag workflow `33327104322` passed tests, integrations, and
+> all four desktop builds, but the workflow is **not publish-green**: its
+> publisher failed closed because the tag is lightweight rather than
+> annotated. Preserve that red result; do not rerun it, move the tag, or mutate
+> the release. The prior v0.27.1 release also remains immutable.
 
-> **Candidate source boundary:** this checkout reports unsigned v0.27.2 and is
-> post-v0.27.1-tag source. No v0.27.2 tag, draft, release, package, checksum,
-> or physical PASS exists. In that list, “draft” means a GitHub release draft,
-> not the draft pull request used for source review. Jeff has named the full
-> unsigned v0.27.2 release round, but this remains an untagged candidate in an
-> unmerged draft PR; GitHub **Latest** stays v0.27.1 during this review. Jeff
-> explicitly approved
+> **Source boundary:** this checkout reports unsigned v0.27.2 and may contain
+> documentation commits after the exact released tag. A checkout or branch
+> artifact is source evidence, not one of the immutable published packages.
+> Only the filenames and SHA-256 values attached to release `379360694` prove
+> the downloadable v0.27.2 bytes. Jeff explicitly approved
 > the existing Jamulus 3.12.2 and 3.12.3 records through v0.27.2, so live
 > Host/Join and the required
-> component-input build gate are source-eligible. This is still not a usable
-> package without exact release evidence. Changes after the v0.27.1 tag are
-> not in the v0.27.1 download. This checkout and branch artifacts are source
-> evidence, not
-> release packages. Shared Track play uses this Mac's official BlackHole
+> component-input build gate are source-eligible. Shared Track play uses this
+> Mac's official BlackHole
 > 16ch/64ch route at 48 kHz and the bundled headless client; it does not wait
 > for a signed catalog pin. The catalog remains sealed at exact WebJam v0.22.5.
 
-> **Download boundary:** use a v0.27.1 package only when its exact filename and
+> **Download boundary:** use a v0.27.2 package only when its exact filename and
 > SHA-256 appear on the immutable
-> [v0.27.1 GitHub release](https://github.com/rupret007/webjam/releases/tag/v0.27.1).
-> Every physical v0.27 gate remains **NOT RUN**. Do not substitute this
-> post-release checkout or a branch artifact.
+> [v0.27.2 GitHub release](https://github.com/rupret007/webjam/releases/tag/v0.27.2).
+> Every physical v0.27.2 gate remains **NOT RUN**. Do not substitute a later
+> checkout or branch artifact for those checksum-bound bytes.
 
 New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 [First Jam](FIRST_JAM.md); this README is the complete technical story.
@@ -53,8 +50,8 @@ New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 | Area | Current state |
 | --- | --- |
 | Product | Creator-facing desktop conductor around Jamulus, optional external meeting conversation, Studio, and Pocket Stage |
-| Published line | Unsigned/ad-hoc v0.27.1 GitHub Latest private test release; verify its checksum manifest |
-| Current source line | Named, still-untagged unsigned v0.27.2 release candidate; Host/Join reuses the exact baked Jamulus 3.12.2/3.12.3 compatibility records |
+| Published line | Unsigned/ad-hoc v0.27.2 GitHub Latest private test release; verify its checksum manifest |
+| Current source line | Post-release v0.27.2 source; Host/Join reuses the exact baked Jamulus 3.12.2/3.12.3 compatibility records |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -635,25 +632,22 @@ checkout or ordinary branch build as a release.
 
 GitHub [Latest](https://github.com/rupret007/webjam/releases/latest) is the
 published unsigned/ad-hoc
-[v0.27.1 release](https://github.com/rupret007/webjam/releases/tag/v0.27.1).
-Release ID `377614785` was published at `2026-08-27T06:56:11Z`. Annotated
-tag object `ba81f8ef65db1013f13773b1536c812af174d81f` peels to exact commit
-`1fc25f87c3386b1cd94303ecb407cdaff6509d1f`. The release has seven packages
-plus `WebJam-v0.27.1-SHA256SUMS.txt`; Windows is unsigned and macOS is ad-hoc
-signed and unnotarized.
+[v0.27.2 release](https://github.com/rupret007/webjam/releases/tag/v0.27.2).
+Release ID `379360694` was published at `2026-08-30T18:06:14Z`. Lightweight
+tag `v0.27.2` resolves directly to exact commit
+`9c6ca3de96aa7eb261c65b7dee768ab48144169c`. The release has seven packages
+plus `WebJam-v0.27.2-SHA256SUMS.txt`; Windows is unsigned and macOS is ad-hoc
+signed and unnotarized. v0.27.1 remains immutable historical evidence.
 
-Tag workflow `33045632613` passed the four desktop builds and supporting
-automated jobs, then its **Publish GitHub Release** job failed closed because a
-draft or published release already used `v0.27.1`. The overall tag workflow is
-therefore red and is not protected-publisher or publish-green evidence. The
-release remains the current downloadable pointer, but neither that pointer nor
-the green post-tag `master` workflows may be rewritten as a successful release
-round.
+Tag workflow `33327104322` passed the four desktop builds and supporting
+automated jobs, then its **Publish GitHub Release** job failed closed because
+the tag is lightweight rather than annotated. The overall tag workflow is
+therefore red and is not protected-publisher or publish-green evidence. Keep
+that result; do not rerun the job, move the tag, or mutate the release.
 
-This candidate checkout reports unsigned **v0.27.2** but is post-v0.27.1-tag
-source. Jeff has named the full unsigned v0.27.2 release round, but the
-candidate remains untagged and unmerged; GitHub Latest remains v0.27.1 during
-this review. Changes after the released tag are not in the v0.27.1 packages.
+This checkout reports unsigned **v0.27.2**. The exact release tag already
+exists; later documentation commits are post-release source and are not the
+checksum-bound v0.27.2 packages.
 Shared Track play uses this Mac's BlackHole route and the
 bundled headless client; the signed catalog remains sealed at exact WebJam
 v0.22.5 and does not authorize a managed v0.27.2 component. The baked Jamulus
@@ -825,7 +819,7 @@ promote a package or claim audibility.
 
 - [Documentation index](docs/README.md)
 - [Project brief for technical stakeholders](docs/PROJECT_BRIEF.md)
-- [Unsigned v0.27.2 release-candidate and v0.27.1 Latest notes](CHANGELOG.md)
+- [Unsigned v0.27.2 Latest release and trust-boundary notes](CHANGELOG.md)
 - [v0.26.0 creator-multitrack physical checklist — release identity verified; physical rows NOT RUN](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.25.0 creator-multitrack physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.24.0 recording-first physical checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md)

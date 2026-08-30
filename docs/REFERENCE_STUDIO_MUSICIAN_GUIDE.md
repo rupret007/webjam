@@ -5,10 +5,11 @@ a backing track. It can open without a WebJam session, Webex, or Jamulus. Its
 local playback and recording choices do not change the device, buffer, mix, or
 connection owned by Jamulus.
 
-> **v0.27.2 source guide:** GitHub **Latest** is the unsigned/ad-hoc v0.27.1
-> private test release. This candidate checkout is unsigned post-tag source and
-> is not that package. Always verify an exact downloaded asset against its attached
-> checksum manifest before use.
+> **v0.27.2 source guide:** GitHub **Latest** is immutable unsigned/ad-hoc
+> private test release `379360694`, published from lightweight tag `v0.27.2` at
+> exact commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Always verify one
+> of its seven package assets against `WebJam-v0.27.2-SHA256SUMS.txt`; a
+> checkout or branch artifact is not a package substitute.
 
 Windows packages are unsigned. Mac packages are ad-hoc signed and unnotarized.
 Automated checks do not prove that a particular interface, driver, speaker, or
