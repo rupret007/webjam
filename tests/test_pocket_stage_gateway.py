@@ -59,6 +59,9 @@ from services.pocket_stage_packaged_smoke import (
 )
 
 
+pytestmark = pytest.mark.requires_local_socket
+
+
 HOST = "127.0.0.1"
 PORT = 18443
 HOST_HEADER = f"{HOST}:{PORT}"

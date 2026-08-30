@@ -32,6 +32,8 @@ from core.session_transfer import (
 )
 from core.session_transfer_runtime import HostPeerSession
 
+pytestmark = pytest.mark.requires_local_socket
+
 DIGEST = "a" * 64
 OTHER_DIGEST = "b" * 64
 

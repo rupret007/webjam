@@ -8,6 +8,8 @@ helpers. Uses QT_QPA_PLATFORM=offscreen so no display is required.
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
@@ -19,6 +21,7 @@ from unittest import mock  # noqa: E402
 from core.settings import AppSettings  # noqa: E402
 from tests.support.jamulus_monitor import bind_primary_rpc_monitor  # noqa: E402
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
+from webjam_qt.controllers import session_persistence as persistence_module  # noqa: E402
 from webjam_qt.widgets.participant_card import ParticipantPresentation  # noqa: E402
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
 
@@ -298,14 +301,13 @@ class TestSessionMetadataPersistence(unittest.TestCase):
 
     def test_save_and_load_round_trips_title_and_mode(self):
         import json
-        import os
         import tempfile
 
-        # Redirect HOME to a temp dir so we don't clobber the user's file
-        old_home = os.environ.get("HOME", "")
-        with tempfile.TemporaryDirectory() as tmp:
-            os.environ["HOME"] = tmp
-
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+            persistence_module,
+            "_persistence_home",
+            return_value=Path(tmp),
+        ):
             window = ConductorWindow(
                 mode_entries=ApplicationController.mode_entries(),
                 initial_mode_key="music_jam",
@@ -337,11 +339,6 @@ class TestSessionMetadataPersistence(unittest.TestCase):
                     self.assertEqual(music["mode"], non_default)
             finally:
                 controller.shutdown()
-                # Restore HOME for subsequent tests
-                if old_home:
-                    os.environ["HOME"] = old_home
-                else:
-                    os.environ.pop("HOME", None)
 
 
 if __name__ == "__main__":

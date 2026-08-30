@@ -19,24 +19,27 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 _app = QApplication.instance() or QApplication([])
 
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
+from webjam_qt.controllers import session_persistence as persistence_module  # noqa: E402
 from webjam_qt.controllers.session_persistence import SessionPersistence  # noqa: E402
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
 
 
 class _TempHome:
-    """Context manager that points $HOME at a fresh temp dir."""
+    """Context manager that points persistence at a fresh temp dir."""
 
     def __enter__(self):
-        self._old_home = os.environ.get("HOME", "")
         self._tmp = tempfile.TemporaryDirectory()
-        os.environ["HOME"] = self._tmp.name
-        return Path(self._tmp.name)
+        home = Path(self._tmp.name)
+        self._home_patch = mock.patch.object(
+            persistence_module,
+            "_persistence_home",
+            return_value=home,
+        )
+        self._home_patch.start()
+        return home
 
     def __exit__(self, *exc):
-        if self._old_home:
-            os.environ["HOME"] = self._old_home
-        else:
-            os.environ.pop("HOME", None)
+        self._home_patch.stop()
         self._tmp.cleanup()
         return False
 

@@ -45,6 +45,12 @@ if set(_PROFILE_NOTES_FILES) != set(_PROFILE_ORDER):
     raise RuntimeError("Every creator profile requires a private notes file.")
 
 
+def _persistence_home() -> Path:
+    """Return the trusted root for profile notes and session metadata."""
+
+    return Path.home()
+
+
 def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
     result: dict[str, object] = {}
     for key, value in pairs:
@@ -236,7 +242,7 @@ class SessionPersistence:
         return canonical
 
     def _notes_path(self) -> Path:
-        return Path.home() / _PROFILE_NOTES_FILES[self._creator_profile_key]
+        return _persistence_home() / _PROFILE_NOTES_FILES[self._creator_profile_key]
 
     # ------------------------------------------------------------------
     # Public API
@@ -299,7 +305,7 @@ class SessionPersistence:
     # Session metadata (title + mode)
     # ------------------------------------------------------------------
     def _load_session_metadata(self) -> None:
-        path = Path.home() / _SESSION_FILE
+        path = _persistence_home() / _SESSION_FILE
         try:
             record = _load_profile_records(path).get(self._creator_profile_key)
             if record is None:
@@ -321,14 +327,14 @@ class SessionPersistence:
         """Return this profile's title so a borrowed one can be left alone."""
 
         try:
-            records = _load_profile_records(Path.home() / _SESSION_FILE)
+            records = _load_profile_records(_persistence_home() / _SESSION_FILE)
         except Exception:  # noqa: BLE001 - absent or unreadable is fine
             return ""
         return records.get(self._creator_profile_key, {}).get("title", "")
 
     def _save_session_metadata(self) -> None:
         try:
-            path = Path.home() / _SESSION_FILE
+            path = _persistence_home() / _SESSION_FILE
             try:
                 records = _load_profile_records(path)
             except Exception:  # noqa: BLE001 - replace corrupt metadata safely

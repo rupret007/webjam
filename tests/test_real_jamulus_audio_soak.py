@@ -54,6 +54,8 @@ from tests.support.jamulus_jack_harness import (
     make_fixture,
 )
 
+pytestmark = pytest.mark.requires_local_socket
+
 MIN_SOAK_SECONDS = 60.0 * 60.0
 DEFAULT_RESOURCE_INTERVAL_S = 60.0
 DEFAULT_MAX_RSS_GROWTH_KIB = 64 * 1024

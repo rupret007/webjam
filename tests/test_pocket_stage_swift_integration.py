@@ -22,6 +22,9 @@ from core.session_conductor import (
 from services.pocket_stage_gateway import PocketStageGateway
 
 
+pytestmark = pytest.mark.requires_local_socket
+
+
 ROOT = Path(__file__).resolve().parents[1]
 
 

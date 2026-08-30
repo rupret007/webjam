@@ -27,6 +27,9 @@ from tests.support.jamulus_jack_harness import (
 )
 
 
+pytestmark = pytest.mark.requires_local_socket
+
+
 def test_fixture_analyzer_preserves_rate_channels_duration_and_identity() -> None:
     fixture = make_fixture(SPEC_A)
     delay = 384

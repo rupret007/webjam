@@ -70,10 +70,12 @@ def isolate_application_controller_repository(request, tmp_path_factory):
     from webjam_qt.controllers import (
         application_controller as controller_module,
     )
+    from webjam_qt.controllers import session_persistence as persistence_module
 
     repository_type = controller_module.WebJamRepository
     repository_root = tmp_path_factory.mktemp("webjam-controller-repository")
     repository_sequence = count(1)
+    persistence_home = tmp_path_factory.mktemp("webjam-session-persistence")
 
     def isolated_repository(db_path=None):
         selected_path = (
@@ -85,9 +87,12 @@ def isolate_application_controller_repository(request, tmp_path_factory):
         return repository_type(str(selected_path))
 
     controller_module.WebJamRepository = isolated_repository
+    original_persistence_home = persistence_module._persistence_home
+    persistence_module._persistence_home = lambda: persistence_home
     try:
         yield
     finally:
+        persistence_module._persistence_home = original_persistence_home
         controller_module.WebJamRepository = repository_type
 
 
@@ -99,6 +104,7 @@ def isolate_jamulus_rpc_secret_path(request, tmp_path_factory):
         request,
         "ApplicationController",
         "BridgeService",
+        "JamulusRpcClient",
         "DEFAULT_SECRET_PATH",
         "launch_jamulus",
     ):

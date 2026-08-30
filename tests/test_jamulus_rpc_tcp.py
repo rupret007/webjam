@@ -15,12 +15,17 @@ import time
 import unittest
 from pathlib import Path
 
+import pytest
+
 from core.jamulus_rpc_client import (
     LIVE_SEND_MUTE,
     PINNED_CLIENT_REQUEST_METHODS,
     PINNED_REQUEST_METHODS,
     JamulusRpcClient,
 )
+
+
+pytestmark = pytest.mark.requires_local_socket
 
 
 def _loopback_bind_permitted() -> bool:

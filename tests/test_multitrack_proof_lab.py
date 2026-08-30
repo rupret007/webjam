@@ -30,6 +30,9 @@ from tests.support.multitrack_proof_lab import (
 )
 
 
+pytestmark = pytest.mark.requires_local_socket
+
+
 def _loopback_bind_permitted() -> bool:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:

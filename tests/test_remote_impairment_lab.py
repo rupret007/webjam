@@ -31,6 +31,9 @@ from tests.support.remote_impairment_lab import (
 )
 
 
+pytestmark = pytest.mark.requires_local_socket
+
+
 def make_channel(
     profile: ImpairmentProfile,
     *,

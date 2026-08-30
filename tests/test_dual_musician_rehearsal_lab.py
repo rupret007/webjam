@@ -7,12 +7,17 @@ import stat
 import socket
 import unittest
 
+import pytest
+
 from core import session_transfer_runtime
 from tests.support.dual_musician_rehearsal_lab import (
     CLEANUP_SCHEMA,
     LAB_REPORT_SCHEMA,
     DualMusicianRehearsalLab,
 )
+
+
+pytestmark = pytest.mark.requires_local_socket
 
 
 def _loopback_bind_permitted() -> bool:

@@ -19,6 +19,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
@@ -28,6 +30,9 @@ from core.jamulus_server_rpc import (  # noqa: E402
     ServerRpcError,
     read_secret_file,
 )
+
+
+pytestmark = pytest.mark.requires_local_socket
 
 
 def _make_staged_server_take(

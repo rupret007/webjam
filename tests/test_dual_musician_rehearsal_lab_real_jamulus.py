@@ -22,6 +22,9 @@ import pytest
 from tests.support.jamulus_jack_harness import JamulusJackHarness
 
 
+pytestmark = pytest.mark.requires_local_socket
+
+
 @pytest.mark.skipif(
     os.environ.get("WEBJAM_RUN_JACK_AUDIO_INTEGRATION") != "1",
     reason="real Jamulus dual-musician companion is opt-in",

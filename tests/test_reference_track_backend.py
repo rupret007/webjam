@@ -39,6 +39,9 @@ from services.reference_track_backend import (
 import services.reference_track_backend as reference_backend
 
 
+pytestmark = pytest.mark.requires_local_socket
+
+
 def _legacy_jamulus_container_directory(home: Path) -> Path:
     return (
         home

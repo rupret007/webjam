@@ -9,6 +9,7 @@ from __future__ import annotations
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from core.jamulus_rpc_client import JamulusRpcClient
 
@@ -66,28 +67,29 @@ class TestRpcClientConcurrency(unittest.TestCase):
 
     def test_stop_racing_with_callers(self):
         client = JamulusRpcClient(port=22222)
-        client.start()  # reader thread just retry-connects to nothing
-        errors: list[BaseException] = []
-        lock = threading.Lock()
-        stop_evt = threading.Event()
+        with patch.object(client, "_read_secret", return_value=None):
+            client.start()  # reader thread retries without opening a socket
+            errors: list[BaseException] = []
+            lock = threading.Lock()
+            stop_evt = threading.Event()
 
-        def hammer():
-            try:
-                while not stop_evt.is_set():
-                    client.set_channel_gain(0, 64)
-                    client._next_id()
-                    client.last_activity_age()
-            except BaseException as exc:  # noqa: BLE001
-                with lock:
-                    errors.append(exc)
+            def hammer():
+                try:
+                    while not stop_evt.is_set():
+                        client.set_channel_gain(0, 64)
+                        client._next_id()
+                        client.last_activity_age()
+                except BaseException as exc:  # noqa: BLE001
+                    with lock:
+                        errors.append(exc)
 
-        t = threading.Thread(target=hammer)
-        t.start()
-        time.sleep(0.1)
-        client.stop()      # race stop against the hammer
-        time.sleep(0.1)
-        stop_evt.set()
-        t.join(timeout=5)
+            t = threading.Thread(target=hammer)
+            t.start()
+            time.sleep(0.1)
+            client.stop()  # race stop against the hammer
+            time.sleep(0.1)
+            stop_evt.set()
+            t.join(timeout=5)
 
         self.assertFalse(t.is_alive(), "caller deadlocked across stop()")
         self.assertFalse(errors, f"raised: {errors!r}")

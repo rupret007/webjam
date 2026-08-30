@@ -40,8 +40,16 @@ git diff --check
 git diff --check origin/master...HEAD
 .venv/bin/python -m pip_audit --progress-spinner off
 .venv/bin/python ux_smoke_test.py
-QT_QPA_PLATFORM=offscreen .venv/bin/pytest -q
+while IFS= read -r test_file; do
+  QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest "$test_file" -q || exit $?
+done < <(git ls-files 'tests/test_*.py')
 ```
+
+Every tracked module runs in its own Python process. Modules marked
+`requires_local_socket` open a real OS-local listener or connection in at least
+one test; the marker is execution metadata, not an automatic skip. A restricted
+sandbox may run the unmarked modules, but the source gate is incomplete until
+every marked module also runs in an environment that permits its local socket.
 
 ### Deterministic multitrack proof
 

@@ -153,6 +153,10 @@ Run the following once, in this order, on the exact candidate head:
 
 `git diff --check` is part of the source check. A subset, one combined long-lived
 pytest process, or a prior commit's result is not the complete local suite.
+The registered `requires_local_socket` marker identifies modules that open a
+real OS-local listener or connection; it never skips them in hosted CI. A
+sandboxed run that excludes those modules is explicitly incomplete until each
+marked module passes once, in a fresh process, with local-socket permission.
 
 ### Complete hosted suite second
 

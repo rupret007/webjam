@@ -23,6 +23,9 @@ from tests.support.jamulus_jack_harness import (
 )
 
 
+pytestmark = pytest.mark.requires_local_socket
+
+
 @pytest.mark.skipif(
     os.environ.get("WEBJAM_RUN_JACK_AUDIO_INTEGRATION") != "1",
     reason="real three-client Reference Track companion is opt-in",

@@ -20,6 +20,8 @@ import pytest
 from core.jamulus_compatibility import ComponentTarget, JamulusRole
 from tests.support.component_store import isolated_component_store_root
 
+pytestmark = pytest.mark.requires_local_socket
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 @pytest.fixture(autouse=True)

@@ -35,6 +35,9 @@ from webjam_qt.windows.launch_dialog import (
 )
 
 
+pytestmark = pytest.mark.requires_local_socket
+
+
 @pytest.fixture(scope="module")
 def qapp():
     return QApplication.instance() or QApplication(sys.argv[:1])

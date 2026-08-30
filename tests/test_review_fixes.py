@@ -22,6 +22,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
+import pytest
+
+
+pytestmark = pytest.mark.requires_local_socket
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 

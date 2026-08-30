@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import time
 import unittest
+from unittest.mock import patch
+
 from core.jamulus_rpc_client import JamulusRpcClient
 
 
@@ -53,12 +55,13 @@ class TestRpcHeartbeat(unittest.TestCase):
         # Simulate a previous session that last succeeded 100s ago.
         client._last_activity_at = time.monotonic() - 100.0
         client.stop()
-        try:
-            client.start()
-            # Right after restart, before any new success, age must be inf.
-            self.assertEqual(client.last_activity_age(), float("inf"))
-        finally:
-            client.stop()
+        with patch.object(client, "_read_secret", return_value=None):
+            try:
+                client.start()
+                # Right after restart, before any new success, age must be inf.
+                self.assertEqual(client.last_activity_age(), float("inf"))
+            finally:
+                client.stop()
 
 
 if __name__ == "__main__":

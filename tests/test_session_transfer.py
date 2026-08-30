@@ -30,6 +30,9 @@ from core.session_transfer import (
 )
 
 
+pytestmark = pytest.mark.requires_local_socket
+
+
 def _id() -> str:
     return str(uuid.uuid4())
 
