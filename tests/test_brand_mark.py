@@ -357,13 +357,13 @@ def test_packaging_keeps_the_vector_companion_and_platform_icons():
     assert '"webjam.icns"' in spec
 
 
-def test_linux_candidate_template_does_not_claim_an_unshipped_launcher():
+def test_linux_release_readme_does_not_claim_an_unshipped_launcher():
     readme = (ROOT / "packaging" / "linux" / "README-LINUX.txt").read_text(
         encoding="utf-8"
     )
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     readme_words = " ".join(readme.split())
-    assert "The future artifact is a portable ZIP, not a distro package." in readme
+    assert "The artifact is a portable ZIP, not a distro package." in readme
     assert "does not install an application-menu entry" in readme_words
     assert ".desktop launcher" in readme_words
     desktop_build = workflow.split(
