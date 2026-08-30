@@ -1,9 +1,12 @@
 # WebJam architecture — v0.27.2 source
 
-> This document describes current unsigned v0.27.2 source. GitHub **Latest** is the
+> This document describes the named, still-untagged unsigned v0.27.2 release
+> candidate, based on exact starting `master` commit
+> `dab7d803b7551e8dbec517a2e5945f0af76285c9`. GitHub **Latest** remains the
 > unsigned/ad-hoc v0.27.1 release from exact tag commit
 > `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`. This candidate checkout is
-> post-tag source and is not that download. Source text is not package evidence.
+> post-v0.27.1-tag source and is not that download. Source text and branch CI
+> are not package evidence; no v0.27.2 tag or release exists yet.
 > The existing Jamulus 3.12.2 and 3.12.3 records are approved through v0.27.2,
 > so baked Host/Join selection and the package build gate are source-eligible.
 > The signed public catalog remains sealed at exact WebJam v0.22.5.
@@ -18,7 +21,7 @@ meeting services reached through hardened external links. The boundary is delibe
 | Layer | Responsibility |
 | --- | --- |
 | `webjam_qt` | Host/Join launch, Session HUD, live Shared Track deck/transport, Record Session and session-Studio UI, standalone Reference Studio, recovery messages |
-| `core/creative_modes.py` | Canonical Music and Podcast & Voice GA profiles, Review & Rehearsal and Art Preview profiles, Art's three bounded start cards, safe defaults, legacy aliases, and cross-surface presentation vocabulary |
+| `core/creative_modes.py` | Canonical Music and Podcast & Voice GA profiles, Review & Rehearsal and Art Preview profiles, Art's two bounded visible starts, safe defaults, legacy aliases, and cross-surface presentation vocabulary |
 | `core/reference_video.py` | Art's host-clocked reference video: descriptor-bound content hashing, session-scoped same-file identity, host-only transport, and a fail-closed follower |
 | `core/drawpile.py`, `core/shared_canvas.py`, `services/drawpile_service.py` | Art's shared canvas as a Drawpile handoff: explicit install-location discovery with no PATH search, documented invitation parsing and normalization, host-only canvas choice, and a fail-closed follower that never launches an unparseable address |
 | `core/krita_ai.py`, `core/ai_image.py`, `services/krita_ai_service.py` | Art's in-session AI image action as a Krita handoff: Krita and AI-plugin discovery, a single loopback-only backend boundary, two local verbs (Make and Edit), and no prompt, model, publisher, or wire projection of any kind |

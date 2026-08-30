@@ -1,9 +1,12 @@
 # WebJam project brief
 
-**Review date:** 2026-08-27
+**Review date:** 2026-08-30
 **Status:** unsigned/ad-hoc v0.27.1 is GitHub Latest release `377614785`.
-Current v0.27.2 source is post-tag and is not that package. Live Jamulus
-Host/Join reuses the existing exact 3.12.2 and 3.12.3 records; every v0.27
+Jeff has named unsigned v0.27.2 as the next full release candidate, starting
+from exact `master` commit `dab7d803b7551e8dbec517a2e5945f0af76285c9`.
+It remains untagged source, not a package: Karen PASS and Jeff's attended merge
+must precede Bob's later tag of exact landed `master`. Live Jamulus Host/Join
+reuses the existing exact 3.12.2 and 3.12.3 records; every v0.27
 physical/hardware gate is **NOT RUN**.
 
 ## Executive summary
@@ -83,6 +86,15 @@ the full contract.
 
 ## Verified status
 
+- GitHub Latest remains the immutable unsigned/ad-hoc v0.27.1 release
+  `377614785` from exact tag commit
+  `1fc25f87c3386b1cd94303ecb407cdaff6509d1f`, with seven packages plus its
+  checksum manifest. Its tag workflow is red rather than publish-green because
+  the publisher correctly refused to replace the already-existing release.
+- The named v0.27.2 candidate starts from exact `dab7d803`. Hosted run
+  `33285848154` passed all 12 required jobs on that starting commit; it is
+  baseline evidence only. The later exact docs-and-tests head still needs the
+  complete local suite and its own complete hosted run before Karen PASS.
 - The published v0.26.0 release contains Windows x64, Ubuntu 22.04 x64, Intel
   Mac, and Apple-silicon Mac packages plus an exact checksum manifest.
 - `cryptography` 50.0.0 remediates the three audited runtime CVEs; the Intel
@@ -127,9 +139,10 @@ services receive friendly labels; generic providers remain neutral and receive
 no native-verification claim. Exact Jamulus correlation, bounded guest
 observation, and fail-closed take/export evidence remain the authority.
 
-This is a new source and package identity, not a rebuild or replacement of
-v0.25.0. Familiar DAW interactions are used for clarity and musical flow
-without copying Apple
+This is a distinct v0.27.2 source identity intended for a later package, not a
+rebuild, retag, or mutation of the v0.27.1 release or any earlier release.
+The untagged candidate is not package evidence. Familiar DAW interactions are
+used for clarity and musical flow without copying Apple
 artwork, exact layouts, assets, or trade dress. Physical audibility, isolation,
 alignment, recovery, output, and packaged UX remain **NOT RUN**.
 
@@ -146,8 +159,9 @@ claimed as implemented in this repository.
 ## Five-minute evaluation
 
 1. Read the [root README](../README.md) and [creator guide](../USER_GUIDE.md).
-2. Use [GitHub Latest](https://github.com/rupret007/webjam/releases/latest) for
-   the current downloadable candidate and verify its checksum manifest. Use
+2. Use the immutable
+   [v0.27.1 GitHub Latest release](https://github.com/rupret007/webjam/releases/tag/v0.27.1)
+   for the current downloadable candidate and verify its checksum manifest. Use
    immutable [v0.23.0](https://github.com/rupret007/webjam/releases/tag/v0.23.0)
    only when evaluating that historical baseline.
 3. Confirm Latest resolves to the unsigned/ad-hoc

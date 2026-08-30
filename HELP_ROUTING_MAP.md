@@ -1,6 +1,7 @@
 # WebJam help routing — v0.27.2 source
 
-> These labels describe current unsigned v0.27.2 source. GitHub **Latest** is the
+> Current unsigned v0.27.2 source is the named release candidate, but it remains
+> untagged source in an unmerged draft PR. GitHub **Latest** is still the
 > unsigned/ad-hoc v0.27.1 private test release. No physical PASS is claimed;
 > every v0.27 physical and release-decision row remains **NOT RUN**.
 > Unsigned v0.27.2 source reuses the existing exact Jamulus 3.12.2 and 3.12.3

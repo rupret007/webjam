@@ -8,11 +8,13 @@
 
 > **Source note:** use the exact release tag and attached checksum manifest as
 > download evidence; an untagged checkout is not a substitute. Current
-> candidate source is post-tag and is not that package.
+> candidate source is post-v0.27.1-tag and is not that package.
 
 > **What this checkout is:** an unsigned v0.27.2 source candidate after the
-> v0.27.1 release. The exact published v0.27.1 release assets—not this checkout
-> or a branch artifact—are package evidence. Live Host/Join and package builds
+> v0.27.1 release. Jeff has named it as the unsigned v0.27.2 release candidate,
+> but it remains untagged source in an unmerged draft PR; GitHub **Latest** is
+> still v0.27.1. The exact published v0.27.1 release assets—not this checkout or
+> a branch artifact—are package evidence. Live Host/Join and package builds
 > reuse the exact baked Jamulus 3.12.2 and 3.12.3 records through v0.27.2; the
 > signed public catalog is unchanged. No physical PASS result is claimed.
 
@@ -82,9 +84,9 @@ managed copies available on macOS. On Windows and Linux, the operating system
 owns installation and WebJam retains its embedded 3.12.2 fallback instead of
 claiming it can roll back the system package.
 
-That fallback is authorized for the released v0.27.1 line, not unsigned
-v0.27.2 source. This candidate cannot start live Jamulus audio until a separate
-review extends the immutable compatibility evidence.
+The exact baked Jamulus 3.12.2 and 3.12.3 records are approved through unsigned
+v0.27.2 source, so live Host/Join is source-eligible. This checkout is still not
+package evidence or a physical-test result.
 
 Jamulus displays a name on a second line after eight characters and accepts no
 more than 16 UTF-16 units. WebJam shows that preview anywhere you enter your
@@ -192,8 +194,9 @@ Waveforms load in the background and recorded gaps remain silence. Studio
 autosaves choices to a separate file; a failed save keeps the edit pending and
 the recorded take safe. Real two-Mac output, hardware interruption/recovery,
 external-editor import, physical Reference Studio audio, and signed-install
-gates are **NOT RUN** for the v0.27.0 private test release and remain unclaimed
-for current v0.27.2 source. Publishing a private candidate does not convert them to PASS. The
+gates remain **NOT RUN** throughout v0.27, including the v0.27.1 private test
+release and current v0.27.2 source. Publishing a private candidate does not
+convert them to PASS. The
 [v0.26 physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 is the all-NOT-RUN physical ledger for that earlier published package; do not
 execute it against this checkout. The

@@ -30,18 +30,36 @@ REQUIRED_CI_JOBS = (
     ),
 )
 DESKTOP_TARGETS = ("windows-x64", "macos-arm64", "macos-x64", "linux-x64")
+JAMULUS_INTEGRATION_VERSIONS = ("3.12.2", "3.12.3")
+JAMULUS_UPDATE_TARGETS = ("windows-x64", "macos-universal")
 NOT_RUN_CI_JOB_NAMES = (
     "Certify Jamulus/JACK (one hour, manual)",
     "Windows Release Trust (windows-x64)",
     "macOS Release Trust",
     "Jamulus 3.12.3 HEADLESS evidence",
+    "Publish GitHub Release",
 )
 DOCS_PASS_FILES = (
+    "CHANGELOG.md",
     "USER_GUIDE.md",
     "README.md",
+    "README_SIMPLE.md",
     "QUICK_HELP_MAP.md",
-    "CHANGELOG.md",
     "HELP_ROUTING_MAP.md",
+    "FIRST_JAM.md",
+    "ARCHITECTURE.md",
+    "docs/PROJECT_BRIEF.md",
+)
+ROUND_CONTROL_FILES = (
+    "docs/MERGE_AND_RELEASE.md",
+    "tests/test_merge_and_release_map.py",
+)
+LOCAL_SUITE_MARKERS = (
+    "`ruff check webjam_qt/ core/ ui/ services/ api/`",
+    "dependency audits:",
+    "`python -m compileall -q core webjam_qt ui services api tests`",
+    "`python ux_smoke_test.py`",
+    "every tracked `tests/test_*.py` module",
 )
 
 
@@ -53,8 +71,8 @@ def _heading_anchors(text: str) -> set[str]:
     return anchors
 
 
-def test_map_records_the_finished_land_and_the_parked_leftovers() -> None:
-    positions = [FLAT_MAP_TEXT.index(f"| {step} |") for step in range(1, 4)]
+def test_map_records_the_named_round_and_the_parked_leftovers() -> None:
+    positions = [FLAT_MAP_TEXT.index(f"| {step} |") for step in range(1, 7)]
     assert positions == sorted(positions), "the remaining steps must read in order"
     for landed in ("#14", "#15", "#16", "#17", "#19"):
         assert landed in FLAT_MAP_TEXT, landed
@@ -68,14 +86,21 @@ def test_map_records_the_finished_land_and_the_parked_leftovers() -> None:
     assert "still a draft" not in FLAT_MAP_TEXT
     assert "is the open product branch" not in FLAT_MAP_TEXT
 
-    # The only remaining steps: leave the parked branches alone, leave the
-    # published release alone, and fix a page only if it still lies.
+    # The parked branches and already-published release remain untouched.
     assert "#37 and #49 stay parked" in FLAT_MAP_TEXT
     assert "do not retag or mutate" in FLAT_MAP_TEXT
-    assert "docs-only leftover PR only if a page still lies" in FLAT_MAP_TEXT
 
-    # A later release waits on Jeff naming it, not on #17.
-    assert "waits until Jeff names it" in FLAT_MAP_TEXT
+    # Jeff named this exact round; the draft review, attended merge, and later
+    # tag are distinct ordered steps.
+    assert "Jeff has named the full unsigned v0.27.2 release round" in FLAT_MAP_TEXT
+    assert "dab7d803b7551e8dbec517a2e5945f0af76285c9" in FLAT_MAP_TEXT
+    assert "33285848154" in FLAT_MAP_TEXT
+    assert "base only, not this candidate head" in FLAT_MAP_TEXT
+    assert "Open one draft PR for Karen" in FLAT_MAP_TEXT
+    assert "only after Karen PASS" in FLAT_MAP_TEXT
+    assert "Tag exact landed `master` as `v0.27.2` later" in FLAT_MAP_TEXT
+    assert "this PR stops before this step" in FLAT_MAP_TEXT
+    assert "waits until Jeff names it" not in FLAT_MAP_TEXT
     assert "does not wait on #17" in FLAT_MAP_TEXT
 
 
@@ -122,9 +147,33 @@ def test_map_gates_landing_and_release_on_the_ten_second_read() -> None:
 
 
 def test_map_keeps_the_merge_button_attended() -> None:
-    assert FLAT_MAP_TEXT.count("Jeff merges") >= 3
+    assert "Jeff merges through the attended button only after Karen PASS" in (
+        FLAT_MAP_TEXT
+    )
+    assert "Jeff presses merge" in FLAT_MAP_TEXT
     assert "Bob does not merge unattended" in FLAT_MAP_TEXT
+    assert "does not tag or publish from this pull request" in FLAT_MAP_TEXT
     assert "no force-push over someone else's product branch" in FLAT_MAP_TEXT
+
+
+def test_map_requires_the_complete_local_suite_before_hosted_ci() -> None:
+    local_section = MAP_TEXT.partition("### Complete local suite first")[2].partition(
+        "### Complete hosted suite second"
+    )[0]
+    assert local_section, "the complete local suite must precede hosted CI"
+    flat_local_section = " ".join(local_section.split())
+    positions = [flat_local_section.index(marker) for marker in LOCAL_SUITE_MARKERS]
+    assert positions == sorted(positions), "local release gates must stay in order"
+    for marker in (
+        "`python -m pip check`",
+        "`python tools/runtime_dependency_policy.py --check`",
+        "`pip-audit`",
+        "every supported native dependency lock",
+        "one fresh Python process per module",
+        "no retry",
+        "`git diff --check`",
+    ):
+        assert marker in flat_local_section, marker
 
 
 def test_map_names_real_required_ci_jobs_and_fails_closed() -> None:
@@ -139,8 +188,22 @@ def test_map_names_real_required_ci_jobs_and_fails_closed() -> None:
     for target in DESKTOP_TARGETS:
         assert f"({target})" in required_section, target
         assert f"target: {target}" in WORKFLOW_TEXT, target
+    integration_template = (
+        "name: Integration (real Jamulus ${{ matrix.jamulus_version }})"
+    )
+    assert integration_template in WORKFLOW_TEXT
+    for version in JAMULUS_INTEGRATION_VERSIONS:
+        assert f"Integration (real Jamulus {version})" in required_section, version
+        assert f'jamulus_version: "{version}"' in WORKFLOW_TEXT, version
+    update_template = "name: Jamulus 3.12.3 update input (${{ matrix.target }})"
+    assert update_template in WORKFLOW_TEXT
+    for target in JAMULUS_UPDATE_TARGETS:
+        assert f"Jamulus 3.12.3 update input ({target})" in required_section, target
+        assert f"target: {target}" in WORKFLOW_TEXT, target
     assert "\n  test:\n" in WORKFLOW_TEXT and "- `test`" in required_section
+    assert "all 12 required hosted jobs" in required_section
     assert "Red means stop" in required_section
+    assert "Do not re-run a job to change its result" in required_section
 
 
 def test_map_lists_unproven_gates_as_not_run_only() -> None:
@@ -155,16 +218,31 @@ def test_map_lists_unproven_gates_as_not_run_only() -> None:
         "Physical and hardware checklist rows",
     ):
         assert gate in not_run_section, gate
+    for boundary in ("signing", "notarization", "physical machines"):
+        assert boundary in not_run_section, boundary
 
 
 def test_map_docs_pass_targets_exist_and_stay_kiss() -> None:
-    for relative_path in DOCS_PASS_FILES:
+    for relative_path in DOCS_PASS_FILES + ROUND_CONTROL_FILES:
         assert (ROOT / relative_path).is_file(), relative_path
         assert relative_path in MAP_TEXT, relative_path
 
     assert "**Art** and **Music**" in FLAT_MAP_TEXT
     assert "No add-on" in FLAT_MAP_TEXT
     assert "No integration wall" in FLAT_MAP_TEXT
+
+
+def test_changelog_moves_final_art_door_work_into_v0272() -> None:
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    unreleased = changelog.partition("## [Unreleased]")[2].partition("## [0.27.2]")[0]
+    v0272 = changelog.partition("## [0.27.2]")[2].partition("## [0.27.1]")[0]
+    heading = "### Art starts with fewer choices"
+    assert heading not in unreleased
+    assert heading in v0272
+    assert "exactly two start cards" in v0272
+    assert "Music remains\n  **Host** / **Join** only" in v0272
+    assert "Its two starts" in v0272
+    assert "Its three starts" not in v0272
 
 
 def test_map_local_links_resolve_and_the_docs_index_points_at_it() -> None:
