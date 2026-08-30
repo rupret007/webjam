@@ -1,4 +1,4 @@
-"""Art's first minute: three cards, then Host or Join.
+"""Art's first minute: two cards, then Host or Join.
 
 The point of this pass is that a person reads a short list once. These tests
 therefore count what is actually on screen, not only what the registry says,
@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
+from PySide6.QtCore import QSize
 from PySide6.QtWidgets import QApplication, QPushButton
 
 from core.creative_modes import CREATOR_PROFILES, get_creator_profile_by_key
@@ -77,17 +78,16 @@ def _assert_first_screen_has_no_banned_words(spoken: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Three cards, and nothing more
+# Two cards, and nothing more
 # ---------------------------------------------------------------------------
 
 
-def test_art_shows_exactly_three_start_cards(qapp, tmp_path: Path):
+def test_art_shows_exactly_two_start_cards(qapp, tmp_path: Path):
     dialog = _dialog(tmp_path)
     try:
         cards = _visible_cards(dialog)
         assert [card.start_key for card in cards] == [
             "talk_and_make",
-            "paint_together",
             "paint_along",
         ]
     finally:
@@ -97,7 +97,7 @@ def test_art_shows_exactly_three_start_cards(qapp, tmp_path: Path):
 def test_art_adds_no_start_action_beyond_the_cards_and_host_join(
     qapp, tmp_path: Path
 ):
-    """No fourth card, no tool picker, no preset forest.
+    """No third card, no tool picker, no preset forest.
 
     The whole visible button set on the choice page is counted, so an added
     control cannot slip in as "just one more".
@@ -112,7 +112,7 @@ def test_art_adds_no_start_action_beyond_the_cards_and_host_join(
             b for b in buttons if not isinstance(b, (StartCard, ProfileCard))
         ]
 
-        assert len(cards) == 3
+        assert len(cards) == 2
         assert [card.accessibleName() for card in profiles] == ["Art", "Music"]
         assert [button.text() for button in others] == ["Host", "Join"]
         # Art has no standalone Studio project, so that door stays shut
@@ -134,8 +134,13 @@ def test_only_paint_along_shows_the_face_mark(qapp, tmp_path: Path):
     try:
         cards = {card.start_key: card for card in _visible_cards(dialog)}
         assert cards["paint_along"].icon().isNull() is False
+        assert cards["paint_along"].iconSize() == QSize(40, 40)
         assert cards["talk_and_make"].icon().isNull() is True
-        assert cards["paint_together"].icon().isNull() is True
+        assert set(cards) == {"talk_and_make", "paint_along"}
+        for button in _visible_buttons(dialog):
+            if button is not cards["paint_along"]:
+                assert button.icon().isNull() is True
+        assert "bob ross" not in _first_screen_spoken(dialog)
     finally:
         dialog.deleteLater()
 
@@ -159,7 +164,7 @@ def test_a_card_is_a_large_target_that_never_submits_the_dialog(
     try:
         for card in _visible_cards(dialog):
             assert card.minimumHeight() >= 48
-            # Bounded above too, so three cards plus Host and Join all stay
+            # Bounded above too, so two cards plus Host and Join all stay
             # on screen at the supported window floor.
             assert card.maximumHeight() <= 72
             assert card.isCheckable() is True
@@ -179,7 +184,7 @@ def test_exactly_one_card_is_chosen_at_all_times(qapp, tmp_path: Path):
         assert sum(card.isChecked() for card in cards) == 1
         assert dialog.selected_start_key == "talk_and_make"
 
-        cards[2].setChecked(True)
+        cards[1].setChecked(True)
         assert sum(card.isChecked() for card in cards) == 1
         assert dialog.selected_start_key == "paint_along"
     finally:
@@ -191,10 +196,10 @@ def test_choosing_a_card_binds_host_to_that_card(qapp, tmp_path: Path):
     try:
         cards = {card.start_key: card for card in _visible_cards(dialog)}
 
-        cards["paint_together"].setChecked(True)
+        cards["talk_and_make"].setChecked(True)
         host_described = dialog._host_button.accessibleDescription().casefold()
-        assert "start paint together as the host" in host_described
-        assert "canvas everyone can draw on" in host_described
+        assert "start make together as the host" in host_described
+        assert "shared canvas from inside the room" in host_described
 
         cards["paint_along"].setChecked(True)
         host_described = dialog._host_button.accessibleDescription().casefold()
@@ -260,7 +265,7 @@ def test_the_page_never_says_the_same_thing_twice(qapp, tmp_path: Path):
     dialog = _dialog(tmp_path)
     try:
         assert dialog._choice_helper.text() == ""
-        # The three cards carry the instruction, so the headline and the
+        # The two cards carry the instruction, so the headline and the
         # subtitle above them step aside rather than crowd them.
         assert dialog._choice_title.isVisibleTo(dialog._choice_page) is False
         assert dialog._choice_subtitle.isVisibleTo(dialog._choice_page) is False
@@ -323,7 +328,6 @@ def test_music_door_keeps_host_join_and_offers_a_first_class_path_to_art(
         assert dialog.selected_creator_profile_key == "art"
         assert [card.start_key for card in _visible_cards(dialog)] == [
             "talk_and_make",
-            "paint_together",
             "paint_along",
         ]
         assert dialog._more_rooms_button.isVisibleTo(dialog._choice_page) is False
@@ -350,19 +354,20 @@ def test_review_door_is_host_join_not_a_caveat_wall(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
-def test_talk_and_make_promises_neither_a_canvas_nor_a_video(qapp, tmp_path: Path):
-    """Talk-only is first class, not a stripped-down version of the others."""
+def test_make_together_keeps_canvas_setup_inside_the_room(qapp, tmp_path: Path):
+    """The combined card keeps one obvious canvas step inside the room."""
 
     dialog = _dialog(tmp_path)
     try:
         start = get_creator_profile_by_key("art").get_start("talk_and_make")
-        assert start.talk_only is True
+        assert start.talk_only is False
+        assert start.shared_canvas is True
 
         cards = {card.start_key: card for card in _visible_cards(dialog)}
         cards["talk_and_make"].setChecked(True)
         described = cards["talk_and_make"].accessibleDescription().casefold()
-        assert "nothing to set up" in described
-        assert "nothing shared but the conversation" in described
+        assert "work in their own space" in described
+        assert "shared canvas from inside the room" in described
     finally:
         dialog.deleteLater()
 
@@ -376,13 +381,13 @@ def test_hosting_persists_the_chosen_start(qapp, tmp_path: Path):
     dialog = _dialog(tmp_path)
     try:
         cards = {card.start_key: card for card in _visible_cards(dialog)}
-        cards["paint_together"].setChecked(True)
+        cards["talk_and_make"].setChecked(True)
         dialog._host()
 
         saved = load_settings(str(tmp_path / "settings.json"))
         assert dialog.selected_role == "host"
         assert saved.last_creator_profile_key == "art"
-        assert saved.last_creator_start_key == "paint_together"
+        assert saved.last_creator_start_key == "talk_and_make"
     finally:
         dialog.deleteLater()
 
@@ -397,6 +402,25 @@ def test_a_remembered_start_is_restored_without_looking_like_a_new_choice(
         dialog = LaunchDialog(settings)
     try:
         assert dialog.selected_start_key == "paint_along"
+    finally:
+        dialog.deleteLater()
+
+
+def test_old_paint_together_choice_migrates_to_make_together_with_canvas_intent(
+    qapp, tmp_path: Path
+):
+    settings = _settings(tmp_path)
+    settings.last_creator_profile_key = "art"
+    settings.last_creator_start_key = "paint_together"
+    with patch.object(sys, "platform", "darwin"):
+        dialog = LaunchDialog(settings)
+    try:
+        assert dialog.selected_start_key == "talk_and_make"
+        assert dialog.selected_start.shared_canvas is True
+
+        dialog._host()
+        saved = load_settings(str(tmp_path / "settings.json"))
+        assert saved.last_creator_start_key == "talk_and_make"
     finally:
         dialog.deleteLater()
 
@@ -516,7 +540,7 @@ def test_no_launch_copy_still_says_studio_visit():
 def test_every_first_screen_has_no_banned_words(
     qapp, tmp_path: Path, profile_key: str
 ):
-    """A painter, sculptor, songwriter, and talk-only person share one door law."""
+    """A painter, sculptor, maker, and songwriter share one door law."""
 
     dialog = _dialog(tmp_path, profile_key)
     try:
@@ -535,10 +559,9 @@ def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
             (card.accessibleName(), card.description()) for card in cards
         ] == [
             (
-                "Talk & make",
-                "Talk while everyone works in their own space.",
+                "Make together",
+                "Talk, make, or draw together in one room.",
             ),
-            ("Paint together", "Draw together on one shared canvas."),
             (
                 "Paint along",
                 "Follow one silent process video while you paint.",

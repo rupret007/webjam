@@ -190,7 +190,7 @@ class StartCard(QCommandLinkButton):
     """One large, checkable card describing a way to begin.
 
     A card is a whole clickable rectangle rather than a radio row because the
-    point of the Art start pass is that a person reads three short lines and
+    point of the Art start pass is that a person reads two short lines and
     hits one big thing, not that they aim at a small dot beside a paragraph.
     ``QCommandLinkButton`` is the stock control for a title plus a line of
     description, so it reports an honest size hint instead of needing labels
@@ -198,9 +198,8 @@ class StartCard(QCommandLinkButton):
     """
 
     def __init__(self, start: CreatorStart, parent: QWidget | None = None) -> None:
-        # Qt reads "&" in button text as a mnemonic marker, which would render
-        # "Talk & make" as "Talk _make". The label is product copy, so it is
-        # escaped rather than reworded.
+        # Qt reads "&" in button text as a mnemonic marker. A start label is
+        # product copy, so any ampersand is escaped rather than reworded.
         super().__init__(start.label.replace("&", "&&"), start.summary, parent)
         self.start_key = start.key
         self.setObjectName("LaunchStartCard")
@@ -221,13 +220,13 @@ class StartCard(QCommandLinkButton):
         )
         if start.key == "paint_along" and mark.is_file():
             self.setIcon(QIcon(str(mark)))
-            self.setIconSize(QSize(28, 28))
+            self.setIconSize(QSize(40, 40))
         else:
             self.setIcon(QIcon())
             self.setIconSize(QSize(0, 0))
         # The stock hint assumes a wrapped description and comes out tall
         # enough to push Host and Join off a supported window. Bounding the
-        # height keeps three cards, Host, and Join all on screen at the
+        # height keeps two cards, Host, and Join all on screen at the
         # 760x600 floor while staying a large target.
         self.setMinimumHeight(54)
         self.setMaximumHeight(64)

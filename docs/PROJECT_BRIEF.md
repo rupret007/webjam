@@ -21,8 +21,9 @@ scratchpad, and playback/read-only review of completed session takes. It blocks
 standalone projects, take editing/comp/mix mutation, track export,
 shared notes, visual sync, and media timecode. Art is Preview and is for
 artists rather than musicians: a live WebJam-audio room to talk in while
-painting, drawing, sculpting, or building. It offers three starts and no more --
-the room alone, the room plus one shared Drawpile canvas, or the room plus one
+painting, drawing, sculpting, or building. It offers two visible starts and no
+more: **Make together**, where people work locally and the host may open one
+shared Drawpile canvas from inside the room, or **Paint along**, with one
 optional reference video the host plays while each computer shows its own copy
 of the same local file. Inside a session it can also open Krita's AI plugin to
 make or edit one local image. It blocks standalone projects, session recording

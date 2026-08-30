@@ -9,8 +9,10 @@
 > records, but do not treat this checkout as a package or physical-test result.
 
 Before Host or Join, choose **Art** or **Music**. Those are the equal first
-clicks. Art then offers **Talk & make**, **Paint together**, or **Paint
-along**, then **Host** or **Join**. Music is **Host** or **Join** only. The
+clicks. Art then offers **Make together** or **Paint along**, then **Host** or
+**Join**. **Make together** means “Talk, make, or draw together in one room”; a
+host may open one shared canvas from inside the room. Music is **Host** or
+**Join** only. The
 chosen profile changes language and safe defaults, not the recorder's evidence
 rules. Podcast and Review stay off that first screen. No profile directly or
 automatically taps a meeting app, browser, or system output.

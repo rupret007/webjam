@@ -35,22 +35,24 @@ they see what to do, and do it, without being told.
 
 | Room | Doors on the first screen |
 | --- | --- |
-| Art | **Art** and **Music** as equal first choices; then **Talk & make**, **Paint together**, **Paint along**, then **Host** / **Join** |
+| Art | **Art** and **Music** as equal first choices; then **Make together**, **Paint along**, then **Host** / **Join** |
 | Music | **Art** and **Music** as equal first choices; then **Host** / **Join**, nothing else |
 
-Banned on the first screen: Studio Visit, Drawpile, Jamulus, host-clocked,
-Moises, BYOK, Preview caveats, API. Tool and vendor names belong inside the
-room, never in the door.
+Banned on the first screen: Studio Visit, Drawpile, Krita, Jamulus, Webex,
+Moises, Music AI, stems, BYOK, host-clocked, Preview caveats, API. Tool and
+vendor names belong inside the room, never in the door.
 
 Where a test can hold a door it does —
 [#19](https://github.com/rupret007/webjam/pull/19) landed
 `tests/test_art_start_ux.py` on `master` — but a green suite is not a claim that
 the first screen makes sense, so the human read happens before the merge.
 
-Art on `master` now has those three start cards from #19. #15 is not the Art
-door. #15 landed a Studio Visit Preview ahead of #14; #19 replaced that door.
-Art and Music are equal first choices. Music still has to keep **Host** /
-**Join** and nothing else after that choice.
+#19 originally established three Art start cards. Current source combines the
+room-only and shared-canvas choices into **Make together**; artists work
+locally, and the host may open one shared canvas from inside the room. #15 is
+not the Art door. #15 landed a Studio Visit Preview ahead of #14; #19 replaced
+that earlier door. Art and Music are equal first choices. Music still has to
+keep **Host** / **Join** and nothing else after that choice.
 
 ## 2. Land order
 

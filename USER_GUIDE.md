@@ -21,8 +21,8 @@ WebJam's operational status. For example, typing “recording finished” cannot
 create a take or unlock export.
 
 At launch, choose **Art** or **Music**. Those are the equal first clicks.
-Art is **Talk & make**, **Paint together**, or **Paint along**, then **Host**
-or **Join**. Music is **Host** or **Join** only. Podcast and Review stay off
+Art is **Make together** or **Paint along**, then **Host** or **Join**. Music
+is **Host** or **Join** only. Podcast and Review stay off
 that first screen. The profile follows the
 launch, live session, recording, Studio, local session metadata, and new
 standalone projects. Legacy content without a saved profile opens as Music.
@@ -37,24 +37,23 @@ meeting app, browser, or system output.
 
 Art opens a room where you talk while you work — painting, drawing,
 sculpting, printing, or anything at a table. When you choose Art at launch,
-you pick one of three ways to start, and nothing more:
+you pick one of two ways to start, and nothing more:
 
-- **Talk & make** — talk while everyone works in their own space.
-- **Paint together** — draw together on one shared canvas.
+- **Make together** — talk, make, or draw together in one room. Everyone may
+  work locally; the host can open one shared canvas from inside the room.
 - **Paint along** — follow one silent process video while you paint.
 
-The first screen deliberately does not name the programs behind those last two.
-You find out which one to install at the moment you need it, in the room, and
-only if it is missing.
+The first screen deliberately does not name the programs behind the optional
+canvas or video. You find out which one to install at the moment you need it,
+in the room, and only if it is missing.
 
-AI image work is *not* a fourth choice: it is an in-session action available
-from any of the three, because nobody plans a session around an image
-generator.
+AI image work is *not* a third choice: it is an in-session action available
+from either start, because nobody plans a session around an image generator.
 
 Then **Host** or **Join** as in every other profile. Joining is one pasted
 invitation: it carries whatever the host started, so there is nothing else for
-a guest to choose. The host can add the other option later from inside the
-room, so you never have to pick both up front.
+a guest to choose. The host can open a shared canvas later from inside either
+room, so canvas setup never needs another start card.
 
 ### Painting together
 

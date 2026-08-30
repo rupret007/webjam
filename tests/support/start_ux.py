@@ -1,6 +1,6 @@
 """First-screen ten-second contract: banned engine words fail CI.
 
-The live door is Host / Join (Music) or three cards then Host / Join (Art).
+The live door is Host / Join (Music) or two cards then Host / Join (Art).
 Component and vendor names belong inside the room, never on the door. This
 module is the one list the start-UX tests harvest against, so a banned word
 cannot return on one profile while another test still looks green.

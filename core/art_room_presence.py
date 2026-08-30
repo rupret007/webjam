@@ -1,6 +1,6 @@
 """What the room itself should say about Art, in one line.
 
-A person who picked "Paint together" and pressed Host lands in a room. Until
+A person who picked **Make together** and pressed Host lands in a room. Until
 now that room said nothing: the canvas lived behind a menu, and the only
 mention of it was a message that appeared for nine seconds and told them which
 menu to open. A user interface explaining how to navigate itself is a good
@@ -15,9 +15,9 @@ it:
 * **Attention before description.** A missing painting program or a video this
   computer cannot follow comes before a canvas that is simply fine, because
   only one of those is a request.
-* **Nothing when there is nothing.** A talk-only room shows no indicator at
-  all. Someone who chose to just talk and work has a finished room, not an
-  empty slot where a feature should be.
+* **Nothing when there is nothing.** A room projection with no intended or
+  shared layer shows no invented indicator. Empty room facts are not an empty
+  slot where a feature should be.
 * **Room facts only.** The image action is personal to whoever runs it, so it
   is not a thing "the room" has and never appears here.
 
@@ -61,7 +61,7 @@ class ArtPresenceTarget(str, Enum):
 class ArtRoomPresence:
     """One line of room chrome, or nothing at all."""
 
-    #: Empty means show nothing. A talk-only room is finished, not unfinished.
+    #: Empty means show nothing. Missing room facts are not unfinished work.
     label: str = ""
     description: str = ""
     tone: ArtPresenceTone = ArtPresenceTone.PRESENT
@@ -112,7 +112,7 @@ def art_room_presence(
 
     ``intended_canvas`` and ``intended_video`` carry what a host chose at
     launch. They are the reason an empty room can still show a way in: a host
-    who chose to paint together has not shared a canvas yet, and the room
+    who chose Make together has not shared a canvas yet, and the room
     should offer the door rather than wait to be searched.
 
     A guest's saved choice says nothing about the room they joined, so their
@@ -187,8 +187,8 @@ def art_room_presence(
         return ArtRoomPresence(
             label="Set up shared canvas",
             description=(
-                "You chose to paint together. Open the panel to host a canvas "
-                "in Drawpile and share it with the room."
+                "You chose Make together. Open the panel to host a canvas in "
+                "Drawpile and share it with the room."
             ),
             target=ArtPresenceTarget.CANVAS,
         )

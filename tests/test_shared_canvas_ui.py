@@ -130,7 +130,7 @@ def test_a_guest_is_offered_no_way_to_share_or_stop_the_canvas():
 
 
 def test_a_room_with_no_canvas_offers_nothing_rather_than_a_dead_button():
-    """A talk-only room is a finished state, not an unfinished one.
+    """No shared-canvas fact is a finished state, not an unfinished one.
 
     A greyed-out canvas button would be a small taunt repeated every time
     someone glanced at the panel, so nothing is offered at all.
@@ -744,9 +744,11 @@ def _presence(controller: ApplicationController):
 def test_the_chosen_start_resolves_against_the_active_profile(fake_launchers):
     controller = _controller("art")
     _with_start(controller, "paint_together")
-    assert controller.creator_start.key == "paint_together"
+    assert controller.creator_start.key == "talk_and_make"
+    assert controller.creator_start.shared_canvas is True
 
-    # A key saved under another profile must not arm anything here.
+    # A key saved under another profile becomes Art's current room-first
+    # default rather than leaking a foreign meaning into this profile.
     _with_start(controller, "host_guest")
     assert controller.creator_start.key == "talk_and_make"
 
@@ -760,7 +762,7 @@ def test_a_canvas_start_shows_the_host_a_persistent_way_in(fake_launchers):
     to open. It carries a control now, which is still there a minute later."""
 
     controller = _controller("art")
-    _with_start(controller, "paint_together")
+    _with_start(controller, "talk_and_make")
     _as_host(controller)
 
     presence = _presence(controller)
@@ -774,7 +776,7 @@ def test_a_canvas_start_shows_the_host_a_persistent_way_in(fake_launchers):
 
 def test_the_way_in_does_not_disappear_after_being_shown_once(fake_launchers):
     controller = _controller("art")
-    _with_start(controller, "paint_together")
+    _with_start(controller, "talk_and_make")
     _as_host(controller)
 
     controller._sync_art_room_presence()
@@ -800,17 +802,18 @@ def test_a_video_start_points_at_paint_along_instead(fake_launchers):
     assert presence.target is ArtPresenceTarget.VIDEO
 
 
-def test_a_talk_only_start_leaves_the_room_chrome_empty(fake_launchers):
-    """Someone who chose to just talk and work has a finished room."""
+def test_old_paint_together_setting_keeps_the_canvas_way_in(fake_launchers):
+    """The retired key migrates without losing the user's canvas intent."""
 
     controller = _controller("art")
-    _with_start(controller, "talk_and_make")
+    _with_start(controller, "paint_together")
     _as_host(controller)
 
     presence = _presence(controller)
 
-    assert presence.offered is False
-    assert presence.target is ArtPresenceTarget.NONE
+    assert presence.label == "Set up shared canvas"
+    assert presence.target is ArtPresenceTarget.CANVAS
+    assert presence.tone is ArtPresenceTone.PRESENT
 
 
 def test_a_start_shows_nothing_until_there_is_a_room(fake_launchers):

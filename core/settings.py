@@ -59,7 +59,7 @@ def _coerce_creator_start_key(profile_key: object, value: object) -> str:
 
     A stale key from an older build, or one copied from another profile, must
     never survive: the start decides whether a canvas or a reference video is
-    armed, so an unrecognized value falls back to the plain talk-only door.
+    armed, so an unrecognized value falls back to the profile's room-first door.
     """
 
     profile = get_creator_profile_by_key_or_default(profile_key)
@@ -262,7 +262,7 @@ class AppSettings:
     # have its own authority when those boundaries adopt creator profiles.
     last_creator_profile_key: str = _DEFAULT_CREATOR_PROFILE_KEY
     # Which start card was chosen last, for the profiles that offer them.
-    # Unknown or stale values fall back to the profile's talk-only start, so
+    # Unknown or stale values fall back to the profile's room-first start, so
     # a saved choice can never arm a capability the profile no longer has.
     last_creator_start_key: str = ""
     # Where an installed Drawpile lives. WebJam ships none and searches no

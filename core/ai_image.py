@@ -3,7 +3,7 @@
 Someone in an Art room can have AI **Make** a new image from text, or **Edit**
 a photo they already own. That is the whole feature. It is deliberately one
 in-session action rather than a launch workflow, because what a person is
-making is chosen once at launch from three cards, and an image generator is
+making is chosen once at launch from two cards, and an image generator is
 something you reach for partway through a session rather than something you
 plan a session around.
 

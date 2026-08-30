@@ -69,8 +69,9 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
 
 1. Open WebJam and choose **Art** or **Music**. Use **Podcast or review** only
    when that is the room you came to make.
-2. For Art, choose **Talk & make**, **Paint together**, or **Paint along**,
-   then **Host** / **Join**. Music uses **Host** / **Join**; Podcast & Voice
+2. For Art, choose **Make together** or **Paint along**, then **Host** /
+   **Join**. **Make together** keeps people working locally and lets the host
+   open one shared canvas from inside the room. Music uses **Host** / **Join**; Podcast & Voice
    and Review & Rehearsal retain their profile-specific Host/Join labels.
 3. Configure interface, channels, headphones, and buffer in Jamulus. Confirm
    the authenticated audio connection, then use the profile-specific
@@ -106,7 +107,7 @@ new standalone projects:
 | Music | GA | Jam/rehearsal language, Shared Track, authoritative session recording, completed-take Studio, and music-focused Reference Studio defaults |
 | Podcast & Voice | GA | Session/speaker/microphone language, episode/reference-audio vocabulary, voice-focused input defaults, authoritative recording, and local project workflow |
 | Review & Rehearsal | Preview | Live WebJam-audio Host/Join and Record Session plus playback/read-only completed-take review; no standalone project, take edit/comp/mix mutation, track export, shared notes, visual sync, or media timecode |
-| Art | Preview | Live room with Talk & make, Drawpile-backed Paint together, or an embedded host-clocked Paint along workspace; no recording, take, standalone project, shipped video, or frame-accurate/timecode claim |
+| Art | Preview | Live room with Make together—local work plus an optional shared canvas the host opens inside the room—or an embedded host-clocked Paint along workspace; no recording, take, standalone project, shipped video, or frame-accurate/timecode claim |
 
 Profiles change presentation and safe defaults, not evidence rules. A legacy
 project, take, or session with no profile metadata migrates to Music. Review &

@@ -310,10 +310,11 @@ class CreatorProfile:
                     f"Start '{start.key}' offers a reference video this "
                     "profile does not have."
                 )
-        if starts and not any(start.talk_only for start in starts):
-            # Talk-only is first class.  Without it a profile could make a
-            # canvas or a video look mandatory just by omitting the plain door.
-            raise ValueError("A profile offering starts must offer a talk-only one.")
+        if starts and not any(not start.reference_video for start in starts):
+            # A person still needs one room-first way in. A shared canvas may
+            # be the room's obvious next action; a reference video cannot be
+            # the only way to begin making together.
+            raise ValueError("A profile offering starts must offer a room-first one.")
         object.__setattr__(self, "starts", starts)
 
     @property
@@ -339,7 +340,7 @@ class CreatorProfile:
         return None
 
     def start_or_default(self, start_key: object) -> CreatorStart | None:
-        """Resolve a start key, falling back to the plain talk-only door."""
+        """Resolve a start key, falling back to the room-first door."""
 
         return self.get_start(start_key) or self.default_start
 
@@ -397,9 +398,9 @@ _ART_CAPABILITIES = CreatorCapabilities(
     ai_image=True,
 )
 
-# Exactly three ways to begin: a room, a room plus a canvas, a room plus a
-# reference video.  There is deliberately no fourth card for "both" and no
-# tool picker; a host adds the other option from inside the room.
+# Exactly two ways to begin: make together in one room, or follow one process
+# video together. The combined room keeps the optional shared canvas inside
+# the room instead of making a person choose another setup card first.
 #
 # The words here are the ten-second door.  A person choosing a room should not
 # have to learn what any of it is built on, so no component names itself on the
@@ -409,22 +410,12 @@ _ART_CAPABILITIES = CreatorCapabilities(
 _ART_STARTS = (
     CreatorStart(
         key="talk_and_make",
-        label="Talk & make",
-        summary="Talk while everyone works in their own space.",
+        label="Make together",
+        summary="Talk, make, or draw together in one room.",
         detail=(
-            "Open a room for conversation while each person paints, draws, "
-            "sculpts, or works on paper in their own space. There is nothing "
-            "to set up and nothing shared but the conversation."
-        ),
-    ),
-    CreatorStart(
-        key="paint_together",
-        label="Paint together",
-        summary="Draw together on one shared canvas.",
-        detail=(
-            "Open the room with one canvas everyone can draw on at the same "
-            "time. WebJam opens the painting program on your computer and "
-            "says plainly if it is not installed yet."
+            "Open one room to talk and make. Everyone can work in their own "
+            "space, or the host can open one shared canvas from inside the "
+            "room when the group wants to draw together."
         ),
         shared_canvas=True,
     ),
@@ -441,7 +432,6 @@ _ART_STARTS = (
         reference_video=True,
     ),
 )
-
 
 CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
     CreatorProfile(
@@ -729,25 +719,24 @@ def _validate_creator_registry() -> None:
     if LEGACY_MODE_KEY_ALIASES.get("studio_visit") != "art":
         raise RuntimeError("The Studio Visit Preview key must migrate to Art.")
 
-    # Launch shows exactly these three doors, in this order, and no other
-    # profile shows any.  The whole point of the Art start pass is that a
-    # person picks once from a short list, so a fourth card is a regression.
+    # Launch shows exactly these two doors, in this order, and no other profile
+    # shows any. The shared canvas lives inside Make together, not on a third
+    # setup card.
     if tuple(start.key for start in art.starts) != (
         "talk_and_make",
-        "paint_together",
         "paint_along",
     ):
-        raise RuntimeError("Art offers exactly three starts, in a fixed order.")
-    if sum(1 for start in art.starts if start.talk_only) != 1:
-        raise RuntimeError("Art offers exactly one talk-only start.")
+        raise RuntimeError("Art offers exactly two starts, in a fixed order.")
+    if any(start.talk_only for start in art.starts):
+        raise RuntimeError("Art combines the plain room with its shared canvas.")
     if sum(1 for start in art.starts if start.shared_canvas) != 1:
-        raise RuntimeError("Art offers exactly one shared-canvas start.")
+        raise RuntimeError("Art offers one direct shared-canvas next action.")
     if sum(1 for start in art.starts if start.reference_video) != 1:
         raise RuntimeError("Art offers exactly one reference-video start.")
     if any(profile.starts for profile in CREATOR_PROFILES if profile.key != "art"):
         raise RuntimeError("Only Art offers start cards.")
     # AI is an in-session action and never a way to begin. Nobody decides what
-    # they are making by choosing an image generator, and a fourth card would
+    # they are making by choosing an image generator, and a third card would
     # undo the point of a short list. Catching the field here means a future
     # edit cannot quietly promote it into the start screen.
     if any(hasattr(start, "ai_image") for start in art.starts):
