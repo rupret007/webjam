@@ -5,9 +5,16 @@ matching its native package. These locks preserve the Python dependency graph
 that is reviewed and tested before signing; `requirements.txt` remains the
 human-maintained application dependency declaration.
 
-The published v0.27.1 tag bound these dependency locks to its exact package
-artifacts and checksum manifest. Current `master` is post-tag source and must
-not reuse that manifest as evidence for a branch build.
+Immutable GitHub **Latest** release `379360694` published these dependency locks
+from lightweight tag `v0.27.2` at exact commit
+`9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Its seven packages are bound by
+`WebJam-v0.27.2-SHA256SUMS.txt`; a later `master` checkout or branch build must
+not reuse that manifest as evidence for different bytes. Tag run `33327104322`
+passed tests, integrations, and all four desktop builds, then failed its
+annotated-tag publisher gate. The run is red and not publish-green; do not
+rerun it, replace the lightweight tag, or mutate the release. v0.27.1 remains
+immutable history. Every physical, signing, notarization, and platform-trust
+gate remains **NOT RUN** unless separately recorded against an exact package.
 The locks target CPython
 3.11.9 on Windows and both macOS targets, CPython
 3.11.15 on Linux, pip 26.1.2, setuptools 81.0.0 on macOS, and setuptools 83.0.0

@@ -1,12 +1,16 @@
 # WebJam v0.27.2 source test procedure
 
-> GitHub **Latest** is the unsigned/ad-hoc v0.27.1 private test release. Current
-> candidate source reports unsigned v0.27.2, not that package. No v0.27.2 physical result
+> GitHub **Latest** is immutable unsigned/ad-hoc v0.27.2 private test release
+> `379360694`, published from lightweight tag `v0.27.2` at exact commit
+> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Its seven packages plus
+> `WebJam-v0.27.2-SHA256SUMS.txt` are release evidence. No v0.27.2 physical result
 > exists; every v0.27 physical, credentialed, signing, and platform-trust gate
-> is **NOT RUN**. Published v0.27.1 has exact tag, packages, and checksum
-> manifest; its tag workflow is red at the duplicate-release publisher.
+> is **NOT RUN**. Tag run `33327104322` passed tests, integrations, and all four
+> desktop builds, then failed its annotated-tag publisher gate. It is red, not
+> publish-green; do not rerun it or replace the lightweight tag.
 > Publication did not create
 > physical PASS.
+> Published v0.27.1 history remains immutable.
 > Required component-input CI exercises the existing exact Jamulus 3.12.2 and
 > 3.12.3 records now approved through v0.27.2. Physical steps still require an
 > exact package handoff and remain **NOT RUN**.
@@ -36,8 +40,16 @@ git diff --check
 git diff --check origin/master...HEAD
 .venv/bin/python -m pip_audit --progress-spinner off
 .venv/bin/python ux_smoke_test.py
-QT_QPA_PLATFORM=offscreen .venv/bin/pytest -q
+while IFS= read -r test_file; do
+  QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest "$test_file" -q || exit $?
+done < <(git ls-files 'tests/test_*.py')
 ```
+
+Every tracked module runs in its own Python process. Modules marked
+`requires_local_socket` open a real OS-local listener or connection in at least
+one test; the marker is execution metadata, not an automatic skip. A restricted
+sandbox may run the unmarked modules, but the source gate is incomplete until
+every marked module also runs in an environment that permits its local socket.
 
 ### Deterministic multitrack proof
 

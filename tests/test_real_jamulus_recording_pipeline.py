@@ -52,6 +52,9 @@ from tests.support.jamulus_jack_harness import (
 )
 
 
+pytestmark = pytest.mark.requires_local_socket
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:

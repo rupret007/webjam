@@ -1,4 +1,4 @@
-"""Published v0.27.1 and unsigned v0.27.2 source truth contracts."""
+"""Published v0.27.2 and immutable release-history truth contracts."""
 
 from __future__ import annotations
 
@@ -50,9 +50,7 @@ def _heading_anchors(text: str) -> set[str]:
     return anchors
 
 
-def test_current_guides_separate_v0271_latest_from_v0272_source_truthfully() -> (
-    None
-):
+def test_current_guides_name_v0272_latest_and_source_truthfully() -> None:
     for relative_path in (
         "README.md",
         "README_SIMPLE.md",
@@ -69,17 +67,19 @@ def test_current_guides_separate_v0271_latest_from_v0272_source_truthfully() -> 
         "CHANGELOG.md",
     ):
         text = _normalized(relative_path)
-        assert "v0.27.1" in text, relative_path
+        assert "v0.27.2" in text, relative_path
         assert "Latest" in text, relative_path
         assert "NOT RUN" in text, relative_path
 
     combined = " ".join(_normalized(path) for path in CURRENT_GUIDES)
     for marker in (
-        "https://github.com/rupret007/webjam/releases/tag/v0.27.1",
-        "377614785",
-        "2026-08-27T06:56:11Z",
-        "WebJam-v0.27.1-SHA256SUMS.txt",
-        "1fc25f87c3386b1cd94303ecb407cdaff6509d1f",
+        "https://github.com/rupret007/webjam/releases/tag/v0.27.2",
+        "379360694",
+        "2026-08-30T18:06:14Z",
+        "WebJam-v0.27.2-SHA256SUMS.txt",
+        "9c6ca3de96aa7eb261c65b7dee768ab48144169c",
+        "33327104322",
+        "lightweight tag",
     ):
         assert marker.casefold() in combined.casefold()
 
@@ -107,16 +107,49 @@ def test_current_guides_separate_v0271_latest_from_v0272_source_truthfully() -> 
         "three post-tag commits ahead",
         "#50–#52",
         "Current private test release: **v0.27.0**",
+        "GitHub **Latest** is the unsigned/ad-hoc v0.27.1",
+        "GitHub **Latest** remains v0.27.1",
+        "GitHub Latest remains the immutable unsigned/ad-hoc v0.27.1",
+        "Current private test release: **v0.27.1**",
+        "unsigned v0.27.2 source candidate",
+        "v0.27.2 source candidate",
+        "No v0.27.2 tag",
+        "No v0.27.2 release",
+        "No v0.27.2 package",
+        "no package published",
     ):
         assert stale_claim.casefold() not in combined.casefold(), stale_claim
 
     assert "v0.27.2 source" in combined.casefold()
     assert "not publish-green" in combined.casefold()
     assert "sealed at exact webjam v0.22.5" in combined.casefold()
+    merge_record = " ".join(
+        line.removeprefix("> ").strip()
+        for line in (ROOT / "docs" / "MERGE_AND_RELEASE.md")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+    assert (
+        "workflow `33327104322` passed tests, integrations, update-input checks, "
+        "and all four desktop builds"
+    ) in merge_record
+    assert "failed closed because the tag is lightweight rather than annotated" in (
+        merge_record
+    )
+    assert (
+        "tag run `33327104322` is red only at the annotated-tag publisher boundary"
+        in merge_record
+    )
+    for historical_marker in (
+        "377614785",
+        "WebJam-v0.27.1-SHA256SUMS.txt",
+        "1fc25f87c3386b1cd94303ecb407cdaff6509d1f",
+    ):
+        assert historical_marker.casefold() in combined.casefold()
 
 
-def test_required_honesty_docs_separate_v0271_release_from_v0272_source() -> None:
-    """Jeff-facing pass: v0.27.1 is Latest; current source is v0.27.2."""
+def test_required_honesty_docs_lock_v0272_release_and_source() -> None:
+    """Jeff-facing pass: v0.27.2 is Latest and later source is not a package."""
 
     required = (
         "README.md",
@@ -142,17 +175,30 @@ def test_required_honesty_docs_separate_v0271_release_from_v0272_source() -> Non
         "`master` still reports v0.27.1",
         "source tree's package identity remains `0.27.1`",
         "Current source:** post-release v0.27.1",
+        "GitHub **Latest** is the unsigned/ad-hoc v0.27.1",
+        "GitHub **Latest** remains v0.27.1",
+        "GitHub Latest remains the immutable unsigned/ad-hoc v0.27.1",
+        "Current private test release: **v0.27.1**",
+        "unsigned v0.27.2 source candidate",
+        "v0.27.2 source candidate",
+        "No v0.27.2 tag",
+        "No v0.27.2 release",
+        "No v0.27.2 package",
+        "no package published",
     )
     for relative_path in required:
         text = (ROOT / relative_path).read_text(encoding="utf-8")
         normalized = " ".join(text.split())
         folded = normalized.casefold()
-        assert "v0.27.1" in text, relative_path
-        if relative_path != "docs/DESKTOP_RELEASE_RUNBOOK.md":
-            assert "v0.27.2" in text, relative_path
-        assert "latest" in folded and "377614785" in text, relative_path
+        assert "v0.27.2" in text, relative_path
+        assert "latest" in folded and "379360694" in text, relative_path
+        assert "9c6ca3de96aa7eb261c65b7dee768ab48144169c" in text, relative_path
+        assert "33327104322" in text, relative_path
+        assert "lightweight tag" in folded, relative_path
+        assert "seven packages" in folded, relative_path
         assert "publish-green" in folded, relative_path
-        assert "WebJam-v0.27.1-SHA256SUMS.txt" in text, relative_path
+        assert "WebJam-v0.27.2-SHA256SUMS.txt" in text, relative_path
+        assert "NOT RUN" in text, relative_path
         for claim in forbidden:
             assert claim.casefold() not in folded, (relative_path, claim)
 

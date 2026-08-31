@@ -1,22 +1,23 @@
-WebJam v0.27.2 unsigned source candidate — no package published
-================================================================
+WebJam v0.27.2 unsigned private test package
+============================================
 
-NO PACKAGE IS AUTHORIZED: v0.27.2 source is not GitHub Latest. The existing
-exact Jamulus 3.12.2 and 3.12.3 records are approved through v0.27.2, so
-required package CI and live Host/Join are source-eligible. Do not use a build
-as a package until an exact release manifest exists.
-Do not use the published v0.27.1 checksum manifest for this post-tag build.
+PACKAGE BOUNDARY: GitHub Latest is immutable release 379360694, published
+2026-08-30T18:06:14Z from lightweight tag v0.27.2 at exact commit
+9c6ca3de96aa7eb261c65b7dee768ab48144169c. It has seven packages plus
+WebJam-v0.27.2-SHA256SUMS.txt. Use this private test package only when its exact
+filename and SHA-256 appear in that manifest. A checkout or branch build is not
+a substitute. The existing exact Jamulus 3.12.2 and 3.12.3 records are approved
+through v0.27.2 for live Host/Join.
 Physical audio, hardware, SmartScreen, publisher-signing, and managed-device
 gates remain NOT RUN unless the release evidence names this exact file and
 SHA-256.
 
-Everything below describes a future package only after exact release evidence
-exists. That future artifact would remain unsigned; its exact filename and
-published SHA-256 would require verification.
+Everything below describes the published unsigned private test package. Its
+exact filename and published SHA-256 still require verification.
 Windows SmartScreen or organizational policy may block it; WebJam does not
 bypass those controls.
 
-This candidate upgrades cryptography to 50.0.0 for CVE-2026-69247,
+This release upgrades cryptography to 50.0.0 for CVE-2026-69247,
 CVE-2026-69248, and CVE-2026-69249 using an exact hash-locked upstream
 Windows wheel.
 
@@ -27,9 +28,9 @@ After installation, open WebJam from the Start menu. You may also choose the
 optional desktop shortcut during setup. WebJam does not start automatically
 when setup finishes.
 
-The released v0.27.1 Windows package can join a jam hosted by the macOS build.
-No v0.27.2 package can currently join. Hosting a jam is not supported by the
-Windows line. Music and Podcast & Voice retain
+The v0.27.2 Windows private test package is built for joining a jam hosted by
+the macOS build; physical cross-platform joining remains NOT RUN. Hosting a jam
+is not supported by the Windows line. Music and Podcast & Voice retain
 standalone Reference Studio for local songwriting, recording, arranging,
 mixing, and WAV/FLAC bounce without joining Jamulus.
 

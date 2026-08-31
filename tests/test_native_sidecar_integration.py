@@ -16,10 +16,13 @@ from core.remote_invitation import issue_remote_invitation
 from services.transport_runtime import TransportProcess
 
 
-pytestmark = pytest.mark.skipif(
-    os.environ.get("WEBJAM_RUN_REMOTE_SIDECAR_INTEGRATION") != "1",
-    reason="real native sidecar integration is opt-in",
-)
+pytestmark = [
+    pytest.mark.requires_local_socket,
+    pytest.mark.skipif(
+        os.environ.get("WEBJAM_RUN_REMOTE_SIDECAR_INTEGRATION") != "1",
+        reason="real native sidecar integration is opt-in",
+    ),
+]
 
 
 ROOT = Path(__file__).resolve().parents[1]

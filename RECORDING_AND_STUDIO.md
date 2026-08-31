@@ -1,11 +1,13 @@
 # Recording and Studio — v0.27.2 source
 
-> This document describes current unsigned v0.27.2 source. GitHub **Latest** is the
-> unsigned/ad-hoc v0.27.1 private test release; this candidate checkout is not that
-> package.
+> This document describes current unsigned v0.27.2 source. GitHub **Latest** is
+> immutable unsigned/ad-hoc private test release `379360694`, published from
+> lightweight tag `v0.27.2` at exact commit
+> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Its seven packages are covered by
+> `WebJam-v0.27.2-SHA256SUMS.txt`; a checkout is not a package substitute.
 > Live Jamulus recording is source-eligible through the existing exact 3.12.2
 > and 3.12.3 compatibility records. Standalone local Studio is a separate audio
-> path, and no v0.27.2 package evidence exists.
+> path. Exact v0.27.2 release assets are package evidence, not physical evidence.
 > Historical v0.27.1 results remain bound to exact v0.27.1 packages. Every
 > v0.27.2 physical recording, Shared Track audibility/isolation, playback,
 > recovery, long-session, and external-editor gate is **NOT RUN** and cannot

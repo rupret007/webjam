@@ -6,27 +6,29 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-> Future work after the named unsigned v0.27.2 source candidate belongs here.
+> Future work after the published unsigned v0.27.2 test candidate belongs here.
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
-## [0.27.2] — Unsigned source candidate (unreleased)
+## [0.27.2] — Unsigned/ad-hoc private test release (2026-08-30)
 
-> Jeff named the full unsigned v0.27.2 release round from exact starting
-> `master` commit `dab7d803b7551e8dbec517a2e5945f0af76285c9`. The current
-> source identity is v0.27.2 only. No annotated v0.27.2 tag, GitHub release
-> draft, release, package, checksum manifest, or physical PASS exists. GitHub
-> **Latest** remains the immutable unsigned/ad-hoc v0.27.1 release
-> `377614785`. Karen PASS and Jeff's attended merge must precede Bob's later
-> tag of exact landed `master`. Existing tag CI may then create a reviewable
-> unsigned release draft only after an annotated `v0.27.2` tag matches
-> `webjam_qt.__version__` and exact `origin/master`; this source change does not
-> create or push that tag.
+> Published as immutable GitHub **Latest** release `379360694` at
+> https://github.com/rupret007/webjam/releases/tag/v0.27.2 at
+> `2026-08-30T18:06:14Z`. Lightweight tag `v0.27.2` resolves directly to exact
+> commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. The release has seven
+> packages plus `WebJam-v0.27.2-SHA256SUMS.txt`. Windows remains unsigned;
+> macOS remains ad-hoc signed and unnotarized. Tag workflow `33327104322`
+> passed tests, integrations, and all four desktop builds, but the publisher
+> failed closed because it requires an annotated tag. The overall run is red
+> and must not be called publish-green or rerun to change its result. Do not
+> move the lightweight tag or mutate this release. v0.27.1 remains immutable
+> historical evidence.
 > Jeff explicitly approved extending the existing immutable Jamulus 3.12.2 and
 > 3.12.3 records through WebJam v0.27.2. Host/Join and the required
 > component-input CI therefore reuse those exact baked identities. The signed
 > public catalog remains sealed at exact WebJam v0.22.5; no catalog, signer,
-> publisher, pin, package, or release was created or changed.
+> or pin was created or changed. Every v0.27.2 physical, credentialed,
+> signing, notarization, Gatekeeper, and SmartScreen result remains **NOT RUN**.
 
 ### Art starts with fewer choices
 

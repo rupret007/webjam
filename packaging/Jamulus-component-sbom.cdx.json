@@ -26,7 +26,7 @@
       },
       {
         "name": "webjam:build-eligibility",
-        "value": "source-eligible-no-package-published"
+        "value": "source-and-package-published-unsigned-test-only"
       }
     ]
   },

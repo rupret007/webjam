@@ -1,8 +1,10 @@
 # WebJam help routing — v0.27.2 source
 
-> Current unsigned v0.27.2 source is the named release candidate, but it remains
-> untagged source in an unmerged draft PR. GitHub **Latest** is still the
-> unsigned/ad-hoc v0.27.1 private test release. No physical PASS is claimed;
+> The exact released source commit for immutable GitHub **Latest** release
+> `379360694` is `9c6ca3de96aa7eb261c65b7dee768ab48144169c`; lightweight tag
+> `v0.27.2` points directly to it, and its seven packages are covered by
+> `WebJam-v0.27.2-SHA256SUMS.txt`. This later documentation source is not a
+> package substitute. No physical PASS is claimed;
 > every v0.27 physical and release-decision row remains **NOT RUN**.
 > Unsigned v0.27.2 source reuses the existing exact Jamulus 3.12.2 and 3.12.3
 > records for Host/Join. A checkout remains source evidence, not a package.

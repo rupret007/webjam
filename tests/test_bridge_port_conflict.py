@@ -11,7 +11,12 @@ import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from tests.support.component_store import isolated_component_store_root
+
+
+pytestmark = pytest.mark.requires_local_socket
 
 
 def _loopback_bind_permitted() -> bool:

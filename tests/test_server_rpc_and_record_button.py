@@ -19,6 +19,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
@@ -28,6 +30,9 @@ from core.jamulus_server_rpc import (  # noqa: E402
     ServerRpcError,
     read_secret_file,
 )
+
+
+pytestmark = pytest.mark.requires_local_socket
 
 
 def _make_staged_server_take(
@@ -273,6 +278,17 @@ class TestRecordButtonWiring(unittest.TestCase):
     def setUpClass(cls):
         from PySide6.QtWidgets import QApplication
 
+        cls._runtime_home_directory = TemporaryDirectory(
+            prefix="webjam-record-button-"
+        )
+        cls.addClassCleanup(cls._runtime_home_directory.cleanup)
+        runtime_home = Path(cls._runtime_home_directory.name)
+        cls._runtime_home_patch = patch(
+            "pathlib.Path.home",
+            return_value=runtime_home,
+        )
+        cls._runtime_home_patch.start()
+        cls.addClassCleanup(cls._runtime_home_patch.stop)
         cls._app = QApplication.instance() or QApplication([])
         from core.settings import AppSettings
         from webjam_qt.controllers.application_controller import (
@@ -285,7 +301,12 @@ class TestRecordButtonWiring(unittest.TestCase):
             initial_mode_key="music_jam",
             initial_title="Test",
         )
-        cls.controller = ApplicationController(cls.window, settings=AppSettings())
+        settings = AppSettings(
+            config_file=str(runtime_home / "settings.json"),
+            mix_file=str(runtime_home / "mix.json"),
+            log_file=str(runtime_home / "webjam.log"),
+        )
+        cls.controller = ApplicationController(cls.window, settings=settings)
 
     @classmethod
     def tearDownClass(cls):

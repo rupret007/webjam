@@ -29,6 +29,7 @@ from services.webex_app import (  # noqa: E402
     WebexAppInfo,
     WebexAppState,
 )
+from storage.repository import WebJamRepository  # noqa: E402
 from webjam_qt.controllers.application_controller import (  # noqa: E402
     ApplicationController,
 )
@@ -40,13 +41,23 @@ _APP = QApplication.instance() or QApplication([])
 
 
 @pytest.fixture
-def controller():
+def controller(tmp_path: Path):
     window = ConductorWindow(
         mode_entries=ApplicationController.mode_entries(),
         initial_mode_key="music_jam",
         initial_title="Component integration test",
     )
-    value = ApplicationController(window, settings=AppSettings())
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        mix_file=str(tmp_path / "mix.json"),
+        log_file=str(tmp_path / "webjam.log"),
+    )
+    repository = WebJamRepository(str(tmp_path / "webjam_app.db"))
+    with patch(
+        "webjam_qt.controllers.application_controller.WebJamRepository",
+        return_value=repository,
+    ):
+        value = ApplicationController(window, settings=settings)
     try:
         yield value
     finally:

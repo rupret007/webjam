@@ -1,21 +1,23 @@
 # WebJam, simply
 
 > **Private test release:** GitHub
-> [Latest](https://github.com/rupret007/webjam/releases/latest) is the
-> unsigned/ad-hoc v0.27.1 package set, release `377614785`. Verify
-> `WebJam-v0.27.1-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
+> [Latest](https://github.com/rupret007/webjam/releases/latest) is immutable
+> unsigned/ad-hoc v0.27.2 release `379360694`, published
+> `2026-08-30T18:06:14Z`. Verify one of its seven packages against
+> `WebJam-v0.27.2-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
 > and unnotarized.
 
-> **Source note:** use the exact release tag and attached checksum manifest as
-> download evidence; an untagged checkout is not a substitute. Current
-> candidate source is post-v0.27.1-tag and is not that package.
+> **Source note:** lightweight tag `v0.27.2` points directly to exact commit
+> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Use the exact release asset and
+> attached checksum manifest as download evidence; a checkout or branch
+> artifact is not a substitute.
 
-> **What this checkout is:** an unsigned v0.27.2 source candidate after the
-> v0.27.1 release. Jeff has named it as the unsigned v0.27.2 release candidate,
-> but it remains untagged source in an unmerged draft PR; GitHub **Latest** is
-> still v0.27.1. The exact published v0.27.1 release assets—not this checkout or
-> a branch artifact—are package evidence. Live Host/Join and package builds
-> reuse the exact baked Jamulus 3.12.2 and 3.12.3 records through v0.27.2; the
+> **What this checkout is:** unsigned v0.27.2 source. The exact published
+> v0.27.2 release assets—not this checkout or a branch artifact—are package
+> evidence. Tag run `33327104322` passed tests, integrations, and all four
+> desktop builds, but its annotated-tag publisher gate failed; the run is red,
+> not publish-green, and must not be rerun or rewritten. Live Host/Join and
+> package builds reuse the exact baked Jamulus 3.12.2 and 3.12.3 records through v0.27.2; the
 > signed public catalog is unchanged. No physical PASS result is claimed.
 
 WebJam helps creators start a live audio session and keep its separate tracks
@@ -38,8 +40,9 @@ mutation, track export, shared notes, visual sync, and media timecode. No
 profile directly or automatically taps a meeting app, browser, or system
 output.
 
-Current private test release: **v0.27.1**. Use only the exact assets attached to
-the immutable v0.27.1 GitHub release and verify them with its checksum manifest.
+Current private test release: **v0.27.2**. Use only the exact assets attached to
+immutable GitHub release `379360694` and verify them with
+`WebJam-v0.27.2-SHA256SUMS.txt`.
 The four-platform release covers
 Windows, Ubuntu 22.04, Intel Mac, and
 Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc
@@ -194,8 +197,8 @@ Waveforms load in the background and recorded gaps remain silence. Studio
 autosaves choices to a separate file; a failed save keeps the edit pending and
 the recorded take safe. Real two-Mac output, hardware interruption/recovery,
 external-editor import, physical Reference Studio audio, and signed-install
-gates remain **NOT RUN** throughout v0.27, including the v0.27.1 private test
-release and current v0.27.2 source. Publishing a private candidate does not
+gates remain **NOT RUN** throughout v0.27, including the v0.27.1 and v0.27.2
+private test releases. Publishing a private candidate does not
 convert them to PASS. The
 [v0.26 physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 is the all-NOT-RUN physical ledger for that earlier published package; do not

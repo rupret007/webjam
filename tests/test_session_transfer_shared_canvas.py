@@ -33,6 +33,8 @@ from core.shared_canvas import (
     SharedCanvasFollowState,
 )
 
+pytestmark = pytest.mark.requires_local_socket
+
 WEB_INVITE = "https://drawpile.net/invites/pub.drawpile.net/kitchen-table?v1#hunter2"
 NORMALIZED = "drawpile://pub.drawpile.net/kitchen-table?v1&p=hunter2"
 

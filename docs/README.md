@@ -4,16 +4,20 @@ This index is the front door for WebJam's documentation. Start with the
 audience that matches what you are trying to do; the root [README](../README.md)
 keeps the product story and five-minute demo intentionally short.
 
-> **Current testing release:** GitHub **Latest** is the unsigned/ad-hoc v0.27.1
-> private test release `377614785`. Use only an exact release asset verified
-> by `WebJam-v0.27.1-SHA256SUMS.txt`. Tag run `33045632613` is red at its
-> duplicate-release publisher and must not be called publish-green. Windows is
+> **Current testing release:** GitHub **Latest** is immutable unsigned/ad-hoc
+> v0.27.2 private test release `379360694`, published
+> `2026-08-30T18:06:14Z`. Use only one of its seven packages verified by
+> `WebJam-v0.27.2-SHA256SUMS.txt`. Lightweight tag `v0.27.2` points directly to
+> exact commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Tag run
+> `33327104322` passed tests, integrations, and all four desktop builds, then
+> failed its annotated-tag publisher gate; it is red and not publish-green.
+> Do not rerun it, replace the tag, or mutate the release. Windows is
 > unsigned; macOS is ad-hoc signed and unnotarized; every physical test remains
 > **NOT RUN** until recorded against those packages.
 
-> **Candidate source:** unsigned v0.27.2 in this checkout, after the published
-> v0.27.1 tag. It is not a release. Do not use a checkout or branch artifact
-> as a package. Its baked Jamulus 3.12.2 and 3.12.3 records are approved through
+> **Source boundary:** this checkout reports unsigned v0.27.2. A checkout or
+> branch artifact is not a package; use the exact release assets above. Its
+> baked Jamulus 3.12.2 and 3.12.3 records are approved through
 > v0.27.2, so live Host/Join and required package-build CI are source-eligible.
 > All v0.27 physical/hardware rows remain **NOT RUN**.
 

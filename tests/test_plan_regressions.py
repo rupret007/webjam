@@ -8,11 +8,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from core.jamulus_protocol import (
     _map_level_list_to_channels,
     _parse_level_list,
 )
 from tests.support.component_store import isolated_component_store_root
+
+
+pytestmark = pytest.mark.requires_local_socket
 
 
 class TestUdpLevelChannelMapping(unittest.TestCase):

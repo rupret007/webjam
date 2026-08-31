@@ -30,18 +30,23 @@ support bundles, or unredacted local paths.
 Jamulus, meeting services, Python dependencies, Qt, and operating-system trust systems
 have their own upstream security channels. WebJam-specific orchestration,
 privacy projection, package verification, updater, transport, and lifecycle
-issues belong here. GitHub **Latest** is the unsigned/ad-hoc v0.27.1 private
-test release. Current `master` is post-tag source and is not that download.
+issues belong here. GitHub **Latest** is immutable unsigned/ad-hoc v0.27.2
+private test release `379360694`, published `2026-08-30T18:06:14Z` from
+lightweight tag `v0.27.2` at exact commit
+`9c6ca3de96aa7eb261c65b7dee768ab48144169c`. A later `master` checkout or
+branch artifact is not that download.
 Use only an exact checksum-verified release asset. The published release and
 its immutable predecessors share this test-only trust boundary: Windows is unsigned and
 macOS is ad-hoc signed and unnotarized.
 
-The exact v0.27.1 release assets and `WebJam-v0.27.1-SHA256SUMS.txt` are the
-downloadable evidence. Tag workflow `33045632613` is not publish-green: its
-publisher refused to mutate an already-existing release. Publication did not
+The seven exact v0.27.2 package assets and `WebJam-v0.27.2-SHA256SUMS.txt` are
+the downloadable evidence. Tag run `33327104322` passed tests, integrations,
+and all four desktop builds, but its annotated-tag publisher gate failed. The
+run is red, not publish-green; do not rerun it, replace the lightweight tag, or
+mutate the immutable release. Publication did not
 create physical certification: every physical,
 hardware, provider, accessibility, signing, notarization, and release-decision
-row remains **NOT RUN**. Immutable v0.27.0 and earlier releases remain
+row remains **NOT RUN**. Immutable v0.27.1 and earlier releases remain
 historical evidence and must
 not be rebuilt or replaced.
 

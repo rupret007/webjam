@@ -12,8 +12,6 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import Qt
-from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
@@ -35,6 +33,9 @@ from webjam_qt.windows.launch_dialog import (
     apply_join_invite,
     default_musician_name,
 )
+
+
+pytestmark = pytest.mark.requires_local_socket
 
 
 @pytest.fixture(scope="module")

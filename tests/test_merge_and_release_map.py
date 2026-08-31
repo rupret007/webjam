@@ -71,7 +71,7 @@ def _heading_anchors(text: str) -> set[str]:
     return anchors
 
 
-def test_map_records_the_named_round_and_the_parked_leftovers() -> None:
+def test_map_records_the_published_round_and_the_parked_leftovers() -> None:
     positions = [FLAT_MAP_TEXT.index(f"| {step} |") for step in range(1, 7)]
     assert positions == sorted(positions), "the remaining steps must read in order"
     for landed in ("#14", "#15", "#16", "#17", "#19"):
@@ -86,22 +86,24 @@ def test_map_records_the_named_round_and_the_parked_leftovers() -> None:
     assert "still a draft" not in FLAT_MAP_TEXT
     assert "is the open product branch" not in FLAT_MAP_TEXT
 
-    # The parked branches and already-published release remain untouched.
+    # The parked branches and published releases remain untouched.
     assert "#37 and #49 stay parked" in FLAT_MAP_TEXT
-    assert "do not retag or mutate" in FLAT_MAP_TEXT
+    assert "do not retag, replace, or mutate" in FLAT_MAP_TEXT
 
-    # Jeff named this exact round; the draft review, attended merge, and later
-    # tag are distinct ordered steps.
-    assert "Jeff has named the full unsigned v0.27.2 release round" in FLAT_MAP_TEXT
-    assert "dab7d803b7551e8dbec517a2e5945f0af76285c9" in FLAT_MAP_TEXT
-    assert "33285848154" in FLAT_MAP_TEXT
-    assert "base only, not this candidate head" in FLAT_MAP_TEXT
+    # The release and the later source-truth draft are distinct boundaries.
+    assert "Published testing boundary:" in FLAT_MAP_TEXT
+    assert "9c6ca3de96aa7eb261c65b7dee768ab48144169c" in FLAT_MAP_TEXT
+    assert "379360694" in FLAT_MAP_TEXT
+    assert "33317581250" in FLAT_MAP_TEXT
+    assert "33327104322" in FLAT_MAP_TEXT
+    assert "lightweight tag" in FLAT_MAP_TEXT
+    assert "not publish-green" in FLAT_MAP_TEXT
     assert "Open one draft PR for Karen" in FLAT_MAP_TEXT
-    assert "only after Karen PASS" in FLAT_MAP_TEXT
-    assert "Tag exact landed `master` as `v0.27.2` later" in FLAT_MAP_TEXT
-    assert "this PR stops before this step" in FLAT_MAP_TEXT
-    assert "waits until Jeff names it" not in FLAT_MAP_TEXT
-    assert "does not wait on #17" in FLAT_MAP_TEXT
+    assert "Stop without merging, tagging, publishing, or altering releases" in (
+        FLAT_MAP_TEXT
+    )
+    assert "No v0.27.2 tag" not in FLAT_MAP_TEXT
+    assert "GitHub **Latest** remains v0.27.1" not in FLAT_MAP_TEXT
 
 
 def test_map_gates_landing_and_release_on_the_ten_second_read() -> None:
@@ -147,12 +149,10 @@ def test_map_gates_landing_and_release_on_the_ten_second_read() -> None:
 
 
 def test_map_keeps_the_merge_button_attended() -> None:
-    assert "Jeff merges through the attended button only after Karen PASS" in (
-        FLAT_MAP_TEXT
-    )
+    assert "Karen and Jeff retain the attended review/merge decision" in FLAT_MAP_TEXT
     assert "Jeff presses merge" in FLAT_MAP_TEXT
-    assert "Bob does not merge unattended" in FLAT_MAP_TEXT
-    assert "does not tag or publish from this pull request" in FLAT_MAP_TEXT
+    assert "Codex does not merge unattended" in FLAT_MAP_TEXT
+    assert "does not tag, publish, or alter a release" in FLAT_MAP_TEXT
     assert "no force-push over someone else's product branch" in FLAT_MAP_TEXT
 
 

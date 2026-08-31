@@ -733,10 +733,15 @@ class BridgeService:
         except Exception:
             pass
 
-    def _macos_runtime_home(self) -> Path:
-        """Return the sole trusted root for private native-child paths."""
+    def _runtime_home(self) -> Path:
+        """Return the trusted root for private native-child paths and logs."""
 
         return Path.home()
+
+    def _macos_runtime_home(self) -> Path:
+        """Return the sole trusted root for private macOS native-child paths."""
+
+        return self._runtime_home()
 
     def _prepare_owned_runtime_paths(
         self,
@@ -2985,7 +2990,7 @@ class BridgeService:
                     log_file = None
                     stdout_dest = subprocess.DEVNULL
                     try:
-                        log_path = Path.home() / ".webjam_jamulus.log"
+                        log_path = self._runtime_home() / ".webjam_jamulus.log"
                         self._close_jamulus_log_file()
                         log_file = open_private_text_log(log_path)
                         self._jamulus_log_file = log_file
@@ -3520,7 +3525,7 @@ class BridgeService:
         stdout_dest = subprocess.DEVNULL
         practice_log = None
         try:
-            log_path = Path.home() / ".webjam_practice_server.log"
+            log_path = self._runtime_home() / ".webjam_practice_server.log"
             self._close_practice_log_file()
             practice_log = open_private_text_log(log_path)
             stdout_dest = practice_log
@@ -4195,11 +4200,12 @@ class BridgeService:
             stdout_dest = subprocess.DEVNULL
             hosted_log = None
             try:
-                log_dir = Path.home() / "Library" / "Logs" / "WebJam"
+                runtime_home = self._runtime_home()
+                log_dir = runtime_home / "Library" / "Logs" / "WebJam"
                 self._close_hosted_log_file()
                 if os.name == "posix":
                     with SecureRuntimeDirectory.open(
-                        home=Path.home(),
+                        home=runtime_home,
                         directory=log_dir,
                     ) as private_log_directory:
                         hosted_log = open_private_append_text_log(

@@ -1,11 +1,13 @@
 # WebJam creator guide — v0.27.2 source
 
-> This guide describes current unsigned v0.27.2 source. Jeff has named it as the
-> unsigned v0.27.2 release candidate, but it remains untagged source in an
-> unmerged draft PR. GitHub **Latest** is still the exact unsigned/ad-hoc v0.27.1
-> private test release; this post-v0.27.1-tag checkout is not that package. The
+> This guide describes current unsigned v0.27.2 source. GitHub **Latest** is the
+> immutable unsigned/ad-hoc v0.27.2 private test release `379360694` from exact
+> tag commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c`, with seven packages plus
+> `WebJam-v0.27.2-SHA256SUMS.txt`. A later checkout or branch artifact is source
+> evidence, not one of those checksum-bound packages. The
 > existing exact Jamulus 3.12.2 and 3.12.3 records are approved through v0.27.2
-> for Host/Join. No package or physical PASS result is claimed.
+> for Host/Join. Windows remains unsigned; macOS remains ad-hoc signed and
+> unnotarized. No physical, credentialed, signing, or notarization PASS is claimed.
 
 ## Follow the current guide
 

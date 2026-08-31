@@ -42,6 +42,9 @@ from core.take_project import (
 )
 
 
+pytestmark = pytest.mark.requires_local_socket
+
+
 def _id() -> str:
     return str(uuid.uuid4())
 

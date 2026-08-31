@@ -26,6 +26,11 @@ import time
 import unittest
 from pathlib import Path
 
+import pytest
+
+
+pytestmark = pytest.mark.requires_local_socket
+
 JAMULUS = os.environ.get("WEBJAM_JAMULUS_BINARY", "")
 
 RPC_HOST = "127.0.0.1"
