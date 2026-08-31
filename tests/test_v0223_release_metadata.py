@@ -416,7 +416,11 @@ def test_v0260_checklist_verifies_release_identity_not_physical_results() -> Non
     assert checklist_name in CHANGELOG
     assert "v0.26.0" in checklist
     normalized = " ".join(checklist.replace(">", "").split())
-    assert "Immutable v0.26.0 is the GitHub **Latest**" in normalized
+    assert (
+        "Immutable v0.26.0 **was** the GitHub **Latest** private test release "
+        "when release `371442375` was published"
+    ) in normalized
+    assert "Immutable v0.26.0 is the GitHub **Latest**" not in normalized
     result_rows = [
         line
         for line in checklist.splitlines()

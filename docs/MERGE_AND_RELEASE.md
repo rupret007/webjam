@@ -4,8 +4,10 @@
 > v0.27.2 release `379360694`, published at `2026-08-30T18:06:14Z` from exact
 > commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Lightweight tag `v0.27.2`
 > resolves directly to that commit. The release has seven packages plus
-> `WebJam-v0.27.2-SHA256SUMS.txt`. This docs-and-tests branch is post-release
-> source review, not one of those checksum-bound packages.
+> `WebJam-v0.27.2-SHA256SUMS.txt`. Merged source-only review
+> [#60](https://github.com/rupret007/webjam/pull/60) is on `master` at
+> `a3079a0040ce52b5834e3a3959819c09fc3f0e6f`; that review and later source
+> changes are not among those checksum-bound packages.
 > The existing exact Jamulus 3.12.2 and 3.12.3 records are explicitly approved
 > through v0.27.2, so Host/Join and required component-input CI are
 > source-eligible. The signed public catalog remains sealed at exact WebJam
@@ -72,13 +74,13 @@ The product land is complete. Already on `master`:
 product PR through the attended button; all five are merged and done. Nothing
 is left to rebase, and nothing is waiting to land.
 
-What remains in this named round:
+Standing procedure after the completed product land:
 
 | Step | Action | Who | Gate before it happens |
 | --- | --- | --- | --- |
 | 1 | #37 and #49 stay parked | nobody | they are parked outlines, not scheduled work — do not restack, rebase, or "fix" them |
 | 2 | Leave v0.27.1, tag `v0.27.2`, and release `379360694` alone | nobody | do not retag, replace, or mutate immutable evidence |
-| 3 | Correct post-release docs and lock tests from exact `9c6ca3de96aa7eb261c65b7dee768ab48144169c` | Codex | no product code and no release mutation |
+| 3 | For any later source-only correction, start from current `master` | Codex | no product code and no release mutation |
 | 4 | Run the complete local suite once on the exact correction head | Codex | red stops; no retry to change a result |
 | 5 | Open one draft PR for Karen | Codex | exact base, files, and verification are recorded |
 | 6 | Stop without merging, tagging, publishing, or altering releases | Codex | Karen and Jeff retain the attended review/merge decision |
@@ -119,9 +121,9 @@ tag is a real immutable ref, but it does not satisfy the workflow's annotated
 tag policy. Tag run `33327104322` therefore remains red at its publisher even
 though all ordinary test, integration, and package-build jobs passed.
 
-The current stop is one post-release truth draft for Karen. It does not repair
-the historical tag run, replace the lightweight tag, mutate a release, or turn
-later source into released package evidence.
+A post-release source-truth draft does not repair the historical tag run,
+replace the lightweight tag, mutate a release, or turn later source into
+released package evidence.
 
 ### Observed v0.27.2 inventory
 
@@ -190,7 +192,7 @@ These stay **NOT RUN** unless real evidence exists for the exact candidate:
 | `Certify Jamulus/JACK (one hour, manual)` | manual dispatch only (`run_one_hour_certification`) |
 | `Windows Release Trust (windows-x64)`, `macOS Release Trust` | credentialed signing/notarization rehearsals behind `windows_signing_rehearsal` / `macos_signing_rehearsal` |
 | `Jamulus 3.12.3 HEADLESS evidence` | quarantined dispatch-only evidence build |
-| `Publish GitHub Release` | existing tag run `33327104322` failed its annotated-tag check; this docs PR does not rerun or publish |
+| `Publish GitHub Release` | existing tag run `33327104322` failed its annotated-tag check; a docs PR does not rerun or publish |
 | Two-Mac Art room video and Drawpile | two physical machines, real observation |
 | Live Music AI | needs a real service credential |
 | Physical and hardware checklist rows | real musician observation against an exact package |
@@ -223,10 +225,10 @@ are part of the same change:
 ## 6. Who merges
 
 Jeff presses merge, one PR at a time, and only when that step's gate in
-section 2 is met. Codex prepares this correction branch, pushes, and reports;
-Codex does not merge unattended and does not tag, publish, or alter a release
-from this pull request. Rebases go to the branch they belong to — no force-push
-over someone else's product branch.
+section 2 is met. For any source-only correction, Codex prepares an isolated
+branch, pushes, and reports; Codex does not merge unattended and does not tag,
+publish, or alter a release from that pull request. Rebases go to the branch
+they belong to — no force-push over someone else's product branch.
 
 `tests/test_merge_and_release_map.py` keeps the doors, job names, and docs list
 on this page in step with `.github/workflows/ci.yml` and the repository.

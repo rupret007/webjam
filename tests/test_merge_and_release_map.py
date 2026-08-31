@@ -98,10 +98,24 @@ def test_map_records_the_published_round_and_the_parked_leftovers() -> None:
     assert "33327104322" in FLAT_MAP_TEXT
     assert "lightweight tag" in FLAT_MAP_TEXT
     assert "not publish-green" in FLAT_MAP_TEXT
+    assert "Merged source-only review" in FLAT_MAP_TEXT
+    assert "[#60](https://github.com/rupret007/webjam/pull/60)" in FLAT_MAP_TEXT
+    assert "Standing procedure after the completed product land:" in FLAT_MAP_TEXT
+    assert "For any later source-only correction, start from current `master`" in (
+        FLAT_MAP_TEXT
+    )
     assert "Open one draft PR for Karen" in FLAT_MAP_TEXT
     assert "Stop without merging, tagging, publishing, or altering releases" in (
         FLAT_MAP_TEXT
     )
+    for stale_process_claim in (
+        "This docs-and-tests branch",
+        "What remains in this named round",
+        "The current stop is one post-release truth draft",
+        "this docs PR does not rerun or publish",
+        "Codex prepares this correction branch",
+    ):
+        assert stale_process_claim not in FLAT_MAP_TEXT
     assert "No v0.27.2 tag" not in FLAT_MAP_TEXT
     assert "GitHub **Latest** remains v0.27.1" not in FLAT_MAP_TEXT
 
