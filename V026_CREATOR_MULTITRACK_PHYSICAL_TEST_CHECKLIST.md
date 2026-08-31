@@ -1,10 +1,10 @@
 # WebJam v0.26.0 creator-multitrack physical test checklist
 
-> Physical-test status: **NOT RUN**. Immutable v0.26.0 is the GitHub **Latest**
-> private test release. Its automated release identity is verified below; no
-> physical, hardware, provider, accessibility, or production-trust PASS is
-> implied. Use only exact release assets whose hashes match the published
-> checksum manifest.
+> Physical-test status: **NOT RUN**. Immutable v0.26.0 **was** the GitHub
+> **Latest** private test release when release `371442375` was published. Its
+> automated release identity is verified below; no physical, hardware,
+> provider, accessibility, or production-trust PASS is implied. Use only exact
+> release assets whose hashes match the published checksum manifest.
 
 Use only exact candidate packages whose filenames, SHA-256 values, app version,
 and source build IDs agree with the published manifest. Record no invitation or
