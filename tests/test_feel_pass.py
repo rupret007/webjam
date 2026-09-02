@@ -235,7 +235,7 @@ def test_join_is_paste_the_invite(qapp, tmp_path: Path):
 def test_art_door_keeps_host_and_join_on_the_supported_window(
     qapp, tmp_path: Path
 ):
-    """Three Art cards cannot push Host off a 760×600 screen."""
+    """Two Art starts plus Host and Join stay on a 760×600 screen."""
 
     from PySide6.QtCore import QPoint, QRect
 
@@ -243,12 +243,17 @@ def test_art_door_keeps_host_and_join_on_the_supported_window(
     dialog.show()
     qapp.processEvents()
     try:
+        visible_starts = dialog._visible_start_cards()
+        assert [card.start_key for card in visible_starts] == [
+            "talk_and_make",
+            "paint_along",
+        ]
         assert dialog.height() + 40 <= 600
         assert dialog._choice_helper.isHidden() is True
         for widget in (
             dialog._art_profile_card,
             dialog._music_profile_card,
-            *dialog._visible_start_cards(),
+            *visible_starts,
             dialog._host_button,
             dialog._join_button,
         ):

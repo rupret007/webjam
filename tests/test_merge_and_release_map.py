@@ -50,6 +50,23 @@ DOCS_PASS_FILES = (
     "ARCHITECTURE.md",
     "docs/PROJECT_BRIEF.md",
 )
+CURRENT_ART_DOOR_GUIDES = (
+    "README.md",
+    "README_SIMPLE.md",
+    "USER_GUIDE.md",
+    "FIRST_JAM.md",
+    "QUICK_HELP_MAP.md",
+    "HELP_ROUTING_MAP.md",
+    "CREATIVE_MODES_MVP_SPEC.md",
+    "docs/PROJECT_BRIEF.md",
+)
+CURRENT_MUSIC_DOOR_MARKERS = {
+    "README.md": "Music uses **Host** / **Join**",
+    "README_SIMPLE.md": "Music uses Host/Join",
+    "USER_GUIDE.md": "Music is **Host** or **Join** only",
+    "FIRST_JAM.md": "Music is **Host** or **Join** only",
+    "QUICK_HELP_MAP.md": "Music is **Host** / **Join** only",
+}
 ROUND_CONTROL_FILES = (
     "docs/MERGE_AND_RELEASE.md",
     "tests/test_merge_and_release_map.py",
@@ -244,6 +261,39 @@ def test_map_docs_pass_targets_exist_and_stay_kiss() -> None:
     assert "**Art** and **Music**" in FLAT_MAP_TEXT
     assert "No add-on" in FLAT_MAP_TEXT
     assert "No integration wall" in FLAT_MAP_TEXT
+
+
+def test_current_guides_keep_the_two_start_art_and_host_join_music_doors() -> None:
+    """Current help must not inherit an older Art or Music start door.
+
+    The changelog, dated quality review, and release-round record intentionally
+    preserve earlier labels. These files describe the door a person sees now.
+    """
+
+    for relative_path in CURRENT_ART_DOOR_GUIDES:
+        text = (ROOT / relative_path).read_text(encoding="utf-8")
+        assert "**Make together**" in text, relative_path
+        assert "**Paint along**" in text, relative_path
+        assert "**Talk & make**" not in text, relative_path
+        assert "**Paint together**" not in text, relative_path
+
+    normalized = {
+        relative_path: " ".join(
+            (ROOT / relative_path).read_text(encoding="utf-8").split()
+        )
+        for relative_path in CURRENT_ART_DOOR_GUIDES
+    }
+    assert "It offers two visible starts and no more" in normalized[
+        "docs/PROJECT_BRIEF.md"
+    ]
+    assert "Launch shows exactly two cards for Art" in normalized[
+        "CREATIVE_MODES_MVP_SPEC.md"
+    ]
+    assert "you pick one of two ways to start, and nothing more" in normalized[
+        "USER_GUIDE.md"
+    ]
+    for relative_path, marker in CURRENT_MUSIC_DOOR_MARKERS.items():
+        assert marker in normalized[relative_path], relative_path
 
 
 def test_changelog_moves_final_art_door_work_into_v0272() -> None:
