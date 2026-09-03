@@ -156,6 +156,8 @@ if set(_CREATOR_LAUNCH_COPY) != {profile.key for profile in CREATOR_PROFILES}:
 _FIRST_SCREEN_PROFILE_KEYS = ("art", "music")
 _ART_PROFILE_SUMMARY = "Make art together."
 _MUSIC_PROFILE_SUMMARY = "Play live together."
+_START_CARD_HEIGHT = 64
+_PAINT_ALONG_MARK_SIZE = QSize(72, 48)
 
 
 class ProfileCard(QCommandLinkButton):
@@ -220,7 +222,12 @@ class StartCard(QCommandLinkButton):
         )
         if start.key == "paint_along" and mark.is_file():
             self.setIcon(QIcon(str(mark)))
-            self.setIconSize(QSize(40, 40))
+            # The source is a wide face mark. A small square request shrank
+            # its painted content to roughly 40 x 27 pixels, so the only
+            # illustrated Art choice read like an incidental thumbnail.
+            # Preserve the asset's shape and give it enough area to identify
+            # at a glance without introducing another label or control.
+            self.setIconSize(_PAINT_ALONG_MARK_SIZE)
         else:
             self.setIcon(QIcon())
             self.setIconSize(QSize(0, 0))
@@ -228,8 +235,10 @@ class StartCard(QCommandLinkButton):
         # enough to push Host and Join off a supported window. Bounding the
         # height keeps two cards, Host, and Join all on screen at the
         # 760x600 floor while staying a large target.
-        self.setMinimumHeight(54)
-        self.setMaximumHeight(64)
+        # Keep both choices equal even though only one has an illustration.
+        # Sixty-four pixels still leaves both cards and Host / Join inside the
+        # supported 760x600 screen floor.
+        self.setFixedHeight(_START_CARD_HEIGHT)
         self.setAccessibleName(start.label)
         self.setAccessibleDescription(f"{start.summary} {start.detail}")
         self.setToolTip(start.detail)

@@ -134,7 +134,7 @@ def test_only_paint_along_shows_the_face_mark(qapp, tmp_path: Path):
     try:
         cards = {card.start_key: card for card in _visible_cards(dialog)}
         assert cards["paint_along"].icon().isNull() is False
-        assert cards["paint_along"].iconSize() == QSize(40, 40)
+        assert cards["paint_along"].iconSize() == QSize(72, 48)
         assert cards["talk_and_make"].icon().isNull() is True
         assert set(cards) == {"talk_and_make", "paint_along"}
         for button in _visible_buttons(dialog):
@@ -163,10 +163,10 @@ def test_a_card_is_a_large_target_that_never_submits_the_dialog(
     dialog = _dialog(tmp_path)
     try:
         for card in _visible_cards(dialog):
-            assert card.minimumHeight() >= 48
+            assert card.minimumHeight() == 64
             # Bounded above too, so two cards plus Host and Join all stay
             # on screen at the supported window floor.
-            assert card.maximumHeight() <= 72
+            assert card.maximumHeight() == 64
             assert card.isCheckable() is True
             # Return belongs to Host. A card that kept autoDefault could take
             # the dialog's default action away from it.

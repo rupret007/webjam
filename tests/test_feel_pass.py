@@ -27,6 +27,7 @@ from tests.support.start_ux import (
     harvest_first_screen,
     harvest_join_page,
 )
+from webjam_qt.theme import load_stylesheet
 from webjam_qt.widgets.session_canvas import SessionCanvas
 from webjam_qt.widgets.session_strip import (
     SessionStrip,
@@ -210,7 +211,7 @@ def test_only_paint_along_keeps_the_squirrel_face(qapp, tmp_path: Path):
     try:
         cards = {card.start_key: card for card in dialog._visible_start_cards()}
         assert cards["paint_along"].icon().isNull() is False
-        assert cards["paint_along"].iconSize() == QSize(40, 40)
+        assert cards["paint_along"].iconSize() == QSize(72, 48)
         assert cards["talk_and_make"].icon().isNull() is True
         assert set(cards) == {"talk_and_make", "paint_along"}
         assert dialog._art_profile_card.icon().isNull() is True
@@ -240,6 +241,7 @@ def test_art_door_keeps_host_and_join_on_the_supported_window(
     from PySide6.QtCore import QPoint, QRect
 
     dialog = _dialog(tmp_path, "art")
+    dialog.setStyleSheet(load_stylesheet())
     dialog.show()
     qapp.processEvents()
     try:
@@ -250,6 +252,7 @@ def test_art_door_keeps_host_and_join_on_the_supported_window(
         ]
         assert dialog.height() + 40 <= 600
         assert dialog._choice_helper.isHidden() is True
+        assert {card.height() for card in visible_starts} == {64}
         for widget in (
             dialog._art_profile_card,
             dialog._music_profile_card,
