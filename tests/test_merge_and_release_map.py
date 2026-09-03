@@ -48,6 +48,7 @@ DOCS_PASS_FILES = (
     "HELP_ROUTING_MAP.md",
     "FIRST_JAM.md",
     "ARCHITECTURE.md",
+    "UX_ACCEPTANCE_CHECKLIST.md",
     "docs/PROJECT_BRIEF.md",
 )
 CURRENT_ART_DOOR_GUIDES = (
@@ -58,6 +59,7 @@ CURRENT_ART_DOOR_GUIDES = (
     "QUICK_HELP_MAP.md",
     "HELP_ROUTING_MAP.md",
     "CREATIVE_MODES_MVP_SPEC.md",
+    "UX_ACCEPTANCE_CHECKLIST.md",
     "docs/PROJECT_BRIEF.md",
 )
 CURRENT_MUSIC_DOOR_MARKERS = {
@@ -66,6 +68,7 @@ CURRENT_MUSIC_DOOR_MARKERS = {
     "USER_GUIDE.md": "Music is **Host** or **Join** only",
     "FIRST_JAM.md": "Music is **Host** or **Join** only",
     "QUICK_HELP_MAP.md": "Music is **Host** / **Join** only",
+    "UX_ACCEPTANCE_CHECKLIST.md": "Music keeps **Host** / **Join** only",
 }
 ROUND_CONTROL_FILES = (
     "docs/MERGE_AND_RELEASE.md",
@@ -294,6 +297,42 @@ def test_current_guides_keep_the_two_start_art_and_host_join_music_doors() -> No
     ]
     for relative_path, marker in CURRENT_MUSIC_DOOR_MARKERS.items():
         assert marker in normalized[relative_path], relative_path
+
+
+def test_owner_click_gate_is_exact_asset_bound_and_stays_not_run() -> None:
+    """The missing feel call must be one honest, non-live package check."""
+
+    checklist = (ROOT / "UX_ACCEPTANCE_CHECKLIST.md").read_text(encoding="utf-8")
+    section = checklist.partition(
+        "## Owner click gate — current two-card door"
+    )[2].partition("\n## ")[0]
+    assert section, "the current package needs one attended first-screen gate"
+
+    required_identity = (
+        "**Status: NOT RUN.**",
+        "release ID `379360694`",
+        "WebJam-v0.27.2-SHA256SUMS.txt",
+        "9c6ca3de96aa7eb261c65b7dee768ab48144169c",
+        "not a checkout or CI artifact",
+    )
+    for marker in required_identity:
+        assert marker in section, marker
+
+    required_door_order = (
+        "exactly **Art** and **Music**",
+        "**Make together** and\n      **Paint along**",
+        "followed by **Host** and **Join**",
+        "**Music**. Confirm it shows **Host** and **Join** only",
+        "Stop before choosing **Host** or **Join**",
+    )
+    positions = [section.index(marker) for marker in required_door_order]
+    assert positions == sorted(positions)
+
+    assert "large squirrel-with-the-fro" in section
+    assert "starts no Jamulus process" in section
+    assert "proves no live audio" in section
+    assert section.count("- [ ]") == 9
+    assert "- [x]" not in section.casefold()
 
 
 def test_changelog_moves_final_art_door_work_into_v0272() -> None:
