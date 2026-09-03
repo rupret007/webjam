@@ -37,7 +37,9 @@ All notable improvements and features for the WebJam creator collaboration platf
   **Paint along**. People may keep working locally in Make together, and the
   host may open one shared canvas from inside the room. Music remains
   **Host** / **Join** only.
-- The squirrel-with-the-fro face is larger on Paint along. No third Art card or
+- The squirrel-with-the-fro face now renders at 72×48 on Paint along instead
+  of the earlier 40×40 request that reduced the wide artwork to a thumbnail.
+  Both Art choices remain equal 64-pixel targets, and no third Art card or
   other animal icon was added.
 
 ### Art says what the person does

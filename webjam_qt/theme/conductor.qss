@@ -902,6 +902,11 @@ QCommandLinkButton#LaunchStartCard {
     border-radius: ${RADIUS_LG}px;
     text-align: left;
     padding: ${SPACE_XS}px ${SPACE_MD}px;
+    /* QSS measures min/max height before its 4px vertical padding and 1px
+       borders. 54px therefore renders as an equal 64px target for both Art
+       choices, including the illustrated Paint along card. */
+    min-height: 54px;
+    max-height: 54px;
     /* The control already sets its own title/description hierarchy. Forcing a
        weight or size here would flatten the two lines into one block. */
 }
