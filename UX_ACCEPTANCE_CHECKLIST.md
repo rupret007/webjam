@@ -12,6 +12,39 @@
 > Host/Join is compatible with the existing exact Jamulus 3.12.2 and 3.12.3
 > records. Use only a checksum-verified release asset for packaged checks.
 
+## Owner click gate — current two-card door
+
+**Status: NOT RUN.** This is the one attended first-screen feel check for the
+published unsigned/ad-hoc v0.27.2 package. Source tests prove labels, order,
+layout, and accessibility; they do not prove that the packaged door feels
+obvious to Jeff. Do not record a result from this checkout or a branch build.
+
+- [ ] Open the immutable
+      [v0.27.2 release](https://github.com/rupret007/webjam/releases/tag/v0.27.2)
+      with release ID `379360694`.
+- [ ] Download the package for this computer plus
+      `WebJam-v0.27.2-SHA256SUMS.txt`, and verify the exact filename and
+      SHA-256 before opening it.
+- [ ] Launch that checksum-verified package from tag commit
+      `9c6ca3de96aa7eb261c65b7dee768ab48144169c`, not a checkout or CI artifact.
+- [ ] Confirm the first screen shows exactly **Art** and **Music** as equal
+      creator choices. Podcast & Voice and Review & Rehearsal stay behind the
+      smaller **Podcast or review** route rather than competing on this screen.
+- [ ] Choose **Art**. Confirm the only starts are **Make together** and
+      **Paint along**, followed by **Host** and **Join**.
+- [ ] Confirm **Paint along** alone carries the large squirrel-with-the-fro
+      face; **Make together**, Art, and Music do not reuse that mark.
+- [ ] Return and choose **Music**. Confirm it shows **Host** and **Join** only,
+      with no Art start card mixed into the Music decision.
+- [ ] Stop before choosing **Host** or **Join**. This gate creates no room,
+      starts no Jamulus process, opens no meeting, and proves no live audio.
+- [ ] Record the exact asset filename, SHA-256, computer/OS, UTC time, and one
+      outcome—accepted or needs revision—before changing this status.
+
+Until those boxes are completed against the exact release asset, this gate
+remains **NOT RUN**. A source test, screenshot, branch build, or prior release
+observation cannot fill it in.
+
 ## Unified guidance
 
 - [ ] HUD, passive stage, Session Canvas, recorder, and Studio use the same
@@ -33,10 +66,13 @@
 
 ## Launch: understandable in five seconds
 
-- [ ] First screen asks **What are you creating?** and offers Music (GA),
-      Podcast & Voice (GA), and Review & Rehearsal (Preview).
-- [ ] Profile selection changes the primary actions to **Host** / **Join**,
-      **Host Remote Recording** / **Join Recording**, or **Host Review** /
+- [ ] First screen asks **What are you creating?** and offers exactly Art
+      (Preview) and Music (GA) as equal cards.
+- [ ] Art then offers exactly **Make together** and **Paint along**, followed by
+      **Host** / **Join**. Music keeps **Host** / **Join** only.
+- [ ] Podcast & Voice (GA) and Review & Rehearsal (Preview) stay behind
+      **Podcast or review**. Choosing one there changes the primary actions to
+      **Host Remote Recording** / **Join Recording** or **Host Review** /
       **Join Review** before startup begins.
 - [ ] Music uses **Band Check**, Podcast & Voice uses **Sound Check**, and
       Review & Rehearsal uses **Session Check (Preview)**.

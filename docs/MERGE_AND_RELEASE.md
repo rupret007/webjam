@@ -53,6 +53,10 @@ Where a test can hold a door it does —
 [#19](https://github.com/rupret007/webjam/pull/19) landed
 `tests/test_art_start_ux.py` on `master` — but a green suite is not a claim that
 the first screen makes sense, so the human read happens before the merge.
+The current checksum-bound human read is the **NOT RUN**
+[owner click gate](../UX_ACCEPTANCE_CHECKLIST.md#owner-click-gate-current-two-card-door).
+It uses an exact v0.27.2 release asset and stops before Host or Join, so it does
+not create a room or claim live audio.
 
 #19 originally established three Art start cards. Current source combines the
 room-only and shared-canvas choices into **Make together**; artists work
@@ -201,9 +205,10 @@ These stay **NOT RUN** unless real evidence exists for the exact candidate:
 
 One docs-only pass over `CHANGELOG.md`, `USER_GUIDE.md`, `README.md`,
 `README_SIMPLE.md`, `QUICK_HELP_MAP.md`, `HELP_ROUTING_MAP.md`, `FIRST_JAM.md`,
-`ARCHITECTURE.md`, and `docs/PROJECT_BRIEF.md`. This map and its executable
-contract, `docs/MERGE_AND_RELEASE.md` and `tests/test_merge_and_release_map.py`,
-are part of the same change:
+`ARCHITECTURE.md`, `UX_ACCEPTANCE_CHECKLIST.md`, and
+`docs/PROJECT_BRIEF.md`. This map and its executable contract,
+`docs/MERGE_AND_RELEASE.md` and `tests/test_merge_and_release_map.py`, are part
+of the same change:
 
 1. Musician-visible names read **Art** and **Music**. #19 already renamed the
    Art door in those guides plus `ARCHITECTURE.md` and `docs/PROJECT_BRIEF.md`.

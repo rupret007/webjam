@@ -9,7 +9,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QRect, Qt  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QRect, Qt  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QCheckBox,
@@ -36,6 +36,18 @@ from webjam_qt.windows.recording_setup import (  # noqa: E402
 
 
 APP = QApplication.instance() or QApplication([])
+
+
+@pytest.fixture(autouse=True)
+def _dispose_top_level_widgets() -> None:
+    """Release each test's dialogs before Qt owns interpreter teardown."""
+
+    yield
+    for widget in QApplication.topLevelWidgets():
+        widget.close()
+        widget.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    APP.processEvents()
 
 
 def _dialog_copy(dialog: LocalOriginalsChoiceDialog) -> tuple[list[str], list[str]]:
