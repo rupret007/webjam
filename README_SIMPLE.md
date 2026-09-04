@@ -70,6 +70,14 @@ helper that removes quarantine from WebJam only.
 
 That is the whole live-session path.
 
+Join has one private invitation field and one button. Remote joins progress
+through **Checking invite**, **Contacting host**, **Securing connection**, and
+**Opening Jamulus**. If WebJam cannot finish safely, it stops at **Needs
+attention** instead of spinning forever and offers one action: **Try Again**
+when the invitation was definitely not used, or **Paste New Invite** when it
+may have been used. **Connected** still requires fresh authenticated Jamulus
+roster evidence.
+
 In **Paint along**, WebJam turns its existing window into a silent process-video
 companion once the room exists. Paint in Procreate, Clip Studio Paint, Krita,
 or on paper beside it; keep Webex or another meeting beside WebJam for

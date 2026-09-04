@@ -271,6 +271,27 @@ services required for that invitation. If setup fails, the in-memory intent is
 preserved only while it is safe to retry; WebJam never pretends an uncertain
 invitation succeeded.
 
+The Join door contains one masked invitation field, one **Join** button, and a
+privacy reminder. Paste the complete invitation copied from the host. Harmless
+message whitespace and surrounding punctuation are accepted; incomplete,
+expired, malformed, incompatible, and unsupported invitations are rejected
+with a plain explanation. Private invitation values are never saved in
+settings or logs and are not echoed back after a private-link error.
+
+For a remote invitation, the normal visible sequence is **Checking invite →
+Contacting host → Securing connection → Opening Jamulus → Connected**. A
+remote attempt has a bounded outer timeout, and Connected appears only after
+WebJam has fresh authenticated Jamulus evidence. At **Needs attention**, use
+the single action shown:
+
+- **Try Again** means WebJam proved the one-use invitation was not submitted.
+- **Paste New Invite** means the invitation expired, timed out, or may have
+  been consumed; ask the host for a new one.
+
+After Jamulus connects, the session canvas includes Jamulus band chat. That
+chat is unavailable while the private connection itself is still being set
+up, so use the invitation recovery shown by WebJam for connection trouble.
+
 ## Main session actions and More
 
 The main session rail keeps the everyday destinations visible:

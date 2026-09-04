@@ -343,7 +343,12 @@ def test_v3_parser_rejects_invalid_fixed_envelopes(name):
             _payload_mutation(name, _raw_link()),
             allowed_profiles=ALLOWED,
         )
-    assert caught.value.code is RemoteInvitationErrorCode.MALFORMED
+    expected = (
+        RemoteInvitationErrorCode.INCOMPLETE
+        if name == "truncated"
+        else RemoteInvitationErrorCode.MALFORMED
+    )
+    assert caught.value.code is expected
 
 
 def test_v3_parser_rejects_every_noncanonical_envelope_length_without_crashing():

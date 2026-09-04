@@ -13,6 +13,7 @@ from services.remote_session_runtime import (
     RemoteGuestConnection,
     RemoteSessionErrorCode,
     RemoteSessionPhase,
+    RemoteSessionStage,
     RemoteSessionRuntime,
 )
 
@@ -150,20 +151,72 @@ def test_only_one_enrollment_worker_can_be_active() -> None:
     assert runtime.wait_until_settled().phase is RemoteSessionPhase.CONNECTED
 
 
-def test_preparing_callback_always_precedes_fast_connected_callback() -> None:
-    phases = []
+def test_bounded_join_stages_precede_fast_connected_callback() -> None:
+    snapshots = []
     runtime = RemoteSessionRuntime(
         Backend(),
-        on_snapshot=lambda value: phases.append(value.phase),
+        on_snapshot=snapshots.append,
     )
 
     runtime.start_guest(_invitation())
     runtime.wait_until_settled()
 
-    assert phases == [
-        RemoteSessionPhase.PREPARING,
-        RemoteSessionPhase.CONNECTED,
+    assert [(item.phase, item.stage) for item in snapshots] == [
+        (RemoteSessionPhase.PREPARING, RemoteSessionStage.CONTACTING_HOST),
+        (RemoteSessionPhase.PREPARING, RemoteSessionStage.SECURING_CONNECTION),
+        (RemoteSessionPhase.CONNECTED, RemoteSessionStage.CONNECTED),
     ]
+
+
+def test_hung_enrollment_times_out_requires_fresh_invite_and_ignores_late_result() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    class BlockingBackend(Backend):
+        def start_guest(self, invitation, *, generation):
+            entered.set()
+            assert release.wait(2)
+            return super().start_guest(invitation, generation=generation)
+
+        def stop(self) -> None:
+            super().stop()
+            release.set()
+
+    backend = BlockingBackend()
+    snapshots = []
+    runtime = RemoteSessionRuntime(
+        backend,
+        on_snapshot=snapshots.append,
+        join_timeout_seconds=0.03,
+    )
+
+    assert runtime.start_guest(_invitation()) is True
+    assert entered.wait(1)
+    settled = runtime.wait_until_settled(timeout=1)
+
+    assert settled.phase is RemoteSessionPhase.FAILED
+    assert settled.stage is RemoteSessionStage.NEEDS_ATTENTION
+    assert settled.error_code is RemoteSessionErrorCode.TIMED_OUT
+    assert not settled.invitation_retry_safe
+    assert runtime._pending_invitation is None
+    assert release.wait(1)
+    deadline = time.monotonic() + 1
+    while backend.stopped != 1 and time.monotonic() < deadline:
+        time.sleep(0.005)
+    assert backend.stopped == 1
+    time.sleep(0.02)
+    assert runtime.snapshot == settled
+    assert snapshots[-1] == settled
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("inf"), 301])
+def test_join_timeout_must_be_positive_and_bounded(timeout: float) -> None:
+    with pytest.raises(ValueError, match="join_timeout_seconds"):
+        RemoteSessionRuntime(
+            Backend(),
+            on_snapshot=lambda _value: None,
+            join_timeout_seconds=timeout,
+        )
 
 
 def test_stop_invalidates_late_worker_result() -> None:

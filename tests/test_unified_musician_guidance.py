@@ -196,7 +196,7 @@ def test_native_setup_and_exceptional_recovery_share_the_same_copy(tmp_path):
         controller._update_session_hud()
         guidance = controller._last_musician_guidance
         assert guidance.primary_action is SessionPrimaryAction.NONE
-        assert guidance.action_label == "New invite needed"
+        assert guidance.action_label == "Paste New Invite"
         assert window.session_hud._status.text() == guidance.title
         assert window.participant_grid._empty_title.text() == guidance.title
         assert window.session_canvas._guidance_status.text() == guidance.title

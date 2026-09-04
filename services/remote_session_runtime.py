@@ -9,6 +9,7 @@ is released immediately after that backend call returns.
 from __future__ import annotations
 
 import logging
+import math
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -24,6 +25,12 @@ from core.session_transport import (
 
 LOGGER = logging.getLogger("webjam.services.remote_session")
 
+# The native guest backend owns a 30-second sidecar-start boundary and a
+# separate 30-second authenticated-enrollment boundary.  This outer guard is
+# intentionally a little wider: it catches a backend or platform primitive
+# that fails to honor either inner timeout without racing a legitimate result.
+DEFAULT_GUEST_JOIN_TIMEOUT_SECONDS = 65.0
+
 
 class RemoteSessionPhase(str, Enum):
     IDLE = "idle"
@@ -34,12 +41,23 @@ class RemoteSessionPhase(str, Enum):
     STOPPED = "stopped"
 
 
+class RemoteSessionStage(str, Enum):
+    """Small, secret-free progress vocabulary for one guest join."""
+
+    CONTACTING_HOST = "contacting_host"
+    SECURING_CONNECTION = "securing_connection"
+    OPENING_JAMULUS = "opening_jamulus"
+    CONNECTED = "connected"
+    NEEDS_ATTENTION = "needs_attention"
+
+
 class RemoteSessionErrorCode(str, Enum):
     EXPIRED = "expired"
     UNAVAILABLE = "unavailable"
     ENROLLMENT_REJECTED = "enrollment_rejected"
     INVITATION_UNUSABLE = "invitation_unusable"
     TRANSPORT_FAILED = "transport_failed"
+    TIMED_OUT = "timed_out"
     STOP_FAILED = "stop_failed"
 
 
@@ -78,6 +96,8 @@ class RemoteSessionSnapshot:
     path: TransportPath | None = None
     quality: ConnectionQuality = ConnectionQuality.UNKNOWN
     error_code: RemoteSessionErrorCode | None = None
+    # Kept last so existing positional construction remains source-compatible.
+    stage: RemoteSessionStage | None = None
 
     @property
     def invitation_retry_safe(self) -> bool:
@@ -98,7 +118,9 @@ class RemoteSessionSnapshot:
     @property
     def musician_status(self) -> str:
         if self.phase is RemoteSessionPhase.PREPARING:
-            return "Finding the fastest path"
+            if self.stage is RemoteSessionStage.SECURING_CONNECTION:
+                return "Securing connection"
+            return "Contacting host"
         if self.phase is RemoteSessionPhase.CONNECTED:
             return self.path.musician_label if self.path is not None else (
                 "Your audio session is connected"
@@ -136,12 +158,19 @@ class RemoteSessionRuntime:
         *,
         on_snapshot: Callable[[RemoteSessionSnapshot], None],
         schedule_callback: Callable[[Callable[[], None]], None] = lambda fn: fn(),
+        join_timeout_seconds: float = DEFAULT_GUEST_JOIN_TIMEOUT_SECONDS,
     ) -> None:
+        timeout = float(join_timeout_seconds)
+        if not math.isfinite(timeout) or timeout <= 0.0 or timeout > 300.0:
+            raise ValueError("join_timeout_seconds must be between zero and 300")
         self._backend = backend
         self._on_snapshot = on_snapshot
         self._schedule_callback = schedule_callback
+        self._join_timeout_seconds = timeout
         self._condition = threading.Condition(threading.RLock())
         self._worker: threading.Thread | None = None
+        self._watchdog: threading.Thread | None = None
+        self._watchdog_cancel: threading.Event | None = None
         self._operation = 0
         self._pending_invitation: RemoteInvitation | None = None
         self._snapshot = RemoteSessionSnapshot(
@@ -172,9 +201,15 @@ class RemoteSessionRuntime:
                 RemoteSessionPhase.STOPPING,
             }:
                 raise RuntimeError("remote session is already active")
+            if self._worker is not None and self._worker.is_alive():
+                raise RuntimeError("remote session cleanup is still active")
             self._operation += 1
             operation = self._operation
-            generation = max(1, self._snapshot.generation)
+            generation = max(
+                1,
+                self._snapshot.generation
+                + (self._snapshot.phase is not RemoteSessionPhase.IDLE),
+            )
             if invitation.advisory_expired():
                 self._pending_invitation = None
                 self._snapshot = RemoteSessionSnapshot(
@@ -182,6 +217,7 @@ class RemoteSessionRuntime:
                     role=SessionRole.GUEST,
                     generation=generation,
                     error_code=RemoteSessionErrorCode.EXPIRED,
+                    stage=RemoteSessionStage.NEEDS_ATTENTION,
                 )
                 snapshot = self._snapshot
                 self._condition.notify_all()
@@ -191,6 +227,7 @@ class RemoteSessionRuntime:
                     phase=RemoteSessionPhase.PREPARING,
                     role=SessionRole.GUEST,
                     generation=generation,
+                    stage=RemoteSessionStage.CONTACTING_HOST,
                 )
                 snapshot = self._snapshot
                 worker = threading.Thread(
@@ -200,8 +237,18 @@ class RemoteSessionRuntime:
                     daemon=True,
                 )
                 self._worker = worker
+                watchdog_cancel = threading.Event()
+                watchdog = threading.Thread(
+                    target=self._watch_guest_join,
+                    args=(operation, generation, watchdog_cancel),
+                    name="webjam-remote-join-watchdog",
+                    daemon=True,
+                )
+                self._watchdog = watchdog
+                self._watchdog_cancel = watchdog_cancel
         self._publish(snapshot)
         if snapshot.phase is RemoteSessionPhase.PREPARING:
+            watchdog.start()
             worker.start()
         return snapshot.phase is RemoteSessionPhase.PREPARING
 
@@ -215,6 +262,7 @@ class RemoteSessionRuntime:
                 return
             self._operation += 1
             self._pending_invitation = None
+            self._cancel_watchdog_locked()
             generation = self._snapshot.generation
             self._snapshot = RemoteSessionSnapshot(
                 phase=RemoteSessionPhase.STOPPING,
@@ -242,6 +290,11 @@ class RemoteSessionRuntime:
                 ),
                 role=self._snapshot.role,
                 generation=generation,
+                stage=(
+                    RemoteSessionStage.NEEDS_ATTENTION
+                    if error is not None
+                    else None
+                ),
                 error_code=error,
             )
             stopped = self._snapshot
@@ -270,8 +323,24 @@ class RemoteSessionRuntime:
     def _guest_worker(self, operation: int, generation: int) -> None:
         with self._condition:
             invitation = self._pending_invitation
+            if (
+                invitation is not None
+                and operation == self._operation
+                and self._snapshot.phase is RemoteSessionPhase.PREPARING
+            ):
+                self._snapshot = RemoteSessionSnapshot(
+                    phase=RemoteSessionPhase.PREPARING,
+                    role=SessionRole.GUEST,
+                    generation=generation,
+                    stage=RemoteSessionStage.SECURING_CONNECTION,
+                )
+                securing = self._snapshot
+            else:
+                securing = None
         if invitation is None:
             return
+        if securing is not None:
+            self._publish(securing)
         connection: RemoteGuestConnection | None = None
         error: RemoteSessionErrorCode | None = None
         try:
@@ -305,6 +374,7 @@ class RemoteSessionRuntime:
                     self._worker = None
                 self._condition.notify_all()
                 return
+            self._cancel_watchdog_locked()
             if connection is not None:
                 self._snapshot = RemoteSessionSnapshot(
                     phase=RemoteSessionPhase.CONNECTED,
@@ -313,6 +383,7 @@ class RemoteSessionRuntime:
                     loopback_port=connection.loopback_port,
                     path=connection.path,
                     quality=connection.quality,
+                    stage=RemoteSessionStage.CONNECTED,
                 )
             else:
                 self._snapshot = RemoteSessionSnapshot(
@@ -322,11 +393,69 @@ class RemoteSessionRuntime:
                     error_code=(
                         error or RemoteSessionErrorCode.TRANSPORT_FAILED
                     ),
+                    stage=RemoteSessionStage.NEEDS_ATTENTION,
                 )
             settled = self._snapshot
             self._worker = None
             self._condition.notify_all()
         self._publish(settled)
+
+    def _expire_guest_join(self, operation: int, generation: int) -> None:
+        """Retire one hung enrollment and prevent its late result from winning."""
+
+        with self._condition:
+            if (
+                operation != self._operation
+                or self._snapshot.phase is not RemoteSessionPhase.PREPARING
+            ):
+                return
+            # The backend may already have entered open_guest.  Invalidate the
+            # operation before cleanup and require a fresh one-use invitation.
+            self._operation += 1
+            self._pending_invitation = None
+            self._watchdog = None
+            self._watchdog_cancel = None
+            self._snapshot = RemoteSessionSnapshot(
+                phase=RemoteSessionPhase.FAILED,
+                role=SessionRole.GUEST,
+                generation=generation,
+                error_code=RemoteSessionErrorCode.TIMED_OUT,
+                stage=RemoteSessionStage.NEEDS_ATTENTION,
+            )
+            expired = self._snapshot
+            self._condition.notify_all()
+        self._publish(expired)
+
+        def cleanup() -> None:
+            try:
+                self._backend.stop()
+            except Exception as exc:  # noqa: BLE001 - no backend text is safe
+                LOGGER.error(
+                    "Timed-out remote backend cleanup failed; exception_type=%s",
+                    type(exc).__name__,
+                )
+
+        threading.Thread(
+            target=cleanup,
+            daemon=True,
+            name="webjam-remote-timeout-cleanup",
+        ).start()
+
+    def _watch_guest_join(
+        self,
+        operation: int,
+        generation: int,
+        cancelled: threading.Event,
+    ) -> None:
+        if not cancelled.wait(self._join_timeout_seconds):
+            self._expire_guest_join(operation, generation)
+
+    def _cancel_watchdog_locked(self) -> None:
+        cancelled = self._watchdog_cancel
+        self._watchdog = None
+        self._watchdog_cancel = None
+        if cancelled is not None:
+            cancelled.set()
 
     def _publish(self, snapshot: RemoteSessionSnapshot) -> None:
         self._schedule_callback(

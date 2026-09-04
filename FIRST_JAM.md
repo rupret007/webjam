@@ -72,10 +72,14 @@ automatically taps a meeting app, browser, or system output.
 ## Join
 
 1. Open the invite or choose the profile's **Join**, **Join Recording**, or
-   **Join Review** action and paste it once.
-2. Let WebJam open Jamulus and connect to the invited session.
-3. Set sound in Jamulus if this Mac needs it.
-4. WebJam moves into the live session automatically when the authenticated
+   **Join Review** action and paste the complete invitation once. The field is
+   masked and the invitation is not saved.
+2. Follow **Checking invite**, **Contacting host**, **Securing connection**, and
+   **Opening Jamulus**. WebJam stops at **Needs attention** rather than waiting
+   forever. Use the one shown action: **Try Again** or **Paste New Invite**.
+3. Set sound in Jamulus if this Mac needs it. First-time native audio setup is
+   a separate human step and may remain open while you choose the interface.
+4. WebJam moves into the live session automatically only when the authenticated
    connection is ready. Play a note and make sure you can hear each other.
 
 ## Important boundaries

@@ -515,6 +515,10 @@ def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     ]
     assert visible_fields == [dialog._invite_input]
     assert dialog._name_input.isVisibleTo(dialog) is False
+    assert dialog._join_button_primary.text() == "Join"
+    assert dialog._join_status.text() == "Paste your invitation"
+    assert "never saved" in dialog._join_privacy.text()
+    assert dialog._invite_input.echoMode() is QLineEdit.EchoMode.Password
     dialog._name_input.setText("Drummer")
     dialog._invite_input.setText(
         create_invite_link("192.168.1.42", session_name="Drummer Test")
@@ -527,6 +531,55 @@ def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     assert data["jamulus_server"] == "192.168.1.42"
     assert data["jamulus_port"] == 22124
     assert data["musician_name"] == "Drummer"
+
+
+def test_join_door_reports_checking_without_reflecting_private_text(
+    qapp, tmp_path
+):
+    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    dialog = LaunchDialog(settings)
+    dialog.show_join()
+    secret = "webjam://join?v=3&r=reference-local&i=PRIVATE-CAPABILITY-SENTINEL"
+
+    assert dialog.accept_invite(secret) is False
+
+    rendered = " ".join(
+        (
+            dialog._join_status.text(),
+            dialog._join_error.text(),
+            dialog._join_privacy.text(),
+            dialog._join_button_primary.text(),
+            dialog.accessibleDescription(),
+        )
+    )
+    assert dialog._join_status.text() == "Needs attention"
+    assert "incomplete" in dialog._join_error.text().casefold()
+    assert dialog._invite_input.text() == ""
+    assert "PRIVATE-CAPABILITY-SENTINEL" not in rendered
+    assert dialog._join_button_primary.isEnabled()
+    dialog.close()
+
+
+@pytest.mark.parametrize(
+    "secret",
+    (
+        "WEBJAM://JOIN?V=3&R=reference-local&I=PRIVATE-UPPER-SENTINEL",
+        "webjam://join?I=PRIVATE-UPPER-SENTINEL",
+    ),
+)
+def test_join_door_never_reflects_case_varied_private_invite(
+    qapp, tmp_path, secret
+):
+    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    dialog = LaunchDialog(settings)
+    dialog.show_join()
+
+    assert dialog.accept_invite(secret) is False
+
+    assert dialog._join_status.text() == "Needs attention"
+    assert dialog._invite_input.text() == ""
+    assert "PRIVATE-UPPER-SENTINEL" not in dialog.accessibleDescription()
+    dialog.close()
 
 
 def test_pasted_join_save_failure_is_visible_and_retryable(qapp, tmp_path):

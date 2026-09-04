@@ -10,7 +10,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
 
 from core.network_invite import create_invite_link
 from core.remote_invitation import issue_remote_invitation
@@ -22,6 +22,7 @@ from services.remote_session_runtime import (
     RemoteSessionErrorCode,
     RemoteSessionPhase,
     RemoteSessionSnapshot,
+    RemoteSessionStage,
 )
 from webjam_qt.controllers.application_controller import ApplicationController
 from webjam_qt.windows.conductor_window import ConductorWindow
@@ -431,8 +432,7 @@ def test_v3_guest_enrollment_failure_requires_fresh_invitation_and_never_falls_t
             controller._remote_session.snapshot.phase is RemoteSessionPhase.FAILED
             and controller._remote_invitation is None
             and controller._remote_invitation_requires_replacement
-            and "Fresh invitation required"
-            in controller.window.session_hud._status.text()
+            and "Needs attention" in controller.window.session_hud._status.text()
         ),
     )
 
@@ -440,9 +440,10 @@ def test_v3_guest_enrollment_failure_requires_fresh_invitation_and_never_falls_t
     # been consumed. The UI cannot replay it or fall back to a LAN/localhost
     # Jamulus start behind the musician's back.
     assert attempts == [invitation]
-    assert not controller.window.participant_grid._empty_primary.isEnabled()
-    assert controller.window.participant_grid._empty_primary.text() == "New invite needed"
-    assert controller.window.session_hud._action.isHidden()
+    assert controller.window.participant_grid._empty_primary.isHidden()
+    assert not controller.window.session_hud._action.isHidden()
+    assert controller.window.session_hud._action.text() == "Paste New Invite"
+    assert controller.window.session_hud._action_kind == "paste_invite"
     controller.audio.on_launch_toggle = mock.MagicMock(return_value=True)
     controller._retry_session()
     controller._on_launch_audio()
@@ -480,15 +481,14 @@ def test_v3_guest_pre_enrollment_failure_stage_and_hud_retry_same_invitation(
         lambda: (
             controller._remote_session.snapshot.phase is RemoteSessionPhase.FAILED
             and controller._remote_invitation is invitation
-            and "Private connection unavailable"
-            in controller.window.session_hud._status.text()
+            and "Needs attention" in controller.window.session_hud._status.text()
         ),
     )
 
     # A routine HUD refresh preserves the one retry because the backend proved
     # the sidecar failed before it entered open_guest().
     controller._update_session_hud()
-    assert controller.window.participant_grid._empty_primary.text() == "Try Again"
+    assert controller.window.participant_grid._empty_primary.isHidden()
     assert not controller.window.session_hud._action.isHidden()
     assert controller.window.session_hud._action.text() == "Try Again"
     assert controller.window.session_hud._action_kind == "retry"
@@ -581,8 +581,103 @@ def test_active_remote_runtime_still_accepts_its_own_failure(qapp, tmp_path) -> 
     controller._show_remote_session_failure.assert_called_once_with(
         guest_enrollment=True,
         retry_safe=True,
+        error_code=RemoteSessionErrorCode.UNAVAILABLE,
     )
     controller._remote_session = None
+    controller.shutdown()
+
+
+def test_remote_join_progress_uses_plain_bounded_states(qapp, tmp_path) -> None:
+    controller = _controller(tmp_path)
+    runtime = object()
+    controller._remote_session = runtime
+
+    controller._on_remote_session_snapshot(
+        RemoteSessionSnapshot(
+            phase=RemoteSessionPhase.PREPARING,
+            role=SessionRole.GUEST,
+            generation=1,
+            stage=RemoteSessionStage.CONTACTING_HOST,
+        ),
+        source=runtime,
+    )
+    assert controller.window.session_hud._status.text() == "Contacting host"
+
+    controller._on_remote_session_snapshot(
+        RemoteSessionSnapshot(
+            phase=RemoteSessionPhase.PREPARING,
+            role=SessionRole.GUEST,
+            generation=1,
+            stage=RemoteSessionStage.SECURING_CONNECTION,
+        ),
+        source=runtime,
+    )
+    assert controller.window.session_hud._status.text() == "Securing connection"
+    assert "private path" in controller.window.session_hud._detail.text()
+    controller._remote_session = None
+    controller.shutdown()
+
+
+def test_timed_out_enrollment_offers_only_paste_new_invite(qapp, tmp_path) -> None:
+    controller = _controller(tmp_path)
+    failed = RemoteSessionSnapshot(
+        phase=RemoteSessionPhase.FAILED,
+        role=SessionRole.GUEST,
+        generation=1,
+        error_code=RemoteSessionErrorCode.TIMED_OUT,
+        stage=RemoteSessionStage.NEEDS_ATTENTION,
+    )
+    runtime = mock.MagicMock(snapshot=failed)
+    controller._remote_session = runtime
+    controller._remote_invitation = _invitation()
+
+    controller._on_remote_session_snapshot(failed, source=runtime)
+
+    assert controller._remote_invitation is None
+    assert controller._remote_invitation_requires_replacement
+    assert controller.window.participant_grid._empty_primary.isHidden()
+    assert controller.window.session_hud._action.text() == "Paste New Invite"
+    assert controller.window.session_hud._action_kind == "paste_invite"
+    assert "timed out" in controller.window.session_hud._detail.text().casefold()
+    assert "CAPABILITY" not in controller.window.session_hud.accessibleDescription()
+    controller._remote_session = None
+    controller.shutdown()
+
+
+def test_paste_new_invite_reopens_the_same_masked_join_door(
+    qapp, tmp_path, monkeypatch
+) -> None:
+    invitation = _invitation()
+    events = []
+
+    class Dialog:
+        band_invite = None
+
+        def __init__(self, settings, parent=None):
+            assert settings is controller.settings
+            assert parent is controller.window
+            events.append("created")
+
+        def show_join(self):
+            events.append("join")
+
+        def exec(self):
+            return QDialog.DialogCode.Accepted
+
+        def take_remote_invitation(self):
+            return invitation
+
+        def deleteLater(self):
+            events.append("deleted")
+
+    controller = _controller(tmp_path)
+    controller.accept_invitation = mock.MagicMock(return_value=True)
+    monkeypatch.setattr("webjam_qt.windows.launch_dialog.LaunchDialog", Dialog)
+
+    controller._paste_new_invitation()
+
+    assert events == ["created", "join", "deleted"]
+    controller.accept_invitation.assert_called_once_with(invitation)
     controller.shutdown()
 
 

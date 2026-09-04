@@ -132,9 +132,10 @@ class SessionUiState:
     def remote_session_retry_available(cls) -> SessionUiState:
         return cls(
             SessionPhase.ERROR,
-            "Private connection unavailable",
-            "WebJam could not start its secure connection. Try again with this invitation.",
+            "Needs attention",
+            "WebJam could not contact the host before using this invitation.",
             "Try Again",
+            show_primary=False,
             show_ready_check=False,
         )
 
@@ -142,10 +143,10 @@ class SessionUiState:
     def remote_session_fresh_invitation_required(cls) -> SessionUiState:
         return cls(
             SessionPhase.ERROR,
-            "Fresh invitation required",
-            "This invitation cannot be reused safely. Ask the host for a new link, then open it here.",
-            "New invite needed",
-            False,
+            "Needs attention",
+            "This invitation may already be used. Ask the host for a new one, then paste it here.",
+            "Paste New Invite",
+            show_primary=False,
             show_ready_check=False,
         )
 

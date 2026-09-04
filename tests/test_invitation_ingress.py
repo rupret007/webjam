@@ -17,12 +17,13 @@ PROFILE = "reference-local"
 ALLOWED = frozenset({PROFILE})
 
 
-def _remote_link() -> str:
+def _remote_link(*, issued_at: int = 1_800_000_000, ttl: int = 600) -> str:
     issued = issue_remote_invitation(
         PROFILE,
         allowed_profiles=ALLOWED,
         host_spki_sha256=bytes.fromhex("44" * 32),
-        issued_at_unix=1_800_000_000,
+        issued_at_unix=issued_at,
+        ttl_seconds=ttl,
         session_reference=bytes.fromhex("11" * 16),
         invite_reference=bytes.fromhex("22" * 16),
         enrollment_capability=bytes.fromhex("33" * 32),
@@ -181,7 +182,7 @@ def test_ingress_errors_have_only_fixed_copy_and_no_exception_chain() -> None:
             source=InvitationSource.PASTE,
             allowed_remote_profiles=ALLOWED,
         )
-    assert caught.value.code is InvitationIngressErrorCode.INVALID
+    assert caught.value.code is InvitationIngressErrorCode.INCOMPLETE
     assert "PRIVATE-CAPABILITY-SENTINEL" not in str(caught.value)
     assert caught.value.__cause__ is None
     assert caught.value.__context__ is not None
@@ -196,7 +197,7 @@ def test_untrusted_profile_is_rejected_without_echoing_it() -> None:
             source=InvitationSource.PASTE,
             allowed_remote_profiles=ALLOWED,
         )
-    assert caught.value.code is InvitationIngressErrorCode.INVALID
+    assert caught.value.code is InvitationIngressErrorCode.UNSUPPORTED
     assert "untrusted-profile" not in str(caught.value)
 
 
@@ -233,7 +234,14 @@ def test_a_v3_link_still_arrives_intact_from_a_surrounding_message() -> None:
 
 def test_quoting_and_punctuation_around_a_forwarded_link_are_tolerated() -> None:
     link = create_invite_link("192.168.1.5", port=22124, session_name="Tuesday Jam")
-    for decorated in (f"<{link}>", f'"{link}"', f"{link},", f"> {link}"):
+    for decorated in (
+        f"<{link}>",
+        f'"{link}"',
+        f"{link},",
+        f"({link}).",
+        f"> {link}",
+        f"\u00a0\t{link}\r\n",
+    ):
         parsed = parse_invitation_at_ingress(
             decorated, source=InvitationSource.PASTE
         )
@@ -285,3 +293,41 @@ def test_a_paste_with_no_jam_link_is_still_rejected() -> None:
             "Hi, see you at 8 — https://band.webex.com/meet/jeff",
             source=InvitationSource.PASTE,
         )
+
+
+def test_empty_incomplete_expired_malformed_and_unsupported_are_distinct() -> None:
+    cases = (
+        ("   \r\n", InvitationIngressErrorCode.EMPTY, "complete"),
+        (_remote_link()[:-12], InvitationIngressErrorCode.INCOMPLETE, "incomplete"),
+        (
+            _remote_link(issued_at=1, ttl=1),
+            InvitationIngressErrorCode.EXPIRED,
+            "expired",
+        ),
+        (
+            "webjam://join?v=3&r=reference-local&i=" + ("!" * 156),
+            InvitationIngressErrorCode.INVALID,
+            "malformed",
+        ),
+        (
+            _remote_link().replace("reference-local", "untrusted-profile"),
+            InvitationIngressErrorCode.UNSUPPORTED,
+            "does not support",
+        ),
+        (
+            create_invite_link("192.168.1.5").replace("v=1", "v=99"),
+            InvitationIngressErrorCode.INCOMPATIBLE,
+            "different webjam version",
+        ),
+    )
+
+    for raw, code, fragment in cases:
+        with pytest.raises(InvitationIngressError) as caught:
+            parse_invitation_at_ingress(
+                raw,
+                source=InvitationSource.PASTE,
+                allowed_remote_profiles=ALLOWED,
+            )
+        assert caught.value.code is code
+        assert fragment in str(caught.value).casefold()
+        assert raw not in str(caught.value)

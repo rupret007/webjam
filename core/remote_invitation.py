@@ -54,6 +54,7 @@ class RemoteInvitationErrorCode(str, Enum):
     """Stable internal reason codes whose messages never contain input data."""
 
     MALFORMED = "malformed"
+    INCOMPLETE = "incomplete"
     INCOMPATIBLE = "incompatible"
     UNTRUSTED_PROFILE = "untrusted_profile"
 
@@ -70,6 +71,13 @@ def _malformed() -> RemoteInvitationError:
     return RemoteInvitationError(
         RemoteInvitationErrorCode.MALFORMED,
         "That WebJam invitation is not valid.",
+    )
+
+
+def _incomplete() -> RemoteInvitationError:
+    return RemoteInvitationError(
+        RemoteInvitationErrorCode.INCOMPLETE,
+        "That WebJam invitation is incomplete.",
     )
 
 
@@ -462,6 +470,8 @@ def parse_remote_invitation_link(
         raise _malformed()
     profile_text, encoded = _strict_query(value)
     profile = _require_allowed_profile(profile_text, allowed_profiles)
+    if len(encoded) < _ENCODED_ENVELOPE_LENGTH:
+        raise _incomplete()
     if (
         len(encoded) != _ENCODED_ENVELOPE_LENGTH
         or "=" in encoded

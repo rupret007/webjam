@@ -1137,6 +1137,17 @@ QPushButton#QuietAction:focus {
     font-size: ${FONT_SIZE_BASE}px;
 }
 
+#LaunchJoinStatus {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_SM}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#LaunchPrivacyNote {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_XS}px;
+}
+
 #LaunchError {
     color: ${COLOR_TEXT_PRIMARY};
     min-height: 20px;
