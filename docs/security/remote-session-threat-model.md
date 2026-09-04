@@ -243,8 +243,11 @@ safe: the sidecar could not start before `open_guest` was entered. Once
 consumed the one-use enrollment value, so it immediately treats that link as
 unusable and requires a fresh invitation. It never turns this failure into a
 legacy same-LAN or localhost Jamulus connection. The user-facing state exposes
-only **Try Again** for the safe pre-`open_guest` failure and **Fresh invitation
-required** for every later or unknown guest failure.
+only **Try Again** for the safe pre-`open_guest` failure and **Paste New Invite**
+for every later or unknown guest failure. An independent 65-second desktop
+watchdog bounds the sidecar's 30-second start and 30-second enrollment limits.
+On expiry it invalidates the operation before cleanup, discards the in-memory
+invitation, and rejects any late worker result or stale generation.
 
 ## Session data plane
 
@@ -278,6 +281,24 @@ take visibly incomplete.
 Media streams are paced below live traffic and use a separate local pipe. A
 slow disk or receiver applies QUIC flow control rather than growing an
 unbounded queue or blocking audio/control.
+
+### Text and pre-connection support boundary
+
+WebJam already exposes Jamulus band chat after Jamulus RPC and its process-bound
+source identity are current. Incoming markup is reduced to plain text before
+display, and failed sends restore the unsent text. That path does not exist
+before Jamulus connects and therefore cannot help a guest whose secure setup is
+failing.
+
+The authenticated remote data plane has strict control framing, but the
+desktop/sidecar IPC exposes no text command or event and the current UI routes
+no chat through reference signaling. Adding pre-connection chat requires a
+separate reviewed protocol change after mutual peer proof: an allowlisted text
+type with protocol version, generation, request ID, bounded UTF-8 payload,
+rate/queue limits, plain-text normalization, stale-generation rejection, and
+ephemeral no-log handling. Unknown, oversized, unauthenticated, replayed, or
+backpressured messages must fail closed. Until those tests and the public
+service gate exist, no UI may claim pre-connection chat.
 
 ## Threats, mitigations, and residuals
 
@@ -326,6 +347,7 @@ updated measurements and threat-model review. Starting bounds are:
 | Concurrent bidirectional QUIC application streams | 4; unidirectional streams disabled |
 | Enrolled guests per invitation | 1; a failed proof terminates that attempt and requires Reset Invite |
 | Candidate bundle | 16 KiB and 32 candidates |
+| Desktop remote-join outer timeout | 65 seconds around bounded start plus enrollment |
 | Control frame / retained event timeline | 64 KiB / 256 entries |
 | Realtime queue | 64 datagrams and 128 KiB |
 | Control queue / media flow window | 1 MiB / 4 MiB |

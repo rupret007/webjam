@@ -5491,10 +5491,9 @@ class ApplicationController(QObject):
                         creator_copy["safe_failure_detail"],
                     )
                 ),
-                action_visible=False,
-                secondary_action_text="Close Setup",
-                secondary_action_visible=True,
-                secondary_action_kind="cancel_startup",
+                action_text="Close Setup",
+                action_visible=True,
+                action_kind="cancel_startup",
             )
         else:
             self.window.session_hud.set_state(
@@ -5508,9 +5507,6 @@ class ApplicationController(QObject):
                 action_text="Try Again",
                 action_visible=True,
                 action_kind="retry_startup",
-                secondary_action_text="Cancel",
-                secondary_action_visible=True,
-                secondary_action_kind="cancel_startup",
             )
         self._focus_initial_hud_action()
         self._persist_startup_attempt(attempt)
@@ -7417,8 +7413,8 @@ class ApplicationController(QObject):
             SessionUiState.connecting("secure session")
         )
         self.window.session_hud.set_state(
-            "Finding the fastest path",
-            "WebJam is opening your private music connection.",
+            "Contacting host",
+            "WebJam is finding the private session from your invitation.",
         )
         callback_source: dict[str, object | None] = {"value": None}
 
@@ -7557,7 +7553,10 @@ class ApplicationController(QObject):
     def _on_remote_session_snapshot(self, snapshot, *, source: object) -> None:
         """Apply one safe transport snapshot on Qt's owning thread."""
 
-        from services.remote_session_runtime import RemoteSessionPhase
+        from services.remote_session_runtime import (
+            RemoteSessionPhase,
+            RemoteSessionStage,
+        )
 
         if getattr(self, "_shutdown", False):
             return
@@ -7565,11 +7564,21 @@ class ApplicationController(QObject):
             LOGGER.debug("Ignored snapshot from a replaced remote runtime")
             return
         if snapshot.phase is RemoteSessionPhase.PREPARING:
-            self.window.session_hud.set_state(
-                "Finding the fastest path",
-                "WebJam is opening your private music connection.",
+            securing = (
+                getattr(snapshot, "stage", None)
+                is RemoteSessionStage.SECURING_CONNECTION
             )
+            # Refresh supporting controls first. Legacy permission/lobby copy
+            # must not overwrite this active join stage afterward.
             self._update_session_hud()
+            self.window.session_hud.set_state(
+                "Securing connection" if securing else "Contacting host",
+                (
+                    "WebJam is verifying the private path before Jamulus can use it."
+                    if securing
+                    else "WebJam is finding the private session from your invitation."
+                ),
+            )
             return
         if snapshot.phase is RemoteSessionPhase.CONNECTED:
             if snapshot.role.value == "guest":
@@ -7590,6 +7599,7 @@ class ApplicationController(QObject):
             self._show_remote_session_failure(
                 guest_enrollment=(snapshot.role.value == "guest"),
                 retry_safe=bool(getattr(snapshot, "invitation_retry_safe", False)),
+                error_code=getattr(snapshot, "error_code", None),
             )
 
     def _activate_remote_guest_route(self, snapshot, *, source: object) -> None:
@@ -7637,8 +7647,8 @@ class ApplicationController(QObject):
         self._remote_invitation = None
         self._remote_invitation_requires_replacement = False
         self.window.session_hud.set_state(
-            snapshot.musician_status,
-            "Jamulus is opening your music connection.",
+            "Opening Jamulus",
+            "The private connection is secure. Jamulus is opening your music connection.",
         )
         self._continue_startup_from_remote(source)
 
@@ -7647,6 +7657,7 @@ class ApplicationController(QObject):
         *,
         guest_enrollment: bool = False,
         retry_safe: bool = False,
+        error_code=None,
     ) -> None:
         """Render a remote failure without replaying an uncertain invitation."""
 
@@ -7677,7 +7688,12 @@ class ApplicationController(QObject):
                 SessionUiState.remote_session_fresh_invitation_required()
             )
             self._render_remote_fresh_invitation_hud()
-            flash_message = "Ask the host for a fresh private invitation."
+            if getattr(error_code, "value", "") == "timed_out":
+                flash_message = "The connection timed out. Paste a fresh invitation."
+            elif getattr(error_code, "value", "") == "expired":
+                flash_message = "That invitation expired. Paste a fresh invitation."
+            else:
+                flash_message = "Ask the host for a fresh private invitation."
         else:
             self._reference_track_remote_route_pre_retired = False
             self.window.participant_grid.set_session_state(
@@ -7719,21 +7735,63 @@ class ApplicationController(QObject):
         """Offer retry only after a proven pre-enrollment failure."""
 
         self.window.session_hud.set_state(
-            "Private connection unavailable",
-            "WebJam could not start its secure connection. Try again with this invitation.",
+            "Needs attention",
+            "WebJam could not contact the host before using this invitation.",
             action_text="Try Again",
             action_visible=True,
             action_kind="retry",
+        )
+
+    def _remote_fresh_invitation_detail(self) -> str:
+        """Return one truthful, secret-free reason a fresh invite is required."""
+
+        runtime = getattr(self, "_remote_session", None)
+        snapshot = getattr(runtime, "snapshot", None)
+        error_value = getattr(getattr(snapshot, "error_code", None), "value", "")
+        if error_value == "timed_out":
+            return (
+                "The secure connection timed out. Ask the host for a new "
+                "invitation, then paste it here."
+            )
+        if error_value == "expired":
+            return (
+                "That invitation expired. Ask the host for a new one, then "
+                "paste it here."
+            )
+        return (
+            "This invitation may already be used. Ask the host for a new "
+            "one, then paste it here."
         )
 
     def _render_remote_fresh_invitation_hud(self) -> None:
         """Keep a consumed-or-uncertain v3 invite out of generic retry paths."""
 
         self.window.session_hud.set_state(
-            "Fresh invitation required",
-            "This invitation cannot be reused safely. Ask the host for a new link, then open it here.",
-            action_visible=False,
+            "Needs attention",
+            self._remote_fresh_invitation_detail(),
+            action_text="Paste New Invite",
+            action_visible=True,
+            action_kind="paste_invite",
         )
+
+    def _paste_new_invitation(self) -> None:
+        """Reopen the same one-field Join door after a one-use link fails."""
+
+        if self._shutdown_cleanup_blocks_action():
+            return
+        from webjam_qt.windows.launch_dialog import LaunchDialog
+
+        dialog = LaunchDialog(self.settings, parent=self.window)
+        dialog.show_join()
+        result = dialog.exec()
+        if result != QDialog.DialogCode.Accepted:
+            dialog.deleteLater()
+            self._render_remote_fresh_invitation_hud()
+            return
+        invitation = dialog.take_remote_invitation() or dialog.band_invite
+        dialog.deleteLater()
+        if invitation is None or not self.accept_invitation(invitation):
+            self._render_remote_fresh_invitation_hud()
 
     def _reset_remote_invite(self) -> None:
         """Revoke/replace the host invite through its owning transport."""
@@ -8088,18 +8146,18 @@ class ApplicationController(QObject):
         if self._remote_join_retry_pending():
             self._render_remote_retry_hud()
             return GuidanceDisplayOverride(
-                "Private connection unavailable",
-                "WebJam could not start its secure connection. Try again with this invitation.",
+                "Needs attention",
+                "WebJam could not contact the host before using this invitation.",
                 SessionPrimaryAction.TRY_RECONNECT,
                 "Try Again",
             )
         if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
             self._render_remote_fresh_invitation_hud()
             return GuidanceDisplayOverride(
-                "Fresh invitation required",
-                "This invitation cannot be reused safely. Ask the host for a new link, then open it here.",
+                "Needs attention",
+                self._remote_fresh_invitation_detail(),
                 SessionPrimaryAction.NONE,
-                "New invite needed",
+                "Paste New Invite",
             )
         from webjam_qt.platform_permissions import microphone_permission_status
 
@@ -8945,6 +9003,10 @@ class ApplicationController(QObject):
             self._reset_remote_invite()
         elif action in {"retry", "try_reconnect", "check_session"}:
             self._retry_session()
+        elif action == "paste_invite":
+            self._paste_new_invitation()
+        elif action == "cancel_startup":
+            self._cancel_startup_journey()
         elif action in {"primary", "start_session"}:
             self._on_session_audio_requested()
         elif action in {"confirm_sound", "run_band_check"}:

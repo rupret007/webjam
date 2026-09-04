@@ -796,6 +796,12 @@ class LaunchDialog(QDialog):
         layout.addWidget(self._join_subtitle)
         layout.addStretch(1)
 
+        self._join_status = QLabel("Paste your invitation")
+        self._join_status.setObjectName("LaunchJoinStatus")
+        self._join_status.setAccessibleName("Join status")
+        self._join_status.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(self._join_status)
+
         self._invite_input = QLineEdit()
         self._invite_input.setObjectName("LaunchInviteInput")
         # Version-2 invitations contain a private bearer credential. Keep the
@@ -809,8 +815,17 @@ class LaunchDialog(QDialog):
             "Paste the whole invite your host sent you."
         )
         self._invite_input.returnPressed.connect(self._join)
-        self._invite_input.textChanged.connect(lambda *_: self._join_error.clear())
+        self._invite_input.textChanged.connect(self._on_invite_text_changed)
         layout.addWidget(self._invite_input)
+
+        self._join_privacy = QLabel(
+            "Private invitation secrets stay hidden and are never saved in settings or logs."
+        )
+        self._join_privacy.setObjectName("LaunchPrivacyNote")
+        self._join_privacy.setAccessibleName("Invitation privacy")
+        self._join_privacy.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._join_privacy.setWordWrap(True)
+        layout.addWidget(self._join_privacy)
 
         self._join_error = QLabel("")
         self._join_error.setObjectName("LaunchError")
@@ -975,8 +990,19 @@ class LaunchDialog(QDialog):
     def show_join(self) -> None:
         if not self._submitting:
             self._join_error.clear()
+            self._join_status.setText("Paste your invitation")
         self._pages.setCurrentWidget(self._join_page)
         self._invite_input.setFocus()
+
+    def _on_invite_text_changed(self, *_args: object) -> None:
+        """Clear stale guidance without ever reflecting invitation text."""
+
+        if self._submitting:
+            return
+        self._join_error.clear()
+        self._join_status.setText(
+            "Ready to join" if self._invite_input.text().strip() else "Paste your invitation"
+        )
 
     def _persist_role_choice(self, candidate: AppSettings) -> bool:
         """Commit the non-audio role intent before starting the main journey."""
@@ -1038,10 +1064,11 @@ class LaunchDialog(QDialog):
 
     def accept_invite(self, value: str) -> bool:
         """Compatibility wrapper for an explicit paste into the one field."""
-        if not self._begin_submission(self._join_button_primary, "Joining…"):
+        if not self._begin_submission(self._join_button_primary, "Checking…"):
             return False
         raw = str(value or "")
         self._invite_input.clear()
+        self._join_status.setText("Checking invite")
         try:
             invitation = parse_invitation_at_ingress(
                 raw,
@@ -1049,11 +1076,19 @@ class LaunchDialog(QDialog):
             )
         except InvitationIngressError as exc:
             self._pages.setCurrentWidget(self._join_page)
-            is_remote_shape = any(
-                part == "v=3" for part in raw.partition("?")[2].split("&")
+            lowered = raw.casefold()
+            query_parts = lowered.partition("?")[2].split("&")
+            contains_private_material = "webjam://" in lowered and (
+                any(
+                    part in {"v=2", "v=3"}
+                    or part.startswith("token=")
+                    or part.startswith("i=")
+                    for part in query_parts
+                )
             )
-            if not is_remote_shape:
+            if not contains_private_material:
                 self._invite_input.setText(raw)
+            self._join_status.setText("Needs attention")
             self._join_error.setText(str(exc))
             self._announce_error(self._join_error, focus=self._invite_input)
             self._restore_submission()
@@ -1107,6 +1142,7 @@ class LaunchDialog(QDialog):
                     "space and try again."
                 )
             )
+            self._join_status.setText("Needs attention")
             self._announce_error(self._join_error, focus=self._invite_input)
             return False
         self.selected_role = "join"
@@ -1124,6 +1160,7 @@ class LaunchDialog(QDialog):
 
         self._pages.setCurrentWidget(self._join_page)
         self._invite_input.clear()
+        self._join_status.setText("Needs attention")
         self._join_error.setText(
             str(message or "WebJam could not open that invitation.")
         )
@@ -1151,6 +1188,7 @@ class LaunchDialog(QDialog):
         if hasattr(self, "_more_rooms_button"):
             self._more_rooms_button.setEnabled(False)
         self._join_button_primary.setEnabled(False)
+        self._invite_input.setEnabled(False)
         self._creator_profile_selector.setEnabled(False)
         for card in getattr(self, "_profile_cards", {}).values():
             card.setEnabled(False)
@@ -1169,6 +1207,7 @@ class LaunchDialog(QDialog):
         self._name_input.setEnabled(True)
         if hasattr(self, "_join_button_primary"):
             self._join_button_primary.setEnabled(True)
+            self._invite_input.setEnabled(True)
 
     def _validated_musician_name(self) -> str | None:
         try:

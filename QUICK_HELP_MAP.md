@@ -13,7 +13,10 @@
 | --- | --- |
 | Choose a creator workflow | Launch → **Art** or **Music**. Art is **Make together** / **Paint along**, then **Host** / **Join**. Music is **Host** / **Join** only |
 | Start a live session | Choose **Art** or **Music**, then **Host**; Art chooses a start card first |
-| Join a live session | Choose a profile → **Join**, **Join Recording**, or **Join Review** → paste one invite; the invite carries whatever the host started |
+| Join a live session | Choose a profile → **Join**, **Join Recording**, or **Join Review** → paste the complete invite into the one masked field → **Join**; the invite carries whatever the host started |
+| Fix an invitation error | Copy the complete invitation again. WebJam names incomplete, expired, malformed, incompatible, or unsupported invitations without showing their private values |
+| Stop a remote join that is not finishing | WebJam stops the attempt at **Needs attention**. Choose the one shown action: **Try Again** only when the invite was not used, or **Paste New Invite** after timeout/expiry/uncertain enrollment |
+| Chat with the room | After authenticated Jamulus connection, use the session canvas band chat. It is not available as pre-connection tech support |
 | Talk or make together | Art → **Make together** → **Host** or **Join**; talk, make, or draw together in one room while everyone works locally |
 | Paint on one shared canvas | Art → **Make together** → **Host** → **Set up shared canvas** → **Host in Drawpile**; keep the Drawpile session **Personal** and paste its invitation back into WebJam |
 | Join the shared canvas | Art guest → **Open shared canvas**; Drawpile must be installed, and WebJam says so plainly when it is not |

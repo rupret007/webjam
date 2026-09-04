@@ -22,8 +22,12 @@ class InvitationSource(str, Enum):
 
 
 class InvitationIngressErrorCode(str, Enum):
+    EMPTY = "empty"
+    INCOMPLETE = "incomplete"
     INVALID = "invalid"
     INCOMPATIBLE = "incompatible"
+    EXPIRED = "expired"
+    UNSUPPORTED = "unsupported"
     SOURCE_NOT_ALLOWED = "source_not_allowed"
 
 
@@ -69,9 +73,12 @@ def _link_from_pasted_text(value: str) -> str:
             "That invite link doesn’t look right. Copy it again from your host.",
         )
     candidates = [
-        token.strip().strip("<>\"'`,;")
+        token.strip().strip("<>\"'`,;.!?()[]{}")
         for token in value.split()
-        if token.strip().strip("<>\"'`,;").lower().startswith("webjam://")
+        if token.strip()
+        .strip("<>\"'`,;.!?()[]{}")
+        .lower()
+        .startswith("webjam://")
     ]
     unique = list(dict.fromkeys(candidates))
     if len(unique) != 1:
@@ -108,6 +115,11 @@ def parse_invitation_at_ingress(
     current_platform = sys.platform if platform is None else str(platform)
     raw = str(text or "")
     value = raw.strip()
+    if not value:
+        raise InvitationIngressError(
+            InvitationIngressErrorCode.EMPTY,
+            "Paste the complete invitation your host sent you.",
+        )
     # Extract the link from a longer paste before any policy check, so the
     # version guards below see the same string the parser will. A paste that
     # is already exactly one bare link takes the original path untouched.
@@ -147,16 +159,51 @@ def parse_invitation_at_ingress(
                 allowed_remote_profiles=allowed_remote_profiles,
             )
     except InviteLinkError as exc:
+        from core.remote_invitation import (
+            RemoteInvitationError,
+            RemoteInvitationErrorCode,
+        )
+
         message = str(exc).lower()
-        if "different webjam version" in message or "incompatible" in message:
+        remote_error = (
+            exc.__cause__ if isinstance(exc.__cause__, RemoteInvitationError) else None
+        )
+        if (
+            "incomplete" in message
+            or getattr(remote_error, "code", None)
+            is RemoteInvitationErrorCode.INCOMPLETE
+        ):
+            raise InvitationIngressError(
+                InvitationIngressErrorCode.INCOMPLETE,
+                "That invitation looks incomplete. Copy the whole invitation from your host.",
+            ) from None
+        if (
+            "different webjam version" in message
+            or "incompatible" in message
+            or getattr(remote_error, "code", None)
+            is RemoteInvitationErrorCode.INCOMPATIBLE
+        ):
             raise InvitationIngressError(
                 InvitationIngressErrorCode.INCOMPATIBLE,
-                "That invitation needs a different WebJam version.",
+                "That invitation needs a different WebJam version. Ask the host for a new invitation.",
+            ) from None
+        if (
+            getattr(remote_error, "code", None)
+            is RemoteInvitationErrorCode.UNTRUSTED_PROFILE
+        ):
+            raise InvitationIngressError(
+                InvitationIngressErrorCode.UNSUPPORTED,
+                "That invitation uses a WebJam service this app does not support. Ask the host for a new invitation.",
             ) from None
         raise InvitationIngressError(
             InvitationIngressErrorCode.INVALID,
-            "That invite link doesn’t look right. Copy it again from your host.",
+            "That invitation is malformed. Copy a new invitation from your host.",
         ) from None
+    if isinstance(invitation, RemoteInvitation) and invitation.advisory_expired():
+        raise InvitationIngressError(
+            InvitationIngressErrorCode.EXPIRED,
+            "That invitation has expired. Ask the host for a new invitation.",
+        )
     if isinstance(invitation, RemoteInvitation) or (
         isinstance(invitation, BandInvite) and invitation.peer_enabled
     ):

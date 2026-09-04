@@ -36,3 +36,24 @@ from its support projection; do not add either back to an issue manually.
 
 If a physical gate is not yet tested, report it as **NOT RUN** rather than
 assuming that a source test or moving meter proves audibility.
+
+## When Join needs attention
+
+A remote Join must move through **Checking invite**, **Contacting host**,
+**Securing connection**, and **Opening Jamulus**, or stop at **Needs
+attention**. It does not have an unbounded “trying to connect” state.
+
+- **Try Again** means the failure occurred before WebJam submitted the
+  one-use invitation.
+- **Paste New Invite** means the invitation expired, timed out, or may already
+  have been consumed. Ask the host to create a new invitation.
+- A fresh Mac may separately leave Jamulus audio setup open for the person to
+  choose the interface, channels, headphones, and buffer. That human setup is
+  not proof of connection.
+
+If the bounded recovery repeats, record only the visible state, safe error
+category, WebJam/Jamulus versions, platform, and whether the host was still
+available. Never include either invitation, its QR code, a meeting link, raw
+addresses, credentials, private paths, or unredacted logs. Jamulus band chat
+starts only after Jamulus is connected and therefore cannot be used to recover
+the connection that carries it.

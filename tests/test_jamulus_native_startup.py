@@ -1171,9 +1171,10 @@ def test_nonretryable_startup_hud_has_close_only_and_no_retry_action() -> None:
     call = controller.window.session_hud.set_state.call_args
     assert call.args[0] == "Quit and reopen WebJam"
     assert "Quit and reopen WebJam" in call.args[1]
-    assert call.kwargs["action_visible"] is False
-    assert call.kwargs["secondary_action_text"] == "Close Setup"
-    assert call.kwargs["secondary_action_kind"] == "cancel_startup"
+    assert call.kwargs["action_visible"] is True
+    assert call.kwargs["action_text"] == "Close Setup"
+    assert call.kwargs["action_kind"] == "cancel_startup"
+    assert call.kwargs.get("secondary_action_visible", False) is False
     assert "retry_startup" not in call.kwargs.values()
     guidance = ApplicationController._startup_guidance_override(
         controller._startup_attempt

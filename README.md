@@ -134,8 +134,11 @@ or heard anything.
 ## Live collaboration flow
 
 1. Open WebJam, choose a creator profile, then choose its Host or Join action.
-2. WebJam starts the private session or consumes the invitation using the
-   profile-specific vocabulary.
+2. Join is one masked invitation field and one **Join** button. WebJam accepts
+   the complete invitation copied from the host, including a link surrounded
+   by ordinary message whitespace or punctuation. It rejects incomplete,
+   expired, malformed, incompatible, and unsupported invitations before
+   starting a connection.
 3. On a fresh Mac setup, Jamulus opens its dedicated WebJam profile and may
    need you to choose the interface, input channels, headphones, and buffer
    once. WebJam does not open the regular Jamulus profile or request access to
@@ -146,13 +149,15 @@ or heard anything.
    automatically; the host then copies the invitation.
 6. Make sound and verify you can hear each other. Use **Band Check**, **Sound
    Check**, or **Session Check** for the selected profile if you need help.
-7. Choose the direct **Conversation** action if participants want conversation
+7. Once Jamulus is authoritatively connected, the session canvas provides
+   Jamulus band chat. It is not a pre-connection support channel.
+8. Choose the direct **Conversation** action if participants want conversation
    or video. It shows WebJam's Conversation controls without opening a meeting;
    WebJam's live audio remains in Jamulus.
-8. The host can add a **Shared Track** from the live surface. Its proven route
+9. The host can add a **Shared Track** from the live surface. Its proven route
    enters Jamulus through the separately owned `WebJam Track` participant;
    every listener still verifies the result by listening.
-9. Choose **Record Session** when the session is ready. One Stop action moves the
+10. Choose **Record Session** when the session is ready. One Stop action moves the
    take through **Stopping** and **Finalizing**; only **Ready** is a completed
    take that can open in Studio.
 
@@ -177,6 +182,15 @@ The Support Bundle records only the immutable generations, attempt state,
 process ID/liveness, finite RPC freshness category, and finite RPC age. It
 never includes the Jamulus profile path, RPC secret, invitation, meeting link,
 or raw exception.
+
+A remote guest also has a 65-second outer join boundary around the sidecar's
+bounded startup and enrollment operations. The visible path is **Checking
+invite → Contacting host → Securing connection → Opening Jamulus → Connected**.
+Only a failure proved to occur before `open_guest` may offer **Try Again** with
+the same invitation. A timeout or any failure after enrollment may have spent
+the one-use capability, so it stops at **Needs attention** with one **Paste New
+Invite** action. A late worker, stale generation, or older Jamulus process
+cannot reverse that failure or claim Connected.
 
 This recovery work first shipped in immutable v0.22.4, remains in historical
 v0.22.5, and carries into later candidates. Publication does not convert any
