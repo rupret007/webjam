@@ -22,9 +22,9 @@ restoration and native retry work remain baseline. The #71 branch was not edited
 **Pre-Karen local gate: PASS.** Final code on the verified post-#71 base:
 
 - Focused Art invitation, Join, observer/retry, room overview/controller,
-  native invitation and Music guidance: **335 passed**.
-- Full raw `.venv/bin/pytest -q`: **7,201 passed, 26 skipped,
-  99 subtests passed, 3 dependency deprecation warnings** in 238.01 seconds;
+  native invitation and Music guidance: **353 passed**.
+- Full raw `.venv/bin/pytest -q`: **7,219 passed, 26 skipped,
+  99 subtests passed, 3 dependency deprecation warnings** in 235.63 seconds;
   process exit 0. No module isolation, exclusions, extra skips, or warning
   filters were added to this local run.
 - Required Ruff scope, compileall, pip check, and `ux_smoke_test.py`: **PASS**.
@@ -38,6 +38,11 @@ restoration and native retry work remain baseline. The #71 branch was not edited
   keyboard preference is restored afterward.
 - Native Join renders cover 460×480 through 620×520, including the longest
   existing save error, masked input, keyboard return, and visible actions.
+  The final Join/adjacent native set passed **128 tests**; the Join module
+  passed **52 offscreen tests**. Wider-font cases reproduced twelve clipping
+  failures before the final spacing fix. All text and control sizes are
+  preserved; expanded-font Art/Music minimum and Recording/Review error
+  renders now fit completely. The full raw suite above was rerun afterward.
 - Independent review of the complete diff against updated master found no
   material issue. All three pre-existing stashes and the old #71 branch tip
   remain intact.
@@ -50,7 +55,10 @@ Leave control refreshes before a host profile arrives. Art distinguishes a
 room never reached from a connection later lost. Retry clears that failure
 only for a fresh observer; cleanup and recording retain precedence. A
 widget-owned timer prevents delayed focus work after a closing Art window
-is destroyed. No assertion was weakened or removed.
+is destroyed. Hosted Linux also exposed wrapped Join guidance clipping with
+Recording/Review name controls visible. Reducing unused Join spacing fixed
+the actual layout; wider-font geometry tests retain every fit assertion.
+No assertion was weakened or removed.
 
 Local proof logs: `/private/tmp/webjam-post71-final-focused.log`,
 `/private/tmp/webjam-post71-final-full-pytest.log`, and

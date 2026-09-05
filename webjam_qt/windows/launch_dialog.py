@@ -812,10 +812,11 @@ class LaunchDialog(QDialog):
     def _build_join_page(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        # Keep the invitation guidance and a wrapped error visible at the
-        # dialog's 460 x 480 minimum without shrinking the Join action.
-        layout.setContentsMargins(Space.MD, Space.MD, Space.MD, 0)
-        layout.setSpacing(Space.SM)
+        # Leave vertical room for wider platform fonts and the visible name
+        # fields on Recording/Review, including when an error wraps below.
+        # The input and actions keep their full target sizes.
+        layout.setContentsMargins(Space.MD, 0, Space.MD, 0)
+        layout.setSpacing(Space.XS)
 
         self._join_title = QLabel()
         self._join_title.setObjectName("LaunchTitle")

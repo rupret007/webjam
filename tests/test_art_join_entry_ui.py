@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QRect, Qt
+from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton
 from shiboken6 import isValid
@@ -188,10 +189,19 @@ def test_whole_art_invitation_message_joins_without_another_profile_choice(
     ],
 )
 @pytest.mark.parametrize("state", ["empty", "pasted", "error"])
+@pytest.mark.parametrize("font_stretch", [100, 125], ids=["default_font", "expanded_font"])
 def test_join_guidance_and_actions_fit_supported_window_sizes(
-    join_door, qapp, profile, size, state
+    join_door, qapp, profile, size, state, font_stretch
 ):
     dialog = join_door(profile, size)
+    # Linux's fallback font wraps the guidance more than native macOS.
+    # Widen the displayed font without changing its pixel size so this
+    # height-for-width regression is exercised on either platform.
+    font = QFont(dialog._join_subtitle.font())
+    pixel_size = font.pixelSize()
+    font.setStretch(font_stretch)
+    dialog._join_subtitle.setFont(font)
+    assert dialog._join_subtitle.font().pixelSize() == pixel_size
     if state == "pasted":
         dialog._invite_input.setText("An unchecked invitation message")
     elif state == "error":
