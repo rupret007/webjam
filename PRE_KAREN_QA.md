@@ -1,6 +1,6 @@
 # Pre-Karen QA
 
-**Product QA PASS. Integrity PASS.** Reviewed product commit `49acdb5b7f4293bb3ad95fd53c3125a4bf7a8fbb` after Worth-Building W1–W10 passed. The weighted rubric scores 68/74 at this phase: all 19 product must-haves plus local verification and Worth-Building criteria pass; hosted Actions and final external handoff remain explicitly pending. They must pass before goal completion.
+**Product QA PASS. Integrity PASS.** Reviewed product commit `49acdb5b7f4293bb3ad95fd53c3125a4bf7a8fbb` after Worth-Building W1–W10 passed. The weighted rubric scores 68/74 at this phase: all 19 product must-haves plus local verification and Worth-Building criteria pass; hosted Actions and final external handoff remain explicitly pending. They must pass before goal completion. This is the historical Phase 3 evaluation; the final all-criteria evaluation and exact head evidence belong in the draft PR body and the actual Bob-the-Bot #3 AFTER.
 
 ## Claims challenged
 
@@ -25,7 +25,7 @@
 - Full-suite investigation exposed a completed controller asking a second close question from stale process information. Only successfully completed shutdown bypasses that prompt; incomplete cleanup still vetoes unsafe teardown.
 - A committed-diff boundary test rejected simultaneous Song-tools and session-authority changes. The test is unchanged; Song-tools source and tests were restored exactly to master. Notes owns edit notifications and its explicit silent restore path. Accepted-suggestion autosave is still tested through the real unchanged caller.
 - No mass source renames, dependency/lockfile/framework changes, workflow changes, provider calls, spend, or implementation outside WebJam. Existing neutral/burnt-orange palette tests pass in the focused and full suites. The rendered Paint along mark additionally passes neutral-pixel checks in every native icon mode/state; its original artwork and size remain intact.
-- Only the new branch based on origin/master was edited. Bob's independently merged #67 arrived through master; its branch and parked #37/#49 were not checkout, push or PR targets. Pre-existing canonical edits remain preserved in the named stash.
+- Only the new branch based on origin/master was edited. Bob's independently merged #67 arrived through master; its branch and parked #37/#49 were not checkout, push or PR targets. Pre-existing canonical edits remain preserved in stash `9fb1e87c4490176f471a4923d59beeefb503452a` (`preserve-canonical-before-webjam-finish-ultra-20260904`) from `codex/webjam-v0272-source-identity`; it was not applied or dropped.
 - No master merge, tag, signing, notarization, release or device installation. No custom diagnostic pytest plugin, skipped failing modules, retries or warning filters were added to the verification commands.
 
 - A combined focused process also hit native Qt garbage collection. Reference Studio test fixtures now explicitly shut down both project and embedded take-review owners and delete their shell while QApplication is alive. All assertions remain. Focused verification uses the existing CI per-module process isolation; the separate raw full `pytest -q` is still required.

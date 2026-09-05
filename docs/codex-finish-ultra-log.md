@@ -100,3 +100,24 @@
 - This is a concrete fixture-lifetime correction; the crash does not establish a production media-worker defect. No production cancellation behavior was changed.
 - Focused proof now follows the existing hosted CI model: every selected module in a fresh process, deterministic order, no retries and no removed tests.
 - The separately required raw full `pytest -q` remains a gate. Next: verify this module, commit, and repeat all nine local proof stages on the clean tip.
+
+## Phase 4 — local candidate qualification
+
+- Clean candidate `52014ccb4e051f16988aa05e762adea7f074b962` passed all nine required local proof stages.
+- Raw full pytest: 6822 passed, 25 skipped, 3 warnings, 99 subtests passed in 245.35s (0:04:05)
+- Focused modules: 2394 passed, 2 skipped, 3 warnings, 2 subtests passed across 84 fresh-process modules in 80.96s
+- Ruff, compileall, pip check and UX smoke passed; Swift 20 tests and actual Swift/Python WSS 1 test passed.
+- Synthetic multitrack qualified 20/20 iterations (380 executions), clean source and cleanup verified. Physical status remains NOT RUN.
+- The reference fixture cleanup passed its 14 tests and the complete raw suite; no native failure or assertion relaxation was hidden.
+- Final evidence wording scopes the 68/74 rubric to Phase 3, retains mandatory hosted/handoff obligations, names Jeff’s preserved stash and keeps the exact final evaluation in the PR/AFTER ledger.
+- Next: commit this review package, repeat all local gates on its exact SHA, publish the draft, then require every hosted integration and all four desktop builds before the final AFTER.
+
+## Phase 5 — prepared handoff, execution still gated
+
+- BOB_HANDOFF.md contains concrete product before/after, review scope and ordered Karen/Bob/Jeff steps.
+- Karen must review leftovers and UX, including invitation redaction, save recovery and Pocket snapshot/command separation. No Karen PASS is presumed.
+- Bob may leftover-squash only after Karen PASS with exact tip MATCH; Codex performs no merge.
+- Jeff retains physical audio/editor/device, platform trust, unsigned click/feel and signing/notarization gates; all existing NOT RUN rows remain unchanged.
+- The final PR body and AFTER must record the same full head SHA, exact local counts, hosted run URLs, W1–W10 PASS and the final all-criteria score.
+- The AFTER must use an actual America/Chicago timestamp and release the lease with agent=none only after the exact head is ready for Karen.
+- This preparation is not an executed handoff. After the actual AFTER, stop WebJam work; do not start another repository.

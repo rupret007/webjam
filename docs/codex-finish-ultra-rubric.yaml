@@ -9,7 +9,7 @@
       1
     ],
     "required": "Every weight-3 must-have must score 1; no Integrity failures.",
-    "note": "Phase 3 product/local evidence passes. B3 hosted and B5 external handoff remain required and unverified; final completion requires every must-have=1 on the final draft tip."
+    "note": "Historical Phase 3 product/local evaluation. B3 hosted and B5 actual external handoff remain mandatory. The final PR body and Bob-the-Bot #3 AFTER provide the final all-criteria evaluation, exact head SHA, local counts and hosted run URLs after those events occur; this snapshot does not anticipate their results."
   },
   "criteria": [
     {
@@ -135,7 +135,7 @@
       "weight": 3,
       "must_have": true,
       "score": 1,
-      "criterion": "No merge/tag/sign/notarize/release; parked #37/#49 and open #67 untouched; unsigned v0.27.2 remains Jeff-only.",
+      "criterion": "No merge/tag/sign/notarize/release; parked #37/#49 and the held #67 branch untouched; unsigned v0.27.2 remains Jeff-only.",
       "evidence": [
         "BOB_HANDOFF.md"
       ],
@@ -317,7 +317,7 @@
       "weight": 3,
       "must_have": true,
       "score": 1,
-      "criterion": "Worth-Building W1-W10 all PASS; Pre-Karen must-haves all score 1 with direct evidence.",
+      "criterion": "Worth-Building W1-W10 all PASS; every Phase 3 product and Integrity must-have scores 1 with direct evidence. Final completion additionally requires B3 and B5.",
       "evidence": [
         "WORTH_BUILDING.md",
         "PRE_KAREN_QA.md"
@@ -339,5 +339,12 @@
   ],
   "product_revision": "49acdb5b7f4293bb3ad95fd53c3125a4bf7a8fbb",
   "weighted_score": 68,
-  "weighted_total": 74
+  "weighted_total": 74,
+  "final_evaluation_ledger": {
+    "pull_request": "Draft from codex/webjam-finish-ultra-product-paths into master; final body records every criterion and full SHA.",
+    "coordination": "https://github.com/rupret007/Bob-the-Bot/issues/3 \u2014 final AFTER records the same SHA, hosted runs and actual lease release.",
+    "required_score": 74,
+    "required_all_must_haves": 1,
+    "status": "NOT_YET_EXECUTED_AT_THIS_SNAPSHOT"
+  }
 }
