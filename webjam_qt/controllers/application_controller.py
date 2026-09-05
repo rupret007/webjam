@@ -7193,6 +7193,10 @@ class ApplicationController(QObject):
             ).vocabulary.participant_singular,
             song_line=_invite_song_line_for(self),
             creator_profile_key=_creator_profile_for_controller(self).key,
+            # A successful LAN share above is the topology evidence. A native
+            # owner must not inherit same-network or public-service claims
+            # from the invitation's serialized shape.
+            same_network_required=owner is None,
         )
         QApplication.clipboard().setText(invite_message.text)
         invite_url = ""
@@ -7209,15 +7213,21 @@ class ApplicationController(QObject):
             self
         ).vocabulary.participant_singular
         link_noun = "room" if _creator_profile_for_controller(self).key == "art" else "jam"
-        self.window.flash_message(
-            (
-                f"One invite copied — {link_noun} link and meeting link. Send it to "
-                f"another {participant}."
+        if _creator_profile_for_controller(self).key == "art" and owner is None:
+            copied_detail = (
+                "Invitation copied. Send the whole message to an artist on "
+                "your same Wi-Fi or local network. Keep this room open."
             )
-            if invite_message.includes_meeting
-            else f"Invite link copied — send it to another {participant}.",
-            ms=7000,
-        )
+        else:
+            copied_detail = (
+                (
+                    f"One invite copied — {link_noun} link and meeting link. Send it to "
+                    f"another {participant}."
+                )
+                if invite_message.includes_meeting
+                else f"Invite link copied — send it to another {participant}."
+            )
+        self.window.flash_message(copied_detail, ms=7000)
 
     def accept_invite_url(self, value: str) -> bool:
         """Compatibility boundary for an explicit in-app paste.
@@ -8199,7 +8209,7 @@ class ApplicationController(QObject):
         )
 
     def _paste_new_invitation(self) -> None:
-        """Reopen the same one-field Join door after a one-use link fails."""
+        """Reopen Join without changing the current invitation's retry policy."""
 
         if self._shutdown_cleanup_blocks_action():
             return
@@ -8210,12 +8220,12 @@ class ApplicationController(QObject):
         result = dialog.exec()
         if result != QDialog.DialogCode.Accepted:
             dialog.deleteLater()
-            self._render_remote_fresh_invitation_hud()
+            self._update_session_hud()
             return
         invitation = dialog.take_remote_invitation() or dialog.band_invite
         dialog.deleteLater()
         if invitation is None or not self.accept_invitation(invitation):
-            self._render_remote_fresh_invitation_hud()
+            self._update_session_hud()
 
     def _reset_remote_invite(self) -> None:
         """Revoke/replace the host invite through its owning transport."""
@@ -9088,6 +9098,11 @@ class ApplicationController(QObject):
             failure = FailureDisposition.RETRYABLE
         elif bool(getattr(self, "_remote_invitation_requires_replacement", False)):
             failure = FailureDisposition.BLOCKED
+        elif bool(getattr(getattr(self, "_room_participant", None), "lan_failed", False)):
+            # The current observer can fail before it authenticates the host's
+            # profile. Keep failure truth independent of a saved Music/Art
+            # preference; neither means the invitation has connected.
+            failure = FailureDisposition.RETRYABLE
         elif lifecycle_phase is SessionLifecyclePhase.FAILED_FINAL:
             failure = FailureDisposition.FINAL
         elif lifecycle_phase is SessionLifecyclePhase.FAILED_RECOVERABLE:
@@ -9482,6 +9497,11 @@ class ApplicationController(QObject):
 
     def _render_room_guidance(self, override: GuidanceDisplayOverride) -> None:
         self._render_session_conductor(override)
+        room = getattr(self, "_room_participant", None)
+        replace_lan_invite = bool(
+            room is not None and room.can_retry_lan
+            and override.primary_action is SessionPrimaryAction.RETRY_SETUP
+        )
         self.window.session_hud.set_state(
             override.title, override.message,
             action_text=override.action_label or override.primary_action.label_for(self.creator_profile),
@@ -9489,6 +9509,9 @@ class ApplicationController(QObject):
                 SessionPrimaryAction.NONE, SessionPrimaryAction.WAIT, SessionPrimaryAction.END_SESSION,
             },
             action_kind=self._conductor_action_kind(override.primary_action),
+            secondary_action_text="Use Another Invite",
+            secondary_action_visible=replace_lan_invite,
+            secondary_action_kind="replace_lan_invite",
         )
 
     def _on_conductor_action_requested(self, action_kind: str) -> None:
@@ -9510,6 +9533,20 @@ class ApplicationController(QObject):
             # Ignore stale or synthetic commands at the controller boundary;
             # hiding an action in presentation code is not an authority check.
             self._render_session_conductor()
+            return
+        room = getattr(self, "_room_participant", None)
+        if (
+            action in {"retry_startup", "retry", "try_reconnect", "check_session"}
+            and room is not None
+            and room.lan_guest is not None
+        ):
+            # This observer owns the invitation, even before the host has
+            # identified its creative profile. A duplicate/stale action must
+            # never fall through into Music setup or one-use native enrollment.
+            if room.can_retry_lan:
+                room.retry_lan_guest()
+            else:
+                self._update_session_hud()
             return
         if action == "native_setup_finished":
             self._finish_native_sound_setup()
@@ -9566,7 +9603,13 @@ class ApplicationController(QObject):
         if self._shutdown_cleanup_blocks_action():
             return
         action = str(action_kind or "").strip().lower()
-        if action in {"bring_jamulus", "fix_audio"}:
+        if action == "replace_lan_invite":
+            room = getattr(self, "_room_participant", None)
+            if room is not None and room.can_retry_lan:
+                self._paste_new_invitation()
+            else:
+                self._update_session_hud()
+        elif action in {"bring_jamulus", "fix_audio"}:
             self._bring_jamulus_forward()
             if action == "fix_audio":
                 attempt = getattr(self, "_startup_attempt", None)

@@ -72,12 +72,21 @@ def art_room_overview(
             "has its own leave controls."
         )
     elif state is ArtRoomState.FAILED:
-        phase, label, title = "failed", "Connection lost", "Your work can stay open"
-        connection = "Room connection is unavailable"
-        detail = (
-            "WebJam cannot confirm who is still here or follow new room changes. "
-            "Follow the room recovery action to continue."
-        )
+        phase, title = "failed", "Your work can stay open"
+        if probing and not hosting:
+            label = "Room not reached"
+            connection = "No room connection confirmed"
+            detail = (
+                "WebJam could not confirm a connection to the host. "
+                "Follow the room recovery action to try joining again."
+            )
+        else:
+            label = "Connection lost"
+            connection = "Room connection is unavailable"
+            detail = (
+                "WebJam cannot confirm who is still here or follow new room changes. "
+                "Follow the room recovery action to continue."
+            )
     elif state is ArtRoomState.RECONNECTING:
         phase, label, title = "reconnecting", "Reconnecting", "Your work can stay open"
         connection = "Waiting for the room connection"

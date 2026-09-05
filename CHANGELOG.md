@@ -12,6 +12,18 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ### Art room participation and recovery
 
+- Art invitations explain whole-message paste on every desktop and name the
+  same-network requirement when copied from a local host. Private clipboard
+  text is excluded from invitation-message representations.
+- Local-network guests can retry a terminal connection using their existing
+  invitation after the previous observer stops. A separate replacement action
+  stays available; native one-use invitations keep their existing recovery policy.
+- The compact Join page explains network requirements without another choice.
+  Enter/Return submits once, and invalid pastes retain the field's keyboard focus.
+- Initial local-network failure shows the actual recovery state and Leave
+  control before the host responds. Art distinguishes a room never reached
+  from a connection later lost; closing the window cancels deferred focus work.
+
 - Art has a room overview that distinguishes waiting, connected, recovering,
   and closing rooms without using Music mixer counts as artist membership.
   Artists can keep their own tools or open the room's existing shared activity.
@@ -20,7 +32,6 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Safe native Art retries can reach the connected room again. End followed by
   a new room uses current connection facts, and unfinished Quit keeps its
   cleanup and the artist's actual role visible.
-
 - Art guests enter the host's room without starting Music audio or creating a
   recording owner. Waiting, connected, reconnecting, and cleanup states follow
   actual room receipts. Music keeps its existing audio evidence requirements.

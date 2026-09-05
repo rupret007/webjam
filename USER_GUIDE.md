@@ -79,9 +79,21 @@ WebJam returns to your saved workspace, activity, personal title, and notes.
 A native invitation carries no title, so its room is called **Room** until
 you choose another title. A title you type yourself is saved for that workspace.
 
+The usual Art invitation works on the **same Wi-Fi or local network** as the
+host. Keep the host's room open and send the whole copied message. Guests
+open WebJam, choose **Join**, and paste that whole message; they do not need
+to pick the host's activity or extract the link. Follow the invitation's
+network instructions before joining.
+
 If the room loses contact, shared playback holds. Follow **Reconnecting to
 the room** or the recovery action shown; WebJam does not claim the room is
-connected while the connection is lost. An invitation that may have been consumed needs **Paste New Invite**
+connected while the connection is lost. If a local-network attempt ends,
+check that the host's room is still open and that you share its network, then
+choose **Try Again**. WebJam closes the old connection before retrying the same
+invitation. If the host has replaced the room or invitation, choose **Use
+Another Invite**. Cancelling that choice leaves the current recovery available.
+
+A native invitation that may have been consumed still needs **Paste New Invite**
 with a fresh invitation from the host. If a peer needs an update, update
 WebJam on both computers and use a fresh invitation.
 
@@ -318,8 +330,10 @@ The Join door contains one masked invitation field, one **Join** button, and a
 privacy reminder. Paste the complete invitation copied from the host. Harmless
 message whitespace and surrounding punctuation are accepted; incomplete,
 expired, malformed, incompatible, and unsupported invitations are rejected
-with a plain explanation. Private invitation values are never saved in
-settings or logs and are not echoed back after a private-link error.
+with a plain explanation. If the invitation says same network, use the
+host's Wi-Fi or local network first. After a paste error, the invitation
+field keeps keyboard focus so you can paste again. Private invitation values
+are never saved in settings or logs and are not echoed back after a private-link error.
 
 WebJam waits for the host's profile before choosing the room or audio path.
 An Art invitation follows the waiting and connection states described in

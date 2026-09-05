@@ -27,7 +27,7 @@ Everything here is pure text and state; no Qt, no network, no platform calls.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from core.meeting_link import (
     GENERIC_MEETING_SERVICE_KEY,
@@ -111,7 +111,7 @@ class EndSessionPrompt:
 class InviteMessage:
     """One clipboard block carrying everything a bandmate needs."""
 
-    text: str
+    text: str = field(repr=False)
     includes_meeting: bool
 
     @property
@@ -286,6 +286,7 @@ def build_invite_message(
     participant_noun: str = "musician",
     song_line: str = "",
     creator_profile_key: str = "music",
+    same_network_required: bool = False,
 ) -> InviteMessage:
     """Return one paste that carries the jam link and, if set, the meeting.
 
@@ -294,7 +295,9 @@ def build_invite_message(
     only when it passes the same validation the rest of WebJam applies, so a
     malformed or unsupported link is dropped. Art copy describes the making
     room and optional work sharing; the default preserves existing Music
-    callers. V3 invitations name the supported manual-paste route.
+    callers. Art invitations always name the supported manual-paste route.
+    Their network requirement comes from the host's actual sharing path via
+    ``same_network_required``, never from inspecting the serialized link.
     """
 
     link = str(join_link or "").strip()
@@ -308,11 +311,17 @@ def build_invite_message(
         "Join this art room on WebJam:" if art else "Join this jam on WebJam:"
     )
     # This is copy around an already-created link, not a second parser or a
-    # rewrite of its opaque capability. Canonical v3 links use manual paste.
-    manual_paste = link.startswith("webjam://join?") and (
+    # rewrite of its opaque capability. Art always names the portable paste
+    # route; other workspaces retain their existing canonical-v3 instruction.
+    manual_paste = art or (link.startswith("webjam://join?") and (
         "v=3" in link.partition("?")[2].split("&")
-    )
+    ))
     lines = [headline]
+    if art and same_network_required:
+        lines.append(
+            "Join on the same Wi-Fi or local network as the host. "
+            "The host needs to keep this room open."
+        )
     if manual_paste:
         lines.append("Open WebJam, choose Join, then paste this full invitation.")
     lines.append(link)
