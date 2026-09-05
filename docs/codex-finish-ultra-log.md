@@ -41,3 +41,22 @@
 - Full suite at 2a5a2e0: 6,818 passed, 25 skipped, 99 subtests passed, one boundary-test failure. That check intentionally forbids simultaneous Song-tools and session-authority changes.
 - Restored Song-tools production and tests byte-for-byte from master. Notes now owns notifications for editable replacements; a distinct silent restore method loads persistence bytes. Accepted suggestions still autosave through the unchanged caller.
 - The boundary test is unchanged. Added direct Notes edit-versus-restore signal regression; rerun full proof before scoring the gate.
+
+## Phase 2 — Worth-Building
+
+- Clean product commit: 1e31e1d447a69e4f29914168a1602af8cfb13cac; based only on origin/master 68b9f292.
+- W1–W10 PASS with direct source/test evidence in WORTH_BUILDING.md.
+- Full local result: 6820 passed, 25 skipped, 3 warnings, 99 subtests passed in 218.80s (0:03:38).
+- Broad touched-area proof: 2338 passed, 2 skipped, 3 warnings, 2 subtests passed in 51.29s.
+- Ruff, compileall, pip check and UX smoke all passed; real Swift/Python WSS interoperability passed.
+- Synthetic multitrack proof qualified 20/20 iterations (380 executions), with run cleanup verified and physical status not_run.
+- Notes owner now preserves both silent restoration and accepted-edit autosave; Song-tools source/tests and its boundary gate remain unchanged.
+- Next: final adversarial launch/profile review, scored Pre-Karen product QA and Integrity review, then repeat exact-tip local proof before hosted builds.
+
+### Phase 3 finding — return to product correction
+
+- Actual offscreen renders showed the Paint along face contained blue/green despite passing stylesheet color tests.
+- Kept the locked illustration and 72×48 geometry; native Qt presents the app-owned icon in neutral grayscale in every state. The source artwork is unchanged.
+- Added pixel-level checks of the real card icon across Normal/Disabled/Active/Selected and Off/On, including retained face detail.
+- Worth-Building is explicitly marked for revalidation; the failed visual finding is not hidden behind an earlier test pass.
+- No product media, external tool, capture path, dependency or held branch is changed. Next: focused palette/launch proof, then full local revalidation and final Pre-Karen score.

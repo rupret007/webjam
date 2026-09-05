@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QSize, QTimer, Qt
-from PySide6.QtGui import QAccessible, QAccessibleEvent, QIcon, QKeySequence
+from PySide6.QtGui import QAccessible, QAccessibleEvent, QIcon, QKeySequence, QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -222,7 +222,19 @@ class StartCard(QCommandLinkButton):
             / "paint_along_mark.png"
         )
         if start.key == "paint_along" and mark.is_file():
-            self.setIcon(QIcon(str(mark)))
+            # Style this app-owned illustration as neutral chrome. Explicit
+            # mode/state pixmaps prevent a platform theme recoloring it.
+            source = QImage(str(mark))
+            neutral = source.convertToFormat(QImage.Format.Format_Grayscale8)
+            if source.hasAlphaChannel():
+                neutral = neutral.convertToFormat(QImage.Format.Format_ARGB32)
+                neutral.setAlphaChannel(source.convertToFormat(QImage.Format.Format_Alpha8))
+            pixmap = QPixmap.fromImage(neutral)
+            icon = QIcon()
+            for mode in QIcon.Mode:
+                for state in QIcon.State:
+                    icon.addPixmap(pixmap, mode, state)
+            self.setIcon(icon)
             # The source is a wide face mark. A small square request shrank
             # its painted content to roughly 40 x 27 pixels, so the only
             # illustrated Art choice read like an incidental thumbnail.

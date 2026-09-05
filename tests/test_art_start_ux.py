@@ -674,3 +674,25 @@ def test_windows_door_with_missing_music_component_stays_compact(qapp, tmp_path,
     finally:
         dialog.close()
         dialog.deleteLater()
+
+
+def test_paint_along_mark_stays_neutral_in_every_native_icon_state(qapp, tmp_path):
+    from PySide6.QtGui import QIcon
+
+    dialog = _dialog(tmp_path)
+    try:
+        card = next(card for card in _visible_cards(dialog) if card.start_key == "paint_along")
+        for mode in QIcon.Mode:
+            for state in QIcon.State:
+                rendered = card.icon().pixmap(card.iconSize(), mode, state).toImage()
+                assert not rendered.isNull()
+                levels = set()
+                for y in range(rendered.height()):
+                    for x in range(rendered.width()):
+                        pixel = rendered.pixelColor(x, y)
+                        if pixel.alpha():
+                            assert pixel.red() == pixel.green() == pixel.blue(), (mode, state, x, y)
+                            levels.add(pixel.red())
+                assert len(levels) > 16  # The detailed face must remain, not an empty icon.
+    finally:
+        dialog.deleteLater()
