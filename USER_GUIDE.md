@@ -69,6 +69,16 @@ Invite**. The guest pastes that complete invitation once; WebJam follows the
 host's Art activity when the room responds. **You’re in** means the Art room
 connection is current, not that a meeting or drawing app has joined.
 
+The room view shows whether you are waiting for artists or connected to the
+host. It does not show a full artist list yet. Without a shared activity,
+**Bring your own tools** is a complete place to start; when the host shares
+a canvas or Paint along video, the room offers that existing panel.
+
+Joining borrows the host's room context. After **Leave Room** finishes,
+WebJam returns to your saved workspace, activity, personal title, and notes.
+A native invitation carries no title, so its room is called **Room** until
+you choose another title. A title you type yourself is saved for that workspace.
+
 If the room loses contact, shared playback holds. Follow **Reconnecting to
 the room** or the recovery action shown; WebJam does not claim the room is
 connected while the connection is lost. An invitation that may have been consumed needs **Paste New Invite**

@@ -387,6 +387,7 @@ class LaunchDialog(QDialog):
         super().__init__(parent)
         self._settings = settings
         self._submitting = False
+        self._creator_choice_explicit = False
         self._allow_workspace_choices = allow_workspace_choices
         self._host_available = sys.platform == "darwin"
         self._jamulus_installer = _windows_jamulus_installer(settings)
@@ -554,7 +555,7 @@ class LaunchDialog(QDialog):
         if saved_index >= 0:
             self._creator_profile_selector.setCurrentIndex(saved_index)
         self._creator_profile_selector.currentIndexChanged.connect(
-            self._apply_creator_profile_presentation
+            self._on_creator_profile_changed
         )
         creator_row.addWidget(self._creator_profile_label)
         creator_row.addWidget(self._creator_profile_selector, 1)
@@ -631,6 +632,8 @@ class LaunchDialog(QDialog):
     def _on_profile_card_toggled(self, checked: bool) -> None:
         sender = self.sender()
         key = getattr(sender, "profile_key", "")
+        if not self._submitting and key in _FIRST_SCREEN_PROFILE_KEYS:
+            self._creator_choice_explicit = True
         if not checked:
             # Clicking the current profile keeps it selected. The group stays
             # non-exclusive so File's Podcast/Review choices can clear both
@@ -686,6 +689,7 @@ class LaunchDialog(QDialog):
 
     def _on_start_card_toggled(self, checked: bool) -> None:
         if checked:
+            self._creator_choice_explicit = True
             self._refresh_start_presentation()
 
     def _visible_start_cards(self) -> list[StartCard]:
@@ -874,6 +878,10 @@ class LaunchDialog(QDialog):
         return get_creator_profile_by_key_or_default(
             self._creator_profile_selector.currentData()
         )
+
+    def _on_creator_profile_changed(self, *_args: object) -> None:
+        self._creator_choice_explicit = True
+        self._apply_creator_profile_presentation()
 
     def _apply_creator_profile_presentation(self, *_args: object) -> None:
         """Keep every visible action honest for the selected creator profile."""
@@ -1076,11 +1084,14 @@ class LaunchDialog(QDialog):
             else "Paste your invitation"
         )
 
-    def _persist_role_choice(self, candidate: AppSettings) -> bool:
-        """Commit the non-audio role intent before starting the main journey."""
+    def _persist_role_choice(
+        self, candidate: AppSettings, *, save_creator_choice: bool = True,
+    ) -> bool:
+        """Save role intent without making a hidden Join default a choice."""
 
-        candidate.last_creator_profile_key = self.selected_creator_profile_key
-        candidate.last_creator_start_key = self.selected_start_key
+        if save_creator_choice:
+            candidate.last_creator_profile_key = self.selected_creator_profile_key
+            candidate.last_creator_start_key = self.selected_start_key
         try:
             save_settings(candidate)
         except OSError:
@@ -1194,12 +1205,15 @@ class LaunchDialog(QDialog):
         candidate = deepcopy(self._settings)
         if isinstance(invitation, RemoteInvitation):
             apply_remote_join_defaults(candidate)
-            session_name = "Band Rehearsal"
+            # The private invitation carries no host-selected room title.
+            session_name = "Room"
         else:
             apply_join_invite(candidate, invitation)
             session_name = invitation.session_name
         candidate.musician_name = musician_name
-        if not self._persist_role_choice(candidate):
+        if not self._persist_role_choice(
+            candidate, save_creator_choice=self._creator_choice_explicit,
+        ):
             # _persist_role_choice() owns the same save failure for Host and
             # Join, so it initially writes the role-choice error. A pasted or
             # cold deep-link invitation returns to the Join page, where that

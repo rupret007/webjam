@@ -2184,3 +2184,47 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
     background-color: transparent;
     width: 0;
 }
+
+/* Art room context uses membership facts, never Music's empty mixer tile. */
+#ArtRoomOverview, #ArtRoomOverviewBody, #ArtRoomOverviewContent {
+    background-color: ${COLOR_BG_BASE};
+    border: none;
+}
+
+#ArtRoomOverviewPhase {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+    letter-spacing: 1px;
+}
+
+#ArtRoomOverviewRole {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_BASE}px;
+}
+
+#ArtRoomOverviewTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_XL}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#ArtRoomOverviewHeading {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#ArtRoomOverviewDetail {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_BASE}px;
+}
+
+#ArtRoomOverviewDivider {
+    background-color: ${COLOR_BORDER_SUBTLE};
+    border: none;
+}
+
+#ArtRoomOverview QPushButton {
+    min-height: 28px;
+}

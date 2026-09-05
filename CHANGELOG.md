@@ -12,6 +12,15 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ### Art room participation and recovery
 
+- Art has a room overview that distinguishes waiting, connected, recovering,
+  and closing rooms without using Music mixer counts as artist membership.
+  Artists can keep their own tools or open the room's existing shared activity.
+- Joining preserves personal workspace, activity, title, and notes through
+  Leave, including cancellation before the host's profile arrives.
+- Safe native Art retries can reach the connected room again. End followed by
+  a new room uses current connection facts, and unfinished Quit keeps its
+  cleanup and the artist's actual role visible.
+
 - Art guests enter the host's room without starting Music audio or creating a
   recording owner. Waiting, connected, reconnecting, and cleanup states follow
   actual room receipts. Music keeps its existing audio evidence requirements.

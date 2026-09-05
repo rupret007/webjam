@@ -49,6 +49,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.art_room_overview import ArtRoomOverview
 from core.creative_modes import CreatorProfile, get_creator_profile_by_key_or_default
 from core.meeting_link import (
     RECORD_SESSION_MEETING_CAPTURE_NOTICE,
@@ -67,6 +68,7 @@ from webjam_qt.widgets import (
     WebexEmbed,
     SongOverlay,
 )
+from webjam_qt.widgets.art_room_overview import ArtRoomOverviewWidget
 from webjam_qt.widgets.room_help import RoomHelpPanel
 
 
@@ -125,6 +127,7 @@ class ConductorWindow(QMainWindow):
         self.session_hud = SessionHud()
         self.side_rail = SideRail()
         self.participant_grid = ParticipantGrid()
+        self.art_room_overview = ArtRoomOverviewWidget()
         self.webex_embed = WebexEmbed()
         self.session_canvas = SessionCanvas()
         # A direct, non-modal preview keeps troubleshooting usable while a
@@ -199,7 +202,12 @@ class ConductorWindow(QMainWindow):
         stage_layout.setContentsMargins(0, 0, 0, 0)
         stage_layout.setSpacing(0)
 
-        stage_layout.addWidget(self.participant_grid, stretch=1)
+        self._room_stage = QStackedWidget()
+        self._room_stage.setObjectName("RoomStage")
+        self._room_stage.addWidget(self.participant_grid)
+        self._room_stage.addWidget(self.art_room_overview)
+        self._room_stage.setCurrentWidget(self.participant_grid)
+        stage_layout.addWidget(self._room_stage, stretch=1)
         stage_layout.addWidget(self.webex_embed)
 
         self.center_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -488,6 +496,8 @@ class ConductorWindow(QMainWindow):
             self.session_hud._input,
             self.session_hud._secondary_action,
             self.session_hud._action,
+            self.art_room_overview.activity_button(),
+            self.art_room_overview.conversation_button(),
             self.participant_grid,
             self.participant_grid._empty_primary,
             self.participant_grid._empty_practice,
@@ -883,6 +893,17 @@ class ConductorWindow(QMainWindow):
         self._paint_along_widget = None
         self._paint_along_return_widget = self.center_splitter
 
+    def set_art_room_overview(self, overview: ArtRoomOverview) -> None:
+        """Project the current Art room without changing workspace selection."""
+
+        self.art_room_overview.set_overview(overview)
+        self._setup_tab_order()
+
+    def set_room_stage_visible(self, visible: bool) -> None:
+        """Keep Art and Music aligned with the existing stage/notes layout."""
+
+        self._room_stage.setVisible(visible)
+
     def set_creator_profile(
         self,
         profile: CreatorProfile,
@@ -909,6 +930,10 @@ class ConductorWindow(QMainWindow):
             else:
                 self.song_overlay.setVisible(False)
         self.participant_grid.set_creator_profile(profile)
+        self._room_stage.setCurrentWidget(
+            self.art_room_overview if profile.key == "art" else self.participant_grid
+        )
+        self._setup_tab_order()
         self.recording_studio.set_creator_profile(profile)
         self.session_canvas.set_creator_profile(profile)
         self.webex_embed.set_creator_profile(profile)

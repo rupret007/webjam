@@ -924,17 +924,32 @@ def test_realtime_pull_uses_no_path_or_descriptor_stat_syscalls(
             pass
 
     segment, _source = _segment(
-        tmp_path, 20, np.full(32, 0.4, dtype=np.float32), rate=8_000
+        tmp_path, 20, np.full(2_000, 0.4, dtype=np.float32), rate=8_000
     )
     project = _project((_track(10, (segment,)),), rate=8_000)
     sink = PullSink()
-    player = TakePlayer(samplerate=8_000, sink=sink)
+    player = TakePlayer(samplerate=8_000, blocksize=64, sink=sink)
     player.load_studio(project, default_studio_document(project), tmp_path)
     preparation = player.prepare_studio_playback()
+    assert preparation.pipeline is not None
+    assert preparation.pipeline.buffered_frames >= 8
     assert player.install_studio_preparation(preparation)
-    player.play()
-    assert sink.pull is not None
 
+    # Promotion wakes the producer; queue-lock contention correctly yields
+    # silence even with prefetched audio. Park its next read outside that lock
+    # so this source-I/O test exercises one uncontended, audible callback.
+    producer_waiting = threading.Event()
+    release_producer = threading.Event()
+    original_read = studio_renderer.StudioRenderStream.read_with_tracks
+
+    def hold_next_read(stream, frame_count):
+        producer_waiting.set()
+        assert release_producer.wait(2.0)
+        return original_read(stream, frame_count)
+
+    monkeypatch.setattr(
+        studio_renderer.StudioRenderStream, "read_with_tracks", hold_next_read
+    )
     violations: list[str] = []
 
     def forbidden(name):
@@ -944,26 +959,36 @@ def test_realtime_pull_uses_no_path_or_descriptor_stat_syscalls(
 
         return fail
 
-    monkeypatch.setattr(studio_renderer, "_open_bound_source", forbidden("open"))
-    monkeypatch.setattr(
-        studio_renderer,
-        "_require_bound_source_current",
-        forbidden("path-stat"),
-    )
-    monkeypatch.setattr(studio_renderer.os, "fstat", forbidden("fstat"))
-    result: list[np.ndarray] = []
-    callback = threading.Thread(
-        target=lambda: result.append(sink.pull(8)),
-        name="test-portaudio-callback",
-    )
-    callback.start()
-    callback.join(1.0)
+    try:
+        player.play()
+        assert sink.pull is not None
+        assert producer_waiting.wait(1.0)
 
-    assert not callback.is_alive(), "realtime pull exceeded its one-second deadline"
-    assert violations == []
-    assert len(result) == 1
-    np.testing.assert_allclose(result[0][:, 0], 0.4, atol=1e-7)
-    player.stop()
+        with monkeypatch.context() as callback_guard:
+            callback_guard.setattr(
+                studio_renderer, "_open_bound_source", forbidden("open")
+            )
+            callback_guard.setattr(
+                studio_renderer,
+                "_require_bound_source_current",
+                forbidden("path-stat"),
+            )
+            callback_guard.setattr(studio_renderer.os, "fstat", forbidden("fstat"))
+            result: list[np.ndarray] = []
+            callback = threading.Thread(
+                target=lambda: result.append(sink.pull(8)),
+                name="test-portaudio-callback",
+            )
+            callback.start()
+            callback.join(1.0)
+
+            assert not callback.is_alive(), "realtime pull exceeded its one-second deadline"
+            assert violations == []
+            assert len(result) == 1
+            np.testing.assert_allclose(result[0][:, 0], 0.4, atol=1e-7)
+    finally:
+        release_producer.set()
+        player.stop()
 
 
 def test_background_prefill_gives_first_pulls_without_callback_source_io(
