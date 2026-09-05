@@ -228,4 +228,6 @@ class ArtRoomOverviewWidget(QScrollArea):
         # Resizing for Conversation may move a button that already owns
         # focus, so it will not receive another FocusIn event. Wait until
         # the queued layout has settled before keeping that action visible.
-        QTimer.singleShot(0, self._reveal_focused_action)
+        # Bind the deferred work to this widget so closing its window
+        # cancels the callback before the underlying C++ object is deleted.
+        QTimer.singleShot(0, self, self._reveal_focused_action)

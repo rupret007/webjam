@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QSize, QTimer, Qt
-from PySide6.QtGui import QAccessible, QAccessibleEvent, QIcon, QKeySequence, QImage, QPixmap
+from PySide6.QtGui import QAccessible, QAccessibleEvent, QIcon, QKeyEvent, QKeySequence, QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -67,6 +67,11 @@ from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
 
 LOGGER = logging.getLogger("webjam.qt.launch_dialog")
 
+_JOIN_INVITATION_GUIDANCE = (
+    "Paste the invite or the whole message.\n"
+    "If your invitation says “same network,” use your host’s Wi-Fi or local network."
+)
+
 
 @dataclass(frozen=True)
 class _CreatorLaunchCopy:
@@ -94,7 +99,7 @@ _CREATOR_LAUNCH_COPY = {
         ),
         helper="Play live together.",
         join_title="Join Music.",
-        join_subtitle="Paste the WebJam invitation your host sent you.",
+        join_subtitle=_JOIN_INVITATION_GUIDANCE,
     ),
     "podcast_voice": _CreatorLaunchCopy(
         host="Host Remote Recording",
@@ -113,7 +118,7 @@ _CREATOR_LAUNCH_COPY = {
         ),
         helper="Record remote voices or start a local multitrack recording.",
         join_title="Join Recording.",
-        join_subtitle="Paste the WebJam recording invitation your host sent you.",
+        join_subtitle=_JOIN_INVITATION_GUIDANCE,
     ),
     "review_rehearsal": _CreatorLaunchCopy(
         host="Host Review",
@@ -126,7 +131,7 @@ _CREATOR_LAUNCH_COPY = {
         ),
         helper="Host or join a review.",
         join_title="Join Review.",
-        join_subtitle="Paste the invitation your host sent you.",
+        join_subtitle=_JOIN_INVITATION_GUIDANCE,
     ),
     "art": _CreatorLaunchCopy(
         host="Host",
@@ -143,7 +148,7 @@ _CREATOR_LAUNCH_COPY = {
         local_description="Standalone art projects are not on this door.",
         helper="Open a room and make something together.",
         join_title="Join the room.",
-        join_subtitle="Paste the invite your host sent you.",
+        join_subtitle=_JOIN_INVITATION_GUIDANCE,
     ),
 }
 
@@ -159,6 +164,18 @@ _ART_PROFILE_SUMMARY = "Make art together."
 _MUSIC_PROFILE_SUMMARY = "Play live together."
 _START_CARD_HEIGHT = 64
 _PAINT_ALONG_MARK_SIZE = QSize(72, 48)
+
+
+class _InvitationInput(QLineEdit):
+    """Submit the invitation once without also activating a dialog default."""
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        super().keyPressEvent(event)
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            # returnPressed already owns Join. A synchronous parse failure
+            # leaves the dialog open, so this same key must not reach Back
+            # or another button that previously became the dialog default.
+            event.accept()
 
 
 class ProfileCard(QCommandLinkButton):
@@ -795,8 +812,10 @@ class LaunchDialog(QDialog):
     def _build_join_page(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(Space.MD, Space.XL, Space.MD, 0)
-        layout.setSpacing(Space.MD)
+        # Keep the invitation guidance and a wrapped error visible at the
+        # dialog's 460 x 480 minimum without shrinking the Join action.
+        layout.setContentsMargins(Space.MD, Space.MD, Space.MD, 0)
+        layout.setSpacing(Space.SM)
 
         self._join_title = QLabel()
         self._join_title.setObjectName("LaunchTitle")
@@ -815,7 +834,7 @@ class LaunchDialog(QDialog):
         self._join_status.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(self._join_status)
 
-        self._invite_input = QLineEdit()
+        self._invite_input = _InvitationInput()
         self._invite_input.setObjectName("LaunchInviteInput")
         # Version-2 invitations contain a private bearer credential. Keep the
         # value available to the parser without rendering it as ordinary text
@@ -824,9 +843,7 @@ class LaunchDialog(QDialog):
         self._invite_input.setEchoMode(QLineEdit.EchoMode.Password)
         self._invite_input.setPlaceholderText("Paste the invite")
         self._invite_input.setAccessibleName("Invite")
-        self._invite_input.setAccessibleDescription(
-            "Paste the whole invite your host sent you."
-        )
+        self._invite_input.setAccessibleDescription(_JOIN_INVITATION_GUIDANCE)
         self._invite_input.returnPressed.connect(self._join)
         self._invite_input.textChanged.connect(self._on_invite_text_changed)
         layout.addWidget(self._invite_input)
@@ -1177,8 +1194,10 @@ class LaunchDialog(QDialog):
                 self._invite_input.setText(raw)
             self._join_status.setText("Needs attention")
             self._join_error.setText(str(exc))
-            self._announce_error(self._join_error, focus=self._invite_input)
+            # The field was disabled during submission. Restore it before
+            # returning keyboard focus to the replacement invitation.
             self._restore_submission()
+            self._announce_error(self._join_error, focus=self._invite_input)
             return False
         return self.accept_invitation(invitation, submission_started=True)
 

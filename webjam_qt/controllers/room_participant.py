@@ -91,6 +91,8 @@ class RoomParticipantController:
     def __init__(self, app):
         self.app = app
         self.lan_guest = None
+        self._lan_terminal_owner = None
+        self._lan_retry_in_progress = False
         self.generation = 0
         self.role = ""
         self.state = ArtRoomState.NONE
@@ -116,6 +118,89 @@ class RoomParticipantController:
         return bool(self.stopping or self.app._shutdown or self.app.audio.stopping
                     or self.app.audio.cleanup_retry_required)
 
+    @property
+    def lan_failed(self):
+        """A terminal receipt remains true while its observer is still owned."""
+        return self.lan_guest is not None and self.lan_guest is self._lan_terminal_owner
+
+    @property
+    def can_retry_lan(self):
+        """Only a terminal receipt from this LAN observer authorizes retry."""
+        from core.network_invite import BandInvite
+
+        owner = self.lan_guest
+        invite = getattr(owner, "invite", None)
+        recording = getattr(self.app, "recording", None)
+        return bool(
+            self.lan_failed
+            and isinstance(invite, BandInvite) and invite.peer_enabled
+            and self.role == "guest"
+            and (self.probe_failed or self.state is ArtRoomState.FAILED)
+            and not self._lan_retry_in_progress and not self.blocked
+            and not getattr(self.app, "_shutdown_cleanup_pending", False)
+            and not getattr(self.app, "_shutdown_in_progress", False)
+            and getattr(self.app, "_startup_attempt", None) is None
+            and getattr(self.app, "_remote_session", None) is None
+            and getattr(self.app, "_remote_invite_owner", None) is None
+            and getattr(self.app, "_remote_invitation", None) is None
+            and getattr(self.app, "guest_peer", None) is None
+            and not getattr(recording, "take_in_progress", False)
+            and not getattr(recording, "is_recording_active", False)
+        )
+
+    def retry_lan_guest(self):
+        """Replace one stopped observer, retaining its reusable invitation."""
+        if not self.can_retry_lan:
+            return False
+        owner = self.lan_guest
+        invite = owner.invite
+        self._lan_retry_in_progress = True
+        # Retire callbacks before stop can run another queued UI operation.
+        self.generation += 1
+        generation = self.generation
+        self.stopping = True
+        try:
+            try:
+                stopped = owner.stop() is True
+            except Exception:  # private peer details never reach recovery copy
+                stopped = False
+            if not stopped:
+                self.app.audio.require_cleanup_retry(
+                    hosting=False, art_room=True,
+                    error="The previous room connection is still closing.",
+                    title="Finish leaving the room",
+                    detail="Choose Try Leave Room, then open the invitation again.",
+                )
+                return False
+            # End/Quit or a replacement owner may have won while stop ran.
+            if (self.lan_guest is not owner or self.generation != generation
+                    or self.app._shutdown or self.app.audio.stopping
+                    or self.app.audio.cleanup_retry_required
+                    or getattr(self.app, "_shutdown_cleanup_pending", False)
+                    or getattr(self.app, "_shutdown_in_progress", False)):
+                return False
+            # Before a first profile arrives, the saved Music conductor can
+            # still be nonterminal. Confirmed observer cleanup is the real
+            # idle boundary that permits replacing that attempt's token.
+            conductor = self.app._live_session_conductor()
+            self.app._session_conductor_token = conductor.reset_to_idle("guest")
+            self.lan_guest = None
+            self.stopping = False
+            try:
+                return self.start_lan_guest(invite)
+            except Exception:  # keep the attempted owner reachable for cleanup
+                if self.lan_guest is None:
+                    self.lan_guest = owner
+                self._lan_terminal_owner = self.lan_guest
+                self.probing = True
+                self.probe_failed = True
+                self.state = ArtRoomState.FAILED
+                self._lan_retry_in_progress = False
+                self.app._update_session_hud()
+                return False
+        finally:
+            self._lan_retry_in_progress = False
+
     def start_lan_guest(self, invite):
         if self.lan_guest is not None:
             return True
@@ -124,8 +209,10 @@ class RoomParticipantController:
         self.generation += 1
         generation = self.generation
         self.role = "guest"
+        self.state = ArtRoomState.STARTING
         self.probing = True
         self.probe_failed = False
+        self._lan_terminal_owner = None
         self.stopping = False
         self.app._conductor_setup_requested = True
         self.app._start_session_conductor_attempt("guest")
@@ -141,7 +228,7 @@ class RoomParticipantController:
             on_state=on_state, on_loss=on_loss,
         )
         self.lan_guest.start()
-        self.app._update_session_hud()
+        self.app._refresh_readiness()
         return True
 
     def receive_lan(self, owner, generation, state):
@@ -152,6 +239,7 @@ class RoomParticipantController:
         if profile is None:
             self.lose_lan(owner, generation, True)
             return
+        self._lan_terminal_owner = None
         if profile != "art":
             invite = owner.invite
             # Stop the observer before constructing the existing recording
@@ -182,10 +270,13 @@ class RoomParticipantController:
     def lose_lan(self, owner, generation, terminal):
         if owner is not self.lan_guest or generation != self.generation or self.blocked:
             return
+        self._lan_terminal_owner = owner if terminal else None
         self.probe_failed = bool(terminal and self.probing)
-        if not self.probing:
-            self.state = ArtRoomState.FAILED if terminal else ArtRoomState.RECONNECTING
-        self.app._update_session_hud()
+        if terminal:
+            self.state = ArtRoomState.FAILED
+        elif not self.probing:
+            self.state = ArtRoomState.RECONNECTING
+        self.app._refresh_readiness()
 
     def start_lan_host(self):
         from core.network_invite import local_band_address
@@ -369,6 +460,7 @@ class RoomParticipantController:
         if owner is not None and owner.stop() is False:
             return False
         self.lan_guest = None
+        self._lan_terminal_owner = None
         self.music_invite = None
         self.probing = False
         self.probe_failed = False
@@ -390,6 +482,12 @@ class RoomParticipantController:
                 "Update WebJam on both computers. Choose End Room, then start a new room and copy its invitation."
                 if needs_update else "Choose End Room to close this connection, then start a new room and copy its invitation.",
                 SessionPrimaryAction.END_SESSION, "End Room",
+            )
+        if self.can_retry_lan:
+            return GuidanceDisplayOverride(
+                "The room could not open" if self.probe_failed else "The room connection ended",
+                "Check that the host's room is open and you are on the same network, then choose Try Again.",
+                SessionPrimaryAction.RETRY_SETUP, "Try Again",
             )
         if self.probing:
             return GuidanceDisplayOverride(
