@@ -10,6 +10,8 @@ const (
 	WireVersion            = 3
 	MaxIPCLineBytes        = 64 * 1024
 	MaxEventLineBytes      = 4 * 1024
+	MaxRoomStateBytes      = 8 * 1024
+	MaxRoomEventLineBytes  = 12 * 1024
 	MaxLivePayloadBytes    = 1024
 	MaxDatagramQueueDepth  = 64
 	MaxStreamFrameBytes    = 64 * 1024

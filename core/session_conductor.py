@@ -199,6 +199,17 @@ class MusicPathState(str, Enum):
     FAILED = "failed"
 
 
+class ArtRoomState(str, Enum):
+    """Room-peer evidence, independent of mixer or audio readiness."""
+
+    NONE = "none"
+    STARTING = "starting"
+    WAITING = "waiting"
+    CONNECTED = "connected"
+    RECONNECTING = "reconnecting"
+    FAILED = "failed"
+
+
 class RecorderState(str, Enum):
     """Authoritative recorder state, not a Record button's visual state."""
 
@@ -320,6 +331,7 @@ class SessionFacts:
     remote_participant: EvidenceState = EvidenceState.NOT_STARTED
     participant_identity: EvidenceState = EvidenceState.NOT_STARTED
     had_authenticated_connection: bool = False
+    art_room: ArtRoomState = ArtRoomState.NONE
 
     recorder: RecorderState = RecorderState.IDLE
     local_capture: EvidenceState = EvidenceState.NOT_REQUIRED
@@ -379,6 +391,7 @@ class SessionFacts:
             "had_authenticated_connection",
             bool(self.had_authenticated_connection),
         )
+        object.__setattr__(self, "art_room", ArtRoomState(self.art_room))
         object.__setattr__(self, "recorder", RecorderState(self.recorder))
         object.__setattr__(
             self,
@@ -603,6 +616,19 @@ _DURABLE_RESTORE_PHASES = frozenset(
 )
 
 
+def _art_room_phase(facts: SessionFacts) -> SessionConductorPhase | None:
+    return {
+        ArtRoomState.STARTING: SessionConductorPhase.JOINING,
+        ArtRoomState.WAITING: (
+            SessionConductorPhase.INVITE_READY
+            if facts.role is SessionRole.HOST else SessionConductorPhase.JOINING
+        ),
+        ArtRoomState.CONNECTED: SessionConductorPhase.CONNECTED,
+        ArtRoomState.RECONNECTING: SessionConductorPhase.RECONNECTING,
+        ArtRoomState.FAILED: SessionConductorPhase.FAILED,
+    }.get(facts.art_room)
+
+
 def _presentation(
     phase: SessionConductorPhase,
     facts: SessionFacts,
@@ -683,6 +709,55 @@ def _presentation(
             primary_label=primary_action.label_for(profile),
         )
 
+    if (
+        profile.key == "art"
+        and facts.setup_requested
+        and facts.cleanup is CleanupState.NOT_REQUESTED
+        and not facts.startup_cleanup_pending
+        and facts.failure is FailureDisposition.NONE
+        and facts.recorder is RecorderState.IDLE
+        and phase is _art_room_phase(facts)
+    ):
+        if facts.art_room is ArtRoomState.STARTING:
+            return present(
+                SessionPrimaryAction.WAIT, "Opening the room",
+                "WebJam is opening your room." if host
+                else "WebJam is connecting your invitation to the host’s room.",
+                "Room membership is not confirmed yet.",
+            )
+        if facts.art_room is ArtRoomState.WAITING:
+            if not host:
+                return present(
+                    SessionPrimaryAction.WAIT, "Waiting for the host",
+                    "The host’s room is not available yet. Keep your own work open.",
+                    "Room membership is not confirmed yet.",
+                )
+            return present(
+                SessionPrimaryAction.COPY_INVITE, "Your room is open",
+                "Copy the invite. Keep making while you wait for another artist.",
+                "The room is open; another artist has not joined yet.",
+            )
+        if facts.art_room is ArtRoomState.CONNECTED:
+            return present(
+                SessionPrimaryAction.NONE, "You’re in",
+                "Make together with your own tools. Paint along and Conversation "
+                "are here when you want them.",
+                "Room connection confirmed. Paint along checks your local video separately.",
+            )
+        if facts.art_room is ArtRoomState.RECONNECTING:
+            return present(
+                SessionPrimaryAction.WAIT, "Reconnecting to the room",
+                "The room connection was interrupted. Your own work stays with you.",
+                "The host’s latest actions cannot be confirmed until the connection returns.",
+            )
+        return present(
+            SessionPrimaryAction.RESET_INVITE if host else SessionPrimaryAction.PASTE_NEW_INVITE,
+            "The room connection ended",
+            "Create a fresh invitation to reopen this room." if host else
+            "Ask the host for a fresh invitation, then choose Paste New Invite.",
+            "The previous connection is no longer active.",
+        )
+
     if (phase is SessionConductorPhase.INDETERMINATE
             and facts.startup_cleanup_pending):
         return present(
@@ -692,6 +767,16 @@ def _presentation(
             "The previous setup's cleanup is unconfirmed; a new connection cannot start yet.",
             preservation,
         )
+
+    if (profile.key == "art" and phase is SessionConductorPhase.INDETERMINATE
+            and facts.cleanup in {CleanupState.FAILED, CleanupState.UNKNOWN}):
+        label = "Try End Room" if host else "Try Leave Room"
+        return replace(present(
+            SessionPrimaryAction.END_SESSION, "Room cleanup needs attention",
+            f"The room has not finished disconnecting. Choose {label} to finish.",
+            "The connection remains owned until cleanup is confirmed.",
+            preservation,
+        ), primary_label=label)
 
     if phase is SessionConductorPhase.IDLE:
         if profile.key == "music":
@@ -1207,6 +1292,9 @@ def derive_session_presentation(
     if facts.cleanup in {CleanupState.FAILED, CleanupState.UNKNOWN}:
         return _presentation(SessionConductorPhase.INDETERMINATE, facts)
 
+    if facts.startup_cleanup_pending:
+        return _presentation(SessionConductorPhase.INDETERMINATE, facts)
+
     # Export/review facts are local to a validated take and outrank a stale
     # connection callback from a session that has already moved into review.
     if facts.export is ExportState.EXPORTING:
@@ -1274,6 +1362,9 @@ def derive_session_presentation(
         return _presentation(SessionConductorPhase.INDETERMINATE, facts)
     if facts.failure in {FailureDisposition.RETRYABLE, FailureDisposition.FINAL}:
         return _presentation(SessionConductorPhase.FAILED, facts)
+
+    if facts.creator_profile_key == "art" and facts.art_room is not ArtRoomState.NONE:
+        return _presentation(_art_room_phase(facts), facts)
 
     if _is_blocked(
         facts.identity,

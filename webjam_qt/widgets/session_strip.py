@@ -471,6 +471,7 @@ class SessionStrip(QFrame):
             lambda: self.tool_requested.emit("audio_settings")
         )
         jamulus_updates_action = QAction("Check for Updates…", tools_menu)
+        self._jamulus_updates_action = jamulus_updates_action
         jamulus_updates_action.setToolTip(
             "Check for a WebJam-approved Jamulus component without interrupting "
             "the current session."
@@ -796,7 +797,7 @@ class SessionStrip(QFrame):
         elif profile_key == "art":
             audio_name = "Start or end the art session"
             audio_tip = (
-                "Start or end the artists' live room. WebJam handles the engine."
+                "Start or leave the art room. Your own tools and any meeting stay open."
             )
             record_name = "Session recording is unavailable"
             record_tip = (
@@ -918,9 +919,13 @@ class SessionStrip(QFrame):
         self._song_button.setVisible(song_tools_available)
         self._song_button.setEnabled(song_tools_available and self._tools_enabled)
         self._tools_button.setAccessibleDescription(
-            f"Open sound settings, {check_label}, conversation, recording, Shared "
+            "Open Conversation, Paint along, optional Shared Canvas, local notes, "
+            "and WebJam support options."
+            if profile_key == "art"
+            else f"Open sound settings, {check_label}, conversation, recording, Shared "
             "Track, local notes, and WebJam support options."
         )
+        self._sync_audio_tools()
         self._sync_conversation_presentation()
         self._sync_audio_action_accessibility()
         self._sync_recording_profile_accessibility()
@@ -938,6 +943,19 @@ class SessionStrip(QFrame):
                 "Visual media and media timecode are not synchronized."
             )
         return ""
+
+    def _sync_audio_tools(self) -> None:
+        """Art's own-tools room does not need music setup or practice."""
+        available = self._creator_profile_key != "art"
+        for action in (
+            self._ready_action,
+            self._practice_action,
+            self._audio_settings_action,
+            self._diagnostics_action,
+            self._jamulus_updates_action,
+        ):
+            action.setVisible(available)
+            action.setEnabled(available and self._tools_enabled)
 
     def _sync_conversation_presentation(self) -> None:
         self._video_action.setText(
@@ -973,6 +991,11 @@ class SessionStrip(QFrame):
         label = self._audio_button_full_text
         if self._creator_profile_key == "music":
             description = f"Band session action. Current action: {label}."
+        elif self._creator_profile_key == "art":
+            description = (
+                f"Art room action. Current action: {label}. "
+                "Your own tools and any external meeting stay open."
+            )
         else:
             description = (
                 f"{self._session_noun.capitalize()} action. Current action: {label}. "
@@ -1011,6 +1034,13 @@ class SessionStrip(QFrame):
         self._update_timer_label()
 
     def set_audio_state(self, label: str, *, enabled: bool = True) -> None:
+        if self._creator_profile_key == "art":
+            label = {
+                "End Session": "End Room",
+                "Leave Jam": "Leave Room",
+                "Try End Session": "Try End Room",
+                "Try Leave Jam": "Try Leave Room",
+            }.get(label, label)
         self._audio_button_full_text = str(label)
         self._audio_button.setText(self._compact_control_label(label))
         self._audio_button.setEnabled(enabled)
@@ -1026,6 +1056,10 @@ class SessionStrip(QFrame):
                 "Stopping…",
                 "Try End Session",
                 "Try Leave Jam",
+                "End Room",
+                "Leave Room",
+                "Try End Room",
+                "Try Leave Room",
             }
         )
         self._audio_button.setAccessibleName(label)
@@ -1043,9 +1077,13 @@ class SessionStrip(QFrame):
             "■ Finish Stop": "■ Finish",
             "Retry Record": "Retry",
             "End Session": "End",
+            "End Room": "End",
+            "Leave Room": "Leave",
             "Leave Jam": "Leave",
             "Try End Session": "Try End",
             "Try Leave Jam": "Try Leave",
+            "Try End Room": "Try End",
+            "Try Leave Room": "Try Leave",
         }.get(str(label), str(label))
 
     def _compact_control_label(self, label: str) -> str:
@@ -1099,6 +1137,7 @@ class SessionStrip(QFrame):
 
     def set_tools_enabled(self, enabled: bool) -> None:
         self._tools_enabled = bool(enabled)
+        self._sync_audio_tools()
         self._tools_button.setEnabled(self._tools_enabled)
         self._video_button.setEnabled(self._tools_enabled)
         self._reference_track_button.setEnabled(

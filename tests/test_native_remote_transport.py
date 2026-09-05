@@ -733,3 +733,425 @@ def test_host_expected_generation_blocks_old_text_before_dispatch(monkeypatch) -
     owner.send_help("new room draft", expected_generation=2)
     assert process.help_requests == [(2, "new room draft")]
     owner.stop()
+
+
+def _room_received(revision=1, *, generation=7, mode="guest"):
+    from core.room_state import RoomState
+    return TransportEvent(
+        event_id=0, event_type="room_state_received", code="ok", state="connected",
+        mode=mode, profile_id="reference-local", generation=generation,
+        room_state=RoomState(revision, "art", "paint_along"),
+    )
+
+
+def test_guest_room_state_is_delivered_during_enrollment_without_help(monkeypatch) -> None:
+    from core.room_state import RoomIdentity
+    class EarlyRoomProcess(FakeProcess):
+        def open_guest(self, invitation, *, generation):
+            self.on_event(_room_received(generation=generation))
+            return super().open_guest(invitation, generation=generation)
+    monkeypatch.setattr(native, "TransportProcess", EarlyRoomProcess)
+    received = []
+    backend = native.NativeGuestTransportBackend(
+        binary="/private/webjam-fabric", expected_build="abc1234",
+        on_room_state=received.append,
+    )
+    invitation = _invitation()
+    backend.start_guest(invitation, generation=7)
+    assert backend.connection_available
+    assert backend.room_identity == RoomIdentity.from_invitation(invitation)
+    assert [event.room_state.revision for event in received] == [1]
+    process = FakeProcess.instances[-1]
+    for event in (_room_received(2, generation=6), _room_received(2, mode="host"),
+                  _room_received(1), _room_received(2)):
+        process.on_event(event)
+    assert [event.room_state.revision for event in received] == [1, 2]
+    backend.stop()
+    assert backend.room_identity is None
+    assert not backend.connection_available
+
+
+def test_queued_room_state_and_loss_are_fenced_by_process_generation_and_stop(monkeypatch) -> None:
+    monkeypatch.setattr(native, "TransportProcess", FakeProcess)
+    pending, received, losses = [], [], []
+    backend = native.NativeGuestTransportBackend(
+        binary="/private/webjam-fabric", expected_build="abc1234",
+        on_room_state=received.append, on_connection_lost=losses.append,
+        schedule_callback=pending.append,
+    )
+    backend.start_guest(_invitation(), generation=7)
+    old = FakeProcess.instances[-1]
+    old.on_event(_room_received(1))
+    old.on_event(_room_received(2))
+    pending.pop(0)()
+    assert not received  # queued older full state must not undo the newest snapshot
+    old.on_event(TransportEvent(event_id=0, event_type="error", state="failed"))
+    assert backend.room_identity is None
+    assert not backend.connection_available
+    pending.pop(0)()
+    assert not received  # latest room snapshot is also retired on disconnect
+    backend.stop()
+    backend.start_guest(_invitation(), generation=7)
+    pending.pop(0)()
+    assert not losses  # old failed process reused the same integer generation
+    old.on_event(_room_received(3))
+    assert not pending
+    current = FakeProcess.instances[-1]
+    current.on_event(_room_received(1))
+    pending.pop(0)()
+    assert len(received) == 1
+    current.running = False
+    assert not backend.connection_available
+    assert backend.room_identity is None
+    pending.pop(0)()
+    assert losses == [7]
+    assert not backend.connection_available
+    assert not pending  # one loss notification, not a repeated polling alarm
+    backend.stop()
+
+
+def test_host_caches_full_room_state_until_authenticated_and_rotates_identity(monkeypatch) -> None:
+    from core.room_state import RoomIdentity, RoomState
+    published = []
+    sent = threading.Event()
+    class RoomProcess(FakeProcess):
+        def publish_room_state(self, state, *, generation):
+            published.append((generation, state))
+            sent.set()
+            return TransportEvent(
+                event_id=51, request_id=51, event_type="room_state_accepted", code="ok",
+                state="connected", mode="host", profile_id="reference-local",
+                generation=generation,
+            )
+    monkeypatch.setattr(native, "TransportProcess", RoomProcess)
+    owner = native.NativeHostTransportOwner(target_port=22124, binary="/private/webjam-fabric",
+                                            expected_build="abc1234")
+    first_identity = owner.room_identity
+    assert first_identity == RoomIdentity.from_invitation(owner.invitation)
+    assert not owner.connection_available
+    state = RoomState(1, "art", "talk_and_make")
+    assert owner.publish_room_state(state)
+    assert not published
+    process = FakeProcess.instances[-1]
+    process.emit_host_connected(1)
+    assert sent.wait(1)
+    assert published == [(1, state)]
+    assert owner.connection_available
+    assert owner.room_identity == first_identity  # consuming invite keeps existing signer
+    sent.clear()
+    latest = RoomState(2, "art", "paint_along")
+    assert owner.publish_room_state(latest)
+    assert sent.wait(1)
+    assert published[-1] == (1, latest)
+    assert not owner.publish_room_state(state)
+    owner.reset()
+    assert owner.room_identity != first_identity
+    assert owner.room_identity == RoomIdentity.from_invitation(owner.invitation)
+    assert not owner.connection_available
+    # Reset retires the old media identities; no state signed with that key is replayed.
+    process.emit_host_connected(2)
+    assert published[-1] == (1, latest)
+    owner.stop()
+    assert owner.room_identity is None
+    assert not owner.publish_room_state(RoomState(3, "art", "paint_along"))
+
+
+def test_guest_older_peer_has_bounded_update_reason(monkeypatch) -> None:
+    from services.transport_runtime import TransportPeerProtocolError
+    class OlderPeerProcess(FakeProcess):
+        def open_guest(self, invitation, *, generation):
+            raise TransportPeerProtocolError("The peer needs a compatible WebJam version.")
+    monkeypatch.setattr(native, "TransportProcess", OlderPeerProcess)
+    backend = native.NativeGuestTransportBackend(binary="/private/webjam-fabric", expected_build="abc1234")
+    with pytest.raises(RemoteBackendError) as failure:
+        backend.start_guest(_invitation(), generation=7)
+    assert failure.value.code is RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED
+    assert backend.room_identity is None
+    assert FakeProcess.instances[-1].stopped == 1
+
+
+def test_runtime_loss_retires_queued_connected_proof_and_exposes_no_room_identity(monkeypatch) -> None:
+    from services.remote_session_runtime import RemoteSessionRuntime
+    monkeypatch.setattr(native, "TransportProcess", FakeProcess)
+    pending, seen = [], []
+    owner = {}
+    backend = native.NativeGuestTransportBackend(
+        binary="/private/webjam-fabric", expected_build="abc1234",
+        on_connection_lost=lambda generation: owner["runtime"].mark_connection_lost(
+            expected_generation=generation),
+    )
+    runtime = RemoteSessionRuntime(backend, on_snapshot=seen.append, schedule_callback=pending.append)
+    owner["runtime"] = runtime
+    runtime.start_guest(_invitation())
+    connected = runtime.wait_until_settled()
+    assert connected.phase is RemoteSessionPhase.CONNECTED
+    assert runtime.room_identity is not None
+    assert runtime.connection_available
+    process = FakeProcess.instances[-1]
+    assert not runtime.mark_connection_lost(expected_generation=connected.generation + 1)
+    process.on_event(TransportEvent(event_id=0, event_type="error", state="failed"))
+    assert runtime.snapshot.phase is RemoteSessionPhase.FAILED
+    assert runtime.snapshot.error_code is RemoteSessionErrorCode.TRANSPORT_FAILED
+    assert runtime.room_identity is None
+    assert not runtime.connection_available
+    assert not runtime.snapshot.invitation_retry_safe
+    for callback in pending:
+        callback()
+    assert [snapshot.phase for snapshot in seen] == [RemoteSessionPhase.FAILED]
+    runtime.stop()
+
+
+def test_host_cannot_lose_authenticated_first_peer_during_registration(monkeypatch) -> None:
+    class EarlyHostProcess(FakeProcess):
+        def open_host(self, invitation, *, target_port, generation):
+            registered = super().open_host(invitation, target_port=target_port, generation=generation)
+            self.emit_host_connected(generation)
+            return registered
+    monkeypatch.setattr(native, "TransportProcess", EarlyHostProcess)
+    owner = native.NativeHostTransportOwner(target_port=22124, binary="/private/webjam-fabric",
+                                            expected_build="abc1234")
+    assert owner.snapshot.phase is RemoteSessionPhase.CONNECTED
+    assert owner.connection_available
+    assert not owner.invitation_available
+    first = owner.room_identity
+    owner.reset()
+    assert owner.snapshot.generation == 2
+    assert owner.snapshot.phase is RemoteSessionPhase.CONNECTED
+    assert owner.connection_available
+    assert not owner.invitation_available
+    assert owner.room_identity != first
+    owner.stop()
+
+
+def _accepted_room_state(generation):
+    return TransportEvent(
+        event_id=71, request_id=71, event_type="room_state_accepted", code="ok",
+        state="connected", mode="host", profile_id="reference-local", generation=generation,
+    )
+
+
+def test_host_rate_limit_retries_only_latest_full_snapshot(monkeypatch) -> None:
+    from core.room_state import RoomState
+    from services.transport_runtime import TransportRoomRateLimitedError
+    entered, release, delivered = threading.Event(), threading.Event(), threading.Event()
+    published = []
+
+    class BusyRoomProcess(FakeProcess):
+        def publish_room_state(self, state, *, generation):
+            published.append((generation, state.revision, time.monotonic()))
+            if len(published) == 1:
+                entered.set()
+                assert release.wait(2)
+                raise TransportRoomRateLimitedError("The room update needs a brief retry.")
+            delivered.set()
+            return _accepted_room_state(generation)
+
+    monkeypatch.setattr(native, "TransportProcess", BusyRoomProcess)
+    owner = native.NativeHostTransportOwner(target_port=22124, binary="/private/webjam-fabric",
+                                            expected_build="abc1234")
+    process = FakeProcess.instances[-1]
+    process.emit_host_connected(1)
+    identity = owner.room_identity
+    try:
+        assert owner.publish_room_state(RoomState(1, "art", "paint_along"))
+        assert entered.wait(1)
+        for revision in range(2, 31):
+            assert owner.publish_room_state(RoomState(revision, "art", "paint_along"))
+        assert owner.connection_available
+        assert owner.room_identity == identity
+        released_at = time.monotonic()
+        release.set()
+        assert delivered.wait(2)
+        assert [(generation, revision) for generation, revision, _ in published] == [(1, 1), (1, 30)]
+        assert published[-1][2] - released_at >= 0.25
+        assert owner.connection_available
+        assert owner.send_help("Still here").code == "ok"
+    finally:
+        release.set()
+        owner.stop()
+
+
+@pytest.mark.parametrize("replace_invitation", [False, True])
+def test_host_cancels_rate_limit_retry_at_stop_or_replacement(monkeypatch, replace_invitation) -> None:
+    from core.room_state import RoomState
+    from services.transport_runtime import TransportRoomRateLimitedError
+    entered, release, delivered = threading.Event(), threading.Event(), threading.Event()
+    published = []
+
+    class SlowRateLimitProcess(FakeProcess):
+        def publish_room_state(self, state, *, generation):
+            published.append((generation, state.revision))
+            if generation == 1:
+                entered.set()
+                assert release.wait(2)
+                raise TransportRoomRateLimitedError("The room update needs a brief retry.")
+            delivered.set()
+            return _accepted_room_state(generation)
+
+    monkeypatch.setattr(native, "TransportProcess", SlowRateLimitProcess)
+    owner = native.NativeHostTransportOwner(target_port=22124, binary="/private/webjam-fabric",
+                                            expected_build="abc1234")
+    process = FakeProcess.instances[-1]
+    process.emit_host_connected(1)
+    owner.publish_room_state(RoomState(1, "art", "paint_along"))
+    assert entered.wait(1)
+    try:
+        if replace_invitation:
+            owner.reset()
+            replacement_identity = owner.room_identity
+            process.emit_host_connected(2)
+            owner.publish_room_state(RoomState(1, "art", "talk_and_make"))
+            assert delivered.wait(1)
+        else:
+            owner.stop()
+        release.set()
+        # Longer than one retry tick: no old room state may be sent or turn a
+        # replacement invitation into a failure when its late error arrives.
+        time.sleep(0.4)
+        expected = [(1, 1), (2, 1)] if replace_invitation else [(1, 1)]
+        assert published == expected
+        if replace_invitation:
+            assert owner.connection_available
+            assert owner.room_identity == replacement_identity
+        else:
+            assert owner.snapshot.phase is RemoteSessionPhase.STOPPED
+            assert owner.room_identity is None
+    finally:
+        release.set()
+        owner.stop()
+
+
+def test_host_persistent_rate_limit_has_bounded_secret_free_failure(monkeypatch, caplog) -> None:
+    from core.room_state import RoomState
+    from core.session_transfer import SharedCanvasSessionSnapshot
+    from services.transport_runtime import TransportRoomRateLimitedError
+    failed = threading.Event()
+    calls = []
+
+    class NeverReadyRoomProcess(FakeProcess):
+        def publish_room_state(self, state, *, generation):
+            calls.append((generation, state.revision))
+            raise TransportRoomRateLimitedError("PRIVATE-CANVAS-TOKEN")
+
+    monkeypatch.setattr(native, "TransportProcess", NeverReadyRoomProcess)
+    monkeypatch.setattr(native, "_ROOM_RETRY_DELAY_SECONDS", 0.001)
+    snapshots = []
+
+    def changed(snapshot):
+        snapshots.append(snapshot)
+        if snapshot.phase is RemoteSessionPhase.FAILED:
+            failed.set()
+
+    owner = native.NativeHostTransportOwner(target_port=22124, binary="/private/webjam-fabric",
+                                            expected_build="abc1234", on_snapshot=changed)
+    FakeProcess.instances[-1].emit_host_connected(1)
+    state = RoomState(1, "art", "talk_and_make", shared_canvas=SharedCanvasSessionSnapshot(
+        generation=1, shared=True, join_url="drawpile://studio.example/room?p=PRIVATE-CANVAS-TOKEN",
+    ))
+    try:
+        assert owner.publish_room_state(state)
+        assert failed.wait(1)
+        assert calls == [(1, 1)] * 8
+        assert owner.snapshot.error_code is RemoteSessionErrorCode.TRANSPORT_FAILED
+        assert owner.room_identity is None
+        assert not owner.connection_available
+        assert not owner.publish_room_state(RoomState(2, "art", "talk_and_make"))
+        assert "PRIVATE-CANVAS-TOKEN" not in repr(snapshots) + repr(owner) + caplog.text
+    finally:
+        owner.stop()
+
+
+@pytest.mark.parametrize("host", [False, True])
+def test_failed_native_stop_retains_process_for_real_cleanup_retry(monkeypatch, host) -> None:
+    from services.transport_runtime import TransportProcessError
+
+    class RetryStopProcess(FakeProcess):
+        def stop(self):
+            self.stopped += 1
+            if self.stopped == 1:
+                raise TransportProcessError("The transport process did not stop.")
+            self.running = False
+
+    monkeypatch.setattr(native, "TransportProcess", RetryStopProcess)
+    if host:
+        owner = native.NativeHostTransportOwner(target_port=22124, binary="/private/webjam-fabric",
+                                                expected_build="abc1234")
+        FakeProcess.instances[-1].emit_host_connected(1)
+    else:
+        owner = native.NativeGuestTransportBackend(binary="/private/webjam-fabric", expected_build="abc1234")
+        owner.start_guest(_invitation(), generation=7)
+    process = FakeProcess.instances[-1]
+    assert owner.connection_available
+    with pytest.raises(TransportProcessError, match="did not stop"):
+        owner.stop()
+    assert process.running
+    assert not owner.connection_available
+    assert owner.room_identity is None
+    if host:
+        assert owner.snapshot.error_code is RemoteSessionErrorCode.STOP_FAILED
+        assert not owner.invitation_available
+        with pytest.raises(RuntimeError):
+            owner.copy_for_clipboard()
+    else:
+        with pytest.raises(RemoteBackendError):
+            owner.start_guest(_invitation(), generation=8)
+    owner.stop()
+    assert process.stopped == 2
+    assert not process.running
+    owner.stop()
+    assert process.stopped == 2
+
+
+def test_failed_enrollment_cleanup_keeps_guest_process_owned(monkeypatch) -> None:
+    from services.transport_runtime import TransportProcessError
+
+    class EnrollmentCleanupProcess(FakeProcess):
+        def open_guest(self, invitation, *, generation):
+            raise TransportProcessError("Cannot enroll")
+
+        def stop(self):
+            self.stopped += 1
+            if self.stopped == 1:
+                raise TransportProcessError("Cannot reap yet")
+            self.running = False
+
+    monkeypatch.setattr(native, "TransportProcess", EnrollmentCleanupProcess)
+    backend = native.NativeGuestTransportBackend(binary="/private/webjam-fabric", expected_build="abc1234")
+    with pytest.raises(RemoteBackendError):
+        backend.start_guest(_invitation(), generation=7)
+    process = FakeProcess.instances[-1]
+    assert process.running
+    assert backend.room_identity is None
+    assert not backend.connection_available
+    with pytest.raises(RemoteBackendError):
+        backend.start_guest(_invitation(), generation=8)
+    backend.stop()
+    assert process.stopped == 2
+    assert not process.running
+
+
+def test_host_older_peer_requires_update_and_replacement_invitation(monkeypatch) -> None:
+    monkeypatch.setattr(native, "TransportProcess", FakeProcess)
+    owner = native.NativeHostTransportOwner(target_port=22124, binary="/private/webjam-fabric",
+                                            expected_build="abc1234")
+    process = FakeProcess.instances[-1]
+    first_identity = owner.room_identity
+    first_invitation = owner.invitation
+    assert owner.invitation_available
+    # Enrollment can consume the capability before protocol proof completes.
+    process.on_event(TransportEvent(
+        event_id=0, event_type="error", code="peer_protocol_unsupported", state="failed",
+    ))
+    assert owner.snapshot.error_code is RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED
+    assert owner.room_identity is None
+    assert not owner.connection_available
+    assert not owner.invitation_available
+    with pytest.raises(RuntimeError):
+        owner.copy_for_clipboard()
+    owner.reset()
+    assert owner.invitation_available
+    assert owner.invitation is not first_invitation
+    assert owner.room_identity != first_identity
+    process.emit_host_connected(2)
+    assert owner.connection_available
+    owner.stop()

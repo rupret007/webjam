@@ -869,12 +869,11 @@ QPushButton#LaunchSecondary:hover {
 }
 
 QPushButton#LaunchSecondary:focus {
-    border: 2px solid ${COLOR_BORDER_FOCUS};
+    border: 2px solid ${COLOR_TEXT_PRIMARY};
 }
 
-/* An unchosen card recedes: same shape, quieter surface and text, so the
-   chosen one reads as the room you are about to open rather than as one of
-   three equally loud settings. */
+/* Orange marks the selected profile/activity. Keyboard focus on a different
+   choice is white, so moving focus never looks like changing the room. */
 QCommandLinkButton#LaunchProfileCard {
     background-color: ${COLOR_BG_INPUT};
     color: ${COLOR_TEXT_MUTED};
@@ -896,8 +895,8 @@ QCommandLinkButton#LaunchProfileCard:checked {
     border: 2px solid ${COLOR_ACCENT_PRIMARY};
 }
 
-QCommandLinkButton#LaunchProfileCard:focus {
-    border: 2px solid ${COLOR_BORDER_FOCUS};
+QCommandLinkButton#LaunchProfileCard:focus:!checked {
+    border: 2px solid ${COLOR_TEXT_PRIMARY};
 }
 
 QCommandLinkButton#LaunchProfileCard:disabled {
@@ -934,8 +933,8 @@ QCommandLinkButton#LaunchStartCard:checked {
     border: 2px solid ${COLOR_ACCENT_PRIMARY};
 }
 
-QCommandLinkButton#LaunchStartCard:focus {
-    border: 2px solid ${COLOR_BORDER_FOCUS};
+QCommandLinkButton#LaunchStartCard:focus:!checked {
+    border: 2px solid ${COLOR_TEXT_PRIMARY};
 }
 
 QCommandLinkButton#LaunchStartCard:disabled {

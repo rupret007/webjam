@@ -629,10 +629,19 @@ class LaunchDialog(QDialog):
         return container
 
     def _on_profile_card_toggled(self, checked: bool) -> None:
-        if not checked or self._submitting:
-            return
         sender = self.sender()
         key = getattr(sender, "profile_key", "")
+        if not checked:
+            # Clicking the current profile keeps it selected. The group stays
+            # non-exclusive so File's Podcast/Review choices can clear both
+            # cards without pretending either first-screen profile is active.
+            if key == self.selected_creator_profile_key:
+                blocked = sender.blockSignals(True)
+                sender.setChecked(True)
+                sender.blockSignals(blocked)
+            return
+        if self._submitting:
+            return
         self._rooms_picker_revealed = False
         index = self._creator_profile_selector.findData(key)
         if index >= 0 and self._creator_profile_selector.currentIndex() != index:
@@ -649,7 +658,10 @@ class LaunchDialog(QDialog):
         container = QWidget()
         container.setObjectName("LaunchStartCards")
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
+        # Activities belong to the selected profile. A small inset and space
+        # above/below separate that choice from the full-width Host/Join
+        # actions without adding another heading or setup step.
+        layout.setContentsMargins(Space.SM, Space.SM, Space.SM, Space.SM)
         layout.setSpacing(Space.XS)
 
         self._start_cards: dict[str, list[StartCard]] = {}
@@ -1030,6 +1042,8 @@ class LaunchDialog(QDialog):
             return
         self._restore_submission()
         self._invite_input.clear()
+        self._clear_join_error()
+        self._join_status.setText("Paste your invitation")
         self._pages.setCurrentWidget(self._choice_page)
         # First-screen rooms hide the picker. Host is the next click.
         if (
@@ -1042,19 +1056,24 @@ class LaunchDialog(QDialog):
 
     def show_join(self) -> None:
         if not self._submitting:
-            self._join_error.clear()
-            self._join_status.setText("Paste your invitation")
+            self._on_invite_text_changed()
         self._pages.setCurrentWidget(self._join_page)
         self._invite_input.setFocus()
 
+    def _clear_join_error(self) -> None:
+        self._join_error.clear()
+        self._join_error.setAccessibleDescription("")
+
     def _on_invite_text_changed(self, *_args: object) -> None:
-        """Clear stale guidance without ever reflecting invitation text."""
+        """Describe an unchecked paste without claiming it is a valid invite."""
 
         if self._submitting:
             return
-        self._join_error.clear()
+        self._clear_join_error()
         self._join_status.setText(
-            "Ready to join" if self._invite_input.text().strip() else "Paste your invitation"
+            "Invitation pasted — choose Join"
+            if self._invite_input.text().strip()
+            else "Paste your invitation"
         )
 
     def _persist_role_choice(self, candidate: AppSettings) -> bool:
@@ -1188,16 +1207,14 @@ class LaunchDialog(QDialog):
             # Join error before restoring the retry action.
             message = self._choice_error.text()
             self._choice_error.clear()
+            self._choice_error.setAccessibleDescription("")
             self._choice_error.setVisible(False)
             self._pages.setCurrentWidget(self._join_page)
             self._invite_input.clear()
             self._restore_submission()
             self._join_error.setText(
-                message
-                or (
-                    "WebJam couldn’t save this choice. Check available disk "
-                    "space and try again."
-                )
+                f"{message or 'WebJam couldn’t save this choice.'} "
+                "The invitation was cleared. Paste the full invitation again, then choose Join."
             )
             self._join_status.setText("Needs attention")
             self._announce_error(self._join_error, focus=self._invite_input)

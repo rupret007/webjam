@@ -19,6 +19,7 @@ import (
 	"github.com/rupret007/webjam/transport/internal/limits"
 	"github.com/rupret007/webjam/transport/internal/loopback"
 	"github.com/rupret007/webjam/transport/internal/profile"
+	"github.com/rupret007/webjam/transport/internal/room"
 )
 
 var protocolTestNow = time.Date(2026, 7, 13, 17, 0, 0, 0, time.UTC)
@@ -938,6 +939,10 @@ func (o *recordingOperation) SendHelp(
 		text:      text,
 	})
 	return nil
+}
+
+func (o *recordingOperation) PublishRoomState(_ context.Context, state *room.State) error {
+	return state.Validate()
 }
 
 func (o *recordingOperation) Close(context.Context) error {

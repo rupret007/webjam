@@ -640,3 +640,18 @@ def test_podcast_and_review_conversation_step_is_one_decision(
         "do not route meeting or system audio",
     ):
         assert banned not in spoken, banned
+
+
+def test_art_copy_invite_names_the_room_and_optional_work_sharing():
+    clipboard = MagicMock()
+    controller = _invite_controller("art", webex_url="https://band.webex.com/meet/jeff")
+    with patch("PySide6.QtWidgets.QApplication") as application:
+        application.clipboard.return_value = clipboard
+        ApplicationController._copy_band_invite(controller)
+    copied = clipboard.setText.call_args.args[0]
+    assert "webjam://join?v=3" in copied
+    assert "Open WebJam, choose Join, then paste this full invitation." in copied
+    assert "Optional Webex conversation and work sharing" in copied
+    assert "Bring your own tools" in copied
+    assert "carries the music" not in copied
+    assert "room link and meeting link" in controller.window.flash_message.call_args.args[0]

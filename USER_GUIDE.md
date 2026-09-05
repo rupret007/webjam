@@ -46,9 +46,10 @@ Accepting a Song suggestion also saves the resulting notes.
 
 ## Art
 
-Art opens a room where you talk while you work — painting, drawing,
-sculpting, printing, or anything at a table. When you choose Art at launch,
-you pick one of two ways to start, and nothing more:
+WebJam welcomes artists in any medium who want to collaborate with each
+other. Art is a newer Preview; the aim is to give it the same depth as Music.
+Bring paint, clay, paper, a printer, or the apps you already use. When you
+choose Art at launch, you pick one of two ways to start, and nothing more:
 
 - **Make together** — talk, make, or draw together in one room. Everyone may
   work locally; the host can open one shared canvas from inside the room.
@@ -61,10 +62,23 @@ in the room, and only if it is missing.
 AI image work is *not* a third choice: it is an in-session action available
 from either start, because nobody plans a session around an image generator.
 
-Then **Host** or **Join** as in every other profile. Joining is one pasted
-invitation: it carries whatever the host started, so there is nothing else for
-a guest to choose. The host can open a shared canvas later from inside either
-room, so canvas setup never needs another start card.
+Then choose **Host** or **Join**. Art opens a room without launching Jamulus,
+asking for microphone setup, or requiring Music audio evidence. The host sees
+**Your room is open** when the room can accept a guest, then chooses **Copy
+Invite**. The guest pastes that complete invitation once; WebJam follows the
+host's Art activity when the room responds. **You’re in** means the Art room
+connection is current, not that a meeting or drawing app has joined.
+
+If the room loses contact, shared playback holds. Follow **Reconnecting to
+the room** or the recovery action shown; WebJam does not claim the room is
+connected while the connection is lost. An invitation that may have been consumed needs **Paste New Invite**
+with a fresh invitation from the host. If a peer needs an update, update
+WebJam on both computers and use a fresh invitation.
+
+Choose **End Room** as host or **Leave Room** as guest. If cleanup needs another
+attempt, **Try End Room** or **Try Leave Room** stays available. Your external
+meeting and drawing app remain open. The host can offer a shared canvas from
+inside either Art activity; joining the room never launches it automatically.
 
 ### Make with your own tools or follow a demonstration
 
@@ -93,8 +107,8 @@ opens it, and carries the invitation so nobody has to be sent a second link.
    (**Session → Invite**) and pastes it into WebJam's **Share with the room**
    field. Include the password when Drawpile offers to.
 4. Everyone else opens the same panel and chooses **Open shared canvas**.
-   Drawpile opens on the host's canvas. Someone who joins the room later gets
-   the same canvas automatically.
+   Drawpile opens on the host's canvas. Someone who joins the room later
+   receives the same canvas invitation and chooses **Open shared canvas**.
 
 Things worth knowing:
 
@@ -134,9 +148,9 @@ Things worth knowing:
 
 - **Only the host controls playback.** Guests have no play, pause, stop, or
   scrub control, by design.
-- **The video is silent from its first frame.** Jamulus and the optional
-  meeting app keep their own audio responsibilities; Paint along never adds a
-  second soundtrack.
+- **The video is silent from its first frame.** Use an optional meeting app
+  for conversation. Art does not start Jamulus, and Paint along adds no
+  soundtrack.
 - **You can hide the video** at any time and keep working. A guest sees **Hide
   video** / **Show video** as the useful action for that state. You stay in the
   room and in the conversation.
@@ -218,13 +232,12 @@ no cloud image service, and no song engine, metronome, or chord detection — it
 reads a musical pulse that something else in the room owns. Your notes stay local to your own computer as in every
 other profile. There is no standalone Art project in this Preview.
 
-Art is also the whole product on your desktop. If you want to see faces, use
-the Conversation card's **Show Webex App** and **Join / Open Meeting** as in
-every other profile: a free or personal Webex account is enough, and Webex is a
-second window beside WebJam rather than something WebJam runs. Remember that
-WebJam's mute and Webex's mute are separate controls, and that leaving a WebJam
-room does not leave your meeting. Leaving or closing the meeting does not end
-the WebJam room either; each app ends only itself.
+Use **Conversation** for faces, talking, and demonstrations shared in Webex
+or another meeting app beside WebJam. Choose **Join / Open Meeting** to open
+the saved link; showing the panel alone starts nothing. The meeting app owns
+its microphone, camera, and screen sharing. Art has no Music mute control.
+Leaving a WebJam room does not leave the meeting, and closing the meeting
+does not end the WebJam room.
 
 Each profile has a separate local scratchpad on this computer. Switching
 profiles safely saves and loads the matching private file; reads refuse links
@@ -236,7 +249,8 @@ another participant, or tied to media timecode.
 WebJam conducts the live session. It starts or joins the private session, creates
 and checks invitations, keeps recording truth, and provides Studio.
 
-Jamulus is WebJam's live audio engine. It owns your interface, inputs, outputs,
+Jamulus is the live audio engine for Music, Podcast & Voice, and Review &
+Rehearsal. Art rooms do not require it. It owns your interface, inputs, outputs,
 channels, buffer, jitter, feedback protection, and participant mix. Configure
 those in Jamulus, not in WebJam.
 
@@ -252,10 +266,8 @@ native app checks are exclusively for Webex. If Webex is missing, an explicit
 button opens Cisco's official installer in your browser; WebJam does not save
 a Webex password or install/update Webex silently.
 
-Which app owns which hardware is worth knowing before a session, because
-nothing moves it for you. The meeting platform uses your computer's built-in
-microphone and speakers for faces and talking. Jamulus uses your audio
-interface for the instruments. Song tools read and write files only; picking a
+Choose conversation devices in your meeting app. For Music, Jamulus owns the
+audio interface used for instruments; Art rooms do not start that audio path. Song tools read and write files only; picking a
 file or running a Music AI job never re-binds, re-routes, or borrows an input
 or output from either one.
 
@@ -268,8 +280,9 @@ separately if that is required.
 
 ## Host a live session
 
-Choose **Host**, **Host Remote Recording**, or **Host Review** for the selected
-profile. That action authorizes the private session—there is no extra Start
+For an Art room, follow [Art](#art) above. For Music, Podcast & Voice, or Review
+& Rehearsal, choose **Host**, **Host Remote Recording**, or **Host Review**.
+That action authorizes the private session—there is no extra Start
 Session click. WebJam starts the server first, then opens a
 visible Jamulus client against it. Set up sound in Jamulus; once WebJam sees
 the authenticated connection, it moves straight into the session without an
@@ -298,11 +311,13 @@ expired, malformed, incompatible, and unsupported invitations are rejected
 with a plain explanation. Private invitation values are never saved in
 settings or logs and are not echoed back after a private-link error.
 
-For a remote invitation, the normal visible sequence is **Checking invite →
-Contacting host → Securing connection → Opening Jamulus → Connected**. A
-remote attempt has a bounded outer timeout, and Connected appears only after
-WebJam has fresh authenticated Jamulus evidence. At **Needs attention**, use
-the single action shown:
+WebJam waits for the host's profile before choosing the room or audio path.
+An Art invitation follows the waiting and connection states described in
+[Art](#art), without Jamulus. For a remote Music invitation, the normal visible
+sequence is **Checking invite → Contacting host → Securing connection → Opening
+Jamulus → Connected**. A remote attempt has a bounded timeout; Music requires
+fresh authenticated Jamulus evidence. At **Needs attention**, use the single
+action shown:
 
 - **Try Again** means WebJam proved the one-use invitation was not submitted.
 - **Paste New Invite** means the invitation expired, timed out, or may have

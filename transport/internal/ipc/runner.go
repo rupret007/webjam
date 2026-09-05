@@ -14,21 +14,26 @@ import (
 	"github.com/rupret007/webjam/transport/internal/limits"
 	"github.com/rupret007/webjam/transport/internal/loopback"
 	"github.com/rupret007/webjam/transport/internal/profile"
+	"github.com/rupret007/webjam/transport/internal/room"
 )
 
 const (
-	CodeOK                  = "ok"
-	CodeProtocolViolation   = "protocol_violation"
-	CodePeerAlreadyOpen     = "peer_already_open"
-	CodePeerNotOpen         = "peer_not_open"
-	CodeOpenFailed          = "open_failed"
-	CodeIdentityNotPrepared = "identity_not_prepared"
-	CodeUnsupportedProfile  = "unsupported_profile"
-	CodeEnrollmentInvalid   = "enrollment_invalid"
-	CodeHelpNotReady        = "help_not_ready"
-	CodeHelpInvalid         = "help_invalid"
-	CodeHelpRateLimited     = "help_rate_limited"
-	CodeHelpQueueFull       = "help_queue_full"
+	CodeOK                      = "ok"
+	CodeProtocolViolation       = "protocol_violation"
+	CodePeerAlreadyOpen         = "peer_already_open"
+	CodePeerNotOpen             = "peer_not_open"
+	CodeOpenFailed              = "open_failed"
+	CodeIdentityNotPrepared     = "identity_not_prepared"
+	CodeUnsupportedProfile      = "unsupported_profile"
+	CodeEnrollmentInvalid       = "enrollment_invalid"
+	CodeHelpNotReady            = "help_not_ready"
+	CodeRoomNotReady            = "room_state_not_ready"
+	CodeRoomInvalid             = "room_state_invalid"
+	CodeRoomRateLimited         = "room_state_rate_limited"
+	CodePeerProtocolUnsupported = "peer_protocol_unsupported"
+	CodeHelpInvalid             = "help_invalid"
+	CodeHelpRateLimited         = "help_rate_limited"
+	CodeHelpQueueFull           = "help_queue_full"
 )
 
 type emitter struct {
@@ -84,6 +89,7 @@ const (
 	updatePeerConnected
 	updateHelpReceived
 	updateHelpDelivered
+	updateRoomStateReceived
 	updateFabricFailed
 )
 
@@ -92,11 +98,13 @@ type fabricUpdate struct {
 	err           error
 	helpRequestID uint64
 	helpText      []byte
+	roomState     *room.State
 }
 
 type fabricOperation interface {
 	Updates() <-chan fabricUpdate
 	SendHelp(context.Context, uint64, string) error
+	PublishRoomState(context.Context, *room.State) error
 	Close(context.Context) error
 }
 
@@ -456,6 +464,20 @@ func (s *runnerState) handle(
 		return false, events.emit(
 			s.helpEvent(command.ID, "help_accepted", command.ID, ""),
 		)
+	case CommandPublishRoomState:
+		if s.operation == nil || s.active == nil || !s.connected || command.Generation != s.active.generation {
+			return false, events.emit(Event{ID: command.ID, Type: "error", Code: CodeRoomNotReady, State: s.stateName()})
+		}
+		if s.active.mode != "host" {
+			return false, events.emit(Event{ID: command.ID, Type: "error", Code: CodeRoomInvalid, State: s.stateName()})
+		}
+		publishCtx, cancel := context.WithTimeout(ctx, limits.HelpOperationLimit)
+		err := s.operation.PublishRoomState(publishCtx, command.RoomState)
+		cancel()
+		if err != nil {
+			return false, events.emit(Event{ID: command.ID, Type: "error", Code: roomErrorCode(err), State: s.stateName()})
+		}
+		return false, events.emit(s.helpEvent(command.ID, "room_state_accepted", command.ID, ""))
 	case CommandClosePeer:
 		if s.operation == nil {
 			if s.recentlyClosed != nil {
@@ -611,10 +633,28 @@ func (s *runnerState) handleFabricUpdate(update fabricUpdate, events *emitter) e
 		return events.emit(
 			s.helpEvent(0, "help_delivered", update.helpRequestID, ""),
 		)
+	case updateRoomStateReceived:
+		if update.err != nil || !s.connected || s.active.mode != "guest" || update.roomState == nil || update.roomState.Validate() != nil {
+			return s.failFabric(events, ErrProtocol)
+		}
+		event := s.helpEvent(0, "room_state_received", 0, "")
+		event.RoomState = update.roomState
+		return events.emit(event)
 	case updateFabricFailed:
 		return s.failFabric(events, update.err)
 	default:
 		return s.failFabric(events, ErrProtocol)
+	}
+}
+
+func roomErrorCode(err error) string {
+	switch {
+	case errors.Is(err, room.ErrInvalid), errors.Is(err, room.ErrReplay), errors.Is(err, room.ErrWrongPeer):
+		return CodeRoomInvalid
+	case errors.Is(err, room.ErrRateLimited):
+		return CodeRoomRateLimited
+	default:
+		return CodeRoomNotReady
 	}
 }
 
@@ -640,6 +680,9 @@ func (s *runnerState) failFabric(events *emitter, failure error) error {
 		id = 0
 	}
 	code := CodeOpenFailed
+	if errors.Is(failure, room.ErrUnsupported) {
+		code = CodePeerProtocolUnsupported
+	}
 	if errors.Is(failure, ErrEnrollmentInvalid) {
 		code = CodeEnrollmentInvalid
 	}

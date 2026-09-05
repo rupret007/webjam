@@ -14,6 +14,7 @@ import (
 	"github.com/rupret007/webjam/transport/internal/peer"
 	"github.com/rupret007/webjam/transport/internal/profile"
 	"github.com/rupret007/webjam/transport/internal/reference"
+	"github.com/rupret007/webjam/transport/internal/room"
 	"github.com/rupret007/webjam/transport/internal/sessionauth"
 )
 
@@ -23,6 +24,17 @@ const (
 	// pairing when the guest is already enrolling.
 	referencePollInitial = 20 * time.Millisecond
 	referencePollMaximum = time.Second
+
+	// IPC generations are each desktop's local callback/command fence, not a
+	// shared value carried in a v3 invitation. A replacement host can be at
+	// local generation 8 while a fresh guest starts at 1. Each invitation has
+	// exactly one authenticated peer connection, so its wire epoch is 1.
+	// Reset rotates InviteReference and the capability, producing a distinct
+	// derived SessionID, enrollment token, relay domain and proof key. Old
+	// packets/proofs therefore cannot enter the replacement invitation even
+	// though its wire epoch is also 1. The runner keeps original local IPC
+	// generations on every command check, connection fact and callback.
+	referenceWireGeneration uint32 = 1
 )
 
 type referenceFabricOrchestrator struct {
@@ -84,7 +96,7 @@ type referenceFabricOperation struct {
 	listener   *icequic.Listener
 	connection *icequic.Connection
 	peer       *peer.Peer
-	help       *help.Channel
+	control    *room.Channel
 	registered bool
 	sequence   uint64
 
@@ -161,7 +173,7 @@ func (o *referenceFabricOperation) runHost() error {
 	}
 	o.stage = "host_register"
 	if err := o.client.Register(
-		o.ctx, o.referenceSession(), o.token, o.enrollment, o.configuration.Generation, ttl,
+		o.ctx, o.referenceSession(), o.token, o.enrollment, referenceWireGeneration, ttl,
 	); err != nil {
 		return err
 	}
@@ -171,7 +183,7 @@ func (o *referenceFabricOperation) runHost() error {
 
 	o.stage = "host_relay"
 	relay, err := reference.OpenRelayLocal(
-		o.referenceSession(), reference.RoleHost, o.token, o.configuration.Generation,
+		o.referenceSession(), reference.RoleHost, o.token, referenceWireGeneration,
 	)
 	if err != nil {
 		return err
@@ -200,7 +212,7 @@ func (o *referenceFabricOperation) runHost() error {
 	guestBootstrap, err := reference.OpenGuestBootstrap(
 		o.referenceCapability(),
 		reference.GuestBootstrapExpected{
-			SessionID: o.referenceSession(), Generation: o.configuration.Generation,
+			SessionID: o.referenceSession(), Generation: referenceWireGeneration,
 			HostPin: reference.PeerPin(o.configuration.HostSPKISHA256),
 		},
 		guestEnvelope, o.now(), reference.NewBootstrapReplayCache(),
@@ -217,7 +229,7 @@ func (o *referenceFabricOperation) runHost() error {
 		return err
 	}
 	acknowledgment := reference.HostAcknowledgment{
-		SessionID: o.referenceSession(), Generation: o.configuration.Generation,
+		SessionID: o.referenceSession(), Generation: referenceWireGeneration,
 		HostPin: reference.PeerPin(o.configuration.HostSPKISHA256), GuestPin: guestBootstrap.GuestPin,
 		GuestNonce: guestBootstrap.Nonce, Acknowledgment: ackNonce, ExpiresAt: expiresAt,
 	}
@@ -244,7 +256,7 @@ func (o *referenceFabricOperation) runHost() error {
 
 	hostBinding := sessionauth.Binding{
 		SessionID: sessionauth.SessionID(o.configuration.SessionID), SenderRole: sessionauth.RoleHost,
-		Generation: o.configuration.Generation, HostPin: sessionauth.PeerPin(o.configuration.HostSPKISHA256),
+		Generation: referenceWireGeneration, HostPin: sessionauth.PeerPin(o.configuration.HostSPKISHA256),
 		GuestPin: sessionauth.PeerPin(guestBootstrap.GuestPin), Nonce: sessionauth.Nonce(ackNonce),
 		ExpiresAt: acknowledgment.ExpiresAt,
 	}
@@ -268,7 +280,7 @@ func (o *referenceFabricOperation) runHost() error {
 	}
 	guestBinding := sessionauth.Binding{
 		SessionID: sessionauth.SessionID(o.configuration.SessionID), SenderRole: sessionauth.RoleGuest,
-		Generation: o.configuration.Generation, HostPin: sessionauth.PeerPin(o.configuration.HostSPKISHA256),
+		Generation: referenceWireGeneration, HostPin: sessionauth.PeerPin(o.configuration.HostSPKISHA256),
 		GuestPin: sessionauth.PeerPin(guestBootstrap.GuestPin), Nonce: sessionauth.Nonce(guestBootstrap.Nonce),
 		ExpiresAt: guestBootstrap.ExpiresAt,
 	}
@@ -294,7 +306,7 @@ func (o *referenceFabricOperation) runGuest() error {
 	}
 	o.stage = "guest_relay"
 	relay, err := reference.OpenRelayLocal(
-		o.referenceSession(), reference.RoleGuest, o.token, o.configuration.Generation,
+		o.referenceSession(), reference.RoleGuest, o.token, referenceWireGeneration,
 	)
 	if err != nil {
 		return err
@@ -310,7 +322,7 @@ func (o *referenceFabricOperation) runGuest() error {
 	}
 	guestPin := reference.PeerPin(o.identity.SPKIFingerprint)
 	guestBootstrap := reference.GuestBootstrap{
-		SessionID: o.referenceSession(), Generation: o.configuration.Generation,
+		SessionID: o.referenceSession(), Generation: referenceWireGeneration,
 		HostPin: reference.PeerPin(o.configuration.HostSPKISHA256), GuestPin: guestPin,
 		Nonce: guestNonce, ExpiresAt: time.Unix(int64(o.configuration.ExpiresAtUnix), 0),
 		CertificateDER: append([]byte(nil), o.identity.Certificate.Certificate[0]...),
@@ -337,7 +349,7 @@ func (o *referenceFabricOperation) runGuest() error {
 	acknowledgment, err := reference.OpenHostAcknowledgment(
 		o.referenceCapability(),
 		reference.HostAcknowledgmentExpected{
-			SessionID: o.referenceSession(), Generation: o.configuration.Generation,
+			SessionID: o.referenceSession(), Generation: referenceWireGeneration,
 			HostPin: reference.PeerPin(o.configuration.HostSPKISHA256), GuestPin: guestPin,
 			GuestNonce: guestNonce,
 		},
@@ -362,7 +374,7 @@ func (o *referenceFabricOperation) runGuest() error {
 
 	guestBinding := sessionauth.Binding{
 		SessionID: sessionauth.SessionID(o.configuration.SessionID), SenderRole: sessionauth.RoleGuest,
-		Generation: o.configuration.Generation, HostPin: sessionauth.PeerPin(o.configuration.HostSPKISHA256),
+		Generation: referenceWireGeneration, HostPin: sessionauth.PeerPin(o.configuration.HostSPKISHA256),
 		GuestPin: sessionauth.PeerPin(guestPin), Nonce: sessionauth.Nonce(guestNonce),
 		ExpiresAt: guestBootstrap.ExpiresAt,
 	}
@@ -386,7 +398,7 @@ func (o *referenceFabricOperation) runGuest() error {
 	}
 	hostBinding := sessionauth.Binding{
 		SessionID: sessionauth.SessionID(o.configuration.SessionID), SenderRole: sessionauth.RoleHost,
-		Generation: o.configuration.Generation, HostPin: sessionauth.PeerPin(o.configuration.HostSPKISHA256),
+		Generation: referenceWireGeneration, HostPin: sessionauth.PeerPin(o.configuration.HostSPKISHA256),
 		GuestPin: sessionauth.PeerPin(guestPin), Nonce: sessionauth.Nonce(acknowledgment.Acknowledgment),
 		ExpiresAt: acknowledgment.ExpiresAt,
 	}
@@ -404,7 +416,7 @@ func (o *referenceFabricOperation) runGuest() error {
 }
 
 func (o *referenceFabricOperation) runPeer(mode peer.Mode) error {
-	livePeer, err := peer.New(mode, o.configuration.Generation, o.endpoint, o.connection)
+	livePeer, err := peer.New(mode, referenceWireGeneration, o.endpoint, o.connection)
 	if err != nil {
 		return err
 	}
@@ -412,14 +424,21 @@ func (o *referenceFabricOperation) runPeer(mode peer.Mode) error {
 	if mode == peer.ModeHost {
 		helpRole = help.RoleHost
 	}
-	liveHelp, err := help.NewChannel(o.connection, helpRole, o.configuration.Generation)
+	plane, err := icequic.NewReliablePlane(o.connection)
+	if err != nil {
+		return err
+	}
+	liveControl, err := room.NewChannel(plane, helpRole, referenceWireGeneration)
 	if err != nil {
 		return err
 	}
 	o.resourceMu.Lock()
 	o.peer = livePeer
-	o.help = liveHelp
+	o.control = liveControl
 	o.resourceMu.Unlock()
+	if err := liveControl.Handshake(o.ctx); err != nil {
+		return err
+	}
 	peerResult := make(chan error, 1)
 	helpResult := make(chan error, 1)
 	go func() { peerResult <- livePeer.Run(o.ctx) }()
@@ -428,7 +447,7 @@ func (o *referenceFabricOperation) runPeer(mode peer.Mode) error {
 		if !o.send(fabricUpdate{kind: updatePeerConnected}) {
 			return o.ctx.Err()
 		}
-		go o.receiveHelp(liveHelp, helpResult)
+		go o.receiveControl(liveControl, helpResult)
 	case err = <-peerResult:
 		if err == nil {
 			return ErrProtocol
@@ -459,24 +478,30 @@ func (o *referenceFabricOperation) runPeer(mode peer.Mode) error {
 	}
 }
 
-func (o *referenceFabricOperation) receiveHelp(
-	channel *help.Channel,
-	result chan<- error,
-) {
+func (o *referenceFabricOperation) receiveControl(channel *room.Channel, result chan<- error) {
 	for {
 		event, err := channel.Receive(o.ctx)
 		if err != nil {
 			result <- err
 			return
 		}
-		update := fabricUpdate{helpRequestID: event.RequestID}
-		switch event.Kind {
-		case help.EventReceived:
-			update.kind = updateHelpReceived
-			update.helpText = []byte(event.Text)
-		case help.EventDelivered:
-			update.kind = updateHelpDelivered
-		default:
+		update := fabricUpdate{}
+		if event.State != nil {
+			update.kind = updateRoomStateReceived
+			update.roomState = event.State
+		} else if event.Help != nil {
+			update.helpRequestID = event.Help.RequestID
+			switch event.Help.Kind {
+			case help.EventReceived:
+				update.kind = updateHelpReceived
+				update.helpText = []byte(event.Help.Text)
+			case help.EventDelivered:
+				update.kind = updateHelpDelivered
+			default:
+				result <- ErrProtocol
+				return
+			}
+		} else {
 			result <- ErrProtocol
 			return
 		}
@@ -487,22 +512,29 @@ func (o *referenceFabricOperation) receiveHelp(
 		}
 	}
 }
-
-func (o *referenceFabricOperation) SendHelp(
-	ctx context.Context,
-	requestID uint64,
-	text string,
-) error {
+func (o *referenceFabricOperation) SendHelp(ctx context.Context, requestID uint64, text string) error {
 	if ctx == nil {
 		return help.ErrNotReady
 	}
 	o.resourceMu.Lock()
-	channel := o.help
+	channel := o.control
 	o.resourceMu.Unlock()
 	if channel == nil {
 		return help.ErrNotReady
 	}
-	return channel.Send(ctx, requestID, text)
+	return channel.SendHelp(ctx, requestID, text)
+}
+func (o *referenceFabricOperation) PublishRoomState(ctx context.Context, state *room.State) error {
+	if ctx == nil {
+		return room.ErrNotReady
+	}
+	o.resourceMu.Lock()
+	channel := o.control
+	o.resourceMu.Unlock()
+	if channel == nil {
+		return room.ErrNotReady
+	}
+	return channel.Publish(ctx, state)
 }
 
 func (o *referenceFabricOperation) signal(role reference.Role, payload []byte) error {
@@ -511,7 +543,7 @@ func (o *referenceFabricOperation) signal(role reference.Role, payload []byte) e
 		return err
 	}
 	return o.client.Signal(
-		o.ctx, o.referenceSession(), role, o.token, o.configuration.Generation, sequence, payload,
+		o.ctx, o.referenceSession(), role, o.token, referenceWireGeneration, sequence, payload,
 	)
 }
 
@@ -530,7 +562,7 @@ func (o *referenceFabricOperation) pollSignal(role reference.Role) ([]byte, erro
 			return nil, err
 		}
 		payload, ok, err := o.client.Poll(
-			o.ctx, o.referenceSession(), role, o.token, o.configuration.Generation, sequence,
+			o.ctx, o.referenceSession(), role, o.token, referenceWireGeneration, sequence,
 		)
 		if err != nil {
 			return nil, err
@@ -606,7 +638,7 @@ func (o *referenceFabricOperation) cleanup() {
 			if sequence, err := o.nextSequence(); err == nil {
 				_ = client.CloseSession(
 					closeCtx, o.referenceSession(), reference.RoleHost, token,
-					o.configuration.Generation, sequence,
+					referenceWireGeneration, sequence,
 				)
 			}
 			cancel()
@@ -624,13 +656,15 @@ func (o *referenceFabricOperation) cleanup() {
 			o.configuration.clear()
 		}
 		o.resourceMu.Lock()
-		o.help = nil
+		o.control = nil
 		o.resourceMu.Unlock()
 	})
 }
 
 func safeFabricFailure(err error) error {
 	switch {
+	case errors.Is(err, room.ErrUnsupported):
+		return room.ErrUnsupported
 	case errors.Is(err, reference.ErrUnauthorized),
 		errors.Is(err, reference.ErrEnrollmentUsed),
 		errors.Is(err, reference.ErrReplay),

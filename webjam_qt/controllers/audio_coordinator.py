@@ -14,10 +14,14 @@ from PySide6.QtWidgets import QMessageBox
 
 from core.jamulus_name import JamulusNameError, validate_jamulus_name
 from core.jamulus_rpc_client import JamulusRpcMonitorIdentity
-from core.meeting_companion import end_session_prompt, service_name_for_link
+from core.meeting_companion import (
+    EndSessionPrompt,
+    end_session_prompt,
+    service_name_for_link,
+)
 from core.session_lifecycle import SessionLifecyclePhase
 from services.bridge_service import JamulusRpcFreshness
-from webjam_qt.session_state import SessionUiState
+from webjam_qt.session_state import SessionPhase, SessionUiState
 from webjam_qt.widgets.participant_card import ParticipantPresentation
 
 if TYPE_CHECKING:
@@ -41,6 +45,8 @@ class AudioCoordinator:
         self.permission_explained = False
         self.cleanup_retry_required = False
         self._stop_hosting = False
+        self._stop_art_room = False
+        self._stop_recording_cleanup_required = False
         self._name_sync_target = ""
         self._name_sync_send_attempts = 0
         self._name_sync_sent = False
@@ -257,27 +263,90 @@ class AudioCoordinator:
         self._c._sync_reference_track_primary_gate()
         return True
 
+    def _current_art_room(self) -> bool:
+        active = getattr(self._c, "_art_room_active", None)
+        return bool(callable(active) and active())
+
+    def _hosted_audio_cleanup_required(self) -> bool:
+        """Retained server ownership survives a change from Host to Guest."""
+
+        bridge = self._c.bridge
+        if any(
+            getattr(bridge, name, None) is not None
+            for name in ("hosted_server_process", "_hosted_runtime_paths")
+        ) or bool(getattr(bridge, "_hosted_restart_inflight", False)):
+            return True
+        try:
+            return bool(bridge.hosted_server_alive())
+        except Exception:
+            # An unavailable ownership probe cannot prove an Art-only room.
+            return True
+
+    def _audio_or_recording_cleanup_required(self) -> bool:
+        """Skip recorder work only with positive evidence of an Art-only room."""
+
+        recording = self._c.recording
+        if (
+            bool(recording.is_recording_active)
+            or bool(getattr(recording, "take_in_progress", False))
+            or bool(getattr(self._c, "_server_recording", False))
+            or bool(getattr(self._c, "_recorder_armed", False))
+            or getattr(recording, "_local_capture", None) is not None
+            or any(
+                bool(getattr(recording, name, ""))
+                for name in (
+                    "_validation_take_id",
+                    "_shutdown_validation_pending_take_id",
+                    "_shutdown_validation_dispatch_take_id",
+                )
+            )
+            or self._hosted_audio_cleanup_required()
+        ):
+            return True
+        bridge = self._c.bridge
+        lifecycle_active = getattr(
+            bridge, "_runtime_component_lifecycle_is_active", None
+        )
+        if not callable(lifecycle_active):
+            return True
+        try:
+            return bool(lifecycle_active()) or self._c._is_jamulus_running()
+        except Exception:
+            return True
+
     def stop(self) -> None:
         if self.stopping:
             return
         if self.cleanup_retry_required:
             self.retry_stop()
             return
-        hosting = bool(getattr(self._c.settings, "host_server_enabled", False))
+        art_room = self._current_art_room()
+        room_role = getattr(self._c, "_art_room_role", "") if art_room else ""
+        hosting = (
+            room_role == "host"
+            if room_role in {"host", "guest"}
+            else bool(getattr(self._c.settings, "host_server_enabled", False))
+        )
         recording_active = self._c.recording.is_recording_active
         take_in_progress = bool(
             getattr(self._c.recording, "take_in_progress", recording_active)
         )
-        if hosting and take_in_progress:
+        if take_in_progress and (
+            hosting or (art_room and self._hosted_audio_cleanup_required())
+        ):
+            finish_action = (
+                "ending the room" if hosting else "leaving the room"
+            ) if art_room else "ending the jam"
             QMessageBox.information(
                 self._c.window,
                 "Finish the take first",
                 (
-                    "Press Stop Rec, then wait for ‘Take saved’ before ending the jam. "
+                    "Press Stop Rec, then wait for ‘Take saved’ before "
                     if recording_active
-                    else "Wait for ‘Take saved’ before ending the jam. "
+                    else "Wait for ‘Take saved’ before "
                 )
-                + "This keeps every musician's track complete and verified.",
+                + finish_action
+                + ". This keeps every musician's track complete and verified.",
             )
             return
         # Ending the jam does not end the meeting. WebJam runs beside an
@@ -290,6 +359,25 @@ class AudioCoordinator:
             meeting_configured=bool(meeting_url),
             meeting_service=service_name_for_link(meeting_url),
         )
+        if art_room:
+            prompt = EndSessionPrompt(
+                title="End Room?" if hosting else "Leave Room?",
+                question=(
+                    "End this room for everyone?\n\n"
+                    "Artists will disconnect from this WebJam room."
+                    if hosting
+                    else "Leave this room?\n\n"
+                    "The host and other artists will stay connected."
+                ),
+                meeting_note=(
+                    f"Your {service_name_for_link(meeting_url)} meeting and "
+                    "external canvas stay open. Close them in their own apps "
+                    "when you’re done."
+                    if meeting_url
+                    else "Your meeting and external canvas stay open. "
+                    "Close them in their own apps when you’re done."
+                ),
+            )
         reply = QMessageBox.question(
             self._c.window, prompt.title,
             prompt.full_text(),
@@ -298,12 +386,28 @@ class AudioCoordinator:
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        self._begin_session_stop(hosting)
+        self._begin_session_stop(hosting, art_room=art_room)
 
-    def _begin_session_stop(self, hosting: bool) -> None:
+    def _begin_session_stop(
+        self, hosting: bool, *, art_room: bool | None = None
+    ) -> None:
         """Enter one serialized End/Leave attempt on the Qt owner thread."""
 
         self._stop_hosting = bool(hosting)
+        self._stop_art_room = (
+            self._current_art_room() if art_room is None else bool(art_room)
+        )
+        # A later transport failure can outlive the audio/capture owner that
+        # needed retirement. Keep that obligation across every cleanup retry.
+        previous_recording_cleanup = (
+            self._stop_recording_cleanup_required
+            if self.cleanup_retry_required else False
+        )
+        self._stop_recording_cleanup_required = bool(
+            previous_recording_cleanup
+            or not self._stop_art_room
+            or self._audio_or_recording_cleanup_required()
+        )
         self.cleanup_retry_required = False
         self.stopping = True
         self.ended_by_user = True
@@ -324,20 +428,33 @@ class AudioCoordinator:
         )
         self._c.participants.clear()
         self._c._push_participants_to_grid()
-        self._c.window.participant_grid.set_session_state(
-            SessionUiState.ending(hosting=hosting)
-        )
+        ending_state = SessionUiState.ending(hosting=hosting)
+        if self._stop_art_room:
+            ending_state = SessionUiState(
+                phase=SessionPhase.ENDING,
+                title="Ending this room…" if hosting else "Leaving the room…",
+                message=(
+                    "WebJam is disconnecting the room. Your meeting and "
+                    "external canvas stay open."
+                    if hosting
+                    else "WebJam is disconnecting this Mac. Your meeting and "
+                    "external canvas stay open."
+                ),
+                primary_text="Please wait…",
+                primary_enabled=False,
+                show_ready_check=False,
+            )
+        self._c.window.participant_grid.set_session_state(ending_state)
         self._c._transition_lifecycle(
             SessionLifecyclePhase.ENDING,
-            "Ending the hosted jam" if hosting else "Leaving the jam",
+            (
+                "Ending the hosted room" if hosting else "Leaving the room"
+            ) if self._stop_art_room else (
+                "Ending the hosted jam" if hosting else "Leaving the jam"
+            ),
         )
         self._c.window.session_hud.set_state(
-            "Ending this jam…" if hosting else "Leaving the jam…",
-            (
-                "WebJam is safely finishing recordings and disconnecting everyone."
-                if hosting
-                else "WebJam is disconnecting your audio safely."
-            ),
+            ending_state.title, ending_state.message
         )
         threading.Thread(
             target=self._stop_session_services,
@@ -363,7 +480,9 @@ class AudioCoordinator:
 
         if self.stopping or not self.cleanup_retry_required:
             return
-        self._begin_session_stop(self._stop_hosting)
+        self._begin_session_stop(
+            self._stop_hosting, art_room=self._stop_art_room
+        )
 
     def require_cleanup_retry(
         self,
@@ -371,9 +490,8 @@ class AudioCoordinator:
         hosting: bool,
         error: str,
         title: str = "WebJam couldn’t finish cleanly",
-        detail: str = (
-            "The current jam is still protected. Try ending or leaving again."
-        ),
+        detail: str | None = None,
+        art_room: bool | None = None,
     ) -> None:
         """Keep an unresolved session owner reachable through one truthful retry.
 
@@ -384,6 +502,9 @@ class AudioCoordinator:
         """
 
         self._stop_hosting = bool(hosting)
+        self._stop_art_room = (
+            self._current_art_room() if art_room is None else bool(art_room)
+        )
         self.stopping = False
         self.cleanup_retry_required = True
         self.ended_by_user = False
@@ -399,14 +520,32 @@ class AudioCoordinator:
             SessionLifecyclePhase.FAILED_RECOVERABLE,
             "Session cleanup needs attention",
         )
-        self._c.window.participant_grid.set_session_state(
-            SessionUiState.stop_failed()
-        )
+        retry_label = "Try End Session" if hosting else "Try Leave Jam"
+        failed_state = SessionUiState.stop_failed()
+        if self._stop_art_room:
+            retry_label = "Try End Room" if hosting else "Try Leave Room"
+            failed_state = SessionUiState(
+                phase=SessionPhase.ERROR,
+                title=title,
+                message="Room cleanup needs attention. Choose "
+                + retry_label
+                + " to finish disconnecting.",
+                primary_text="Room cleanup needs attention",
+                primary_enabled=False,
+                show_ready_check=False,
+            )
+        if detail is None:
+            detail = (
+                "The room has not finished disconnecting. Choose "
+                + retry_label
+                + " to finish."
+                if self._stop_art_room
+                else "The current jam is still protected. Try ending or "
+                "leaving again."
+            )
+        self._c.window.participant_grid.set_session_state(failed_state)
         self._c.window.session_hud.set_state(title, detail)
-        self._c.window.session_strip.set_audio_state(
-            "Try End Session" if hosting else "Try Leave Jam",
-            enabled=True,
-        )
+        self._c.window.session_strip.set_audio_state(retry_label, enabled=True)
         self._c.window.flash_message(error, ms=8000)
 
     def _finish_session_stop_ui(
@@ -446,13 +585,29 @@ class AudioCoordinator:
             self.require_cleanup_retry(
                 hosting=self._stop_hosting,
                 error=error,
+                art_room=self._stop_art_room,
             )
             return
+        restore_art_profile = getattr(
+            self._c, "_finish_art_room_profile_restore", None
+        )
+        if self._stop_art_room and callable(restore_art_profile):
+            try:
+                restore_art_profile()
+            except Exception:
+                LOGGER.error("Could not restore the saved profile after room cleanup")
+                self.require_cleanup_retry(
+                    hosting=self._stop_hosting,
+                    error="Your saved workspace could not be restored cleanly.",
+                    art_room=True,
+                )
+                return
         self.cleanup_retry_required = False
         self._c.window.session_strip.reset_session_clock()
         if callable(complete_pocket_stage):
             complete_pocket_stage(succeeded=True)
-        self._c.recording.on_audio_session_stopped()
+        if self._stop_recording_cleanup_required:
+            self._c.recording.on_audio_session_stopped()
         self._c._transition_lifecycle(
             SessionLifecyclePhase.COMPLETED,
             "Session resources were released",
@@ -465,6 +620,20 @@ class AudioCoordinator:
     def _stop_session_services(self, hosting: bool) -> None:
         """Stop in data-safe order without freezing the Qt event loop."""
         failures: list[str] = []
+        # Capture ownership before the peer stop restores a guest's saved
+        # profile/settings. An Art role never licenses abandoning old audio.
+        art_room = self._stop_art_room
+        self._stop_recording_cleanup_required = bool(
+            self._stop_recording_cleanup_required
+            or not art_room
+            or self._audio_or_recording_cleanup_required()
+        )
+        finalize_recording = (
+            self._stop_recording_cleanup_required if art_room else hosting
+        )
+        stop_hosted_server = hosting or (
+            art_room and self._hosted_audio_cleanup_required()
+        )
         # The Shared Track owns a second Jamulus client. Retire it before
         # recorder finalization and before the primary musician client/server;
         # an uncertain backing route must never outlive the jam it was feeding.
@@ -477,7 +646,7 @@ class AudioCoordinator:
                 lambda message=error: self._finish_session_stop_ui(message)
             )
             return
-        if hosting:
+        if finalize_recording:
             self._c._transition_lifecycle(
                 SessionLifecyclePhase.FINALIZING_RECORDINGS,
                 "Finalizing hosted recordings before shutdown",
@@ -509,7 +678,9 @@ class AudioCoordinator:
         # invitation so Try End/Leave can retry without orphaning a sidecar.
         if not self._c._stop_session_peer(clear_invite=True):
             failures.append(
-                "The private recording-transfer connection did not stop cleanly."
+                "The room connection did not stop cleanly."
+                if art_room
+                else "The private recording-transfer connection did not stop cleanly."
             )
         if failures:
             error = " ".join(failures)
@@ -523,7 +694,7 @@ class AudioCoordinator:
         except Exception:
             LOGGER.exception("Could not stop the local music connection")
             failures.append("The local music connection did not stop cleanly.")
-        if hosting:
+        if stop_hosted_server:
             try:
                 if not self._c.bridge.stop_hosted_server():
                     failures.append("The hosted jam did not stop cleanly.")
@@ -571,6 +742,7 @@ class AudioCoordinator:
     def reset_to_idle(self) -> None:
         self.stopping = False
         self.cleanup_retry_required = False
+        self._stop_recording_cleanup_required = False
         self._c._clear_primary_local_roster_proof()
         self._reset_musician_name_sync()
         self._c.session_health.reset_live_truth()

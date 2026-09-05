@@ -20,8 +20,13 @@
 > package builds reuse the exact baked Jamulus 3.12.2 and 3.12.3 records through v0.27.2; the
 > signed public catalog is unchanged. No physical PASS result is claimed.
 
-WebJam helps creators start a live audio session and keep its separate tracks
-organized. Jamulus handles low-latency audio. Any meeting platform can be
+WebJam brings artists together to make, learn, and collaborate across mediums.
+Music supports live audio and separate recorded tracks; Art welcomes people
+working with their own materials and apps. Art is a newer Preview, and the aim
+is to build it out to the same depth as Music.
+
+Jamulus handles low-latency audio for Music. Art rooms do not require Jamulus
+or audio setup. Any meeting platform can be
 optional for talking or video when it provides a public HTTPS meeting link
 that passes WebJam's safety checks. WebJam never directly or automatically taps
 the meeting app, browser, or system output. Local Originals record only the
@@ -54,29 +59,30 @@ The Mac downloads use drag-to-Applications as the primary path and include
 optional verified Terminal helpers, including a separately labeled advanced
 helper that removes quarantine from WebJam only.
 
-## Start playing
+## Start creating
 
 1. Choose **Art** or **Music**. The launch **File** menu contains local Music
    projects, Podcast & Voice, and Review & Rehearsal.
-2. In Art, choose **Make together** or **Paint along**, then Host/Join. Music
-   uses Host/Join; Podcast uses Host Remote Recording/Join
-   Recording; Review uses Host Review/Join Review.
-3. When Jamulus opens, choose your interface, input channels, headphones, and
-   buffer there.
-4. WebJam moves into the session automatically when it sees the authenticated
-   Jamulus connection.
-5. The host copies the invite. Make sound and verify participants hear each
-   other.
+2. In Art, choose **Make together** or **Paint along**, then **Host** or
+   **Join**. Bring your own tools; a shared canvas is optional.
+3. An Art host waits for **Your room is open**, then chooses **Copy Invite**.
+   A guest pastes the complete invitation and waits for the room to respond.
+   **You’re in** means the Art room is connected; no Music audio proof is
+   needed. Choose **End Room** as host or **Leave Room** as guest when finished.
+4. Music uses Host/Join; Podcast & Voice uses Host Remote Recording/Join
+   Recording; Review & Rehearsal uses Host Review/Join Review. Set your
+   interface, channels, headphones, and buffer when Jamulus opens. WebJam enters the
+   session after an authenticated Jamulus connection. The host then copies the
+   invitation. Make sound and check that participants can hear each other.
 
-That is the whole live-session path.
-
-Join has one private invitation field and one button. Remote joins progress
-through **Checking invite**, **Contacting host**, **Securing connection**, and
-**Opening Jamulus**. If WebJam cannot finish safely, it stops at **Needs
-attention** instead of spinning forever and offers one action: **Try Again**
-when the invitation was definitely not used, or **Paste New Invite** when it
-may have been used. **Connected** still requires fresh authenticated Jamulus
-roster evidence.
+Join has one private invitation field and one button. Paste the full invitation
+copied by the host. WebJam checks the host's profile before choosing Art or the
+Music audio path. Art shows waiting, connected, or reconnecting room status;
+Music continues through **Opening Jamulus** and requires fresh authenticated
+Jamulus roster evidence. Use **Try Again** when WebJam says the one-use
+invitation was not submitted. If it may have been used, choose **Paste New Invite** with a fresh invitation from the host. Older peers must update
+WebJam and use a fresh invitation. A failed room cleanup keeps **Try End Room**
+or **Try Leave Room** available until it finishes.
 
 In **Paint along**, WebJam turns its existing window into a silent process-video
 companion once the room exists. Paint in Procreate, Clip Studio Paint, Krita,
@@ -116,7 +122,7 @@ action unavailable in Preview.
 
 ## If you need help
 
-- **Sound needs attention:** choose **More → Audio Settings in Jamulus**.
+- **Music sound needs attention:** choose **More → Audio Settings in Jamulus**.
 - **Talking/video:** choose the direct **Conversation** action (or **More →
   Conversation**). It does not open a meeting. Save a public HTTPS meeting link,
   then use **Join / Open Meeting** for the explicit handoff. Webex, Zoom,
@@ -126,8 +132,8 @@ action unavailable in Preview.
   re-verifies and activates the exact Cisco process when running. If stopped,
   it launches the verified app itself with no URL or browser; Webex chooses its
   own screen. Only **Join / Open Meeting** performs the one explicit
-  meeting-link handoff. **Open Webex to Mute** shows the verified app so you can use
-  its own Mute control; WebJam never claims it changed Webex or Jamulus. Ending
+  meeting-link handoff. Use the meeting app's own microphone and sharing
+  controls. Art has no Music mute control. Ending
   or leaving WebJam leaves that meeting open, and leaving or closing the
   meeting does not end the WebJam session; each app ends only itself.
   FaceTime links are Mac-only. Windows and Linux use **Join / Open Meeting**
@@ -135,7 +141,9 @@ action unavailable in Preview.
   do not verify the native app publisher. If the app is missing, WebJam can
   open Cisco's official installer page after you confirm; it does not save a
   Webex password or install silently.
-- **Something failed:** use the profile's **Band Check**, **Sound Check**, or
+- **Art room needs attention:** follow the room's shown recovery action. Ending
+  or leaving the room keeps your meeting and drawing app open.
+- **Live audio needs attention:** use the profile's **Band Check**, **Sound Check**, or
   **Session Check** and the
   support/diagnostics action. The report includes bounded Jamulus updater and
   Webex app state without local paths, meeting links, provider hostnames,

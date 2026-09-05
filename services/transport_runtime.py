@@ -30,10 +30,12 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 from core.remote_invitation import RemoteInvitation
+from core.room_state import RoomState
 
 IPC_VERSION = 1
 MAX_IPC_LINE_BYTES = 64 * 1024
 MAX_EVENT_LINE_BYTES = 4 * 1024
+MAX_ROOM_EVENT_LINE_BYTES = 12 * 1024
 MAX_TIMELINE_EVENTS = 64
 MAX_HELP_TEXT_BYTES = 500
 DEFAULT_START_TIMEOUT_SECONDS = 5.0
@@ -57,6 +59,7 @@ _EVENT_FIELDS = frozenset(
         "build",
         "request_id",
         "text",
+        "room_state",
     }
 )
 _EVENT_TYPES = frozenset(
@@ -70,6 +73,8 @@ _EVENT_TYPES = frozenset(
         "help_accepted",
         "help_received",
         "help_delivered",
+        "room_state_accepted",
+        "room_state_received",
         "stopped",
         "error",
     }
@@ -89,6 +94,10 @@ _EVENT_CODES = frozenset(
         "help_invalid",
         "help_rate_limited",
         "help_queue_full",
+        "room_state_not_ready",
+        "room_state_invalid",
+        "room_state_rate_limited",
+        "peer_protocol_unsupported",
     }
 )
 _EVENT_STATES = frozenset(
@@ -112,6 +121,14 @@ class TransportProcessError(RuntimeError):
     """Base class for fixed, privacy-safe sidecar ownership failures."""
 
 
+class TransportPeerProtocolError(TransportProcessError):
+    """The authenticated peer needs a compatible room protocol."""
+
+
+class TransportRoomRateLimitedError(TransportProcessError):
+    """A matched room publish may retry its newest snapshot after a short delay."""
+
+
 class TransportLaunchError(TransportProcessError):
     """The packaged sidecar could not be launched or identified safely."""
 
@@ -128,8 +145,8 @@ class TransportTimeoutError(TransportProcessError):
 class TransportEvent:
     """One allowlisted sidecar event.
 
-    Help text is the sole bounded free-form field. It is intentionally omitted
-    from representations and the process diagnostic timeline.
+    Bounded help and typed room payloads are intentionally omitted from
+    representations and the process diagnostic timeline.
     """
 
     event_id: int
@@ -144,6 +161,7 @@ class TransportEvent:
     build: str = ""
     request_id: int = 0
     help_text: str = field(default="", repr=False)
+    room_state: RoomState | None = field(default=None, repr=False)
 
 
 def _decode_fixed_public(value: Any, size: int) -> bytes:
@@ -216,7 +234,7 @@ def _normalize_help_text(value: Any, *, require_canonical: bool = False) -> str:
 def parse_transport_event(encoded: bytes) -> TransportEvent:
     """Parse one complete event line without reflecting attacker-controlled data."""
 
-    if not encoded or len(encoded) > MAX_EVENT_LINE_BYTES or not encoded.endswith(b"\n"):
+    if not encoded or len(encoded) > MAX_ROOM_EVENT_LINE_BYTES or not encoded.endswith(b"\n"):
         raise TransportProtocolError("The transport process sent invalid data.")
     if b"\x00" in encoded:
         raise TransportProtocolError("The transport process sent invalid data.")
@@ -239,6 +257,18 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         raise TransportProtocolError("The transport process is not compatible.")
     event_id = _strict_int(raw.get("id"), minimum=0, maximum=2**63 - 1)
     event_type = raw.get("type")
+    if len(encoded) > MAX_EVENT_LINE_BYTES and event_type not in {
+        "room_state_received", "room_state_accepted"
+    }:
+        raise TransportProtocolError("The transport process sent invalid data.")
+    room_state = None
+    if "room_state" in raw:
+        if event_type != "room_state_received":
+            raise TransportProtocolError("The transport process sent invalid data.")
+        try:
+            room_state = RoomState.from_mapping(raw["room_state"])
+        except ValueError:
+            raise TransportProtocolError("The transport process sent invalid data.") from None
     code = raw.get("code", "")
     state = raw.get("state", "")
     mode = raw.get("mode", "")
@@ -294,6 +324,7 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         "peer_connected",
         "help_received",
         "help_delivered",
+        "room_state_received",
         "error",
         "stopped",
     }:
@@ -366,6 +397,18 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
             help_text = _normalize_help_text(help_text, require_canonical=True)
         elif event_id != 0 or help_text:
             raise TransportProtocolError("The transport process sent invalid data.")
+    if event_type in {"room_state_accepted", "room_state_received"}:
+        required = {"version", "id", "type", "code", "state", "mode",
+                    "profile_id", "generation"}
+        required.add("request_id" if event_type == "room_state_accepted" else "room_state")
+        if (set(raw) != required or code != "ok" or state != "connected"
+                or not profile_id or generation == 0):
+            raise TransportProtocolError("The transport process sent invalid data.")
+        if event_type == "room_state_accepted":
+            if event_id == 0 or request_id != event_id or mode != "host":
+                raise TransportProtocolError("The transport process sent invalid data.")
+        elif event_id != 0 or mode != "guest" or room_state is None:
+            raise TransportProtocolError("The transport process sent invalid data.")
     if event_type == "hello":
         active = state in {"connecting", "host_waiting", "connected"}
         if (
@@ -417,7 +460,7 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         or build
     ):
         raise TransportProtocolError("The transport process sent invalid data.")
-    if event_type not in {"help_accepted", "help_received", "help_delivered"} and (
+    if event_type not in {"help_accepted", "help_received", "help_delivered", "room_state_accepted"} and (
         request_id or help_text
     ):
         raise TransportProtocolError("The transport process sent invalid data.")
@@ -435,6 +478,7 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         build=build,
         request_id=request_id,
         help_text=help_text,
+        room_state=room_state,
     )
 
 
@@ -798,7 +842,9 @@ class TransportProcess:
             generation=current_generation,
             target_port=port,
         )
-        if event.event_type != "host_registered":
+        if (event.event_type != "host_registered" or event.mode != "host"
+                or event.generation != current_generation
+                or event.profile_id != invitation.profile_id):
             self._record_failure(
                 TransportProtocolError("The transport process sent invalid data.")
             )
@@ -820,7 +866,9 @@ class TransportProcess:
             mode="guest",
             generation=current_generation,
         )
-        if event.event_type != "peer_connected":
+        if (event.event_type != "peer_connected" or event.mode != "guest"
+                or event.generation != current_generation
+                or event.profile_id != invitation.profile_id):
             self._record_failure(
                 TransportProtocolError("The transport process sent invalid data.")
             )
@@ -847,6 +895,20 @@ class TransportProcess:
             self._record_failure(
                 TransportProtocolError("The transport process sent invalid data.")
             )
+            raise TransportProtocolError("The transport process sent invalid data.")
+        return event
+
+    def publish_room_state(self, state: RoomState, *, generation: int) -> TransportEvent:
+        """Publish a typed full room snapshot through the authenticated host peer."""
+
+        if type(state) is not RoomState:
+            raise ValueError("room state must be typed")
+        current_generation = self._command_int(generation, minimum=1, maximum=2**32 - 1)
+        event = self._request("publish_room_state", generation=current_generation,
+                              room_state=state.to_mapping())
+        if (event.event_type != "room_state_accepted" or event.mode != "host"
+                or event.generation != generation):
+            self._record_failure(TransportProtocolError("The transport process sent invalid data."))
             raise TransportProtocolError("The transport process sent invalid data.")
         return event
 
@@ -984,6 +1046,7 @@ class TransportProcess:
         return self._wait_response(
             command_id,
             self._command_timeout if timeout is None else float(timeout),
+            command_type=command_type,
         )
 
     def _wait_ready(self, timeout: float) -> TransportEvent:
@@ -1001,7 +1064,9 @@ class TransportProcess:
             assert self._ready is not None
             return self._ready
 
-    def _wait_response(self, command_id: int, timeout: float) -> TransportEvent:
+    def _wait_response(
+        self, command_id: int, timeout: float, *, command_type: str = ""
+    ) -> TransportEvent:
         deadline = time.monotonic() + timeout
         with self._condition:
             while command_id not in self._pending and self._failure is None:
@@ -1020,13 +1085,19 @@ class TransportProcess:
                 raise self._failure
             event = self._pending.pop(command_id)
         if event.event_type == "error":
+            if (command_type == "publish_room_state"
+                    and event.code == "room_state_rate_limited"
+                    and event.state == "connected"):
+                raise TransportRoomRateLimitedError("The room update needs a brief retry.")
+            if event.code == "peer_protocol_unsupported":
+                raise TransportPeerProtocolError("The peer needs a compatible WebJam version.")
             raise TransportProcessError("The secure transport could not continue.")
         return event
 
     def _read_events(self, process: subprocess.Popen[bytes], stdout: BinaryIO) -> None:
         try:
             while True:
-                line = stdout.readline(MAX_EVENT_LINE_BYTES + 1)
+                line = stdout.readline(MAX_ROOM_EVENT_LINE_BYTES + 1)
                 if not line:
                     if process.poll() is None:
                         raise TransportProtocolError(
@@ -1050,7 +1121,7 @@ class TransportProcess:
                                 "The transport process sent an unexpected response."
                             )
                         self._pending[event.event_id] = event
-                    if not event.event_type.startswith("help_"):
+                    if not event.event_type.startswith(("help_", "room_state_")):
                         self._timeline.append(event)
                     self._condition.notify_all()
                 callback = self._on_event
@@ -1082,6 +1153,16 @@ class TransportProcess:
                         )
                     self._condition.notify_all()
 
+            with self._condition:
+                failed = self._failure is not None and not self._stop_requested
+            if failed and self._on_event is not None:
+                try:
+                    self._on_event(TransportEvent(
+                        event_id=0, event_type="error", code="protocol_violation", state="failed"
+                    ))
+                except Exception:
+                    pass
+
     def _record_failure(self, failure: TransportProcessError) -> None:
         with self._condition:
             self._record_failure_locked(failure)
@@ -1103,8 +1184,6 @@ class TransportProcess:
                 self._prepared_host_pin = None
                 return
             reader = self._reader
-            self._process = None
-            self._reader = None
             with self._condition:
                 if self._waiting:
                     self._record_failure_locked(
@@ -1114,6 +1193,8 @@ class TransportProcess:
                         )
                     )
             self._terminate_process(process)
+            self._process = None
+            self._reader = None
             if reader is not None and reader is not threading.current_thread():
                 reader.join(timeout=self._stop_timeout)
             self._close_process_streams(process)
@@ -1149,6 +1230,9 @@ class TransportProcess:
             process.wait(timeout=self._stop_timeout)
         except (OSError, subprocess.TimeoutExpired):
             pass
+
+        if process.poll() is None:
+            raise TransportProcessError("The transport process did not stop.")
 
 
 def bundled_transport_binary() -> Path | None:

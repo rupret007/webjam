@@ -13,6 +13,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
 
 from core.network_invite import create_invite_link
+from core.room_state import RoomIdentity, RoomState
+from services.transport_runtime import TransportEvent
 from core.remote_invitation import issue_remote_invitation
 from core.session_transport import ConnectionQuality, SessionRole, TransportPath
 from core.settings import AppSettings, save_settings
@@ -67,10 +69,37 @@ def _drain_until(qapp, predicate, timeout: float = 2.0) -> None:
     assert predicate()
 
 
+class _AuthenticatedMusicRoomBackend:
+    """Existing routing tests supply the host profile required by the wire contract."""
+
+    def __init__(self, *, on_room_state=None, schedule_callback=lambda fn: fn(), **kwargs):
+        self.on_room_state = on_room_state
+        self.schedule_callback = schedule_callback
+        self.connection_available = False
+        self.room_identity = None
+
+    def __init_subclass__(cls):
+        start = cls.start_guest
+
+        def start_with_room(self, invitation, *, generation):
+            connection = start(self, invitation, generation=generation)
+            self.connection_available = True
+            self.room_identity = RoomIdentity.from_invitation(invitation)
+            event = TransportEvent(
+                0, "room_state_received", code="ok", state="connected",
+                mode="guest", generation=generation, room_state=RoomState(1, "music"),
+            )
+            if self.on_room_state is not None:
+                self.schedule_callback(lambda: self.on_room_state(event))
+            return connection
+
+        cls.start_guest = start_with_room
+
+
 def test_v3_guest_waits_for_authenticated_backend_then_routes_jamulus(
     qapp, tmp_path, monkeypatch
 ) -> None:
-    class Backend:
+    class Backend(_AuthenticatedMusicRoomBackend):
         def start_guest(self, invitation, *, generation):
             assert invitation is remote
             return RemoteGuestConnection(
@@ -114,7 +143,7 @@ def test_v3_guest_waits_for_authenticated_backend_then_routes_jamulus(
 def test_direct_remote_route_activation_retires_reference_track_once(
     qapp, tmp_path, monkeypatch
 ) -> None:
-    class Backend:
+    class Backend(_AuthenticatedMusicRoomBackend):
         def start_guest(self, invitation, *, generation):
             assert invitation is remote
             return RemoteGuestConnection(
@@ -153,7 +182,7 @@ def test_direct_remote_route_activation_retires_reference_track_once(
 def test_busy_legacy_switch_latest_remote_invite_reuses_reference_retirement(
     qapp, tmp_path, monkeypatch
 ) -> None:
-    class Backend:
+    class Backend(_AuthenticatedMusicRoomBackend):
         def start_guest(self, invitation, *, generation):
             assert invitation is remote
             return RemoteGuestConnection(
@@ -237,7 +266,7 @@ def test_busy_legacy_switch_latest_remote_invite_reuses_reference_retirement(
 def test_retry_safe_remote_failure_retains_pre_retired_marker_until_cleanup(
     qapp, tmp_path, monkeypatch
 ) -> None:
-    class Backend:
+    class Backend(_AuthenticatedMusicRoomBackend):
         def start_guest(self, _invitation, *, generation):
             raise RemoteBackendError(RemoteSessionErrorCode.UNAVAILABLE)
 
@@ -409,7 +438,7 @@ def test_v3_guest_enrollment_failure_requires_fresh_invitation_and_never_falls_t
 ) -> None:
     attempts = []
 
-    class Backend:
+    class Backend(_AuthenticatedMusicRoomBackend):
         def start_guest(self, invitation, *, generation):
             attempts.append(invitation)
             raise RuntimeError("PRIVATE-CAPABILITY-SENTINEL")
@@ -459,7 +488,7 @@ def test_v3_guest_pre_enrollment_failure_stage_and_hud_retry_same_invitation(
 ) -> None:
     attempts = []
 
-    class Backend:
+    class Backend(_AuthenticatedMusicRoomBackend):
         def start_guest(self, invitation, *, generation):
             attempts.append(invitation)
             raise RemoteBackendError(RemoteSessionErrorCode.UNAVAILABLE)
@@ -698,7 +727,7 @@ def test_remote_guest_intent_replaces_a_host_profile_conductor_token(qapp, tmp_p
 def test_v3_guest_replaces_idle_v2_peer_before_enrollment(
     qapp, tmp_path, monkeypatch
 ) -> None:
-    class Backend:
+    class Backend(_AuthenticatedMusicRoomBackend):
         def start_guest(self, invitation, *, generation):
             old_peer.stop.assert_called_once_with()
             return RemoteGuestConnection(

@@ -40,6 +40,10 @@ func (p *ReliablePlane) Send(ctx context.Context, frame wire.StreamFrame) error 
 	if err != nil {
 		return err
 	}
+	// Each frame uses only the sending direction of a bidirectional QUIC
+	// stream. Retire the unused receive direction so repeated control updates
+	// return stream credit instead of stalling at the concurrency ceiling.
+	defer stream.CancelRead(0)
 	if err = stream.SetDeadline(operationDeadline(ctx)); err != nil {
 		stream.CancelWrite(1)
 		return err
@@ -63,6 +67,9 @@ func (p *ReliablePlane) Accept(ctx context.Context) (wire.StreamFrame, error) {
 	if err != nil {
 		return wire.StreamFrame{}, err
 	}
+	// No reply travels on this stream; acknowledgments use separate frames.
+	// Finish the unused write side even when the inbound frame is invalid.
+	defer stream.Close()
 	if err = stream.SetDeadline(operationDeadline(ctx)); err != nil {
 		stream.CancelRead(1)
 		return wire.StreamFrame{}, err

@@ -17,6 +17,7 @@ from enum import Enum
 from typing import Protocol
 
 from core.remote_invitation import RemoteInvitation
+from core.room_state import RoomIdentity
 from core.session_transport import (
     ConnectionQuality,
     SessionRole,
@@ -60,6 +61,7 @@ class RemoteSessionErrorCode(str, Enum):
     TRANSPORT_FAILED = "transport_failed"
     TIMED_OUT = "timed_out"
     STOP_FAILED = "stop_failed"
+    PEER_PROTOCOL_UNSUPPORTED = "peer_protocol_unsupported"
 
 
 class RemoteBackendError(RuntimeError):
@@ -191,6 +193,61 @@ class RemoteSessionRuntime:
             RemoteSessionPhase.PREPARING,
             RemoteSessionPhase.CONNECTED,
         }
+
+    @property
+    def room_identity(self) -> RoomIdentity | None:
+        with self._condition:
+            if self._snapshot.phase not in {RemoteSessionPhase.PREPARING,
+                                            RemoteSessionPhase.CONNECTED}:
+                return None
+            identity = getattr(self._backend, "room_identity", None)
+            return identity if type(identity) is RoomIdentity else None
+
+    @property
+    def connection_available(self) -> bool:
+        with self._condition:
+            if self._snapshot.phase is not RemoteSessionPhase.CONNECTED:
+                return False
+            generation = self._snapshot.generation
+        try:
+            available = getattr(self._backend, "connection_available", False) is True
+        except Exception:
+            available = False
+        if not available:
+            self.mark_connection_lost(expected_generation=generation)
+        with self._condition:
+            return available and self._snapshot.phase is RemoteSessionPhase.CONNECTED
+
+    def mark_connection_lost(
+        self, *, expected_generation: int,
+        error_code: RemoteSessionErrorCode = RemoteSessionErrorCode.TRANSPORT_FAILED,
+    ) -> bool:
+        """Retire a lost authenticated peer before any late worker can reconnect it."""
+
+        if type(error_code) is not RemoteSessionErrorCode or error_code not in {
+            RemoteSessionErrorCode.TRANSPORT_FAILED,
+            RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED,
+        }:
+            raise ValueError("The connection loss reason is not supported.")
+        with self._condition:
+            if (type(expected_generation) is not int
+                    or expected_generation != self._snapshot.generation
+                    or self._snapshot.phase not in {RemoteSessionPhase.PREPARING,
+                                                    RemoteSessionPhase.CONNECTED}):
+                return False
+            self._operation += 1
+            self._pending_invitation = None
+            self._cancel_watchdog_locked()
+            self._snapshot = RemoteSessionSnapshot(
+                phase=RemoteSessionPhase.FAILED, role=SessionRole.GUEST,
+                generation=expected_generation,
+                error_code=error_code,
+                stage=RemoteSessionStage.NEEDS_ATTENTION,
+            )
+            snapshot = self._snapshot
+            self._condition.notify_all()
+        self._publish(snapshot)
+        return True
 
     @property
     def help_available(self) -> bool:
@@ -407,7 +464,10 @@ class RemoteSessionRuntime:
                 invitation,
                 generation=generation,
             )
-            if not isinstance(connection, RemoteGuestConnection):
+            if (not isinstance(connection, RemoteGuestConnection)
+                    or type(connection.generation) is not int
+                    or connection.generation != generation):
+                connection = None
                 raise TypeError("backend returned an invalid connection")
         except RemoteBackendError as exc:
             error = exc.code
@@ -517,9 +577,16 @@ class RemoteSessionRuntime:
             cancelled.set()
 
     def _publish(self, snapshot: RemoteSessionSnapshot) -> None:
-        self._schedule_callback(
-            lambda value=snapshot: self._on_snapshot(value)
-        )
+        with self._condition:
+            operation = self._operation
+
+        def deliver() -> None:
+            with self._condition:
+                if operation != self._operation or snapshot.generation != self._snapshot.generation:
+                    return
+            self._on_snapshot(snapshot)
+
+        self._schedule_callback(deliver)
 
     def __repr__(self) -> str:
         return (
