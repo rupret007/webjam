@@ -151,6 +151,10 @@ or heard anything.
    Check**, or **Session Check** for the selected profile if you need help.
 7. Once Jamulus is authoritatively connected, the session canvas provides
    Jamulus band chat. It is not a pre-connection support channel.
+   A separate [Session help development preview](docs/SESSION_HELP_PREVIEW.md)
+   uses the existing authenticated reference transport before Jamulus is ready.
+   It is hidden by default, requires the existing lab opt-in, and is not a
+   feature claim for the immutable downloaded release.
 8. Choose the direct **Conversation** action if participants want conversation
    or video. It shows WebJam's Conversation controls without opening a meeting;
    WebJam's live audio remains in Jamulus.

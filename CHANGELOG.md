@@ -10,6 +10,26 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Session help development preview
+
+- The existing authenticated reference transport now has a direct **Help**
+  control opening a non-modal, temporary-message panel. It is hidden unless
+  `WEBJAM_ENABLE_REFERENCE_LOCAL=1` is explicitly set for an approved lab;
+  standalone offline Studio never exposes it. Normal Art and Music doors are
+  unchanged.
+- Help can work after secure peer proof even when Jamulus is not ready. It
+  cannot bypass failed enrollment. Local acceptance and peer acknowledgement
+  remain separate; neither is a read receipt.
+- Text stays separate from saved notes, diagnostics and support bundles.
+  Bounded ingress/history/receipts and one send worker prevent queue growth.
+  Reset, leave, failure, replacement and shutdown erase drafts/history,
+  including Qt Undo history. Source/generation fencing rejects stale events
+  and prevents a reset race from sending old text to the replacement peer.
+- First messages arriving before the CONNECTED screen update are staged
+  within the same bounds and displayed only after exact current proof.
+  [Preview evidence and handoff](docs/SESSION_HELP_PREVIEW.md) keep packaged
+  two-Mac, public-service, physical and release readiness **NOT RUN**.
+
 ## [0.27.2] — Unsigned/ad-hoc private test release (2026-08-30)
 
 > Published as immutable GitHub **Latest** release `379360694` at

@@ -212,6 +212,150 @@ def test_guest_help_uses_current_generation_and_drops_stale_events(
     assert stopped.value.code is RemoteSessionErrorCode.TRANSPORT_FAILED
 
 
+def test_guest_queued_help_cannot_cross_stop_or_reused_generation(monkeypatch) -> None:
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", FakeProcess)
+    pending = []
+    received = []
+    backend = native.NativeGuestTransportBackend(
+        binary="/private/webjam-fabric",
+        expected_build="abc1234",
+        on_help=received.append,
+        schedule_callback=pending.append,
+    )
+    assert not backend.help_available
+    backend.start_guest(_invitation(), generation=7)
+    old_process = FakeProcess.instances[-1]
+    old_process.emit_help("help_received", 7, "old room")
+    assert len(pending) == 1
+    backend.stop()
+    backend.start_guest(_invitation(), generation=7)
+    new_process = FakeProcess.instances[-1]
+    pending.pop()()
+    old_process.emit_help("help_received", 7, "late old room")
+    assert not pending
+    assert received == []
+    assert backend.help_available
+    new_process.emit_help("help_received", 7, "current room")
+    pending.pop()()
+    assert [event.help_text for event in received] == ["current room"]
+    backend.stop()
+
+
+def test_guest_dedicated_help_scheduler_keeps_ingress_out_of_ui_queue(monkeypatch) -> None:
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", FakeProcess)
+    ui_queue = []
+    received = []
+    backend = native.NativeGuestTransportBackend(
+        binary="/private/webjam-fabric",
+        expected_build="abc1234",
+        on_help=received.append,
+        schedule_callback=ui_queue.append,
+        schedule_help_callback=lambda callback: callback(),
+    )
+    backend.start_guest(_invitation(), generation=7)
+    FakeProcess.instances[-1].emit_help("help_received", 7, "bounded ingress")
+    assert len(received) == 1
+    assert ui_queue == []
+    backend.stop()
+
+
+@pytest.mark.parametrize("terminal", ["process_death", "peer_closed", "stopped", "error"])
+def test_guest_help_retires_on_post_proof_transport_loss(monkeypatch, terminal) -> None:
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", FakeProcess)
+    pending = []
+    received = []
+    backend = native.NativeGuestTransportBackend(
+        binary="/private/webjam-fabric",
+        expected_build="abc1234",
+        on_help=received.append,
+        schedule_callback=pending.append,
+    )
+    backend.start_guest(_invitation(), generation=7)
+    process = FakeProcess.instances[-1]
+    assert backend.help_available
+    process.emit_help("help_received", 7, "queued before loss")
+    if terminal == "process_death":
+        process.running = False
+    else:
+        process.on_event(TransportEvent(
+            event_id=0, event_type=terminal,
+            code="protocol_violation" if terminal == "error" else "ok",
+            state={"peer_closed": "closed", "stopped": "stopped", "error": "failed"}[terminal],
+            mode="guest" if terminal == "peer_closed" else "",
+            generation=7 if terminal == "peer_closed" else 0,
+        ))
+    assert not backend.help_available
+    assert backend._phase == "failed"
+    pending.pop()()
+    assert received == []
+    with pytest.raises(RemoteBackendError, match="^transport_failed$"):
+        backend.send_help("not sent")
+    assert process.help_requests == []
+    backend.stop()
+
+
+def test_guest_help_ignores_wrong_generation_close_and_request_backpressure(monkeypatch) -> None:
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", FakeProcess)
+    backend = native.NativeGuestTransportBackend(
+        binary="/private/webjam-fabric", expected_build="abc1234"
+    )
+    backend.start_guest(_invitation(), generation=7)
+    process = FakeProcess.instances[-1]
+    for mode, generation in [("host", 7), ("guest", 6)]:
+        process.on_event(TransportEvent(
+            event_id=0, event_type="peer_closed", code="ok", state="closed",
+            mode=mode, generation=generation,
+        ))
+    process.on_event(TransportEvent(
+        event_id=31, event_type="error", code="help_rate_limited", state="connected"
+    ))
+    assert backend.help_available
+    assert backend.send_help("current room").generation == 7
+    backend.stop()
+
+
+def test_guest_send_rejects_acceptance_after_owner_stop(monkeypatch) -> None:
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", FakeProcess)
+    backend = native.NativeGuestTransportBackend(
+        binary="/private/webjam-fabric", expected_build="abc1234"
+    )
+    backend.start_guest(_invitation(), generation=7)
+    process = FakeProcess.instances[-1]
+    send = process.send_help
+
+    def finish_after_stop(text, *, generation):
+        accepted = send(text, generation=generation)
+        backend.stop()
+        return accepted
+
+    process.send_help = finish_after_stop
+    with pytest.raises(RemoteBackendError, match="^transport_failed$"):
+        backend.send_help("retired completion")
+
+
+def test_guest_expected_generation_blocks_old_text_before_dispatch(monkeypatch) -> None:
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", FakeProcess)
+    backend = native.NativeGuestTransportBackend(
+        binary="/private/webjam-fabric", expected_build="abc1234"
+    )
+    backend.start_guest(_invitation(), generation=7)
+    backend.stop()
+    backend.start_guest(_invitation(), generation=8)
+    process = FakeProcess.instances[-1]
+    with pytest.raises(RemoteBackendError, match="^transport_failed$"):
+        backend.send_help("old room draft", expected_generation=7)
+    assert process.help_requests == []
+    backend.send_help("new room draft", expected_generation=8)
+    assert process.help_requests == [(8, "new room draft")]
+    backend.stop()
+
+
 def test_guest_backend_allows_same_invitation_retry_only_before_open_guest(
     monkeypatch,
 ) -> None:
@@ -461,3 +605,131 @@ def test_frozen_macos_integrity_uses_resources_manifest(
 
     options = native._integrity_options(binary)
     assert options["expected_sha256"] == "b" * 64
+
+
+def _help_host(monkeypatch, **kwargs):
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", FakeProcess)
+    owner = native.NativeHostTransportOwner(
+        target_port=22124,
+        binary="/private/webjam-fabric",
+        expected_build="abc1234",
+        **kwargs,
+    )
+    return owner, FakeProcess.instances[-1]
+
+
+def test_host_help_scheduler_rechecks_generation_after_reset(monkeypatch) -> None:
+    pending = []
+    received = []
+    owner, process = _help_host(
+        monkeypatch,
+        on_help=received.append,
+        schedule_help_callback=pending.append,
+    )
+    assert not owner.help_available
+    process.emit_host_connected(1)
+    assert owner.help_available
+    process.emit_help("help_received", 1, "old room", mode="host")
+    owner.reset()
+    assert not owner.help_available
+    process.emit_host_connected(2)
+    assert owner.help_available
+    pending.pop()()
+    assert received == []
+    process.emit_help("help_received", 2, "current room", mode="host")
+    pending.pop()()
+    assert [event.help_text for event in received] == ["current room"]
+    process.emit_help("help_received", 2, "queued before stop", mode="host")
+    owner.stop()
+    pending.pop()()
+    assert len(received) == 1
+    assert not owner.help_available
+
+
+def test_host_help_can_use_inline_ingress_without_scheduling_ui_text(monkeypatch) -> None:
+    ui_queue = []
+    received = []
+    owner, process = _help_host(
+        monkeypatch,
+        on_help=received.append,
+        schedule_callback=ui_queue.append,
+        schedule_help_callback=lambda callback: callback(),
+    )
+    process.emit_host_connected(1)
+    snapshot_count = len(ui_queue)
+    process.emit_help("help_received", 1, "bounded ingress", mode="host")
+    assert len(received) == 1
+    assert len(ui_queue) == snapshot_count
+    owner.stop()
+
+
+@pytest.mark.parametrize("terminal", ["process_death", "peer_closed", "stopped", "error"])
+def test_host_help_retires_on_post_proof_transport_loss(monkeypatch, terminal) -> None:
+    pending = []
+    received = []
+    owner, process = _help_host(
+        monkeypatch, on_help=received.append, schedule_help_callback=pending.append
+    )
+    process.emit_host_connected(1)
+    process.emit_help("help_received", 1, "queued before loss", mode="host")
+    if terminal == "process_death":
+        process.running = False
+    else:
+        process.on_event(TransportEvent(
+            event_id=0, event_type=terminal,
+            code="protocol_violation" if terminal == "error" else "ok",
+            state={"peer_closed": "closed", "stopped": "stopped", "error": "failed"}[terminal],
+            mode="host" if terminal == "peer_closed" else "",
+            generation=1 if terminal == "peer_closed" else 0,
+        ))
+    assert not owner.help_available
+    assert owner.snapshot.phase is RemoteSessionPhase.FAILED
+    pending.pop()()
+    assert received == []
+    with pytest.raises(RemoteBackendError, match="^transport_failed$"):
+        owner.send_help("not sent")
+    assert process.help_requests == []
+    owner.stop()
+
+
+def test_host_help_ignores_old_close_and_rejects_acceptance_after_reset(monkeypatch) -> None:
+    owner, process = _help_host(monkeypatch)
+    process.emit_host_connected(1)
+    owner.reset()
+    process.emit_host_connected(2)
+    process.on_event(TransportEvent(
+        event_id=0, event_type="peer_closed", code="ok", state="closed",
+        mode="host", generation=1,
+    ))
+    process.on_event(TransportEvent(
+        event_id=31, event_type="error", code="help_rate_limited", state="connected"
+    ))
+    assert owner.help_available
+    send = process.send_help
+
+    def finish_after_reset(text, *, generation):
+        accepted = send(text, generation=generation)
+        owner.reset()
+        process.emit_host_connected(3)
+        return accepted
+
+    process.send_help = finish_after_reset
+    with pytest.raises(RemoteBackendError, match="^transport_failed$"):
+        owner.send_help("old generation completion")
+    assert owner.help_available
+    owner.stop()
+
+
+def test_host_expected_generation_blocks_old_text_before_dispatch(monkeypatch) -> None:
+    owner, process = _help_host(monkeypatch)
+    process.emit_host_connected(1)
+    owner.reset()
+    process.emit_host_connected(2)
+    for old_generation in [1, True]:
+        with pytest.raises(RemoteBackendError, match="^transport_failed$"):
+            owner.send_help("old room draft", expected_generation=old_generation)
+    assert process.help_requests == []
+    owner.send_help("new room draft", expected_generation=2)
+    assert process.help_requests == [(2, "new room draft")]
+    owner.stop()
