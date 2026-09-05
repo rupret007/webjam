@@ -459,6 +459,10 @@ QPushButton#SharedTrackLiveState[nextStep="true"]:focus {
     padding: 0 20px;
 }
 
+#SessionControlBar[helpPreviewCompact="true"] QPushButton#AudioButton[destructive="true"] {
+    padding: 0 ${SPACE_MD}px;
+}
+
 #SessionControlBar QPushButton#AudioButton[destructive="true"]:hover {
     background-color: ${COLOR_ACCENT_PRIMARY};
 }
@@ -1806,6 +1810,10 @@ QPushButton#StudioRecordButton {
     min-height: 36px;
     padding: ${SPACE_SM}px ${SPACE_LG}px;
     font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#SessionControlBar[helpPreviewCompact="true"] QPushButton#StudioRecordButton {
+    padding: 0 10px;
 }
 
 QPushButton#StudioRecordButton:hover {

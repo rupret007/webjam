@@ -40,6 +40,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QPushButton,
+    QSizePolicy,
+    QSpacerItem,
     QSplitter,
     QStackedWidget,
     QStatusBar,
@@ -180,7 +182,13 @@ class ConductorWindow(QMainWindow):
         self.session_strip._tools_button.setText("More ▾")
         self.session_strip._tools_button.setAccessibleName("More session options")
         controls_layout.addWidget(self.session_strip._tools_button)
-        controls_layout.addSpacing(Space.MD)
+        self._session_end_gap = QSpacerItem(
+            Space.MD,
+            1,
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Minimum,
+        )
+        controls_layout.addItem(self._session_end_gap)
         self.session_strip._audio_button.setProperty("destructive", "true")
         controls_layout.addWidget(self.session_strip._audio_button)
         controls_layout.addStretch(1)
@@ -310,6 +318,14 @@ class ConductorWindow(QMainWindow):
         margin = Space.SM if compact else Space.LG
         layout.setContentsMargins(margin, Space.SM, margin, Space.SM)
         layout.setSpacing(Space.XS if compact else Space.SM)
+        end_gap = Space.XS if compact else Space.MD
+        self._session_end_gap.changeSize(
+            end_gap,
+            1,
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Minimum,
+        )
+        layout.invalidate()
         for index in range(layout.count()):
             widget = layout.itemAt(index).widget()
             if widget is not None:

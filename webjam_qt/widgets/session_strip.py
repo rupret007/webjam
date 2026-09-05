@@ -233,6 +233,11 @@ class SessionStrip(QFrame):
         self._record_elapsed = QLabel("REC 00:00")
         self._record_elapsed.setObjectName("RecordElapsed")
         self._record_elapsed.setAccessibleName("Recording elapsed time")
+        # Receipt text is the longest live status; do not shrink it first when
+        # the optional Help preview shares the 720 px control bar.
+        self._record_elapsed.setSizePolicy(
+            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed
+        )
         self._record_elapsed.setVisible(False)
         self._record_elapsed_seconds = 0
         self._record_clock = QTimer(self)
