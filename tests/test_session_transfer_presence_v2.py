@@ -293,7 +293,11 @@ def test_challenge_rotation_replay_and_generation_staleness_fail_closed(
     tmp_path: Path,
 ) -> None:
     credentials = SessionCredentials.create()
-    registry = EnrollmentRegistry(tmp_path, credentials)
+    # Whole-snapshot equality below means the same instant as well as the
+    # same roster. Real elapsed milliseconds legitimately reduce lease_ms.
+    registry = EnrollmentRegistry(
+        tmp_path, credentials, presence_clock=lambda: _ULP_ARTIFACT_NOW
+    )
     musician = registry.enroll(_id(), "Musician", invite_token=credentials.invite_token)
     first_challenge = _install(registry, _digest(), 1)
     _bind(
@@ -2386,3 +2390,14 @@ def test_guest_capture_start_failure_never_acknowledges_arm(
         arm_generation=arm.arm_generation,
     )
     guest.stop()
+
+
+def test_identical_roster_does_not_extend_an_aging_challenge_lease(tmp_path):
+    now = [100.0]
+    credentials = SessionCredentials.create()
+    registry = EnrollmentRegistry(tmp_path, credentials, presence_clock=lambda: now[0])
+    first = _install(registry, _digest(), 1)
+    now[0] += 0.25
+    aged = _install(registry, _digest(), 1)
+    assert aged.lease_ms == first.lease_ms - 250
+    assert replace(aged, lease_ms=first.lease_ms) == first

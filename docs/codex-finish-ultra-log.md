@@ -82,3 +82,12 @@
 - Rubric scores 68/74: all product/local criteria pass. B3 hosted green and B5 actual external handoff are honestly pending subsequent phases.
 - BOB_HANDOFF.md contains review scope and ordered Karen/Bob/Jeff steps; it explicitly forbids treating this preparation as hosted-green.
 - Phase verify: rubric/evidence paths and git diff --check validated. Next: commit QA artifacts, repeat required exact-tip local checks, push draft and fix hosted checks until green.
+
+## Phase 4 — exact-tip local proof, first iteration
+
+- Candidate af3b7f75 passed Ruff, compileall, pip check, UX smoke, 2,339 focused tests, Swift 20 tests, real Swift/Python WSS and synthetic 20/20 qualification.
+- Its full suite reported 6,820 passed, 25 skipped, 99 subtests passed and one intermittent presence-snapshot test failure; no push or hosted-green claim followed the failure.
+- The failing equality compared a freshly minted 15,000-ms lease with the same challenge 1 ms later. The runtime correctly reported 14,999 ms.
+- Injected the existing frozen-clock fixture value into that exact-equality scenario. All original replay, generation, rotation and equality assertions remain unchanged.
+- Added an advancing-clock test proving repeated identical roster installation preserves challenge identity and does not extend the remaining lease.
+- No production presence behavior, held branch, authentication control, dependency or workflow is changed. Next: focused module and a complete clean-tip rerun before pushing the draft.

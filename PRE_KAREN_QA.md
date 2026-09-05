@@ -17,6 +17,7 @@
 
 ## Integrity review
 
+- The exact-tip rerun exposed a clock-dependent presence snapshot comparison (15,000 versus 14,999 ms). The original exact equality/replay/generation assertions remain intact with an injected frozen clock. An added advancing-clock test proves reinstalling the same roster does not extend its lease.
 - No test was skipped or deleted to obtain green. One legacy Art migration test was renamed because the owner explicitly removed automatic canvas intent; the same persisted-key migration remains covered, with additional real optional-share/publication coverage.
 - Retired launch-button assertions were replaced with exact current control inventories, real File/Help dispatch and installer-page geometry. All previous size ceilings, title-bar allowance, default/focus rules, containment and overlap requirements were retained.
 - The first-screen harvester now includes the entire visible dialog and visible menu titles; it no longer hides installer/extra-room controls from the gate. Banned-word negative tests still fail closed.
