@@ -101,8 +101,35 @@ def test_art_strip_copy_addresses_artists_not_a_review(qapp):
         assert "studio visit" not in rendered
         assert "host-clocked" not in rendered
         assert "jamulus" not in strip._reference_track_button.accessibleDescription().casefold()
-        assert "preview" not in strip._subtitle.text().casefold()
-        assert strip._subtitle.text() == "Art · Ready"
+        assert strip._subtitle.text() == "Art · Preview"
+    finally:
+        strip.deleteLater()
+
+
+def test_art_strip_status_shows_preview_not_ready_when_profile_is_preview(qapp):
+    """Art stays Preview. The in-session chip must not claim Ready or GA."""
+
+    strip = _strip()
+    try:
+        art = get_creator_profile_by_key("art")
+        assert art.is_preview is True
+        strip.set_creator_profile(art)
+        assert strip._subtitle.text() == "Art · Preview"
+        assert "ready" not in strip._subtitle.text().casefold()
+
+        strip.set_creator_profile(art, locked=True)
+        assert strip._subtitle.text() == "Art · Preview · Host profile"
+        assert "ready" not in strip._subtitle.text().casefold()
+
+        music = get_creator_profile_by_key("music")
+        assert music.is_preview is False
+        strip.set_creator_profile(music)
+        assert strip._subtitle.text() == "Music · Ready"
+
+        review = get_creator_profile_by_key("review_rehearsal")
+        assert review.is_preview is True
+        strip.set_creator_profile(review)
+        assert strip._subtitle.text() == "Review & Rehearsal · Preview"
     finally:
         strip.deleteLater()
 

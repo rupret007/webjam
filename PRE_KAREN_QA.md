@@ -1,5 +1,44 @@
 # Pre-Karen QA — Art participant, door, and End/Leave
 
+## Art Preview honesty hotfix (post-#69 squash)
+
+**What failed:** #69 landed on master as `230ef498` while Art stayed
+`release_tier=PREVIEW` / `is_preview=True` and docs still claimed Art is
+visibly Preview. The in-session strip buried that status with
+`profile.is_preview and profile.key != "art"`, so End Room / Leave Room chrome
+read **Art · Ready**. Launch copy also said `Art rooms are live for now`.
+Karen fail-closed on that honesty gap. Art was not promoted to GA.
+
+**What changed:** Art uses the same Preview status path as other Preview
+profiles on the surfaces that claim status: session-strip subtitle, conductor
+window title, and notes header. Launch standalone copy now mirrors Review
+(`Standalone Art Unavailable`) and no longer claims live/GA. HUD/empty-stage
+copy still omits Review's meeting-capture lecture. End Room / Leave Room
+behavior from #69 is untouched. Art remains Preview. Parked #37/#49 untouched.
+
+**How verified:** Exact tip `3b29198547dfc006447029fa704152e600d4edc6`.
+`QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -v tests/test_art_session_strip.py
+tests/test_art_profile.py tests/test_art_start_ux.py tests/test_art_participant_door.py
+tests/test_creator_live_presentation.py tests/test_feel_pass.py tests/test_qt_widgets.py
+-k "art or preview or creator_profiles or launch_copy or strip_status"`:
+161 passed, 93 deselected. Isolated modules after that: Art strip 6, Art
+profile 47, start UX 43, participant door 33 (End Room / Leave Room still
+compact and accessible), qt widgets 100 + 42 subtests, feel 14, live
+presentation 11, Art cleanup 15, Art recovery 6, UI redesign 34. Combined
+Art/feel/UX modules: 390 passed, 42 subtests. Remaining Art/honesty modules
+plus `python ux_smoke_test.py`: 367 passed and UX smoke PASS. Ruff,
+compileall, pip check, and `git diff --check HEAD` passed.
+
+Raw one-interpreter `pytest -q` reached 6986 passed / 27 skipped / 99
+subtests, matching #69's passed count. Two unrelated one-process flakes
+appeared across two full runs (Pocket Stage live WSS against websockets 17.1
+instead of lockfile 16.1.1; one Studio seek checksum). Isolated re-runs of
+those modules passed; no failing assertion was removed or weakened.
+
+No merge, tag, sign, release, or Pages.
+
+---
+
 2026-09-05 CT; branch `codex/webjam-art-participant-door`; base
 `7f38ba20eb71afffdb37a8d03d29248abfdee1de`.
 

@@ -26,6 +26,10 @@ All notable improvements and features for the WebJam creator collaboration platf
   readiness before validation, and replacement clears old accessible errors.
 - Art remains a newer Preview for artists working across mediums. The user
   guides now distinguish Art room entry from Music's audio setup.
+- The in-session strip, window title, and notes header now say **Preview**
+  the same way Review & Rehearsal does, instead of **Ready**. Launch copy no
+  longer says Art rooms are live; the hidden standalone door reads
+  **Standalone Art Unavailable**. End Room / Leave Room behavior is unchanged.
 
 ### Session help development preview
 

@@ -131,7 +131,7 @@ _CREATOR_LAUNCH_COPY = {
     "art": _CreatorLaunchCopy(
         host="Host",
         join="Join",
-        local="Art rooms are live for now",
+        local="Standalone Art Unavailable",
         host_description=(
             "Open the room and send one invite. Whoever joins lands in "
             "whatever you started."
@@ -140,7 +140,7 @@ _CREATOR_LAUNCH_COPY = {
             "Paste the invite you were sent. It carries whatever the host "
             "started, so there is nothing else to pick."
         ),
-        local_description="Art rooms are live for now, so there is nothing to open on your own.",
+        local_description="Standalone art projects are not on this door.",
         helper="Open a room and make something together.",
         join_title="Join the room.",
         join_subtitle="Paste the invite your host sent you.",
