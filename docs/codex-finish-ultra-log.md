@@ -32,3 +32,12 @@
 - Independent review found stale Pocket action propagation and false safe-retry history. Exact generation/revision matching and real cleanup transition tests now cover both (88 guidance/Pocket tests passed).
 - Added Studio failure-with-different-published-bytes coverage: pending edits/history and old token survive; retry conflicts without overwriting the intervening writer.
 - Next: rebase this new branch only onto updated origin/master, then run broad focused, synthetic integration and full local proof before scoring Worth-Building.
+
+### Phase 1 — repository boundary follow-up
+
+- Rebased cleanly onto origin/master 68b9f292; no held branch was used.
+- Ruff, compileall, pip check and UX smoke passed; 81 focused modules passed 2,279 tests, two skips and two subtests.
+- Real Swift/Python WSS interoperability passed; the fixed synthetic multitrack matrix passed 20/20 clean-process iterations (380 test executions) with cleanup verified.
+- Full suite at 2a5a2e0: 6,818 passed, 25 skipped, 99 subtests passed, one boundary-test failure. That check intentionally forbids simultaneous Song-tools and session-authority changes.
+- Restored Song-tools production and tests byte-for-byte from master. Notes now owns notifications for editable replacements; a distinct silent restore method loads persistence bytes. Accepted suggestions still autosave through the unchanged caller.
+- The boundary test is unchanged. Added direct Notes edit-versus-restore signal regression; rerun full proof before scoring the gate.

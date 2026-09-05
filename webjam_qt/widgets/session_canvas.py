@@ -336,7 +336,8 @@ class SessionCanvas(QFrame):
             self._guidance_why.setText("Why: WebJam has not checked this room yet.")
             self._guidance_next.setText("Next: follow the session bar")
 
-    def set_notes(self, text: str) -> None:
+    def restore_notes(self, text: str) -> None:
+        """Restore owner-held bytes without creating a new user edit."""
         if self._notes.toPlainText() == text:
             return
         self._notes.blockSignals(True)
@@ -344,9 +345,14 @@ class SessionCanvas(QFrame):
         self._notes.blockSignals(False)
         self._sync_export_actions()
 
+    def set_notes(self, text: str) -> None:
+        """Replace editable notes and notify their persistence owner."""
+        if self._notes.toPlainText() != text:
+            self._notes.setPlainText(text)
+
     def edit_notes(self, text: str) -> None:
-        """Apply an explicit user edit, including accepted Song suggestions."""
-        self._notes.setPlainText(text)
+        """Apply an explicit user edit through the normal notes change path."""
+        self.set_notes(text)
 
     def current_notes(self) -> str:
         return self._notes.toPlainText()

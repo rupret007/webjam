@@ -286,21 +286,21 @@ class SessionPersistence:
     def _load_notes_only(self, *, clear_missing: bool = False) -> None:
         profile = self._creator_profile_key
         if profile in self._pending_notes:
-            self._canvas.set_notes(self._pending_notes[profile])
+            self._canvas.restore_notes(self._pending_notes[profile])
         elif profile in self._exported_profiles:
-            self._canvas.set_notes(self._settled_notes[profile])
+            self._canvas.restore_notes(self._settled_notes[profile])
         else:
             try:
                 text = _read_bounded_notes(self._notes_path())
                 self._unreadable_notes.discard(profile)
                 self._settled_notes[profile] = text or ""
                 if text is not None or clear_missing:
-                    self._canvas.set_notes(text or "")
+                    self._canvas.restore_notes(text or "")
             except Exception as exc:  # noqa: BLE001 - preserve rejected originals
                 self._unreadable_notes.add(profile)
                 self._settled_notes[profile] = ""
                 if clear_missing:
-                    self._canvas.set_notes("")
+                    self._canvas.restore_notes("")
                 else:
                     self._retain_notes(profile, self._canvas.current_notes())
                 self._log.debug("Could not load notes; error_type=%s", type(exc).__name__)
@@ -376,7 +376,7 @@ class SessionPersistence:
             return False
         self._retain_notes(profile, text)
         if profile == self._creator_profile_key:
-            self._canvas.set_notes(text)
+            self._canvas.restore_notes(text)
         self._refresh_notes_state()
         return True
 

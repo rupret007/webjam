@@ -554,7 +554,7 @@ def test_notes_save_limit_matches_utf8_reader_without_losing_oversized_draft(tmp
     state = SimpleNamespace(text=text, status="")
     canvas = SimpleNamespace(
         current_notes=lambda: state.text,
-        set_notes=lambda value: setattr(state, "text", value),
+        restore_notes=lambda value: setattr(state, "text", value),
         set_notes_save_state=lambda value: setattr(state, "status", value),
     )
     persistence = SessionPersistence(SimpleNamespace(), canvas, creator_profile_key="art")
@@ -678,3 +678,24 @@ def test_recovery_dialog_preserves_stale_editor_until_explicit_export(tmp_path, 
         assert not dialog.isVisible()
     finally:
         window.close()
+
+
+def test_notes_owner_distinguishes_restoration_from_editable_replacement():
+    from webjam_qt.widgets.session_canvas import SessionCanvas
+
+    canvas = SessionCanvas()
+    changed = mock.Mock()
+    canvas.notes_changed.connect(changed)
+    try:
+        canvas.restore_notes("Saved local draft")
+        changed.assert_not_called()
+        canvas.set_notes("An accepted edit")
+        changed.assert_called_once_with("An accepted edit")
+        canvas.set_notes("An accepted edit")
+        changed.assert_called_once_with("An accepted edit")
+        canvas.restore_notes("Another workspace's saved draft")
+        changed.assert_called_once_with("An accepted edit")
+        assert canvas.current_notes() == "Another workspace's saved draft"
+    finally:
+        canvas.close()
+        canvas.deleteLater()

@@ -776,7 +776,7 @@ class SongToolsCoordinator:
         """
 
         canvas = getattr(self._c.window, "session_canvas", None)
-        writer = getattr(canvas, "edit_notes", None)
+        writer = getattr(canvas, "set_notes", None)
         if writer is None:
             return
         self._sync_workbench()
