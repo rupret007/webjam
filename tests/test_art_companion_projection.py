@@ -170,6 +170,7 @@ def test_a_hosts_own_failure_asks_for_the_hosts_attention():
             ReferenceVideoFollowState.HOST_ATTENTION,
             VideoCompanionState.HOST_ATTENTION,
         ),
+        (ReferenceVideoFollowState.LOCAL_ATTENTION, VideoCompanionState.LOCAL_ATTENTION),
         (ReferenceVideoFollowState.STALLED, VideoCompanionState.STALLED),
     ),
 )

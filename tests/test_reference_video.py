@@ -768,7 +768,14 @@ def test_a_failed_pause_keeps_the_proven_copy_instead_of_claiming_it_closed(
     with pytest.raises(ReferenceVideoPlayerError, match="couldn't stop"):
         follower.close_local_copy()
 
-    assert follower.resolve(0.0).state is ReferenceVideoFollowState.FOLLOWING
+    snapshot = follower.resolve(0.0)
+    assert snapshot.state is ReferenceVideoFollowState.LOCAL_ATTENTION
+    assert snapshot.blocked
+    assert snapshot.can_close_local_copy
+    assert player.state == "playing"
+    player.fail_on.clear()
+    assert follower.close_local_copy().state is ReferenceVideoFollowState.NEEDS_FILE
+    assert player.state == "paused"
 
 
 def test_a_follower_exposes_no_transport_at_all():
@@ -1002,7 +1009,11 @@ def test_a_local_player_that_cannot_open_the_copy_reports_it(tmp_path, signer):
     with pytest.raises(ReferenceVideoPlayerError):
         follower.open_local_copy(write_video(tmp_path / "mine.mp4", b"the lesson"))
     follower.observe(shared_projection(tmp_path, signer), received_monotonic_s=0.0)
-    assert follower.resolve(0.0).state is ReferenceVideoFollowState.NEEDS_FILE
+    snapshot = follower.resolve(0.0)
+    assert snapshot.state is ReferenceVideoFollowState.LOCAL_ATTENTION
+    assert snapshot.blocked
+    assert snapshot.can_close_local_copy
+    assert not snapshot.can_follow
 
 
 def test_the_wire_snapshot_satisfies_the_follower_projection_contract():

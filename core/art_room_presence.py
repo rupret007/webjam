@@ -90,6 +90,10 @@ _VIDEO_ATTENTION = {
         "Paint along needs a look",
         "The copy open here moved or changed, so it stopped following.",
     ),
+    VideoCompanionState.LOCAL_ATTENTION: (
+        "Your video needs attention",
+        "Open your copy again to continue following on this computer.",
+    ),
     VideoCompanionState.STALLED: (
         "Paint along is out of step",
         "The host's position is too old to follow honestly.",

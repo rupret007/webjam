@@ -1,80 +1,64 @@
-# Pre-Karen QA — Art invitation entry and local-network retry
+# Pre-Karen QA — Paint along guest copy recovery
 
-2026-09-05 CT. Branch `codex/webjam-art-entry-clarity`; exact base
-`cf311470fadcee1a688f3b675eb6d2ca4094926d`.
-[Coord BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5554784296).
+2026-09-05 CT. Branch `codex/webjam-art-activity-clarity`; verified base
+`f27a6344abc18ec3af990d43827d4c74f869a088` (post-#72 squash).
+[Initial BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5555193410)
+and [master-refresh BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5555306061).
+The source audit started at cf311470. #72 landed during implementation; only
+this new unpublished branch was refreshed. Its invitation/retry/Leave work
+is baseline and its branch remains untouched.
 
-This slice covers the complete invitation → Join → failed local connection →
-retry or replacement path. #71 landed while this slice was in progress. The new branch was rebased onto
-its verified squash on master; its room overview, personal-profile/title
-restoration and native retry work remain baseline. The #71 branch was not edited.
+The guest can use **Open my copy…** to follow the host's next video or recover
+a moved or failed local copy while staying in the Art room. A known local
+player error cannot be presented as **Following the host**. This is one
+copy-replacement and playback-recovery slice; host keyboard seeking and
+optional-canvas publication remain deferred.
 
-| Claim challenged | Direct product evidence |
+| Claim challenged | Product evidence |
 | --- | --- |
-| A copied Art invitation describes a working route | Art copy always instructs Open WebJam → Join → paste the whole message. Same-network/keep-host-open wording comes from the successful LAN owner path, not a URL guess. Native/reference-local copy makes no public-service or same-network claim. Complete v2/v3 message round-trips preserve the original capability. |
-| A guest does not need to understand protocol versions | Shared Join guidance works from default Music as well as Art and other profiles. It is conditional on the host's invitation, keeps one masked field and one Join action, and does not parse while typing. Optional meeting links remain separate and explicit. |
-| Keyboard users can recover from an invalid paste | Enter and keypad Enter submit once. The field is re-enabled before focus is returned; the same key cannot activate a remembered Back default and hide the error. New tests reproduce the original failure after tabbing through Back. |
-| Local-network retry does actual work | Real observer threads reach terminal failure with controlled peer responses and a deterministic clock. Retry confirms old-worker stop, resets the conductor only at that boundary, starts one new observer with the same typed invitation, and waits for a fresh authenticated host profile. |
-| Retry cannot discard an owned connection | False/throwing stop retains the observer and old conductor token, with Try Leave Room cleanup. Duplicate/reentrant commands, stale owners/generations, End/Quit, recording, native ownership and active/nonterminal states cannot start a competing worker. |
-| Activity and invitation policies stay truthful | Borrowed Art context survives the local retry; no Music owner starts until a fresh authenticated non-Art profile arrives. Native one-use replacement remains unchanged. Use Another Invite is reachable for a terminal LAN failure, and cancelling it restores LAN recovery instead of consumed-invite wording. |
-| Compact UI and private data stay usable/safe | Native Cocoa Join renders cover 460×480 through 620×520, including longest existing save errors. All owned test windows are explicitly destroyed. InviteMessage excludes private clipboard text from repr; feedback and errors do not expose credentials or raw peer exceptions. |
+| The offered action accepts a replacement | Real coordinator and actual Qt chooser/button journeys replace host video A with B and reopen a moved copy. One existing muted player is reused; a different player still requires cleanup. |
+| A local error stays local and visible | Load, play, seek, pause and position failures produce bounded local attention and an actionable retry. The Art overview keeps the room connected, offers the video route, and projects only finite state. Raw backend details and filenames stay out of diagnostics and public projections. |
+| A copy is closed only after confirmed stopping | A refused pause retains the copy and its retry obligation. Close remains available for retained/failed attempts even when hidden, the host withdraws the video, or the host needs attention. Successful explicit reopen or close clears local failure. |
+| Loading cannot resurrect an old room or picture | Old proof is retired before a changing source can be driven. Nested ticks cannot play it. Close, End and rebind invalidate pending load completion and callbacks. The original descriptor token binds the hashed bytes through signing and loading; path substitution at either boundary fails closed without committing proof. |
+| The existing Qt adapter detects delayed failure | Controlled Qt event delivery covers error codes, InvalidMedia, subsequent position reads and playback/seek checks. Explicit load clears and reopens even the same source. Pause, stop and close stay usable after faults. Audio remains muted. |
+| A guest remains an artist in the same room | Eight actual ApplicationController journeys cover saved Music/Art preferences, next-video/moved-copy replacement and four local playback faults. Real LAN observer receipts establish room state. Recovery preserves observer ownership and generation, saved profile and Art context, and starts neither Music audio nor a Webex call. |
+| Recovery fits the supported compact window | Thirty geometry cases exercise recovery/following at 720×560, 760×600 and 1040×720 with normal and 125% font width. Video, actions and footer do not overlap. Long filenames are elided with full accessible/tooltip text. Actual mouse/keyboard Open and More→Close actions are covered. |
 
-**Pre-Karen local gate: PASS.** Final code on the verified post-#71 base:
+**Pre-Karen local gate: PASS.** Final verification on the post-#72 base:
 
-- Focused Art invitation, Join, observer/retry, room overview/controller,
-  native invitation and Music guidance: **353 passed**.
-- Full raw `.venv/bin/pytest -q`: **7,219 passed, 26 skipped,
-  99 subtests passed, 3 dependency deprecation warnings** in 235.63 seconds;
-  process exit 0. No module isolation, exclusions, extra skips, or warning
-  filters were added to this local run.
-- Required Ruff scope, compileall, pip check, and `ux_smoke_test.py`: **PASS**.
-- Six native Cocoa recovery renders at 720×560 and 1100×760: **PASS** for
-  saved Music before host profile, Art before first connection, and Art
-  after a confirmed connection. Try Again, Use Another Invite, and Leave
-  remain visible, enabled and inside the window without overlap.
-- Native overview/lifetime set: **53 passed** with full keyboard navigation
-  explicitly enabled for that runner. Both deletion regressions reproduce
-  the old deferred-callback bug; normal focus reveal still works. System
-  keyboard preference is restored afterward.
-- Native Join renders cover 460×480 through 620×520, including the longest
-  existing save error, masked input, keyboard return, and visible actions.
-  The final Join/adjacent native set passed **128 tests**; the Join module
-  passed **52 offscreen tests**. Wider-font cases reproduced twelve clipping
-  failures before the final spacing fix. All text and control sizes are
-  preserved; expanded-font Art/Music minimum and Recording/Review error
-  renders now fit completely. The full raw suite above was rerun afterward.
-- Independent review of the complete diff against updated master found no
-  material issue. All three pre-existing stashes and the old #71 branch tip
-  remain intact.
+- Focused Art/Paint along/door/session/invitation set: **739 passed**.
+- Full raw `.venv/bin/pytest -q`: **7,342 passed, 26 existing skips,
+  99 subtests passed, 3 dependency deprecation warnings** in 298.96 seconds.
+  No module isolation, exclusions, extra skips, warning filters or retries.
+- Required Ruff scope, compileall, pip check, whitespace and UX smoke: **PASS**.
+- Controlled core/coordinator set: **131 passed**; Qt adapter health/seam/
+  starts-muted set: **31 passed**. These are included in the focused/full proof.
 
-Self-review fixed compact guidance clipping, Enter/Return reaching Back after
-an invalid paste, and a saved-Music retry retaining its old conductor token.
-The conductor resets only after confirmed observer cleanup. A failed initial
-LAN attempt now renders failure across saved profiles, and the actual owned
-Leave control refreshes before a host profile arrives. Art distinguishes a
-room never reached from a connection later lost. Retry clears that failure
-only for a fresh observer; cleanup and recording retain precedence. A
-widget-owned timer prevents delayed focus work after a closing Art window
-is destroyed. Hosted Linux also exposed wrapped Join guidance clipping with
-Recording/Review name controls visible. Reducing unused Join spacing fixed
-the actual layout; wider-font geometry tests retain every fit assertion.
-No assertion was weakened or removed.
+The final native set passed **117 tests**, including guest journeys, compact
+UI and command authority. Eight final Cocoa renders at 720×560 and 1040×720
+were inspected; these use synthetic host/player facts and establish widget
+usability, not physical codec or multi-computer playback performance.
+Independent source and token-boundary reviews found no actionable issue.
 
-Local proof logs: `/private/tmp/webjam-post71-final-focused.log`,
-`/private/tmp/webjam-post71-final-full-pytest.log`, and
-`/private/tmp/webjam-post71-final-verification.json`. Native recovery evidence:
-`/private/tmp/webjam-post71-rebased-lan-render.log` and corresponding PNGs.
-These are synthetic controller/widget checks, not physical peer evidence.
+Self-QA retained the existing compact-label length limit and fixed the new
+label to fit it. A partial-controller test now spies on immediate presentation
+intent while real-window tests exercise actual recovery; existing no-wrong-
+surface assertions remain. Known false-Following expectations now require
+local attention, retained ownership, confirmed pause and successful recovery.
+The old 220px embedded-video minimum assertion was replaced by actual
+video/transport/action/footer nonoverlap checks. No new skip or test exclusion. Final review also reproduced four post-hash
+substitution failures before the fix; the verified descriptor token now spans
+that boundary, without adding private identity data to wire state or diagnostics.
 
-The open draft records the final committed SHA, exact-tip hosted run/job
-links, four desktop artifact matches, and final hosted gate status. Hosted
-SUCCESS for that SHA, including all four desktop builds, is required before
-Bob handoff; no local result substitutes for it.
+The open draft will record its final SHA, matching hosted run/job links and
+four desktop artifact records. Exact-tip hosted SUCCESS with all four builds
+is mandatory before the Bob handoff; local results do not substitute for it.
 
-Holds remain: Art Preview; existing silent local-file Paint along; own tools;
-no automatic meeting/canvas launch, Webex on the Art door, new video stack,
-short-code/public rendezvous or default Session Help claim. Music audio still
-requires its own evidence. Physical/public/live-provider/installed unsigned
-package click-feel NOT RUN. Unsigned 0.27.2 remains Jeff-only.
-No merge/tag/sign/release/Pages/Release Trust. #37/#49 parked; #67 untouched.
-Canonical checkout only; all pre-existing stashes remain preserved.
+Holds: Art Preview; own tools and existing silent local-file Paint along;
+Webex conversation/share separate and never on the Art door. No automatic
+meeting/canvas launch, second video stack, short-code/public rendezvous or
+default Session Help product claim. Music audio remains evidence-based.
+Physical/public/live-provider/installed unsigned-package checks NOT RUN.
+Unsigned 0.27.2 remains Jeff-only. No merge/tag/sign/release/Pages/Release Trust.
+#37/#49 parked; #67 untouched. Canonical WebJam only; all prior stashes and
+protected branch tips preserved.

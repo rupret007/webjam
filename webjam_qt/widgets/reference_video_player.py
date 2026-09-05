@@ -62,6 +62,7 @@ class QtReferenceVideoPlayer:
         self._player.setVideoOutput(self._surface)
         self._duration_s = 0.0
         self._closed = False
+        self._failed = False
 
     @property
     def surface(self):
@@ -86,27 +87,35 @@ class QtReferenceVideoPlayer:
 
     def load(self, path: Path) -> float:
         from PySide6.QtCore import QUrl
-        from PySide6.QtMultimedia import QMediaPlayer
 
         self._require_open()
-        self._player.setSource(QUrl.fromLocalFile(str(Path(path))))
-        duration_ms = self._await_duration()
-        if duration_ms <= 0:
+        # Reset the source even when the artist chooses the same path again.
+        # Qt may otherwise retain the failed source instead of reopening it.
+        self._player.stop()
+        self._player.setSource(QUrl())
+        self._duration_s = 0.0
+        self._failed = False
+        try:
+            self._player.setSource(QUrl.fromLocalFile(str(Path(path))))
+            duration_ms = self._await_duration()
+            self._require_healthy()
+            if duration_ms <= 0:
+                raise ReferenceVideoPlayerError(
+                    "WebJam couldn't read that video's length on this computer."
+                )
+        except ReferenceVideoPlayerError:
+            # Clearing the Qt source must not make this failed attempt appear
+            # healthy. Only an explicit load begins another attempt.
+            self._failed = True
             self._player.setSource(QUrl())
-            raise ReferenceVideoPlayerError(
-                "WebJam couldn't read that video's length on this computer."
-            )
-        if self._player.mediaStatus() == QMediaPlayer.MediaStatus.InvalidMedia:
-            self._player.setSource(QUrl())
-            raise ReferenceVideoPlayerError(
-                "This computer has no decoder for that video."
-            )
+            raise
         self._duration_s = duration_ms / _MS
         return self._duration_s
 
     def play(self) -> None:
-        self._require_open()
+        self._require_healthy()
         self._player.play()
+        self._require_healthy()
 
     def pause(self) -> None:
         self._require_open()
@@ -118,13 +127,17 @@ class QtReferenceVideoPlayer:
         self._player.stop()
 
     def seek(self, position_s: float) -> None:
-        self._require_open()
+        self._require_healthy()
         self._player.setPosition(int(max(0.0, float(position_s)) * _MS))
+        self._require_healthy()
 
     def position_s(self) -> float:
         if self._closed:
             return 0.0
-        return max(0.0, self._player.position() / _MS)
+        self._require_healthy()
+        position_s = max(0.0, self._player.position() / _MS)
+        self._require_healthy()
+        return position_s
 
     def close(self) -> None:
         if self._closed:
@@ -137,7 +150,7 @@ class QtReferenceVideoPlayer:
             self._player.setSource(QUrl())
             self._player.setVideoOutput(None)
         except Exception:  # noqa: BLE001 - teardown must not mask the reason
-            LOGGER.debug("Reference video player teardown failed", exc_info=True)
+            LOGGER.debug("Reference video player teardown failed")
         self._surface.deleteLater()
 
     # -- internals -----------------------------------------------------
@@ -146,20 +159,35 @@ class QtReferenceVideoPlayer:
         if self._closed:
             raise ReferenceVideoPlayerError("This reference video player is closed.")
 
+    def _require_healthy(self) -> None:
+        from PySide6.QtMultimedia import QMediaPlayer
+
+        self._require_open()
+        if (
+            self._player.error() != QMediaPlayer.Error.NoError
+            or self._player.mediaStatus() == QMediaPlayer.MediaStatus.InvalidMedia
+        ):
+            self._failed = True
+        if self._failed:
+            # Backend error strings can contain the artist's local path. The
+            # core receives only this bounded failure, including after a
+            # successful load when Qt discovers a later playback error.
+            raise ReferenceVideoPlayerError(
+                "WebJam couldn't play that video on this computer."
+            )
+
     def _await_duration(self) -> int:
         from PySide6.QtCore import QCoreApplication, QDeadlineTimer, QEventLoop
         from PySide6.QtMultimedia import QMediaPlayer
 
         deadline = QDeadlineTimer(_DURATION_TIMEOUT_MS)
         while not deadline.hasExpired():
+            self._require_healthy()
             duration = int(self._player.duration())
             status = self._player.mediaStatus()
             if duration > 0:
                 return duration
-            if status in {
-                QMediaPlayer.MediaStatus.InvalidMedia,
-                QMediaPlayer.MediaStatus.NoMedia,
-            }:
+            if status == QMediaPlayer.MediaStatus.NoMedia:
                 return 0
             # User input stays excluded so pumping events to resolve a
             # duration cannot re-enter the transport that asked for it.
@@ -167,6 +195,7 @@ class QtReferenceVideoPlayer:
                 QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents,
                 _DURATION_POLL_MS,
             )
+        self._require_healthy()
         return int(self._player.duration())
 
 

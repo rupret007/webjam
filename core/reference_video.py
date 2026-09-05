@@ -82,6 +82,10 @@ FILE_UNAVAILABLE_MESSAGE = (
     "Your Paint along copy moved, changed, or became unreadable. "
     "Open it again to follow the host."
 )
+LOCAL_ATTENTION_MESSAGE = (
+    "Paint along could not continue on this computer. Open your copy again "
+    "to try again, or close it and keep working in the room."
+)
 HOST_ATTENTION_MESSAGE = (
     "The host's Paint along video needs attention. Nothing is "
     "playing here until the host recovers it."
@@ -145,6 +149,8 @@ class ReferenceVideoSource:
     display_name: str
     content_sha256: str
     byte_size: int
+    # The descriptor identity whose bytes were hashed; never a wire field.
+    _identity_token: tuple[int, int, int, int, int]
 
     def __repr__(self) -> str:
         return (
@@ -228,6 +234,7 @@ def load_reference_video_source(path: str | os.PathLike[str]) -> ReferenceVideoS
         display_name=display_name,
         content_sha256=digest.hexdigest(),
         byte_size=int(opened.st_size),
+        _identity_token=bound,
     )
 
 
@@ -670,6 +677,8 @@ class ReferenceVideoFollowState(str, Enum):
     MISMATCHED_FILE = "mismatched_file"
     #: The opened copy moved, changed, or became unreadable.
     FILE_UNAVAILABLE = "file_unavailable"
+    #: This computer could not load or follow its local copy.
+    LOCAL_ATTENTION = "local_attention"
     #: The host's own player failed.
     HOST_ATTENTION = "host_attention"
     #: The host's position is too old to follow honestly.
@@ -684,6 +693,7 @@ _FOLLOW_MESSAGES: dict[ReferenceVideoFollowState, str] = {
     ReferenceVideoFollowState.MISMATCHED_FILE: MISMATCHED_FILE_MESSAGE,
     ReferenceVideoFollowState.FILE_UNAVAILABLE: FILE_UNAVAILABLE_MESSAGE,
     ReferenceVideoFollowState.HOST_ATTENTION: HOST_ATTENTION_MESSAGE,
+    ReferenceVideoFollowState.LOCAL_ATTENTION: LOCAL_ATTENTION_MESSAGE,
     ReferenceVideoFollowState.STALLED: STALLED_MESSAGE,
     ReferenceVideoFollowState.FOLLOWING: FOLLOWING_MESSAGE,
 }
@@ -701,6 +711,8 @@ class ReferenceVideoFollowSnapshot:
     source_display_name: str = ""
     playback_generation: int = 0
     message: str = NO_VIDEO_MESSAGE
+    # Retained copy or unfinished player attempt, independent of host state.
+    can_close_local_copy: bool = False
 
     @property
     def blocked(self) -> bool:
@@ -711,6 +723,7 @@ class ReferenceVideoFollowSnapshot:
             ReferenceVideoFollowState.MISMATCHED_FILE,
             ReferenceVideoFollowState.FILE_UNAVAILABLE,
             ReferenceVideoFollowState.HOST_ATTENTION,
+            ReferenceVideoFollowState.LOCAL_ATTENTION,
             ReferenceVideoFollowState.STALLED,
         }
 
@@ -744,6 +757,10 @@ class ReferenceVideoFollower:
         self._received_monotonic_s = 0.0
         self._applied_generation = -1
         self._playing_locally = False
+        self._pause_pending = False
+        self._local_attention = False
+        self._operation = 0
+        self._loading: int | None = None
 
     # -- guest inputs --------------------------------------------------
 
@@ -756,7 +773,9 @@ class ReferenceVideoFollower:
         """
 
         with self._lock:
-            if self._local_identity:
+            if player is self._player:
+                return
+            if self._local_identity or self._pause_pending or self._loading is not None:
                 raise ReferenceVideoError(
                     "Close the current Paint along video before changing players."
                 )
@@ -765,38 +784,71 @@ class ReferenceVideoFollower:
     def open_local_copy(
         self, path: str | os.PathLike[str]
     ) -> ReferenceVideoFollowSnapshot:
-        """Open this artist's own copy and prove whether it is the host's file.
-
-        A file that does not match is rejected here rather than played, so a
-        follower never shows the wrong picture while claiming to be in sync.
-        """
+        """Validate a replacement before retiring and loading the current copy."""
 
         with self._lock:
+            if self._loading is not None:
+                raise ReferenceVideoError("A Paint along video is still opening.")
+            # A plainly unreadable choice must not disturb a working copy.
             source = load_reference_video_source(path)
             identity = self._identity_signer(source.content_sha256)
+            candidate_token = source._identity_token
+            try:
+                if file_identity_token(source.path) != candidate_token:
+                    raise ReferenceVideoError(FILE_UNAVAILABLE_MESSAGE)
+            except OSError as exc:
+                raise ReferenceVideoError(FILE_UNAVAILABLE_MESSAGE) from exc
             projection = self._projection
             expected = str(getattr(projection, "identity_digest", "") or "")
             if expected and not identities_match(identity, expected):
                 self._clear_local_locked()
                 raise ReferenceVideoError(MISMATCHED_FILE_MESSAGE)
-            if self._player is not None:
+
+            # load() can pump UI events. Retire the previous proof only after
+            # its pause is confirmed, so a nested tick cannot drive a changing
+            # source using the previous copy's identity.
+            self._clear_local_locked()
+            self._operation += 1
+            operation = self._operation
+            self._loading = operation
+            try:
                 try:
-                    self._player.load(source.path)
+                    if self._player is not None:
+                        duration = _seconds(
+                            self._player.load(source.path), "Video duration",
+                            maximum=MAX_REFERENCE_VIDEO_DURATION_S,
+                        )
+                        if duration <= 0.0:
+                            raise ReferenceVideoPlayerError(LOCAL_ATTENTION_MESSAGE)
                 except Exception as exc:
-                    self._clear_local_locked()
-                    raise ReferenceVideoPlayerError(
-                        "WebJam couldn't open that video on this computer."
-                    ) from exc
-            self._local_identity = identity
-            self._local_path = source.path
-            self._local_token = file_identity_token(source.path)
-            self._applied_generation = -1
-            self._playing_locally = False
+                    if operation == self._operation:
+                        self._mark_player_failure_locked()
+                        raise ReferenceVideoPlayerError(LOCAL_ATTENTION_MESSAGE) from exc
+                if operation == self._operation:
+                    try:
+                        current_token = file_identity_token(source.path)
+                    except OSError as exc:
+                        self._mark_player_failure_locked()
+                        raise ReferenceVideoError(FILE_UNAVAILABLE_MESSAGE) from exc
+                    if current_token != candidate_token:
+                        self._mark_player_failure_locked()
+                        raise ReferenceVideoError(FILE_UNAVAILABLE_MESSAGE)
+                    self._local_identity = identity
+                    self._local_path = source.path
+                    self._local_token = current_token
+                    self._local_attention = False
+                    self._applied_generation = -1
+            finally:
+                if self._loading == operation:
+                    self._loading = None
             return self._resolve_locked(self._received_monotonic_s)
 
     def close_local_copy(self) -> ReferenceVideoFollowSnapshot:
         with self._lock:
+            # Invalidate a load even when it is currently pumping events.
+            self._operation += 1
             self._clear_local_locked()
+            self._local_attention = False
             return self._resolve_locked(self._received_monotonic_s)
 
     def set_hidden(self, hidden: bool) -> ReferenceVideoFollowSnapshot:
@@ -845,16 +897,15 @@ class ReferenceVideoFollower:
         with self._lock:
             snapshot = self._resolve_locked(now_monotonic_s)
             player = self._player
-            if player is None:
+            if player is None or self._loading is not None:
                 return snapshot
             if not snapshot.can_follow:
-                if self._playing_locally:
-                    self._playing_locally = False
-                    try:
-                        player.pause()
-                    except Exception:  # noqa: BLE001 - stopping must not raise
-                        pass
-                return snapshot
+                try:
+                    self._pause_local_locked()
+                except ReferenceVideoPlayerError:
+                    # Keep the obligation: the next tick must try again.
+                    pass
+                return self._resolve_locked(now_monotonic_s)
             try:
                 if snapshot.playback_generation != self._applied_generation:
                     player.seek(snapshot.target_position_s)
@@ -865,37 +916,49 @@ class ReferenceVideoFollower:
                 ):
                     player.seek(snapshot.target_position_s)
                 if snapshot.should_play and not self._playing_locally:
+                    # An adapter may start playback before reporting a fault.
+                    self._pause_pending = True
                     player.play()
                     self._playing_locally = True
-                elif not snapshot.should_play and self._playing_locally:
-                    player.pause()
-                    self._playing_locally = False
+                    self._pause_pending = False
+                elif not snapshot.should_play:
+                    self._pause_local_locked()
             except Exception as exc:
-                self._playing_locally = False
-                raise ReferenceVideoPlayerError(
-                    "WebJam couldn't follow the host on this computer."
-                ) from exc
+                self._mark_player_failure_locked()
+                raise ReferenceVideoPlayerError(LOCAL_ATTENTION_MESSAGE) from exc
             return snapshot
 
     # -- derivation ----------------------------------------------------
 
-    def _clear_local_locked(self) -> None:
-        # Clearing proof while its picture keeps moving would make the model
-        # claim NEEDS_FILE even though the old file is still on screen. Stop
-        # first, and leave the proven copy intact if the player cannot honor
-        # that stop.
-        if self._playing_locally and self._player is not None:
+    def _pause_local_locked(self) -> None:
+        if (self._playing_locally or self._pause_pending) and self._player is not None:
             try:
                 self._player.pause()
             except Exception as exc:
+                self._pause_pending = True
+                self._local_attention = True
                 raise ReferenceVideoPlayerError(
                     "WebJam couldn't stop that video on this computer."
                 ) from exc
+        self._playing_locally = False
+        self._pause_pending = False
+
+    def _mark_player_failure_locked(self) -> None:
+        self._local_attention = True
+        self._pause_pending = self._player is not None
+        try:
+            self._pause_local_locked()
+        except ReferenceVideoPlayerError:
+            pass
+
+    def _clear_local_locked(self) -> None:
+        # A refused pause retains the copy and a retry obligation. Never
+        # describe it as closed while its picture may still be moving.
+        self._pause_local_locked()
         self._local_identity = ""
         self._local_path = None
         self._local_token = None
         self._applied_generation = -1
-        self._playing_locally = False
 
     def _local_copy_is_current(self) -> bool:
         if self._local_path is None or self._local_token is None:
@@ -925,6 +988,11 @@ class ReferenceVideoFollower:
             source_display_name=source_display_name,
             playback_generation=playback_generation,
             message=_FOLLOW_MESSAGES[state],
+            can_close_local_copy=bool(
+                self._local_identity or self._local_attention
+                or self._pause_pending
+                or self._loading is not None and self._loading == self._operation
+            ),
         )
 
     def _resolve_locked(
@@ -962,7 +1030,9 @@ class ReferenceVideoFollower:
             return decide(ReferenceVideoFollowState.HIDDEN)
         if bool(getattr(projection, "needs_attention", False)):
             return decide(ReferenceVideoFollowState.HOST_ATTENTION)
-        if not self._local_identity:
+        if self._local_attention:
+            return decide(ReferenceVideoFollowState.LOCAL_ATTENTION)
+        if self._loading is not None or not self._local_identity:
             return decide(ReferenceVideoFollowState.NEEDS_FILE)
         if not self._local_copy_is_current():
             return decide(ReferenceVideoFollowState.FILE_UNAVAILABLE)
@@ -1010,6 +1080,7 @@ __all__ = [
     "FOLLOWING_MESSAGE",
     "HIDDEN_MESSAGE",
     "HOST_ATTENTION_MESSAGE",
+    "LOCAL_ATTENTION_MESSAGE",
     "HOST_ONLY_TRANSPORT_MESSAGE",
     "MAX_REFERENCE_VIDEO_BYTES",
     "MAX_REFERENCE_VIDEO_DURATION_S",

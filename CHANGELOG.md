@@ -10,6 +10,16 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Paint along guest copy recovery
+
+- **Open my copy…** now accepts the host’s next video or a moved matching
+  file using the existing silent player, without leaving the Art room.
+- Local load or playback failures show a recovery action instead of claiming
+  **Following the host**. Failed pauses remain pending until confirmed;
+  closing or leaving during loading cannot restore an old copy.
+- Compact Paint along recovery controls fit beside long filenames. **Close my
+  copy** remains available while a local copy or failed attempt is still held.
+
 ### Art room participation and recovery
 
 - Art invitations explain whole-message paste on every desktop and name the

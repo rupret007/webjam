@@ -219,11 +219,17 @@ def test_every_transport_command_requires_the_transport_scope():
         assert command.drives_host_transport is True
 
 
-def test_transport_is_refused_when_there_is_nothing_shared_to_move():
-    host = _room(video=VideoCompanionState.NONE, transport_allowed=True)
+@pytest.mark.parametrize("video", [
+    VideoCompanionState.NONE, VideoCompanionState.HOST_ATTENTION,
+    VideoCompanionState.LOCAL_ATTENTION,
+])
+@pytest.mark.parametrize("command", TRANSPORT_COMMANDS)
+def test_transport_is_refused_when_there_is_nothing_shared_to_move(video, command):
+    host = _room(video=video, transport_allowed=True)
 
+    arguments = {"position_s": 10} if command is ArtCommand.SEEK_VIDEO else {}
     receipt = authorize_art_command(
-        _request(ArtCommand.PLAY_VIDEO, host), host, ALL_SCOPES
+        _request(command, host, **arguments), host, ALL_SCOPES
     )
 
     assert receipt.reason is ArtRejectionReason.INVALID_STATE
