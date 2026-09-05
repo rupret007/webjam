@@ -365,6 +365,9 @@ def test_a_guest_wrong_copy_never_becomes_the_visible_surface(
 ):
     controller = _controller("art")
     _as_guest(controller)
+    # This harness has a window stub. Observe presentation intent while the
+    # real-window guest journey tests exercise the actual panel.
+    controller._open_reference_video = MagicMock()
     coordinator = controller._reference_video_coordinator()
     digest = _digest(tmp_path)
     coordinator.observe_host_state(_peer_state(_shared_video(digest)))
@@ -376,6 +379,7 @@ def test_a_guest_wrong_copy_never_becomes_the_visible_surface(
 
     assert coordinator.player_surface is fake_players[0].surface
     assert controller._paint_along_surface(coordinator) is None
+    controller._open_reference_video.assert_called_once_with(take_focus=False)
 
 
 def test_releasing_a_room_publishes_nothing_shared_and_forgets_the_binding(

@@ -12624,6 +12624,10 @@ class ApplicationController(QObject):
             "Your Paint along copy moved, changed, or became "
             "unreadable, so WebJam stopped following the host."
         ),
+        "local_attention": (
+            "Your Paint along copy needs attention. Open it again to continue "
+            "following, or hide the video and keep making."
+        ),
     }
 
     def _announce_reference_video_follow_state(self, snapshot) -> None:

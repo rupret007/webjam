@@ -76,6 +76,9 @@ class ReferenceVideoCoordinator:
         self._follower: ReferenceVideoFollower | None = None
         self._player: ReferenceVideoPlayer | None = None
         self._publish_failed = False
+        self._generation = 0
+        self._follow_operation = 0
+        self._opening_follower: ReferenceVideoFollower | None = None
 
     # -- lifecycle -----------------------------------------------------
 
@@ -116,6 +119,7 @@ class ReferenceVideoCoordinator:
     def end(self) -> None:
         """Release players and return this computer to the no-video path."""
 
+        self._generation += 1
         host = self._host
         if host is not None:
             try:
@@ -204,11 +208,47 @@ class ReferenceVideoCoordinator:
 
     def open_local_copy(self, path: str) -> ReferenceVideoFollowSnapshot:
         follower = self._require_follower()
-        follower.set_player(self._build_player())
-        return self._notify_follow(follower.open_local_copy(path))
+        if follower is self._opening_follower:
+            raise ReferenceVideoError("A Paint along video is still opening.")
+        self._opening_follower = follower
+        generation = self._generation
+        self._follow_operation += 1
+        operation = self._follow_operation
+        try:
+            follower.set_player(self._build_player())
+            snapshot = follower.open_local_copy(path)
+        except ReferenceVideoError:
+            self._notify_follow(
+                follower.resolve(self._clock()), follower=follower,
+                generation=generation, operation=operation,
+            )
+            if (follower is not self._follower or generation != self._generation
+                    or operation != self._follow_operation):
+                return self.follow_snapshot
+            raise
+        finally:
+            if self._opening_follower is follower:
+                self._opening_follower = None
+        return self._notify_follow(
+            snapshot, follower=follower, generation=generation, operation=operation,
+        )
 
     def close_local_copy(self) -> ReferenceVideoFollowSnapshot:
-        return self._notify_follow(self._require_follower().close_local_copy())
+        follower = self._require_follower()
+        generation = self._generation
+        self._follow_operation += 1
+        operation = self._follow_operation
+        try:
+            snapshot = follower.close_local_copy()
+        except ReferenceVideoError:
+            self._notify_follow(
+                follower.resolve(self._clock()), follower=follower,
+                generation=generation, operation=operation,
+            )
+            raise
+        return self._notify_follow(
+            snapshot, follower=follower, generation=generation, operation=operation,
+        )
 
     def set_hidden(self, hidden: bool) -> ReferenceVideoFollowSnapshot:
         return self._notify_follow(self._require_follower().set_hidden(bool(hidden)))
@@ -241,8 +281,15 @@ class ReferenceVideoCoordinator:
         return follower
 
     def _notify_follow(
-        self, snapshot: ReferenceVideoFollowSnapshot
+        self, snapshot: ReferenceVideoFollowSnapshot, *,
+        follower: ReferenceVideoFollower | None = None,
+        generation: int | None = None,
+        operation: int | None = None,
     ) -> ReferenceVideoFollowSnapshot:
+        if (follower is not None and follower is not self._follower
+                or generation is not None and generation != self._generation
+                or operation is not None and operation != self._follow_operation):
+            return self.follow_snapshot
         if self._on_follow_snapshot is not None:
             self._on_follow_snapshot(snapshot)
         return snapshot
@@ -266,12 +313,16 @@ class ReferenceVideoCoordinator:
         follower = self._follower
         if follower is None:
             return
+        generation = self._generation
+        operation = self._follow_operation
         try:
             snapshot = follower.apply(self._clock())
         except ReferenceVideoError as exc:
             LOGGER.debug("Reference video follow failed: %s", exc)
             snapshot = follower.resolve(self._clock())
-        self._notify_follow(snapshot)
+        self._notify_follow(
+            snapshot, follower=follower, generation=generation, operation=operation,
+        )
 
     # -- peer plane ----------------------------------------------------
 
@@ -359,6 +410,7 @@ def follow_state_is_blocked(state: object) -> bool:
             ReferenceVideoFollowState.MISMATCHED_FILE,
             ReferenceVideoFollowState.FILE_UNAVAILABLE,
             ReferenceVideoFollowState.HOST_ATTENTION,
+            ReferenceVideoFollowState.LOCAL_ATTENTION,
             ReferenceVideoFollowState.STALLED,
         }
     except ValueError:

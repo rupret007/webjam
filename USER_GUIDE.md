@@ -178,8 +178,13 @@ Things worth knowing:
   room and in the conversation.
 - **Back to room** or Escape returns to the conductor without withdrawing the
   file, leaving the room, or closing the optional meeting app.
-- **If your copy moves, changes, or disappears**, WebJam stops following and
-  tells you, instead of drifting silently.
+- **If the host changes videos or your copy moves**, choose **Open my copy…**
+  again and select the matching file. You stay in the same room.
+- **If your copy cannot play here**, WebJam shows that local problem instead
+  of claiming you are following. Open your copy again to retry, or use
+  **More → Hide video** and keep making. **More → Close my copy** stays
+  available while WebJam still holds a copy, even when hidden or no longer
+  shared by the host.
 - **If WebJam loses track of the host's position**, it holds rather than
   guessing. Playback resumes when the host is heard from again.
 - **This is not frame-accurate review.** Everyone stays within about a second

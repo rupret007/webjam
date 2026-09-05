@@ -86,6 +86,7 @@ class VideoCompanionState(str, Enum):
     NEEDS_FILE = "needs_file"
     MISMATCHED_FILE = "mismatched_file"
     FILE_UNAVAILABLE = "file_unavailable"
+    LOCAL_ATTENTION = "local_attention"
     HOST_ATTENTION = "host_attention"
     STALLED = "stalled"
 
@@ -384,6 +385,7 @@ def _state_allows(
         return projection.video not in {
             VideoCompanionState.NONE,
             VideoCompanionState.HOST_ATTENTION,
+            VideoCompanionState.LOCAL_ATTENTION,
         }
     if command in {ArtCommand.AI_MAKE, ArtCommand.AI_EDIT}:
         return projection.ai in {AiCompanionState.IDLE, AiCompanionState.HANDED_OFF}

@@ -144,6 +144,7 @@ def test_a_missing_painting_program_is_the_line_even_beside_a_live_video():
         (VideoCompanionState.NEEDS_FILE, "Open your Paint along copy"),
         (VideoCompanionState.MISMATCHED_FILE, "Paint along needs a look"),
         (VideoCompanionState.FILE_UNAVAILABLE, "Paint along needs a look"),
+        (VideoCompanionState.LOCAL_ATTENTION, "Your video needs attention"),
         (VideoCompanionState.STALLED, "Paint along is out of step"),
         (VideoCompanionState.HOST_ATTENTION, "Paint along needs a look"),
     ),

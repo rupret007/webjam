@@ -74,6 +74,12 @@ def _follow(state, **changes) -> ReferenceVideoFollowSnapshot:
         "message": _FOLLOW_MESSAGES[state],
         "duration_s": 600.0,
         "source_display_name": "lesson.mp4",
+        "can_close_local_copy": state in {
+            ReferenceVideoFollowState.FOLLOWING,
+            ReferenceVideoFollowState.MISMATCHED_FILE,
+            ReferenceVideoFollowState.FILE_UNAVAILABLE,
+            ReferenceVideoFollowState.STALLED,
+        },
     }
     values.update(changes)
     return ReferenceVideoFollowSnapshot(**values)
@@ -606,7 +612,9 @@ def test_embedded_paint_along_fits_the_supported_compact_window(qapp):
         assert window.size().width() == 760
         assert window.size().height() == 600
         assert panel.minimumHeight() == 0
-        assert panel._surface_holder.minimumHeight() == 220
+        assert panel._surface_holder.geometry().bottom() < panel._position.geometry().top()
+        assert panel._position.geometry().bottom() < panel._pause_button.geometry().top()
+        assert panel._pause_button.geometry().bottom() < panel._hint.geometry().top()
         assert panel.geometry().bottom() <= window.workspace_stack.rect().bottom()
         assert panel._hint.isVisible() is True
         assert window.session_controls.isVisible() is True

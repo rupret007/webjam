@@ -8,7 +8,7 @@ transport control at all, because they have none.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QDialog,
@@ -62,6 +62,9 @@ _FOLLOW_STATUS = {
     ReferenceVideoFollowState.FILE_UNAVAILABLE: (
         "Your copy moved or changed. Open it again to continue."
     ),
+    ReferenceVideoFollowState.LOCAL_ATTENTION: (
+        "Your copy could not play here. Open it again to continue."
+    ),
     ReferenceVideoFollowState.HOST_ATTENTION: (
         "The host needs to check the video before it can continue."
     ),
@@ -82,6 +85,36 @@ def clock_text(seconds: float) -> str:
     if hours:
         return f"{hours:d}:{minutes:02d}:{secs:02d}"
     return f"{minutes:d}:{secs:02d}"
+
+
+class _VideoNameLabel(QLabel):
+    """Keep the local filename available without crowding recovery actions."""
+
+    def __init__(self, text: str) -> None:
+        super().__init__()
+        self._full_text = ""
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setText(text)
+
+    def setText(self, text: str) -> None:
+        self._full_text = str(text)
+        self.setToolTip(self._full_text)
+        self.setAccessibleDescription(self._full_text)
+        self._render_text()
+
+    def _render_text(self) -> None:
+        super().setText(self.fontMetrics().elidedText(
+            self._full_text, Qt.TextElideMode.ElideMiddle, self.contentsRect().width()
+        ))
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._render_text()
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.FontChange and hasattr(self, "_full_text"):
+            self._render_text()
 
 
 class ReferenceVideoDialog(QDialog):
@@ -138,7 +171,7 @@ class ReferenceVideoDialog(QDialog):
         header.addWidget(self._role)
         layout.addLayout(header)
 
-        self._headline = QLabel(
+        self._headline = _VideoNameLabel(
             _HOST_EMPTY_HEADLINE if self._hosting else _GUEST_EMPTY_HEADLINE
         )
         self._headline.setObjectName("PaintAlongHeadline")
@@ -251,6 +284,7 @@ class ReferenceVideoDialog(QDialog):
 
         self._hint = QLabel(_SYNC_HONESTY)
         self._hint.setObjectName("PaintAlongHint")
+        self._hint.setWordWrap(True)
         self._hint.setAccessibleName("How Paint along works")
         self._hint.setAccessibleDescription(_SYNC_DETAIL)
         self._hint.setToolTip(_SYNC_DETAIL)
@@ -294,11 +328,11 @@ class ReferenceVideoDialog(QDialog):
         embedded = bool(embedded)
         self._back_button.setVisible(embedded)
         if embedded:
-            # The surrounding strip, HUD, and 72px room bar still need to fit
-            # on WebJam's supported 760x600 floor. Normal desktops let the
-            # expanding surface take all remaining room.
+            # Reserve room for recovery and navigation at the 720x560 client
+            # minimum. Stretch gives the video all remaining space on larger
+            # windows without forcing it over the controls on compact ones.
             self.setMinimumSize(0, 0)
-            self._surface_holder.setMinimumHeight(220)
+            self._surface_holder.setMinimumHeight(0)
         else:
             self.setMinimumSize(720, 520)
             self._surface_holder.setMinimumHeight(360)
@@ -422,6 +456,7 @@ class ReferenceVideoDialog(QDialog):
                 ReferenceVideoFollowState.NEEDS_FILE: "Open your copy to see the process video",
                 ReferenceVideoFollowState.MISMATCHED_FILE: "Open the matching copy",
                 ReferenceVideoFollowState.FILE_UNAVAILABLE: "Open your copy again",
+                ReferenceVideoFollowState.LOCAL_ATTENTION: "Open your copy again",
                 ReferenceVideoFollowState.HOST_ATTENTION: "Waiting for the host",
                 ReferenceVideoFollowState.STALLED: "Playback paused",
                 ReferenceVideoFollowState.HIDDEN: "Video hidden on this computer",
@@ -429,18 +464,14 @@ class ReferenceVideoDialog(QDialog):
         )
         self._render_position(snapshot.target_position_s, self._duration_s)
         self._position.setEnabled(False)
-        # A guest in a room with no video has nothing to open, close, or hide,
-        # so none of it is offered.
-        holds_copy = state in {
-            ReferenceVideoFollowState.FOLLOWING,
-            ReferenceVideoFollowState.MISMATCHED_FILE,
-            ReferenceVideoFollowState.FILE_UNAVAILABLE,
-            ReferenceVideoFollowState.STALLED,
-        }
+        # A retained local copy can still be closed when the host withdraws
+        # the video or this artist hides it. Only the core owns that fact.
+        holds_copy = snapshot.can_close_local_copy
         needs_copy = state in {
             ReferenceVideoFollowState.NEEDS_FILE,
             ReferenceVideoFollowState.MISMATCHED_FILE,
             ReferenceVideoFollowState.FILE_UNAVAILABLE,
+            ReferenceVideoFollowState.LOCAL_ATTENTION,
         }
         following_or_hidden = state in {
             ReferenceVideoFollowState.FOLLOWING,

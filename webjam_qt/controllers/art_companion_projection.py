@@ -33,6 +33,7 @@ _FOLLOW_VIDEO_STATES = {
     "needs_file": VideoCompanionState.NEEDS_FILE,
     "mismatched_file": VideoCompanionState.MISMATCHED_FILE,
     "file_unavailable": VideoCompanionState.FILE_UNAVAILABLE,
+    "local_attention": VideoCompanionState.LOCAL_ATTENTION,
     "host_attention": VideoCompanionState.HOST_ATTENTION,
     "stalled": VideoCompanionState.STALLED,
 }
