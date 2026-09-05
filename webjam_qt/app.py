@@ -63,6 +63,15 @@ def qt_arguments_without_test_night(arguments: Sequence[object]) -> list[str]:
     ]
 
 
+def _apply_launch_session_context(
+    controller: ApplicationController, launch: LaunchDialog | None,
+) -> None:
+    """Display an invitation title without adopting it as a personal default."""
+
+    if launch is not None and launch.selected_role == "join":
+        controller._set_session_entry_title(launch.session_name, borrowed=True)
+
+
 class WebJamApplication(QApplication):
     """QApplication that receives macOS ``webjam://`` open events."""
 
@@ -388,9 +397,7 @@ def _run_app() -> int:
     if not reference_studio_launch:
         # The localhost companion belongs to live-session integrations.
         controller.start_companion_api()
-    if launch is not None and launch.selected_role == "join":
-        window.session_strip.set_session_title(launch.session_name)
-        controller._save_session_title()
+    _apply_launch_session_context(controller, launch)
     if isinstance(app, WebJamApplication):
 
         def _deliver_live_invite(invitation: Invitation) -> None:

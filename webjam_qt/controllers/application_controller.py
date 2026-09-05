@@ -953,6 +953,10 @@ class ApplicationController(QObject):
                 action_visible=False,
             )
 
+        sync_art_overview = getattr(self, "_sync_art_room_overview", None)
+        if callable(sync_art_overview):
+            sync_art_overview()
+
     def _shutdown_cleanup_blocks_action(self) -> bool:
         """Block new work while a failed shutdown still owns cleanup."""
 
@@ -1027,6 +1031,8 @@ class ApplicationController(QObject):
         # Saving may still veto Quit without changing any runtime ownership.
         # Everything after this line can be irreversible, so a later failure
         # leaves the monotonic cleanup latch set until a successful retry.
+        if not getattr(self, "_shutdown_cleanup_pending", False):
+            self._shutdown_art_room_role = getattr(self, "_art_room_role", "")
         self._shutdown_cleanup_pending = True
         room_help = getattr(self, "_room_help", None)
         if room_help is not None:
@@ -1565,7 +1571,13 @@ class ApplicationController(QObject):
                         invoke(clear_projection)
                     else:
                         clear_projection()
-                restore_borrowed = bool(getattr(self, "_creator_profile_host_owned", False))
+                # Entry can borrow a title before the first authenticated
+                # profile arrives. Leaving that pending join must restore the
+                # personal title too, even though no profile was adopted.
+                restore_borrowed = bool(
+                    getattr(self, "_creator_profile_host_owned", False)
+                    or getattr(getattr(self, "_persistence", None), "_borrowed_title", None)
+                )
                 def restore_profile() -> None:
                     if restore_borrowed:
                         previous_profile = self._active_creator_profile_key
@@ -1901,6 +1913,87 @@ class ApplicationController(QObject):
             intended_video=bool(start is not None and start.reference_video),
         )
         strip.set_art_room_presence(presence)
+        self._sync_art_room_overview(presence)
+
+    def _sync_art_room_overview(self, presence=None):
+        """Keep Art's stage tied to current room and cleanup owners."""
+        setter = getattr(self.window, "set_art_room_overview", None)
+        if (
+            not callable(setter) or self.creator_profile.key != "art"
+            or getattr(self, "_shutdown", False)
+        ):
+            return None
+        from core.art_room_overview import art_room_overview
+        from core.art_room_presence import ABSENT, art_room_presence
+
+        room = getattr(self, "_room_participant", None)
+        audio = getattr(self, "audio", None)
+        state = getattr(room, "state", ArtRoomState.NONE)
+        if bool(getattr(room, "probe_failed", False)):
+            state = ArtRoomState.FAILED
+        closing = bool(getattr(audio, "stopping", False))
+        cleanup = bool(getattr(audio, "cleanup_retry_required", False))
+        quitting = bool(getattr(self, "_shutdown_cleanup_pending", False))
+        probing = bool(getattr(room, "probing", False))
+        # The audio owner retains its last clean End latch across Art starts.
+        # A current room attempt supersedes that historical latch.
+        ended = bool(
+            getattr(audio, "ended_by_user", False)
+            and state is ArtRoomState.NONE and not probing
+        )
+        # A retained optional-layer snapshot is not evidence that its room
+        # is connected. Never offer it through a stale or closing room.
+        if presence is None:
+            presence = ABSENT
+            if state in {ArtRoomState.WAITING, ArtRoomState.CONNECTED} and not (
+                closing or cleanup or ended or quitting
+            ):
+                projection = self.art_room_state()
+                start = self.creator_start
+                presence = art_room_presence(
+                    projection,
+                    hosting=projection.transport_allowed,
+                    intended_canvas=bool(start is not None and start.shared_canvas),
+                    intended_video=bool(start is not None and start.reference_video),
+                )
+        role = self._art_room_role or (
+            "host" if self.settings.host_server_enabled else "guest"
+        )
+        if ended and bool(getattr(audio, "_stop_art_room", False)):
+            role = "host" if getattr(audio, "_stop_hosting", False) else "guest"
+        quitting_role = getattr(self, "_shutdown_art_room_role", "")
+        if quitting and quitting_role in {"host", "guest"}:
+            role = quitting_role
+        overview = art_room_overview(
+            state=state,
+            hosting=(role == "host"),
+            probing=probing,
+            stopping=closing,
+            ended=ended,
+            cleanup_required=cleanup,
+            quitting=quitting,
+            presence=presence,
+        )
+        setter(overview)
+        return overview
+
+    def _on_art_overview_activity(self, action: str) -> None:
+        # Re-read current owners at dispatch; a click queued before Leave
+        # must not open an optional layer for a room that is now closing.
+        overview = self._sync_art_room_overview()
+        if overview is None or not overview.activity_enabled:
+            return
+        if action != overview.activity_action:
+            return
+        if action == "video":
+            self._open_reference_video()
+        elif action == "canvas":
+            self._open_shared_canvas()
+
+    def _on_art_overview_conversation(self) -> None:
+        overview = self._sync_art_room_overview()
+        if overview is not None and overview.conversation_enabled:
+            self._show_webex_conversation()
 
     def _maybe_open_paint_along(self, snapshot=None) -> None:
         """Show Paint along once when room truth makes it actionable.
@@ -3888,6 +3981,10 @@ class ApplicationController(QObject):
         # Settings shortcut (Ctrl+,) and side-rail Settings button → wizard
         self.window._settings_shortcut.activated.connect(self._open_settings_wizard)
         self.window.side_rail.view_changed.connect(self._on_rail_view_changed)
+        art_overview = getattr(self.window, "art_room_overview", None)
+        if art_overview is not None:
+            art_overview.activity_requested.connect(self._on_art_overview_activity)
+            art_overview.conversation_requested.connect(self._on_art_overview_conversation)
 
         # Participant grid re-emits card signals — connect once here
         grid = self.window.participant_grid
@@ -7246,6 +7343,9 @@ class ApplicationController(QObject):
         self._reference_track_remote_route_pre_retired = bool(
             reference_track_already_retired
         )
+        # Native invitations contain no room title. Do not label the host's
+        # room with this artist's previous personal project.
+        self._set_session_entry_title("Room", borrowed=True)
         self._remote_invitation = invitation
         self.window.session_strip.set_invite_available(False)
         self.window.session_strip.set_reset_invite_available(False)
@@ -7386,9 +7486,7 @@ class ApplicationController(QObject):
             # whoever sent it. Marking it borrowed keeps it out of the
             # musician's persisted default, so a joined session's name cannot
             # follow them into a jam they host later.
-            self.window.session_strip.set_session_title(invitation.session_name)
-            self._persistence.mark_title_borrowed(invitation.session_name)
-            self._save_session_title()
+            self._set_session_entry_title(invitation.session_name, borrowed=True)
             self.window.recording_studio.set_takes_directory(
                 self.settings.takes_directory
             )
@@ -9155,6 +9253,7 @@ class ApplicationController(QObject):
         self._last_session_conductor = presentation
         self._record_pilot_conductor_presentation(presentation)
         self._publish_musician_guidance(snapshot, display_override=display_override)
+        self._sync_art_room_overview()
         if display_override is not None:
             if display_override.primary_action is SessionPrimaryAction.COPY_INVITE:
                 self.window.session_strip.set_invite_available(False)
@@ -11833,6 +11932,13 @@ class ApplicationController(QObject):
         )
         self._reopen_invalidated_band_check(reopen_band_check, reopen_start_when_ready)
 
+    def _set_room_stage_visible(self, visible: bool) -> None:
+        setter = getattr(self.window, "set_room_stage_visible", None)
+        if callable(setter):
+            setter(visible)
+        else:
+            self.window.participant_grid.setVisible(visible)
+
     def _on_rail_view_changed(self, key: str) -> None:
         if key == "takes" and not self.creator_profile.capabilities.take_review:
             self.window.flash_message(
@@ -11895,7 +12001,7 @@ class ApplicationController(QObject):
                 self.window.workspace_stack.setCurrentWidget(
                     self.window.center_splitter
                 )
-                self.window.participant_grid.setVisible(True)
+                self._set_room_stage_visible(True)
                 self.window.session_canvas.setVisible(False)
                 splitter.setSizes([total, 0])
             elif key == "canvas":
@@ -11908,7 +12014,7 @@ class ApplicationController(QObject):
                 # record the workspace instead; normal desktops retain useful
                 # stage context beside it.
                 compact_canvas = self.window.width() < 900
-                self.window.participant_grid.setVisible(not compact_canvas)
+                self._set_room_stage_visible(not compact_canvas)
                 splitter.setSizes(
                     [0, total]
                     if compact_canvas
@@ -14283,6 +14389,16 @@ class ApplicationController(QObject):
     def _load_session_title(self) -> None:
         """Restore the session title and last-used mode from disk."""
         self._persistence._load_session_metadata()
+
+    def _set_session_entry_title(self, title: str, *, borrowed: bool) -> None:
+        """Apply entry context before any title signal can persist it."""
+        if borrowed:
+            self._persistence.mark_title_borrowed(title)
+        else:
+            self._persistence.clear_borrowed_title()
+        self.window.session_strip.set_session_title(title)
+        if not borrowed:
+            self._save_session_title()
 
     def _save_session_title(self) -> None:
         """Persist the current session title and mode to disk."""

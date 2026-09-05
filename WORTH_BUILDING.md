@@ -1,28 +1,51 @@
-# Worth-Building — Art room participation
+# Worth-Building — Art room clarity and continuity
 
-2026-09-05 CT. Branch `codex/webjam-art-participant-door`, based on
-`origin/master` at `7f38ba20eb71afffdb37a8d03d29248abfdee1de`.
+2026-09-05 CT. Branch `codex/webjam-art-room-clarity` from exact master
+`c18e0b9ac039e8e99d3a5fa19305c155de3b160e` after #69 and #70.
 
-**Source/product Worth-Building: PASS.**
-The final commit, hosted results, and lease release are recorded in the draft PR
-and Bob-the-Bot #3 AFTER. Historical #68 results are not proof for this slice.
+**Worth-Building PASS. Product self-QA PASS. Full local suite PASS (7,078 tests).**
+Exact-tip hosted success and four desktop builds remain required for handoff.
+Bob-the-Bot #3 BEFORE: comment `5554058853`.
 
-The product gap was concrete: an artist accepting a room invitation followed
-Music startup, while native guests had no host profile or creative state to
-follow. Art now has a room participant that can enter, follow, recover, and
-leave without constructing a recording guest or starting Music audio.
+Current source exposes three connected problems in an artist's room journey:
 
-| Gate | Product behavior and evidence |
-| --- | --- |
-| Clear start | Exactly Make together / Paint along, then Host / Join; Music retains Host / Join. Repeated click and Space preserve selection, white focus stays distinct from burnt-orange selection, and the neutral squirrel mark retains its size. `test_art_participant_door.py`, `test_art_start_ux.py`. |
-| Real room entry | Private LAN discovery reads the authenticated host profile before choosing Art or Music. Native peers deliver typed initial and live room state. Actual controller tests enter Art from a saved Music profile without Jamulus or a recording owner. `test_art_room_controller.py`, `test_art_room_connection_facts.py`. |
-| Useful collaboration | Existing silent local-video matching/follow and optional canvas owners consume current host state; own tools and Webex demonstrations remain available. Wrong local files, withdrawal, stale state, and invitation replacement stop following honestly. No automatic external app launch. |
-| One recovery action | Waiting, connected, reconnecting, update/rejoin, End Room / Leave Room, and cleanup retries use observed ownership. Music audio evidence, unresolved recording, local notes, and unfinished cleanup retain precedence. `test_art_audio_cleanup.py`, `test_art_room_recovery.py`. |
-| Private invitation | Full invitation validation happens on Join; replacing a paste clears accessible errors. Existing capability/pinned connection boundaries remain. Typed room payloads are bounded, ephemeral, and excluded from diagnostics and persistence. `test_room_state.py`, native transport and Go room tests. |
-| Real transport proof | One reliable dispatcher handles Help and room state. Two actual sidecar processes prove initial/live state, withdrawal, reset with a fresh guest, stale rejection, independent rate limits, and connection loss. Existing audio datagrams and Help still work. `test_native_room_process.py`, `test_native_sidecar_integration.py`. |
-| Product honesty | Guides describe Art as a newer Preview for artists across mediums and distinguish room entry from Music audio setup. No public service, physical output, signing, or release result is inferred from source automation. |
+1. A connected Art room still renders the empty Music participant stage.
+   `ApplicationController._push_participants_to_grid` supplies only Music
+   participants, and `_render_session_conductor` repeats the HUD into the empty
+   card. `ParticipantGrid._sync_participant_accessibility` therefore announces
+   zero artists while the authenticated room connection says connected. Make
+   together has no useful body when no optional canvas or video exists.
+2. Cold Join can overwrite the guest's saved workspace. The launch dialog saves
+   its fallback Music profile even when a Podcast/Review guest never chose it;
+   `app.py` saves an invitation title before marking it borrowed. Leave then
+   restores the overwritten title/profile. Warm entry already protects borrowed
+   titles, but cold bootstrap tests miss this boundary.
+3. A safe native Art retry can connect while the conductor stays FAILED.
+   `prepare_native` resets room state without opening a new conductor attempt;
+   the conductor correctly refuses to leave its terminal failed generation.
+   A pure transition check confirms that advancing the attempt accepts the new
+   connected facts while the previous token does not.
 
-Required proof: focused regressions, full unfiltered local pytest, Ruff,
-compileall, pip check, UX smoke, Go checks/race suite, Pre-Karen review, and
-hosted SUCCESS on the exact open draft tip including all four desktop builds.
-No source from parked #37/#49 or the #67 branch is a work target.
+The coherent improvement is a truthful Art room view with a working entry,
+retry, and exit boundary. The room body will use actual role/connection and
+existing activity facts, give direct access to existing optional activities,
+and distinguish waiting, connected, reconnecting, closing, and closed rooms.
+It will not display Music mixer counts as artist membership or invent a named
+roster that the current peer protocol does not supply. Cold invitations must
+preserve the artist's personal profile, activity, title, and notes through Leave;
+native retry must bind its successful room to a fresh conductor attempt.
+
+Required proof: actual widget/controller transitions and action routing;
+cold door → authenticated Art entry → Leave → personal workspace restoration;
+safe native failure → retry → connected, with stale callbacks rejected;
+Art/door/session/invite regressions; full unfiltered local pytest, Ruff,
+compileall, pip check, UX smoke; compact/normal native renders; Pre-Karen QA;
+one mergeable OPEN DRAFT with exact-tip hosted SUCCESS and four desktop builds.
+
+Art Preview labels from #70 remain. Music audio readiness stays evidence-based.
+Two Art choices precede Host/Join; meeting/canvas launch stays explicit, Webex
+sharing and silent local Paint along retain their existing owners. Black,
+white, neutral gray, and burnt orange only. No short-code, public rendezvous,
+default Session-help claim, second video stack, merge/tag/sign/release/Pages or
+Release Trust. #37/#49 stay parked. Unsigned 0.27.2 and physical/public results
+remain Jeff-only / NOT RUN. Final SHA and evidence belong in the draft and AFTER.

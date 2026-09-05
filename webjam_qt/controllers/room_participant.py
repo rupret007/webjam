@@ -228,6 +228,11 @@ class RoomParticipantController:
         ))
 
     def prepare_native(self, role):
+        # Native callers reach this boundary only when starting a new owner,
+        # after guarding an already active runtime or host constructor. A safe
+        # retry needs a fresh conductor token so its Art connection can replace
+        # the previous attempt's terminal failure without accepting late work.
+        self.app._start_session_conductor_attempt(role)
         self.generation += 1
         self.role = role
         self.stopping = False
