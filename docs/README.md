@@ -56,6 +56,9 @@ keeps the product story and five-minute demo intentionally short.
 - [Quick help map](../QUICK_HELP_MAP.md) and
   [help routing map](../HELP_ROUTING_MAP.md) — need→action and
   musician-question→answer tables for support conversations.
+- [Session help preview](SESSION_HELP_PREVIEW.md) — development-gated temporary
+  troubleshooting text after secure peer proof, separate from Jamulus chat and
+  saved notes; source evidence and unperformed physical gates.
 
 ## Evidence, releases, and operations
 

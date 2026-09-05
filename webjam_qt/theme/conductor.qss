@@ -443,6 +443,13 @@ QPushButton#SharedTrackLiveState[nextStep="true"]:focus {
     width: 0px;
 }
 
+/* Only the opt-in preview adds Help. Keep every action and the recording
+ * receipt readable at the 720 px floor, with unchanged default chrome. */
+#SessionControlBar[helpPreviewCompact="true"] QPushButton#GhostButton,
+#SessionControlBar[helpPreviewCompact="true"] QToolButton#GhostButton {
+    padding: 0 10px;
+}
+
 #SessionControlBar QPushButton#AudioButton[destructive="true"] {
     background-color: ${COLOR_BG_CARD};
     color: ${COLOR_TEXT_PRIMARY};
@@ -450,6 +457,10 @@ QPushButton#SharedTrackLiveState[nextStep="true"]:focus {
     border-radius: 20px;
     min-height: 38px;
     padding: 0 20px;
+}
+
+#SessionControlBar[helpPreviewCompact="true"] QPushButton#AudioButton[destructive="true"] {
+    padding: 0 ${SPACE_MD}px;
 }
 
 #SessionControlBar QPushButton#AudioButton[destructive="true"]:hover {
@@ -1799,6 +1810,10 @@ QPushButton#StudioRecordButton {
     min-height: 36px;
     padding: ${SPACE_SM}px ${SPACE_LG}px;
     font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#SessionControlBar[helpPreviewCompact="true"] QPushButton#StudioRecordButton {
+    padding: 0 10px;
 }
 
 QPushButton#StudioRecordButton:hover {

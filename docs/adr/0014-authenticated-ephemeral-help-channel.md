@@ -54,21 +54,40 @@ receipt.
 `send_help` is the sole IPC command that accepts bounded free-form text. The
 three help-event types are never added to the desktop diagnostic timeline.
 Go event formatting and Python event representations omit the content. The
-desktop may give received text to an in-memory observer, which is the seam a
-future reviewed UI can consume.
+desktop may give received text to an in-memory observer. The separate
+development preview consumes that seam without granting default-product use.
 
 ## Consequences
 
 - The transport foundation for setup help is real and tested in both
   directions without weakening peer authentication or introducing a service.
-- There is no user-facing help control yet. Source and releases must not claim
-  pre-Jamulus chat until that UI, failure language, and real-path evidence
-  exist.
+- A separate [development-gated desktop preview](../SESSION_HELP_PREVIEW.md)
+  now consumes this seam using the existing reference-local lab opt-in. The
+  default and released product still expose no pre-Jamulus help control.
+  Packaged two-Mac and public-service evidence remain NOT RUN; a source UI is
+  not release readiness.
 - The message lives briefly in process memory and IPC pipes. Administrator
   memory dumps and a fully compromised endpoint remain out of scope.
 - An invited peer can send objectionable plain text within the bound. The
   channel prevents persistence and resource growth; it does not moderate a
   trusted collaborator.
+
+## Desktop preview ownership
+
+The presenter stages at most sixteen early/queued frames for an explicitly
+armed source. It grants no display or send authority until the exact live
+source, role and generation have connected proof. One scheduled Qt drain,
+forty display entries, eight early acknowledgement IDs and one send worker
+bound memory/work. The worker passes the captured expected generation to the
+native sender, which checks it before dispatch rather than merely rejecting a
+late receipt after text has already gone to a different peer.
+
+Native liveness is checked separately from Jamulus readiness; a dead sidecar
+or terminal peer event disables help even if an older enrollment snapshot is
+still on screen. Reset/leave/replacement/failure/shutdown invalidate queued
+work and erase displayed/draft text. QLineEdit reset uses a replacement value,
+not an undoable clear. The panel is not a notes or export source, and help
+content remains excluded from existing diagnostic projections.
 
 ## Rejected alternatives
 

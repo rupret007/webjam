@@ -381,6 +381,23 @@ class ApplicationController(QObject):
         )
 
         self._ui_invoker = UiThreadInvoker(self)
+        from services.native_remote_transport import reference_local_host_requested
+        from webjam_qt.controllers.room_help import RoomHelpController
+
+        self._room_help_enabled = bool(
+            reference_local_host_requested() and not offline_reference_studio
+        )
+        self._room_help = RoomHelpController(
+            self.window.room_help,
+            enabled=self._room_help_enabled,
+            schedule_callback=self._ui_invoker.invoke,
+        )
+        self.window.set_room_help_enabled(self._room_help_enabled)
+        self._room_help_timer = QTimer(self)
+        self._room_help_timer.setInterval(500)
+        self._room_help_timer.timeout.connect(self._room_help.poll_availability)
+        if self._room_help_enabled:
+            self._room_help_timer.start()
         self._song_tools = None
 
         self.repository = WebJamRepository()
@@ -981,6 +998,12 @@ class ApplicationController(QObject):
         # Everything after this line can be irreversible, so a later failure
         # leaves the monotonic cleanup latch set until a successful retry.
         self._shutdown_cleanup_pending = True
+        room_help = getattr(self, "_room_help", None)
+        if room_help is not None:
+            room_help.shutdown()
+        room_help_timer = getattr(self, "_room_help_timer", None)
+        if room_help_timer is not None:
+            room_help_timer.stop()
         # Stop updater network/download/install work before touching any
         # Jamulus owner. A component worker may be hashing large bytes or
         # waiting for platform approval; cancellation is bounded and failure
@@ -5863,6 +5886,13 @@ class ApplicationController(QObject):
             return
         self.window.session_canvas.append_line(f"You: {text}")
 
+    def _invalidate_room_help(self) -> None:
+        """Retire text/receipts immediately, even during background cleanup."""
+
+        room_help = getattr(self, "_room_help", None)
+        if room_help is not None:
+            room_help.invalidate()
+
     def _rpc_ui_source_is_current(
         self,
         source_identity: JamulusRpcMonitorIdentity,
@@ -6505,6 +6535,7 @@ class ApplicationController(QObject):
     def _clear_remote_invite_owner(self) -> bool:
         """Revoke v3 invitation state and clear mode after server ownership ends."""
 
+        ApplicationController._invalidate_room_help(self)
         cleanup_ok = True
         owner = getattr(self, "_remote_invite_owner", None)
         owner_stopped = True
@@ -6557,6 +6588,7 @@ class ApplicationController(QObject):
     def _stop_remote_transport(self, *, restore_route: bool = True) -> bool:
         """Stop v3 only after Jamulus has released its loopback proxy."""
 
+        ApplicationController._invalidate_room_help(self)
         cleanup_ok = True
         runtime = getattr(self, "_remote_session", None)
         runtime_stopped = True
@@ -7426,9 +7458,25 @@ class ApplicationController(QObject):
                 return
             self._on_remote_session_snapshot(snapshot, source=source)
 
+        def on_help(event) -> None:
+            source = callback_source["value"]
+            if source is not None:
+                self._room_help.receive(event, source=source)
+
+        ApplicationController._invalidate_room_help(self)
         try:
+            backend = (
+                NativeGuestTransportBackend(
+                    on_help=on_help,
+                    # The presenter bounds ingress before scheduling ONE Qt
+                    # drain; do not enqueue arbitrary captured text in Qt.
+                    schedule_help_callback=lambda callback: callback(),
+                )
+                if getattr(self, "_room_help_enabled", False)
+                else NativeGuestTransportBackend()
+            )
             runtime = RemoteSessionRuntime(
-                NativeGuestTransportBackend(),
+                backend,
                 on_snapshot=on_snapshot,
                 schedule_callback=self._ui_invoker.invoke,
             )
@@ -7444,6 +7492,9 @@ class ApplicationController(QObject):
             return
         callback_source["value"] = runtime
         self._remote_session = runtime
+        room_help = getattr(self, "_room_help", None)
+        if room_help is not None:
+            room_help.arm(runtime)
         self._bind_remote_startup_continuation(
             runtime,
             startup_authorization_generation,
@@ -7479,6 +7530,11 @@ class ApplicationController(QObject):
                     return
                 self._on_remote_session_snapshot(snapshot, source=source)
 
+            def on_help(event) -> None:
+                source = callback_source["value"]
+                if source is not None:
+                    self._room_help.receive(event, source=source)
+
             try:
                 from services.native_remote_transport import NativeHostTransportOwner
 
@@ -7486,6 +7542,14 @@ class ApplicationController(QObject):
                     target_port=int(self.settings.jamulus_port),
                     on_snapshot=on_snapshot,
                     schedule_callback=self._ui_invoker.invoke,
+                    **(
+                        {
+                            "on_help": on_help,
+                            "schedule_help_callback": lambda callback: callback(),
+                        }
+                        if getattr(self, "_room_help_enabled", False)
+                        else {}
+                    ),
                 )
                 callback_source["value"] = owner
             except Exception as exc:  # noqa: BLE001 - fixed musician copy only
@@ -7514,6 +7578,9 @@ class ApplicationController(QObject):
                     self._show_remote_session_failure()
                     return
                 self._remote_session = owner
+                room_help = getattr(self, "_room_help", None)
+                if room_help is not None:
+                    room_help.arm(owner)
                 self._bind_remote_startup_continuation(
                     owner,
                     startup_authorization_generation,
@@ -7555,6 +7622,7 @@ class ApplicationController(QObject):
 
         from services.remote_session_runtime import (
             RemoteSessionPhase,
+            RemoteSessionSnapshot,
             RemoteSessionStage,
         )
 
@@ -7563,6 +7631,21 @@ class ApplicationController(QObject):
         if source is not getattr(self, "_remote_session", None):
             LOGGER.debug("Ignored snapshot from a replaced remote runtime")
             return
+        current_snapshot = getattr(source, "snapshot", None)
+        if (
+            isinstance(current_snapshot, RemoteSessionSnapshot)
+            and (
+                not isinstance(snapshot, RemoteSessionSnapshot)
+                or snapshot.generation != current_snapshot.generation
+                or snapshot.role != current_snapshot.role
+            )
+        ):
+            # Reset keeps the same host owner object. A queued old-generation
+            # failure must not clear the replacement peer's help or room UI.
+            return
+        room_help = getattr(self, "_room_help", None)
+        if room_help is not None:
+            room_help.update(source, snapshot)
         if snapshot.phase is RemoteSessionPhase.PREPARING:
             securing = (
                 getattr(snapshot, "stage", None)
@@ -7661,6 +7744,7 @@ class ApplicationController(QObject):
     ) -> None:
         """Render a remote failure without replaying an uncertain invitation."""
 
+        ApplicationController._invalidate_room_help(self)
         self._remote_startup_launch_continuation = None
         self._transition_lifecycle(
             SessionLifecyclePhase.FAILED_RECOVERABLE,
@@ -7805,6 +7889,7 @@ class ApplicationController(QObject):
                 ms=5000,
             )
             return
+        ApplicationController._invalidate_room_help(self)
         try:
             owner.reset()
         except Exception:
@@ -7814,6 +7899,10 @@ class ApplicationController(QObject):
                 ms=6000,
             )
             return
+        room_help = getattr(self, "_room_help", None)
+        if room_help is not None:
+            room_help.arm(owner)
+            room_help.update(owner, getattr(owner, "snapshot", None))
         self.window.flash_message(
             "Old invitation revoked. A new private link is ready.",
             ms=6000,

@@ -22,6 +22,7 @@ from core.session_transport import (
     SessionRole,
     TransportPath,
 )
+from services.transport_runtime import TransportEvent
 
 LOGGER = logging.getLogger("webjam.services.remote_session")
 
@@ -190,6 +191,64 @@ class RemoteSessionRuntime:
             RemoteSessionPhase.PREPARING,
             RemoteSessionPhase.CONNECTED,
         }
+
+    @property
+    def help_available(self) -> bool:
+        """Return current backend proof, never infer help from audio readiness."""
+
+        with self._condition:
+            if self._snapshot.phase is not RemoteSessionPhase.CONNECTED:
+                return False
+            try:
+                return getattr(self._backend, "help_available", False) is True
+            except Exception:  # noqa: BLE001 - readiness must fail closed
+                return False
+
+    def send_help(
+        self, text: str, *, expected_generation: int | None = None
+    ) -> TransportEvent:
+        """Forward one send while retaining this operation's ownership fence."""
+
+        with self._condition:
+            if not self.help_available:
+                raise RemoteBackendError(RemoteSessionErrorCode.TRANSPORT_FAILED)
+            backend = self._backend
+            operation = self._operation
+            generation = self._snapshot.generation
+            if expected_generation is not None and (
+                type(expected_generation) is not int or expected_generation != generation
+            ):
+                raise RemoteBackendError(RemoteSessionErrorCode.TRANSPORT_FAILED)
+            sender = getattr(backend, "send_help", None)
+            if not callable(sender):
+                raise RemoteBackendError(RemoteSessionErrorCode.TRANSPORT_FAILED)
+        try:
+            # Bind dispatch itself, not only the later receipt. A stop/restart
+            # between this lock and the backend call must not send old text to
+            # the replacement peer before we reject its completion.
+            accepted = sender(text, expected_generation=generation)
+        except ValueError:
+            raise ValueError("help text must be bounded plain text") from None
+        except Exception:  # noqa: BLE001 - never expose message or backend detail
+            raise RemoteBackendError(RemoteSessionErrorCode.TRANSPORT_FAILED) from None
+        with self._condition:
+            if (
+                backend is not self._backend
+                or operation != self._operation
+                or generation != self._snapshot.generation
+                or not self.help_available
+                or not isinstance(accepted, TransportEvent)
+                or accepted.event_type != "help_accepted"
+                or accepted.mode != "guest"
+                or accepted.generation != generation
+                or accepted.code != "ok"
+                or accepted.state != "connected"
+                or accepted.request_id < 1
+                or accepted.event_id != accepted.request_id
+                or accepted.help_text
+            ):
+                raise RemoteBackendError(RemoteSessionErrorCode.TRANSPORT_FAILED)
+        return accepted
 
     def start_guest(self, invitation: RemoteInvitation) -> bool:
         if not isinstance(invitation, RemoteInvitation):

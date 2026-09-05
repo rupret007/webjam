@@ -34,10 +34,14 @@ from PySide6.QtGui import (
     QShortcut,
 )
 from PySide6.QtWidgets import (
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QPushButton,
+    QSizePolicy,
+    QSpacerItem,
     QSplitter,
     QStackedWidget,
     QStatusBar,
@@ -63,6 +67,7 @@ from webjam_qt.widgets import (
     WebexEmbed,
     SongOverlay,
 )
+from webjam_qt.widgets.room_help import RoomHelpPanel
 
 
 class ConductorWindow(QMainWindow):
@@ -122,6 +127,24 @@ class ConductorWindow(QMainWindow):
         self.participant_grid = ParticipantGrid()
         self.webex_embed = WebexEmbed()
         self.session_canvas = SessionCanvas()
+        # A direct, non-modal preview keeps troubleshooting usable while a
+        # musician is still working through setup. Never mix it with saved
+        # notes, and never expose it without the existing lab opt-in.
+        self._room_help_dialog = QDialog(self)
+        self._room_help_dialog.setWindowTitle("Session help — Development preview")
+        self._room_help_dialog.setModal(False)
+        self._room_help_dialog.resize(380, 340)
+        self._room_help_dialog.setMinimumWidth(300)
+        self.room_help = RoomHelpPanel(self._room_help_dialog)
+        help_layout = QVBoxLayout(self._room_help_dialog)
+        help_layout.setContentsMargins(0, 0, 0, 0)
+        help_layout.addWidget(self.room_help)
+        self._room_help_button = QPushButton("Help")
+        self._room_help_button.setObjectName("GhostButton")
+        self._room_help_button.setAccessibleName("Open temporary session help preview")
+        self._room_help_button.setToolTip("Temporary help with your secure peer; development preview")
+        self._room_help_button.setVisible(False)
+        self._room_help_button.clicked.connect(self._show_room_help)
         self.recording_studio = RecordingStudio()
         self.reference_studio = ReferenceStudioShell(self.recording_studio)
         # Compact chrome that can sit beside a free Webex window: a fixed
@@ -155,10 +178,17 @@ class ConductorWindow(QMainWindow):
         # the bar a musician already uses, rather than inside a menu.
         controls_layout.addWidget(self.session_strip._song_button)
         controls_layout.addWidget(self.session_strip._studio_button)
+        controls_layout.addWidget(self._room_help_button)
         self.session_strip._tools_button.setText("More ▾")
         self.session_strip._tools_button.setAccessibleName("More session options")
         controls_layout.addWidget(self.session_strip._tools_button)
-        controls_layout.addSpacing(Space.MD)
+        self._session_end_gap = QSpacerItem(
+            Space.MD,
+            1,
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Minimum,
+        )
+        controls_layout.addItem(self._session_end_gap)
         self.session_strip._audio_button.setProperty("destructive", "true")
         controls_layout.addWidget(self.session_strip._audio_button)
         controls_layout.addStretch(1)
@@ -266,6 +296,49 @@ class ConductorWindow(QMainWindow):
         self._setup_shortcuts()
         self.participant_grid.participants_changed.connect(self._setup_tab_order)
         self._setup_tab_order()
+
+    def set_room_help_enabled(self, enabled: bool) -> None:
+        """Expose the temporary help preview only after the lab opt-in."""
+
+        self._room_help_enabled = enabled is True
+        self._room_help_button.setVisible(self._room_help_enabled)
+        self._sync_room_help_density()
+        if not self._room_help_enabled:
+            self._room_help_dialog.hide()
+
+    def _sync_room_help_density(self) -> None:
+        """Make space for preview Help without hiding or clipping other actions."""
+
+        compact = bool(getattr(self, "_room_help_enabled", False)) and self.width() < 900
+        bar = self.session_controls
+        if bar.property("helpPreviewCompact") == compact:
+            return
+        bar.setProperty("helpPreviewCompact", compact)
+        layout = bar.layout()
+        margin = Space.SM if compact else Space.LG
+        layout.setContentsMargins(margin, Space.SM, margin, Space.SM)
+        layout.setSpacing(Space.XS if compact else Space.SM)
+        end_gap = Space.XS if compact else Space.MD
+        self._session_end_gap.changeSize(
+            end_gap,
+            1,
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Minimum,
+        )
+        layout.invalidate()
+        for index in range(layout.count()):
+            widget = layout.itemAt(index).widget()
+            if widget is not None:
+                widget.style().unpolish(widget)
+                widget.style().polish(widget)
+                widget.updateGeometry()
+
+    def _show_room_help(self) -> None:
+        if not getattr(self, "_room_help_enabled", False):
+            return
+        self._room_help_dialog.show()
+        self._room_help_dialog.raise_()
+        self._room_help_dialog.activateWindow()
 
     def _setup_shortcuts(self) -> None:
         # On macOS, "Ctrl" in QKeySequence parses to Cmd (Qt.ControlModifier).
@@ -437,6 +510,7 @@ class ConductorWindow(QMainWindow):
                 # a musician sees rather than the order things were built in.
                 strip._song_button,
                 strip._studio_button,
+                self._room_help_button,
                 strip._tools_button,
                 strip._audio_button,
             ]
@@ -925,6 +999,8 @@ class ConductorWindow(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, "session_strip"):
             self.session_strip.set_compact_control_labels(self.width() < 900)
+        if hasattr(self, "session_controls"):
+            self._sync_room_help_density()
         if getattr(self, "song_overlay", None) is not None:
             self.song_overlay.set_available_width(self.width())
 

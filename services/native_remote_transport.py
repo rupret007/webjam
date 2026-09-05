@@ -157,14 +157,20 @@ class NativeGuestTransportBackend:
         connect_timeout: float = DEFAULT_REMOTE_CONNECT_TIMEOUT_SECONDS,
         on_help: Callable[[TransportEvent], None] | None = None,
         schedule_callback: Callable[[Callable[[], None]], None] = lambda fn: fn(),
+        schedule_help_callback: Callable[[Callable[[], None]], None] | None = None,
     ) -> None:
         if on_help is not None and not callable(on_help):
             raise TypeError("on_help must be callable")
+        if schedule_help_callback is not None and not callable(schedule_help_callback):
+            raise TypeError("schedule_help_callback must be callable")
         self._binary = Path(binary) if binary is not None else transport_binary_path()
         self._expected_build = expected_build or _expected_build_id()
         self._connect_timeout = float(connect_timeout)
         self._on_help = on_help
         self._schedule_callback = schedule_callback
+        self._schedule_help_callback = (
+            schedule_callback if schedule_help_callback is None else schedule_help_callback
+        )
         self._lock = threading.RLock()
         self._process: TransportProcess | None = None
         self._phase = "idle"
@@ -191,7 +197,7 @@ class NativeGuestTransportBackend:
                     # enrollment capability, so a timeout remains retry-safe.
                     start_timeout=DEFAULT_REMOTE_START_TIMEOUT_SECONDS,
                     command_timeout=self._connect_timeout,
-                    on_event=self._handle_event,
+                    on_event=lambda event: self._handle_event(event, source=process),
                     **_integrity_options(self._binary),
                 )
                 self._process = process
@@ -245,38 +251,103 @@ class NativeGuestTransportBackend:
             generation=connected.generation,
         )
 
-    def send_help(self, text: str) -> TransportEvent:
+    @property
+    def help_available(self) -> bool:
+        """Whether this generation still has a proved, live help transport."""
+
+        with self._lock:
+            return self._help_available_locked()
+
+    def _help_available_locked(self) -> bool:
+        process = self._process
+        if process is None or self._phase != "connected" or self._generation == 0:
+            return False
+        if not process.running:
+            self._phase = "failed"
+            return False
+        return True
+
+    def send_help(
+        self, text: str, *, expected_generation: int | None = None
+    ) -> TransportEvent:
         """Send help only through the current authenticated guest generation."""
 
         with self._lock:
             process = self._process
             generation = self._generation
-            ready = process is not None and self._phase == "connected"
+            ready = self._help_available_locked()
+            if expected_generation is not None and (
+                type(expected_generation) is not int or expected_generation != generation
+            ):
+                ready = False
         if not ready or process is None or generation == 0:
             raise RemoteBackendError(RemoteSessionErrorCode.TRANSPORT_FAILED)
         try:
-            return process.send_help(text, generation=generation)
+            accepted = process.send_help(text, generation=generation)
         except ValueError:
-            raise
-        except TransportProcessError:
+            raise ValueError("help text must be bounded plain text") from None
+        except Exception:  # noqa: BLE001 - fixed help failure boundary
             raise RemoteBackendError(
                 RemoteSessionErrorCode.TRANSPORT_FAILED
             ) from None
-
-    def _handle_event(self, event: TransportEvent) -> None:
-        if event.event_type not in {"help_received", "help_delivered"}:
-            return
         with self._lock:
             if (
-                self._process is None
-                or self._phase not in {"enrolling", "connected"}
+                self._process is not process
+                or self._generation != generation
+                or not self._help_available_locked()
+                or not isinstance(accepted, TransportEvent)
+                or accepted.event_type != "help_accepted"
+                or accepted.mode != "guest"
+                or accepted.generation != generation
+            ):
+                raise RemoteBackendError(RemoteSessionErrorCode.TRANSPORT_FAILED)
+        return accepted
+
+    def _handle_event(
+        self, event: TransportEvent, *, source: TransportProcess
+    ) -> None:
+        with self._lock:
+            if source is not self._process:
+                return
+            if (
+                event.event_type == "stopped"
+                or (
+                    event.event_type == "error"
+                    and event.event_id == 0
+                    and event.state in {"failed", "closed"}
+                )
+                or (
+                    event.event_type == "peer_closed"
+                    and event.mode == "guest"
+                    and event.generation == self._generation
+                )
+            ):
+                self._phase = "failed"
+                return
+            if event.event_type not in {"help_received", "help_delivered"}:
+                return
+            if (
+                self._phase not in {"enrolling", "connected"}
                 or event.mode != "guest"
                 or event.generation != self._generation
+                or not source.running
             ):
                 return
             callback = self._on_help
         if callback is not None:
-            self._schedule_callback(lambda value=event: callback(value))
+            def deliver() -> None:
+                with self._lock:
+                    if (
+                        source is not self._process
+                        or self._phase not in {"enrolling", "connected"}
+                        or event.mode != "guest"
+                        or event.generation != self._generation
+                        or not source.running
+                    ):
+                        return
+                callback(event)
+
+            self._schedule_help_callback(deliver)
 
     def _discard_failed_process(self, process: TransportProcess) -> None:
         """Best-effort cleanup without masking the safe enrollment result."""
@@ -322,6 +393,7 @@ class NativeHostTransportOwner:
         on_snapshot: Callable[[RemoteSessionSnapshot], None] | None = None,
         on_help: Callable[[TransportEvent], None] | None = None,
         schedule_callback: Callable[[Callable[[], None]], None] = lambda fn: fn(),
+        schedule_help_callback: Callable[[Callable[[], None]], None] | None = None,
     ) -> None:
         if not 1 <= int(target_port) <= 65_535:
             raise ValueError("target_port is out of range")
@@ -331,8 +403,13 @@ class NativeHostTransportOwner:
         self._on_snapshot = on_snapshot or (lambda _snapshot: None)
         if on_help is not None and not callable(on_help):
             raise TypeError("on_help must be callable")
+        if schedule_help_callback is not None and not callable(schedule_help_callback):
+            raise TypeError("schedule_help_callback must be callable")
         self._on_help = on_help
         self._schedule_callback = schedule_callback
+        self._schedule_help_callback = (
+            schedule_callback if schedule_help_callback is None else schedule_help_callback
+        )
         self._lock = threading.RLock()
         self._generation = 0
         self._active_invitation: RemoteInvitation | None = None
@@ -399,25 +476,65 @@ class NativeHostTransportOwner:
             raise RuntimeError("No remote invitation is active.")
         owner.reset()
 
-    def send_help(self, text: str) -> TransportEvent:
+    @property
+    def help_available(self) -> bool:
+        """Whether the current host peer remains proved and live."""
+
+        with self._lock:
+            return self._help_available_locked()
+
+    def _help_available_locked(self) -> bool:
+        if (
+            self._stopped
+            or self._snapshot.phase is not RemoteSessionPhase.CONNECTED
+            or self._active_invitation is None
+            or self._generation == 0
+        ):
+            return False
+        if not self._process.running:
+            self._snapshot = RemoteSessionSnapshot(
+                phase=RemoteSessionPhase.FAILED,
+                role=SessionRole.HOST,
+                generation=self._generation,
+                path=TransportPath.SECURE_RELAY,
+                error_code=RemoteSessionErrorCode.TRANSPORT_FAILED,
+            )
+            return False
+        return True
+
+    def send_help(
+        self, text: str, *, expected_generation: int | None = None
+    ) -> TransportEvent:
         """Send help only through the current authenticated host generation."""
 
         with self._lock:
             generation = self._generation
-            ready = (
-                not self._stopped
-                and self._snapshot.phase is RemoteSessionPhase.CONNECTED
-            )
+            ready = self._help_available_locked()
+            if expected_generation is not None and (
+                type(expected_generation) is not int or expected_generation != generation
+            ):
+                ready = False
         if not ready or generation == 0:
             raise RemoteBackendError(RemoteSessionErrorCode.TRANSPORT_FAILED)
         try:
-            return self._process.send_help(text, generation=generation)
+            accepted = self._process.send_help(text, generation=generation)
         except ValueError:
-            raise
-        except TransportProcessError:
+            raise ValueError("help text must be bounded plain text") from None
+        except Exception:  # noqa: BLE001 - fixed help failure boundary
             raise RemoteBackendError(
                 RemoteSessionErrorCode.TRANSPORT_FAILED
             ) from None
+        with self._lock:
+            if (
+                self._generation != generation
+                or not self._help_available_locked()
+                or not isinstance(accepted, TransportEvent)
+                or accepted.event_type != "help_accepted"
+                or accepted.mode != "host"
+                or accepted.generation != generation
+            ):
+                raise RemoteBackendError(RemoteSessionErrorCode.TRANSPORT_FAILED)
+        return accepted
 
     def register_invitation(self, invitation: RemoteInvitation) -> None:
         with self._lock:
@@ -479,15 +596,42 @@ class NativeHostTransportOwner:
         if event.event_type in {"help_received", "help_delivered"}:
             with self._lock:
                 if (
-                    self._stopped
-                    or self._snapshot.phase is not RemoteSessionPhase.CONNECTED
+                    not self._help_available_locked()
                     or event.mode != "host"
                     or event.generation != self._generation
                 ):
                     return
                 callback = self._on_help
             if callback is not None:
-                self._schedule_callback(lambda value=event: callback(value))
+                def deliver() -> None:
+                    with self._lock:
+                        if (
+                            not self._help_available_locked()
+                            or event.mode != "host"
+                            or event.generation != self._generation
+                        ):
+                            return
+                    callback(event)
+
+                self._schedule_help_callback(deliver)
+            return
+        if event.event_type in {"stopped", "peer_closed"}:
+            with self._lock:
+                if self._stopped:
+                    return
+                if event.event_type == "peer_closed" and (
+                    event.mode != "host" or event.generation != self._generation
+                ):
+                    return
+                self._snapshot = RemoteSessionSnapshot(
+                    phase=RemoteSessionPhase.FAILED,
+                    role=SessionRole.HOST,
+                    generation=max(1, self._generation),
+                    path=TransportPath.SECURE_RELAY,
+                    error_code=RemoteSessionErrorCode.TRANSPORT_FAILED,
+                )
+                snapshot = self._snapshot
+            self._publish(snapshot)
             return
         if event.event_type not in {"peer_connected", "error"} or event.event_id != 0:
             return

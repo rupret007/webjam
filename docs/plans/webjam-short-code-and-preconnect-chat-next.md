@@ -1,9 +1,10 @@
 # WebJam short-code join and pre-connection chat — next architecture slice
 
-> Status: transport foundation implemented; meeting identifier and help UI
-> remain gated. The current product still joins with one complete private
-> invitation and exposes no pre-Jamulus help control. This plan does not
-> authorize a public service, deployment, credential, release, or UI claim.
+> Status: transport foundation and lab-only help UI implemented; meeting
+> identifiers, default-product help and physical deployment remain gated.
+> The current product still joins with one complete private invitation. This
+> plan does not authorize a public service, deployment, credential, release,
+> or default-product UI claim.
 
 ## Product outcome
 
@@ -22,7 +23,9 @@ credential.
   remote attempt. There is no meeting-number lookup today.
 - Jamulus chat exists only after an authenticated Jamulus RPC connection. The
   reference sidecar and desktop adapter now expose one bounded ephemeral help
-  operation after mutual transport proof, but no product UI invokes it.
+  operation after mutual transport proof. A default-off
+  [Session help preview](../SESSION_HELP_PREVIEW.md) invokes that operation in
+  the existing reference-local lab, not on an unproved connection.
 - The reference service is self-hostable test evidence. No public WebJam
   rendezvous or relay is deployed or production-approved.
 
@@ -61,7 +64,7 @@ the existing protocol rather than creating a second socket or cloud chatbot:
   rejection, and immediate retirement on reset, timeout, or generation change;
 - ephemeral memory only: no logs, analytics, support bundles, notifications,
   transcripts, or offline delivery;
-- a future simple UI surface showing send failure honestly and preserving
+- a development-only UI surface showing send failure honestly and preserving
   unsent local text without claiming remote receipt.
 
 Unit, adapter, race-detector, and independent local-relay integration tests now
@@ -76,12 +79,15 @@ until explicitly implemented and performed.
 
 1. ADR and threat-model review for the identifier/capsule scheme.
 2. Help frame, sidecar/IPC, and desktop adapter foundation, local and offline.
-   **Implemented**, with no product UI.
+   **Implemented** as the underlying transport; the separate lab UI is below.
 3. Identifier lookup architecture and desktop adapter, after step 1.
-4. One reviewed Join-door prototype with the help UI behind a development flag.
+4. One reviewed Join-door prototype with help UI behind a development flag.
+   **Help panel implemented** behind existing `WEBJAM_ENABLE_REFERENCE_LOCAL=1`;
+   it does not replace the Join door or implement identifier lookup. Review and
+   packaged physical testing still gate any default-product enablement.
 5. Public-service privacy/abuse review, infrastructure approval, and physical
    two-network testing.
 
 Only after all five gates may the product replace the complete invitation with
-a meeting identifier. The product must not advertise help before Jamulus until
-steps 4 and 5 provide reviewed UI and real-path evidence.
+a meeting identifier. The default/released product must not advertise help
+before Jamulus until steps 4 and 5 provide reviewed UI and real-path evidence.
