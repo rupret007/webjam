@@ -515,3 +515,166 @@ class TestBorrowedInvitationTitle(unittest.TestCase):
                     window2.close()
             finally:
                 window.close()
+
+
+def test_failed_profile_saves_keep_each_local_draft_until_retry(tmp_path, monkeypatch):
+    monkeypatch.setattr(persistence_module, "_persistence_home", lambda: tmp_path)
+    window, persistence = _make_window_and_persistence(tmp_path)
+    try:
+        canvas = window.session_canvas
+        canvas.set_notes("A clay sculpture idea")
+        with mock.patch.object(persistence_module, "atomic_write_text", side_effect=OSError("disk full")):
+            assert persistence.switch_profile_key("art") == "art"
+            assert canvas.current_notes() == ""
+            canvas.set_notes("A printed relief experiment")
+            assert persistence.switch_profile_key("music") == "music"
+            assert canvas.current_notes() == "A clay sculpture idea"
+            assert persistence.has_unsaved_notes
+            assert persistence.notes_save_state == "failed"
+            assert "Choose Save Notes" in canvas._notes_save_status.text()
+            assert not canvas._save_notes_button.isHidden()
+        assert persistence._save_notes_only()
+        assert not persistence.has_unsaved_notes
+        assert (tmp_path / ".webjam_notes.md").read_text() == "A clay sculpture idea"
+        assert (tmp_path / ".webjam_notes.art.md").read_text() == "A printed relief experiment"
+        assert canvas._save_notes_button.isHidden()
+        persistence.switch_profile_key("art")
+        assert canvas.current_notes() == "A printed relief experiment"
+    finally:
+        window.close()
+        window.deleteLater()
+
+
+def test_notes_save_limit_matches_utf8_reader_without_losing_oversized_draft(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(persistence_module, "_persistence_home", lambda: tmp_path)
+    limit = persistence_module._MAX_NOTES_FILE_BYTES
+    text = "🎨" * (limit // 4)
+    state = SimpleNamespace(text=text, status="")
+    canvas = SimpleNamespace(
+        current_notes=lambda: state.text,
+        set_notes=lambda value: setattr(state, "text", value),
+        set_notes_save_state=lambda value: setattr(state, "status", value),
+    )
+    persistence = SessionPersistence(SimpleNamespace(), canvas, creator_profile_key="art")
+    assert persistence._save_notes_only()
+    path = tmp_path / ".webjam_notes.art.md"
+    original = path.read_bytes()
+    assert len(original) == limit
+    assert persistence_module._read_bounded_notes(path) == text
+    state.text += "x"
+    assert persistence._save_notes_only() is False
+    assert state.status == "too_large"
+    assert state.text == text + "x"
+    assert path.read_bytes() == original
+    state.text = "A shorter idea"
+    assert persistence._save_notes_only()
+    assert persistence_module._read_bounded_notes(path) == "A shorter idea"
+
+
+def test_failed_notes_never_follow_a_symbolic_link(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(persistence_module, "_persistence_home", lambda: tmp_path)
+    target = tmp_path / "keep.txt"
+    target.write_text("Keep this file")
+    (tmp_path / ".webjam_notes.md").symlink_to(target)
+    canvas = SimpleNamespace(current_notes=lambda: "New draft")
+    persistence = SessionPersistence(SimpleNamespace(), canvas)
+    assert persistence._save_notes_only() is False
+    assert persistence.has_unsaved_notes
+    assert target.read_text() == "Keep this file"
+    assert (tmp_path / ".webjam_notes.md").is_symlink()
+
+
+class TestNotesDraftRecovery(unittest.TestCase):
+    def test_unreadable_original_survives_close_switch_and_export(self):
+        for original in (b"\xffinvalid", b"x" * (1024 * 1024 + 1)):
+            with self.subTest(original_size=len(original)), _TempHome() as home:
+                path = home / ".webjam_notes.md"
+                path.write_bytes(original)
+                window, persistence = _make_window_and_persistence(home)
+                try:
+                    persistence.load()
+                    self.assertEqual(window.session_canvas.current_notes(), "")
+                    self.assertTrue(persistence._save_notes_only())
+                    self.assertEqual(path.read_bytes(), original)
+                    window.session_canvas.edit_notes("  new local draft\n")
+                    self.assertFalse(persistence._save_notes_only())
+                    persistence.switch_profile_key("art")
+                    self.assertEqual(window.session_canvas.current_notes(), "")
+                    self.assertEqual(persistence.unsaved_notes, (("music", "  new local draft\n"),))
+                    with self.assertRaises(ValueError):
+                        persistence.export_pending_notes("music", "  new local draft\n", str(path))
+                    copy = home / "recovered.md"
+                    self.assertTrue(persistence.export_pending_notes("music", "  new local draft\n", str(copy)))
+                    self.assertEqual(copy.read_text(), "  new local draft\n")
+                    self.assertTrue(persistence._save_notes_only())
+                    persistence.switch_profile_key("music")
+                    self.assertEqual(window.session_canvas.current_notes(), copy.read_text())
+                    self.assertEqual(persistence.notes_save_state, "exported")
+                    self.assertTrue(persistence._save_notes_only())
+                    self.assertEqual(path.read_bytes(), original)
+                finally:
+                    window.close()
+
+    def test_hidden_oversized_draft_can_be_shortened_without_switching_session(self):
+        from webjam_qt.widgets.notes_recovery_dialog import NotesRecoveryDialog
+        with _TempHome() as home:
+            window, persistence = _make_window_and_persistence(home)
+            try:
+                window.session_canvas.edit_notes("x" * (1024 * 1024 + 1))
+                persistence.switch_profile_key("art")
+                dialog = NotesRecoveryDialog(persistence, window)
+                dialog._editor.setPlainText("Keep this song idea")
+                dialog._save.click()
+                self.assertEqual(persistence.profile_key, "art")
+                self.assertEqual(window.session_canvas.current_notes(), "")
+                self.assertFalse(persistence.has_unsaved_notes)
+                self.assertEqual((home / ".webjam_notes.md").read_text(), "Keep this song idea")
+                self.assertEqual(dialog.result(), dialog.DialogCode.Accepted)
+            finally:
+                window.close()
+
+    def test_export_failure_or_stale_snapshot_never_acknowledges_a_draft(self):
+        with _TempHome() as home:
+            window, persistence = _make_window_and_persistence(home)
+            try:
+                persistence.notes_changed("first")
+                with mock.patch.object(persistence_module, "atomic_write_text", side_effect=OSError("private")):
+                    with self.assertRaises(OSError):
+                        persistence.export_pending_notes("music", "first", str(home / "copy.md"))
+                self.assertTrue(persistence.has_unsaved_notes)
+                persistence.notes_changed("newer")
+                self.assertFalse(persistence.export_pending_notes("music", "first", str(home / "copy.md")))
+                self.assertEqual(persistence.unsaved_notes, (("music", "newer"),))
+                self.assertFalse((home / "copy.md").exists())
+            finally:
+                window.close()
+
+
+def test_recovery_dialog_preserves_stale_editor_until_explicit_export(tmp_path, monkeypatch):
+    from webjam_qt.widgets.notes_recovery_dialog import NotesRecoveryDialog
+    monkeypatch.setattr(persistence_module, "_persistence_home", lambda: tmp_path)
+    window, persistence = _make_window_and_persistence(tmp_path)
+    try:
+        window.session_canvas.edit_notes("old draft")
+        persistence.notes_changed("old draft")
+        dialog = NotesRecoveryDialog(persistence, window)
+        dialog.show()
+        dialog._editor.setPlainText("my edited copy")
+        window.session_canvas.edit_notes("newer session-side notes")
+        assert persistence._save_notes_only()
+        dialog.reject()
+        assert dialog.isVisible()
+        assert dialog._editor.toPlainText() == "my edited copy"
+        copy = tmp_path / "conflict-copy.md"
+        monkeypatch.setattr("webjam_qt.widgets.notes_recovery_dialog.QFileDialog.getSaveFileName", lambda *a: (str(copy), ""))
+        dialog._export.click()
+        assert copy.read_text() == "my edited copy"
+        assert (tmp_path / ".webjam_notes.md").read_text() == "newer session-side notes"
+        assert window.session_canvas.current_notes() == "newer session-side notes"
+        assert not dialog.isVisible()
+    finally:
+        window.close()

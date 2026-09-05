@@ -25,8 +25,9 @@ create a take or unlock export.
 
 At launch, choose **Art** or **Music**. Those are the equal first clicks.
 Art is **Make together** or **Paint along**, then **Host** or **Join**. Music
-is **Host** or **Join** only. Podcast and Review stay off
-that first screen. The profile follows the
+is **Host** or **Join** only. The launch **File** menu opens **New Music
+Project…**, **Podcast & Voice…**, or **Review & Rehearsal…** before a live session
+starts. The profile follows the
 launch, live session, recording, Studio, local session metadata, and new
 standalone projects. Legacy content without a saved profile opens as Music.
 Review & Rehearsal allows live WebJam-audio Host/Join, Record Session, local
@@ -35,6 +36,13 @@ standalone projects, take editing/comp/mix mutation, track export, shared
 notes, visual sync, and media timecode. Art is a room for artists in any
 medium; see [Art](#art) below. No profile directly or automatically taps a
 meeting app, browser, or system output.
+
+Local notes save shortly after an edit. If a save fails, choose **Save Notes**.
+The recovery window can show drafts from another workspace without changing
+the current session. Shorten a long draft or choose **Export Copy…**. A failed
+load leaves the original saved file unchanged. Keep the app open until new
+notes have been saved or exported; Quit preserves that recovery opportunity.
+Accepting a Song suggestion also saves the resulting notes.
 
 ## Art
 
@@ -57,6 +65,18 @@ Then **Host** or **Join** as in every other profile. Joining is one pasted
 invitation: it carries whatever the host started, so there is nothing else for
 a guest to choose. The host can open a shared canvas later from inside either
 room, so canvas setup never needs another start card.
+
+### Make with your own tools or follow a demonstration
+
+Make together is complete with everyone working in their own space: paint,
+clay, paper, a printer, or the software they already know. A shared canvas is
+optional and is not a setup requirement.
+
+Open **Conversation** to talk and show your work. Use **Join / Open Meeting**
+to open the saved link, then share a demonstration or process video in Webex
+or the selected meeting app. That app owns its video, microphone, and sharing.
+WebJam does not open a meeting merely because the room or panel appeared.
+**Paint along** below is the separate silent local-file option.
 
 ### Painting together
 

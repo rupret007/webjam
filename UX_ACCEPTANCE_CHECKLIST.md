@@ -45,6 +45,10 @@ Until those boxes are completed against the exact release asset, this gate
 remains **NOT RUN**. A source test, screenshot, branch build, or prior release
 observation cannot fill it in.
 
+The immutable package gate above retains that package's historical routes.
+The current source checks below use the new launch File menu; they do not
+change the package's NOT RUN status.
+
 ## Unified guidance
 
 - [ ] HUD, passive stage, Session Canvas, recorder, and Studio use the same
@@ -66,12 +70,13 @@ observation cannot fill it in.
 
 ## Launch: understandable in five seconds
 
-- [ ] First screen asks **What are you creating?** and offers exactly Art
-      (Preview) and Music (GA) as equal cards.
+- [ ] Current source offers exactly **Art** and **Music** as equal cards,
+      without Preview/GA badges or a profile-picker headline on the door.
+      Art remains Preview in the capability documentation.
 - [ ] Art then offers exactly **Make together** and **Paint along**, followed by
       **Host** / **Join**. Music keeps **Host** / **Join** only.
-- [ ] Podcast & Voice (GA) and Review & Rehearsal (Preview) stay behind
-      **Podcast or review**. Choosing one there changes the primary actions to
+- [ ] Podcast & Voice (GA) and Review & Rehearsal (Preview) are in the launch
+      **File** menu. Choosing one there changes the primary actions to
       **Host Remote Recording** / **Join Recording** or **Host Review** /
       **Join Review** before startup begins.
 - [ ] Music uses **Band Check**, Podcast & Voice uses **Sound Check**, and

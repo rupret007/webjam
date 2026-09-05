@@ -153,7 +153,7 @@ def test_art_door_is_two_starts_then_host_join(qapp, tmp_path: Path):
             ),
         ]
         assert others == ["Host", "Join"]
-        assert dialog._more_rooms_button.isHidden() is True
+        assert set(dialog._workspace_actions) == {"music", "podcast_voice", "review_rehearsal"}
         assert dialog._creator_profile_selector.isHidden() is True
         assert dialog._name_input.isHidden() is True
         assert dialog._choice_helper.isHidden() is True
@@ -181,7 +181,7 @@ def test_music_door_is_host_join_only(qapp, tmp_path: Path):
         assert starts == []
         assert roles == ["Host", "Join"]
         assert dialog._studio_button.isHidden() is True
-        assert dialog._more_rooms_button.text() == "Podcast or review"
+        assert set(dialog._workspace_actions) == {"music", "podcast_voice", "review_rehearsal"}
         spoken = harvest_first_screen(dialog)
         assert "podcast & voice" not in spoken
         assert "review & rehearsal" not in spoken
@@ -201,7 +201,7 @@ def test_clicking_art_shows_the_two_starts(qapp, tmp_path: Path):
             if not card.isHidden()
         ]
         assert starts == ["talk_and_make", "paint_along"]
-        assert dialog._more_rooms_button.isHidden() is True
+        assert set(dialog._workspace_actions) == {"music", "podcast_voice", "review_rehearsal"}
     finally:
         dialog.deleteLater()
 

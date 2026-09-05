@@ -440,3 +440,29 @@ func backgroundingRetiresControlsAndRequiresFreshPairing() async throws {
     #expect(model.pair(with: try pairingCode(tokenCharacter: "C")))
     #expect(factory.sockets.count == 2)
 }
+
+
+@Test
+@MainActor
+func desktopRecoverySnapshotsNeverEnablePhoneRecordingCommands() async throws {
+    for action in ["paste_new_invite", "close_setup"] {
+        let factory = MockSocketFactory()
+        let model = makeModel(factory: factory)
+        let socket = try await connect(
+            model,
+            factory: factory,
+            code: pairingCode(),
+            snapshot: snapshotMessage(sequence: 1, phase: "indeterminate", primaryAction: action)
+        )
+        #expect(model.phase == .connected)
+        #expect(model.primaryAction == action)
+        #expect(!model.canControlRecording)
+        model.requestRecording(
+            displayedPrimaryAction: action,
+            observedGeneration: 7,
+            observedRevision: 10
+        )
+        #expect(socket.sentTexts.count == 1)
+        model.disconnect()
+    }
+}

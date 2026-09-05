@@ -295,8 +295,7 @@ def test_a_profile_without_cards_keeps_its_headline_and_helper(
         assert dialog._music_profile_card.description() == "Play live together."
         assert dialog._creator_profile_label.isVisibleTo(dialog._choice_page) is False
         assert dialog._creator_profile_selector.isVisibleTo(dialog._choice_page) is False
-        assert dialog._more_rooms_button.isVisibleTo(dialog._choice_page) is True
-        assert dialog._more_rooms_button.text() == "Podcast or review"
+        assert set(dialog._workspace_actions) == {"music", "podcast_voice", "review_rehearsal"}
     finally:
         dialog.deleteLater()
 
@@ -317,10 +316,7 @@ def test_music_door_keeps_host_join_and_offers_a_first_class_path_to_art(
         assert dialog._studio_button.isHidden() is True
         assert dialog._art_profile_card.isVisibleTo(dialog._choice_page) is True
         assert dialog._music_profile_card.isVisibleTo(dialog._choice_page) is True
-        assert dialog._more_rooms_button.isVisibleTo(dialog._choice_page) is True
-        assert dialog._more_rooms_button.text() == "Podcast or review"
-        assert dialog._more_rooms_button.autoDefault() is False
-        assert dialog._more_rooms_button.isDefault() is False
+        assert set(dialog._workspace_actions) == {"music", "podcast_voice", "review_rehearsal"}
         assert dialog._host_button.isDefault() is True
         _assert_first_screen_has_no_banned_words(_first_screen_spoken(dialog))
 
@@ -330,13 +326,13 @@ def test_music_door_keeps_host_join_and_offers_a_first_class_path_to_art(
             "talk_and_make",
             "paint_along",
         ]
-        assert dialog._more_rooms_button.isVisibleTo(dialog._choice_page) is False
+        assert set(dialog._workspace_actions) == {"music", "podcast_voice", "review_rehearsal"}
         assert dialog._creator_profile_selector.isVisibleTo(dialog._choice_page) is False
         _assert_first_screen_has_no_banned_words(_first_screen_spoken(dialog))
 
         dialog._music_profile_card.click()
         assert dialog._rooms_picker_revealed is False
-        assert dialog._more_rooms_button.isVisibleTo(dialog._choice_page) is True
+        assert set(dialog._workspace_actions) == {"music", "podcast_voice", "review_rehearsal"}
         assert dialog._creator_profile_selector.isVisibleTo(dialog._choice_page) is False
         assert _visible_cards(dialog) == []
     finally:
@@ -355,13 +351,14 @@ def test_review_door_is_host_join_not_a_caveat_wall(qapp, tmp_path: Path):
 
 
 def test_make_together_keeps_canvas_setup_inside_the_room(qapp, tmp_path: Path):
-    """The combined card keeps one obvious canvas step inside the room."""
+    """The combined card allows making in any medium without canvas setup."""
 
     dialog = _dialog(tmp_path)
     try:
         start = get_creator_profile_by_key("art").get_start("talk_and_make")
-        assert start.talk_only is False
-        assert start.shared_canvas is True
+        assert start.talk_only is True
+        assert start.shared_canvas is False
+        assert get_creator_profile_by_key("art").capabilities.shared_canvas is True
 
         cards = {card.start_key: card for card in _visible_cards(dialog)}
         cards["talk_and_make"].setChecked(True)
@@ -406,7 +403,7 @@ def test_a_remembered_start_is_restored_without_looking_like_a_new_choice(
         dialog.deleteLater()
 
 
-def test_old_paint_together_choice_migrates_to_make_together_with_canvas_intent(
+def test_old_paint_together_choice_migrates_without_requiring_canvas_setup(
     qapp, tmp_path: Path
 ):
     settings = _settings(tmp_path)
@@ -416,7 +413,7 @@ def test_old_paint_together_choice_migrates_to_make_together_with_canvas_intent(
         dialog = LaunchDialog(settings)
     try:
         assert dialog.selected_start_key == "talk_and_make"
-        assert dialog.selected_start.shared_canvas is True
+        assert dialog.selected_start.talk_only is True
 
         dialog._host()
         saved = load_settings(str(tmp_path / "settings.json"))
@@ -480,7 +477,7 @@ def test_a_profile_without_starts_shows_no_cards(
         first_screen = profile_key == "music"
         assert dialog._creator_profile_label.isHidden() is first_screen
         assert dialog._creator_profile_selector.isHidden() is first_screen
-        assert dialog._more_rooms_button.isHidden() is not first_screen
+        assert set(dialog._workspace_actions) == {"music", "podcast_voice", "review_rehearsal"}
         assert dialog._art_profile_card.isHidden() is False
         assert dialog._music_profile_card.isHidden() is False
     finally:
@@ -619,3 +616,61 @@ def test_the_banned_word_gate_fails_closed():
     _assert_first_screen_has_no_banned_words(
         "already creating together. host or join."
     )
+
+
+@pytest.mark.parametrize("profile", ["music", "art"])
+@pytest.mark.parametrize("installer", ["", "C:/WebJam/Jamulus/setup.exe"])
+def test_every_visible_door_button_matches_owner_lock(qapp, tmp_path, profile, installer):
+    from unittest.mock import patch
+    from PySide6.QtWidgets import QAbstractButton
+    from tests.support.start_ux import assert_no_banned_first_screen_words, harvest_first_screen
+    with patch("webjam_qt.windows.launch_dialog._windows_jamulus_installer", return_value=installer):
+        dialog = _dialog(tmp_path, profile)
+    try:
+        dialog._menu_bar.setNativeMenuBar(False)
+        dialog.resize(620, 520)
+        dialog.show()
+        qapp.processEvents()
+        assert dialog.height() + 40 <= 600
+        assert dialog.width() <= 760
+        buttons = [button for button in dialog._choice_page.findChildren(QAbstractButton) if button.isVisibleTo(dialog._choice_page)]
+        assert [button.text() for button in buttons] == (
+            ["Art", "Music", "Make together", "Paint along", "Host", "Join"]
+            if profile == "art" else ["Art", "Music", "Host", "Join"]
+        )
+        for button in buttons:
+            assert dialog.rect().contains(button.mapTo(dialog, button.rect().topLeft()))
+            assert dialog.rect().contains(button.mapTo(dialog, button.rect().bottomRight()))
+        assert not dialog._install_jamulus_button.isVisibleTo(dialog)
+        assert_no_banned_first_screen_words(harvest_first_screen(dialog))
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize("profile", ["art", "music"])
+def test_windows_door_with_missing_music_component_stays_compact(qapp, tmp_path, profile):
+    from webjam_qt.theme import load_stylesheet
+    from unittest.mock import patch
+    from tests.support.start_ux import assert_no_banned_first_screen_words, harvest_first_screen
+    with patch("webjam_qt.windows.launch_dialog.sys.platform", "win32"), patch(
+        "webjam_qt.windows.launch_dialog._windows_jamulus_installer", return_value="C:/WebJam/setup.exe"
+    ):
+        dialog = LaunchDialog(AppSettings(config_file=str(tmp_path / "settings.json"), last_creator_profile_key=profile))
+    try:
+        dialog._menu_bar.setNativeMenuBar(False)
+        dialog.setStyleSheet(load_stylesheet())
+        dialog.resize(620, 520)
+        dialog.show()
+        qapp.processEvents()
+        assert dialog.height() + 40 <= 600
+        assert dialog.width() <= 760
+        assert not dialog._host_button.isEnabled()
+        assert dialog._join_button.isEnabled()
+        assert not dialog._install_jamulus_button.isVisibleTo(dialog)
+        assert_no_banned_first_screen_words(harvest_first_screen(dialog))
+        dialog._setup_action.trigger()
+        assert dialog._install_jamulus_button.isVisibleTo(dialog)
+    finally:
+        dialog.close()
+        dialog.deleteLater()

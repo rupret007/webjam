@@ -57,6 +57,17 @@ class StudioStoreConflict(StudioStoreError):
     """Raised when another writer replaced Studio state after it was loaded."""
 
 
+class StudioStoreSaveUnconfirmed(StudioStoreError):
+    """Exact intended bytes exist, but the write's durability is unconfirmed."""
+
+    def __init__(self, published_token: str) -> None:
+        if (not isinstance(published_token, str) or len(published_token) != 64
+                or any(c not in "0123456789abcdef" for c in published_token)):
+            raise StudioStoreError("Invalid unconfirmed Studio save token.")
+        super().__init__("Studio could not confirm the save. Keep it open and try Save again.")
+        self.published_token = published_token
+
+
 class _OversizedStudioState(StudioStoreError):
     """Internal signal retaining a stable token for a regular oversized file."""
 
@@ -504,17 +515,11 @@ def _quarantine_oversized_primary(
     primary: Path,
     token: str,
 ) -> Path:
-    """Move a stable oversized regular primary aside without loading it."""
-
+    """Preserve an oversized primary until atomic replacement succeeds."""
     target = folder / f".webjam-studio-state.corrupt-oversized-{token}.json"
-    if _exists_without_following(target):
-        raise StudioStoreError(
-            "Studio oversized-state recovery path is already occupied."
-        )
-    linked = False
     try:
-        os.link(primary, target, follow_symlinks=False)
-        linked = True
+        if not _exists_without_following(target):
+            os.link(primary, target, follow_symlinks=False)
         source_info = primary.lstat()
         target_info = target.lstat()
         if (
@@ -525,20 +530,15 @@ def _quarantine_oversized_primary(
             or _oversized_token(target_info) != token
         ):
             raise StudioStoreError(
-                "Studio oversized state changed before it could be preserved."
+                "Studio oversized state changed or its recovery path is occupied."
             )
-        primary.unlink()
+        # A failed subsequent write may retry using this exact hard link.
+        # Never unlink the primary before the atomic writer publishes new bytes.
         return target
     except OSError as exc:
         raise StudioStoreError(
             "Could not preserve oversized Studio state before saving."
         ) from exc
-    finally:
-        if linked and primary.exists() and target.exists():
-            try:
-                target.unlink()
-            except OSError:
-                pass
 
 
 def save_studio_document(
@@ -588,6 +588,12 @@ def save_studio_document(
                 "Studio state changed after it was loaded; reload and merge your edits."
             )
 
+        payload = (
+            json.dumps(reconciled.to_dict(), indent=2, sort_keys=False) + "\n"
+        ).encode("utf-8")
+        if len(payload) > MAX_STUDIO_STATE_BYTES:
+            raise StudioStoreError("Studio arrangement is too large to save safely.")
+
         backup_written: Path | None = None
         if oversized is not None:
             backup_written = _quarantine_oversized_primary(
@@ -634,14 +640,18 @@ def save_studio_document(
                         "Could not preserve the last-known-good Studio state."
                     ) from exc
 
-        payload = (
-            json.dumps(reconciled.to_dict(), indent=2, sort_keys=False) + "\n"
-        ).encode("utf-8")
-        if len(payload) > MAX_STUDIO_STATE_BYTES:
-            raise StudioStoreError("Studio arrangement is too large to save safely.")
         try:
             atomic_write_bytes(primary, payload, mode=0o600)
         except OSError as exc:
+            # os.replace can publish successfully before the directory fsync
+            # fails. Under the same store lock, acknowledge only exact intended
+            # bytes as a retry token; this is never a successful/durable save.
+            try:
+                published = _read_bounded(primary, "unconfirmed state sidecar")
+            except StudioStoreError:
+                published = None
+            if published == payload:
+                raise StudioStoreSaveUnconfirmed(_token(payload)) from exc
             raise StudioStoreError("Could not atomically save Studio state.") from exc
         saved_token = _token(payload)
         saved_document = replace(reconciled, _store_token=saved_token)
@@ -666,6 +676,7 @@ __all__ = [
     "StudioSaveResult",
     "StudioStoreConflict",
     "StudioStoreError",
+    "StudioStoreSaveUnconfirmed",
     "load_studio_document",
     "save_studio_document",
     "studio_state_backup_path",

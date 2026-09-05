@@ -1,0 +1,315 @@
+{
+  "schema_version": 1,
+  "phase": 0,
+  "status": "UNSCORED",
+  "scoring": {
+    "kind": "weighted_binary",
+    "values": [
+      0,
+      1
+    ],
+    "required": "Every weight-3 must-have must score 1; no Integrity failures.",
+    "note": "Initial zero means unverified, not a claimed failure. Scores require direct evidence."
+  },
+  "criteria": [
+    {
+      "id": "F1",
+      "axis": "File Change",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Real behavior improvements across Art, recovery, local notes, and recording/Studio; every changed behavior has a regression test.",
+      "evidence": [
+        "QUALITY_GAP_LIST.md",
+        "tests"
+      ]
+    },
+    {
+      "id": "F2",
+      "axis": "File Change",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "All source changes remain in WebJam on the new master-based branch; no held PR branch changes.",
+      "evidence": [
+        "BOB_HANDOFF.md"
+      ]
+    },
+    {
+      "id": "S1",
+      "axis": "Spec Alignment",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Art shows exactly Make together and Paint along, then Host/Join; larger squirrel face only on Paint along.",
+      "evidence": [
+        "core/creative_modes.py",
+        "webjam_qt/windows/launch_dialog.py",
+        "tests/test_art_start_ux.py"
+      ]
+    },
+    {
+      "id": "S2",
+      "axis": "Spec Alignment",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Music launch offers Host/Join only; every actually visible control is included in the door gate.",
+      "evidence": [
+        "tests/test_feel_pass.py",
+        "tests/support/start_ux.py"
+      ]
+    },
+    {
+      "id": "S3",
+      "axis": "Spec Alignment",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Own tools, clay, printer and paper are valid Make together outcomes; canvas setup is optional in-room.",
+      "evidence": [
+        "core/art_room_presence.py",
+        "tests/test_art_room_presence.py"
+      ]
+    },
+    {
+      "id": "S4",
+      "axis": "Spec Alignment",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Webex follow-along is findable in existing Conversation; Paint along remains silent local-file playback; no automatic meeting/system capture.",
+      "evidence": [
+        "webjam_qt/widgets/webex_embed.py",
+        "tests/test_art_meeting_coexistence.py"
+      ]
+    },
+    {
+      "id": "S5",
+      "axis": "Spec Alignment",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Help maps, FIRST_JAM and USER_GUIDE describe reachable shipped actions and Art Preview boundaries.",
+      "evidence": [
+        "HELP_ROUTING_MAP.md",
+        "QUICK_HELP_MAP.md",
+        "FIRST_JAM.md",
+        "USER_GUIDE.md"
+      ]
+    },
+    {
+      "id": "I1",
+      "axis": "Integrity",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "No failing test is weakened, skipped or removed to obtain green; changed assertions follow explicit owner laws or demonstrated corrected behavior.",
+      "evidence": [
+        "PRE_KAREN_QA.md"
+      ]
+    },
+    {
+      "id": "I2",
+      "axis": "Integrity",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "No mass rename, dependency churn, new framework, provider call, spend or out-of-repository implementation.",
+      "evidence": [
+        "PRE_KAREN_QA.md"
+      ]
+    },
+    {
+      "id": "I3",
+      "axis": "Integrity",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "No merge/tag/sign/notarize/release; parked #37/#49 and open #67 untouched; unsigned v0.27.2 remains Jeff-only.",
+      "evidence": [
+        "BOB_HANDOFF.md"
+      ]
+    },
+    {
+      "id": "I4",
+      "axis": "Integrity",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Physical, platform-trust and installed-device NOT RUN gates remain NOT RUN; source automation is never substituted.",
+      "evidence": [
+        "TEST_PROCEDURE.md",
+        "PRE_KAREN_QA.md"
+      ]
+    },
+    {
+      "id": "I5",
+      "axis": "Integrity",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Invitation contents never enter status, accessibility, recovery, public guidance, or support output.",
+      "evidence": [
+        "tests/test_controller_remote_transport.py",
+        "tests/test_unified_musician_guidance.py"
+      ]
+    },
+    {
+      "id": "R1",
+      "axis": "Runtime/UX",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Art and Music launch copy and full visible controls pass the ten-second and banned-chrome gates at supported compact sizes.",
+      "evidence": [
+        "tests/test_art_start_ux.py",
+        "tests/test_feel_pass.py"
+      ]
+    },
+    {
+      "id": "R2",
+      "axis": "Runtime/UX",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Host/Join success and failure recovery have executable tests, including consumed invitation and reconnect guidance.",
+      "evidence": [
+        "tests/test_controller_remote_transport.py",
+        "tests/test_jamulus_native_startup.py"
+      ]
+    },
+    {
+      "id": "R3",
+      "axis": "Runtime/UX",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "HUD, passive stage, Notes and Studio agree on one semantic next action during setup, failure, recording, save and export transitions.",
+      "evidence": [
+        "core/session_conductor.py",
+        "core/musician_guidance.py",
+        "tests/test_unified_musician_guidance.py"
+      ]
+    },
+    {
+      "id": "R4",
+      "axis": "Runtime/UX",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Local notes survive save failures and profile changes; UTF-8 save bounds match load bounds; recovery is visible without publishing notes.",
+      "evidence": [
+        "webjam_qt/controllers/session_persistence.py",
+        "tests/test_session_persistence.py"
+      ]
+    },
+    {
+      "id": "R5",
+      "axis": "Runtime/UX",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Shared Track and Record Session readiness distinguish loaded, routed, available storage, recording, finalizing and completed take, with actionable recovery.",
+      "evidence": [
+        "webjam_qt/controllers/recording_coordinator.py",
+        "core/recording_readiness.py"
+      ]
+    },
+    {
+      "id": "R6",
+      "axis": "Runtime/UX",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Studio edits/save/reopen/undo/comp/render/waveform/export preserve source identity and recover safely; focused regression modules pass.",
+      "evidence": [
+        "tests/test_studio_controller.py",
+        "tests/test_studio_export.py",
+        "tests/test_recording_studio.py"
+      ]
+    },
+    {
+      "id": "R7",
+      "axis": "Runtime/UX",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Pocket Stage retains gateway-off/private-bind/one-use-QR/fresh-pairing and finite-command boundaries, without phone media/chat/Studio transport.",
+      "evidence": [
+        "DEVELOPMENT.md",
+        "tests/test_pocket_stage.py",
+        "tests/test_pocket_stage_gateway.py",
+        "tests/test_pocket_stage_controller.py"
+      ]
+    },
+    {
+      "id": "R8",
+      "axis": "Runtime/UX",
+      "weight": 2,
+      "must_have": false,
+      "score": 0,
+      "criterion": "Equivalent guidance updates do not churn accessibility; meaningful new states remain usable at compact window sizes.",
+      "evidence": [
+        "tests/test_unified_musician_guidance.py"
+      ]
+    },
+    {
+      "id": "B1",
+      "axis": "Build/Test",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Exact-tip Ruff, compileall, pip check and UX smoke all pass with recorded commands.",
+      "evidence": [
+        "docs/codex-finish-ultra-log.md"
+      ]
+    },
+    {
+      "id": "B2",
+      "axis": "Build/Test",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Exact-tip full local pytest -q and all focused touched-area modules pass; no hidden native lifetime failures.",
+      "evidence": [
+        "WORTH_BUILDING.md",
+        "docs/codex-finish-ultra-log.md"
+      ]
+    },
+    {
+      "id": "B3",
+      "axis": "Build/Test",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Hosted Actions including desktop matrix and required integrations are green on the exact draft tip, not an ancestor.",
+      "evidence": [
+        "BOB_HANDOFF.md"
+      ]
+    },
+    {
+      "id": "B4",
+      "axis": "Build/Test",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Worth-Building W1-W10 all PASS; Pre-Karen must-haves all score 1 with direct evidence.",
+      "evidence": [
+        "WORTH_BUILDING.md",
+        "PRE_KAREN_QA.md"
+      ]
+    },
+    {
+      "id": "B5",
+      "axis": "Build/Test",
+      "weight": 3,
+      "must_have": true,
+      "score": 0,
+      "criterion": "Draft PR targets master, exact-tip evidence and ordered Bob/Karen/Jeff handoff exist; AFTER releases lease when ready.",
+      "evidence": [
+        "BOB_HANDOFF.md"
+      ]
+    }
+  ]
+}

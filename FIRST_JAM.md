@@ -17,8 +17,14 @@ clicks. Art then offers **Make together** or **Paint along**, then **Host** or
 host may open one shared canvas from inside the room. Music is **Host** or
 **Join** only. The
 chosen profile changes language and safe defaults, not the recorder's evidence
-rules. Podcast and Review stay off that first screen. No profile directly or
+rules. The launch **File** menu contains **New Music Project…**,
+**Podcast & Voice…**, and **Review & Rehearsal…**. No profile directly or
 automatically taps a meeting app, browser, or system output.
+
+In Art, bring your own tools—paint, clay, paper, a printer, or your usual app.
+A shared canvas is optional. Inside the room, **Conversation** lets you open
+a meeting and share a demonstration in Webex or your chosen service. Everyone
+can follow there; **Paint along** is the separate silent local-video option.
 
 ## Host
 

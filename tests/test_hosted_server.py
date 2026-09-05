@@ -1055,7 +1055,7 @@ class TestHostedControllerFlows(unittest.TestCase):
         )
         self.assertTrue(self.window.session_strip._audio_button.isEnabled())
         self.assertIn(
-            "Multitrack recording is ready",
+            "Recording is optional",
             self.window.participant_grid._empty_hint.text(),
         )
 
@@ -1089,18 +1089,34 @@ class TestHostedShutdown(unittest.TestCase):
         settings.host_server_enabled = True
         controller = ApplicationController(window, settings=settings)
         order: list[str] = []
-        controller.bridge.hosted_server_alive = MagicMock(
-            side_effect=[True, True, False],
-        )
-        controller.bridge.hosted_server_owned = MagicMock(return_value=True)
-        controller.recording.stop_server_recording_for_shutdown = MagicMock(
-            side_effect=lambda: order.append("stop-recording") or True
-        )
-        controller.bridge.stop_hosted_server = MagicMock(
-            side_effect=lambda: order.append("stop-server")
-        )
-        controller.shutdown()
-        self.assertEqual(order, ["stop-recording", "stop-server"])
+        try:
+            with (
+                patch.object(
+                    controller.bridge, "hosted_server_alive",
+                    side_effect=[True, True, False],
+                ),
+                patch.object(controller.bridge, "hosted_server_owned", return_value=True),
+                patch.object(
+                    controller.recording, "stop_server_recording_for_shutdown",
+                    side_effect=lambda: order.append("stop-recording") or True,
+                ),
+                patch.object(
+                    controller.bridge, "stop_hosted_server",
+                    side_effect=lambda: order.append("stop-server"),
+                ),
+            ):
+                self.assertTrue(controller.shutdown())
+                self.assertEqual(order, ["stop-recording", "stop-server"])
+        finally:
+            # Restore the finite process sequence before any close callback.
+            # This test owns its window; a later Qt suite must not inherit a
+            # live controller with an exhausted mocked process observation.
+            controller.shutdown()
+            window.close()
+            window.deleteLater()
+            from PySide6.QtCore import QCoreApplication, QEvent
+
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 if __name__ == "__main__":

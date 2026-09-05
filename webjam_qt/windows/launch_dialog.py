@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QSize, QTimer, Qt
-from PySide6.QtGui import QAccessible, QAccessibleEvent, QIcon
+from PySide6.QtGui import QAccessible, QAccessibleEvent, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenuBar,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -369,10 +370,12 @@ class LaunchDialog(QDialog):
         *,
         initial_invitation: Invitation | None = None,
         initial_invite_url: str = "",
+        allow_workspace_choices: bool = True,
     ) -> None:
         super().__init__(parent)
         self._settings = settings
         self._submitting = False
+        self._allow_workspace_choices = allow_workspace_choices
         self._host_available = sys.platform == "darwin"
         self._jamulus_installer = _windows_jamulus_installer(settings)
         if self._jamulus_installer:
@@ -450,7 +453,10 @@ class LaunchDialog(QDialog):
         self._join_page = self._build_join_page()
         self._pages.addWidget(self._choice_page)
         self._pages.addWidget(self._join_page)
+        self._setup_page = self._build_setup_page()
+        self._pages.addWidget(self._setup_page)
         root.addWidget(self._pages, 1)
+        self._build_menu(root)
         self.setTabOrder(self._name_input, self._art_profile_card)
         self.setTabOrder(self._art_profile_card, self._music_profile_card)
         previous: QWidget = self._music_profile_card
@@ -463,8 +469,6 @@ class LaunchDialog(QDialog):
         self.setTabOrder(previous, self._host_button)
         self.setTabOrder(self._host_button, self._join_button)
         self.setTabOrder(self._join_button, self._studio_button)
-        self.setTabOrder(self._studio_button, self._install_jamulus_button)
-        self.setTabOrder(self._install_jamulus_button, self._more_rooms_button)
 
         if initial_invitation is not None and initial_invite_url:
             raise ValueError("provide one initial invitation")
@@ -564,27 +568,6 @@ class LaunchDialog(QDialog):
         layout.addWidget(self._host_button)
         layout.addWidget(self._join_button)
         layout.addWidget(self._studio_button)
-
-        self._install_jamulus_button = QPushButton("Install Jamulus")
-        self._install_jamulus_button.setObjectName("GhostButton")
-        self._install_jamulus_button.setAccessibleName("Install Jamulus")
-        self._install_jamulus_button.setAccessibleDescription(
-            "Open the Jamulus installer included with this Windows build."
-        )
-        self._install_jamulus_button.clicked.connect(self._install_jamulus)
-        self._install_jamulus_button.setVisible(bool(self._jamulus_installer))
-        layout.addWidget(self._install_jamulus_button)
-
-        self._more_rooms_button = QPushButton("Podcast or review")
-        self._more_rooms_button.setObjectName("LaunchMoreRooms")
-        self._more_rooms_button.setAutoDefault(False)
-        self._more_rooms_button.setDefault(False)
-        self._more_rooms_button.setAccessibleName("Podcast or review")
-        self._more_rooms_button.setAccessibleDescription(
-            "Choose Podcast and Voice or Review and Rehearsal."
-        )
-        self._more_rooms_button.clicked.connect(self._reveal_other_rooms)
-        layout.addWidget(self._more_rooms_button, 0, Qt.AlignmentFlag.AlignHCenter)
 
         self._choice_helper = QLabel()
         self._choice_helper.setObjectName("LaunchHelper")
@@ -751,32 +734,34 @@ class LaunchDialog(QDialog):
     def _install_jamulus(self) -> None:
         """Open only the checksum-pinned installer shipped in this package."""
 
-        if not self._jamulus_installer:
+        if not self._jamulus_installer or not self._install_jamulus_button.isEnabled():
             return
         from services.bridge_service import _is_pinned_jamulus_installer
 
         if not _is_pinned_jamulus_installer(self._jamulus_installer):
             self._jamulus_installer = ""
             self._install_jamulus_button.setEnabled(False)
-            self._choice_error.setText(
+            self._installer_error.setText(
                 "The included Jamulus installer failed its integrity check. "
                 "Re-extract an official WebJam download and try again."
             )
-            self._choice_error.setVisible(True)
-            self._announce_error(self._choice_error)
+            self._installer_error.setVisible(True)
+            self._announce_error(self._installer_error)
             return
         try:
             subprocess.Popen([self._jamulus_installer], shell=False)
         except OSError:
-            self._choice_error.setText(
+            self._installer_error.setText(
                 "Jamulus couldn’t open. Re-extract WebJam and try Install Jamulus again."
             )
-            self._choice_error.setVisible(True)
-            self._announce_error(self._choice_error)
+            self._installer_error.setVisible(True)
+            self._announce_error(self._installer_error)
             return
         self._install_jamulus_button.setEnabled(False)
-        self._set_choice_helper(
-            "Finish the Jamulus installer, then return here and choose Join a Jam."
+        self._installer_error.clear()
+        self._installer_error.setVisible(False)
+        self._installer_status.setText(
+            "Finish the Jamulus installer, then choose Back to continue."
         )
 
     def _build_join_page(self) -> QWidget:
@@ -913,11 +898,6 @@ class LaunchDialog(QDialog):
         )
         self._creator_profile_label.setVisible(show_picker)
         self._creator_profile_selector.setVisible(show_picker)
-        if hasattr(self, "_more_rooms_button"):
-            self._more_rooms_button.setEnabled(not self._submitting)
-            self._more_rooms_button.setVisible(
-                music_door and not self._rooms_picker_revealed
-            )
         if hasattr(self, "_profile_cards"):
             for key, card in self._profile_cards.items():
                 blocked = card.blockSignals(True)
@@ -965,16 +945,77 @@ class LaunchDialog(QDialog):
         self._choice_helper.setText(helper)
         self._choice_helper.setVisible(bool(helper))
 
-    def _reveal_other_rooms(self) -> None:
-        """Show the existing picker without adding a third primary action."""
+    def _build_menu(self, root: QVBoxLayout) -> None:
+        self._menu_bar = QMenuBar(self)
+        self._menu_bar.setAccessibleName("WebJam menu")
+        root.setMenuBar(self._menu_bar)
+        self._workspace_actions = {}
+        if self._allow_workspace_choices:
+            file_menu = self._menu_bar.addMenu("&File")
+            for key, label in (("music", "New Music Project…"),
+                               ("podcast_voice", "Podcast & Voice…"),
+                               ("review_rehearsal", "Review & Rehearsal…")):
+                action = file_menu.addAction(label.replace("&", "&&"))
+                action.setData(key)
+                action.triggered.connect(lambda checked=False, key=key: self._open_workspace(key))
+                self._workspace_actions[key] = action
+            new = self._workspace_actions["music"]
+            new.setShortcut(QKeySequence.StandardKey.New)
+            new.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        help_menu = self._menu_bar.addMenu("&Help")
+        self._setup_action = help_menu.addAction("Music setup…")
+        self._setup_action.triggered.connect(self._show_music_setup)
+        self._setup_action.setEnabled(bool(self._jamulus_installer))
 
-        if self._submitting:
+    def _open_workspace(self, key: str) -> None:
+        if self._submitting or not self._allow_workspace_choices:
             return
-        self._rooms_picker_revealed = True
-        self._apply_creator_profile_presentation()
-        self._creator_profile_selector.setFocus(Qt.FocusReason.OtherFocusReason)
+        if key not in {"music", "podcast_voice", "review_rehearsal"}:
+            return
+        self._invite_input.clear()
+        self._creator_profile_selector.setCurrentIndex(self._creator_profile_selector.findData(key))
+        if key == "music":
+            self.show_choices()
+            self._studio()
+        else:
+            self.show_choices()
+
+    def _build_setup_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        self._installer_status = QLabel("Install the music component included with this WebJam download.")
+        self._installer_status.setWordWrap(True)
+        self._installer_status.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addWidget(self._installer_status)
+        self._install_jamulus_button = QPushButton("Install Jamulus")
+        self._install_jamulus_button.setObjectName("GhostButton")
+        self._install_jamulus_button.setAccessibleName("Install Jamulus")
+        self._install_jamulus_button.setAccessibleDescription(
+            "Open the Jamulus installer included with this Windows build."
+        )
+        self._install_jamulus_button.clicked.connect(self._install_jamulus)
+        self._install_jamulus_button.setVisible(bool(self._jamulus_installer))
+        layout.addWidget(self._install_jamulus_button)
+
+        self._installer_error = QLabel()
+        self._installer_error.setTextFormat(Qt.TextFormat.PlainText)
+        self._installer_error.setWordWrap(True)
+        self._installer_error.setAccessibleName("Music setup status")
+        layout.addWidget(self._installer_error)
+        back = QPushButton("Back")
+        back.clicked.connect(self.show_choices if self._allow_workspace_choices else self.show_join)
+        layout.addWidget(back)
+        layout.addStretch(1)
+        return page
+
+    def _show_music_setup(self) -> None:
+        if not self._submitting:
+            self._pages.setCurrentWidget(self._setup_page)
 
     def show_choices(self) -> None:
+        if not self._allow_workspace_choices:
+            self.show_join()
+            return
         self._restore_submission()
         self._invite_input.clear()
         self._pages.setCurrentWidget(self._choice_page)
@@ -1022,6 +1063,8 @@ class LaunchDialog(QDialog):
         return True
 
     def _host(self) -> None:
+        if not self._allow_workspace_choices:
+            return
         musician_name = self._validated_musician_name()
         if musician_name is None:
             return
@@ -1040,6 +1083,8 @@ class LaunchDialog(QDialog):
         self.accept()
 
     def _studio(self) -> None:
+        if not self._allow_workspace_choices or not self._selected_creator_profile.capabilities.local_multitrack:
+            return
         if not self._begin_submission(self._studio_button, "Opening…"):
             return
         candidate = deepcopy(self._settings)
@@ -1174,6 +1219,10 @@ class LaunchDialog(QDialog):
         return invitation
 
     def done(self, result: int) -> None:
+        self._submitting = True
+        for action in self._workspace_actions.values():
+            action.setEnabled(False)
+        self._setup_action.setEnabled(False)
         self._invite_input.clear()
         super().done(result)
 
@@ -1185,8 +1234,9 @@ class LaunchDialog(QDialog):
         self._host_button.setEnabled(False)
         self._join_button.setEnabled(False)
         self._studio_button.setEnabled(False)
-        if hasattr(self, "_more_rooms_button"):
-            self._more_rooms_button.setEnabled(False)
+        for action in self._workspace_actions.values():
+            action.setEnabled(False)
+        self._setup_action.setEnabled(False)
         self._join_button_primary.setEnabled(False)
         self._invite_input.setEnabled(False)
         self._creator_profile_selector.setEnabled(False)
@@ -1202,6 +1252,10 @@ class LaunchDialog(QDialog):
 
     def _restore_submission(self) -> None:
         self._submitting = False
+        for action in getattr(self, "_workspace_actions", {}).values():
+            action.setEnabled(True)
+        if hasattr(self, "_setup_action"):
+            self._setup_action.setEnabled(bool(self._jamulus_installer))
         self._creator_profile_selector.setEnabled(True)
         self._apply_creator_profile_presentation()
         self._name_input.setEnabled(True)

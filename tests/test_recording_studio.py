@@ -4701,3 +4701,24 @@ def test_completed_take_is_auto_selected_and_loaded_in_studio(tmp_path):
         assert selected.data(Qt.ItemDataRole.UserRole) == str(take_dir)
     finally:
         studio.shutdown()
+
+
+@pytest.mark.parametrize("kind", ["marker", "section"])
+def test_long_arrange_names_offer_recovery_without_changing_recording(tmp_path, kind):
+    take_dir, _ = _schema2_studio_take(tmp_path)
+    truth = {path: path.read_bytes() for path in (take_dir / "webjam-take.json", *sorted((take_dir / "media").glob("*.wav")))}
+    studio = RecordingStudio(str(tmp_path), player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
+    try:
+        studio._take_list.setCurrentRow(0)
+        original = studio._studio_state
+        studio._studio_arrange._user_select_region(original.regions[0])
+        action = studio._add_arrange_marker if kind == "marker" else studio._add_arrange_section
+        action("x" * 161)
+        assert studio._studio_state is original
+        assert "160 characters or fewer" in studio._hint.text()
+        action("A better name")
+        markers = [m for m in studio._studio_state.markers if not m.deleted]
+        assert [(m.label, m.kind.value) for m in markers] == [("A better name", kind)]
+        assert {path: path.read_bytes() for path in truth} == truth
+    finally:
+        studio.shutdown()

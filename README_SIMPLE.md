@@ -56,8 +56,8 @@ helper that removes quarantine from WebJam only.
 
 ## Start playing
 
-1. Choose **Art** or **Music**. Choose **Podcast or review** only when you need
-   one of those rooms.
+1. Choose **Art** or **Music**. The launch **File** menu contains local Music
+   projects, Podcast & Voice, and Review & Rehearsal.
 2. In Art, choose **Make together** or **Paint along**, then Host/Join. Music
    uses Host/Join; Podcast uses Host Remote Recording/Join
    Recording; Review uses Host Review/Join Review.
@@ -80,8 +80,10 @@ roster evidence.
 
 In **Paint along**, WebJam turns its existing window into a silent process-video
 companion once the room exists. Paint in Procreate, Clip Studio Paint, Krita,
-or on paper beside it; keep Webex or another meeting beside WebJam for
-conversation. There is no third preview window. The host chooses **Choose
+or on paper beside it. **Conversation** also offers a first-class way to talk
+and follow a demonstration shared in Webex or your chosen meeting app. Make
+together works with everyone's own tools, including clay and printers;
+opening a shared canvas is optional. There is no third preview window. The host chooses **Choose
 process video…** and controls play/pause; a guest chooses **Open my copy…** for
 the same local file. **Back to room** or Escape returns to the conductor
 without ending the room.

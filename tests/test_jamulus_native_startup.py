@@ -398,8 +398,8 @@ def test_cancelled_host_setup_keeps_failure_visible_until_cleanup_is_confirmed()
         controller._cancel_startup_journey()
 
     assert controller._startup_attempt["phase"] == "failed"
-    assert controller._startup_attempt["retryable"] is True
-    assert "Try again after the music connection has stopped" in (
+    assert controller._startup_attempt["retryable"] is False
+    assert "Choose Close Setup" in (
         controller._startup_attempt["failure"]
     )
     assert controller._startup_attempt_store.cleared == 0
@@ -536,7 +536,7 @@ def test_builtin_feedback_warning_decline_blocks_native_launch() -> None:
 
     controller.bridge.launch_jamulus.assert_not_called()
     controller._fail_startup_journey.assert_called_once()
-    assert "headphones" in controller._fail_startup_journey.call_args.args[1]
+    assert controller._fail_startup_journey.call_args.args[1] == "feedback_required"
 
 
 def test_feedback_assessment_requires_explicit_confirmation_only_for_risk() -> None:
@@ -728,8 +728,7 @@ def test_expired_native_setup_stops_exact_attempt_before_retry() -> None:
     )
     controller._fail_startup_journey.assert_called_once_with(
         5,
-        "Jamulus sound setup waited 10 minutes without a verified music "
-        "connection. Check your interface, then try again.",
+        "setup_timeout",
     )
 
 
@@ -1169,8 +1168,8 @@ def test_nonretryable_startup_hud_has_close_only_and_no_retry_action() -> None:
     ApplicationController._render_startup_journey(controller)
 
     call = controller.window.session_hud.set_state.call_args
-    assert call.args[0] == "Quit and reopen WebJam"
-    assert "Quit and reopen WebJam" in call.args[1]
+    assert call.args[0] == "Close this setup"
+    assert "Choose Close Setup" in call.args[1]
     assert call.kwargs["action_visible"] is True
     assert call.kwargs["action_text"] == "Close Setup"
     assert call.kwargs["action_kind"] == "cancel_startup"
@@ -1179,8 +1178,8 @@ def test_nonretryable_startup_hud_has_close_only_and_no_retry_action() -> None:
     guidance = ApplicationController._startup_guidance_override(
         controller._startup_attempt
     )
-    assert guidance.primary_action is SessionPrimaryAction.NONE
-    assert guidance.action_label == ""
+    assert guidance.primary_action is SessionPrimaryAction.CLOSE_SETUP
+    assert guidance.action_label == "Close Setup"
 
 
 def test_native_sound_setup_watches_connection_without_a_completion_click() -> None:
@@ -1630,3 +1629,41 @@ def test_music_readiness_requires_authenticated_connection_and_one_local_identit
     controller.participants.pop(4)
     controller.jamulus.rpc_client.available = False
     assert controller._startup_music_is_proven(attempt) is False
+
+
+def test_retry_after_cleanup_failure_retries_cleanup_without_a_new_owner():
+    controller = _controller(hosting=True)
+    attempt = {"generation": 1, "role": "host", "phase": "native_sound_setup"}
+    controller._startup_attempt = attempt
+    controller.bridge.stop_jamulus = mock.Mock(return_value=False)
+    controller.bridge.stop_hosted_server = mock.Mock(return_value=True)
+    controller._launch_native_jamulus_for_startup = mock.Mock()
+    controller._begin_explicit_startup_journey = mock.Mock()
+    with mock.patch("webjam_qt.controllers.application_controller.threading.Thread", _ImmediateThread):
+        controller._cancel_startup_journey()
+        controller._retry_startup_journey()
+        assert controller._startup_attempt is attempt
+        assert attempt["generation"] == 1
+        assert controller.bridge.stop_jamulus.call_count == 2
+        assert controller._startup_attempt_store.cleared == 0
+        controller.bridge.stop_jamulus.return_value = True
+        controller._retry_startup_journey()
+    assert controller._startup_attempt is None
+    assert controller._startup_attempt_store.cleared == 1
+    controller._launch_native_jamulus_for_startup.assert_not_called()
+    controller._begin_explicit_startup_journey.assert_not_called()
+
+
+@pytest.mark.parametrize("reason", ["feedback_required", "host_start_failed", "component_open_failed", "connection_failed", "opening_timeout", "setup_timeout", "cleanup_failed", "webjam://private/?token=secret"])
+def test_startup_failure_uses_one_bounded_message_and_action(reason):
+    from webjam_qt.controllers.application_controller import _STARTUP_FAILURE_COPY
+    controller = _controller(hosting=False)
+    controller._startup_attempt = {"generation": 1, "role": "guest", "phase": "native_sound_setup"}
+    controller._fail_startup_journey(1, reason)
+    attempt = controller._startup_attempt
+    override = ApplicationController._startup_guidance_override(attempt)
+    assert "token=secret" not in str(attempt)
+    assert "token=secret" not in override.message
+    if reason in _STARTUP_FAILURE_COPY:
+        assert override.message == attempt["failure"] == _STARTUP_FAILURE_COPY[reason]
+    assert override.primary_action is (SessionPrimaryAction.CLOSE_SETUP if reason == "cleanup_failed" else SessionPrimaryAction.RETRY_SETUP)

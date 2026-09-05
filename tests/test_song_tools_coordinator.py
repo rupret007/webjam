@@ -52,7 +52,7 @@ def _controller(app, *, is_host=True, api_key="k", webex_url="", notes=SHEET):
     window = SimpleNamespace(
         song_overlay=overlay,
         session_canvas=SimpleNamespace(
-            current_notes=lambda: notes, set_notes=MagicMock()
+            current_notes=lambda: notes, edit_notes=MagicMock()
         ),
         session_strip=SimpleNamespace(
             current_title=lambda: "Tuesday Jam",
@@ -939,7 +939,7 @@ def test_removing_the_track_returns_the_count_to_the_panel(app):
 def test_a_suggestion_writes_nothing_until_it_is_kept(app):
     coordinator = _coordinator(app)
     written: list[str] = []
-    coordinator._c.window.session_canvas.set_notes = written.append
+    coordinator._c.window.session_canvas.edit_notes = written.append
 
     coordinator.show_chords("Verse")
 
@@ -950,7 +950,7 @@ def test_a_suggestion_writes_nothing_until_it_is_kept(app):
 def test_keeping_a_suggestion_writes_it_under_that_part(app):
     coordinator = _coordinator(app)
     written: list[str] = []
-    coordinator._c.window.session_canvas.set_notes = written.append
+    coordinator._c.window.session_canvas.edit_notes = written.append
 
     coordinator.keep_suggestion("Verse", "F G Am Am")
 
@@ -963,7 +963,7 @@ def test_keeping_a_suggestion_writes_it_under_that_part(app):
 def test_keeping_a_part_the_sheet_lacks_appends_it(app):
     coordinator = _coordinator(app)
     written: list[str] = []
-    coordinator._c.window.session_canvas.set_notes = written.append
+    coordinator._c.window.session_canvas.edit_notes = written.append
 
     coordinator.keep_suggestion("Bridge", "Dm Am Em Am")
 
@@ -973,7 +973,7 @@ def test_keeping_a_part_the_sheet_lacks_appends_it(app):
 
 def test_keeping_clears_the_suggestions_and_says_what_happened(app):
     coordinator = _coordinator(app)
-    coordinator._c.window.session_canvas.set_notes = lambda _text: None
+    coordinator._c.window.session_canvas.edit_notes = lambda _text: None
     coordinator.show_chords("Verse")
 
     coordinator.keep_suggestion("Verse", "F G Am Am")
@@ -985,7 +985,7 @@ def test_keeping_clears_the_suggestions_and_says_what_happened(app):
 def test_keeping_nothing_changes_nothing(app):
     coordinator = _coordinator(app)
     written: list[str] = []
-    coordinator._c.window.session_canvas.set_notes = written.append
+    coordinator._c.window.session_canvas.edit_notes = written.append
 
     coordinator.keep_suggestion("Verse", "   ")
 
@@ -996,7 +996,7 @@ def test_keeping_nothing_changes_nothing(app):
 def test_dismissing_clears_the_panel_and_writes_nothing(app):
     coordinator = _coordinator(app)
     written: list[str] = []
-    coordinator._c.window.session_canvas.set_notes = written.append
+    coordinator._c.window.session_canvas.edit_notes = written.append
     coordinator.show_chords("Verse")
 
     coordinator.dismiss_suggestions()

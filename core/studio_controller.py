@@ -24,6 +24,7 @@ from core.studio_store import (
     StudioLoadResult,
     StudioStoreConflict,
     StudioStoreError,
+    StudioStoreSaveUnconfirmed,
     load_studio_document,
     save_studio_document,
 )
@@ -424,6 +425,13 @@ class StudioProjectController:
         except StudioStoreConflict as exc:
             self._last_error = str(exc)
             self._conflicted = True
+            self._dirty = True
+            return False
+        except StudioStoreSaveUnconfirmed as exc:
+            self._store_token = exc.published_token
+            self._requires_save = True
+            self._last_error = str(exc)
+            self._conflicted = False
             self._dirty = True
             return False
         except StudioStoreError as exc:

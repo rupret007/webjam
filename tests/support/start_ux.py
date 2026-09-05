@@ -27,6 +27,7 @@ FIRST_SCREEN_BANNED_PHRASES = (
     "comfyui",
     "host-clocked",
     "studio visit",
+    "bob ross",
     "stems",
 )
 
@@ -50,10 +51,8 @@ def harvest_spoken_page(
 ) -> str:
     """Harvest what a person can read or hear on one launch page.
 
-    Hidden fail-closed recovery (the Windows Jamulus installer) stays out
-    because it is not on the door. Hidden combo items stay out too: Podcast
-    and Review are not first-screen rooms, and harvesting them while the
-    picker is off would bury Art again.
+    Every visible widget is included. Hidden menu entries and combo items
+    belong to their explicit secondary page, with separate route tests.
     """
 
     skipped = {widget for widget in exclude if widget is not None}
@@ -78,13 +77,11 @@ def harvest_spoken_page(
 def harvest_first_screen(dialog: QWidget) -> str:
     """Harvest the choice page a person actually sees."""
 
-    page = getattr(dialog, "_choice_page", dialog)
-    installer = getattr(dialog, "_install_jamulus_button", None)
-    more_rooms = getattr(dialog, "_more_rooms_button", None)
-    exclude = tuple(
-        widget for widget in (installer, more_rooms) if widget is not None
-    )
-    return harvest_spoken_page(page, exclude=exclude)
+    spoken = harvest_spoken_page(dialog)
+    menu = getattr(dialog, "_menu_bar", None)
+    if menu is not None:
+        spoken += " " + " ".join(action.text() for action in menu.actions() if action.isVisible()).casefold()
+    return spoken
 
 
 def harvest_join_page(dialog: QWidget) -> str:

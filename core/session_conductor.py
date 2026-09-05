@@ -85,11 +85,13 @@ class SessionPrimaryAction(str, Enum):
     START_SESSION = "start_session"
     COPY_INVITE = "copy_invite"
     RESET_INVITE = "reset_invite"
+    PASTE_NEW_INVITE = "paste_new_invite"
     OPEN_AUDIO_SETTINGS = "open_audio_settings"
     ADD_CONVERSATION = "add_conversation"
     SAVE_CONVERSATION = "save_conversation"
     ENTER_JAM = "enter_jam"
     RETRY_SETUP = "retry_setup"
+    CLOSE_SETUP = "close_setup"
     WAIT = "wait"
     TRY_RECONNECT = "try_reconnect"
     RECORD = "record"
@@ -111,11 +113,13 @@ class SessionPrimaryAction(str, Enum):
             SessionPrimaryAction.START_SESSION: "Start Session",
             SessionPrimaryAction.COPY_INVITE: "Copy Invite",
             SessionPrimaryAction.RESET_INVITE: "Reset Invite",
+            SessionPrimaryAction.PASTE_NEW_INVITE: "Paste New Invite",
             SessionPrimaryAction.OPEN_AUDIO_SETTINGS: "Open Audio Setup",
             SessionPrimaryAction.ADD_CONVERSATION: "Add Conversation",
             SessionPrimaryAction.SAVE_CONVERSATION: "Save Conversation",
             SessionPrimaryAction.ENTER_JAM: "Enter Jam",
             SessionPrimaryAction.RETRY_SETUP: "Try Setup Again",
+            SessionPrimaryAction.CLOSE_SETUP: "Close Setup",
             SessionPrimaryAction.WAIT: "Please wait",
             SessionPrimaryAction.TRY_RECONNECT: "Try Reconnect",
             SessionPrimaryAction.RECORD: "Record",
@@ -331,6 +335,7 @@ class SessionFacts:
     studio_export_available: bool = False
     export: ExportState = ExportState.IDLE
     cleanup: CleanupState = CleanupState.NOT_REQUESTED
+    startup_cleanup_pending: bool = False
     failure: FailureDisposition = FailureDisposition.NONE
     creator_profile_key: str = "music"
 
@@ -412,6 +417,7 @@ class SessionFacts:
         )
         object.__setattr__(self, "export", ExportState(self.export))
         object.__setattr__(self, "cleanup", CleanupState(self.cleanup))
+        object.__setattr__(self, "startup_cleanup_pending", bool(self.startup_cleanup_pending))
         object.__setattr__(self, "failure", FailureDisposition(self.failure))
         object.__setattr__(
             self,
@@ -675,6 +681,16 @@ def _presentation(
             retry_safe=retry_safe,
             creator_profile_key=profile.key,
             primary_label=primary_action.label_for(profile),
+        )
+
+    if (phase is SessionConductorPhase.INDETERMINATE
+            and facts.startup_cleanup_pending):
+        return present(
+            SessionPrimaryAction.CLOSE_SETUP,
+            "Close this setup",
+            "WebJam couldn't finish closing this setup. Choose Close Setup to try closing it again.",
+            "The previous setup's cleanup is unconfirmed; a new connection cannot start yet.",
+            preservation,
         )
 
     if phase is SessionConductorPhase.IDLE:

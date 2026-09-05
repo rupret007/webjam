@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from core.recording_readiness_presentation import (
     RecordingReadinessPresentation,
+    RecordingReadinessRecovery,
     RecordingReadinessSource,
 )
 from webjam_qt.theme.tokens import Space
@@ -208,6 +209,7 @@ class RecordingReadinessDialog(QDialog):
             raise TypeError("presentation must be a RecordingReadinessPresentation")
         super().__init__(parent)
         self._presentation = presentation
+        self.recovery_requested = RecordingReadinessRecovery.NONE
         self._source_rows: tuple[RecordingReadinessSourceRow, ...] = ()
         self._last_announcement = ""
         self.setObjectName("RecordingReadinessDialog")
@@ -309,12 +311,21 @@ class RecordingReadinessDialog(QDialog):
         self._start_button.setObjectName("StudioRecordButton")
         self._start_button.setAccessibleName("Start Recording")
         self._start_button.clicked.connect(self._request_start)
+        self._setup_button = QPushButton("Recording Setup")
+        self._setup_button.setObjectName("GhostButton")
+        self._setup_button.setAccessibleName("Recording Setup")
+        self._setup_button.setAccessibleDescription(
+            "Recording has not started. Fix the selected inputs, then choose Record Session again."
+        )
+        self._setup_button.clicked.connect(self._request_setup)
         footer.addWidget(self._cancel_button)
+        footer.addWidget(self._setup_button)
         footer.addWidget(self._start_button)
         root.addLayout(footer)
 
         QWidget.setTabOrder(self._scroll, self._cancel_button)
-        QWidget.setTabOrder(self._cancel_button, self._start_button)
+        QWidget.setTabOrder(self._cancel_button, self._setup_button)
+        QWidget.setTabOrder(self._setup_button, self._start_button)
         self.set_presentation(presentation, announce=False)
 
     @property
@@ -336,6 +347,7 @@ class RecordingReadinessDialog(QDialog):
         if not isinstance(presentation, RecordingReadinessPresentation):
             raise TypeError("presentation must be a RecordingReadinessPresentation")
         self._presentation = presentation
+        self.recovery_requested = RecordingReadinessRecovery.NONE
         while self._source_layout.count():
             item = self._source_layout.takeAt(0)
             widget = item.widget()
@@ -381,6 +393,10 @@ class RecordingReadinessDialog(QDialog):
         )
         self._summary.setAccessibleDescription(presentation.accessible_description)
         self.setAccessibleDescription(presentation.accessible_description)
+        setup = not presentation.can_start and presentation.recovery is RecordingReadinessRecovery.OPEN_RECORDING_SETUP
+        self._setup_button.setVisible(setup)
+        self._setup_button.setEnabled(setup)
+        self._setup_button.setDefault(setup)
         self._start_button.setEnabled(presentation.can_start)
         self._start_button.setDefault(presentation.can_start)
         self._start_button.setAccessibleDescription(
@@ -394,6 +410,13 @@ class RecordingReadinessDialog(QDialog):
         )
         if announce and self.isVisible():
             self._announce(presentation.accessible_description)
+
+    def _request_setup(self) -> None:
+        if (self._presentation.can_start or self._presentation.recovery is not
+                RecordingReadinessRecovery.OPEN_RECORDING_SETUP):
+            return
+        self.recovery_requested = RecordingReadinessRecovery.OPEN_RECORDING_SETUP
+        self.reject()
 
     def _announce(self, message: str) -> None:
         if message == self._last_announcement:
@@ -429,6 +452,8 @@ class RecordingReadinessDialog(QDialog):
         super().showEvent(event)
         if self._presentation.can_start:
             self._start_button.setFocus(Qt.FocusReason.OtherFocusReason)
+        elif self._setup_button.isVisible() and self._setup_button.isEnabled():
+            self._setup_button.setFocus(Qt.FocusReason.OtherFocusReason)
         else:
             self._cancel_button.setFocus(Qt.FocusReason.OtherFocusReason)
         self._announce(self._presentation.accessible_description)

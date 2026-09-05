@@ -29,6 +29,11 @@ class RecordingReadinessModelError(ValueError):
     """Raised when a UI snapshot is ambiguous, unsafe, or unbounded."""
 
 
+class RecordingReadinessRecovery(str, Enum):
+    NONE = "none"
+    OPEN_RECORDING_SETUP = "open_recording_setup"
+
+
 class RecordingSourceKind(str, Enum):
     SERVER = "server"
     LOCAL_ORIGINAL = "local_original"
@@ -347,6 +352,7 @@ class RecordingReadinessPresentation:
     storage: RecordingStoragePresentation
     shared_track: SharedTrackPresentation
     blockers: tuple[str, ...] = ()
+    recovery: RecordingReadinessRecovery = RecordingReadinessRecovery.NONE
 
     def __post_init__(self) -> None:
         sources = tuple(self.sources)
@@ -383,6 +389,9 @@ class RecordingReadinessPresentation:
         )
         object.__setattr__(self, "sources", sources)
         object.__setattr__(self, "blockers", _deduplicated(safe_blockers))
+        object.__setattr__(self, "recovery", _enum_value(
+            self.recovery, RecordingReadinessRecovery, "recovery"
+        ))
 
     @property
     def effective_blockers(self) -> tuple[str, ...]:

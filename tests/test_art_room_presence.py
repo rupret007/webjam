@@ -93,7 +93,7 @@ def test_a_host_who_chose_the_canvas_is_offered_the_way_in():
     presence = art_room_presence(_room(), hosting=True, intended_canvas=True)
 
     assert presence.label == "Set up shared canvas"
-    assert "Make together" in presence.description
+    assert "when the group wants" in presence.description
     assert presence.target is ArtPresenceTarget.CANVAS
     assert presence.tone is ArtPresenceTone.PRESENT
 
@@ -591,3 +591,25 @@ def test_switching_a_strip_from_art_to_music_clears_the_line():
 
     assert strip.art_room_chip.presence.offered is False
     assert strip.art_room_chip.isHidden() is True
+
+
+@pytest.mark.parametrize("saved_start", ["talk_and_make", "paint_together", "unknown"])
+def test_make_together_with_own_tools_is_a_complete_room(saved_start):
+    from core.creative_modes import get_creator_profile_by_key
+
+    profile = get_creator_profile_by_key("art")
+    start = profile.start_or_default(saved_start)
+    presence = art_room_presence(
+        _room(), hosting=True,
+        intended_canvas=start.shared_canvas,
+        intended_video=start.reference_video,
+    )
+    assert start.label == "Make together"
+    assert start.talk_only
+    assert not presence.offered
+    assert presence.target is ArtPresenceTarget.NONE
+    assert profile.capabilities.shared_canvas
+    # Choosing a canvas later still gives guests the real shared canvas.
+    shared = art_room_presence(_room(canvas=CanvasCompanionState.READY))
+    assert shared.label == "Shared canvas"
+    assert shared.target is ArtPresenceTarget.CANVAS
