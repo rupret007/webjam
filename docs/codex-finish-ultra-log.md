@@ -91,3 +91,12 @@
 - Injected the existing frozen-clock fixture value into that exact-equality scenario. All original replay, generation, rotation and equality assertions remain unchanged.
 - Added an advancing-clock test proving repeated identical roster installation preserves challenge identity and does not extend the remaining lease.
 - No production presence behavior, held branch, authentication control, dependency or workflow is changed. Next: focused module and a complete clean-tip rerun before pushing the draft.
+
+## Phase 4 — native test lifetime correction
+
+- Candidate dafcab3 passed the four basic local gates, then the combined focused GUI process exited with a native Qt garbage-collection fault; it was not published as green.
+- Reference Studio test desktops shut down their project controllers but omitted shutdown of the embedded take reviewer and deletion of their native shell.
+- Added per-test ownership tracking and teardown for both components, including deferred native deletion while QApplication remains alive. Existing product assertions are unchanged.
+- This is a concrete fixture-lifetime correction; the crash does not establish a production media-worker defect. No production cancellation behavior was changed.
+- Focused proof now follows the existing hosted CI model: every selected module in a fresh process, deterministic order, no retries and no removed tests.
+- The separately required raw full `pytest -q` remains a gate. Next: verify this module, commit, and repeat all nine local proof stages on the clean tip.

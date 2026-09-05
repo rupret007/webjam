@@ -28,6 +28,8 @@
 - Only the new branch based on origin/master was edited. Bob's independently merged #67 arrived through master; its branch and parked #37/#49 were not checkout, push or PR targets. Pre-existing canonical edits remain preserved in the named stash.
 - No master merge, tag, signing, notarization, release or device installation. No custom diagnostic pytest plugin, skipped failing modules, retries or warning filters were added to the verification commands.
 
+- A combined focused process also hit native Qt garbage collection. Reference Studio test fixtures now explicitly shut down both project and embedded take-review owners and delete their shell while QApplication is alive. All assertions remain. Focused verification uses the existing CI per-module process isolation; the separate raw full `pytest -q` is still required.
+
 ## Evidence and limits
 
 `WORTH_BUILDING.md` records the full and focused counts and exact product revision. `docs/codex-finish-ultra-log.md` records failed attempts and corrections, rather than presenting intermediate failures as green. Final local checks, hosted run URLs and exact draft SHA belong in the PR and Bob handoff after Phase 4.

@@ -11,6 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
 import pytest
+from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
 import soundfile as sf
 
@@ -81,6 +82,44 @@ def _shell() -> ReferenceStudioShell:
     return ReferenceStudioShell(
         RecordingStudio(player=TakePlayer(samplerate=48_000, sink=_TakeSink()))
     )
+
+
+@pytest.fixture(autouse=True)
+def _dispose_studio_owners(qapp: QApplication, monkeypatch):
+    """End each synthetic desktop's native lifetime while QApplication is alive."""
+
+    shells = []
+    controllers = []
+    make_shell = _shell
+    make_controller = ReferenceStudioApplicationController
+
+    def tracked_shell():
+        shell = make_shell()
+        shells.append(shell)
+        return shell
+
+    def tracked_controller(*args, **kwargs):
+        controller = make_controller(*args, **kwargs)
+        controllers.append(controller)
+        return controller
+
+    monkeypatch.setitem(globals(), "_shell", tracked_shell)
+    monkeypatch.setitem(
+        globals(), "ReferenceStudioApplicationController", tracked_controller
+    )
+    yield
+    for controller in reversed(controllers):
+        if not controller._closed:
+            assert controller.close_project(choice="discard")
+        assert controller.shutdown()
+    for shell in reversed(shells):
+        # The project controller and embedded take reviewer have distinct owners.
+        assert shell.take_review.shutdown()
+        shell.take_review._waveform_executor.shutdown(wait=True, cancel_futures=True)
+        shell.close()
+        shell.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    qapp.processEvents()
 
 
 def _wait_until(qapp: QApplication, predicate, timeout: float = 5.0) -> None:
