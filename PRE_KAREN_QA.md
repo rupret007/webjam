@@ -30,6 +30,8 @@
 
 - A combined focused process also hit native Qt garbage collection. Reference Studio test fixtures now explicitly shut down both project and embedded take-review owners and delete their shell while QApplication is alive. All assertions remain. Focused verification uses the existing CI per-module process isolation; the separate raw full `pytest -q` is still required.
 
+- Fixed-matrix repetition exposed one unidentified intermittent companion failure. Two diagnostic batches passed unchanged; review then deterministically reproduced malformed export fakes at the real completion callback. The fixtures now use typed results and assert completed ready/reveal state; podcast bounce awaits current overdub media verification. Original assertions and timeouts are retained. Final standard qualification remains required.
+
 ## Evidence and limits
 
 `WORTH_BUILDING.md` records the full and focused counts and exact product revision. `docs/codex-finish-ultra-log.md` records failed attempts and corrections, rather than presenting intermediate failures as green. Final local checks, hosted run URLs and exact draft SHA belong in the PR and Bob handoff after Phase 4.

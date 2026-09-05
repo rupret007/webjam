@@ -121,3 +121,12 @@
 - The final PR body and AFTER must record the same full head SHA, exact local counts, hosted run URLs, W1–W10 PASS and the final all-criteria score.
 - The AFTER must use an actual America/Chicago timestamp and release the lease with agent=none only after the exact head is ready for Karen.
 - This preparation is not an executed handoff. After the actual AFTER, stop WebJam work; do not start another repository.
+
+## Phase 4 — asynchronous companion fixture correction
+
+- Candidate 4c9409b9 passed basics, 2,394 focused tests, Swift and WSS, but fixed multitrack qualification stopped at iteration 15 with 18 passed and one failure. Its sanitized report did not retain the individual assertion.
+- Two bounded diagnostic batches retained unchanged subprocess output; both passed 20/20. They were not substituted for the final standard qualification. The original intermittent assertion remains unidentified.
+- Read-only review found two incomplete Studio export fakes. Calling the real completion callback reproduced AttributeError for their missing legacy stems field deterministically.
+- Both fixtures now return the actual StudioExportResult type, await the full completion callback and additionally assert ready copy and reveal destination; all prior export/source/persistence assertions remain.
+- The podcast journey now waits for media verification of the newly committed overdub before starting bounce, preserving its exact Published status assertion instead of racing two worker completions.
+- No production exporter, timing deadline, test selection, retry policy or qualification threshold changed. Next: targeted proof, commit, all exact-tip local stages, then hosted draft.
