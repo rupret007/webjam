@@ -51,6 +51,7 @@ class FakeProcess:
         self.running = False
         self.host_generations = []
         self.guest_generations = []
+        self.help_requests = []
         self.closed = 0
         self.stopped = 0
         FakeProcess.instances.append(self)
@@ -100,6 +101,24 @@ class FakeProcess:
             state="closed",
         )
 
+    def send_help(self, text, *, generation):
+        self.help_requests.append((generation, text))
+        mode = (
+            "host"
+            if self.host_generations and self.host_generations[-1] == generation
+            else "guest"
+        )
+        return TransportEvent(
+            event_id=31,
+            event_type="help_accepted",
+            code="ok",
+            state="connected",
+            mode=mode,
+            profile_id="reference-local",
+            generation=generation,
+            request_id=31,
+        )
+
     def stop(self):
         self.stopped += 1
         self.running = False
@@ -116,6 +135,24 @@ class FakeProcess:
                 profile_id="reference-local",
                 generation=generation,
                 loopback_port=43000 + generation,
+            )
+        )
+
+    def emit_help(
+        self, event_type: str, generation: int, text: str = "", mode: str = "guest"
+    ):
+        assert self.on_event is not None
+        self.on_event(
+            TransportEvent(
+                event_id=0,
+                event_type=event_type,
+                code="ok",
+                state="connected",
+                mode=mode,
+                profile_id="reference-local",
+                generation=generation,
+                request_id=41,
+                help_text=text,
             )
         )
 
@@ -139,6 +176,40 @@ def test_guest_backend_returns_only_authenticated_loopback_facts(monkeypatch) ->
     backend.stop()
     assert FakeProcess.instances[-1].closed == 0
     assert FakeProcess.instances[-1].stopped == 1
+
+
+def test_guest_help_uses_current_generation_and_drops_stale_events(
+    monkeypatch,
+) -> None:
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", FakeProcess)
+    received = []
+    backend = native.NativeGuestTransportBackend(
+        binary="/private/webjam-fabric",
+        expected_build="abc1234",
+        on_help=received.append,
+    )
+    backend.start_guest(_invitation(), generation=7)
+    process = FakeProcess.instances[-1]
+
+    accepted = backend.send_help("Try headphones")
+    assert accepted.event_type == "help_accepted"
+    assert process.help_requests == [(7, "Try headphones")]
+
+    process.emit_help("help_received", 6, "stale")
+    process.emit_help("help_received", 7, "I can hear you")
+    process.emit_help("help_delivered", 7)
+    assert [event.event_type for event in received] == [
+        "help_received",
+        "help_delivered",
+    ]
+    assert received[0].help_text == "I can hear you"
+    assert "I can hear you" not in repr(received[0])
+
+    backend.stop()
+    with pytest.raises(RemoteBackendError) as stopped:
+        backend.send_help("too late")
+    assert stopped.value.code is RemoteSessionErrorCode.TRANSPORT_FAILED
 
 
 def test_guest_backend_allows_same_invitation_retry_only_before_open_guest(
@@ -252,11 +323,13 @@ def test_host_owner_registers_before_copy_and_reset_rotates_one_use_bearer(
     FakeProcess.instances.clear()
     monkeypatch.setattr(native, "TransportProcess", FakeProcess)
     snapshots = []
+    help_events = []
     owner = native.NativeHostTransportOwner(
         target_port=22124,
         binary="/private/webjam-fabric",
         expected_build="abc1234",
         on_snapshot=snapshots.append,
+        on_help=help_events.append,
     )
     process = FakeProcess.instances[-1]
     assert process.start_timeout == 5
@@ -284,6 +357,12 @@ def test_host_owner_registers_before_copy_and_reset_rotates_one_use_bearer(
     assert owner.snapshot.role is SessionRole.HOST
     assert snapshots[-1].phase is RemoteSessionPhase.CONNECTED
     assert not owner.invitation_available
+    accepted = owner.send_help("Try headphones")
+    assert accepted.event_type == "help_accepted"
+    assert process.help_requests == [(2, "Try headphones")]
+    process.emit_help("help_received", 1, "stale")
+    process.emit_help("help_received", 2, "That worked", mode="host")
+    assert [event.help_text for event in help_events] == ["That worked"]
     with pytest.raises(RemoteInvitationOwnerError, match="fresh"):
         owner.copy_for_clipboard()
 

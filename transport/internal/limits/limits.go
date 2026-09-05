@@ -24,6 +24,11 @@ const (
 	MaxSignalEnvelopeBytes = 16 * 1024
 	MaxCertificateBytes    = 4 * 1024
 	MaxReplayNonces        = 1024
+	MaxHelpTextBytes       = 500
+	MaxHelpPending         = 8
+	MaxHelpEventQueueDepth = 16
+	HelpMessageBurst       = 6
+	HelpMessagesPerMinute  = 30
 )
 
 const (
@@ -37,4 +42,5 @@ const (
 	MaxSignalLifetime     = 10 * time.Minute
 	MaxEnrollmentLifetime = 10 * time.Minute
 	EnrollmentClockSkew   = 30 * time.Second
+	HelpOperationLimit    = 3 * time.Second
 )

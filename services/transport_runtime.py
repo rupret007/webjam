@@ -22,9 +22,10 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -34,6 +35,7 @@ IPC_VERSION = 1
 MAX_IPC_LINE_BYTES = 64 * 1024
 MAX_EVENT_LINE_BYTES = 4 * 1024
 MAX_TIMELINE_EVENTS = 64
+MAX_HELP_TEXT_BYTES = 500
 DEFAULT_START_TIMEOUT_SECONDS = 5.0
 DEFAULT_COMMAND_TIMEOUT_SECONDS = 5.0
 DEFAULT_STOP_TIMEOUT_SECONDS = 3.0
@@ -53,6 +55,8 @@ _EVENT_FIELDS = frozenset(
         "profile_id",
         "host_spki_sha256",
         "build",
+        "request_id",
+        "text",
     }
 )
 _EVENT_TYPES = frozenset(
@@ -63,6 +67,9 @@ _EVENT_TYPES = frozenset(
         "host_registered",
         "peer_connected",
         "peer_closed",
+        "help_accepted",
+        "help_received",
+        "help_delivered",
         "stopped",
         "error",
     }
@@ -78,6 +85,10 @@ _EVENT_CODES = frozenset(
         "identity_not_prepared",
         "unsupported_profile",
         "enrollment_invalid",
+        "help_not_ready",
+        "help_invalid",
+        "help_rate_limited",
+        "help_queue_full",
     }
 )
 _EVENT_STATES = frozenset(
@@ -115,7 +126,11 @@ class TransportTimeoutError(TransportProcessError):
 
 @dataclass(frozen=True)
 class TransportEvent:
-    """One allowlisted sidecar event, containing no free-form text."""
+    """One allowlisted sidecar event.
+
+    Help text is the sole bounded free-form field. It is intentionally omitted
+    from representations and the process diagnostic timeline.
+    """
 
     event_id: int
     event_type: str
@@ -127,6 +142,8 @@ class TransportEvent:
     profile_id: str = ""
     host_spki_sha256: bytes = b""
     build: str = ""
+    request_id: int = 0
+    help_text: str = field(default="", repr=False)
 
 
 def _decode_fixed_public(value: Any, size: int) -> bytes:
@@ -174,6 +191,28 @@ def _strict_int(value: Any, *, minimum: int, maximum: int) -> int:
     return value
 
 
+def _normalize_help_text(value: Any, *, require_canonical: bool = False) -> str:
+    """Return the sole bounded plain-text spelling accepted by the sidecar."""
+
+    if not isinstance(value, str):
+        raise TransportProtocolError("The transport process sent invalid data.")
+    text = unicodedata.normalize("NFC", value)
+    if require_canonical and text != value:
+        raise TransportProtocolError("The transport process sent invalid data.")
+    try:
+        encoded = text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise TransportProtocolError(
+            "The transport process sent invalid data."
+        ) from exc
+    if not text or not text.strip() or len(encoded) > MAX_HELP_TEXT_BYTES:
+        raise TransportProtocolError("The transport process sent invalid data.")
+    for character in text:
+        if character in "<>\n\r\t" or unicodedata.category(character).startswith("C"):
+            raise TransportProtocolError("The transport process sent invalid data.")
+    return text
+
+
 def parse_transport_event(encoded: bytes) -> TransportEvent:
     """Parse one complete event line without reflecting attacker-controlled data."""
 
@@ -206,6 +245,10 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
     profile_id = raw.get("profile_id", "")
     encoded_host_pin = raw.get("host_spki_sha256", "")
     build = raw.get("build", "")
+    request_id = _strict_int(
+        raw.get("request_id", 0), minimum=0, maximum=2**64 - 1
+    )
+    help_text = raw.get("text", "")
     if not isinstance(event_type, str) or not isinstance(code, str):
         raise TransportProtocolError("The transport process sent invalid data.")
     if not isinstance(state, str) or not isinstance(mode, str):
@@ -224,6 +267,8 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         _decode_fixed_public(encoded_host_pin, 32) if encoded_host_pin else b""
     )
     if not isinstance(build, str) or (build and not _BUILD_PATTERN.fullmatch(build)):
+        raise TransportProtocolError("The transport process sent invalid data.")
+    if not isinstance(help_text, str):
         raise TransportProtocolError("The transport process sent invalid data.")
     generation = _strict_int(
         raw.get("generation", 0), minimum=0, maximum=2**32 - 1
@@ -245,7 +290,13 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
             or loopback_port
         ):
             raise TransportProtocolError("The transport process sent invalid data.")
-    elif event_id == 0 and event_type not in {"peer_connected", "error", "stopped"}:
+    elif event_id == 0 and event_type not in {
+        "peer_connected",
+        "help_received",
+        "help_delivered",
+        "error",
+        "stopped",
+    }:
         raise TransportProtocolError("The transport process sent invalid data.")
     if event_type == "host_prepared" and (
         code != "ok"
@@ -293,6 +344,28 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         or build
     ):
         raise TransportProtocolError("The transport process sent invalid data.")
+    if event_type in {"help_accepted", "help_received", "help_delivered"}:
+        if (
+            code != "ok"
+            or state != "connected"
+            or mode not in {"host", "guest"}
+            or not profile_id
+            or generation == 0
+            or loopback_port
+            or host_pin
+            or build
+            or request_id == 0
+        ):
+            raise TransportProtocolError("The transport process sent invalid data.")
+        if event_type == "help_accepted":
+            if event_id == 0 or request_id != event_id or help_text:
+                raise TransportProtocolError("The transport process sent invalid data.")
+        elif event_type == "help_received":
+            if event_id != 0:
+                raise TransportProtocolError("The transport process sent invalid data.")
+            help_text = _normalize_help_text(help_text, require_canonical=True)
+        elif event_id != 0 or help_text:
+            raise TransportProtocolError("The transport process sent invalid data.")
     if event_type == "hello":
         active = state in {"connecting", "host_waiting", "connected"}
         if (
@@ -344,6 +417,10 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         or build
     ):
         raise TransportProtocolError("The transport process sent invalid data.")
+    if event_type not in {"help_accepted", "help_received", "help_delivered"} and (
+        request_id or help_text
+    ):
+        raise TransportProtocolError("The transport process sent invalid data.")
 
     return TransportEvent(
         event_id=event_id,
@@ -356,6 +433,8 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         profile_id=profile_id,
         host_spki_sha256=host_pin,
         build=build,
+        request_id=request_id,
+        help_text=help_text,
     )
 
 
@@ -751,6 +830,26 @@ class TransportProcess:
     def close_peer(self) -> TransportEvent:
         return self._request("close_peer")
 
+    def send_help(self, text: str, *, generation: int) -> TransportEvent:
+        """Send one ephemeral help message after authenticated peer proof."""
+
+        try:
+            normalized = _normalize_help_text(text)
+        except TransportProtocolError as exc:
+            raise ValueError("help text must be bounded plain text") from exc
+        current_generation = self._command_int(
+            generation, minimum=1, maximum=2**32 - 1
+        )
+        event = self._request(
+            "send_help", generation=current_generation, text=normalized
+        )
+        if event.event_type != "help_accepted":
+            self._record_failure(
+                TransportProtocolError("The transport process sent invalid data.")
+            )
+            raise TransportProtocolError("The transport process sent invalid data.")
+        return event
+
     def stop(self) -> None:
         with self._condition:
             self._stop_requested = True
@@ -860,8 +959,8 @@ class TransportProcess:
         }
         command.update(fields)
         encoded = json.dumps(
-            command, sort_keys=True, separators=(",", ":"), ensure_ascii=True
-        ).encode("ascii") + b"\n"
+            command, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8") + b"\n"
         if len(encoded) > MAX_IPC_LINE_BYTES:
             with self._condition:
                 self._waiting.discard(command_id)
@@ -951,7 +1050,8 @@ class TransportProcess:
                                 "The transport process sent an unexpected response."
                             )
                         self._pending[event.event_id] = event
-                    self._timeline.append(event)
+                    if not event.event_type.startswith("help_"):
+                        self._timeline.append(event)
                     self._condition.notify_all()
                 callback = self._on_event
                 if callback is not None:

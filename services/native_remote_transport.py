@@ -1,9 +1,10 @@
 """Concrete desktop ownership for WebJam's bundled remote transport.
 
-The native process owns networking and the loopback UDP proxy.  This module
-keeps the Qt/controller boundary small: typed invitations go in and only
-allowlisted connection facts come back.  The built-in profile is deliberately
-lab-only until a public rendezvous profile is provisioned.
+The native process owns networking and the loopback UDP proxy. This module
+keeps the Qt/controller boundary small: typed invitations and bounded help
+text go in; only allowlisted connection facts and ephemeral help events come
+back. The built-in profile is deliberately lab-only until a public rendezvous
+profile is provisioned.
 """
 
 from __future__ import annotations
@@ -139,7 +140,7 @@ def _integrity_options(binary: Path) -> dict[str, object]:
 
 
 class NativeGuestTransportBackend:
-    """One-use guest backend that returns only authenticated loopback facts.
+    """One-use guest backend for authenticated loopback and help facts.
 
     A guest capability is one-use at the reference service. The only failure
     that is safe to retry with the same invitation is one before
@@ -154,13 +155,20 @@ class NativeGuestTransportBackend:
         binary: str | Path | None = None,
         expected_build: str | None = None,
         connect_timeout: float = DEFAULT_REMOTE_CONNECT_TIMEOUT_SECONDS,
+        on_help: Callable[[TransportEvent], None] | None = None,
+        schedule_callback: Callable[[Callable[[], None]], None] = lambda fn: fn(),
     ) -> None:
+        if on_help is not None and not callable(on_help):
+            raise TypeError("on_help must be callable")
         self._binary = Path(binary) if binary is not None else transport_binary_path()
         self._expected_build = expected_build or _expected_build_id()
         self._connect_timeout = float(connect_timeout)
+        self._on_help = on_help
+        self._schedule_callback = schedule_callback
         self._lock = threading.RLock()
         self._process: TransportProcess | None = None
         self._phase = "idle"
+        self._generation = 0
 
     def start_guest(
         self,
@@ -183,6 +191,7 @@ class NativeGuestTransportBackend:
                     # enrollment capability, so a timeout remains retry-safe.
                     start_timeout=DEFAULT_REMOTE_START_TIMEOUT_SECONDS,
                     command_timeout=self._connect_timeout,
+                    on_event=self._handle_event,
                     **_integrity_options(self._binary),
                 )
                 self._process = process
@@ -201,6 +210,7 @@ class NativeGuestTransportBackend:
         with self._lock:
             if self._process is process and self._phase == "starting":
                 self._phase = "enrolling"
+                self._generation = generation
                 cancelled = False
             else:
                 cancelled = True
@@ -235,6 +245,39 @@ class NativeGuestTransportBackend:
             generation=connected.generation,
         )
 
+    def send_help(self, text: str) -> TransportEvent:
+        """Send help only through the current authenticated guest generation."""
+
+        with self._lock:
+            process = self._process
+            generation = self._generation
+            ready = process is not None and self._phase == "connected"
+        if not ready or process is None or generation == 0:
+            raise RemoteBackendError(RemoteSessionErrorCode.TRANSPORT_FAILED)
+        try:
+            return process.send_help(text, generation=generation)
+        except ValueError:
+            raise
+        except TransportProcessError:
+            raise RemoteBackendError(
+                RemoteSessionErrorCode.TRANSPORT_FAILED
+            ) from None
+
+    def _handle_event(self, event: TransportEvent) -> None:
+        if event.event_type not in {"help_received", "help_delivered"}:
+            return
+        with self._lock:
+            if (
+                self._process is None
+                or self._phase not in {"enrolling", "connected"}
+                or event.mode != "guest"
+                or event.generation != self._generation
+            ):
+                return
+            callback = self._on_help
+        if callback is not None:
+            self._schedule_callback(lambda value=event: callback(value))
+
     def _discard_failed_process(self, process: TransportProcess) -> None:
         """Best-effort cleanup without masking the safe enrollment result."""
 
@@ -250,12 +293,14 @@ class NativeGuestTransportBackend:
                 if self._process is process:
                     self._process = None
                     self._phase = "idle"
+                    self._generation = 0
 
     def stop(self) -> None:
         with self._lock:
             process = self._process
             self._process = None
             self._phase = "idle"
+            self._generation = 0
         if process is None:
             return
         # Whole-process shutdown destroys the active peer in the sidecar. It
@@ -265,7 +310,7 @@ class NativeGuestTransportBackend:
 
 
 class NativeHostTransportOwner:
-    """Invitation owner plus a live host-side native transport registration."""
+    """Invitation owner plus live host transport and ephemeral help."""
 
     def __init__(
         self,
@@ -275,6 +320,7 @@ class NativeHostTransportOwner:
         binary: str | Path | None = None,
         expected_build: str | None = None,
         on_snapshot: Callable[[RemoteSessionSnapshot], None] | None = None,
+        on_help: Callable[[TransportEvent], None] | None = None,
         schedule_callback: Callable[[Callable[[], None]], None] = lambda fn: fn(),
     ) -> None:
         if not 1 <= int(target_port) <= 65_535:
@@ -283,6 +329,9 @@ class NativeHostTransportOwner:
         self._target_port = int(target_port)
         self._profile_id = str(profile_id)
         self._on_snapshot = on_snapshot or (lambda _snapshot: None)
+        if on_help is not None and not callable(on_help):
+            raise TypeError("on_help must be callable")
+        self._on_help = on_help
         self._schedule_callback = schedule_callback
         self._lock = threading.RLock()
         self._generation = 0
@@ -350,6 +399,26 @@ class NativeHostTransportOwner:
             raise RuntimeError("No remote invitation is active.")
         owner.reset()
 
+    def send_help(self, text: str) -> TransportEvent:
+        """Send help only through the current authenticated host generation."""
+
+        with self._lock:
+            generation = self._generation
+            ready = (
+                not self._stopped
+                and self._snapshot.phase is RemoteSessionPhase.CONNECTED
+            )
+        if not ready or generation == 0:
+            raise RemoteBackendError(RemoteSessionErrorCode.TRANSPORT_FAILED)
+        try:
+            return self._process.send_help(text, generation=generation)
+        except ValueError:
+            raise
+        except TransportProcessError:
+            raise RemoteBackendError(
+                RemoteSessionErrorCode.TRANSPORT_FAILED
+            ) from None
+
     def register_invitation(self, invitation: RemoteInvitation) -> None:
         with self._lock:
             if self._stopped or self._active_invitation is not None:
@@ -407,6 +476,19 @@ class NativeHostTransportOwner:
         self._publish(snapshot)
 
     def _handle_event(self, event: TransportEvent) -> None:
+        if event.event_type in {"help_received", "help_delivered"}:
+            with self._lock:
+                if (
+                    self._stopped
+                    or self._snapshot.phase is not RemoteSessionPhase.CONNECTED
+                    or event.mode != "host"
+                    or event.generation != self._generation
+                ):
+                    return
+                callback = self._on_help
+            if callback is not None:
+                self._schedule_callback(lambda value=event: callback(value))
+            return
         if event.event_type not in {"peer_connected", "error"} or event.event_id != 0:
             return
         consumed_owner: RemoteInvitationOwner | None = None

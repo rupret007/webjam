@@ -9,6 +9,7 @@ require (
 	github.com/pion/transport/v4 v4.0.2
 	github.com/pion/turn/v5 v5.0.12
 	github.com/quic-go/quic-go v0.60.0
+	golang.org/x/text v0.41.0
 )
 
 require (

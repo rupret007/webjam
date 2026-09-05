@@ -126,6 +126,13 @@ for line in sys.stdin:
             event.update(type="host_registered", state="host_waiting", mode=last[0], profile_id=last[1], generation=last[2], loopback_port=43123)
         else:
             event.update(type="peer_connected", state="connected", mode=last[0], profile_id=last[1], generation=last[2], loopback_port=43123)
+    elif command["type"] == "send_help":
+        if last is None or command.get("generation") != last[2]:
+            event.update(type="error", code="help_not_ready", state="connected")
+        elif set(command) != {{"version", "id", "type", "generation", "text"}}:
+            raise SystemExit(95)
+        else:
+            event.update(type="help_accepted", state="connected", mode=last[0], profile_id=last[1], generation=last[2], request_id=command["id"])
     elif command["type"] == "close_peer":
         if last is None:
             event.update(type="error", code="peer_not_open", state="idle")
@@ -137,6 +144,12 @@ for line in sys.stdin:
         event.update(type="error", code="protocol_violation", state="failed")
     sys.stdout.write(json.dumps(event, separators=(",", ":")) + "\\n")
     sys.stdout.flush()
+    if command["type"] == "send_help" and event["type"] == "help_accepted":
+        received = {{"version":1,"id":0,"type":"help_received","code":"ok","state":"connected","mode":last[0],"profile_id":last[1],"generation":last[2],"request_id":command["id"] + 100,"text":command["text"]}}
+        delivered = {{"version":1,"id":0,"type":"help_delivered","code":"ok","state":"connected","mode":last[0],"profile_id":last[1],"generation":last[2],"request_id":command["id"]}}
+        sys.stdout.write(json.dumps(received, separators=(",", ":"), ensure_ascii=False) + "\\n")
+        sys.stdout.write(json.dumps(delivered, separators=(",", ":")) + "\\n")
+        sys.stdout.flush()
     if command["type"] == "shutdown":
         break
 '''
@@ -173,6 +186,39 @@ def test_transport_process_has_constant_argv_empty_env_and_clean_lifecycle(
         "peer_closed",
         "stopped",
     )
+
+
+def test_help_is_nfc_bounded_ephemeral_and_excluded_from_diagnostics(
+    tmp_path: Path,
+) -> None:
+    observed = []
+    with TransportProcess(
+        _sidecar(tmp_path), expected_build="test-build", on_event=observed.append
+    ) as process:
+        process.open_guest(_invitation(), generation=7)
+        accepted = process.send_help('Try cafe\u0301 "mix"', generation=7)
+        assert accepted.event_type == "help_accepted"
+        assert accepted.request_id == accepted.event_id
+
+        deadline = time.monotonic() + 1
+        while not any(event.event_type == "help_delivered" for event in observed):
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+
+        received = next(
+            event for event in observed if event.event_type == "help_received"
+        )
+        assert received.help_text == 'Try café "mix"'
+        assert 'Try café "mix"' not in repr(received)
+        assert not any(
+            event.event_type.startswith("help_") for event in process.timeline
+        )
+
+        for invalid in ("", "   ", "<b>help</b>", "line\nbreak", "é" * 251):
+            with pytest.raises(ValueError, match="bounded plain text"):
+                process.send_help(invalid, generation=7)
+        with pytest.raises(ValueError):
+            process.send_help("help", generation=0)
 
 
 def test_host_command_is_bounded_and_requires_valid_port_and_generation(
@@ -510,3 +556,51 @@ def test_peer_connected_schema_distinguishes_guest_response_and_host_update() ->
     ):
         with pytest.raises(TransportProtocolError):
             parse_transport_event(json.dumps(invalid).encode() + b"\n")
+
+
+def test_help_event_schema_is_exact_canonical_and_redacted() -> None:
+    common = {
+        "version": 1,
+        "id": 0,
+        "code": "ok",
+        "state": "connected",
+        "mode": "guest",
+        "profile_id": "reference-local",
+        "generation": 7,
+        "request_id": 23,
+    }
+    received = parse_transport_event(
+        json.dumps(
+            {**common, "type": "help_received", "text": "Try headphones — café"},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        + b"\n"
+    )
+    assert received.request_id == 23
+    assert received.help_text == "Try headphones — café"
+    assert "headphones" not in repr(received)
+
+    accepted = parse_transport_event(
+        json.dumps(
+            {**common, "id": 23, "type": "help_accepted", "text": ""}
+        ).encode()
+        + b"\n"
+    )
+    assert accepted.request_id == accepted.event_id == 23
+
+    delivered = parse_transport_event(
+        json.dumps({**common, "type": "help_delivered"}).encode() + b"\n"
+    )
+    assert delivered.request_id == 23
+
+    for invalid in (
+        {**common, "type": "help_received", "text": "cafe\u0301"},
+        {**common, "type": "help_received", "text": "<b>help</b>"},
+        {**common, "type": "help_received", "text": "help", "id": 1},
+        {**common, "type": "help_accepted", "id": 22},
+        {**common, "type": "help_delivered", "text": "leak"},
+    ):
+        with pytest.raises(TransportProtocolError):
+            parse_transport_event(
+                json.dumps(invalid, ensure_ascii=False).encode("utf-8") + b"\n"
+            )

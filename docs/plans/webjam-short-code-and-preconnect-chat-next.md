@@ -1,8 +1,9 @@
 # WebJam short-code join and pre-connection chat — next architecture slice
 
-> Status: design gate, not implemented. The current product still joins with
-> one complete private invitation. This plan does not authorize a public
-> service, deployment, credential, release, or UI claim.
+> Status: transport foundation implemented; meeting identifier and help UI
+> remain gated. The current product still joins with one complete private
+> invitation and exposes no pre-Jamulus help control. This plan does not
+> authorize a public service, deployment, credential, release, or UI claim.
 
 ## Product outcome
 
@@ -20,8 +21,8 @@ credential.
 - The Join door accepts that complete invitation, never saves it, and bounds a
   remote attempt. There is no meeting-number lookup today.
 - Jamulus chat exists only after an authenticated Jamulus RPC connection. The
-  reference sidecar has strict authenticated control frames, but its IPC and
-  desktop API expose no pre-connection text operation.
+  reference sidecar and desktop adapter now expose one bounded ephemeral help
+  operation after mutual transport proof, but no product UI invokes it.
 - The reference service is self-hostable test evidence. No public WebJam
   rendezvous or relay is deployed or production-approved.
 
@@ -49,8 +50,8 @@ tests precede any production endpoint or shortened UI label.
 ## Pre-connection text decision
 
 Text is allowed only after mutual peer proof opens the authenticated data-plane
-gate, even if Jamulus has not opened yet. Extend the existing protocol rather
-than creating a second socket or cloud chatbot:
+gate, even if Jamulus has not opened yet. The implemented foundation extends
+the existing protocol rather than creating a second socket or cloud chatbot:
 
 - one allowlisted message type with protocol version, session generation,
   monotonic request ID, direction, and acknowledgement;
@@ -60,23 +61,27 @@ than creating a second socket or cloud chatbot:
   rejection, and immediate retirement on reset, timeout, or generation change;
 - ephemeral memory only: no logs, analytics, support bundles, notifications,
   transcripts, or offline delivery;
-- one simple UI surface showing send failure honestly and preserving unsent
-  local text without claiming remote receipt.
+- a future simple UI surface showing send failure honestly and preserving
+  unsent local text without claiming remote receipt.
 
-Tests must cover unauthenticated send, wrong role/session/generation, replay,
-Unicode byte bounds, markup, floods, queue exhaustion, disconnect, reset,
-late events, log/support redaction, and the transition into existing Jamulus
-chat. Physical two-Mac and public-service evidence remain **NOT RUN** until
-explicitly performed.
+Unit, adapter, race-detector, and independent local-relay integration tests now
+cover authentication and generation gates, wrong role, replay, Unicode byte
+bounds, markup, rate and queue exhaustion, receipt binding, send cleanup, IPC
+redaction, and bidirectional transport. Disconnect/reset lifecycle coverage is
+shared with the existing peer suite. A user-facing transition into Jamulus
+chat, packaged two-Mac evidence, and public-service evidence remain **NOT RUN**
+until explicitly implemented and performed.
 
 ## Delivery order
 
 1. ADR and threat-model review for the identifier/capsule scheme.
-2. Reference-service protocol plus sidecar/IPC tests, still local and offline.
-3. Desktop lookup and pre-connection text adapters with no new navigation.
-4. One Join-door prototype behind a development flag.
+2. Help frame, sidecar/IPC, and desktop adapter foundation, local and offline.
+   **Implemented**, with no product UI.
+3. Identifier lookup architecture and desktop adapter, after step 1.
+4. One reviewed Join-door prototype with the help UI behind a development flag.
 5. Public-service privacy/abuse review, infrastructure approval, and physical
    two-network testing.
 
 Only after all five gates may the product replace the complete invitation with
-a meeting identifier or advertise chat before Jamulus connects.
+a meeting identifier. The product must not advertise help before Jamulus until
+steps 4 and 5 provide reviewed UI and real-path evidence.
