@@ -48,6 +48,7 @@ from core.recording_readiness import (
 from core.recording_readiness_presentation import (
     RecordingChannelTopology,
     RecordingReadinessPresentation,
+    RecordingReadinessRecovery,
     RecordingReadinessSource,
     RecordingSourceKind,
     RecordingSourceReadiness,
@@ -4311,7 +4312,7 @@ class RecordingCoordinator:
         storage = RecordingStoragePresentation(
             readiness=storage_readiness,
             summary=(
-                "Storage reserved"
+                "Storage checked"
                 if plan.storage.status is RecordingStorageStatus.READY
                 else "Storage is low"
                 if plan.storage.status is RecordingStorageStatus.WARNING
@@ -4339,7 +4340,41 @@ class RecordingCoordinator:
             sources=tuple(sources),
             storage=storage,
             shared_track=shared_track,
+            recovery=(RecordingReadinessRecovery.OPEN_RECORDING_SETUP if not local_ready
+                      else RecordingReadinessRecovery.NONE),
         )
+
+    def _resolve_readiness_decision(self, plan, presentation, decision) -> bool:
+        # Nested Qt events can replace the plan while the sheet is open.
+        # A stale cancellation is no more authoritative than a stale Start.
+        with self._evidence_lock:
+            if (self.phase is not RecorderPhase.PREFLIGHT
+                    or self._take_id != plan.take_id
+                    or self._recording_plan_take_id != plan.take_id
+                    or self._recording_plan is not plan
+                    or self._recording_plan_fingerprint != plan.plan_fingerprint()):
+                return False
+        if decision is True and presentation is not None and presentation.can_start:
+            return True
+        setup = (isinstance(presentation, RecordingReadinessPresentation)
+                 and not presentation.can_start
+                 and presentation.recovery is RecordingReadinessRecovery.OPEN_RECORDING_SETUP
+                 and decision is RecordingReadinessRecovery.OPEN_RECORDING_SETUP)
+        canceled_take_id = self._take_id
+        self._retire_active_take(canceled_take_id)
+        self._set_phase(RecorderPhase.IDLE)
+        if setup:
+            self._c.window.flash_message(
+                "Recording has not started. Fix the selected inputs, then choose Record Session again.",
+                ms=5000,
+            )
+            self._c._open_recording_setup()
+        else:
+            self._c.window.flash_message(
+                "Recording was not started. Review the source readiness items, then try again.",
+                ms=5000,
+            )
+        return False
 
     def _readiness_authority_still_matches(
         self,
@@ -4843,7 +4878,7 @@ class RecordingCoordinator:
                 ),
                 next_action=(
                     "Choose a writable Takes folder in Recording Setup, then "
-                    "try Record Take again. No server recording was started."
+                    "try Record Session again. No server recording was started."
                 ),
                 retry_callback=self._c._on_record_requested,
             )
@@ -4963,7 +4998,7 @@ class RecordingCoordinator:
                         "The recorder secret file or server configuration changed."
                     ),
                     next_action=(
-                        "Verify the host recording setup, then retry Record Take."
+                        "Verify the host recording setup, then retry Record Session."
                     ),
                     retry_callback=self._c._on_record_requested,
                 )
@@ -5277,18 +5312,8 @@ class RecordingCoordinator:
         except Exception:  # noqa: BLE001 - presentation details stay private
             presentation = None
         confirm = getattr(self._c, "_confirm_recording_readiness", None)
-        accepted = bool(
-            presentation is not None and callable(confirm) and confirm(presentation)
-        )
-        if not accepted:
-            canceled_take_id = self._take_id
-            self._retire_active_take(canceled_take_id)
-            self._set_phase(RecorderPhase.IDLE)
-            self._c.window.flash_message(
-                "Recording was not started. Review the source readiness items, "
-                "then try again.",
-                ms=5000,
-            )
+        decision = confirm(presentation) if presentation is not None and callable(confirm) else False
+        if not self._resolve_readiness_decision(plan, presentation, decision):
             return
         if not self._readiness_authority_still_matches(
             plan,
@@ -5348,7 +5373,7 @@ class RecordingCoordinator:
                     "musician is captured in one take."
                 ),
                 next_action=(
-                    "Ask the host to press Record Take in Studio. Your audio "
+                    "Ask the host to press Record Session in Studio. Your audio "
                     "will appear there automatically as its own track."
                 ),
             )
@@ -5380,7 +5405,7 @@ class RecordingCoordinator:
                     ),
                     next_action=(
                         "Start Session, wait for the musician track to appear, "
-                        "then press Record Take again."
+                        "then press Record Session again."
                     ),
                     retry_callback=self._c._on_record_requested,
                 )

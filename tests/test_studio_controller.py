@@ -418,3 +418,94 @@ def test_constructor_bounds_and_scheduler_failure_remain_recoverable(
     assert controller.dirty is True
     assert controller.autosave_pending is False
     assert "scheduler unavailable" in controller.last_error
+
+
+@pytest.mark.parametrize("undo_first", [False, True])
+def test_unconfirmed_save_retries_without_losing_history(tmp_path, undo_first):
+    from core.file_io import atomic_write_bytes
+    from core.studio_store import studio_state_path
+    folder, project = _make_take(tmp_path, "unconfirmed")
+    controller = StudioProjectController()
+    initial = controller.load(folder)
+    track_id = project.tracks[0].track_id
+    edited = controller.perform("Pan", lambda d: d.update_track(track_id, pan=0.3))
+    primary = studio_state_path(folder)
+    def fail_primary_sync(path, data, *, mode=None):
+        if Path(path) == primary:
+            with patch("core.file_io._fsync_parent_directory", side_effect=OSError("private")):
+                atomic_write_bytes(path, data, mode=mode)
+        else:
+            atomic_write_bytes(path, data, mode=mode)
+    with patch("core.studio_store.atomic_write_bytes", side_effect=fail_primary_sync):
+        assert controller.save() is False
+    assert controller.document is edited
+    assert controller.dirty and not controller.conflicted
+    assert controller.can_undo
+    assert controller.store_token == hashlib.sha256(primary.read_bytes()).hexdigest()
+    assert "private" not in controller.last_error
+    if undo_first:
+        controller.undo()
+        assert controller.document == initial
+        assert controller.dirty
+        assert controller.can_redo
+    assert controller.save()
+    reopened = StudioProjectController()
+    assert reopened.load(folder) == controller.document
+    assert not controller.dirty
+
+
+def test_external_writer_after_unconfirmed_save_still_conflicts(tmp_path):
+    folder, project = _make_take(tmp_path, "intervening")
+    first = StudioProjectController()
+    first.load(folder)
+    track_id = project.tracks[0].track_id
+    edited = first.perform("Pan", lambda d: d.update_track(track_id, pan=0.2))
+    with patch("core.file_io._fsync_parent_directory", side_effect=OSError("sync failed")):
+        assert first.save() is False
+    other = StudioProjectController()
+    other.load(folder)
+    other.perform("Other pan", lambda d: d.update_track(track_id, pan=-0.2))
+    assert other.save()
+    assert first.save() is False
+    assert first.conflicted and first.dirty
+    assert first.document is edited
+    reopened = StudioProjectController()
+    assert reopened.load(folder) == other.document
+
+
+def test_failed_primary_write_never_adopts_different_published_bytes(tmp_path):
+    from core.file_io import atomic_write_bytes
+    from core.studio_store import studio_state_path
+
+    folder, project = _make_take(tmp_path, "different-publication")
+    controller = StudioProjectController()
+    controller.load(folder)
+    controller.perform("Initial edit", lambda d: d.update_track(project.tracks[0].track_id, muted=True))
+    assert controller.save()
+    primary = studio_state_path(folder)
+    foreign = primary.read_bytes()  # Valid source document, different from the pending edit.
+    token = controller.store_token
+    edited = controller.perform(
+        "Pan", lambda document: document.update_track(project.tracks[0].track_id, pan=0.4)
+    )
+
+    def publish_different_then_fail(path, data, *, mode=None):
+        if Path(path) == primary:
+            # A concurrent publisher's valid bytes must never become our retry token.
+            different = foreign.replace(b'"pan": 0.0', b'"pan": -0.2')
+            assert different != foreign and different != data
+            atomic_write_bytes(path, different, mode=mode)
+            raise OSError("replacement not confirmed")
+        atomic_write_bytes(path, data, mode=mode)
+
+    with patch("core.studio_store.atomic_write_bytes", side_effect=publish_different_then_fail):
+        assert controller.save() is False
+    published = primary.read_bytes()
+    assert controller.document is edited
+    assert controller.dirty and controller.can_undo
+    assert controller.store_token == token
+    assert hashlib.sha256(published).hexdigest() != token
+    assert controller.save() is False
+    assert controller.conflicted and controller.dirty
+    assert controller.document is edited and controller.can_undo
+    assert primary.read_bytes() == published

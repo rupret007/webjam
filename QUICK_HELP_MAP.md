@@ -18,7 +18,7 @@
 | Stop a remote join that is not finishing | WebJam stops the attempt at **Needs attention**. Choose the one shown action: **Try Again** only when the invite was not used, or **Paste New Invite** after timeout/expiry/uncertain enrollment |
 | Chat with the room | After authenticated Jamulus connection, use the session canvas band chat. It is not available as pre-connection tech support |
 | Talk or make together | Art → **Make together** → **Host** or **Join**; talk, make, or draw together in one room while everyone works locally |
-| Paint on one shared canvas | Art → **Make together** → **Host** → **Set up shared canvas** → **Host in Drawpile**; keep the Drawpile session **Personal** and paste its invitation back into WebJam |
+| Paint on one shared canvas | Art room → **More → Shared Canvas…** → **Host in Drawpile**; keep the Drawpile session **Personal** and paste its invitation back into WebJam |
 | Join the shared canvas | Art guest → **Open shared canvas**; Drawpile must be installed, and WebJam says so plainly when it is not |
 | See where the room is while painting | Art → **More → Shared Canvas…**; the panel shows **Bar 17.3 · Chorus**, a video position, or **No shared clock**. It is a readout, not a control |
 | Make an image with AI | Art, in session → notes **Suggestion** → **Make**; Krita opens a new canvas and its AI Image Generation docker takes your prompt. WebJam generates nothing and uploads nothing |
@@ -26,7 +26,12 @@
 | Start a process video | Art host → **Paint along → Choose process video…** and pick one local file you have the right to play; paint in your usual app or on paper beside WebJam |
 | Follow the host's process video | Art guest → **Paint along → Open my copy…** and pick your own copy of the host's exact file; a different file is refused rather than played |
 | Ignore a process video | Art → **Paint along → Hide video**; you stay in the room and in the conversation |
-| Start a supported local project | Music → **New Music Project** or Podcast & Voice → **New Local Recording** |
+| Start a supported local project | Launch → **File → New Music Project…**; or **File → Podcast & Voice… → New Local Recording** |
+| Follow a demonstration in a meeting | Art room → **Conversation → Join / Open Meeting**; share a demonstration in Webex or your chosen meeting app while everyone uses their own tools. The meeting owns video and sound; Paint along remains a separate silent local-file path |
+| Recover unsaved local notes | **Notes → Save Notes**; retry the save, shorten a retained draft, or **Export Copy…** to another file. This can recover another workspace's draft without changing your joined session |
+| Fix blocked recording inputs | **Record Session Readiness → Recording Setup**; the pending take is retired before setup opens. Fix the inputs, then choose **Record Session** again |
+| Find Podcast or Review | At launch, use **File → Podcast & Voice…** or **File → Review & Rehearsal…** |
+| Install the included Windows music component | At launch, **Help → Music setup… → Install Jamulus** when offered; finish the installer, then use **Back** |
 | Change live sound | **More → Audio Settings in Jamulus** |
 | Invite a collaborator | Host setup → **Copy Invite** |
 | Show conversation controls | Direct **Conversation** or **More → Conversation**; this does not open a meeting |

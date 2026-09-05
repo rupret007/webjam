@@ -567,3 +567,56 @@ def test_primary_atomic_write_failure_leaves_old_primary_readable(
     assert reopened.document == first_save.document
     assert reopened.token == first_save.token
     assert reopened.origin is StudioLoadOrigin.PRIMARY_V2
+
+
+def test_oversized_recovery_failed_replacement_preserves_original_and_retries(tmp_path):
+    take_dir, project = _make_take(tmp_path)
+    evidence = _evidence_hashes(take_dir)
+    first = save_studio_document(take_dir, default_studio_document(project), expected_token=None)
+    save_studio_document(take_dir, first.document.update_track(project.tracks[0].track_id, pan=0.2), expected_token=first.token)
+    primary = studio_state_path(take_dir)
+    original = b"x" * (MAX_STUDIO_STATE_BYTES + 1)
+    primary.write_bytes(original)
+    backup = studio_state_backup_path(take_dir).read_bytes()
+    recovered = load_studio_document(take_dir)
+    edited = recovered.document.update_track(project.tracks[1].track_id, pan=-0.3)
+    with patch("core.studio_store.atomic_write_bytes", side_effect=OSError("simulated failed replacement")):
+        with pytest.raises(StudioStoreError, match="atomically save"):
+            save_studio_document(take_dir, edited, expected_token=recovered.token)
+    assert primary.read_bytes() == original
+    assert load_studio_document(take_dir).token == recovered.token
+    assert studio_state_backup_path(take_dir).read_bytes() == backup
+    saved = save_studio_document(take_dir, edited, expected_token=recovered.token)
+    assert saved.backup_path.read_bytes() == original
+    assert load_studio_document(take_dir).document == edited
+    assert _evidence_hashes(take_dir) == evidence
+
+
+def test_invalid_replacement_size_preserves_oversized_primary_without_quarantine(tmp_path):
+    take_dir, project = _make_take(tmp_path)
+    first = save_studio_document(take_dir, default_studio_document(project), expected_token=None)
+    save_studio_document(take_dir, first.document, expected_token=first.token)
+    primary = studio_state_path(take_dir)
+    original = b"x" * (MAX_STUDIO_STATE_BYTES + 1)
+    primary.write_bytes(original)
+    recovered = load_studio_document(take_dir)
+    backup = studio_state_backup_path(take_dir).read_bytes()
+    with patch("core.studio_store.MAX_STUDIO_STATE_BYTES", 1):
+        with pytest.raises(StudioStoreError, match="too large to save"):
+            save_studio_document(take_dir, recovered.document, expected_token=recovered.token)
+    assert primary.read_bytes() == original
+    assert studio_state_backup_path(take_dir).read_bytes() == backup
+    assert not list(take_dir.glob(".webjam-studio-state.corrupt-oversized-*"))
+
+
+def test_post_replace_sync_failure_returns_exact_unconfirmed_token(tmp_path):
+    from core.studio_store import StudioStoreSaveUnconfirmed
+    take_dir, project = _make_take(tmp_path)
+    primary = studio_state_path(take_dir)
+    document = default_studio_document(project)
+    with patch("core.file_io._fsync_parent_directory", side_effect=OSError("unconfirmed")):
+        with pytest.raises(StudioStoreSaveUnconfirmed) as result:
+            save_studio_document(take_dir, document, expected_token=None)
+    assert result.value.published_token == _digest(primary.read_bytes())
+    saved = save_studio_document(take_dir, document, expected_token=result.value.published_token)
+    assert load_studio_document(take_dir).token == saved.token

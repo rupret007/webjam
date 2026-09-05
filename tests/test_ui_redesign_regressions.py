@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QLineEdit,
     QMessageBox,
+    QPushButton,
     QWidget,
 )
 
@@ -120,9 +121,13 @@ def test_launch_hierarchy_is_one_primary_then_two_clear_alternatives(
         dialog = LaunchDialog(_settings(tmp_path))
     assert dialog.height() <= 540
     dialog.resize(460, 600)
+    dialog._menu_bar.setNativeMenuBar(False)
     dialog.show()
     styled_qapp.processEvents()
     try:
+        assert [action.text() for action in dialog._menu_bar.actions()] == ["&File", "&Help"]
+        assert dialog._menu_bar.isVisibleTo(dialog)
+        assert dialog.rect().contains(_rect_in(dialog._menu_bar, dialog))
         assert dialog.minimumWidth() <= 460
         assert dialog.minimumHeight() <= 600
         assert dialog._host_button.objectName() == "LaunchPrimary"
@@ -146,9 +151,12 @@ def test_launch_hierarchy_is_one_primary_then_two_clear_alternatives(
         assert not dialog._creator_profile_selector.isVisibleTo(dialog)
         assert dialog._art_profile_card.isVisibleTo(dialog)
         assert dialog._music_profile_card.isVisibleTo(dialog)
-        assert dialog._more_rooms_button.isVisibleTo(dialog)
-        assert dialog._more_rooms_button.objectName() == "LaunchMoreRooms"
-        assert dialog._more_rooms_button.text() == "Podcast or review"
+        assert set(dialog._workspace_actions) == {"music", "podcast_voice", "review_rehearsal"}
+        assert [action.text().replace("&&", "&") for action in dialog._workspace_actions.values()] == [
+            "New Music Project…", "Podcast & Voice…", "Review & Rehearsal…",
+        ]
+        assert {button.text() for button in dialog.findChildren(QPushButton)
+                if button.isVisibleTo(dialog)} == {"Art", "Music", "Host", "Join"}
         assert not dialog._choice_subtitle.isVisibleTo(dialog)
         assert (
             dialog._host_button.geometry().top()
@@ -173,9 +181,13 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
 ):
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(_settings(tmp_path))
+    dialog._menu_bar.setNativeMenuBar(False)
     dialog.show()
     styled_qapp.processEvents()
     try:
+        assert [action.text() for action in dialog._menu_bar.actions()] == ["&File", "&Help"]
+        assert dialog._menu_bar.isVisibleTo(dialog)
+        assert dialog.rect().contains(_rect_in(dialog._menu_bar, dialog))
         assert dialog.width() <= 760
         assert dialog.height() <= 520
         assert dialog.height() + 40 <= 600
@@ -186,7 +198,6 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
             dialog._music_profile_card,
             dialog._host_button,
             dialog._join_button,
-            dialog._more_rooms_button,
         ):
             assert control.isVisibleTo(dialog)
             assert dialog.rect().contains(_rect_in(control, dialog))
@@ -225,9 +236,13 @@ def test_art_door_keeps_two_starts_and_host_join_inside_760_by_600(
     settings.last_creator_profile_key = "art"
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(settings)
+    dialog._menu_bar.setNativeMenuBar(False)
     dialog.show()
     styled_qapp.processEvents()
     try:
+        assert [action.text() for action in dialog._menu_bar.actions()] == ["&File", "&Help"]
+        assert dialog._menu_bar.isVisibleTo(dialog)
+        assert dialog.rect().contains(_rect_in(dialog._menu_bar, dialog))
         assert dialog.width() <= 760
         assert dialog.height() + 40 <= 600
         assert dialog._choice_helper.isVisibleTo(dialog) is False
@@ -247,7 +262,9 @@ def test_art_door_keeps_two_starts_and_host_join_inside_760_by_600(
             "Make together",
             "Paint along",
         ]
-        assert dialog._more_rooms_button.isVisibleTo(dialog) is False
+        assert {button.text() for button in dialog.findChildren(QPushButton)
+                if button.isVisibleTo(dialog)} == {"Art", "Music", "Make together", "Paint along", "Host", "Join"}
+        assert all(action.isEnabled() for action in dialog._workspace_actions.values())
         assert dialog._name_input.isVisibleTo(dialog) is False
     finally:
         _destroy(dialog)
@@ -265,9 +282,13 @@ def test_windows_launch_name_roles_and_installer_do_not_overlap_at_default_size(
         ),
     ):
         dialog = LaunchDialog(_settings(tmp_path))
+    dialog._menu_bar.setNativeMenuBar(False)
     dialog.show()
     styled_qapp.processEvents()
     try:
+        assert [action.text() for action in dialog._menu_bar.actions()] == ["&File", "&Help"]
+        assert dialog._menu_bar.isVisibleTo(dialog)
+        assert dialog.rect().contains(_rect_in(dialog._menu_bar, dialog))
         for hidden in (
             dialog._name_label,
             dialog._name_input,
@@ -289,8 +310,6 @@ def test_windows_launch_name_roles_and_installer_do_not_overlap_at_default_size(
         controls = (
             dialog._host_button,
             dialog._join_button,
-            dialog._install_jamulus_button,
-            dialog._more_rooms_button,
         )
         rects = [_rect_in(control, dialog) for control in controls]
         for control, rect in zip(controls, rects):
@@ -299,6 +318,21 @@ def test_windows_launch_name_roles_and_installer_do_not_overlap_at_default_size(
         assert art_rect.bottom() < rects[0].top()
         for upper, lower in zip(rects, rects[1:]):
             assert upper.bottom() < lower.top()
+        assert not dialog._install_jamulus_button.isVisibleTo(dialog)
+        assert dialog._setup_action.isEnabled()
+        dialog._setup_action.trigger()
+        styled_qapp.processEvents()
+        assert dialog._pages.currentWidget() is dialog._setup_page
+        setup_controls = [dialog._installer_status, *dialog._setup_page.findChildren(QPushButton)]
+        setup_rects = [_rect_in(control, dialog) for control in setup_controls]
+        for control, rect in zip(setup_controls, setup_rects):
+            assert control.isVisibleTo(dialog)
+            assert dialog.rect().contains(rect)
+        assert dialog._install_jamulus_button in setup_controls
+        for upper, lower in zip(setup_rects, setup_rects[1:]):
+            assert upper.bottom() < lower.top()
+        assert dialog.height() + 40 <= 600
+        assert dialog.width() <= 760
     finally:
         _destroy(dialog)
 

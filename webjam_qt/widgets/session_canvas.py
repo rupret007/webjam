@@ -42,6 +42,7 @@ class SessionCanvas(QFrame):
     CANVAS_MIN_WIDTH = 280
 
     notes_changed = Signal(str)
+    save_notes_requested = Signal()
     chat_submitted = Signal(str)   # user pressed Enter in the chat box
     brief_export_requested = Signal()
     suggestion_requested = Signal()  # Art: Suggestion on these notes/canvas
@@ -54,6 +55,7 @@ class SessionCanvas(QFrame):
         self._current_pulse: SessionPulse | None = None
         self._current_guidance: MusicianGuidanceSnapshot | None = None
         self._compact_guidance = False
+        self._art_profile = False
 
         self._header = QLabel("Session Canvas")
         self._header.setObjectName("CanvasHeader")
@@ -132,6 +134,21 @@ class SessionCanvas(QFrame):
         toolbar.setSpacing(Space.XS)
         toolbar.addWidget(self._suggestion_row)
         toolbar.addLayout(chrome_row)
+        self._notes_save_status = QLabel()
+        self._notes_save_status.setObjectName("NotesSaveStatus")
+        self._notes_save_status.setTextFormat(Qt.TextFormat.PlainText)
+        self._notes_save_status.setWordWrap(True)
+        self._notes_save_status.setAccessibleName("Local notes save status")
+        self._save_notes_button = QPushButton("Save Notes")
+        self._save_notes_button.setObjectName("GhostButton")
+        self._save_notes_button.setAccessibleName("Save Notes")
+        self._save_notes_button.setToolTip("Retry saving local notes kept in this app")
+        self._save_notes_button.clicked.connect(self.save_notes_requested.emit)
+        toolbar.addWidget(self._notes_save_status)
+        chrome_row.insertWidget(2, self._save_notes_button)
+        self._normal_notes_buttons = (ts_btn, clear_btn)
+        self._notes_save_state = ""
+        self.set_notes_save_state("saved")
 
         self._guidance = QFrame()
         self._guidance.setObjectName("MusicianGuidance")
@@ -311,14 +328,16 @@ class SessionCanvas(QFrame):
         art = profile.key == "art"
         self._suggestion_button.setVisible(art)
         self._suggestion_button.setEnabled(art)
-        self._suggestion_row.setVisible(art)
+        self._art_profile = art
+        self._suggestion_row.setVisible(art and self._notes_save_state not in {"failed", "too_large"})
         # Default NOW copy is Music-shaped until the HUD writes. A painter
         # should not read "live music path" on the notes.
         if art and self._current_guidance is None:
             self._guidance_why.setText("Why: WebJam has not checked this room yet.")
             self._guidance_next.setText("Next: follow the session bar")
 
-    def set_notes(self, text: str) -> None:
+    def restore_notes(self, text: str) -> None:
+        """Restore owner-held bytes without creating a new user edit."""
         if self._notes.toPlainText() == text:
             return
         self._notes.blockSignals(True)
@@ -326,8 +345,44 @@ class SessionCanvas(QFrame):
         self._notes.blockSignals(False)
         self._sync_export_actions()
 
+    def set_notes(self, text: str) -> None:
+        """Replace editable notes and notify their persistence owner."""
+        if self._notes.toPlainText() != text:
+            self._notes.setPlainText(text)
+
+    def edit_notes(self, text: str) -> None:
+        """Apply an explicit user edit through the normal notes change path."""
+        self.set_notes(text)
+
     def current_notes(self) -> str:
         return self._notes.toPlainText()
+
+    def set_notes_save_state(self, state: str) -> None:
+        messages = {
+            "saved": "Saved on this computer",
+            "pending": "Saving notes…",
+            "failed": "Notes need saving. Choose Save Notes.",
+            "too_large": "Long draft: choose Save Notes to shorten or export it.",
+            "unreadable": "Saved notes could not be opened. The original is unchanged.",
+            "exported": "Draft exported to your chosen file.",
+        }
+        if state not in messages:
+            raise ValueError("Unknown local notes save state.")
+        if state == self._notes_save_state:
+            return
+        self._notes_save_state = state
+        self._notes_save_status.setText(messages[state])
+        self._notes_save_status.setAccessibleDescription(messages[state])
+        needs_attention = state in {"failed", "too_large"}
+        self._notes_save_status.setVisible(needs_attention or state in {"unreadable", "exported"})
+        for button in getattr(self, "_normal_notes_buttons", ()):
+            button.setVisible(not needs_attention)
+        self._save_notes_button.setVisible(needs_attention)
+        # A save failure belongs beside the draft, above optional suggestions.
+        # Keep the editor and recovery reachable at the compact window floor.
+        if hasattr(self, "_pulse"):
+            self._pulse.setVisible(not needs_attention)
+        self._suggestion_row.setVisible(self._art_profile and not needs_attention)
 
     def set_session_pulse(self, pulse: SessionPulse) -> None:
         """Render the current local pulse without interpreting note markup."""
@@ -444,8 +499,8 @@ class SessionCanvas(QFrame):
 
     def export_notes(self) -> None:
         """Prompt the user to save current notes to a file."""
-        text = self.current_notes().strip()
-        if not text:
+        text = self.current_notes()
+        if not text.strip():
             return
         date_str = datetime.now().strftime("%Y-%m-%d")
         default_name = f"webjam_session_{date_str}.md"

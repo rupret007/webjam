@@ -104,8 +104,8 @@ def test_launch_shows_live_and_offline_music_paths(qapp, tmp_path):
     assert dialog._music_profile_card.isVisibleTo(dialog) is True
     assert dialog._art_profile_card.accessibleName() == "Art"
     assert dialog._music_profile_card.accessibleName() == "Music"
-    assert dialog._more_rooms_button.isVisibleTo(dialog) is True
-    assert dialog._more_rooms_button.accessibleName() == "Podcast or review"
+    assert set(dialog._workspace_actions) == {"music", "podcast_voice", "review_rehearsal"}
+    assert set(dialog._workspace_actions) == {"music", "podcast_voice", "review_rehearsal"}
     assert dialog.selected_creator_profile_key == "music"
     assert dialog._name_label.isVisibleTo(dialog) is False
     assert dialog._name_input.isVisibleTo(dialog) is False
@@ -146,7 +146,7 @@ def test_launch_creator_selector_uses_canonical_profiles_and_truthful_actions(
         # widget, but the picker is not a first-screen control.
         assert selector.isVisibleTo(dialog) is False
         assert dialog._creator_profile_label.isVisibleTo(dialog) is False
-        assert dialog._more_rooms_button.isVisibleTo(dialog) is True
+        assert set(dialog._workspace_actions) == {"music", "podcast_voice", "review_rehearsal"}
         assert dialog._art_profile_card.isVisibleTo(dialog) is True
         assert dialog._music_profile_card.isVisibleTo(dialog) is True
         for control in (
@@ -302,7 +302,7 @@ def test_launch_restores_last_creator_profile_and_local_project_persists_it(
     assert dialog.selected_creator_profile_key == "music"
     assert dialog._art_profile_card.isVisibleTo(dialog)
     assert dialog._music_profile_card.isVisibleTo(dialog)
-    dialog._more_rooms_button.click()
+    dialog._workspace_actions["podcast_voice"].trigger()
     dialog._creator_profile_selector.setCurrentIndex(
         dialog._creator_profile_selector.findData("podcast_voice")
     )
@@ -337,6 +337,8 @@ def test_windows_clean_install_exposes_the_bundled_jamulus_installer(
         dialog = LaunchDialog(settings)
         dialog.show()
         qapp.processEvents()
+        assert not dialog._install_jamulus_button.isVisibleTo(dialog)
+        dialog._setup_action.trigger()
         assert dialog._install_jamulus_button.isVisibleTo(dialog)
         dialog._install_jamulus_button.click()
 
@@ -345,7 +347,7 @@ def test_windows_clean_install_exposes_the_bundled_jamulus_installer(
         shell=False,
     )
     assert not dialog._install_jamulus_button.isEnabled()
-    assert "Finish the Jamulus installer" in dialog._choice_helper.text()
+    assert "Finish the Jamulus installer" in dialog._installer_status.text()
     dialog.close()
 
 
@@ -389,7 +391,7 @@ def test_windows_installer_launch_failure_is_actionable(qapp, tmp_path):
     ):
         dialog = LaunchDialog(settings)
         dialog._install_jamulus_button.click()
-    assert "couldn’t open" in dialog._choice_error.text()
+    assert "couldn’t open" in dialog._installer_error.text()
     assert dialog._install_jamulus_button.isEnabled()
 
 
@@ -411,7 +413,7 @@ def test_windows_installer_replacement_is_rejected_before_launch(qapp, tmp_path)
         dialog._install_jamulus_button.click()
 
     popen.assert_not_called()
-    assert "failed its integrity check" in dialog._choice_error.text()
+    assert "failed its integrity check" in dialog._installer_error.text()
     assert not dialog._install_jamulus_button.isEnabled()
 
 
@@ -1069,6 +1071,9 @@ def test_host_calls_out_a_copied_lan_invite_after_wifi_address_changes(qapp, tmp
     assert controller.window.session_hud._status.text() == "Your Wi-Fi changed"
     assert controller.window.session_hud._action.text() == "Copy New Invite"
     assert controller.window.session_hud._invite_available is True
+    assert controller.window.session_strip._invite_button.isHidden()
+    assert controller._last_musician_guidance.next_step == "Copy New Invite"
+    assert "Copy New Invite" in controller.window.session_canvas._guidance_next.text()
     assert controller.session_lifecycle.phase is SessionLifecyclePhase.DEGRADED
     controller.bridge.hosted_server_alive.return_value = False
     controller.shutdown()
@@ -2011,3 +2016,122 @@ class _DeferredThread:
 
     def start(self):
         pass
+
+
+@pytest.mark.parametrize("profile", ["music", "art"])
+def test_file_menu_music_project_is_explicit_offline_choice(qapp, tmp_path, profile):
+    config = tmp_path / "settings.json"
+    settings = AppSettings(config_file=str(config), last_creator_profile_key=profile, jamulus_server="band.example")
+    dialog = LaunchDialog(settings)
+    dialog.show_join()
+    dialog._invite_input.setText("private unsubmitted invitation")
+    dialog._workspace_actions["music"].trigger()
+    assert dialog.result() == dialog.DialogCode.Accepted
+    assert dialog.selected_role == "studio"
+    assert dialog.selected_creator_profile_key == "music"
+    assert dialog._invite_input.text() == ""
+    persisted = load_settings(config)
+    assert persisted.last_creator_profile_key == "music"
+    assert persisted.jamulus_server == "band.example"
+    assert "private unsubmitted" not in config.read_text()
+    assert all(not action.isEnabled() for action in dialog._workspace_actions.values())
+
+
+def test_join_recovery_cannot_change_to_a_host_or_offline_workspace(qapp, tmp_path):
+    config = tmp_path / "settings.json"
+    dialog = LaunchDialog(AppSettings(config_file=str(config)), allow_workspace_choices=False)
+    dialog.show_join()
+    assert dialog._workspace_actions == {}
+    dialog._open_workspace("music")
+    dialog._host()
+    dialog._studio()
+    dialog.show_choices()
+    assert dialog._pages.currentWidget() is dialog._join_page
+    assert dialog.selected_role == ""
+    assert not config.exists()
+    dialog.close()
+
+
+@pytest.mark.parametrize("page", ["join", "setup"])
+def test_menu_project_save_failure_is_visible_and_retryable(qapp, tmp_path, page):
+    dialog = LaunchDialog(AppSettings(config_file=str(tmp_path / "settings.json")))
+    dialog.show()
+    if page == "join":
+        dialog.show_join()
+    else:
+        dialog._show_music_setup()
+    with patch("webjam_qt.windows.launch_dialog.save_settings", side_effect=OSError("private")):
+        dialog._workspace_actions["music"].trigger()
+    assert dialog.showing_choices
+    assert dialog._choice_error.isVisibleTo(dialog)
+    assert "couldn’t save" in dialog._choice_error.text()
+    assert "private" not in dialog._choice_error.text()
+    assert dialog._workspace_actions["music"].isEnabled()
+    assert dialog.selected_role == ""
+    dialog.close()
+
+
+def test_completed_shutdown_does_not_reopen_a_live_quit_prompt(qapp, tmp_path):
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+    window = ConductorWindow(mode_entries=ApplicationController.mode_entries(), initial_mode_key="music_jam", initial_title="Close once")
+    controller = ApplicationController(window, settings=AppSettings(config_file=str(tmp_path / "settings.json")))
+    try:
+        assert controller.shutdown() is True
+        assert controller._shutdown is True
+        with (
+            patch.object(controller, "_is_jamulus_running", side_effect=AssertionError("shutdown must not reinterpret stale process snapshots")),
+            patch.object(QMessageBox, "question") as question,
+            patch.object(QMessageBox, "information") as information,
+        ):
+            assert controller._confirm_close() is True
+            assert window.close() is True
+            question.assert_not_called()
+            information.assert_not_called()
+    finally:
+        window.deleteLater()
+
+
+@pytest.mark.parametrize("profile", ["music", "art"])
+def test_file_music_project_bootstraps_offline(qapp, tmp_path, profile):
+    from webjam_qt import app as app_module
+    config = tmp_path / "settings.json"
+    initial = AppSettings(config_file=str(config), last_creator_profile_key=profile, jamulus_server="band.example")
+    launcher = LaunchDialog(initial)
+    qt_app = MagicMock()
+    qt_app.exec.return_value = 0
+    controller = MagicMock()
+    def choose_music_project():
+        launcher._workspace_actions["music"].trigger()
+        return launcher.result()
+    def load_for_bootstrap(path=None):
+        return initial if path is None else load_settings(path)
+    try:
+        with (
+            patch.object(sys, "argv", ["WebJam"]),
+            patch.dict(os.environ, {"WEBJAM_SMOKE_AUTOSTART_AUDIO": "0"}),
+            patch.object(app_module, "configure_logging"),
+            patch.object(app_module, "load_settings", side_effect=load_for_bootstrap),
+            patch.object(launcher, "exec", side_effect=choose_music_project),
+            patch.object(app_module, "LaunchDialog", return_value=launcher),
+            patch.object(app_module.QApplication, "instance", return_value=qt_app),
+            patch.object(app_module, "load_stylesheet", return_value=""),
+            patch.object(app_module, "ConductorWindow", return_value=MagicMock()),
+            patch.object(app_module, "ApplicationController", return_value=controller) as controller_class,
+            patch.object(app_module.QTimer, "singleShot", side_effect=lambda _delay, callback: callback()) as single_shot,
+        ):
+            assert app_module.run() == 0
+        assert launcher.selected_role == "studio"
+        kwargs = controller_class.call_args.kwargs
+        assert kwargs["offline_reference_studio"] is True
+        assert kwargs["settings"].last_creator_profile_key == "music"
+        assert kwargs["settings"].jamulus_server == "band.example"
+        assert kwargs["session_invite"] is None
+        assert kwargs["remote_invitation"] is None
+        single_shot.assert_called_once_with(0, controller.begin_reference_studio_journey)
+        controller.begin_reference_studio_journey.assert_called_once_with()
+        controller.begin_startup_journey.assert_not_called()
+        controller._on_launch_audio.assert_not_called()
+        controller.start_companion_api.assert_not_called()
+    finally:
+        launcher.deleteLater()

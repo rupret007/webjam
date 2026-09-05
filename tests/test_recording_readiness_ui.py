@@ -326,3 +326,46 @@ def test_finalizing_is_identical_to_legacy_validating_phase() -> None:
         )
     finally:
         strip.close()
+
+
+def test_blocked_local_inputs_open_setup_without_starting_recording():
+    from dataclasses import replace
+    from core.recording_readiness_presentation import RecordingReadinessRecovery
+    snapshot = replace(_snapshot(blocked=True), recovery=RecordingReadinessRecovery.OPEN_RECORDING_SETUP)
+    dialog = _show_dialog(snapshot, 600, 500)
+    started = []
+    dialog.start_requested.connect(started.append)
+    try:
+        assert not dialog._start_button.isEnabled()
+        assert dialog._setup_button.isVisibleTo(dialog)
+        assert "Fix the selected inputs" in dialog._setup_button.accessibleDescription()
+        assert dialog.rect().contains(dialog._setup_button.mapTo(dialog, dialog._setup_button.rect().bottomRight()))
+        assert dialog._setup_button.hasFocus()
+        QTest.keyClick(dialog, Qt.Key.Key_Return)
+        assert dialog.result() == dialog.DialogCode.Rejected
+        assert dialog.recovery_requested is RecordingReadinessRecovery.OPEN_RECORDING_SETUP
+        assert started == []
+    finally:
+        dialog.deleteLater()
+
+
+def test_application_returns_setup_intent_only_for_the_exact_blocked_sheet(monkeypatch):
+    from dataclasses import replace
+    from types import SimpleNamespace
+    from PySide6.QtWidgets import QWidget
+    from core.recording_readiness_presentation import RecordingReadinessRecovery
+    from webjam_qt.controllers.application_controller import ApplicationController
+    snapshot = replace(_snapshot(blocked=True), recovery=RecordingReadinessRecovery.OPEN_RECORDING_SETUP)
+    def choose_setup(dialog):
+        dialog._setup_button.click()
+        return dialog.result()
+    monkeypatch.setattr(RecordingReadinessDialog, "exec", choose_setup)
+    window = QWidget()
+    try:
+        controller = SimpleNamespace(window=window)
+        result = ApplicationController._confirm_recording_readiness(controller, snapshot)
+        assert result is RecordingReadinessRecovery.OPEN_RECORDING_SETUP
+        # A ready sheet cannot emit a setup intent or consent on this path.
+        assert ApplicationController._confirm_recording_readiness(controller, _snapshot()) is False
+    finally:
+        window.deleteLater()

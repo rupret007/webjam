@@ -516,3 +516,27 @@ def test_opening_art_surfaces_leaves_the_meeting_handoff_alone():
         assert forbidden not in [
             call for call in dir(controller.host_peer)
         ], forbidden
+
+
+def test_art_conversation_invites_demonstration_without_opening_or_muting():
+    from webjam_qt.widgets.webex_embed import WebexEmbed
+    panel = WebexEmbed()
+    calls = []
+    panel.open_meeting_requested.connect(lambda: calls.append("open"))
+    panel.bring_forward_requested.connect(lambda: calls.append("focus"))
+    panel.mute_in_webex_requested.connect(lambda: calls.append("mute"))
+    try:
+        panel.set_creator_profile(get_creator_profile_by_key("art"))
+        assert panel._title_label.text() == "Conversation"
+        text = panel._mode_label.text()
+        assert "share a demonstration" in text
+        assert "Webex" in text
+        assert "own tools" in text
+        assert "separate silent local video" in text
+        assert "end the WebJam session" not in text
+        assert calls == []
+        panel.set_creator_profile(get_creator_profile_by_key("music"))
+        assert "muted while" in panel._mode_label.text()
+        assert calls == []
+    finally:
+        panel.deleteLater()

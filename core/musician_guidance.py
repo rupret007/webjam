@@ -537,10 +537,20 @@ def _recovery(
     retry_safe: bool,
     primary_action: SessionPrimaryAction,
 ) -> tuple[GuidanceRecovery, str]:
+    if primary_action is SessionPrimaryAction.PASTE_NEW_INVITE:
+        return (
+            GuidanceRecovery.REPLACE_INVITE,
+            "Ask the host for a new invitation, then choose Paste New Invite.",
+        )
     if primary_action is SessionPrimaryAction.RESET_INVITE:
         return (
             GuidanceRecovery.REPLACE_INVITE,
             "Replace the old invitation before sharing another private link.",
+        )
+    if primary_action is SessionPrimaryAction.CLOSE_SETUP:
+        return (
+            GuidanceRecovery.RETRY_SETUP,
+            "Choose Close Setup to finish closing the previous setup before starting again.",
         )
     if primary_action is SessionPrimaryAction.RETRY_SETUP:
         return (
@@ -626,7 +636,7 @@ def _transition_label(phase: SessionLifecyclePhase) -> str:
         SessionLifecyclePhase.ENDING: "Session cleanup started",
         SessionLifecyclePhase.FINALIZING_RECORDINGS: "Finalizing recordings",
         SessionLifecyclePhase.COMPLETED: "Session cleanup completed",
-        SessionLifecyclePhase.FAILED_RECOVERABLE: "Safe retry available",
+        SessionLifecyclePhase.FAILED_RECOVERABLE: "Session needs attention",
         SessionLifecyclePhase.FAILED_FINAL: "Session stopped safely",
     }[phase]
 

@@ -826,6 +826,78 @@ class TestRecordButtonWiring(unittest.TestCase):
             c.recording.phase = prior_phase
             c.recording.plan_shared_track_for_next_take(required=False)
 
+    def test_readiness_setup_retires_old_plan_before_opening_and_rebuilds_fresh(self):
+        from core.recording_readiness_presentation import RecordingReadinessRecovery
+        from core.session_recording_plan import InputMapBinding
+        c = self.controller
+        bindings = (InputMapBinding("Host Mic", 1, True, True),)
+        plan = self._install_bound_capture_plan(bindings)
+        c.recording.phase = c.recording.phase.__class__.PREFLIGHT
+        presentation = c.recording._build_recording_readiness_presentation(
+            plan, local_preflight=SimpleNamespace(ready=False)
+        )
+        self.assertFalse(presentation.can_start)
+        self.assertEqual(presentation.storage.summary, "Storage checked")
+        self.assertIs(presentation.recovery, RecordingReadinessRecovery.OPEN_RECORDING_SETUP)
+        def open_setup():
+            self.assertEqual(c.recording.phase.value, "idle")
+            self.assertEqual(c.recording._take_id, "")
+            self.assertIsNone(c.recording._recording_plan)
+            self.assertFalse(c._recorder_armed)
+            self.assertFalse(c._server_recording)
+            self.assertIsNone(c.recording._local_capture)
+        with (
+            patch.object(c, "_open_recording_setup", side_effect=open_setup) as setup,
+            patch.object(c.recording, "_continue_recording_start") as start,
+            patch.object(c.recording, "_arm_guest_capture_before_server_start") as guest_arm,
+        ):
+            self.assertFalse(c.recording._resolve_readiness_decision(
+                plan, presentation, RecordingReadinessRecovery.OPEN_RECORDING_SETUP
+            ))
+            setup.assert_called_once_with()
+            start.assert_not_called()
+            guest_arm.assert_not_called()
+        fresh = self._install_bound_capture_plan(bindings)
+        try:
+            self.assertNotEqual(fresh.take_id, plan.take_id)
+            c.recording.phase = c.recording.phase.__class__.PREFLIGHT
+            ready = c.recording._build_recording_readiness_presentation(
+                fresh, local_preflight=SimpleNamespace(ready=True)
+            )
+            self.assertTrue(ready.can_start)
+            self.assertIs(ready.recovery, RecordingReadinessRecovery.NONE)
+            self.assertTrue(c.recording._resolve_readiness_decision(fresh, ready, True))
+            self.assertIs(c.recording._recording_plan, fresh)
+        finally:
+            c.recording._retire_active_take(fresh.take_id)
+
+    def test_stale_readiness_decisions_never_retire_a_replacement_or_active_take(self):
+        from core.recording_readiness_presentation import RecordingReadinessRecovery
+        from core.session_recording_plan import InputMapBinding
+        c = self.controller
+        bindings = (InputMapBinding("Host Mic", 1, True, True),)
+        old = self._install_bound_capture_plan(bindings)
+        old_view = c.recording._build_recording_readiness_presentation(old, local_preflight=SimpleNamespace(ready=False))
+        c.recording._retire_active_take(old.take_id)
+        replacement = self._install_bound_capture_plan(bindings)
+        try:
+            for phase in ("PREFLIGHT", "STARTING", "RECORDING"):
+                c.recording.phase = getattr(c.recording.phase.__class__, phase)
+                with patch.object(c, "_open_recording_setup") as setup:
+                    self.assertFalse(c.recording._resolve_readiness_decision(
+                        old, old_view, RecordingReadinessRecovery.OPEN_RECORDING_SETUP
+                    ))
+                    self.assertIs(c.recording._recording_plan, replacement)
+                    self.assertEqual(c.recording._take_id, replacement.take_id)
+                    self.assertEqual(c.recording.phase.name, phase)
+                    setup.assert_not_called()
+            view = c.recording._build_recording_readiness_presentation(replacement, local_preflight=SimpleNamespace(ready=False))
+            self.assertFalse(c.recording._resolve_readiness_decision(replacement, view, RecordingReadinessRecovery.OPEN_RECORDING_SETUP))
+            self.assertIs(c.recording._recording_plan, replacement)
+        finally:
+            c.recording._retire_active_take(replacement.take_id)
+            c.recording.phase = c.recording.phase.__class__.IDLE
+
     def test_prestart_retry_returns_through_application_record_planning(self):
         c = self.controller
         prior_phase = c.recording.phase

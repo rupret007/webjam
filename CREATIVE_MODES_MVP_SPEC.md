@@ -349,8 +349,9 @@ prompt or model control because those belong to Krita.
 - The chosen start key is re-validated against the resolved profile on every
   load and save. A current start decides whether the Paint along video is
   armed; the retired `paint_together` key migrates to **Make together**, which
-  preserves the saved shared-canvas intent. Any other stale or foreign key
-  also falls back to that current room-first choice.
+  starts with the artist's own tools and no shared-canvas requirement. The
+  host can choose a canvas inside the room. Other stale or foreign start keys
+  also fall back to Make together.
 - `visual_studio` remains a valid legacy *mode* key in its own registry, so
   session metadata that records it keeps resolving.
 - The retired five-mode list is not offered anywhere as a picker. What someone

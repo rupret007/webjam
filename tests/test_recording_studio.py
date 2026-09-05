@@ -38,6 +38,7 @@ from core.recording_sources import (
     RecordingSourceState,
 )
 from core.settings import AppSettings
+from core.studio_export import StudioExportResult
 from core.studio_project import (
     MarkerKind,
     StudioMarker,
@@ -179,6 +180,24 @@ def _impulse_wav(
                 if start <= frame < start + count:
                     block[frame - start] = int(max(-1.0, min(1.0, amplitude)) * 32767)
             audio.writeframes(block.tobytes())
+
+
+def _studio_export_result(folder: Path) -> StudioExportResult:
+    return StudioExportResult(
+        folder=folder,
+        edited_stems=(),
+        original_stems=(),
+        rough_mix=folder / "rough-mix.wav",
+        markers_csv=folder / "markers.csv",
+        provenance=folder / "provenance.json",
+        checksums=folder / "SHA256SUMS.txt",
+        instructions=folder / "IMPORT.txt",
+        studio_document=folder / "studio.json",
+        source_manifest=folder / "source.json",
+        source_manifests=(),
+        sample_rate=RATE,
+        frames=RATE,
+    )
 
 
 def _wait_until(predicate, timeout: float = 3.0) -> bool:
@@ -1563,12 +1582,7 @@ def test_schema2_studio_choices_reopen_and_export_by_durable_track_id(tmp_path):
     assert audio.read_bytes() == audio_before
 
     called = threading.Event()
-    result = SimpleNamespace(
-        folder=take_dir / "Studio Export",
-        edited_stems=(),
-        original_stems=(),
-        sample_rate=RATE,
-    )
+    result = _studio_export_result(take_dir / "Studio Export")
     with patch(
         "webjam_qt.widgets.recording_studio.export_studio_arrangement",
         side_effect=lambda *_args, **_kwargs: called.set() or result,
@@ -1591,6 +1605,9 @@ def test_schema2_studio_choices_reopen_and_export_by_durable_track_id(tmp_path):
             assert not reopened._master_limiter.isChecked()
             reopened._export_tracks()
             assert _wait_until(called.is_set)
+            assert _wait_until(lambda: not reopened.export_in_progress)
+            assert "Studio export ready" in reopened._hint.text()
+            assert reopened._reveal_path == result.folder
             exported_project, exported_document, exported_root = export.call_args.args
             assert exported_project.take_id == reopened._studio_state.take_id
             assert exported_root == take_dir.resolve()
@@ -2587,18 +2604,16 @@ def test_repeated_take_lane_comp_audition_export_and_reopen(tmp_path):
         assert studio._studio_audition_lane_id is None
 
         called = threading.Event()
-        result = SimpleNamespace(
-            folder=primary_dir / "Studio Export",
-            edited_stems=(),
-            original_stems=(),
-            sample_rate=RATE,
-        )
+        result = _studio_export_result(primary_dir / "Studio Export")
         with patch(
             "webjam_qt.widgets.recording_studio.export_studio_arrangement",
             side_effect=lambda *_args, **_kwargs: called.set() or result,
         ) as export:
             studio._export_tracks()
             assert _wait_until(called.is_set)
+            assert _wait_until(lambda: not studio.export_in_progress)
+            assert "Studio export ready" in studio._hint.text()
+            assert studio._reveal_path == result.folder
             assert export.call_args.kwargs["source_catalog"] is (
                 studio._studio_source_catalog
             )
@@ -4699,5 +4714,26 @@ def test_completed_take_is_auto_selected_and_loaded_in_studio(tmp_path):
         selected = studio._take_list.currentItem()
         assert selected is not None
         assert selected.data(Qt.ItemDataRole.UserRole) == str(take_dir)
+    finally:
+        studio.shutdown()
+
+
+@pytest.mark.parametrize("kind", ["marker", "section"])
+def test_long_arrange_names_offer_recovery_without_changing_recording(tmp_path, kind):
+    take_dir, _ = _schema2_studio_take(tmp_path)
+    truth = {path: path.read_bytes() for path in (take_dir / "webjam-take.json", *sorted((take_dir / "media").glob("*.wav")))}
+    studio = RecordingStudio(str(tmp_path), player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
+    try:
+        studio._take_list.setCurrentRow(0)
+        original = studio._studio_state
+        studio._studio_arrange._user_select_region(original.regions[0])
+        action = studio._add_arrange_marker if kind == "marker" else studio._add_arrange_section
+        action("x" * 161)
+        assert studio._studio_state is original
+        assert "160 characters or fewer" in studio._hint.text()
+        action("A better name")
+        markers = [m for m in studio._studio_state.markers if not m.deleted]
+        assert [(m.label, m.kind.value) for m in markers] == [("A better name", kind)]
+        assert {path: path.read_bytes() for path in truth} == truth
     finally:
         studio.shutdown()

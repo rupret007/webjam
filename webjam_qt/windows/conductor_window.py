@@ -915,6 +915,7 @@ class ConductorWindow(QMainWindow):
         self.participant_grid.set_creator_profile(profile)
         self.recording_studio.set_creator_profile(profile)
         self.session_canvas.set_creator_profile(profile)
+        self.webex_embed.set_creator_profile(profile)
         if profile.key != "art":
             self.session_canvas.setAccessibleDescription(
                 "Local notes and separate live chat. Notes are not shared or "

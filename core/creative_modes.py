@@ -417,7 +417,6 @@ _ART_STARTS = (
             "space, or the host can open one shared canvas from inside the "
             "room when the group wants to draw together."
         ),
-        shared_canvas=True,
     ),
     CreatorStart(
         key="paint_along",
@@ -727,10 +726,10 @@ def _validate_creator_registry() -> None:
         "paint_along",
     ):
         raise RuntimeError("Art offers exactly two starts, in a fixed order.")
-    if any(start.talk_only for start in art.starts):
-        raise RuntimeError("Art combines the plain room with its shared canvas.")
-    if sum(1 for start in art.starts if start.shared_canvas) != 1:
-        raise RuntimeError("Art offers one direct shared-canvas next action.")
+    if not art.starts[0].talk_only:
+        raise RuntimeError("Make together starts with the room and the artist's own tools.")
+    if any(start.shared_canvas for start in art.starts):
+        raise RuntimeError("A shared canvas is an explicit in-room choice.")
     if sum(1 for start in art.starts if start.reference_video) != 1:
         raise RuntimeError("Art offers exactly one reference-video start.")
     if any(profile.starts for profile in CREATOR_PROFILES if profile.key != "art"):

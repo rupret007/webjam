@@ -117,7 +117,7 @@ def test_the_only_visible_workflow_choice_is_the_creator_profile(qapp, tmp_path)
 
         dialog._music_profile_card.click()
         qapp.processEvents()
-        dialog._more_rooms_button.click()
+        dialog._workspace_actions["podcast_voice"].trigger()
         qapp.processEvents()
         offered = _visible_combo_items(dialog)
         assert offered == PROFILE_LABELS

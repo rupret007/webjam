@@ -426,8 +426,8 @@ public struct SnapshotBody: Codable, Equatable, Sendable {
         ])
         let primaryActions = Set([
             "none", "continue", "confirm_sound", "run_band_check", "start_session",
-            "copy_invite", "reset_invite", "open_audio_settings",
-            "add_conversation", "save_conversation", "enter_jam", "retry_setup",
+            "copy_invite", "reset_invite", "paste_new_invite", "open_audio_settings",
+            "add_conversation", "save_conversation", "enter_jam", "retry_setup", "close_setup",
             "wait", "try_reconnect", "record", "stop_recording", "review_take",
             "select_take", "export_tracks", "end_session", "open_details",
             "check_session",

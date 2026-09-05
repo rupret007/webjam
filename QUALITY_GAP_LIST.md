@@ -1,0 +1,26 @@
+# WebJam Ultra quality gaps
+
+Baseline: master a004bbbce20a8ced3b67f7ec89798e0a9416f208. Inventory precedes code changes. Ranked by user-visible impact; findings are hypotheses until regression tests reproduce them.
+
+1. **Make together asks for a shared canvas before anyone wants one.** The two-card door already exists, but `core/creative_modes.py` arms canvas intent and `core/art_room_presence.py` makes setup the default room action. Make own-space work a complete first-class room; preserve optional canvas and legacy start keys.
+2. **The launch gate omits visible controls.** `tests/support/start_ux.py` excludes the installer and other-rooms button even when visible. Music exposes an extra Podcast or review choice, and a Windows installer can name the engine on the door. Harvest actual visible/a11y copy, add the Bob Ross ban, and retain reachable recovery after Host/Join.
+3. **Recovery surfaces disagree about what to click.** `application_controller.py` projects Paste New Invite as NONE, replaces specific startup failures with generic text, and can duplicate Copy Invite after a Wi-Fi change. Extend the existing shared semantic action model and prove action/copy consistency, redaction and no accessibility churn.
+4. **Local notes can be lost after a reported save or profile switch.** `session_persistence.py` writes beyond its 1 MiB read limit and swallows failed saves before replacing the current draft. Preserve drafts, match UTF-8 bounds, and expose a local retry path without treating notes as session truth.
+5. **Webex follow-along has no useful Art guidance.** Existing Conversation works, but shared Music mute advice is applied to Art and there is no explanation of meeting video beside silent local-file Paint along. Reuse the existing Conversation surface and explicit handoff only.
+6. **Recording readiness leaves users at a disabled Start button.** The readiness sheet has no direct route to fix common setup blockers; storage probes claim Storage reserved despite not reserving bytes. An idle stage also claims multitrack readiness without evidence, including in Art. Use owner facts and route to the existing setup owner.
+7. **Studio save retry can turn into a false conflict.** `core/studio_store.py` unlinks an oversized primary before replacement succeeds, and a parent-directory fsync failure after rename leaves the controller with its old exact token. Both prevent retry with pending edits. Preserve primary bytes until replacement, track unconfirmed publication without claiming durability, and test both failures followed by successful retry. Also guard overlong marker/section names at the existing edit boundary so a normal paste cannot escape a Qt slot.
+8. **Help points at outdated routes.** `QUICK_HELP_MAP.md` advertises a hidden Music launch project button; `UX_ACCEPTANCE_CHECKLIST.md` still describes retired first-screen profile/chrome. Update maps against final reachable UI and preserve Art Preview and physical NOT RUN truth.
+9. **Pocket Stage remains a boundary-proof item.** Run its focused automated modules and inspect boundary coverage. No hardware or distribution claim; change it only for a demonstrated defect.
+
+The baseline full local suite reported 6,662 passed, 25 skipped, 97 subtests passed and 20 teardown errors in `test_local_originals_choice_profiles.py`; its widget-disposal fixture encounters a previously mocked callback. This is a real suite failure to diagnose and fix, not evidence to hide by dropping tests. Phase 1 will record regressions and outcomes here; Phase 2 and 3 documents will score only executed proof. Held PRs and release actions are outside this work.
+
+## Verified product outcomes
+
+- Gaps 1–2: own-tools Art and exact door controls are implemented; optional canvas, File workspace routes and explicit Windows Help setup are tested.
+- Gap 3: finite recovery actions and bounded copy reach HUD, Notes and Pocket with exact generation/revision matching; failed cleanup cannot claim a safe retry.
+- Gap 4: profile-scoped drafts, bounded writes, unreadable-file preservation, editable recovery/export and quit veto are implemented. Notes owns edit notifications; disk restoration remains silent.
+- Gap 5: existing Conversation gives Art demonstration guidance without launch/capture side effects or a second player.
+- Gap 6: readiness offers existing Recording Setup after retiring only the current preflight plan, and no longer claims reserved storage or unproved idle readiness.
+- Gap 7: oversized and post-replacement failures have safe retry paths; history/source preservation and different-writer conflicts are tested; long marker/section edits fail visibly.
+- Gap 8: shipped source routes and Preview/NOT RUN limits match the help maps. Gap 9: Python/Swift Pocket boundary and local WSS proof passed; installed-device behavior remains NOT RUN.
+- Full-suite producer lifetime and stale completed-shutdown prompt were fixed. WORTH_BUILDING.md records the passed product gate; PRE_KAREN_QA.md records adversarial corrections and remaining hosted/handoff gates.

@@ -745,7 +745,9 @@ def test_the_chosen_start_resolves_against_the_active_profile(fake_launchers):
     controller = _controller("art")
     _with_start(controller, "paint_together")
     assert controller.creator_start.key == "talk_and_make"
-    assert controller.creator_start.shared_canvas is True
+    assert controller.creator_start.shared_canvas is False
+    assert controller.creator_start.talk_only is True
+    assert controller._shared_canvas_supported() is True
 
     # A key saved under another profile becomes Art's current room-first
     # default rather than leaking a foreign meaning into this profile.
@@ -758,8 +760,7 @@ def test_the_chosen_start_resolves_against_the_active_profile(fake_launchers):
 
 
 def test_a_canvas_start_shows_the_host_a_persistent_way_in(fake_launchers):
-    """The room used to answer this with a nine-second message naming the menu
-    to open. It carries a control now, which is still there a minute later."""
+    """Own tools need no setup; choosing a canvas then gives a persistent route."""
 
     controller = _controller("art")
     _with_start(controller, "talk_and_make")
@@ -767,7 +768,15 @@ def test_a_canvas_start_shows_the_host_a_persistent_way_in(fake_launchers):
 
     presence = _presence(controller)
 
-    assert presence.label == "Set up shared canvas"
+    assert presence.offered is False
+    assert fake_launchers[0].host_pages == 0
+    assert fake_launchers[0].joined == []
+    coordinator = controller._shared_canvas_coordinator()
+    coordinator.share(WEB_INVITE)
+    controller.host_peer.publish_shared_canvas_state.assert_called()
+    controller.window.session_strip.set_art_room_presence.reset_mock()
+    presence = _presence(controller)
+    assert presence.label == "Shared canvas"
     assert presence.target is ArtPresenceTarget.CANVAS
     assert presence.tone is ArtPresenceTone.PRESENT
     # Nothing is opened at the host, so nothing takes focus from the meeting.
@@ -779,6 +788,8 @@ def test_the_way_in_does_not_disappear_after_being_shown_once(fake_launchers):
     _with_start(controller, "talk_and_make")
     _as_host(controller)
 
+    controller._shared_canvas_coordinator().share(WEB_INVITE)
+    controller.window.session_strip.set_art_room_presence.reset_mock()
     controller._sync_art_room_presence()
     controller._sync_art_room_presence()
     strip = controller.window.session_strip
@@ -787,7 +798,7 @@ def test_the_way_in_does_not_disappear_after_being_shown_once(fake_launchers):
     labels = {
         call.args[0].label for call in strip.set_art_room_presence.call_args_list
     }
-    assert labels == {"Set up shared canvas"}
+    assert labels == {"Shared canvas"}
 
 
 def test_a_video_start_points_at_paint_along_instead(fake_launchers):
@@ -803,7 +814,7 @@ def test_a_video_start_points_at_paint_along_instead(fake_launchers):
 
 
 def test_old_paint_together_setting_keeps_the_canvas_way_in(fake_launchers):
-    """The retired key migrates without losing the user's canvas intent."""
+    """The retired key opens Make together; sharing a canvas stays optional."""
 
     controller = _controller("art")
     _with_start(controller, "paint_together")
@@ -811,7 +822,13 @@ def test_old_paint_together_setting_keeps_the_canvas_way_in(fake_launchers):
 
     presence = _presence(controller)
 
-    assert presence.label == "Set up shared canvas"
+    assert presence.offered is False
+    assert controller.creator_start.key == "talk_and_make"
+    assert controller._shared_canvas_supported()
+    controller._shared_canvas_coordinator().share(WEB_INVITE)
+    controller.window.session_strip.set_art_room_presence.reset_mock()
+    presence = _presence(controller)
+    assert presence.label == "Shared canvas"
     assert presence.target is ArtPresenceTarget.CANVAS
     assert presence.tone is ArtPresenceTone.PRESENT
 

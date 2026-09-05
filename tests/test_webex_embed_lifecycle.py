@@ -284,8 +284,11 @@ def test_keyboard_show_app_and_join_meeting_remain_distinct():
     embed.close()
 
 
-def test_explicit_webex_actions_remain_legible_at_760_pixels():
+@pytest.mark.parametrize("profile", ["music", "art"])
+def test_explicit_webex_actions_remain_legible_at_760_pixels(profile):
+    from core.creative_modes import get_creator_profile_by_key_or_default
     embed = WebexEmbed()
+    embed.set_creator_profile(get_creator_profile_by_key_or_default(profile))
     embed.resize(760, embed.maximumHeight())
     embed.set_meeting_configured(True)
     embed.set_app_status(
@@ -297,6 +300,10 @@ def test_explicit_webex_actions_remain_legible_at_760_pixels():
     _app.processEvents()
 
     assert embed.minimumSizeHint().width() <= 760
+    assert embed.width() <= 760
+    assert embed.height() <= 152
+    assert embed._title_label.width() >= embed._title_label.sizeHint().width()
+    assert embed._mode_label.height() >= embed._mode_label.heightForWidth(embed._mode_label.width())
     for button in (
         embed.show_app_button(),
         embed.mute_button(),

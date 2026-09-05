@@ -248,6 +248,17 @@ def _same_companion_view(left: object, right: object) -> bool:
     )
 
 
+_STARTUP_FAILURE_COPY = {
+    "host_start_failed": "WebJam couldn't start your private jam. Try again, or close another WebJam window first.",
+    "feedback_required": "Connect wired headphones or an audio interface, then choose Try Again. You can also explicitly choose Start Anyway in the feedback warning.",
+    "component_open_failed": "WebJam couldn't open Jamulus. Reinstall this WebJam build, then try again.",
+    "connection_failed": "Jamulus couldn't open the music connection. Check Jamulus, then try again.",
+    "opening_timeout": "Jamulus did not finish opening in time. Check your audio setup, then try again.",
+    "setup_timeout": "Jamulus sound setup waited 10 minutes without a verified music connection. Check your interface, then try again.",
+    "cleanup_failed": "WebJam couldn't finish closing this setup. Choose Close Setup to try closing it again."
+}
+
+
 class ApplicationController(QObject):
     """Glue layer between ConductorWindow and the service layer."""
 
@@ -776,6 +787,11 @@ class ApplicationController(QObject):
             creator_profile_key=self._active_creator_profile_key,
         )
 
+        self._notes_save_timer = QTimer(self)
+        self._notes_save_timer.setSingleShot(True)
+        self._notes_save_timer.setInterval(750)
+        self._notes_save_timer.timeout.connect(self._save_notes)
+
         # Mix save/load/restore (~/.webjam_mix.json).
         # Adapt flash_message's keyword-only ``ms=`` to MixManager's positional
         # ``(text, ms)`` callback contract so MixManager doesn't have to know
@@ -993,6 +1009,14 @@ class ApplicationController(QObject):
         self._shutdown_in_progress = True
         if not ApplicationController._prepare_studio_close(self):
             self._shutdown_in_progress = False
+            return False
+        if self._save_notes() is False:
+            self._shutdown_in_progress = False
+            self.window.flash_message(
+                "Notes are not saved yet. Open Notes and choose Save Notes before quitting.",
+                ms=0,
+            )
+            self.window.side_rail.trigger("canvas")
             return False
         # Saving may still veto Quit without changing any runtime ownership.
         # Everything after this line can be irreversible, so a later failure
@@ -2114,6 +2138,10 @@ class ApplicationController(QObject):
 
     def _confirm_close(self) -> bool:
         """Never let a live jam disappear from a close-button accident."""
+        # Successful shutdown sets this only after every owner has stopped.
+        # A subsequent native close must not ask again using stale snapshots.
+        if bool(getattr(self, "_shutdown", False)):
+            return True
         # A prior finalize_close attempt already obtained the user's approval
         # and began irreversible teardown. Let the next close reach shutdown()
         # directly so it can retry the retained owner.
@@ -3291,12 +3319,17 @@ class ApplicationController(QObject):
         presentation = conductor.presentation
         guidance = getattr(self, "_last_musician_guidance", None)
         guidance_matches = bool(
-            guidance is not None and guidance.generation == conductor.token.generation
+            guidance is not None
+            and guidance.generation == conductor.token.generation
+            and guidance.revision == conductor.revision
+        )
+        primary_action = (
+            guidance.primary_action if guidance_matches else presentation.primary_action
         )
         primary_enabled = bool(
             guidance.primary_enabled
             if guidance_matches
-            else presentation.primary_action
+            else primary_action
             not in {SessionPrimaryAction.NONE, SessionPrimaryAction.WAIT}
         )
         cue = self._pocket_safe_text(
@@ -3347,7 +3380,7 @@ class ApplicationController(QObject):
             self._pocket_roster_binding_epoch,
             conductor.token.role.value,
             presentation.phase.value,
-            presentation.primary_action.value,
+            primary_action.value,
             primary_enabled,
             recording_state.value,
             tuple(
@@ -3378,7 +3411,7 @@ class ApplicationController(QObject):
                 revision=self._pocket_projection_revision,
                 role=conductor.token.role,
                 phase=presentation.phase,
-                primary_action=presentation.primary_action,
+                primary_action=primary_action,
                 primary_enabled=primary_enabled,
                 recording_state=recording_state,
                 participants=tuple(mobile_participants),
@@ -3780,6 +3813,8 @@ class ApplicationController(QObject):
         self.window.session_canvas.notes_changed.connect(
             self._schedule_session_pulse_refresh
         )
+        self.window.session_canvas.notes_changed.connect(self._schedule_notes_save)
+        self.window.session_canvas.save_notes_requested.connect(self._recover_notes)
         self.window.session_canvas.brief_export_requested.connect(
             self._refresh_session_pulse
         )
@@ -4400,7 +4435,7 @@ class ApplicationController(QObject):
                 if not ok:
                     self._fail_startup_journey(
                         generation,
-                        "WebJam couldn't start your private jam. Try again, or close another WebJam window first.",
+                        "host_start_failed",
                     )
                     return
                 self._launch_native_jamulus_for_startup(generation)
@@ -4431,9 +4466,7 @@ class ApplicationController(QObject):
         if not self._feedback_guard_allows_audio_start():
             self._fail_startup_journey(
                 generation,
-                "Connect wired headphones or an audio interface, then choose "
-                "Try Again. You can also explicitly choose Start Anyway in "
-                "the feedback warning.",
+                "feedback_required",
             )
             return
         attempt["phase"] = "native_sound_setup"
@@ -4466,8 +4499,7 @@ class ApplicationController(QObject):
                 attempt.pop("native_setup_deadline", None)
                 self._fail_startup_journey(
                     generation,
-                    "WebJam couldn't open Jamulus. Reinstall this WebJam "
-                    "build, then try again.",
+                    "component_open_failed",
                 )
                 return
             launch_snapshot = self._primary_jamulus_recovery_snapshot()
@@ -4512,8 +4544,7 @@ class ApplicationController(QObject):
         if state in terminal:
             self._fail_startup_journey(
                 generation,
-                "Jamulus couldn't open the music connection. Check "
-                "Jamulus, then try again.",
+                "connection_failed",
             )
             return
 
@@ -4668,21 +4699,17 @@ class ApplicationController(QObject):
                     if opening_timeout:
                         self._fail_startup_journey(
                             generation,
-                            "Jamulus did not finish opening in time. Check "
-                            "your audio setup, then try again.",
+                            "opening_timeout",
                         )
                         return
                     self._fail_startup_journey(
                         generation,
-                        "Jamulus sound setup waited 10 minutes without a "
-                        "verified music connection. Check your interface, "
-                        "then try again.",
+                        "setup_timeout",
                     )
                     return
                 self._fail_startup_journey(
                     generation,
-                    "WebJam couldn't safely close the timed-out Jamulus "
-                    "setup. Quit and reopen WebJam before trying again.",
+                    "cleanup_failed",
                     retryable=False,
                 )
 
@@ -5012,8 +5039,10 @@ class ApplicationController(QObject):
         if attempt is None:
             return
         attempt["phase"] = "failed"
-        attempt["failure"] = str(message)
-        attempt["retryable"] = bool(retryable)
+        reason = message if message in _STARTUP_FAILURE_COPY else "unknown"
+        attempt["failure_reason"] = reason
+        attempt["failure"] = _STARTUP_FAILURE_COPY.get(reason, "Setup could not finish. Check your setup, then try again.")
+        attempt["retryable"] = bool(retryable) and reason != "cleanup_failed"
         self._transition_lifecycle(
             SessionLifecyclePhase.FAILED_RECOVERABLE,
             "Jamulus-native startup needs attention",
@@ -5024,6 +5053,11 @@ class ApplicationController(QObject):
         attempt = getattr(self, "_startup_attempt", None)
         if attempt is None:
             self._begin_explicit_startup_journey()
+            return
+        if not bool(attempt.get("retryable", True)) or attempt.get("failure_reason") == "cleanup_failed":
+            self._cancel_startup_journey()
+            return
+        if attempt.get("phase") == "cancelling":
             return
         role = str(attempt.get("role", "guest"))
         self._startup_attempt = None
@@ -5057,6 +5091,8 @@ class ApplicationController(QObject):
         attempt = getattr(self, "_startup_attempt", None)
         if attempt is None:
             return
+        if attempt.get("phase") == "cancelling":
+            return
         generation = int(attempt["generation"])
         role = str(attempt.get("role", "guest"))
         cancel_event = attempt.get("cancel_event")
@@ -5083,9 +5119,7 @@ class ApplicationController(QObject):
                 if not cleanup_ok:
                     self._fail_startup_journey(
                         generation,
-                        "WebJam couldn't finish closing this startup "
-                        "attempt. Try again after the music connection has "
-                        "stopped.",
+                        "cleanup_failed",
                     )
                     return
                 self._clear_startup_recovery()
@@ -5505,31 +5539,15 @@ class ApplicationController(QObject):
                 creator_copy["closing_detail"],
                 action_visible=False,
             )
-        elif phase == "failed" and not bool(attempt.get("retryable", True)):
-            self.window.session_hud.set_state(
-                "Quit and reopen WebJam",
-                str(
-                    attempt.get(
-                        "failure",
-                        creator_copy["safe_failure_detail"],
-                    )
-                ),
-                action_text="Close Setup",
-                action_visible=True,
-                action_kind="cancel_startup",
-            )
         else:
+            failure = ApplicationController._startup_guidance_override(attempt, self.creator_profile.key)
+            close_setup = failure.primary_action is SessionPrimaryAction.CLOSE_SETUP
             self.window.session_hud.set_state(
-                creator_copy["failure_title"],
-                str(
-                    attempt.get(
-                        "failure",
-                        creator_copy["failure_detail"],
-                    )
-                ),
-                action_text="Try Again",
+                failure.title,
+                failure.message,
+                action_text=failure.action_label,
                 action_visible=True,
-                action_kind="retry_startup",
+                action_kind="cancel_startup" if close_setup else "retry_startup",
             )
         self._focus_initial_hud_action()
         self._persist_startup_attempt(attempt)
@@ -5573,11 +5591,16 @@ class ApplicationController(QObject):
         phase = str(attempt.get("phase", ""))
         role = str(attempt.get("role", "guest"))
         creator_copy = ApplicationController._startup_creator_copy(creator_profile_key)
-        if phase == "failed" and not bool(attempt.get("retryable", True)):
+        if phase == "failed":
+            reason = attempt.get("failure_reason")
+            close_setup = not bool(attempt.get("retryable", True)) or reason == "cleanup_failed"
             return GuidanceDisplayOverride(
-                "Quit and reopen WebJam",
-                creator_copy["safe_failure_detail"],
-                SessionPrimaryAction.NONE,
+                "Close this setup" if close_setup else creator_copy["failure_title"],
+                _STARTUP_FAILURE_COPY["cleanup_failed"] if close_setup else _STARTUP_FAILURE_COPY.get(
+                    reason, creator_copy["failure_detail"]
+                ),
+                SessionPrimaryAction.CLOSE_SETUP if close_setup else SessionPrimaryAction.RETRY_SETUP,
+                "Close Setup" if close_setup else "Try Again",
             )
         values = {
             "starting_server": GuidanceDisplayOverride(
@@ -6670,7 +6693,7 @@ class ApplicationController(QObject):
             ms=8000,
         )
 
-    def _confirm_recording_readiness(self, presentation: object) -> bool:
+    def _confirm_recording_readiness(self, presentation: object):
         """Show one exact pre-record snapshot and return explicit consent.
 
         The dialog is presentation only. ``RecordingCoordinator`` retains the
@@ -6680,6 +6703,7 @@ class ApplicationController(QObject):
 
         from core.recording_readiness_presentation import (
             RecordingReadinessPresentation,
+            RecordingReadinessRecovery,
         )
         from webjam_qt.windows.recording_readiness import RecordingReadinessDialog
 
@@ -6689,6 +6713,11 @@ class ApplicationController(QObject):
         dialog = RecordingReadinessDialog(presentation, parent=self.window)
         dialog.start_requested.connect(accepted_snapshot.append)
         result = dialog.exec()
+        if (result == QDialog.DialogCode.Rejected and dialog.presentation is presentation
+                and not presentation.can_start
+                and dialog.recovery_requested is RecordingReadinessRecovery.OPEN_RECORDING_SETUP
+                and presentation.recovery is RecordingReadinessRecovery.OPEN_RECORDING_SETUP):
+            return RecordingReadinessRecovery.OPEN_RECORDING_SETUP
         return bool(
             result == QDialog.DialogCode.Accepted
             and accepted_snapshot == [presentation]
@@ -7865,7 +7894,7 @@ class ApplicationController(QObject):
             return
         from webjam_qt.windows.launch_dialog import LaunchDialog
 
-        dialog = LaunchDialog(self.settings, parent=self.window)
+        dialog = LaunchDialog(self.settings, parent=self.window, allow_workspace_choices=False)
         dialog.show_join()
         result = dialog.exec()
         if result != QDialog.DialogCode.Accepted:
@@ -8245,7 +8274,7 @@ class ApplicationController(QObject):
             return GuidanceDisplayOverride(
                 "Needs attention",
                 self._remote_fresh_invitation_detail(),
-                SessionPrimaryAction.NONE,
+                SessionPrimaryAction.PASTE_NEW_INVITE,
                 "Paste New Invite",
             )
         from webjam_qt.platform_permissions import microphone_permission_status
@@ -8742,6 +8771,17 @@ class ApplicationController(QObject):
             if lifecycle_phase is SessionLifecyclePhase.COMPLETED
             else CleanupState.NOT_REQUESTED
         )
+        startup = getattr(self, "_startup_attempt", None)
+        startup_cleanup_pending = bool(
+            isinstance(startup, dict)
+            and (startup.get("phase") == "cancelling" or (
+                startup.get("phase") == "failed"
+                and not bool(startup.get("retryable", True))
+            ))
+        )
+        if startup_cleanup_pending:
+            cleanup = CleanupState.ENDING if startup.get("phase") == "cancelling" else CleanupState.FAILED
+            failure = FailureDisposition.BLOCKED
         studio_widget = getattr(
             getattr(self, "window", None),
             "recording_studio",
@@ -8792,6 +8832,7 @@ class ApplicationController(QObject):
             studio_export_available=studio_facts.can_export,
             export=getattr(self, "_conductor_export", ExportState.IDLE),
             cleanup=cleanup,
+            startup_cleanup_pending=startup_cleanup_pending,
             failure=failure,
             creator_profile_key=self.creator_profile.key,
         )
@@ -8830,11 +8871,13 @@ class ApplicationController(QObject):
             SessionPrimaryAction.RUN_BAND_CHECK: "run_band_check",
             SessionPrimaryAction.COPY_INVITE: "copy_invite",
             SessionPrimaryAction.RESET_INVITE: "reset_invite",
+            SessionPrimaryAction.PASTE_NEW_INVITE: "paste_invite",
             SessionPrimaryAction.OPEN_AUDIO_SETTINGS: "bring_jamulus",
             SessionPrimaryAction.ADD_CONVERSATION: "add_webex",
             SessionPrimaryAction.SAVE_CONVERSATION: "save_webex",
             SessionPrimaryAction.ENTER_JAM: "enter_jam",
             SessionPrimaryAction.RETRY_SETUP: "retry_startup",
+            SessionPrimaryAction.CLOSE_SETUP: "cancel_startup",
             SessionPrimaryAction.TRY_RECONNECT: "try_reconnect",
             SessionPrimaryAction.RECORD: "record",
             SessionPrimaryAction.STOP_RECORDING: "stop_recording",
@@ -8872,6 +8915,8 @@ class ApplicationController(QObject):
         self._record_pilot_conductor_presentation(presentation)
         self._publish_musician_guidance(snapshot, display_override=display_override)
         if display_override is not None:
+            if display_override.primary_action is SessionPrimaryAction.COPY_INVITE:
+                self.window.session_strip.set_invite_available(False)
             self.window.participant_grid.set_session_state(
                 SessionUiState(
                     self._conductor_stage_phase(presentation.phase),
@@ -8924,16 +8969,21 @@ class ApplicationController(QObject):
         detail = presentation.message
         if presentation.preservation:
             detail = f"{detail} {presentation.preservation}"
-        # Keep the quiet lobby's useful one-line recording context even
-        # though its Start button is intentionally hidden in favor of the
-        # single HUD action.
+        # Explain what this profile allows without claiming a recorder or
+        # a completed setup. The HUD remains the only startup action.
         stage_hint = ""
         if presentation.phase is SessionConductorPhase.IDLE:
-            stage_hint = (
-                "Multitrack recording is ready on this Mac"
-                if facts.role is SessionRole.HOST
-                else "Your host records everyone as separate tracks"
-            )
+            if self.creator_profile.key == "art":
+                stage_hint = (
+                    "Bring your own tools: paint, clay, paper or a printer. "
+                    "Talk and show your work through Conversation."
+                )
+            else:
+                stage_hint = (
+                    "Recording is optional. Set it up when you choose Record Session."
+                    if facts.role is SessionRole.HOST
+                    else "Your host can choose Record Session when everyone is ready."
+                )
         self.window.session_hud.set_state(
             presentation.title,
             detail,
@@ -13878,9 +13928,25 @@ class ApplicationController(QObject):
         """Restore session notes from disk (best-effort)."""
         self._persistence._load_notes_only()
 
-    def _save_notes(self) -> None:
-        """Persist current session notes to disk (best-effort)."""
-        self._persistence._save_notes_only()
+    def _save_notes(self) -> bool:
+        """Flush all local drafts and retain failed writes for visible retry."""
+        timer = getattr(self, "_notes_save_timer", None)
+        if timer is not None:
+            timer.stop()
+        return self._persistence._save_notes_only()
+
+    def _recover_notes(self) -> None:
+        if self._save_notes():
+            return
+        from webjam_qt.widgets.notes_recovery_dialog import NotesRecoveryDialog
+
+        dialog = NotesRecoveryDialog(self._persistence, self.window)
+        dialog.exec()
+
+    def _schedule_notes_save(self, text: str) -> None:
+        if not self._shutdown:
+            self._persistence.notes_changed(text)
+            self._notes_save_timer.start()
 
     def _load_session_title(self) -> None:
         """Restore the session title and last-used mode from disk."""

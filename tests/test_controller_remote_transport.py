@@ -653,9 +653,10 @@ def test_paste_new_invite_reopens_the_same_masked_join_door(
     class Dialog:
         band_invite = None
 
-        def __init__(self, settings, parent=None):
+        def __init__(self, settings, parent=None, *, allow_workspace_choices=True):
             assert settings is controller.settings
             assert parent is controller.window
+            assert allow_workspace_choices is False
             events.append("created")
 
         def show_join(self):

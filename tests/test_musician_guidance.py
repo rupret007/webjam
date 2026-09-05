@@ -401,3 +401,23 @@ def test_reviewing_action_tracks_selected_take_dirty_and_export_truth():
     assert choose.primary_action is SessionPrimaryAction.SELECT_TAKE
     assert saving.primary_action is SessionPrimaryAction.WAIT
     assert export.primary_action is SessionPrimaryAction.EXPORT_TRACKS
+
+
+@pytest.mark.parametrize("profile_key", ["music", "art"])
+def test_fresh_invitation_is_an_enabled_shared_recovery_action(profile_key):
+    from core.musician_guidance import GuidanceDisplayOverride
+
+    snapshot = _snapshot(replace(
+        _base(SessionRole.GUEST), creator_profile_key=profile_key,
+        failure=FailureDisposition.BLOCKED,
+    ))
+    guidance = build_musician_guidance(snapshot, display_override=GuidanceDisplayOverride(
+        "Needs attention", "That invitation expired. Ask the host for a new one.",
+        SessionPrimaryAction.PASTE_NEW_INVITE,
+    ))
+    assert guidance.next_step == "Paste New Invite"
+    assert guidance.primary_enabled
+    assert guidance.recovery is GuidanceRecovery.REPLACE_INVITE
+    assert "Paste New Invite" in guidance.recovery_text
+    assert guidance.to_public_dict()["recovery"] == "replace_invite"
+    assert "invitation expired" not in str(guidance.to_public_dict())

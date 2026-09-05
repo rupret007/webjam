@@ -195,3 +195,18 @@ private func goldenSnapshot(
         }
     }
 }
+
+
+@Test func desktopRecoveryActionsRemainValidSnapshotFacts() throws {
+    for action in ["paste_new_invite", "close_setup"] {
+        let data = try goldenSnapshot { body in
+            body["primary_action"] = action
+            body["phase"] = "indeterminate"
+        }
+        guard case let .snapshot(snapshot) = try WireCodec.decodeIncomingMessage(data) else {
+            Issue.record("Expected a recovery snapshot")
+            return
+        }
+        #expect(snapshot.body.primaryAction == action)
+    }
+}

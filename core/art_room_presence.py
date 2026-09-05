@@ -110,10 +110,9 @@ def art_room_presence(
 ) -> ArtRoomPresence:
     """Return the one line this room should show, or nothing.
 
-    ``intended_canvas`` and ``intended_video`` carry what a host chose at
-    launch. They are the reason an empty room can still show a way in: a host
-    who chose Make together has not shared a canvas yet, and the room
-    should offer the door rather than wait to be searched.
+    Intent describes an explicit choice of an optional layer. Paint along
+    chooses video at launch; Make together chooses no layer. A host may
+    choose a canvas later, but simply making together never requires setup.
 
     A guest's saved choice says nothing about the room they joined, so their
     intent is ignored -- what the host actually shared is the only fact.
@@ -187,8 +186,8 @@ def art_room_presence(
         return ArtRoomPresence(
             label="Set up shared canvas",
             description=(
-                "You chose Make together. Open the panel to host a canvas in "
-                "Drawpile and share it with the room."
+                "Open the panel to host a canvas in Drawpile and share it "
+                "when the group wants to draw on one canvas."
             ),
             target=ArtPresenceTarget.CANVAS,
         )

@@ -243,6 +243,10 @@ class StudioEditingToolbar(QWidget):
             )
         if not isinstance(name, str) or not name.strip():
             return
+        name = " ".join(name.split())
+        if len(name) > 160:
+            self.hint_requested.emit("Use a name of 160 characters or fewer.")
+            return
         marker = StudioMarker(
             marker_id=str(uuid4()),
             start_frame=context.playhead_frame,
@@ -270,6 +274,10 @@ class StudioEditingToolbar(QWidget):
                 self.next_label(MarkerKind.SECTION),
             )
         if not isinstance(name, str) or not name.strip():
+            return
+        name = " ".join(name.split())
+        if len(name) > 160:
+            self.hint_requested.emit("Use a name of 160 characters or fewer.")
             return
         section = StudioMarker(
             marker_id=str(uuid4()),

@@ -232,15 +232,16 @@ def test_art_offers_exactly_two_starts_in_a_fixed_order(profile):
 def test_each_start_carries_at_most_one_add_on(profile):
     make, video = profile.starts
 
-    assert make.talk_only is False
-    assert (make.shared_canvas, make.reference_video) == (True, False)
+    assert make.talk_only is True
+    assert (make.shared_canvas, make.reference_video) == (False, False)
     assert (video.shared_canvas, video.reference_video) == (False, True)
 
 
 def test_old_paint_together_choice_migrates_to_the_combined_default(profile):
     assert profile.get_start("paint_together") is None
     assert profile.start_or_default("paint_together").key == "talk_and_make"
-    assert profile.start_or_default("paint_together").shared_canvas is True
+    assert profile.start_or_default("paint_together").talk_only is True
+    assert profile.capabilities.shared_canvas is True
 
 
 def test_no_start_combines_a_canvas_and_a_video():

@@ -49,6 +49,7 @@ class WebexEmbed(QFrame):
         self.setMaximumHeight(152)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._audio_mode = "talkback"
+        self._creator_profile_key = "music"
         self._meeting_configured = False
         self._launch_busy = False
         self._native_app_available = False
@@ -636,8 +637,19 @@ class WebexEmbed(QFrame):
         ):
             target.setFocus(Qt.FocusReason.OtherFocusReason)
 
+    def set_creator_profile(self, profile) -> None:
+        self._creator_profile_key = profile.key
+        self._render_audio_guidance()
+
     def _render_audio_guidance(self) -> None:
         service = self._service_label
+        if self._creator_profile_key == "art":
+            self._title_label.setText("Conversation")
+            self._mode_label.setText(
+                f"Talk and share a demonstration in {service or 'Webex or your meeting app'}. "
+                "Use your own tools. Paint along plays a separate silent local video."
+            )
+            return
         titles = (
             {
                 "talkback": f"{service} conversation",

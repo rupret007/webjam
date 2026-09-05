@@ -268,6 +268,16 @@ def test_podcast_voice_record_overdub_chapter_bounce_and_reopen(
 
         recorded = controller.project_controller.snapshot.project
         assert recorded is not None
+        # Commit completion schedules media verification separately. Follow the
+        # ready project before starting another asynchronous user operation.
+        _wait_until(
+            qapp,
+            lambda: (
+                controller._catalog is not None
+                and controller._catalog.project == recorded
+                and controller._renderer is not None
+            ),
+        )
         ledger = load_recording_evidence(bundle, recorded)
         assert len(ledger.commits) == 2
         expected_maps = {
