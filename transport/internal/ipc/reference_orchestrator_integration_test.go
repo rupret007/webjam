@@ -88,6 +88,40 @@ func TestRunnerHostAndGuestThroughIndependentReferenceRelay(t *testing.T) {
 		t.Fatalf("host authenticated boundary = %+v; stage=%s", hostConnected, observedFailure(hostFailures))
 	}
 
+	host.send(t, `{"version":1,"id":3,"type":"send_help","generation":7,"text":"Try headphones — café"}`)
+	hostAccepted := host.next(t)
+	if hostAccepted.Type != "help_accepted" || hostAccepted.ID != 3 ||
+		hostAccepted.RequestID != 3 || hostAccepted.Text != "" {
+		t.Fatalf("host help acceptance = %+v", hostAccepted)
+	}
+	guestReceived := guest.next(t)
+	if guestReceived.Type != "help_received" || guestReceived.ID != 0 ||
+		guestReceived.RequestID != 3 || guestReceived.Text != "Try headphones — café" {
+		t.Fatalf("guest did not receive the authenticated help message")
+	}
+	hostDelivered := host.next(t)
+	if hostDelivered.Type != "help_delivered" || hostDelivered.ID != 0 ||
+		hostDelivered.RequestID != 3 || hostDelivered.Text != "" {
+		t.Fatalf("host help delivery receipt = %+v", hostDelivered)
+	}
+
+	guest.send(t, `{"version":1,"id":3,"type":"send_help","generation":7,"text":"I can hear you now"}`)
+	guestAccepted := guest.next(t)
+	if guestAccepted.Type != "help_accepted" || guestAccepted.ID != 3 ||
+		guestAccepted.RequestID != 3 || guestAccepted.Text != "" {
+		t.Fatalf("guest help acceptance = %+v", guestAccepted)
+	}
+	hostReceived := host.next(t)
+	if hostReceived.Type != "help_received" || hostReceived.ID != 0 ||
+		hostReceived.RequestID != 3 || hostReceived.Text != "I can hear you now" {
+		t.Fatalf("host did not receive the authenticated help message")
+	}
+	guestDelivered := guest.next(t)
+	if guestDelivered.Type != "help_delivered" || guestDelivered.ID != 0 ||
+		guestDelivered.RequestID != 3 || guestDelivered.Text != "" {
+		t.Fatalf("guest help delivery receipt = %+v", guestDelivered)
+	}
+
 	guestJamulus, err := net.DialUDP(
 		"udp4", nil,
 		&net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: guestConnected.LoopbackPort},
@@ -123,12 +157,12 @@ func TestRunnerHostAndGuestThroughIndependentReferenceRelay(t *testing.T) {
 	// Explicit close revokes the current host registration but retains the
 	// prepared identity. A fresh transport invitation can register immediately
 	// without rotating the pin out from under the desktop owner.
-	host.send(t, `{"version":1,"id":3,"type":"close_peer"}`)
-	if closed := host.next(t); closed.Type != "peer_closed" || closed.ID != 3 {
+	host.send(t, `{"version":1,"id":4,"type":"close_peer"}`)
+	if closed := host.next(t); closed.Type != "peer_closed" || closed.ID != 4 {
 		t.Fatalf("host close boundary = %+v", closed)
 	}
 	resetFields := openFields(
-		4, "host", profile.ReferenceLocalID, expiresAt,
+		5, "host", profile.ReferenceLocalID, expiresAt,
 		jamulus.LocalAddr().(*net.UDPAddr).Port, "",
 	)
 	// Reset Invite preserves the logical session reference, but rotates the
@@ -139,19 +173,19 @@ func TestRunnerHostAndGuestThroughIndependentReferenceRelay(t *testing.T) {
 	resetFields["generation"] = uint32(8)
 	host.send(t, string(mustJSON(t, resetFields)))
 	resetRegistered := host.next(t)
-	if resetRegistered.Type != "host_registered" || resetRegistered.ID != 4 ||
+	if resetRegistered.Type != "host_registered" || resetRegistered.ID != 5 ||
 		resetRegistered.Generation != 8 || resetRegistered.State != "host_waiting" {
 		t.Fatalf("host reset registration = %+v", resetRegistered)
 	}
-	host.send(t, `{"version":1,"id":5,"type":"close_peer"}`)
-	if closed := host.next(t); closed.Type != "peer_closed" || closed.ID != 5 {
+	host.send(t, `{"version":1,"id":6,"type":"close_peer"}`)
+	if closed := host.next(t); closed.Type != "peer_closed" || closed.ID != 6 {
 		t.Fatalf("reset close boundary = %+v", closed)
 	}
 
 	// Shutdown remains bounded even though the guest observes the host-side
 	// connection close independently.
-	host.send(t, `{"version":1,"id":6,"type":"shutdown"}`)
-	guest.send(t, `{"version":1,"id":3,"type":"shutdown"}`)
+	host.send(t, `{"version":1,"id":7,"type":"shutdown"}`)
+	guest.send(t, `{"version":1,"id":4,"type":"shutdown"}`)
 	waitForRunnerEvent(t, host, "stopped")
 	waitForRunnerEvent(t, guest, "stopped")
 }

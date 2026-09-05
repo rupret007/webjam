@@ -10,11 +10,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"regexp"
 	"time"
+	"unicode/utf8"
 
+	"github.com/rupret007/webjam/transport/internal/help"
 	"github.com/rupret007/webjam/transport/internal/limits"
 	"github.com/rupret007/webjam/transport/internal/profile"
 )
@@ -35,6 +38,7 @@ const (
 	CommandHello       CommandType = "hello"
 	CommandPrepareHost CommandType = "prepare_host"
 	CommandOpenPeer    CommandType = "open_peer"
+	CommandSendHelp    CommandType = "send_help"
 	CommandClosePeer   CommandType = "close_peer"
 	CommandShutdown    CommandType = "shutdown"
 )
@@ -74,6 +78,7 @@ type Command struct {
 	HostSPKISHA256       PublicPin
 	HasHostSPKI          bool
 	SessionID            SessionID
+	HelpText             []byte
 }
 
 func (Command) String() string               { return "ipc.Command{redacted}" }
@@ -89,6 +94,8 @@ func (c *Command) ClearSensitive() {
 	clear(c.EnrollmentCapability[:])
 	clear(c.HostSPKISHA256[:])
 	clear(c.SessionID[:])
+	clear(c.HelpText)
+	c.HelpText = nil
 	c.ExpiresAtUnix = 0
 	c.HasHostSPKI = false
 }
@@ -106,6 +113,7 @@ type wireCommand struct {
 	EnrollmentCapability *strictString `json:"enrollment_capability,omitempty"`
 	ExpiresAtUnix        *uint64       `json:"expires_at_unix,omitempty"`
 	HostSPKISHA256       *strictString `json:"host_spki_sha256,omitempty"`
+	HelpText             *string       `json:"text,omitempty"`
 }
 
 func (w *wireCommand) clearStrings() {
@@ -123,6 +131,10 @@ func (w *wireCommand) clearStrings() {
 	w.InviteReference = nil
 	w.EnrollmentCapability = nil
 	w.HostSPKISHA256 = nil
+	if w.HelpText != nil {
+		*w.HelpText = ""
+	}
+	w.HelpText = nil
 }
 
 // strictString rejects JSON escapes and non-ASCII bytes. This makes each
@@ -154,7 +166,27 @@ type Event struct {
 	LoopbackPort   int    `json:"loopback_port,omitempty"`
 	HostSPKISHA256 string `json:"host_spki_sha256,omitempty"`
 	Build          string `json:"build,omitempty"`
+	RequestID      uint64 `json:"request_id,omitempty"`
+	Text           string `json:"text,omitempty"`
 }
+
+func (e Event) String() string {
+	text := ""
+	if e.Text != "" {
+		text = " [help-text redacted]"
+	}
+	return fmt.Sprintf(
+		"ipc.Event{id=%d type=%s code=%s state=%s request_id=%d%s}",
+		e.ID,
+		e.Type,
+		e.Code,
+		e.State,
+		e.RequestID,
+		text,
+	)
+}
+
+func (e Event) GoString() string { return e.String() }
 
 func ParseCommand(line []byte) (Command, error) {
 	return ParseCommandAt(line, time.Now())
@@ -162,6 +194,9 @@ func ParseCommand(line []byte) (Command, error) {
 
 func ParseCommandAt(line []byte, now time.Time) (Command, error) {
 	if len(line) == 0 || len(line) > limits.MaxIPCLineBytes || !canonicalIPCBytes(line) {
+		return Command{}, ErrProtocol
+	}
+	if hasEscapedTopLevelKey(line) {
 		return Command{}, ErrProtocol
 	}
 	if err := rejectDuplicateFields(line); err != nil {
@@ -190,14 +225,19 @@ func ParseCommandAt(line []byte, now time.Time) (Command, error) {
 		return command, nil
 	case CommandOpenPeer:
 		return parseOpenCommand(command, wire, now)
+	case CommandSendHelp:
+		return parseHelpCommand(command, wire)
 	default:
 		return command, ErrProtocol
 	}
 }
 
 func canonicalIPCBytes(encoded []byte) bool {
+	if !utf8.Valid(encoded) {
+		return false
+	}
 	for _, character := range encoded {
-		if character == '\\' || character >= 0x7f ||
+		if character == 0 ||
 			(character < 0x20 && character != '\t' && character != '\r' && character != '\n') {
 			return false
 		}
@@ -205,17 +245,73 @@ func canonicalIPCBytes(encoded []byte) bool {
 	return true
 }
 
+// hasEscapedTopLevelKey preserves one spelling for every command field name
+// while allowing ordinary JSON escapes only inside the help text value.
+func hasEscapedTopLevelKey(encoded []byte) bool {
+	depth := 0
+	inString := false
+	escaped := false
+	expectingKey := false
+	keyString := false
+	keyHadEscape := false
+	for _, character := range encoded {
+		if inString {
+			if escaped {
+				escaped = false
+				if keyString {
+					keyHadEscape = true
+				}
+				continue
+			}
+			if character == '\\' {
+				escaped = true
+				continue
+			}
+			if character == '"' {
+				inString = false
+				if keyString && keyHadEscape {
+					return true
+				}
+				keyString = false
+			}
+			continue
+		}
+		switch character {
+		case '"':
+			inString = true
+			keyString = depth == 1 && expectingKey
+			keyHadEscape = false
+		case '{':
+			depth++
+			if depth == 1 {
+				expectingKey = true
+			}
+		case '}':
+			depth--
+		case ':':
+			if depth == 1 {
+				expectingKey = false
+			}
+		case ',':
+			if depth == 1 {
+				expectingKey = true
+			}
+		}
+	}
+	return false
+}
+
 func (w wireCommand) noPeerFields() bool {
 	return w.Mode == nil && w.TargetPort == nil && w.Generation == nil && w.ProfileID == nil &&
 		w.SessionReference == nil && w.InviteReference == nil && w.EnrollmentCapability == nil &&
-		w.ExpiresAtUnix == nil && w.HostSPKISHA256 == nil
+		w.ExpiresAtUnix == nil && w.HostSPKISHA256 == nil && w.HelpText == nil
 }
 
 func parseOpenCommand(command Command, wire wireCommand, now time.Time) (Command, error) {
 	if wire.Mode == nil || wire.Generation == nil || *wire.Generation == 0 || wire.ProfileID == nil ||
 		wire.ExpiresAtUnix == nil || *wire.ExpiresAtUnix == 0 || wire.SessionReference == nil ||
 		wire.InviteReference == nil || wire.EnrollmentCapability == nil || *wire.SessionReference == "" ||
-		*wire.InviteReference == "" || *wire.EnrollmentCapability == "" {
+		*wire.InviteReference == "" || *wire.EnrollmentCapability == "" || wire.HelpText != nil {
 		return command, ErrEnrollmentInvalid
 	}
 	profileID := string(*wire.ProfileID)
@@ -275,6 +371,23 @@ func parseOpenCommand(command Command, wire wireCommand, now time.Time) (Command
 		command.HasHostSPKI = true
 	}
 	command.SessionID = deriveSessionID(command.SessionReference, command.InviteReference)
+	return command, nil
+}
+
+func parseHelpCommand(command Command, wire wireCommand) (Command, error) {
+	if wire.Generation == nil || *wire.Generation == 0 || wire.HelpText == nil ||
+		wire.Mode != nil || wire.TargetPort != nil || wire.ProfileID != nil ||
+		wire.SessionReference != nil || wire.InviteReference != nil ||
+		wire.EnrollmentCapability != nil || wire.ExpiresAtUnix != nil ||
+		wire.HostSPKISHA256 != nil {
+		return command, ErrProtocol
+	}
+	normalized, err := help.NormalizeText(*wire.HelpText)
+	if err != nil || normalized != *wire.HelpText {
+		return command, ErrProtocol
+	}
+	command.Generation = *wire.Generation
+	command.HelpText = append([]byte(nil), normalized...)
 	return command, nil
 }
 
@@ -379,14 +492,15 @@ func validateEvent(event *Event) error {
 		event.Build = safeBuildID(event.Build)
 	}
 	peerFieldsEmpty := event.Mode == "" && event.ProfileID == "" && event.Generation == 0 && event.LoopbackPort == 0
+	helpFieldsEmpty := event.RequestID == 0 && event.Text == ""
 	switch event.Type {
 	case "ready":
 		if event.ID != 0 || event.Code != CodeOK || event.State != "idle" || event.Build == "" ||
-			!peerFieldsEmpty || event.HostSPKISHA256 != "" {
+			!peerFieldsEmpty || event.HostSPKISHA256 != "" || !helpFieldsEmpty {
 			return ErrProtocol
 		}
 	case "hello":
-		if event.ID == 0 || event.Code != CodeOK || event.Build == "" || event.HostSPKISHA256 != "" {
+		if event.ID == 0 || event.Code != CodeOK || event.Build == "" || event.HostSPKISHA256 != "" || !helpFieldsEmpty {
 			return ErrProtocol
 		}
 		if event.State == "connecting" || event.State == "host_waiting" || event.State == "connected" {
@@ -398,19 +512,19 @@ func validateEvent(event *Event) error {
 		}
 	case "host_prepared":
 		if event.ID == 0 || event.Code != CodeOK || event.State != "identity_ready" || event.Build != "" ||
-			!peerFieldsEmpty || event.HostSPKISHA256 == "" {
+			!peerFieldsEmpty || event.HostSPKISHA256 == "" || !helpFieldsEmpty {
 			return ErrProtocol
 		}
 	case "host_registered":
 		if event.ID == 0 || event.Code != CodeOK || event.State != "host_waiting" || event.Build != "" ||
 			event.Mode != "host" || event.ProfileID == "" || event.Generation == 0 || event.LoopbackPort == 0 ||
-			event.HostSPKISHA256 != "" {
+			event.HostSPKISHA256 != "" || !helpFieldsEmpty {
 			return ErrProtocol
 		}
 	case "peer_connected":
 		if event.Code != CodeOK || event.State != "connected" || event.Build != "" ||
 			event.Mode == "" || event.ProfileID == "" || event.Generation == 0 || event.LoopbackPort == 0 ||
-			event.HostSPKISHA256 != "" {
+			event.HostSPKISHA256 != "" || !helpFieldsEmpty {
 			return ErrProtocol
 		}
 		// A host connection completes asynchronously after host_registered, so
@@ -422,17 +536,38 @@ func validateEvent(event *Event) error {
 	case "peer_closed":
 		if event.ID == 0 || event.Code != CodeOK || event.State != "closed" || event.Build != "" ||
 			event.Mode == "" || event.ProfileID == "" || event.Generation == 0 || event.LoopbackPort != 0 ||
-			event.HostSPKISHA256 != "" {
+			event.HostSPKISHA256 != "" || !helpFieldsEmpty {
 			return ErrProtocol
+		}
+	case "help_accepted", "help_received", "help_delivered":
+		if event.Code != CodeOK || event.State != "connected" || event.Build != "" ||
+			event.Mode == "" || event.ProfileID == "" || event.Generation == 0 ||
+			event.LoopbackPort != 0 || event.HostSPKISHA256 != "" || event.RequestID == 0 {
+			return ErrProtocol
+		}
+		switch event.Type {
+		case "help_accepted":
+			if event.ID == 0 || event.RequestID != event.ID || event.Text != "" {
+				return ErrProtocol
+			}
+		case "help_received":
+			normalized, err := help.NormalizeText(event.Text)
+			if event.ID != 0 || err != nil || normalized != event.Text {
+				return ErrProtocol
+			}
+		case "help_delivered":
+			if event.ID != 0 || event.Text != "" {
+				return ErrProtocol
+			}
 		}
 	case "stopped":
 		if event.Code != CodeOK || event.State != "stopped" || event.Build != "" ||
-			!peerFieldsEmpty || event.HostSPKISHA256 != "" {
+			!peerFieldsEmpty || event.HostSPKISHA256 != "" || !helpFieldsEmpty {
 			return ErrProtocol
 		}
 	case "error":
 		if event.Code == "" || event.Code == CodeOK || event.State == "" || event.State == "stopped" ||
-			event.Build != "" || !peerFieldsEmpty || event.HostSPKISHA256 != "" {
+			event.Build != "" || !peerFieldsEmpty || event.HostSPKISHA256 != "" || !helpFieldsEmpty {
 			return ErrProtocol
 		}
 	default:
@@ -446,11 +581,13 @@ var (
 	profilePattern    = regexp.MustCompile(`\A[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?\z`)
 	allowedEventTypes = map[string]struct{}{
 		"ready": {}, "hello": {}, "host_prepared": {}, "host_registered": {},
-		"peer_connected": {}, "peer_closed": {}, "stopped": {}, "error": {},
+		"peer_connected": {}, "peer_closed": {}, "help_accepted": {},
+		"help_received": {}, "help_delivered": {}, "stopped": {}, "error": {},
 	}
 	allowedEventCodes = map[string]struct{}{
 		CodeOK: {}, CodeProtocolViolation: {}, CodePeerAlreadyOpen: {}, CodePeerNotOpen: {},
 		CodeOpenFailed: {}, CodeIdentityNotPrepared: {}, CodeUnsupportedProfile: {}, CodeEnrollmentInvalid: {},
+		CodeHelpNotReady: {}, CodeHelpInvalid: {}, CodeHelpRateLimited: {}, CodeHelpQueueFull: {},
 	}
 	allowedEventStates = map[string]struct{}{
 		"idle": {}, "identity_ready": {}, "connecting": {}, "host_waiting": {}, "connected": {},

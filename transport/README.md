@@ -24,14 +24,27 @@ The v3 ICE wrapper accepts only public-unicast server-reflexive candidates or
 relay candidates whose public address appears in the profile's exact fixed
 allowlist; host, private, reserved, and documentation addresses are rejected.
 
-IPC version 1 supports `prepare_host` and one-shot `open_peer` enrollment
-configuration. It accepts only fixed-size, canonical unpadded-base64url
-session, invite, capability, and SPKI values plus the exact compiled
-`reference-local` profile ID. That profile maps to fixed loopback native
-control and exact-pair relay endpoints inside the binary; IPC cannot supply an
-address, URL, credential, certificate, key, path, or free-form network setting.
-The host private identity never leaves the process; `host_prepared` /
-`identity_ready` emits only its SHA-256 SPKI pin.
+IPC version 1 supports `prepare_host`, one-shot `open_peer` enrollment, and
+`send_help` after mutual peer proof. Enrollment accepts only fixed-size,
+canonical unpadded-base64url session, invite, capability, and SPKI values plus
+the exact compiled `reference-local` profile ID. That profile maps to fixed
+loopback native control and exact-pair relay endpoints inside the binary; IPC
+cannot supply an address, URL, credential, certificate, key, path, or
+free-form network setting. The host private identity never leaves the process;
+`host_prepared` / `identity_ready` emits only its SHA-256 SPKI pin.
+
+Help text is the sole bounded free-form IPC value. It is NFC-normalized plain
+UTF-8 (500 bytes maximum), rejects markup and control/private-use characters,
+and travels only on the existing reliable QUIC plane after that plane is
+authorized. Role, generation, and monotonic request ID are checked at both
+ends; sending and receiving have bounded token buckets, replay rejection, and
+at most eight pending receipts. `help_accepted` means the local transport
+accepted the send, while `help_delivered` means only that the peer transport
+acknowledged it—not that a person saw or read it. Text and all three help-event
+types are excluded from the desktop diagnostic timeline. Closing, resetting,
+expiry, or a generation change destroys the channel and its pending state.
+There is no persistence, transcript, offline delivery, attachment, analytics,
+notification, or separate network service.
 
 The raw invitation capability remains inside the sidecar's peer-authentication
 boundary. A distinct session-bound enrollment token is derived with
@@ -58,10 +71,11 @@ production UDP-buffer sizing remain future public-path work.
 
 The committed native integration starts an independent reference-service
 process and runs two production runner instances through registration,
-authentication, bidirectional loopback-proxy payloads, reset, and close. Those
-runners live inside the Go test process and use a controlled UDP Jamulus seam;
-this is not packaged-binary, real-Jamulus, secure-media, public-network, or
-acoustic evidence.
+authentication, bidirectional help with transport receipts, bidirectional
+loopback-proxy payloads, reset, and close. Those runners live inside the Go
+test process and use a controlled UDP Jamulus seam; this is not packaged-
+binary, real-Jamulus, user-interface, secure-media, public-network, or acoustic
+evidence.
 
 The command accepts no flags or environment configuration. It reads one
 strict JSON object per stdin line and writes allowlisted JSON events to stdout.

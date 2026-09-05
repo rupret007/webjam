@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rupret007/webjam/transport/internal/help"
 	"github.com/rupret007/webjam/transport/internal/icequic"
 	"github.com/rupret007/webjam/transport/internal/limits"
 	"github.com/rupret007/webjam/transport/internal/loopback"
@@ -55,7 +56,8 @@ func (o *referenceFabricOrchestrator) Start(
 	operationCtx, cancel := context.WithCancel(ctx)
 	operation := &referenceFabricOperation{
 		ctx: operationCtx, cancel: cancel, now: o.now, configuration: configuration,
-		identity: identity, endpoint: endpoint, updates: make(chan fabricUpdate, 3), done: make(chan struct{}),
+		identity: identity, endpoint: endpoint,
+		updates: make(chan fabricUpdate, limits.MaxHelpEventQueueDepth), done: make(chan struct{}),
 		observe: o.observe,
 	}
 	go operation.run()
@@ -82,6 +84,7 @@ type referenceFabricOperation struct {
 	listener   *icequic.Listener
 	connection *icequic.Connection
 	peer       *peer.Peer
+	help       *help.Channel
 	registered bool
 	sequence   uint64
 
@@ -405,17 +408,28 @@ func (o *referenceFabricOperation) runPeer(mode peer.Mode) error {
 	if err != nil {
 		return err
 	}
+	helpRole := help.RoleGuest
+	if mode == peer.ModeHost {
+		helpRole = help.RoleHost
+	}
+	liveHelp, err := help.NewChannel(o.connection, helpRole, o.configuration.Generation)
+	if err != nil {
+		return err
+	}
 	o.resourceMu.Lock()
 	o.peer = livePeer
+	o.help = liveHelp
 	o.resourceMu.Unlock()
-	result := make(chan error, 1)
-	go func() { result <- livePeer.Run(o.ctx) }()
+	peerResult := make(chan error, 1)
+	helpResult := make(chan error, 1)
+	go func() { peerResult <- livePeer.Run(o.ctx) }()
 	select {
 	case <-livePeer.Ready():
 		if !o.send(fabricUpdate{kind: updatePeerConnected}) {
 			return o.ctx.Err()
 		}
-	case err = <-result:
+		go o.receiveHelp(liveHelp, helpResult)
+	case err = <-peerResult:
 		if err == nil {
 			return ErrProtocol
 		}
@@ -424,7 +438,15 @@ func (o *referenceFabricOperation) runPeer(mode peer.Mode) error {
 		return o.ctx.Err()
 	}
 	select {
-	case err = <-result:
+	case err = <-peerResult:
+		if o.ctx.Err() != nil {
+			return o.ctx.Err()
+		}
+		if err == nil {
+			return ErrProtocol
+		}
+		return err
+	case err = <-helpResult:
 		if o.ctx.Err() != nil {
 			return o.ctx.Err()
 		}
@@ -435,6 +457,52 @@ func (o *referenceFabricOperation) runPeer(mode peer.Mode) error {
 	case <-o.ctx.Done():
 		return o.ctx.Err()
 	}
+}
+
+func (o *referenceFabricOperation) receiveHelp(
+	channel *help.Channel,
+	result chan<- error,
+) {
+	for {
+		event, err := channel.Receive(o.ctx)
+		if err != nil {
+			result <- err
+			return
+		}
+		update := fabricUpdate{helpRequestID: event.RequestID}
+		switch event.Kind {
+		case help.EventReceived:
+			update.kind = updateHelpReceived
+			update.helpText = []byte(event.Text)
+		case help.EventDelivered:
+			update.kind = updateHelpDelivered
+		default:
+			result <- ErrProtocol
+			return
+		}
+		if !o.send(update) {
+			clear(update.helpText)
+			result <- o.ctx.Err()
+			return
+		}
+	}
+}
+
+func (o *referenceFabricOperation) SendHelp(
+	ctx context.Context,
+	requestID uint64,
+	text string,
+) error {
+	if ctx == nil {
+		return help.ErrNotReady
+	}
+	o.resourceMu.Lock()
+	channel := o.help
+	o.resourceMu.Unlock()
+	if channel == nil {
+		return help.ErrNotReady
+	}
+	return channel.Send(ctx, requestID, text)
 }
 
 func (o *referenceFabricOperation) signal(role reference.Role, payload []byte) error {
@@ -555,6 +623,9 @@ func (o *referenceFabricOperation) cleanup() {
 		if o.configuration != nil {
 			o.configuration.clear()
 		}
+		o.resourceMu.Lock()
+		o.help = nil
+		o.resourceMu.Unlock()
 	})
 }
 

@@ -48,6 +48,55 @@ func TestStrictCommandRejectsUnknownDuplicateTrailingAndEscapedJSON(t *testing.T
 	}
 }
 
+func TestHelpCommandIsNFCBoundedPlainTextAndCleared(t *testing.T) {
+	t.Parallel()
+	encoded, err := json.Marshal(map[string]any{
+		"version":    1,
+		"id":         17,
+		"type":       "send_help",
+		"generation": 7,
+		"text":       "Try headphones — café \"mix\"",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command, err := ParseCommandAt(encoded, protocolTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command.Type != CommandSendHelp || command.ID != 17 || command.Generation != 7 ||
+		string(command.HelpText) != "Try headphones — café \"mix\"" {
+		t.Fatalf("help command = %+v", command)
+	}
+	owned := command.HelpText
+	command.ClearSensitive()
+	if command.HelpText != nil {
+		t.Fatal("cleared help command retained text")
+	}
+	for _, value := range owned {
+		if value != 0 {
+			t.Fatal("cleared help command bytes were not wiped")
+		}
+	}
+
+	for _, fields := range []map[string]any{
+		{"version": 1, "id": 1, "type": "send_help", "generation": 0, "text": "help"},
+		{"version": 1, "id": 1, "type": "send_help", "generation": 7, "text": ""},
+		{"version": 1, "id": 1, "type": "send_help", "generation": 7, "text": "<b>help</b>"},
+		{"version": 1, "id": 1, "type": "send_help", "generation": 7, "text": "cafe\u0301"},
+		{"version": 1, "id": 1, "type": "send_help", "generation": 7, "text": strings.Repeat("é", 251)},
+		{"version": 1, "id": 1, "type": "send_help", "generation": 7, "text": "help", "target_port": 22},
+	} {
+		candidate, marshalErr := json.Marshal(fields)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		if _, parseErr := ParseCommandAt(candidate, protocolTestNow); !errors.Is(parseErr, ErrProtocol) {
+			t.Fatalf("unsafe help command %s error = %v", candidate, parseErr)
+		}
+	}
+}
+
 func TestOpenPeerDecodesTypedValuesAndDerivesSessionID(t *testing.T) {
 	t.Parallel()
 	encoded := openCommand(7, "guest", profile.ReferenceLocalID, protocolTestNow.Add(time.Minute), 0, testPin())
@@ -425,6 +474,89 @@ func TestConnectedEventsWaitForAuthenticatedFabricBoundary(t *testing.T) {
 	}
 }
 
+func TestHelpRequiresAuthenticatedGenerationAndEmitsBoundedReceipts(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	factory := &recordingFactory{port: 43600}
+	orchestrator := &recordingOrchestrator{
+		manual:  true,
+		started: make(chan *recordingOperation, 1),
+	}
+	harness := newRunnerHarness(t, factory, orchestrator, now)
+	defer harness.stop(t)
+	if ready := harness.next(t); ready.Type != "ready" {
+		t.Fatalf("initial event = %+v", ready)
+	}
+	harness.send(t, openCommand(
+		2,
+		"guest",
+		profile.ReferenceLocalID,
+		now.Add(time.Minute),
+		0,
+		testPin(),
+	))
+	var operation *recordingOperation
+	select {
+	case operation = <-orchestrator.started:
+	case <-time.After(time.Second):
+		t.Fatal("fabric operation did not start")
+	}
+
+	harness.send(t, `{"version":1,"id":3,"type":"send_help","generation":7,"text":"Too soon"}`)
+	if early := harness.next(t); early.Type != "error" || early.Code != CodeHelpNotReady {
+		t.Fatalf("pre-auth help = %+v", early)
+	}
+	operation.updates <- fabricUpdate{kind: updatePeerConnected}
+	if connected := harness.next(t); connected.Type != "peer_connected" {
+		t.Fatalf("connected event = %+v", connected)
+	}
+
+	harness.send(t, `{"version":1,"id":4,"type":"send_help","generation":6,"text":"Stale"}`)
+	if stale := harness.next(t); stale.Type != "error" || stale.Code != CodeHelpNotReady {
+		t.Fatalf("stale-generation help = %+v", stale)
+	}
+	harness.send(t, `{"version":1,"id":5,"type":"send_help","generation":7,"text":"Try headphones — café"}`)
+	accepted := harness.next(t)
+	if accepted.Type != "help_accepted" || accepted.ID != 5 ||
+		accepted.RequestID != 5 || accepted.Text != "" {
+		t.Fatalf("accepted help = %+v", accepted)
+	}
+	operation.mu.Lock()
+	requests := append([]recordingHelpRequest(nil), operation.helpRequests...)
+	operation.mu.Unlock()
+	if len(requests) != 1 || requests[0].requestID != 5 ||
+		requests[0].text != "Try headphones — café" {
+		t.Fatalf("help requests = %+v", requests)
+	}
+
+	operation.updates <- fabricUpdate{
+		kind: updateHelpReceived, helpRequestID: 91,
+		helpText: []byte("I can hear you"),
+	}
+	received := harness.next(t)
+	if received.Type != "help_received" || received.ID != 0 ||
+		received.RequestID != 91 || received.Text != "I can hear you" {
+		t.Fatalf("received help metadata changed")
+	}
+	operation.updates <- fabricUpdate{
+		kind:          updateHelpDelivered,
+		helpRequestID: 5,
+	}
+	delivered := harness.next(t)
+	if delivered.Type != "help_delivered" || delivered.ID != 0 ||
+		delivered.RequestID != 5 || delivered.Text != "" {
+		t.Fatalf("delivery receipt = %+v", delivered)
+	}
+
+	harness.send(t, `{"version":1,"id":6,"type":"close_peer"}`)
+	if closed := harness.next(t); closed.Type != "peer_closed" {
+		t.Fatalf("closed event = %+v", closed)
+	}
+	harness.send(t, `{"version":1,"id":7,"type":"shutdown"}`)
+	if stopped := harness.next(t); stopped.Type != "stopped" {
+		t.Fatalf("stopped event = %+v", stopped)
+	}
+}
+
 func TestExplicitCloseAcknowledgesCompletedRemoteTeardownOnce(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
 	factory := &recordingFactory{port: 43700}
@@ -644,6 +776,52 @@ func TestMarshalEventRejectsFreeFormFields(t *testing.T) {
 	}
 }
 
+func TestHelpEventsAreExactEphemeralAndFormattingRedactsText(t *testing.T) {
+	t.Parallel()
+	base := Event{
+		Type: "help_received", Code: CodeOK, State: "connected",
+		Mode: "guest", ProfileID: profile.ReferenceLocalID, Generation: 7,
+		RequestID: 19, Text: "Can you hear me? — café",
+	}
+	encoded, err := MarshalEvent(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), "Can you hear me?") {
+		t.Fatalf("ephemeral IPC event omitted text: %s", encoded)
+	}
+	formatted := fmt.Sprintf("%v %+v %#v", base, base, base)
+	if strings.Contains(formatted, base.Text) || !strings.Contains(formatted, "redacted") {
+		t.Fatalf("help event formatting leaked text: %s", formatted)
+	}
+
+	accepted := base
+	accepted.Type = "help_accepted"
+	accepted.ID = 19
+	accepted.Text = ""
+	if _, err = MarshalEvent(accepted); err != nil {
+		t.Fatal(err)
+	}
+	delivered := accepted
+	delivered.Type = "help_delivered"
+	delivered.ID = 0
+	if _, err = MarshalEvent(delivered); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, unsafe := range []Event{
+		{Type: "help_received", Code: CodeOK, State: "connected", Mode: "guest", ProfileID: profile.ReferenceLocalID, Generation: 7, RequestID: 19, Text: "<b>help</b>"},
+		{ID: 1, Type: "help_received", Code: CodeOK, State: "connected", Mode: "guest", ProfileID: profile.ReferenceLocalID, Generation: 7, RequestID: 19, Text: "help"},
+		{ID: 19, Type: "help_accepted", Code: CodeOK, State: "connected", Mode: "guest", ProfileID: profile.ReferenceLocalID, Generation: 7, RequestID: 20},
+		{Type: "help_delivered", Code: CodeOK, State: "connected", Mode: "guest", ProfileID: profile.ReferenceLocalID, Generation: 7, RequestID: 19, Text: "leak"},
+		{Type: "help_delivered", Code: CodeOK, State: "connected", Mode: "guest", ProfileID: profile.ReferenceLocalID, Generation: 0, RequestID: 19},
+	} {
+		if _, err = MarshalEvent(unsafe); !errors.Is(err, ErrProtocol) {
+			t.Fatalf("unsafe help event %+v error = %v", unsafe, err)
+		}
+	}
+}
+
 type recordingFactory struct {
 	calls      int
 	mode       string
@@ -734,9 +912,33 @@ type recordingOperation struct {
 	configuration *enrollmentConfig
 	endpoint      loopback.Endpoint
 	closed        bool
+	helpRequests  []recordingHelpRequest
+	helpError     error
+}
+
+type recordingHelpRequest struct {
+	requestID uint64
+	text      string
 }
 
 func (o *recordingOperation) Updates() <-chan fabricUpdate { return o.updates }
+
+func (o *recordingOperation) SendHelp(
+	_ context.Context,
+	requestID uint64,
+	text string,
+) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.helpError != nil {
+		return o.helpError
+	}
+	o.helpRequests = append(o.helpRequests, recordingHelpRequest{
+		requestID: requestID,
+		text:      text,
+	})
+	return nil
+}
 
 func (o *recordingOperation) Close(context.Context) error {
 	o.mu.Lock()

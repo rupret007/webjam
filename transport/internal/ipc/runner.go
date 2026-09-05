@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rupret007/webjam/transport/internal/help"
 	"github.com/rupret007/webjam/transport/internal/icequic"
 	"github.com/rupret007/webjam/transport/internal/limits"
 	"github.com/rupret007/webjam/transport/internal/loopback"
@@ -24,6 +25,10 @@ const (
 	CodeIdentityNotPrepared = "identity_not_prepared"
 	CodeUnsupportedProfile  = "unsupported_profile"
 	CodeEnrollmentInvalid   = "enrollment_invalid"
+	CodeHelpNotReady        = "help_not_ready"
+	CodeHelpInvalid         = "help_invalid"
+	CodeHelpRateLimited     = "help_rate_limited"
+	CodeHelpQueueFull       = "help_queue_full"
 )
 
 type emitter struct {
@@ -77,16 +82,21 @@ type fabricUpdateKind uint8
 const (
 	updateHostRegistered fabricUpdateKind = iota + 1
 	updatePeerConnected
+	updateHelpReceived
+	updateHelpDelivered
 	updateFabricFailed
 )
 
 type fabricUpdate struct {
-	kind fabricUpdateKind
-	err  error
+	kind          fabricUpdateKind
+	err           error
+	helpRequestID uint64
+	helpText      []byte
 }
 
 type fabricOperation interface {
 	Updates() <-chan fabricUpdate
+	SendHelp(context.Context, uint64, string) error
 	Close(context.Context) error
 }
 
@@ -226,6 +236,24 @@ func (s *runnerState) metadataEvent(id uint64, eventType, state string) Event {
 		event.ProfileID = s.active.profileID
 		event.Generation = s.active.generation
 		event.LoopbackPort = s.active.loopbackPort
+	}
+	return event
+}
+
+func (s *runnerState) helpEvent(
+	id uint64,
+	eventType string,
+	requestID uint64,
+	text string,
+) Event {
+	event := Event{
+		ID: id, Type: eventType, Code: CodeOK, State: "connected",
+		RequestID: requestID, Text: text,
+	}
+	if s.active != nil {
+		event.Mode = s.active.mode
+		event.ProfileID = s.active.profileID
+		event.Generation = s.active.generation
 	}
 	return event
 }
@@ -404,6 +432,30 @@ func (s *runnerState) handle(
 		})
 	case CommandOpenPeer:
 		return false, s.openPeer(ctx, command, events, now)
+	case CommandSendHelp:
+		if s.operation == nil || s.active == nil || !s.connected ||
+			command.Generation != s.active.generation {
+			return false, events.emit(Event{
+				ID: command.ID, Type: "error", Code: CodeHelpNotReady,
+				State: s.stateName(),
+			})
+		}
+		helpCtx, cancel := context.WithTimeout(ctx, limits.HelpOperationLimit)
+		err := s.operation.SendHelp(
+			helpCtx,
+			command.ID,
+			string(command.HelpText),
+		)
+		cancel()
+		if err != nil {
+			return false, events.emit(Event{
+				ID: command.ID, Type: "error", Code: helpErrorCode(err),
+				State: s.stateName(),
+			})
+		}
+		return false, events.emit(
+			s.helpEvent(command.ID, "help_accepted", command.ID, ""),
+		)
 	case CommandClosePeer:
 		if s.operation == nil {
 			if s.recentlyClosed != nil {
@@ -539,10 +591,43 @@ func (s *runnerState) handleFabricUpdate(update fabricUpdate, events *emitter) e
 			id = 0
 		}
 		return events.emit(s.metadataEvent(id, "peer_connected", "connected"))
+	case updateHelpReceived:
+		if update.err != nil || !s.connected || update.helpRequestID == 0 ||
+			len(update.helpText) == 0 {
+			clear(update.helpText)
+			return s.failFabric(events, ErrProtocol)
+		}
+		text := string(update.helpText)
+		clear(update.helpText)
+		return events.emit(
+			s.helpEvent(0, "help_received", update.helpRequestID, text),
+		)
+	case updateHelpDelivered:
+		if update.err != nil || !s.connected || update.helpRequestID == 0 ||
+			len(update.helpText) != 0 {
+			clear(update.helpText)
+			return s.failFabric(events, ErrProtocol)
+		}
+		return events.emit(
+			s.helpEvent(0, "help_delivered", update.helpRequestID, ""),
+		)
 	case updateFabricFailed:
 		return s.failFabric(events, update.err)
 	default:
 		return s.failFabric(events, ErrProtocol)
+	}
+}
+
+func helpErrorCode(err error) string {
+	switch {
+	case errors.Is(err, help.ErrInvalidMessage), errors.Is(err, help.ErrReplay):
+		return CodeHelpInvalid
+	case errors.Is(err, help.ErrRateLimited):
+		return CodeHelpRateLimited
+	case errors.Is(err, help.ErrQueueFull):
+		return CodeHelpQueueFull
+	default:
+		return CodeHelpNotReady
 	}
 }
 

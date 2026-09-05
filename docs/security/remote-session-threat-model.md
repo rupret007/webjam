@@ -290,15 +290,25 @@ display, and failed sends restore the unsent text. That path does not exist
 before Jamulus connects and therefore cannot help a guest whose secure setup is
 failing.
 
-The authenticated remote data plane has strict control framing, but the
-desktop/sidecar IPC exposes no text command or event and the current UI routes
-no chat through reference signaling. Adding pre-connection chat requires a
-separate reviewed protocol change after mutual peer proof: an allowlisted text
-type with protocol version, generation, request ID, bounded UTF-8 payload,
-rate/queue limits, plain-text normalization, stale-generation rejection, and
-ephemeral no-log handling. Unknown, oversized, unauthenticated, replayed, or
-backpressured messages must fail closed. Until those tests and the public
-service gate exist, no UI may claim pre-connection chat.
+The authenticated remote data plane now carries one dedicated help frame only
+after mutual peer proof. It binds role, generation, and a monotonic request ID;
+accepts at most 500 bytes of canonical NFC plain UTF-8; rejects markup,
+controls, private-use characters, stale generations, wrong roles, replay,
+flooding, and receipt-queue exhaustion; and retires with the peer connection.
+It reuses the authorized reliable QUIC plane and creates no new socket,
+signaling field, service endpoint, transcript, attachment, notification, or
+offline-delivery path.
+
+The sidecar IPC exposes `send_help`, `help_accepted`, `help_received`, and
+`help_delivered`. Acceptance means the local sidecar accepted the message;
+delivery means the peer transport returned the bound acknowledgement, never
+that a person read it. Help events and text are excluded from the desktop
+diagnostic timeline, and string formatting redacts the text. Independent
+local-relay integration proves both directions only after authentication. The
+current UI invokes none of this, and there is still no public-service,
+packaged two-Mac, real-Jamulus-transition, or human-read evidence. Until the UI
+and public-service gates are reviewed and run, no product surface may claim
+pre-Jamulus help.
 
 ## Threats, mitigations, and residuals
 
@@ -313,6 +323,7 @@ service gate exist, no UI may claim pre-connection chat.
 | QUIC handshake or parser flood | Stateless retry, pending limits, deadlines, token buckets, strict lengths, fuzzing | Distributed DDoS cannot be eliminated |
 | Datagram replay, duplicate, reorder | QUIC protection plus app generation/sequence window | Loss and deliberate peer silence remain possible |
 | Malicious enrolled audio | Per-peer socket, direction/size/rate checks, host mute/revoke | An enrolled guest can send objectionable audio |
+| Malicious enrolled help text | Mutual proof, canonical plain text, markup/control rejection, byte/rate/queue/replay bounds, generation retirement, no persistence | A deliberately invited peer can still send objectionable text within the bound |
 | False recorder ordinal from an enrolled peer | Fresh ordered-roster challenge, exact host local-zero proof, full-profile ambiguity rejection, collision tombstones, and no v1 promotion | A modified invited peer can claim an otherwise-unclaimed unique row; remote ordinal is cooperative, not cryptographic Jamulus identity, so invites remain trusted-collaborator only |
 | Forged or cross-take media | Host grant, per-peer authorization, generation, offset, SHA/PCM checks | Authorized media still consumes its quota |
 | Path traversal or overwrite | UUID-derived names, private roots, no-follow/dirfd operations where available, conflict on existing final | Same-user filesystem tampering is residual |
