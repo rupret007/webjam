@@ -16,12 +16,26 @@ window title, and notes header. Launch standalone copy now mirrors Review
 copy still omits Review's meeting-capture lecture. End Room / Leave Room
 behavior from #69 is untouched. Art remains Preview. Parked #37/#49 untouched.
 
-**How verified:** Focused regressions in `tests/test_art_session_strip.py`,
-`tests/test_art_profile.py`, `tests/test_art_start_ux.py`, plus the existing
-creator-shell contract in `tests/test_qt_widgets.py` and End/Leave Room
-contracts in `tests/test_art_participant_door.py`. Broader Art/feel/UX modules
-and the repo CI per-module pytest path on the tip. Exact commands and counts
-belong in this draft PR. No merge, tag, sign, release, or Pages.
+**How verified:** Exact tip `3b29198547dfc006447029fa704152e600d4edc6`.
+`QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -v tests/test_art_session_strip.py
+tests/test_art_profile.py tests/test_art_start_ux.py tests/test_art_participant_door.py
+tests/test_creator_live_presentation.py tests/test_feel_pass.py tests/test_qt_widgets.py
+-k "art or preview or creator_profiles or launch_copy or strip_status"`:
+161 passed, 93 deselected. Isolated modules after that: Art strip 6, Art
+profile 47, start UX 43, participant door 33 (End Room / Leave Room still
+compact and accessible), qt widgets 100 + 42 subtests, feel 14, live
+presentation 11, Art cleanup 15, Art recovery 6, UI redesign 34. Combined
+Art/feel/UX modules: 390 passed, 42 subtests. Remaining Art/honesty modules
+plus `python ux_smoke_test.py`: 367 passed and UX smoke PASS. Ruff,
+compileall, pip check, and `git diff --check HEAD` passed.
+
+Raw one-interpreter `pytest -q` reached 6986 passed / 27 skipped / 99
+subtests, matching #69's passed count. Two unrelated one-process flakes
+appeared across two full runs (Pocket Stage live WSS against websockets 17.1
+instead of lockfile 16.1.1; one Studio seek checksum). Isolated re-runs of
+those modules passed; no failing assertion was removed or weakened.
+
+No merge, tag, sign, release, or Pages.
 
 ---
 
