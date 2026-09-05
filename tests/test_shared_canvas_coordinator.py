@@ -55,16 +55,27 @@ class FakeLauncher:
 class FakeHostPeer:
     """Stands in for the authenticated peer plane."""
 
-    def __init__(self, *, active: bool = True, explode: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        active: bool = True,
+        explode: bool = False,
+        accept: bool = True,
+    ) -> None:
         self.active = active
         self.explode = explode
+        self.accept = accept
+        self.attempts: list[dict] = []
         self.published: list[dict] = []
 
     def publish_shared_canvas_state(self, **kwargs):
         if self.explode:
             raise RuntimeError("peer plane is unhappy")
+        self.attempts.append(kwargs)
+        if not self.accept:
+            return None
         self.published.append(kwargs)
-        return None
+        return SharedCanvasSessionSnapshot(**kwargs)
 
 
 def _coordinator(*, launcher=None, peer=None, follow=None):
@@ -228,6 +239,35 @@ def test_publication_is_skipped_while_the_peer_plane_is_inactive():
 
     assert peer.published == []
     assert coordinator.host_snapshot.shared is True
+
+    peer.active = True
+    coordinator.tick()
+    coordinator.tick()
+
+    assert len(peer.published) == 1
+    assert peer.published[0]["join_url"] == NORMALIZED
+
+
+def test_a_peer_rejection_is_retried_until_session_control_accepts_the_canvas():
+    """A callable peer without session control has delivered nothing yet."""
+
+    peer = FakeHostPeer(accept=False)
+    coordinator = _coordinator(peer=peer)
+    coordinator.begin_host()
+
+    snapshot = coordinator.share(WEB_INVITE)
+
+    assert snapshot.shared is True
+    assert len(peer.attempts) == 1
+    assert peer.published == []
+
+    peer.accept = True
+    coordinator.tick()
+    coordinator.tick()
+
+    assert len(peer.attempts) == 2
+    assert len(peer.published) == 1
+    assert peer.published[0]["join_url"] == NORMALIZED
 
 
 def test_a_peer_failure_never_breaks_the_hosts_canvas():

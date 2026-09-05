@@ -58,6 +58,11 @@ class SharedCanvasCoordinator:
         self._host: SharedCanvasHostController | None = None
         self._follower: SharedCanvasFollower | None = None
         self._launcher: CanvasLauncher | None = None
+        # A room starts with no shared canvas, so absence is the only peer
+        # projection already known to have been delivered. A callable peer
+        # publisher is not delivery evidence: HostPeerSession returns None
+        # until authenticated session control accepts the projection.
+        self._published: tuple[bool, str, str, str] = (False, "", "", "")
         self._publish_failed = False
 
     # -- lifecycle -----------------------------------------------------
@@ -112,6 +117,7 @@ class SharedCanvasCoordinator:
         self._follower = None
         self._launcher = None
         self._role = ""
+        self._published = (False, "", "", "")
         self._publish_failed = False
 
     @property
@@ -154,7 +160,9 @@ class SharedCanvasCoordinator:
             raise SharedCanvasError(NOT_HOSTING_MESSAGE)
         snapshot = operation(self._host_controller())
         if publish:
-            self._publish(snapshot)
+            projection = self._projection(snapshot)
+            if projection != self._published and self._publish(projection):
+                self._published = projection
         if self._on_host_snapshot is not None:
             self._on_host_snapshot(snapshot)
         return snapshot
@@ -204,26 +212,57 @@ class SharedCanvasCoordinator:
 
     # -- peer plane ----------------------------------------------------
 
-    def _publish(self, snapshot: SharedCanvasSnapshot) -> None:
-        publish = self._peer_publisher()
-        if publish is None:
+    def tick(self) -> None:
+        """Retry the current host projection until the peer plane accepts it.
+
+        Sharing stays a local Drawpile choice even if the authenticated peer
+        session is not ready yet. Remembering only an accepted projection
+        ensures a bounded Art timer can carry that choice to late joiners
+        without republishing it once delivery succeeds.
+        """
+
+        host = self._host
+        if not self.hosting or host is None:
             return
+        projection = self._projection(host.snapshot)
+        if projection != self._published and self._publish(projection):
+            self._published = projection
+
+    def _projection(
+        self, snapshot: SharedCanvasSnapshot
+    ) -> tuple[bool, str, str, str]:
         host = self._host
         invite = host.invite() if host is not None else None
         shared = bool(snapshot.shared and invite is not None)
+        return (
+            shared,
+            invite.join_url if shared and invite is not None else "",
+            snapshot.server_label if shared else "",
+            snapshot.session_label if shared else "",
+        )
+
+    def _publish(self, projection: tuple[bool, str, str, str]) -> bool:
+        publish = self._peer_publisher()
+        if publish is None:
+            return False
+        shared, join_url, server_label, session_label = projection
         try:
-            publish(
+            accepted = publish(
                 shared=shared,
-                join_url=invite.join_url if shared and invite is not None else "",
-                server_label=snapshot.server_label if shared else "",
-                session_label=snapshot.session_label if shared else "",
+                join_url=join_url,
+                server_label=server_label,
+                session_label=session_label,
             )
+            if accepted is None:
+                return False
         except Exception:  # noqa: BLE001 - peer boundary stays UI-optional
             if not self._publish_failed:
                 LOGGER.warning("Shared canvas peer state could not be published")
             self._publish_failed = True
+            return False
         else:
             self._publish_failed = False
+            return True
 
     def _publish_unshared(self) -> None:
         publish = self._peer_publisher()

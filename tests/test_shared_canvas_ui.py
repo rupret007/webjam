@@ -885,3 +885,14 @@ def test_the_room_survives_a_presence_failure_without_going_quiet(fake_launchers
     controller._tick_creator_start()
 
     assert controller._art_room_presence_failed is True
+
+
+def test_the_bounded_art_tick_retries_canvas_publication(fake_launchers):
+    controller = _controller("art")
+    _as_host(controller)
+    canvas = controller._shared_canvas_coordinator()
+    canvas.tick = MagicMock()
+
+    controller._tick_creator_start()
+
+    canvas.tick.assert_called_once_with()

@@ -215,6 +215,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 - A host no longer treats a locally rendered room clock as delivered when the private peer plane is inactive, rejects one update, or has not attached authenticated session control yet. The same bounded pulse is retried on the next tick, then returns to change-only publishing after a successful delivery; live audio and transport ownership are unchanged.
 
+### Shared-canvas delivery: carry the invite after peer control arrives
+
+- Sharing a Drawpile canvas before authenticated session control is ready no longer leaves guests without the invite. The host retries only the undelivered memory-only projection on Art's bounded cadence, then returns to change-only publishing as soon as the peer plane accepts it. Drawpile still owns the canvas, and WebJam still opens or publishes nothing on a guest's behalf.
+
 ### Music AI upload portability: one FLAC type on every desktop
 
 - FLAC uploads now use the canonical `audio/flac` content type on both macOS and Linux instead of inheriting the host operating system's `audio/x-flac` alias. The upload remains explicit, host-confirmed, and otherwise unchanged.
