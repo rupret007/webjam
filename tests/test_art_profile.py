@@ -160,6 +160,36 @@ def test_nothing_a_person_reads_still_says_studio_visit(profile):
     assert "studio visit" not in visible
 
 
+def test_art_launch_copy_does_not_claim_live_or_ga_while_preview(profile):
+    """The door must not call Preview Art live or generally available."""
+
+    from webjam_qt.windows.launch_dialog import _CREATOR_LAUNCH_COPY
+
+    assert profile.is_preview is True
+    copy = _CREATOR_LAUNCH_COPY[ART]
+    spoken = " ".join(
+        (
+            copy.host,
+            copy.join,
+            copy.local,
+            copy.host_description,
+            copy.join_description,
+            copy.local_description,
+            copy.helper,
+            copy.join_title,
+            copy.join_subtitle,
+        )
+    ).casefold()
+    assert "live for now" not in spoken
+    assert "rooms are live" not in spoken
+    assert "generally available" not in spoken
+    assert not re.search(r"\bga\b", spoken)
+    # First-screen copy still cannot say Preview; the in-session chip does.
+    assert not re.search(r"\bpreview\b", spoken)
+    assert copy.local == "Standalone Art Unavailable"
+    assert copy.local_description == "Standalone art projects are not on this door."
+
+
 def test_art_help_states_its_non_goals_plainly(profile):
     help_text = profile.quick_help.casefold()
     assert "no camera feed" in help_text

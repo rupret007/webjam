@@ -1,5 +1,30 @@
 # Pre-Karen QA — Art participant, door, and End/Leave
 
+## Art Preview honesty hotfix (post-#69 squash)
+
+**What failed:** #69 landed on master as `230ef498` while Art stayed
+`release_tier=PREVIEW` / `is_preview=True` and docs still claimed Art is
+visibly Preview. The in-session strip buried that status with
+`profile.is_preview and profile.key != "art"`, so End Room / Leave Room chrome
+read **Art · Ready**. Launch copy also said `Art rooms are live for now`.
+Karen fail-closed on that honesty gap. Art was not promoted to GA.
+
+**What changed:** Art uses the same Preview status path as other Preview
+profiles on the surfaces that claim status: session-strip subtitle, conductor
+window title, and notes header. Launch standalone copy now mirrors Review
+(`Standalone Art Unavailable`) and no longer claims live/GA. HUD/empty-stage
+copy still omits Review's meeting-capture lecture. End Room / Leave Room
+behavior from #69 is untouched. Art remains Preview. Parked #37/#49 untouched.
+
+**How verified:** Focused regressions in `tests/test_art_session_strip.py`,
+`tests/test_art_profile.py`, `tests/test_art_start_ux.py`, plus the existing
+creator-shell contract in `tests/test_qt_widgets.py` and End/Leave Room
+contracts in `tests/test_art_participant_door.py`. Broader Art/feel/UX modules
+and the repo CI per-module pytest path on the tip. Exact commands and counts
+belong in this draft PR. No merge, tag, sign, release, or Pages.
+
+---
+
 2026-09-05 CT; branch `codex/webjam-art-participant-door`; base
 `7f38ba20eb71afffdb37a8d03d29248abfdee1de`.
 

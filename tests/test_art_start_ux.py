@@ -528,6 +528,8 @@ def test_no_launch_copy_still_says_studio_visit():
         ).casefold()
         assert "studio visit" not in spoken, key
         assert not re.search(r"\bpreview\b", spoken), key
+        assert "live for now" not in spoken, key
+        assert "rooms are live" not in spoken, key
         _assert_first_screen_has_no_banned_words(spoken)
 
 
