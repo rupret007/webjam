@@ -13,3 +13,14 @@ Baseline: master a004bbbce20a8ced3b67f7ec89798e0a9416f208. Inventory precedes co
 9. **Pocket Stage remains a boundary-proof item.** Run its focused automated modules and inspect boundary coverage. No hardware or distribution claim; change it only for a demonstrated defect.
 
 The baseline full local suite reported 6,662 passed, 25 skipped, 97 subtests passed and 20 teardown errors in `test_local_originals_choice_profiles.py`; its widget-disposal fixture encounters a previously mocked callback. This is a real suite failure to diagnose and fix, not evidence to hide by dropping tests. Phase 1 will record regressions and outcomes here; Phase 2 and 3 documents will score only executed proof. Held PRs and release actions are outside this work.
+
+## Verified product outcomes
+
+- Gaps 1–2: own-tools Art and exact door controls are implemented; optional canvas, File workspace routes and explicit Windows Help setup are tested.
+- Gap 3: finite recovery actions and bounded copy reach HUD, Notes and Pocket with exact generation/revision matching; failed cleanup cannot claim a safe retry.
+- Gap 4: profile-scoped drafts, bounded writes, unreadable-file preservation, editable recovery/export and quit veto are implemented. Notes owns edit notifications; disk restoration remains silent.
+- Gap 5: existing Conversation gives Art demonstration guidance without launch/capture side effects or a second player.
+- Gap 6: readiness offers existing Recording Setup after retiring only the current preflight plan, and no longer claims reserved storage or unproved idle readiness.
+- Gap 7: oversized and post-replacement failures have safe retry paths; history/source preservation and different-writer conflicts are tested; long marker/section edits fail visibly.
+- Gap 8: shipped source routes and Preview/NOT RUN limits match the help maps. Gap 9: Python/Swift Pocket boundary and local WSS proof passed; installed-device behavior remains NOT RUN.
+- Full-suite producer lifetime and stale completed-shutdown prompt were fixed. WORTH_BUILDING.md records the passed product gate; PRE_KAREN_QA.md records adversarial corrections and remaining hosted/handoff gates.

@@ -60,3 +60,25 @@
 - Added pixel-level checks of the real card icon across Normal/Disabled/Active/Selected and Off/On, including retained face detail.
 - Worth-Building is explicitly marked for revalidation; the failed visual finding is not hidden behind an earlier test pass.
 - No product media, external tool, capture path, dependency or held branch is changed. Next: focused palette/launch proof, then full local revalidation and final Pre-Karen score.
+
+## Phase 2 — Worth-Building
+
+- Clean product commit: 49acdb5b7f4293bb3ad95fd53c3125a4bf7a8fbb; based only on origin/master 68b9f292.
+- W1–W10 PASS with direct source/test evidence in WORTH_BUILDING.md.
+- Full local result: 6821 passed, 25 skipped, 3 warnings, 99 subtests passed in 207.97s (0:03:27).
+- Broad touched-area proof: 2339 passed, 2 skipped, 3 warnings, 2 subtests passed in 49.74s.
+- Ruff, compileall, pip check and UX smoke all passed; real Swift/Python WSS interoperability passed.
+- Synthetic multitrack proof qualified 20/20 iterations (380 executions), with run cleanup verified and physical status not_run.
+- Notes owner now preserves both silent restoration and accepted-edit autosave; Song-tools source/tests and its boundary gate remain unchanged.
+- Next: final adversarial launch/profile review, scored Pre-Karen product QA and Integrity review, then repeat exact-tip local proof before hosted builds.
+
+## Phase 3 — Pre-Karen product QA
+
+- Final read-only launch/profile review revisited actual controls, compact geometry, own-tools intent, optional canvas and File bootstrap after Worth-Building passed; a rendered-mark palette finding returned to product correction and then passed pixel and full-suite proof.
+- Recovery review verified real failed-cleanup history, same-revision Pocket action, silent Notes restore and editable-replacement autosave; no remaining confirmed product blocker.
+- Studio/recording review verified exact-byte save ownership, stale-modal rejection, dirty/history retention and Setup retirement before another preflight.
+- PRE_KAREN_QA.md records static, happy-path and failure-path evidence plus explicit physical/platform/device NOT RUN limits.
+- Integrity review retains the unmodified Song-tools boundary gate; no test skips/deletions, dependency or workflow churn, mass renames or held-branch implementation.
+- Rubric scores 68/74: all product/local criteria pass. B3 hosted green and B5 actual external handoff are honestly pending subsequent phases.
+- BOB_HANDOFF.md contains review scope and ordered Karen/Bob/Jeff steps; it explicitly forbids treating this preparation as hosted-green.
+- Phase verify: rubric/evidence paths and git diff --check validated. Next: commit QA artifacts, repeat required exact-tip local checks, push draft and fix hosted checks until green.
