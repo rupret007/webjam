@@ -15,18 +15,39 @@ Before Host or Join, choose **Art** or **Music**. Those are the equal first
 clicks. Art then offers **Make together** or **Paint along**, then **Host** or
 **Join**. **Make together** means “Talk, make, or draw together in one room”; a
 host may open one shared canvas from inside the room. Music is **Host** or
-**Join** only. The
-chosen profile changes language and safe defaults, not the recorder's evidence
-rules. The launch **File** menu contains **New Music Project…**,
+**Join** only. Profiles that support recording keep the same evidence
+rules for their recorders. The launch **File** menu contains **New Music Project…**,
 **Podcast & Voice…**, and **Review & Rehearsal…**. No profile directly or
 automatically taps a meeting app, browser, or system output.
 
-In Art, bring your own tools—paint, clay, paper, a printer, or your usual app.
+WebJam welcomes artists in any medium who want to make things together. Art
+is a newer Preview; the aim is to build it out to the same depth as Music.
+Bring your own tools—paint, clay, paper, a printer, or your usual app.
 A shared canvas is optional. Inside the room, **Conversation** lets you open
 a meeting and share a demonstration in Webex or your chosen service. Everyone
 can follow there; **Paint along** is the separate silent local-video option.
 
-## Host
+## Start an Art room
+
+1. Choose **Art**, then **Make together** or **Paint along**.
+2. Choose **Host**. When **Your room is open** appears, choose **Copy Invite**
+   and send the complete invitation to your collaborator.
+3. To join, choose **Join** and paste that full invitation once. Wait for the
+   host's room to respond. **You’re in** means the Art room is connected.
+   Art does not launch Jamulus or ask you to prove Music audio.
+4. Work with your own tools, open **Conversation** for an optional meeting or
+   shared demonstration, or follow the host's silent local video in **Paint
+   along**. A shared canvas opens only when you choose it.
+5. If the room loses contact, follow its reconnecting or recovery guidance.
+   Use **Paste New Invite** with a fresh invitation when the old one may have
+   been used. Older peers must update WebJam before using a fresh invitation.
+6. Choose **End Room** as host or **Leave Room** as guest. If cleanup needs
+   another attempt, use **Try End Room** or **Try Leave Room**. Your external
+   meeting and drawing app remain open.
+
+## Host with live audio
+
+These steps apply to Music, Podcast & Voice, and Review & Rehearsal.
 
 1. Open WebJam, choose a creator profile, then choose **Host**, **Host Remote
    Recording**, or **Host Review** as shown for that profile.
@@ -75,7 +96,10 @@ can follow there; **Paint along** is the separate silent local-video option.
     Original is one mono file; each planned stereo Local Original is one true
     two-channel file.
 
-## Join
+## Join with live audio
+
+These steps apply when the host is using Music, Podcast & Voice, or Review &
+Rehearsal. An Art invitation follows the room steps above.
 
 1. Open the invite or choose the profile's **Join**, **Join Recording**, or
    **Join Review** action and paste the complete invitation once. The field is
@@ -90,16 +114,16 @@ can follow there; **Paint along** is the separate silent local-video option.
 
 ## Important boundaries
 
-- Do not select Jamulus music devices in WebJam; Jamulus owns them.
-- Do not expect a meeting service to carry the music; it is optional
-  conversation/video.
+- For live audio, select music devices in Jamulus. Art needs no Jamulus setup.
+- Music uses Jamulus for music. An optional meeting supports talking, video,
+  and demonstrations in Art or Music.
 - Any provider's link must be public HTTPS with a DNS hostname. Local/private
   destinations, IP-literal hosts, embedded credentials, and custom ports are
   refused.
 - **Show Webex App** activates or launches the verified app itself without a
-  meeting link or browser; Webex chooses its own screen. **Open Webex to Mute** shows
-  the verified app for its own Mute control; WebJam does not claim to change or
-  verify Webex mute. Those focus actions are currently macOS-only; Windows and
+  meeting link or browser; Webex chooses its own screen. Use the meeting app's
+  own microphone and sharing controls. Art has no Music mute control. Native
+  app focus is currently macOS-only; Windows and
   Linux use **Join / Open Meeting**.
 - Do not configure Local Originals before joining. The host’s first **Record
   Session** click is when that choice matters.

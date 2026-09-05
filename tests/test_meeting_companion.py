@@ -392,3 +392,54 @@ def test_no_copy_claims_webjam_joined_or_muted_a_meeting():
     ):
         assert claim not in text
     assert "does not change or verify" in surface.meeting.hint
+
+
+@pytest.mark.parametrize("meeting_url", ["", MEETING_URL, "https://zoom.us/j/123"])
+def test_art_invite_describes_own_tools_and_optional_work_sharing(meeting_url):
+    message = build_invite_message(
+        join_link=JOIN_LINK,
+        meeting_url=meeting_url,
+        creator_profile_key="art",
+        song_line="A saved Music song",
+    )
+    assert JOIN_LINK in message.text.splitlines()
+    assert message.text.startswith("Join this art room on WebJam:")
+    assert "own tools" in message.text
+    assert "paper" in message.text
+    assert "usual app" in message.text
+    for phrase in ("carries the music", "between takes", "need it to play", "Song:"):
+        assert phrase not in message.text
+    if meeting_url:
+        assert message.includes_meeting
+        assert meeting_url in message.text.splitlines()
+        assert "conversation and work sharing" in message.text
+        assert "separate and optional" in message.text
+        assert "WebJam does not run it" in message.text
+    else:
+        assert not message.includes_meeting
+        assert "without a meeting" in message.text
+
+
+@pytest.mark.parametrize("profile", ["art", "music"])
+@pytest.mark.parametrize("meeting_url", ["", MEETING_URL])
+def test_v3_message_names_manual_paste_and_preserves_the_complete_invitation(profile, meeting_url):
+    from core.remote_invitation import issue_remote_invitation
+    from webjam_qt.invitation_ingress import InvitationSource, parse_invitation_at_ingress
+
+    issued = issue_remote_invitation(
+        "reference-local",
+        allowed_profiles={"reference-local"},
+        host_spki_sha256=b"p" * 32,
+    )
+    link = issued.private_link.reveal_for_clipboard()
+    message = build_invite_message(
+        join_link=link, meeting_url=meeting_url, creator_profile_key=profile,
+    )
+    assert "Open WebJam, choose Join, then paste this full invitation." in message.text
+    assert message.text.splitlines().count(link) == 1
+    assert "Open the link in WebJam" not in message.text
+    parsed = parse_invitation_at_ingress(message.text, source=InvitationSource.PASTE)
+    assert parsed.host_spki_sha256 == issued.invitation.host_spki_sha256
+    assert parsed.capability_for_enrollment() == issued.invitation.capability_for_enrollment()
+    if profile == "art":
+        assert "carries the music" not in message.text

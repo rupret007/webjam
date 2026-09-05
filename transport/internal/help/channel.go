@@ -147,6 +147,14 @@ func NewChannel(
 	return newChannel(plane, role, generation, time.Now)
 }
 
+// NewWithPlane shares a single authenticated reliable receiver with typed room state.
+func NewWithPlane(plane interface {
+	Send(context.Context, wire.StreamFrame) error
+	Accept(context.Context) (wire.StreamFrame, error)
+}, role Role, generation uint32) (*Channel, error) {
+	return newChannel(plane, role, generation, time.Now)
+}
+
 func newChannel(
 	plane reliablePlane,
 	role Role,
@@ -294,6 +302,12 @@ func (c *Channel) Receive(ctx context.Context) (Event, error) {
 	if err != nil {
 		return Event{}, err
 	}
+	return c.HandleFrame(ctx, stream)
+}
+
+// HandleFrame validates a frame supplied by the sole reliable dispatcher.
+func (c *Channel) HandleFrame(ctx context.Context, stream wire.StreamFrame) (Event, error) {
+	var err error
 	if stream.Kind != wire.StreamKindControl {
 		return Event{}, ErrInvalidMessage
 	}

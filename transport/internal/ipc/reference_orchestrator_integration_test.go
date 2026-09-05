@@ -88,37 +88,66 @@ func TestRunnerHostAndGuestThroughIndependentReferenceRelay(t *testing.T) {
 		t.Fatalf("host authenticated boundary = %+v; stage=%s", hostConnected, observedFailure(hostFailures))
 	}
 
-	host.send(t, `{"version":1,"id":3,"type":"send_help","generation":7,"text":"Try headphones — café"}`)
+	// Art follow works before either app sends Session help. This is a full
+	// initial snapshot of already-shared video/canvas, not a presence-only badge.
+	initialRoom := ipcRoomState()
+	host.send(t, roomCommand(t, 3, 7, initialRoom))
+	if accepted := host.next(t); accepted.Type != "room_state_accepted" || accepted.RequestID != 3 {
+		t.Fatal("initial room state not accepted")
+	}
+	initialReceived := guest.next(t)
+	if initialReceived.Type != "room_state_received" || initialReceived.RoomState == nil || *initialReceived.RoomState != *initialRoom {
+		t.Fatal("initial host Art state did not reach the guest")
+	}
+	host.send(t, roomCommand(t, 4, 7, initialRoom))
+	if replay := host.next(t); replay.Type != "error" || replay.Code != CodeRoomInvalid {
+		t.Fatal("replayed host revision accepted")
+	}
+	guest.send(t, roomCommand(t, 3, 7, initialRoom))
+	if rejected := guest.next(t); rejected.Type != "error" || rejected.Code != CodeRoomInvalid {
+		t.Fatal("guest published host Art state")
+	}
+	initialRoom.Revision = 2
+	initialRoom.ReferenceVideo.PositionS = 5
+	host.send(t, roomCommand(t, 5, 7, initialRoom))
+	if accepted := host.next(t); accepted.Type != "room_state_accepted" {
+		t.Fatal("follow refresh rejected")
+	}
+	if received := guest.next(t); received.Type != "room_state_received" || received.RoomState.ReferenceVideo.PositionS != 5 {
+		t.Fatal("host playback refresh lost")
+	}
+
+	host.send(t, `{"version":1,"id":10,"type":"send_help","generation":7,"text":"Try headphones — café"}`)
 	hostAccepted := host.next(t)
-	if hostAccepted.Type != "help_accepted" || hostAccepted.ID != 3 ||
-		hostAccepted.RequestID != 3 || hostAccepted.Text != "" {
+	if hostAccepted.Type != "help_accepted" || hostAccepted.ID != 10 ||
+		hostAccepted.RequestID != 10 || hostAccepted.Text != "" {
 		t.Fatalf("host help acceptance = %+v", hostAccepted)
 	}
 	guestReceived := guest.next(t)
 	if guestReceived.Type != "help_received" || guestReceived.ID != 0 ||
-		guestReceived.RequestID != 3 || guestReceived.Text != "Try headphones — café" {
+		guestReceived.RequestID != 10 || guestReceived.Text != "Try headphones — café" {
 		t.Fatalf("guest did not receive the authenticated help message")
 	}
 	hostDelivered := host.next(t)
 	if hostDelivered.Type != "help_delivered" || hostDelivered.ID != 0 ||
-		hostDelivered.RequestID != 3 || hostDelivered.Text != "" {
+		hostDelivered.RequestID != 10 || hostDelivered.Text != "" {
 		t.Fatalf("host help delivery receipt = %+v", hostDelivered)
 	}
 
-	guest.send(t, `{"version":1,"id":3,"type":"send_help","generation":7,"text":"I can hear you now"}`)
+	guest.send(t, `{"version":1,"id":10,"type":"send_help","generation":7,"text":"I can hear you now"}`)
 	guestAccepted := guest.next(t)
-	if guestAccepted.Type != "help_accepted" || guestAccepted.ID != 3 ||
-		guestAccepted.RequestID != 3 || guestAccepted.Text != "" {
+	if guestAccepted.Type != "help_accepted" || guestAccepted.ID != 10 ||
+		guestAccepted.RequestID != 10 || guestAccepted.Text != "" {
 		t.Fatalf("guest help acceptance = %+v", guestAccepted)
 	}
 	hostReceived := host.next(t)
 	if hostReceived.Type != "help_received" || hostReceived.ID != 0 ||
-		hostReceived.RequestID != 3 || hostReceived.Text != "I can hear you now" {
+		hostReceived.RequestID != 10 || hostReceived.Text != "I can hear you now" {
 		t.Fatalf("host did not receive the authenticated help message")
 	}
 	guestDelivered := guest.next(t)
 	if guestDelivered.Type != "help_delivered" || guestDelivered.ID != 0 ||
-		guestDelivered.RequestID != 3 || guestDelivered.Text != "" {
+		guestDelivered.RequestID != 10 || guestDelivered.Text != "" {
 		t.Fatalf("guest help delivery receipt = %+v", guestDelivered)
 	}
 
@@ -157,12 +186,12 @@ func TestRunnerHostAndGuestThroughIndependentReferenceRelay(t *testing.T) {
 	// Explicit close revokes the current host registration but retains the
 	// prepared identity. A fresh transport invitation can register immediately
 	// without rotating the pin out from under the desktop owner.
-	host.send(t, `{"version":1,"id":4,"type":"close_peer"}`)
-	if closed := host.next(t); closed.Type != "peer_closed" || closed.ID != 4 {
+	host.send(t, `{"version":1,"id":11,"type":"close_peer"}`)
+	if closed := host.next(t); closed.Type != "peer_closed" || closed.ID != 11 {
 		t.Fatalf("host close boundary = %+v", closed)
 	}
 	resetFields := openFields(
-		5, "host", profile.ReferenceLocalID, expiresAt,
+		12, "host", profile.ReferenceLocalID, expiresAt,
 		jamulus.LocalAddr().(*net.UDPAddr).Port, "",
 	)
 	// Reset Invite preserves the logical session reference, but rotates the
@@ -173,19 +202,51 @@ func TestRunnerHostAndGuestThroughIndependentReferenceRelay(t *testing.T) {
 	resetFields["generation"] = uint32(8)
 	host.send(t, string(mustJSON(t, resetFields)))
 	resetRegistered := host.next(t)
-	if resetRegistered.Type != "host_registered" || resetRegistered.ID != 5 ||
+	if resetRegistered.Type != "host_registered" || resetRegistered.ID != 12 ||
 		resetRegistered.Generation != 8 || resetRegistered.State != "host_waiting" {
 		t.Fatalf("host reset registration = %+v", resetRegistered)
 	}
-	host.send(t, `{"version":1,"id":6,"type":"close_peer"}`)
-	if closed := host.next(t); closed.Type != "peer_closed" || closed.ID != 6 {
+	// A new desktop knows only the invitation, not the host's local counter.
+	// Its local generation starts at one while the host is at eight. Their
+	// IPC facts retain those unequal local generations; the authenticated wire
+	// epoch belongs to this one-use invitation. Old local commands still fail.
+	resetGuest := newRunnerHarnessWithTimeout(t, systemEndpointFactory{}, &referenceFabricOrchestrator{now: time.Now}, now, 15*time.Second, 8*time.Second)
+	defer resetGuest.stop(t)
+	resetGuest.next(t)
+	resetGuestFields := openFields(2, "guest", profile.ReferenceLocalID, expiresAt, 0, prepared.HostSPKISHA256)
+	resetGuestFields["invite_reference"] = fixedBase64(16, 8)
+	resetGuestFields["enrollment_capability"] = fixedBase64(32, 9)
+	resetGuestFields["generation"] = uint32(1)
+	resetGuest.send(t, string(mustJSON(t, resetGuestFields)))
+	if connected := resetGuest.next(t); connected.Type != "peer_connected" || connected.Generation != 1 {
+		t.Fatal("fresh guest did not authenticate")
+	}
+	if connected := host.next(t); connected.Type != "peer_connected" || connected.Generation != 8 {
+		t.Fatal("host did not adopt reset generation")
+	}
+	host.send(t, roomCommand(t, 15, 7, ipcRoomState()))
+	if stale := host.next(t); stale.Code != CodeRoomNotReady {
+		t.Fatal("old generation published after reset")
+	}
+	host.send(t, roomCommand(t, 16, 8, ipcRoomState()))
+	if accepted := host.next(t); accepted.Type != "room_state_accepted" {
+		t.Fatal("fresh generation retained stale room revision")
+	}
+	if received := resetGuest.next(t); received.Type != "room_state_received" || received.Generation != 1 || received.RoomState.Revision != 1 {
+		t.Fatal("reset room state not delivered")
+	}
+	host.send(t, `{"version":1,"id":13,"type":"close_peer"}`)
+	if closed := host.next(t); closed.Type != "peer_closed" || closed.ID != 13 {
 		t.Fatalf("reset close boundary = %+v", closed)
 	}
 
+	resetGuest.send(t, `{"version":1,"id":3,"type":"shutdown"}`)
+	waitForRunnerEvent(t, resetGuest, "stopped")
+
 	// Shutdown remains bounded even though the guest observes the host-side
 	// connection close independently.
-	host.send(t, `{"version":1,"id":7,"type":"shutdown"}`)
-	guest.send(t, `{"version":1,"id":4,"type":"shutdown"}`)
+	host.send(t, `{"version":1,"id":14,"type":"shutdown"}`)
+	guest.send(t, `{"version":1,"id":11,"type":"shutdown"}`)
 	waitForRunnerEvent(t, host, "stopped")
 	waitForRunnerEvent(t, guest, "stopped")
 }

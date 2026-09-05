@@ -435,3 +435,55 @@ def test_runtime_help_failures_never_expose_backend_text(caplog, error_type) -> 
     assert "PRIVATE-MESSAGE-SENTINEL" not in str(caught.value)
     assert "PRIVATE-MESSAGE-SENTINEL" not in caplog.text
     runtime.stop()
+
+
+def test_missing_authenticated_room_profile_preserves_bounded_update_reason() -> None:
+    pending, seen = [], []
+    runtime = RemoteSessionRuntime(Backend(), on_snapshot=seen.append, schedule_callback=pending.append)
+    runtime.start_guest(_invitation())
+    connected = runtime.wait_until_settled()
+    assert connected.phase is RemoteSessionPhase.CONNECTED
+    assert runtime.mark_connection_lost(
+        expected_generation=connected.generation,
+        error_code=RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED,
+    )
+    assert runtime.snapshot.phase is RemoteSessionPhase.FAILED
+    assert runtime.snapshot.error_code is RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED
+    assert not runtime.snapshot.invitation_retry_safe
+    for callback in pending:
+        callback()
+    assert [snapshot.error_code for snapshot in seen] == [RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED]
+    runtime.stop()
+
+
+@pytest.mark.parametrize("reason", ["private detail", "peer_protocol_unsupported", RemoteSessionErrorCode.UNAVAILABLE])
+def test_connection_loss_rejects_freeform_or_retry_safe_reason(reason) -> None:
+    runtime = RemoteSessionRuntime(Backend(), on_snapshot=lambda _snapshot: None)
+    runtime.start_guest(_invitation())
+    connected = runtime.wait_until_settled()
+    try:
+        with pytest.raises(ValueError, match="^The connection loss reason is not supported.$"):
+            runtime.mark_connection_lost(expected_generation=connected.generation, error_code=reason)
+        assert runtime.snapshot is connected
+    finally:
+        runtime.stop()
+
+
+@pytest.mark.parametrize("wrong_generation", [2, True])
+def test_backend_cannot_replace_local_generation_with_wire_or_stale_value(wrong_generation) -> None:
+    class WrongGenerationBackend(Backend):
+        def start_guest(self, invitation, *, generation):
+            assert generation == 1
+            return RemoteGuestConnection(
+                loopback_port=34001, path=TransportPath.SECURE_RELAY,
+                quality=ConnectionQuality.UNKNOWN, generation=wrong_generation,
+            )
+
+    runtime = RemoteSessionRuntime(WrongGenerationBackend(), on_snapshot=lambda _snapshot: None)
+    runtime.start_guest(_invitation())
+    result = runtime.wait_until_settled()
+    assert result.phase is RemoteSessionPhase.FAILED
+    assert result.error_code is RemoteSessionErrorCode.INVITATION_UNUSABLE
+    assert result.generation == 1
+    assert not result.invitation_retry_safe
+    runtime.stop()

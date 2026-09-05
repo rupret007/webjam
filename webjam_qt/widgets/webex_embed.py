@@ -598,7 +598,11 @@ class WebexEmbed(QFrame):
     def _sync_native_actions(self) -> None:
         enabled = self._native_app_available and not self._native_action_busy
         self._bring_forward_btn.setEnabled(enabled)
-        self._mute_btn.setEnabled(enabled)
+        # Art uses conversation and work sharing directly in the meeting.
+        # The Music-specific shortcut to its mute controls is not a room task.
+        show_mute = self._creator_profile_key != "art"
+        self._mute_btn.setVisible(show_mute)
+        self._mute_btn.setEnabled(enabled and show_mute)
         self._recheck_btn.setEnabled(not self._native_action_busy)
         label = (
             "Verifying…"
@@ -640,13 +644,14 @@ class WebexEmbed(QFrame):
     def set_creator_profile(self, profile) -> None:
         self._creator_profile_key = profile.key
         self._render_audio_guidance()
+        self._sync_native_actions()
 
     def _render_audio_guidance(self) -> None:
         service = self._service_label
         if self._creator_profile_key == "art":
             self._title_label.setText("Conversation")
             self._mode_label.setText(
-                f"Talk and share a demonstration in {service or 'Webex or your meeting app'}. "
+                f"Talk and share a demonstration in {service or 'Webex or your meeting app'} if you like. "
                 "Use your own tools. Paint along plays a separate silent local video."
             )
             return

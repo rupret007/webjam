@@ -1,41 +1,57 @@
-# Pre-Karen QA
+# Pre-Karen QA — Art participant, door, and End/Leave
 
-**Product QA PASS. Integrity PASS.** Reviewed product commit `49acdb5b7f4293bb3ad95fd53c3125a4bf7a8fbb` after Worth-Building W1–W10 passed. The weighted rubric scores 68/74 at this phase: all 19 product must-haves plus local verification and Worth-Building criteria pass; hosted Actions and final external handoff remain explicitly pending. They must pass before goal completion. This is the historical Phase 3 evaluation; the final all-criteria evaluation and exact head evidence belong in the draft PR body and the actual Bob-the-Bot #3 AFTER.
+2026-09-05 CT; branch `codex/webjam-art-participant-door`; base
+`7f38ba20eb71afffdb37a8d03d29248abfdee1de`.
 
-## Claims challenged
+**Product QA PASS. Integrity PASS.** This reviews the current Art slice,
+not historical #68. Final full-suite and hosted results must be attached to the
+exact committed tip before handoff. The immutable final SHA,
+local results, hosted run URLs, and Bob handoff belong in the open draft PR.
+Hosted SUCCESS including four desktop builds is required before lease release.
 
-| Claim | Static proof | Happy path | Failure/adversarial proof |
-| --- | --- | --- | --- |
-| Artists know where to start | `core/creative_modes.py`, `webjam_qt/windows/launch_dialog.py`; own-tools Make together, silent local Paint along | `test_art_start_ux.py`, `test_feel_pass.py`: exact Art/Music controls and larger squirrel mark only on Paint along | `test_ui_redesign_regressions.py`: 760×600 envelope, preserved title-bar allowance, focus/default and nonoverlap checks; Windows Help setup navigation; whole visible/a11y door gate |
-| Optional creative tools remain reachable | `core/art_room_presence.py`, `webjam_qt/widgets/webex_embed.py` | `test_shared_canvas_ui.py`: actual explicit share publishes and keeps a persistent route; `test_art_meeting_coexistence.py`: Conversation beside local video | Empty own-tools room has no canvas requirement; retired paint_together migrates; missing tools remain truthful; no meeting opens or audio taps merely by showing Conversation |
-| Recovery has one truthful action | `core/session_conductor.py`, `core/musician_guidance.py`, controller finite failure map | `test_host_share_join_flow.py`: successful invite/host/join and File project bootstrap; `test_unified_musician_guidance.py`: shared HUD/Notes/Pocket action | Consumed invite → Paste New Invite; failed cleanup → Close Setup, retry_safe=False; cancelling → disabled Wait; stale generation/revision falls back; actual failure history/export never claims safe retry |
-| Local notes survive normal failure | `session_persistence.py`, `session_canvas.py`, `notes_recovery_dialog.py` | `test_session_persistence.py`: save/load/profile round trip and edit-versus-restore notifications; accepted suggestion autosave with unchanged Song tools | UTF-8 one-MiB boundary, oversized drafts, unreadable original, failed write, symbolic link, hidden workspace recovery, stale modal edit/export, quit veto before teardown |
-| Recording readiness helps without starting a take | `core/recording_readiness_presentation.py`, `recording_coordinator.py`, `windows/recording_readiness.py` | `test_recording_readiness_ui.py`, `test_server_rpc_and_record_button.py`: Setup focus/Enter, exact pending plan retirement and fresh next preflight | No storage-reservation claim; no server/guest/local recording starts from recovery; stale/replaced or advanced plan decisions cannot affect a newer owner |
-| Studio edits remain recoverable | `core/studio_store.py`, `core/studio_controller.py`, `widgets/studio_editing.py` | All focused model/store/history/controller/renderer/comping/waveform/export/Qt suites; save/reopen/undo/redo and synthetic multi-source lab | Oversized primary retained until successful replacement; final-sync failure keeps exact retry token and dirty/history state; different/intervening bytes conflict; invalid marker/section paste leaves document unchanged with visible recovery |
-| Pocket stays bounded | `core/pocket_stage.py`, `ios/PocketStage/StageConnectionModel.swift`; unchanged seven-command allowlists | Python gateway/TLS/controller/pairing tests, Swift protocol/transport 20 tests, actual pinned-WSS Swift/Python interoperability | New actions are display facts only; no phone recovery command. Gateway off by default, private bind, one-use QR, fresh pairing, generation/revision guards and no phone audio/chat/solo/Studio transport remain enforced |
-| Help and maturity claims match source | `FIRST_JAM.md`, `USER_GUIDE.md`, `QUICK_HELP_MAP.md`, `HELP_ROUTING_MAP.md`, `README_SIMPLE.md` | Routes map to actual File/Help, Notes, Recording Setup, Conversation and in-room controls | Art stays Preview; Music/Podcast GA classifications remain; immutable v0.27.2 package click and physical ledger are not rewritten as current source proof |
+| Claim challenged | Direct proof and failure coverage |
+| --- | --- |
+| An Art guest can join without Music audio | Actual controller tests discover Art from a saved Music profile, enter from the first idle LAN snapshot or native host state, and leave without starting Jamulus or a recording owner. The same discovery hands a confirmed Music host back to existing audio startup. |
+| Connected means current room evidence | LAN membership requires a fresh authenticated state read, not enrollment alone. Native receipt/source/generation/revision checks run before queueing and delivery. First-profile timeout and stale initial state give bounded update/rejoin guidance. UI ticks do not refresh video receipt age. |
+| Follow-along does useful work | Two real controllers use existing same-file matching and silent video follow. Wrong files remain blocked. Canvas invitation follows without auto-launch, then withdraws. Reset retires old video/canvas identity before creating the replacement invitation. |
+| Native transport survives a real reset | Two real sidecar processes exercise cached initial state, live follow/withdrawal, Help in both directions, audio datagrams, rate limits, replay rejection, reset, and loss. Reset uses an invitation-scoped wire epoch; a fresh guest need not know the host's local generation. |
+| End/Leave is truthful | One cleanup worker retains failed owners for retry, fences late callbacks and pending host construction, and preserves real residual recording/server ownership. Pure Art skips recorder finalization. Failed profile restoration remains retryable without mixing local Notes namespaces. |
+| Artists understand the door | Actual native widget tests cover exact control inventory, click/Space selection, compact geometry, nonoverlap, accessible invitation error replacement, and white focus versus burnt-orange selection. The Paint along mark stays neutral in all native icon modes. |
+| Claims stay within evidence | Private payloads remain out of representations, diagnostics, support history, and persistence. Art is Preview; Music readiness remains based on audio evidence. Optional meeting/canvas launch remains explicit. |
 
-## Integrity review
+## Verification record
 
-- The exact-tip rerun exposed a clock-dependent presence snapshot comparison (15,000 versus 14,999 ms). The original exact equality/replay/generation assertions remain intact with an injected frozen clock. An added advancing-clock test proves reinstalling the same roster does not extend its lease.
-- No test was skipped or deleted to obtain green. One legacy Art migration test was renamed because the owner explicitly removed automatic canvas intent; the same persisted-key migration remains covered, with additional real optional-share/publication coverage.
-- Retired launch-button assertions were replaced with exact current control inventories, real File/Help dispatch and installer-page geometry. All previous size ceilings, title-bar allowance, default/focus rules, containment and overlap requirements were retained.
-- The first-screen harvester now includes the entire visible dialog and visible menu titles; it no longer hides installer/extra-room controls from the gate. Banned-word negative tests still fail closed.
-- The baseline finite hosted-server mock leaked into later window disposal. Its owner now scopes the original finite response sequence and disposes its window; no assertions or cases were removed.
-- Full-suite investigation exposed a completed controller asking a second close question from stale process information. Only successfully completed shutdown bypasses that prompt; incomplete cleanup still vetoes unsafe teardown.
-- A committed-diff boundary test rejected simultaneous Song-tools and session-authority changes. The test is unchanged; Song-tools source and tests were restored exactly to master. Notes owns edit notifications and its explicit silent restore path. Accepted-suggestion autosave is still tested through the real unchanged caller.
-- No mass source renames, dependency/lockfile/framework changes, workflow changes, provider calls, spend, or implementation outside WebJam. Existing neutral/burnt-orange palette tests pass in the focused and full suites. The rendered Paint along mark additionally passes neutral-pixel checks in every native icon mode/state; its original artwork and size remain intact.
-- Only the new branch based on origin/master was edited. Bob's independently merged #67 arrived through master; its branch and parked #37/#49 were not checkout, push or PR targets. Pre-existing canonical edits remain preserved in stash `9fb1e87c4490176f471a4923d59beeefb503452a` (`preserve-canonical-before-webjam-finish-ultra-20260904`) from `codex/webjam-v0272-source-identity`; it was not applied or dropped.
-- No master merge, tag, signing, notarization, release or device installation. No custom diagnostic pytest plugin, skipped failing modules, retries or warning filters were added to the verification commands.
+- Initial full integration run: 7 failed, 6973 passed, 26 skipped, 99 subtests.
+  Two legacy test doubles lacked the new host-profile discovery contract;
+  five failures exposed a Qt thread lookup on an uninitialized fixture owner.
+  The doubles now exercise the real discovery ordering and retain their
+  original assertions; the controller dispatches through its actual UI invoker.
+- Subsequent unfiltered full run: 6985 passed, 26 skipped, 3 warnings,
+  99 subtests in 256.18 seconds. Ruff, compileall, pip check, and UX smoke passed.
+- Final review additionally fixed pending-profile cleanup dispatch and failure
+  rollback of the borrowed profile, Notes namespace, and title. Focused proof:
+  60 passed, 2 subtests; final recovery module: 6 passed. A real Notes edit during
+  failed Art cleanup stays in Art and leaves the saved Music notes intact.
+- The final source rerun had 6985 passed, 26 skipped, 99 subtests, and one guide
+  wording failure. The guide now retains the exact two-Art-choice and Music
+  Host/Join instructions; the unchanged guide contract module passes all 11
+  tests. A full unfiltered rerun on the committed tip remains mandatory; its
+  final result is recorded in the draft PR alongside hosted evidence.
+- Go `make check`, `go test -race -count=1 ./...`, `go mod verify`, and
+  `go mod tidy -diff` passed (12 tested packages). The two opt-in real-process
+  modules passed together: 2 passed in 1.09 seconds. Their hosted invocation
+  builds the sidecar from the exact checked-out commit.
 
-- A combined focused process also hit native Qt garbage collection. Reference Studio test fixtures now explicitly shut down both project and embedded take-review owners and delete their shell while QApplication is alive. All assertions remain. Focused verification uses the existing CI per-module process isolation; the separate raw full `pytest -q` is still required.
+No failing test was removed, skipped, weakened, or retried to obtain green.
+The full local command is raw `pytest -q` with Qt offscreen; no custom plugin,
+warning filter, or exclusion was added. Hosted CI retains its existing
+per-module Qt process isolation and now includes the new real-process module.
+No dependency or lockfile changes. All pre-existing local work and stashes
+remain preserved; only the authorized branch is a commit/push target.
 
-- Fixed-matrix repetition exposed one unidentified intermittent companion failure. Two diagnostic batches passed unchanged; review then deterministically reproduced malformed export fakes at the real completion callback. The fixtures now use typed results and assert completed ready/reveal state; podcast bounce awaits current overdub media verification. Original assertions and timeouts are retained. Final standard qualification remains required.
-
-## Evidence and limits
-
-`WORTH_BUILDING.md` records the full and focused counts and exact product revision. `docs/codex-finish-ultra-log.md` records failed attempts and corrections, rather than presenting intermediate failures as green. Final local checks, hosted run URLs and exact draft SHA belong in the PR and Bob handoff after Phase 4.
-
-The existing optional/platform skips are retained; the opt-in Swift interoperability test is additionally executed. Dependency deprecation warnings are reported without suppression. A prior full run also observed a fake RPC server's connection-reset thread warning; this is not evidence of physical RPC or audio behavior.
-
-**NOT RUN:** physical two-Mac audio and interface recovery; external-editor and physical output; live meeting-provider calls; installed iPhone camera/Local Network/firewall/pairing/accessibility and long-session behavior; immutable v0.27.2 package click/feel; Windows/macOS platform-trust decisions; signing/notarization/release. Synthetic media and local WSS automation do not establish these outcomes. Jeff retains these gates.
+**NOT RUN / Jeff-only:** physical two-computer audio/output and interfaces;
+external-editor/device pairing; installed-phone behavior; public rendezvous;
+live meeting-provider calls; immutable unsigned v0.27.2 package click/feel;
+platform trust, signing, notarization, tags, and releases. No merge, release,
+or public-service activation is part of this draft. #37/#49 remain parked;
+the #67 branch remains untouched.

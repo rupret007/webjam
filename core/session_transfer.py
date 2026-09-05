@@ -4309,6 +4309,9 @@ class SessionPeerServer:
         self.registry = registry
         self.control = control
         self.transfers = transfers
+        self._room_poll_lock = threading.Lock()
+        self._room_poll_clock = time.monotonic
+        self._room_polls: dict[str, float] = {}
         self._httpd = _ReusableThreadingHTTPServer((host, int(port)), self._handler())
         self._thread: threading.Thread | None = None
 
@@ -4316,6 +4319,19 @@ class SessionPeerServer:
     def address(self) -> tuple[str, int]:
         host, port = self._httpd.server_address[:2]
         return str(host), int(port)
+
+    def room_participants(self, *, now: float | None = None) -> frozenset[str]:
+        """Fresh authenticated state readers; never recording/mixer presence."""
+
+        if self._httpd.stopping:
+            return frozenset()
+        observed = self._room_poll_clock() if now is None else now
+        with self._room_poll_lock:
+            self._room_polls = {
+                key: seen for key, seen in self._room_polls.items()
+                if 0 <= observed - seen < 5.0
+            }
+            return frozenset(self._room_polls)
 
     def _handler(self):
         owner = self
@@ -4573,6 +4589,10 @@ class SessionPeerServer:
                     self._json(HTTPStatus.OK, asdict(challenge))
                     return
                 if parsed.path == "/v1/state":
+                    # Authentication above is required. Enrollment alone is
+                    # deliberately not evidence of an artist still being here.
+                    with owner._room_poll_lock:
+                        owner._room_polls[participant_id] = owner._room_poll_clock()
                     snapshot = owner.control.snapshot_for_participant(participant_id)
                     if (
                         owner.registry.presence_v2_configured()
@@ -4701,6 +4721,8 @@ class SessionPeerServer:
 
     def stop(self) -> None:
         self._httpd.begin_shutdown()
+        with self._room_poll_lock:
+            self._room_polls.clear()
         if self._thread is None:
             self._httpd.server_close()
             return

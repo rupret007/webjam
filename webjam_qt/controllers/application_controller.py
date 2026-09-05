@@ -26,7 +26,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QObject, Qt, QTimer
+from PySide6.QtCore import QObject, Qt, QThread, QTimer
 from PySide6.QtWidgets import QDialog, QMessageBox
 
 from core.creative_modes import (
@@ -61,6 +61,7 @@ from core.pocket_stage import (
 )
 from core.remote_invitation import RemoteInvitation
 from core.session_conductor import (
+    ArtRoomState,
     CleanupState,
     EvidenceState,
     ExportState,
@@ -493,10 +494,15 @@ class ApplicationController(QObject):
         self._guest_peer_configuration_failed = False
         self.guest_peer: GuestPeerSession | None = None
         self._shared_track_peer_publish_failed = False
+        from webjam_qt.controllers.room_participant import RoomParticipantController
+
+        self._room_participant = RoomParticipantController(self)
         if session_invite is not None and bool(
             getattr(session_invite, "peer_enabled", False)
         ):
-            self._configure_guest_peer(session_invite)
+            self._guest_invite = session_invite
+            self._room_participant.probing = True
+            self._room_participant.role = "guest"
 
         # Companion API — optional localhost HTTP bridge for DAWs/editors.
         # Constructed here (no side effects) but only started in
@@ -1305,6 +1311,41 @@ class ApplicationController(QObject):
         self._shutdown = True
         return True
 
+    def _art_room_active(self) -> bool:
+        room = getattr(self, "_room_participant", None)
+        audio = getattr(self, "audio", None)
+        cleanup = bool(getattr(audio, "_stop_art_room", False) and (
+            getattr(audio, "stopping", False) or getattr(audio, "cleanup_retry_required", False)
+        ))
+        return bool(cleanup or (room is not None and room.active))
+
+    def _room_is_busy_for_invitation(self) -> bool:
+        room = getattr(self, "_room_participant", None)
+        return bool(getattr(self, "_remote_host_preparing", False) or (
+            room is not None and room.active and not room.probe_failed
+            and room.state is not ArtRoomState.FAILED
+        ))
+
+    @property
+    def _art_room_role(self) -> str:
+        room = getattr(self, "_room_participant", None)
+        audio = getattr(self, "audio", None)
+        if bool(getattr(audio, "_stop_art_room", False)) and (
+            getattr(audio, "stopping", False) or getattr(audio, "cleanup_retry_required", False)
+        ):
+            return "host" if getattr(audio, "_stop_hosting", False) else "guest"
+        return room.role if room is not None else ""
+
+    def _finish_art_room_profile_restore(self) -> None:
+        restore = getattr(self, "_pending_room_profile_restore", None)
+        if callable(restore):
+            restore()
+        self._pending_room_profile_restore = None
+
+    def _room_host_publisher(self):
+        room = getattr(self, "_room_participant", None)
+        return room.host_publisher() if room is not None else getattr(self, "host_peer", None)
+
     def _configure_guest_peer(self, invite) -> bool:
         """Install a replacement v2 transfer peer without orphaning its owner.
 
@@ -1472,6 +1513,12 @@ class ApplicationController(QObject):
 
     def _stop_session_peer(self, *, clear_invite: bool = False) -> bool:
         cleanup_ok = True
+        room = getattr(self, "_room_participant", None)
+        if room is not None:
+            try:
+                cleanup_ok = room.stop_lan()
+            except Exception:
+                cleanup_ok = False
         guest = getattr(self, "guest_peer", None)
         if guest is not None:
             try:
@@ -1493,60 +1540,122 @@ class ApplicationController(QObject):
         # guest object after an unproved stop would orphan a private listener
         # while the UI falsely returned to idle.
         if cleanup_ok:
-            # The room is now proven stopped. Retire its session-keyed video
-            # signer, player, and embedded page synchronously instead of
-            # waiting for the next one-second Art presence tick.
-            ApplicationController._release_reference_video(self)
             self.guest_peer = None
             if clear_invite:
                 self._guest_invite = None
                 self._guest_peer_configuration_failed = False
             self._host_peer_warning = ""
-            clear_projection = getattr(
-                getattr(getattr(self, "window", None), "session_strip", None),
-                "clear_shared_track_projection",
-                None,
-            )
-            if callable(clear_projection):
-                invoker = getattr(self, "_ui_invoker", None)
-                invoke = getattr(invoker, "invoke", None)
-                if callable(invoke):
-                    invoke(clear_projection)
+            generation = room.generation if room is not None else None
+
+            def finish_room_ui() -> None:
+                if room is not None and room.generation != generation:
+                    return
+                ApplicationController._release_reference_video(self)
+                ApplicationController._release_shared_canvas(self)
+                ApplicationController._release_room_clock(self)
+                clear_projection = getattr(
+                    getattr(getattr(self, "window", None), "session_strip", None),
+                    "clear_shared_track_projection",
+                    None,
+                )
+                if callable(clear_projection):
+                    invoker = getattr(self, "_ui_invoker", None)
+                    invoke = getattr(invoker, "invoke", None)
+                    if callable(invoke):
+                        invoke(clear_projection)
+                    else:
+                        clear_projection()
+                restore_borrowed = bool(getattr(self, "_creator_profile_host_owned", False))
+                def restore_profile() -> None:
+                    if restore_borrowed:
+                        previous_profile = self._active_creator_profile_key
+                        previous_owner = self._creator_profile_host_owned
+                        persistence = getattr(self, "_persistence", None)
+                        previous_namespace = getattr(persistence, "profile_key", None)
+                        previous_borrowed_title = getattr(persistence, "_borrowed_title", None)
+                        strip = getattr(self.window, "session_strip", None)
+                        canvas = getattr(self.window, "session_canvas", None)
+                        current_title = getattr(strip, "current_title", None)
+                        current_notes = getattr(canvas, "current_notes", None)
+                        previous_title = current_title() if callable(current_title) else None
+                        previous_notes = current_notes() if callable(current_notes) else None
+                        try:
+                            saved_profile_key = (
+                                canonical_creator_profile_key(
+                                    getattr(self.settings, "last_creator_profile_key", "music")
+                                )
+                                or "music"
+                            )
+                            ApplicationController._apply_creator_profile_key(
+                                self,
+                                saved_profile_key,
+                                host_owned=False,
+                            )
+                            persistence = getattr(self, "_persistence", None)
+                            clear_borrowed_title = getattr(
+                                persistence,
+                                "clear_borrowed_title",
+                                None,
+                            )
+                            if callable(clear_borrowed_title):
+                                clear_borrowed_title()
+                            strip = getattr(getattr(self, "window", None), "session_strip", None)
+                            set_session_title = getattr(strip, "set_session_title", None)
+                            if callable(set_session_title):
+                                set_session_title(
+                                    _creator_profile_for_controller(self).default_template
+                                )
+                            load_metadata = getattr(
+                                persistence,
+                                "_load_session_metadata",
+                                None,
+                            )
+                            if callable(load_metadata):
+                                load_metadata()
+
+                        except Exception:
+                            self._active_creator_profile_key = previous_profile
+                            self._creator_profile_host_owned = previous_owner
+                            # Profile switching also changes the Notes owner.
+                            # Restore that namespace and the visible draft as
+                            # one unit before an artist can edit or save again.
+                            set_namespace = getattr(persistence, "set_profile_key", None)
+                            if callable(set_namespace) and previous_namespace is not None:
+                                set_namespace(previous_namespace)
+                            if previous_borrowed_title is None:
+                                restore_title_owner = getattr(persistence, "clear_borrowed_title", None)
+                                if callable(restore_title_owner):
+                                    restore_title_owner()
+                            else:
+                                restore_title_owner = getattr(persistence, "mark_title_borrowed", None)
+                                if callable(restore_title_owner):
+                                    restore_title_owner(previous_borrowed_title)
+                            restore_title = getattr(strip, "set_session_title", None)
+                            if callable(restore_title) and previous_title is not None:
+                                restore_title(previous_title)
+                            restore_notes = getattr(canvas, "restore_notes", None)
+                            if callable(restore_notes) and previous_notes is not None:
+                                restore_notes(previous_notes)
+                            refresh_notes = getattr(persistence, "_refresh_notes_state", None)
+                            if callable(refresh_notes):
+                                refresh_notes()
+                            setter = getattr(self.window, "set_creator_profile", None)
+                            if callable(setter):
+                                setter(self.creator_profile, locked=previous_owner)
+                            raise
+
+                audio = getattr(self, "audio", None)
+                if getattr(audio, "_stop_art_room", False) and getattr(audio, "stopping", False):
+                    if getattr(self, "_pending_room_profile_restore", None) is None:
+                        self._pending_room_profile_restore = restore_profile
                 else:
-                    clear_projection()
-            if bool(getattr(self, "_creator_profile_host_owned", False)):
-                saved_profile_key = (
-                    canonical_creator_profile_key(
-                        getattr(self.settings, "last_creator_profile_key", "music")
-                    )
-                    or "music"
-                )
-                ApplicationController._apply_creator_profile_key(
-                    self,
-                    saved_profile_key,
-                    host_owned=False,
-                )
-                persistence = getattr(self, "_persistence", None)
-                clear_borrowed_title = getattr(
-                    persistence,
-                    "clear_borrowed_title",
-                    None,
-                )
-                if callable(clear_borrowed_title):
-                    clear_borrowed_title()
-                strip = getattr(getattr(self, "window", None), "session_strip", None)
-                set_session_title = getattr(strip, "set_session_title", None)
-                if callable(set_session_title):
-                    set_session_title(
-                        _creator_profile_for_controller(self).default_template
-                    )
-                load_metadata = getattr(
-                    persistence,
-                    "_load_session_metadata",
-                    None,
-                )
-                if callable(load_metadata):
-                    load_metadata()
+                    restore_profile()
+
+            invoker = getattr(self, "_ui_invoker", None)
+            if isinstance(invoker, UiThreadInvoker) and QThread.currentThread() != invoker.thread():
+                invoker.invoke(finish_room_ui)
+            else:
+                finish_room_ui()
         return cleanup_ok
 
     def _on_peer_take_updated(
@@ -1684,8 +1793,10 @@ class ApplicationController(QObject):
         does not have; it falls back to the profile's room-first door.
         """
 
+        room = getattr(self, "_room_participant", None)
+        borrowed = room.borrowed_start if room is not None else ""
         return self.creator_profile.start_or_default(
-            getattr(getattr(self, "settings", None), "last_creator_start_key", "")
+            borrowed or getattr(getattr(self, "settings", None), "last_creator_start_key", "")
         )
 
     def _session_recording_control_available(self, *, hosting: bool | None = None) -> bool:
@@ -1746,6 +1857,9 @@ class ApplicationController(QObject):
                 timer.stop()
             return
         try:
+            room = getattr(self, "_room_participant", None)
+            if room is not None:
+                room.tick()
             self._sync_art_room_presence()
             self._maybe_open_paint_along()
         except Exception:  # noqa: BLE001 - room chrome never breaks the room
@@ -3960,6 +4074,8 @@ class ApplicationController(QObject):
 
     def _on_ready_check(self) -> None:
         """F2 — observe a live jam; Jamulus owns setup before it starts."""
+        if _creator_profile_for_controller(self).key == "art":
+            return
         if not self._is_jamulus_running():
             self.window.flash_message(
                 "Start or join a jam first. Jamulus owns your sound setup; "
@@ -3971,6 +4087,8 @@ class ApplicationController(QObject):
 
     def _open_band_check(self, *, start_session_when_ready: bool = False) -> None:
         """Open Band Check; optionally make it the unverified-start gate."""
+        if _creator_profile_for_controller(self).key == "art":
+            return
         from core.band_check import BandCheckMode
 
         if self._shutdown_cleanup_blocks_action():
@@ -4236,6 +4354,9 @@ class ApplicationController(QObject):
         ):
             self.audio.retry_stop()
             return
+        if ApplicationController._art_room_active(self):
+            self.audio.stop()
+            return
         # Lightweight legacy/controller-extension fixtures may construct this
         # QObject without the normal initializer. Keep that narrow compatibility
         # path on the old verifier instead of inventing incomplete startup
@@ -4322,6 +4443,21 @@ class ApplicationController(QObject):
                     startup_authorization_generation=authorization_generation,
                 )
                 return True
+
+        room = getattr(self, "_room_participant", None)
+        if room is not None:
+            invite = getattr(self, "_guest_invite", None)
+            if invite is not None and invite is not room.music_invite:
+                return room.start_lan_guest(invite)
+            if self.creator_profile.key == "art":
+                if getattr(self, "_remote_invite_owner", None) is not None:
+                    room.role = "host"
+                    room.tick()
+                    return True
+                if bool(getattr(self.settings, "host_server_enabled", False)):
+                    return room.start_lan_host()
+                self._paste_new_invitation()
+                return False
 
         role = (
             "host"
@@ -5138,6 +5274,8 @@ class ApplicationController(QObject):
         ).start()
 
     def _bring_jamulus_forward(self) -> None:
+        if _creator_profile_for_controller(self).key == "art":
+            return
         outcome = self.bridge.bring_jamulus_forward_outcome()
         if outcome.reason is JamulusForegroundReason.PLATFORM_NOT_MANAGED:
             self.window.flash_message(
@@ -5697,6 +5835,11 @@ class ApplicationController(QObject):
             )
             return
         self._conductor_setup_requested = True
+        room = getattr(self, "_room_participant", None)
+        if room is not None and (self.creator_profile.key == "art" or room.probing
+                                 or getattr(self, "_guest_invite", None) is not None):
+            self.begin_startup_journey()
+            return
         if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
             self._render_remote_fresh_invitation_hud()
             return
@@ -6404,6 +6547,15 @@ class ApplicationController(QObject):
                 ms=5000,
             )
             return
+        if self.audio.cleanup_retry_required:
+            self.audio.retry_stop()
+            return
+        if ApplicationController._art_room_active(self):
+            self.audio.stop()
+            return
+        if self.creator_profile.key == "art":
+            self.begin_startup_journey()
+            return
         if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
             # An attempted v3 enrollment may have consumed its one-use
             # capability. Do not let a generic Start Audio action turn that
@@ -6559,6 +6711,10 @@ class ApplicationController(QObject):
         """Revoke v3 invitation state and clear mode after server ownership ends."""
 
         ApplicationController._invalidate_room_help(self)
+        # A constructor may already own a sidecar without having returned it.
+        # Keep End/Leave retryable until its worker delivers and retires it.
+        if getattr(self, "_remote_host_preparing", False):
+            return False
         cleanup_ok = True
         owner = getattr(self, "_remote_invite_owner", None)
         owner_stopped = True
@@ -6939,6 +7095,7 @@ class ApplicationController(QObject):
                 self
             ).vocabulary.participant_singular,
             song_line=_invite_song_line_for(self),
+            creator_profile_key=_creator_profile_for_controller(self).key,
         )
         QApplication.clipboard().setText(invite_message.text)
         invite_url = ""
@@ -6954,9 +7111,10 @@ class ApplicationController(QObject):
         participant = _creator_profile_for_controller(
             self
         ).vocabulary.participant_singular
+        link_noun = "room" if _creator_profile_for_controller(self).key == "art" else "jam"
         self.window.flash_message(
             (
-                f"One invite copied — jam link and meeting link. Send it to "
+                f"One invite copied — {link_noun} link and meeting link. Send it to "
                 f"another {participant}."
             )
             if invite_message.includes_meeting
@@ -7062,9 +7220,10 @@ class ApplicationController(QObject):
                 ms=7000,
             )
             return False
-        if self._is_jamulus_running() or self.bridge.hosted_server_alive():
+        if (self._is_jamulus_running() or self.bridge.hosted_server_alive()
+                or self._room_is_busy_for_invitation()):
             self.window.flash_message(
-                "End this jam first, then open the new invitation again.",
+                "End this room first, then open the new invitation again.",
                 ms=7000,
             )
             return False
@@ -7100,7 +7259,8 @@ class ApplicationController(QObject):
     def _accept_band_invitation(self, invite: BandInvite) -> bool:
         """Preserve the existing v1/v2 same-LAN join flow."""
 
-        busy = bool(self._is_jamulus_running() or self.bridge.hosted_server_alive())
+        busy = bool(self._is_jamulus_running() or self.bridge.hosted_server_alive()
+                    or self._room_is_busy_for_invitation())
         switch_was_hosting = bool(getattr(self.settings, "host_server_enabled", False))
         if (
             busy
@@ -7219,7 +7379,9 @@ class ApplicationController(QObject):
                 self.window.session_strip.reset_session_clock()
             self._reconfigure_services_after_settings(old_settings)
             if bool(getattr(invitation, "peer_enabled", False)):
-                self._configure_guest_peer(invitation)
+                self._guest_invite = invitation
+                self._room_participant.probing = True
+                self._room_participant.role = "guest"
             # The invitation's name labels this session, but it belongs to
             # whoever sent it. Marking it borrowed keeps it out of the
             # musician's persisted default, so a joined session's name cannot
@@ -7492,17 +7654,26 @@ class ApplicationController(QObject):
             if source is not None:
                 self._room_help.receive(event, source=source)
 
+        def on_room_state(event) -> None:
+            source = callback_source["value"]
+            if source is not None:
+                self._room_participant.receive_native(event, source=source)
+
+        def on_connection_lost(generation) -> None:
+            source = callback_source["value"]
+            if source is not None and source is self._remote_session:
+                source.mark_connection_lost(expected_generation=generation)
+
+        self._room_participant.prepare_native("guest")
         ApplicationController._invalidate_room_help(self)
         try:
-            backend = (
-                NativeGuestTransportBackend(
-                    on_help=on_help,
-                    # The presenter bounds ingress before scheduling ONE Qt
-                    # drain; do not enqueue arbitrary captured text in Qt.
-                    schedule_help_callback=lambda callback: callback(),
-                )
-                if getattr(self, "_room_help_enabled", False)
-                else NativeGuestTransportBackend()
+            backend = NativeGuestTransportBackend(
+                on_room_state=on_room_state,
+                on_connection_lost=on_connection_lost,
+                schedule_callback=self._ui_invoker.invoke,
+                **({"on_help": on_help,
+                    "schedule_help_callback": lambda callback: callback()}
+                   if getattr(self, "_room_help_enabled", False) else {}),
             )
             runtime = RemoteSessionRuntime(
                 backend,
@@ -7544,6 +7715,9 @@ class ApplicationController(QObject):
             "Preparing the private host path",
         )
         self._remote_host_preparing = True
+        self._room_participant.prepare_native("host")
+        room_generation = self._room_participant.generation
+        art_room = self.creator_profile.key == "art"
         self.window.session_hud.set_state(
             "Preparing your jam",
             "WebJam is creating one private invitation.",
@@ -7589,9 +7763,10 @@ class ApplicationController(QObject):
 
             def deliver() -> None:
                 self._remote_host_preparing = False
-                if getattr(self, "_shutdown", False):
-                    if owner is not None:
-                        owner.stop()
+                if (getattr(self, "_shutdown", False)
+                        or self._room_participant.generation != room_generation
+                        or self._room_participant.blocked):
+                    self._retire_uninstalled_remote_host(owner, art_room=art_room)
                     return
                 if owner is None:
                     self._show_remote_session_failure()
@@ -7599,7 +7774,7 @@ class ApplicationController(QObject):
                 try:
                     self._install_remote_invite_owner(owner)
                 except Exception as exc:  # noqa: BLE001
-                    owner.stop()
+                    self._retire_uninstalled_remote_host(owner, art_room=art_room)
                     LOGGER.error(
                         "Remote host activation failed; exception_type=%s",
                         type(exc).__name__,
@@ -7607,6 +7782,9 @@ class ApplicationController(QObject):
                     self._show_remote_session_failure()
                     return
                 self._remote_session = owner
+                publisher = self._room_host_publisher()
+                if publisher is not None:
+                    publisher.publish()
                 room_help = getattr(self, "_room_help", None)
                 if room_help is not None:
                     room_help.arm(owner)
@@ -7632,7 +7810,10 @@ class ApplicationController(QObject):
                             connected=False,
                         )
                 self._update_session_hud()
-                self._continue_startup_from_remote(owner)
+                if self.creator_profile.key == "art":
+                    self._room_participant.tick()
+                else:
+                    self._continue_startup_from_remote(owner)
 
             try:
                 self._ui_invoker.invoke(deliver)
@@ -7646,6 +7827,24 @@ class ApplicationController(QObject):
             name="webjam-remote-host",
         ).start()
 
+    def _retire_uninstalled_remote_host(self, owner, *, art_room: bool) -> None:
+        if owner is None:
+            return
+        try:
+            stopped = owner.stop() is not False
+        except Exception:
+            stopped = False
+        if not stopped:
+            # Preparation is serialized; no replacement can enter while the
+            # pending constructor or this failed cleanup is still owned.
+            self._remote_invite_owner = owner
+            self._remote_session = owner
+            self.audio.require_cleanup_retry(
+                hosting=True, art_room=art_room,
+                error="The previous room connection is still closing.",
+                title="Finish closing the room",
+            )
+
     def _on_remote_session_snapshot(self, snapshot, *, source: object) -> None:
         """Apply one safe transport snapshot on Qt's owning thread."""
 
@@ -7656,6 +7855,8 @@ class ApplicationController(QObject):
         )
 
         if getattr(self, "_shutdown", False):
+            return
+        if self.audio.stopping or self.audio.cleanup_retry_required:
             return
         if source is not getattr(self, "_remote_session", None):
             LOGGER.debug("Ignored snapshot from a replaced remote runtime")
@@ -7683,16 +7884,16 @@ class ApplicationController(QObject):
             # Refresh supporting controls first. Legacy permission/lobby copy
             # must not overwrite this active join stage afterward.
             self._update_session_hud()
-            self.window.session_hud.set_state(
+            override = GuidanceDisplayOverride(
                 "Securing connection" if securing else "Contacting host",
-                (
-                    "WebJam is verifying the private path before Jamulus can use it."
-                    if securing
-                    else "WebJam is finding the private session from your invitation."
-                ),
+                "WebJam is verifying the private path to your room.",
+                SessionPrimaryAction.WAIT,
             )
+            self._render_room_guidance(override)
             return
         if snapshot.phase is RemoteSessionPhase.CONNECTED:
+            if self._room_participant.connected_native(source, snapshot):
+                return
             if snapshot.role.value == "guest":
                 self._activate_remote_guest_route(snapshot, source=source)
             else:
@@ -7708,11 +7909,16 @@ class ApplicationController(QObject):
                 self._update_session_hud()
             return
         if snapshot.phase is RemoteSessionPhase.FAILED:
+            self._room_participant.probing = False
+            if self.creator_profile.key == "art":
+                self._room_participant.state = ArtRoomState.FAILED
             self._show_remote_session_failure(
                 guest_enrollment=(snapshot.role.value == "guest"),
                 retry_safe=bool(getattr(snapshot, "invitation_retry_safe", False)),
                 error_code=getattr(snapshot, "error_code", None),
             )
+            if self.creator_profile.key == "art":
+                self._refresh_readiness()
 
     def _activate_remote_guest_route(self, snapshot, *, source: object) -> None:
         """Point Jamulus at the authenticated proxy without persisting it."""
@@ -7775,9 +7981,13 @@ class ApplicationController(QObject):
 
         ApplicationController._invalidate_room_help(self)
         self._remote_startup_launch_continuation = None
+        art_room = self.creator_profile.key == "art"
+        if art_room:
+            self._room_participant.probing = False
+            self._room_participant.state = ArtRoomState.FAILED
         self._transition_lifecycle(
             SessionLifecyclePhase.FAILED_RECOVERABLE,
-            "The private music path could not open",
+            "The private room could not open" if art_room else "The private music path could not open",
         )
         if (
             guest_enrollment
@@ -7817,13 +8027,14 @@ class ApplicationController(QObject):
                 "Ask the host to confirm the session, then try again.",
                 action_visible=False,
             )
-            flash_message = "The private music connection couldn’t open."
+            flash_message = ("The room connection couldn’t open." if art_room
+                             else "The private music connection couldn’t open.")
         self.window.session_strip.set_tools_enabled(True)
         self.window.flash_message(
             flash_message,
             ms=7000,
         )
-        if guest_enrollment:
+        if guest_enrollment or art_room:
             self._update_session_hud()
         else:
             self._render_session_conductor(
@@ -7866,6 +8077,8 @@ class ApplicationController(QObject):
                 "The secure connection timed out. Ask the host for a new "
                 "invitation, then paste it here."
             )
+        if error_value == "peer_protocol_unsupported":
+            return "Update WebJam on both computers, then ask the host for a fresh invitation."
         if error_value == "expired":
             return (
                 "That invitation expired. Ask the host for a new one, then "
@@ -7919,6 +8132,15 @@ class ApplicationController(QObject):
             )
             return
         ApplicationController._invalidate_room_help(self)
+        # Retire every coordinator using the old invitation before reset can
+        # advertise a replacement. A queued media tick must never sign a new
+        # room snapshot with the previous invitation's key.
+        self._release_reference_video()
+        self._release_shared_canvas()
+        self._release_room_clock()
+        room = getattr(self, "_room_participant", None)
+        if room is not None:
+            room.publisher = None
         try:
             owner.reset()
         except Exception:
@@ -7932,6 +8154,9 @@ class ApplicationController(QObject):
         if room_help is not None:
             room_help.arm(owner)
             room_help.update(owner, getattr(owner, "snapshot", None))
+        publisher = self._room_host_publisher()
+        if publisher is not None:
+            publisher.publish()
         self.window.flash_message(
             "Old invitation revoked. A new private link is ready.",
             ms=6000,
@@ -8131,6 +8356,9 @@ class ApplicationController(QObject):
     def _host_share_readiness(self):
         """Return observable pre-share truth for the supported LAN topology."""
 
+        room = getattr(self, "_room_participant", None)
+        if _creator_profile_for_controller(self).key == "art" and room is not None:
+            return room.readiness()
         from core.host_share_readiness import evaluate_host_share_readiness
         from core.network_invite import local_band_address
 
@@ -8162,6 +8390,13 @@ class ApplicationController(QObject):
 
         address = readiness.address
         try:
+            if _creator_profile_for_controller(self).key == "art":
+                if not self.host_peer.active:
+                    return ""
+                return self.host_peer.invite_link(
+                    host=address, jamulus_port=self.settings.jamulus_port,
+                    session_name=self.window.session_strip.current_title() or "Art room",
+                )
             if self._ensure_host_peer(address):
                 return self.host_peer.invite_link(
                     host=address,
@@ -8521,7 +8756,8 @@ class ApplicationController(QObject):
             .lower()
         )
         remote_guest_intent = bool(
-            getattr(self, "_remote_invitation", None) is not None
+            getattr(self, "_art_room_role", "") == "guest"
+            or getattr(self, "_remote_invitation", None) is not None
             or remote_role == SessionRole.GUEST.value
         )
         role = (
@@ -8767,6 +9003,8 @@ class ApplicationController(QObject):
                 SessionLifecyclePhase.ENDING,
                 SessionLifecyclePhase.FINALIZING_RECORDINGS,
             }
+            else CleanupState.FAILED
+            if bool(getattr(audio, "cleanup_retry_required", False))
             else CleanupState.COMPLETE
             if lifecycle_phase is SessionLifecyclePhase.COMPLETED
             else CleanupState.NOT_REQUESTED
@@ -8835,6 +9073,9 @@ class ApplicationController(QObject):
             startup_cleanup_pending=startup_cleanup_pending,
             failure=failure,
             creator_profile_key=self.creator_profile.key,
+            art_room=(self._room_participant.state
+                      if getattr(self, "_room_participant", None) is not None
+                      else ArtRoomState.NONE),
         )
 
     @staticmethod
@@ -9094,6 +9335,42 @@ class ApplicationController(QObject):
         if getattr(self, "_startup_attempt", None) is not None:
             self._render_startup_journey()
             return
+        room = getattr(self, "_room_participant", None)
+        if room is not None and (self.creator_profile.key == "art" or self._art_room_active()):
+            hosting = room.role == "host"
+            owner = getattr(self, "_remote_invite_owner", None)
+            invite_available = bool(hosting and (
+                owner.invitation_available if owner is not None
+                else self._current_invite_url()
+            ))
+            self._last_observed_invite_available = invite_available
+            self.window.session_strip.set_invite_available(invite_available)
+            self.window.session_strip.set_reset_invite_available(bool(hosting and owner is not None))
+            self.window.session_strip.set_recording_available(False)
+            self.window.session_strip.set_reference_track_available(False)
+            override = room.guidance()
+            if getattr(self, "_remote_invitation_requires_replacement", False):
+                override = GuidanceDisplayOverride(
+                    "Needs attention", self._remote_fresh_invitation_detail(),
+                    SessionPrimaryAction.PASTE_NEW_INVITE,
+                )
+            if self.audio.stopping or self.audio.cleanup_retry_required:
+                override = None
+            if self.audio.cleanup_retry_required and getattr(self.audio, "_stop_art_room", False):
+                # A first-profile probe can fail to stop while the saved
+                # workspace is still Music. Its captured room cleanup owns
+                # the action; changing the artist's profile would be false.
+                label = "Try End Room" if self.audio._stop_hosting else "Try Leave Room"
+                override = GuidanceDisplayOverride(
+                    "Room cleanup needs attention",
+                    f"The room has not finished disconnecting. Choose {label} to finish.",
+                    SessionPrimaryAction.END_SESSION, label,
+                )
+            if override is not None:
+                self._render_room_guidance(override)
+            else:
+                self._render_session_conductor()
+            return
         display_override = self._update_session_hud_legacy()
         if bool(getattr(self, "_conductor_studio_reviewing", False)):
             # Live-session recovery copy (for example a denied microphone
@@ -9103,6 +9380,17 @@ class ApplicationController(QObject):
             # above so strip/invite side effects remain current.
             display_override = None
         self._render_session_conductor(display_override)
+
+    def _render_room_guidance(self, override: GuidanceDisplayOverride) -> None:
+        self._render_session_conductor(override)
+        self.window.session_hud.set_state(
+            override.title, override.message,
+            action_text=override.action_label or override.primary_action.label_for(self.creator_profile),
+            action_visible=override.primary_action not in {
+                SessionPrimaryAction.NONE, SessionPrimaryAction.WAIT, SessionPrimaryAction.END_SESSION,
+            },
+            action_kind=self._conductor_action_kind(override.primary_action),
+        )
 
     def _on_conductor_action_requested(self, action_kind: str) -> None:
         """Route the one visible conductor action to its real owner."""
@@ -9133,7 +9421,10 @@ class ApplicationController(QObject):
         elif action == "save_webex":
             self._save_startup_webex_link()
         elif action == "retry_startup":
-            self._retry_startup_journey()
+            if self.creator_profile.key == "art" and getattr(self, "_startup_attempt", None) is None:
+                self.begin_startup_journey()
+            else:
+                self._retry_startup_journey()
         elif action == "enter_jam":
             self._enter_startup_jam()
         elif action in {"invite", "copy_invite"}:
@@ -9993,6 +10284,8 @@ class ApplicationController(QObject):
         self.recording.apply_toggle_failure(message)
 
     def _on_practice_requested(self) -> None:
+        if _creator_profile_for_controller(self).key == "art":
+            return
         # Practice has its own private server/client lifecycle. When a stale
         # Host/Join preflight exists but no Jamulus process owns work yet,
         # give the explicit Practice choice its own role-bound attempt rather
@@ -10256,6 +10549,30 @@ class ApplicationController(QObject):
         self.window.flash_message(text, color=color)
 
     def _refresh_readiness(self) -> None:
+        room = getattr(self, "_room_participant", None)
+        if room is not None and (self.creator_profile.key == "art" or self._art_room_active()):
+            hosting = (getattr(self.audio, "_stop_hosting", False)
+                       if self.audio.stopping or self.audio.cleanup_retry_required
+                       else room.role == "host")
+            action = "End Room" if hosting else "Leave Room"
+            if self.audio.cleanup_retry_required:
+                action = "Try " + action
+            elif self.audio.stopping:
+                action = "Ending…" if hosting else "Leaving…"
+            elif not room.active:
+                action = "Start Session"
+            self.window.session_strip.set_audio_state(action, enabled=not self.audio.stopping)
+            self.window.session_strip.set_tools_enabled(not self.audio.stopping)
+            self.window.set_status_audio("")
+            self.window.set_status_server("")
+            self.window.set_status_video(self.bridge.webex_state)
+            self.window.session_strip.set_video_state(
+                _meeting_open_action_label(self.settings.webex_url), enabled=True,
+            )
+            self.window.session_strip.set_video_configured(bool(self.settings.webex_url))
+            self.window.webex_embed.set_launch_status(self.bridge.webex_state)
+            self._update_session_hud()
+            return
         # A launched process is not the same as a proven Jamulus session.  Keep
         # the "Running" wording out of the UI until participant/RPC truth has
         # arrived; the button can still offer Stop Audio for a live subprocess.
@@ -10924,6 +11241,8 @@ class ApplicationController(QObject):
         all.  Applies to soloed channels too — a panic "mute everything" must
         actually silence the room, solo or not.
         """
+        if _creator_profile_for_controller(self).key == "art":
+            return
         if not self.participants:
             return
         any_unmuted = any(not p.muted for p in self.participants.values())
@@ -11861,6 +12180,19 @@ class ApplicationController(QObject):
         has real credentials.
         """
 
+        room = getattr(self, "_room_participant", None)
+        if room is not None:
+            if room.stopping:
+                return "", "", ""
+            remote = getattr(self, "_remote_session", None)
+            identity = getattr(remote, "room_identity", None)
+            if identity is not None:
+                role = getattr(getattr(remote, "snapshot", None), "role", None)
+                return role.value, identity.session_id, identity.session_key
+            observer = room.lan_guest
+            if observer is not None and observer.last_state is not None:
+                invite = observer.invite
+                return "guest", invite.session_id, invite.invite_token
         host_peer = getattr(self, "host_peer", None)
         credentials = getattr(host_peer, "credentials", None)
         if bool(getattr(host_peer, "active", False)) and credentials is not None:
@@ -11886,7 +12218,7 @@ class ApplicationController(QObject):
         if not role or not session_id or not session_key:
             self._release_reference_video()
             return None
-        binding = (role, session_id)
+        binding = (role, session_id, session_key)
         coordinator = getattr(self, "_reference_video", None)
         if coordinator is not None:
             if getattr(self, "_reference_video_binding", ()) == binding:
@@ -11906,7 +12238,7 @@ class ApplicationController(QObject):
 
         coordinator = ReferenceVideoCoordinator(
             player_factory=build_player,
-            host_peer_provider=lambda: getattr(self, "host_peer", None),
+            host_peer_provider=self._room_host_publisher,
             on_host_snapshot=self._on_reference_video_host_snapshot,
             on_follow_snapshot=self._on_reference_video_follow_snapshot,
         )
@@ -12185,7 +12517,7 @@ class ApplicationController(QObject):
         if not role or not session_id or not session_key:
             self._release_shared_canvas()
             return None
-        binding = (role, session_id)
+        binding = (role, session_id, session_key)
         coordinator = getattr(self, "_shared_canvas", None)
         if coordinator is not None:
             if getattr(self, "_shared_canvas_binding", ()) == binding:
@@ -12203,7 +12535,7 @@ class ApplicationController(QObject):
 
         coordinator = SharedCanvasCoordinator(
             launcher_factory=build_launcher,
-            host_peer_provider=lambda: getattr(self, "host_peer", None),
+            host_peer_provider=self._room_host_publisher,
             on_host_snapshot=self._on_shared_canvas_host_snapshot,
             on_follow_snapshot=self._on_shared_canvas_follow_snapshot,
         )
@@ -12397,7 +12729,7 @@ class ApplicationController(QObject):
         if not role or not session_id or not session_key:
             self._release_room_clock()
             return None
-        binding = (role, session_id)
+        binding = (role, session_id, session_key)
         coordinator = getattr(self, "_room_clock", None)
         if coordinator is not None:
             if getattr(self, "_room_clock_binding", ()) == binding:
@@ -12407,7 +12739,7 @@ class ApplicationController(QObject):
         from webjam_qt.controllers.room_clock_coordinator import RoomClockCoordinator
 
         coordinator = RoomClockCoordinator(
-            host_peer_provider=lambda: getattr(self, "host_peer", None),
+            host_peer_provider=self._room_host_publisher,
             song_form_provider=self._room_clock_song_form,
             video_facts_provider=self._room_clock_video_facts,
             on_view=self._on_room_clock_view,

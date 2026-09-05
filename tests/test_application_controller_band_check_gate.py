@@ -378,7 +378,21 @@ def test_v2_guest_peer_waits_for_post_gate_audio_start(
     restarted_guest = mock.Mock()
     restarted_guest.originals_root = tmp_path
     restarted_guest.recovered_captures = ()
-    invite = SimpleNamespace(peer_enabled=True)
+    from core.network_invite import BandInvite
+    from core.session_transfer import RecordingSignal, SessionCredentials, SessionStateSnapshot
+
+    credentials = SessionCredentials.create()
+    invite = BandInvite(
+        "192.168.1.20", session_id=credentials.session_id,
+        peer_port=22125, invite_token=credentials.invite_token,
+    )
+    monkeypatch.setattr("services.lan_room_guest.LanRoomGuest.start", lambda owner: None)
+    monkeypatch.setattr("services.lan_room_guest.SessionPeerClient", lambda *args, **kwargs: SimpleNamespace(
+        enroll=lambda *args: object(),
+        state=lambda *args: SessionStateSnapshot(
+            invite.session_id, 0, RecordingSignal.IDLE, creator_profile_key="music",
+        ),
+    ))
 
     with mock.patch(
         "webjam_qt.controllers.application_controller.GuestPeerSession",
@@ -389,6 +403,23 @@ def test_v2_guest_peer_waits_for_post_gate_audio_start(
             settings=settings,
             session_invite=invite,
         )
+        # Enrollment must first discover a real Music host through the
+        # read-only observer. It must not construct a capture owner from the
+        # guest's saved profile or start audio while this gate is under test.
+        guest_type.assert_not_called()
+        assert controller.guest_peer is None
+        with mock.patch.object(controller, "begin_startup_journey") as continue_music:
+            assert controller._room_participant.start_lan_guest(invite)
+            observer = controller._room_participant.lan_guest
+            observer.poll_once()
+            APP.processEvents()
+            guest_type.assert_called_once()
+            continue_music.assert_called_once_with()
+        assert controller._room_participant.music_invite is invite
+        assert controller._room_participant.lan_guest is None
+        assert observer._stop.is_set()
+        assert controller.creator_profile.key == "music"
+        guest.start.assert_not_called()
     try:
         peer_kwargs = guest_type.call_args.kwargs
         assert peer_kwargs["capture_enabled"]() is True

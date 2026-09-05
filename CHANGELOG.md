@@ -10,6 +10,23 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Art room participation and recovery
+
+- Art guests enter the host's room without starting Music audio or creating a
+  recording owner. Waiting, connected, reconnecting, and cleanup states follow
+  actual room receipts. Music keeps its existing audio evidence requirements.
+- The existing private invitations carry the host's Art profile, silent
+  Paint along state, and optional canvas invitation. Reset, disconnect, and
+  withdrawal retire old projections; opening a meeting or canvas stays explicit.
+  The native reference transport remains an opt-in local development path.
+- Art offers **End Room** / **Leave Room** and a real cleanup retry. An unfinished
+  stop retains its connection owner; unrelated meeting and drawing apps remain open.
+- The two Art choices keep their selection on repeated clicks, distinguish
+  keyboard focus, and fit the compact door. Pasted invitations no longer claim
+  readiness before validation, and replacement clears old accessible errors.
+- Art remains a newer Preview for artists working across mediums. The user
+  guides now distinguish Art room entry from Music's audio setup.
+
 ### Session help development preview
 
 - The existing authenticated reference transport now has a direct **Help**

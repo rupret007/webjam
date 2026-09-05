@@ -285,14 +285,16 @@ def build_invite_message(
     meeting_url: str = "",
     participant_noun: str = "musician",
     song_line: str = "",
+    creator_profile_key: str = "music",
 ) -> InviteMessage:
     """Return one paste that carries the jam link and, if set, the meeting.
 
     The ``webjam://`` link is passed through untouched — this changes what the
     clipboard holds, not the invitation protocol. A meeting link is included
     only when it passes the same validation the rest of WebJam applies, so a
-    malformed or non-Webex link is dropped rather than pasted into a bandmate's
-    chat window.
+    malformed or unsupported link is dropped. Art copy describes the making
+    room and optional work sharing; the default preserves existing Music
+    callers. V3 invitations name the supported manual-paste route.
     """
 
     link = str(join_link or "").strip()
@@ -301,31 +303,62 @@ def build_invite_message(
 
     name = " ".join(str(session_name or "").split())[:80]
     noun = str(participant_noun or "musician").strip() or "musician"
-    headline = f"Join {name} on WebJam:" if name else "Join this jam on WebJam:"
-
-    lines = [headline, link]
+    art = str(creator_profile_key or "").strip().casefold() == "art"
+    headline = f"Join {name} on WebJam:" if name else (
+        "Join this art room on WebJam:" if art else "Join this jam on WebJam:"
+    )
+    # This is copy around an already-created link, not a second parser or a
+    # rewrite of its opaque capability. Canonical v3 links use manual paste.
+    manual_paste = link.startswith("webjam://join?") and (
+        "v=3" in link.partition("?")[2].split("&")
+    )
+    lines = [headline]
+    if manual_paste:
+        lines.append("Open WebJam, choose Join, then paste this full invitation.")
+    lines.append(link)
     # When the room has already chosen a song, say so. A joiner arrives
     # knowing what they are playing instead of being asked to pick something.
     song = " ".join(str(song_line or "").split())[:120]
-    if song:
+    if song and not art:
         lines.extend(["", f"Song: {song}"])
     candidate = str(meeting_url or "").strip()
     # Any meeting link the rest of WebJam accepts is carried, not just Webex.
     includes_meeting = bool(candidate) and is_allowed_meeting_link(candidate)
     if includes_meeting:
         site = meeting_link_hostname(candidate) or "the meeting"
+        if art:
+            service = service_name_for_link(candidate)
+            lines.extend(
+                [
+                    "",
+                    f"Optional {service} conversation and work sharing ({site}):",
+                    candidate,
+                    "",
+                    "WebJam opens the art room. Bring your own tools, paper, or usual app. "
+                    "The meeting is separate and optional; WebJam does not run it.",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "",
+                    f"Optional video chat ({site}):",
+                    candidate,
+                    "",
+                    "The WebJam link carries the music. The meeting link is a "
+                    "separate app for talking between takes — WebJam does not run "
+                    "it, and you do not need it to play.",
+                ]
+            )
+    elif art:
         lines.extend(
             [
                 "",
-                f"Optional video chat ({site}):",
-                candidate,
-                "",
-                "The WebJam link carries the music. The meeting link is a "
-                "separate app for talking between takes — WebJam does not run "
-                "it, and you do not need it to play.",
+                "WebJam opens the art room. Bring your own tools, paper, or usual app. "
+                "You can make together without a meeting.",
             ]
         )
-    else:
+    elif not manual_paste:
         lines.extend(
             [
                 "",

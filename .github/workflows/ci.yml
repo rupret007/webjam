@@ -616,7 +616,7 @@ jobs:
           WEBJAM_RUN_REMOTE_SIDECAR_INTEGRATION=1 \
           WEBJAM_TRANSPORT_BINARY="$PWD/transport/build/webjam-fabric-linux-amd64" \
           WEBJAM_TEST_TRANSPORT_BUILD_ID="$build_id" \
-            python -m pytest -q tests/test_native_sidecar_integration.py
+            python -m pytest -q tests/test_native_sidecar_integration.py tests/test_native_room_process.py
 
   # ------------------------------------------------------------------
   # Self-hostable v3 rendezvous / exact-pair relay reference. The desktop

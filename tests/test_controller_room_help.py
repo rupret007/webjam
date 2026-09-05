@@ -68,11 +68,19 @@ def test_default_door_has_no_help_preview(qapp, tmp_path, monkeypatch):
 def test_guest_help_works_before_jamulus_without_notes_or_delivery_fiction(
     qapp, tmp_path, monkeypatch, caplog
 ):
+    from core.room_state import RoomIdentity, RoomState
+
     monkeypatch.setenv("WEBJAM_ENABLE_REFERENCE_LOCAL", "1")
     backends = []
 
     class Backend:
-        def __init__(self, *, on_help, schedule_help_callback):
+        def __init__(self, *, on_help, schedule_help_callback, on_room_state,
+                     on_connection_lost, schedule_callback):
+            self.on_room_state = on_room_state
+            self.on_connection_lost = on_connection_lost
+            self.schedule_callback = schedule_callback
+            self.connection_available = False
+            self.room_identity = None
             self.on_help = on_help
             self.schedule_help_callback = schedule_help_callback
             self.help_available = False
@@ -83,9 +91,18 @@ def test_guest_help_works_before_jamulus_without_notes_or_delivery_fiction(
         def start_guest(self, invitation, *, generation):
             self.generation = generation
             self.help_available = True
+            self.connection_available = True
+            self.room_identity = RoomIdentity.from_invitation(invitation)
             # A proved IPC message may arrive before the UI receives its
             # CONNECTED snapshot. It must be staged, not lost or shown early.
             self.on_help(self.event("help_received", text="fixture first hello", request_id=20))
+            # The authenticated host profile selects the Music route without
+            # requiring Jamulus. Preserve the early-help ordering above.
+            self.schedule_callback(lambda: self.on_room_state(TransportEvent(
+                event_id=0, event_type="room_state_received", code="ok",
+                state="connected", mode="guest", generation=generation,
+                profile_id="reference-local", room_state=RoomState(1, "music"),
+            )))
             return RemoteGuestConnection(
                 43123, TransportPath.SECURE_RELAY,
                 ConnectionQuality.UNKNOWN, generation,
@@ -112,6 +129,8 @@ def test_guest_help_works_before_jamulus_without_notes_or_delivery_fiction(
 
         def stop(self):
             self.help_available = False
+            self.connection_available = False
+            self.room_identity = None
 
     monkeypatch.setattr(
         "services.native_remote_transport.NativeGuestTransportBackend", Backend
@@ -131,6 +150,9 @@ def test_guest_help_works_before_jamulus_without_notes_or_delivery_fiction(
         _drain(qapp, lambda: "fixture first hello" in panel._messages.toPlainText())
         assert controller.bridge.jamulus_process is None
         assert controller._remote_session.help_available
+        _drain(qapp, lambda: not controller._room_participant.probing)
+        assert controller.creator_profile.key == "music"
+        assert controller._room_participant.native_state == RoomState(1, "music")
         window._show_room_help()
         assert window._room_help_dialog.isVisible()
         assert not window._room_help_dialog.isModal()

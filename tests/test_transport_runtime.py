@@ -604,3 +604,217 @@ def test_help_event_schema_is_exact_canonical_and_redacted() -> None:
             parse_transport_event(
                 json.dumps(invalid, ensure_ascii=False).encode("utf-8") + b"\n"
             )
+
+
+def _room_event(state=None):
+    from core.room_state import RoomState
+    return {
+        "version": 1, "id": 0, "type": "room_state_received", "code": "ok",
+        "state": "connected", "mode": "guest", "profile_id": "reference-local",
+        "generation": 3,
+        "room_state": (state or RoomState(1, "art", "paint_along")).to_mapping(),
+    }
+
+
+def test_room_event_strict_nested_schema_direction_and_redaction() -> None:
+    from core.room_state import RoomState
+    from core.session_transfer import SharedCanvasSessionSnapshot
+    state = RoomState(1, "art", "paint_along", shared_canvas=SharedCanvasSessionSnapshot(
+        generation=1, shared=True, join_url="drawpile://studio.example/room?p=secret",
+        server_label="Private studio", session_label="Private room",
+    ))
+    raw = _room_event(state)
+    def encode(value):
+        return (json.dumps(value, ensure_ascii=False) + "\n").encode()
+    parsed = parse_transport_event(encode(raw))
+    assert parsed.room_state == state
+    assert "secret" not in repr(parsed)
+    assert "Private studio" not in repr(parsed)
+    for change in ({"mode": "host"}, {"generation": 0}, {"id": 3},
+                   {"request_id": 4}, {"text": ""}, {"room_state": None}):
+        with pytest.raises(TransportProtocolError):
+            parse_transport_event(encode({**raw, **change}))
+    raw["room_state"]["reference_video"]["private_path"] = "/private/file"
+    with pytest.raises(TransportProtocolError):
+        parse_transport_event(encode(raw))
+    duplicate = encode(_room_event()).replace(b'"revision": 1', b'"revision": 1, "revision": 2')
+    with pytest.raises(TransportProtocolError):
+        parse_transport_event(duplicate)
+
+
+def test_room_event_has_its_own_size_bound_without_expanding_other_events() -> None:
+    encoded = (json.dumps(_room_event(), indent=80) + "\n").encode()
+    assert transport_runtime.MAX_EVENT_LINE_BYTES < len(encoded) <= transport_runtime.MAX_ROOM_EVENT_LINE_BYTES
+    assert parse_transport_event(encoded).room_state is not None
+    ready = b'{"version":1,"id":0,"type":"ready","code":"ok","state":"idle","build":"test-build"}'
+    with pytest.raises(TransportProtocolError):
+        parse_transport_event(ready + b" " * 4100 + b"\n")
+    with pytest.raises(TransportProtocolError):
+        parse_transport_event(encoded + b" " * 12288 + b"\n")
+
+
+def test_room_publish_command_and_receipt_are_typed_and_not_diagnostic(monkeypatch) -> None:
+    from core.room_state import RoomState
+    state = RoomState(2, "art", "talk_and_make")
+    process = TransportProcess("/private/webjam-fabric", expected_build="test-build")
+    calls = []
+    def request(command, **kwargs):
+        calls.append((command, kwargs))
+        return transport_runtime.TransportEvent(
+            event_id=4, request_id=4, event_type="room_state_accepted", code="ok",
+            state="connected", mode="host", profile_id="reference-local", generation=3,
+        )
+    monkeypatch.setattr(process, "_request", request)
+    assert process.publish_room_state(state, generation=3).event_type == "room_state_accepted"
+    assert calls == [("publish_room_state", {"generation": 3, "room_state": state.to_mapping()})]
+    with pytest.raises(ValueError):
+        process.publish_room_state(state.to_mapping(), generation=3)
+    with pytest.raises(ValueError):
+        process.publish_room_state(state, generation=True)
+
+
+def test_real_ipc_reader_keeps_room_payloads_out_of_process_timeline(tmp_path: Path) -> None:
+    from core.room_state import RoomState
+    from core.session_transfer import SharedCanvasSessionSnapshot
+    state = RoomState(1, "art", "talk_and_make", shared_canvas=SharedCanvasSessionSnapshot(
+        generation=1, shared=True, join_url="drawpile://studio.example/room?p=PRIVATE-CANVAS-TOKEN",
+        server_label="Private studio", session_label="Private canvas",
+    ))
+    binary = _sidecar(tmp_path)
+    program = binary.read_text()
+    program = program.replace(
+        '    elif command["type"] == "close_peer":',
+        '''    elif command["type"] == "publish_room_state":
+        if set(command) != {"version", "id", "type", "generation", "room_state"}:
+            raise SystemExit(96)
+        event.update(type="room_state_accepted", state="connected", mode="host",
+                     profile_id=last[1], generation=last[2], request_id=command["id"])
+    elif command["type"] == "close_peer":''',
+    )
+    room_mapping = json.dumps(state.to_mapping(), separators=(",", ":"))
+    program = program.replace(
+        '    if command["type"] == "shutdown":',
+        f'''    if command["type"] == "open_peer" and command["mode"] == "guest":
+        room_event = {{"version":1,"id":0,"type":"room_state_received","code":"ok", "state":"connected","mode":"guest","profile_id":last[1],"generation":last[2], "room_state":json.loads({room_mapping!r})}}
+        sys.stdout.write(json.dumps(room_event, separators=(",", ":")) + "\\n")
+        sys.stdout.flush()
+    if command["type"] == "shutdown":''',
+    )
+    binary.write_text(program)
+    received, arrived = [], threading.Event()
+    def on_event(event):
+        if event.event_type.startswith("room_state_"):
+            received.append(event)
+            arrived.set()
+    with TransportProcess(binary, expected_build="test-build", on_event=on_event) as process:
+        process.open_guest(_invitation(), generation=3)
+        assert arrived.wait(1)
+        assert received[0].room_state == state
+        process.close_peer()
+        process.prepare_host()
+        process.open_host(_invitation(), generation=4, target_port=22124)
+        assert process.publish_room_state(state, generation=4).event_type == "room_state_accepted"
+        assert all(not event.event_type.startswith("room_state_") for event in process.timeline)
+        assert "PRIVATE-CANVAS-TOKEN" not in repr(process.timeline)
+        assert "Private canvas" not in repr(process)
+
+
+def test_real_room_rate_limit_receipt_is_retryable_without_poisoning_process(tmp_path: Path) -> None:
+    from core.room_state import RoomState
+    from services.transport_runtime import TransportRoomRateLimitedError
+    binary = _sidecar(tmp_path)
+    program = binary.read_text().replace('last = None', 'last = None\nroom_attempts = 0')
+    program = program.replace(
+        '    elif command["type"] == "close_peer":',
+        '''    elif command["type"] == "publish_room_state":
+        room_attempts += 1
+        if room_attempts == 1:
+            event.update(type="error", code="room_state_rate_limited", state="connected")
+        else:
+            event.update(type="room_state_accepted", state="connected", mode="host",
+                         profile_id=last[1], generation=last[2], request_id=command["id"])
+    elif command["type"] == "close_peer":''',
+    )
+    binary.write_text(program)
+    with TransportProcess(binary, expected_build="test-build") as process:
+        process.prepare_host()
+        process.open_host(_invitation(), generation=4, target_port=22124)
+        with pytest.raises(TransportRoomRateLimitedError):
+            process.publish_room_state(RoomState(1, "art", "talk_and_make"), generation=4)
+        assert process.running
+        assert process.publish_room_state(RoomState(2, "art", "talk_and_make"), generation=4).code == "ok"
+        assert process.send_help("Still connected", generation=4).code == "ok"
+
+
+@pytest.mark.parametrize("command,state", [
+    ("send_help", "connected"), ("publish_room_state", "failed"),
+])
+def test_rate_limit_error_outside_connected_room_publish_is_not_retryable(command, state) -> None:
+    from services.transport_runtime import TransportEvent, TransportRoomRateLimitedError
+    process = TransportProcess("/private/webjam-fabric", expected_build="test-build")
+    process._waiting.add(7)
+    process._pending[7] = TransportEvent(
+        event_id=7, event_type="error", code="room_state_rate_limited", state=state,
+    )
+    with pytest.raises(TransportProcessError) as error:
+        process._wait_response(7, 0.1, command_type=command)
+    assert not isinstance(error.value, TransportRoomRateLimitedError)
+
+
+def test_failed_child_reap_retains_handle_and_requires_actual_retry(monkeypatch) -> None:
+    class UnreapedChild:
+        pid = 987654321
+        stdin = None
+        stdout = None
+        reaped = False
+        attempts = 0
+
+        def poll(self):
+            return 0 if self.reaped else None
+
+        def terminate(self):
+            self.attempts += 1
+            raise OSError("blocked terminate")
+
+        def kill(self):
+            raise OSError("blocked kill")
+
+    def cannot_kill(*args):
+        raise OSError("blocked kill")
+
+    monkeypatch.setattr(transport_runtime.os, "killpg", cannot_kill, raising=False)
+    process = TransportProcess("/private/webjam-fabric", expected_build="test-build")
+    child = UnreapedChild()
+    process._process = child
+    process._failure = TransportProcessError("The event channel failed.")
+    with pytest.raises(TransportProcessError, match="did not stop"):
+        process.stop()
+    assert process.process_id == child.pid
+    assert child.attempts == 1
+    with pytest.raises(TransportProcessError, match="did not stop"):
+        process.stop()
+    assert child.attempts == 2
+    child.reaped = True
+    process.stop()
+    assert process.process_id is None
+
+
+@pytest.mark.parametrize("mode", ["host", "guest"])
+@pytest.mark.parametrize("wrong_field,value", [
+    ("generation", 1), ("profile_id", "different-profile"),
+])
+def test_enrollment_receipt_must_echo_local_generation_and_profile(monkeypatch, mode, wrong_field, value) -> None:
+    from services.transport_runtime import TransportEvent
+    process = TransportProcess("/private/webjam-fabric", expected_build="test-build")
+    process._prepared_host_pin = HOST_PIN
+    fields = dict(event_id=7, event_type="host_registered" if mode == "host" else "peer_connected",
+                  code="ok", state="host_waiting" if mode == "host" else "connected",
+                  mode=mode, profile_id="reference-local", generation=23, loopback_port=43123)
+    fields[wrong_field] = value
+    monkeypatch.setattr(process, "_request_enrollment", lambda *args, **kwargs: TransportEvent(**fields))
+    with pytest.raises(TransportProtocolError, match="^The transport process sent invalid data.$"):
+        if mode == "host":
+            process.open_host(_invitation(), generation=23, target_port=22124)
+        else:
+            process.open_guest(_invitation(), generation=23)
+    assert isinstance(process._failure, TransportProtocolError)
