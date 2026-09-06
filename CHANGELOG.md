@@ -10,6 +10,17 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Return to either Art activity
+
+- When a room offers both a shared canvas and Paint along, the room keeps a
+  separate status and Open action for each. A missing drawing app or a video
+  that needs attention no longer hides the other activity.
+- Returning to hidden Paint along preserves the local copy and its hidden
+  state; **Show video** remains an explicit choice. Canvas opening also stays
+  explicit in its existing panel.
+- Withdrawal and room loss retire unavailable actions. Both routes remain
+  reachable by keyboard in compact rooms beside Conversation.
+
 ### Shared canvas publication recovery
 
 - Hosts can **Change invitation** while the previous canvas stays offered.

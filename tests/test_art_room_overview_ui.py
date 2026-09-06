@@ -23,6 +23,10 @@ from webjam_qt.windows.conductor_window import ConductorWindow
 def qapp():
     app = QApplication.instance() or QApplication([])
     previous_font = app.font()
+    previous_tab_behavior = app.styleHints().tabFocusBehavior()
+    # Exercise full keyboard navigation independently of macOS's option to
+    # tab through text fields only. This changes this Qt process, not the OS.
+    app.styleHints().setTabFocusBehavior(Qt.TabFocusBehavior.TabFocusAllControls)
     font_ids = []
     fonts = Path(__file__).resolve().parents[1] / "webjam_qt/theme/fonts"
     for path in sorted(fonts.glob("Inter-*.ttf")):
@@ -35,6 +39,7 @@ def qapp():
     try:
         yield app
     finally:
+        app.styleHints().setTabFocusBehavior(previous_tab_behavior)
         app.setFont(previous_font)
         for font_id in font_ids:
             QFontDatabase.removeApplicationFont(font_id)

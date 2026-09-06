@@ -29,6 +29,23 @@ class ArtRoomOverview:
     activity_action_label: str = ""
     activity_enabled: bool = False
     conversation_enabled: bool = True
+    secondary_activity_label: str = ""
+    secondary_activity_detail: str = ""
+    secondary_activity_action: str = ""
+    secondary_activity_action_label: str = ""
+    secondary_activity_enabled: bool = False
+
+    @property
+    def activity_actions(self) -> tuple[str, ...]:
+        """The distinct, currently enabled panel targets in display order."""
+        actions = []
+        for enabled, action in (
+            (self.activity_enabled, self.activity_action),
+            (self.secondary_activity_enabled, self.secondary_activity_action),
+        ):
+            if enabled and action in {"video", "canvas"} and action not in actions:
+                actions.append(action)
+        return tuple(actions)
 
 
 def art_room_overview(
@@ -41,6 +58,7 @@ def art_room_overview(
     cleanup_required: bool = False,
     quitting: bool = False,
     presence: ArtRoomPresence = ABSENT,
+    secondary_presence: ArtRoomPresence = ABSENT,
 ) -> ArtRoomOverview:
     """Keep closure and missing connection evidence ahead of optional layers."""
     role = "Host" if hosting else "Guest"
@@ -135,11 +153,19 @@ def art_room_overview(
     action = ""
     action_label = ""
     if active and presence.offered:
-        activity, activity_detail = presence.label, presence.description
-        if presence.target is ArtPresenceTarget.VIDEO:
-            action, action_label = "video", "Open Paint along"
-        elif presence.target is ArtPresenceTarget.CANVAS:
-            action, action_label = "canvas", "Open canvas"
+        action, action_label = _activity_action(presence.target)
+        if action:
+            activity, activity_detail = presence.label, presence.description
+    secondary_activity = ""
+    secondary_detail = ""
+    secondary_action = ""
+    secondary_action_label = ""
+    if active and secondary_presence.offered:
+        candidate, candidate_label = _activity_action(secondary_presence.target)
+        if candidate and candidate != action:
+            secondary_activity = secondary_presence.label
+            secondary_detail = secondary_presence.description
+            secondary_action, secondary_action_label = candidate, candidate_label
     return ArtRoomOverview(
         phase=phase,
         phase_label=label,
@@ -152,7 +178,20 @@ def art_room_overview(
         activity_action=action,
         activity_action_label=action_label,
         activity_enabled=active and bool(action),
+        secondary_activity_label=secondary_activity,
+        secondary_activity_detail=secondary_detail,
+        secondary_activity_action=secondary_action,
+        secondary_activity_action_label=secondary_action_label,
+        secondary_activity_enabled=active and bool(secondary_action),
         # Conversation only reveals the separate meeting controls. Its
         # availability is independent of the Art transport connection.
         conversation_enabled=not (stopping or cleanup_required or quitting),
     )
+
+
+def _activity_action(target: ArtPresenceTarget) -> tuple[str, str]:
+    if target is ArtPresenceTarget.VIDEO:
+        return "video", "Open Paint along"
+    if target is ArtPresenceTarget.CANVAS:
+        return "canvas", "Open canvas"
+    return "", ""

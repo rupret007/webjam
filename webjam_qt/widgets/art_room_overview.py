@@ -1,4 +1,4 @@
-"""Art's room context and optional activity, separate from the Music mixer."""
+"""Art's room context and offered activities, separate from the Music mixer."""
 
 from __future__ import annotations
 
@@ -94,14 +94,43 @@ class ArtRoomOverviewWidget(QScrollArea):
         )
         activity.addWidget(self._activity)
         activity.addWidget(self._activity_detail)
-        self._content_layout.addLayout(activity)
-
-        self._actions = QBoxLayout(QBoxLayout.Direction.LeftToRight)
-        self._actions.setSpacing(Space.SM)
+        self._activity_row = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        self._activity_row.setSpacing(Space.LG)
+        self._activity_row.addLayout(activity, 1)
         self._activity_button = QPushButton()
         self._activity_button.setObjectName("PrimaryButton")
         self._activity_button.setVisible(False)
         self._activity_button.clicked.connect(self._open_activity)
+        self._activity_row.addWidget(self._activity_button)
+        self._content_layout.addLayout(self._activity_row)
+
+        self._secondary_activity_row = QFrame()
+        secondary_layout = QBoxLayout(
+            QBoxLayout.Direction.LeftToRight, self._secondary_activity_row
+        )
+        secondary_layout.setContentsMargins(0, 0, 0, 0)
+        secondary_layout.setSpacing(Space.LG)
+        self._secondary_activity_layout = secondary_layout
+        secondary_text = QVBoxLayout()
+        secondary_text.setSpacing(Space.XS)
+        self._secondary_activity = self._label(
+            "ArtRoomOverviewHeading", "Other room activity"
+        )
+        self._secondary_activity_detail = self._label(
+            "ArtRoomOverviewDetail", "Other room activity details"
+        )
+        secondary_text.addWidget(self._secondary_activity)
+        secondary_text.addWidget(self._secondary_activity_detail)
+        secondary_layout.addLayout(secondary_text, 1)
+        self._secondary_activity_button = QPushButton()
+        self._secondary_activity_button.setObjectName("GhostButton")
+        self._secondary_activity_button.clicked.connect(self._open_secondary_activity)
+        secondary_layout.addWidget(self._secondary_activity_button)
+        self._secondary_activity_row.hide()
+        self._content_layout.addWidget(self._secondary_activity_row)
+
+        self._actions = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        self._actions.setSpacing(Space.SM)
         self._conversation_button = QPushButton("Conversation")
         self._conversation_button.setObjectName("GhostButton")
         self._conversation_button.setAccessibleName("Show Conversation controls")
@@ -114,12 +143,14 @@ class ArtRoomOverviewWidget(QScrollArea):
         )
         self._conversation_button.setEnabled(False)
         self._conversation_button.clicked.connect(self._open_conversation)
-        self._activity_button.installEventFilter(self)
-        self._conversation_button.installEventFilter(self)
-        self._actions.addWidget(self._activity_button)
+        for button in self._navigation_buttons():
+            button.installEventFilter(self)
+            button.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         self._actions.addWidget(self._conversation_button)
         self._actions.addStretch(1)
         self._content_layout.addLayout(self._actions)
+        QWidget.setTabOrder(self._activity_button, self._secondary_activity_button)
+        QWidget.setTabOrder(self._secondary_activity_button, self._conversation_button)
 
     @staticmethod
     def _label(object_name: str, accessible_name: str) -> QLabel:
@@ -143,6 +174,8 @@ class ArtRoomOverviewWidget(QScrollArea):
             (self._connection_detail, overview.connection_detail),
             (self._activity, overview.activity_label),
             (self._activity_detail, overview.activity_detail),
+            (self._secondary_activity, overview.secondary_activity_label),
+            (self._secondary_activity_detail, overview.secondary_activity_detail),
         ):
             label.setText(text)
             label.setAccessibleDescription(text)
@@ -154,12 +187,27 @@ class ArtRoomOverviewWidget(QScrollArea):
         self._activity_button.setToolTip(overview.activity_detail)
         self._activity_button.setVisible(offered)
         self._activity_button.setEnabled(offered and overview.activity_enabled)
+        secondary_offered = bool(
+            overview.secondary_activity_action and overview.secondary_activity_action_label
+        )
+        secondary = self._secondary_activity_button
+        secondary.setText(overview.secondary_activity_action_label.replace("&", "&&"))
+        secondary.setAccessibleName(overview.secondary_activity_action_label)
+        secondary.setAccessibleDescription(overview.secondary_activity_detail)
+        secondary.setToolTip(overview.secondary_activity_detail)
+        secondary.setEnabled(secondary_offered and overview.secondary_activity_enabled)
+        self._secondary_activity_row.setVisible(secondary_offered)
         self._conversation_button.setEnabled(overview.conversation_enabled)
+        secondary_description = (
+            (overview.secondary_activity_label, overview.secondary_activity_detail)
+            if secondary_offered else ()
+        )
         description = ". ".join(
             text.rstrip(".") for text in (
                 overview.phase_label, overview.role_label,
                 overview.connection_label, overview.connection_detail,
                 overview.activity_label, overview.activity_detail,
+                *secondary_description,
             ) if text
         )
         self.setAccessibleDescription(description)
@@ -179,6 +227,14 @@ class ArtRoomOverviewWidget(QScrollArea):
         if overview is not None and overview.activity_enabled and overview.activity_action:
             self.activity_requested.emit(overview.activity_action)
 
+    def _open_secondary_activity(self) -> None:
+        overview = self._overview
+        if (
+            overview is not None and overview.secondary_activity_enabled
+            and overview.secondary_activity_action
+        ):
+            self.activity_requested.emit(overview.secondary_activity_action)
+
     def _open_conversation(self) -> None:
         if self._overview is not None and self._overview.conversation_enabled:
             self.conversation_requested.emit()
@@ -186,13 +242,20 @@ class ArtRoomOverviewWidget(QScrollArea):
     def activity_button(self) -> QPushButton:
         return self._activity_button
 
+    def secondary_activity_button(self) -> QPushButton:
+        return self._secondary_activity_button
+
+    def _navigation_buttons(self) -> tuple[QPushButton, ...]:
+        return (
+            self._activity_button, self._secondary_activity_button,
+            self._conversation_button,
+        )
+
     def conversation_button(self) -> QPushButton:
         return self._conversation_button
 
     def eventFilter(self, watched, event) -> bool:
-        if event.type() == QEvent.Type.FocusIn and watched in {
-            self._activity_button, self._conversation_button,
-        }:
+        if event.type() == QEvent.Type.FocusIn and watched in self._navigation_buttons():
             # Conversation can shorten the room on a compact display. A
             # keyboard action must scroll into view just like a pointer target.
             self.ensureWidgetVisible(watched, Space.SM, Space.SM)
@@ -202,7 +265,7 @@ class ArtRoomOverviewWidget(QScrollArea):
         if not self.isVisible():
             return
         focused = self.focusWidget()
-        if focused in {self._activity_button, self._conversation_button}:
+        if focused in self._navigation_buttons():
             self.ensureWidgetVisible(focused, Space.SM, Space.SM)
 
     def resizeEvent(self, event) -> None:
@@ -210,21 +273,34 @@ class ArtRoomOverviewWidget(QScrollArea):
         self._sync_density()
 
     def _sync_density(self) -> None:
-        compact = self.viewport().width() < 500 or self.viewport().height() < 340
+        height = self.viewport().height()
+        two_activities = bool(
+            self._overview is not None and self._overview.secondary_activity_action
+        )
+        compact = (
+            self.viewport().width() < 500 or height < 340
+            or (two_activities and height < 480)
+        )
         margin = Space.MD if compact else Space.XL
-        short = self.viewport().height() < 300
-        vertical_margin = Space.SM if short else Space.LG
+        short = height < 300 or (two_activities and height < 400)
+        vertical_margin = (
+            Space.XS if short and two_activities else Space.SM if short else Space.LG
+        )
         self._body_layout.setContentsMargins(margin, vertical_margin, margin, vertical_margin)
-        # When Conversation shares a compact window, retain every room fact
+        # Short rooms with two activities or Conversation retain every fact
         # and action while omitting the additional display heading.
         if self._overview is not None:
             self._title.setVisible(bool(self._overview.title) and not short)
         self._content_layout.setSpacing(Space.SM if compact else Space.LG)
-        self._actions.setDirection(
+        direction = (
             QBoxLayout.Direction.TopToBottom
             if self.viewport().width() < 420
             else QBoxLayout.Direction.LeftToRight
         )
+        for layout in (
+            self._activity_row, self._secondary_activity_layout, self._actions,
+        ):
+            layout.setDirection(direction)
         # Resizing for Conversation may move a button that already owns
         # focus, so it will not receive another FocusIn event. Wait until
         # the queued layout has settled before keeping that action visible.
