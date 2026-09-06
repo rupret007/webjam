@@ -1,82 +1,61 @@
-# Pre-Karen QA — Art Leave and the next room
+# Pre-Karen QA — current-room canvas recovery for Art guests
 
-Canonical checkout `/Users/jeffstory/Documents/WebJam`; branch
-`codex/webjam-finish-product-art-end-leave`; exact master base
-`0f097e70130b6ef80668f2c4cd0df896f012a592` after Bob's #80 squash.
-BEFORE [5559172070](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5559172070),
-07:20:13–11:20:13 CT on 2026-09-06; marker
-`OVERNIGHT_NEXT_ART_REBASE_20260906_0715`. The earlier 8d708d56 base gate was
-explicitly superseded by Jeff. This is the same task.
+Canonical checkout `/Users/jeffstory/Documents/WebJam`; fresh branch
+`codex/webjam-finish-product-art-room-actions`; fetched master base
+`171219a80935e80f4e00fbfeb59c8cc4f13eaee9`. Bob landed #81 with the reviewed
+`b94e8b53` tree before this branch; its source ref remains unchanged.
+BEFORE [5559660806](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5559660806),
+2026-09-06 08:50–12:50 CT; marker `OVERNIGHT_NEXT_ART_DOOR_20260906_0840`.
 
 ## Product and ownership
 
-Confirmed Art Leave offers Paste New Invite; host End offers Start New Room.
-The local finite receipt uses the room's captured role across saved Host/Join
-settings and restored Art/Music workspaces. It remains an idle presentation,
-so take preservation, Studio review and export keep their existing precedence.
-Conductor reset still advances its generation and captures the exited role.
-The existing invitation-only dialog preserves the workspace when canceled;
-new invitation acceptance creates a fresh owner. Historical callbacks cannot
-resurrect the departed room or authorize implicit hosting.
+An open guest canvas panel follows actual room availability. During loss it
+shows **Return to room**, hides an unconfirmed clock, and preserves the current
+room, local notes, video copy and external Drawpile work. Return hides this
+WebJam panel and exposes the existing room recovery guidance. A current receipt
+restores the latest canvas offer, including replacement or withdrawal.
 
-Native discovery now exposes Leave before the host's profile arrives. The
-cleanup owner captures that pending invitation by identity, retains it through
-failed cleanup, and retires it only after cleanup and profile restoration
-succeed with no runtime remaining. Art cleanup failure updates Notes immediately
-to the same Try Leave Room/Try End Room action owned by the header. Pending or
-failed cleanup blocks new invitation entry. Existing Music startup behavior
-is preserved by limiting that extra refresh to captured Art cleanup.
-
-No automatic meeting, canvas, player or Music launch; no new transport. Private
-invitations remain in memory outside public guidance/diagnostics. The existing
-rotating redacted log and bounded lifecycle events remain authoritative; this
-slice adds no log sink or payload logging. Privacy cases exclude private Notes,
-titles and native stop exceptions, and repeated receipt rendering stays stable.
+Open rechecks current source availability, room generation, binding, current
+panel/coordinator, and observed canvas projection. Native availability checks
+can report loss; ownership is rechecked afterward. LAN receipt freshness also
+covers the interval before queued UI callbacks. Rendering does not probe the
+native backend, launch a process, or alter conductor facts. Public diagnostics
+receive no new field, invitation, URL, Notes, filename or raw exception. Existing
+rotating/redacted logging remains in use; no additional payload logging.
 
 ## Verification
 
-- Native macOS Cocoa: **40 passed in 11.46s** (27 real controller journeys and
-  13 pure guidance checks). Controlled network/process boundaries; no live providers.
-- Native capture gate: **2 passed in 3.18s**. Four 760×600 captures cover Art
-  and restored Music, each in room and Notes views. Real Notes→room navigation,
-  button geometry and mouse activation reach the invitation dialog. Root and
-  independent review confirm readable copy and one reachable entry action.
-- Focused suite: **66 modules; 2,308 passed, 2 existing skips, 2 subtests,
-  122.68s, exit 0**.
-- Full unfiltered suite: **8,511 passed, 26 existing skips, 3 dependency
-  deprecation warnings, 99 subtests, 387.26s, exit 0**. One process:
-  `QT_QPA_PLATFORM=offscreen .venv/bin/pytest -vv`.
-- Ruff, compileall, pip check, runtime dependency policy and UX smoke: PASS.
-- Independent PRE_KAREN leftover/security/UX review: PASS on the same six-file
-  source/test freeze. No source changes during final validation.
-- Preservation audit: 48 original refs checked; 47 unchanged and local master
-  alone advanced to the authorized base. All four stashes MATCH. The #80 source
-  branch remains `da1b3036822e92a70784339af1a76187c06cb058`.
+- Fixture-first: ten failures on master; ten passed after the initial fix.
+- Expanded actual-controller matrix: 15 cases. Existing canvas/host/activity
+  regression selection: **103 passed in 9.07s**.
+- Native Cocoa: **15 passed in 5.79s**. Synthetic controlled room and launcher;
+  no real provider or hardware. Root inspected actual native recovery-panel
+  and 760×600 return screenshots. Visible readable action, Space-key activation,
+  stable repeated renders, and preserved workspace all pass.
+- Independent read-only leftover/security and UX audits: **PASS** on the same
+  four source/test hashes frozen in `/private/tmp/webjam-post81-frozen-source.json`.
+- Ruff, compileall, pip check, runtime dependency policy, UX smoke: **PASS**.
+- Focused suite: **73 modules; 2,515 passed, 2 existing skips, 5 subtests,
+  131.04s**, exit 0.
+- Full unfiltered pytest: **8,526 passed, 26 existing skips, 3 dependency
+  deprecation warnings, 99 subtests, 418.40s**, exit 0. Source/test hashes
+  remained unchanged throughout all final gates.
+- Hosted proof will be added to the PR body for the exact committed tip;
+  no hosted success is inferred from local results.
+- Preservation: 75 original local branch/tag refs audited; 74 unchanged, only
+  local master advanced to the verified base. All four stashes match.
 
-## Regression and review history
+## Scope and limits
 
-Fixture-first failures reproduced Start Session after guest Leave, stale Notes
-on failed cleanup, retained pending native invitation, inaccessible discovery
-Leave, and a misleading Record Session hint after restoring Music. Native stop
-faults use exceptions because the backend stop contract is void; LAN faults use
-False. Native callback assertions wait for the actual queued receipt, and title
-assertions expect the restored personal title rather than the borrowed room name.
+Three product files plus one new regression module. Host publication, #81
+Leave/rejoin/cleanup, parked #37/#49, door copy and artwork remain outside the
+diff. The coordinator retains only its already-private typed canvas projection;
+the UI caches the existing follow snapshot. No second video stack, new peer
+protocol, short-code, public rendezvous, automatic canvas or meeting launch.
+Webex remains first-class beside WebJam and off the Art door.
 
-An earlier focused run was deliberately interrupted at 2,211 passing tests for
-compact navigation inspection. Subsequent geometry and mouse checks found no
-missing-HUD defect; individual exact-SHA image inspection resolved an apparent
-omission in a multi-image display. The recording hint was removed. Interrupted
-and intermediate results are retained and are not final passing evidence.
-
-Raw logs, source hashes, four screenshots, review and preservation manifests
-are under `/private/tmp/webjam-post80-art-*`; fixture history is also under
-`/private/tmp/webjam-art-exit-*`. Exact-tip hosted SUCCESS, all four desktop
-checkout/artifact proofs and final tip/tree belong in the OPEN DRAFT and AFTER.
-Local verification does not establish release-package trust.
-
-Draft for Karen; AFTER and agent:none, then stop for Bob. Parked #37/#49
-untouched; stay off #67. No merge/tag/sign/Pages/Release Trust/publish/GitHub
-Latest, short-code/public rendezvous, or other repositories. Unsigned 0.27.2
-Jeff-only. Art Preview, squirrel Paint along mark, own tools, silent local-file
-Paint along and Webex beside WebJam retain their boundaries. Physical,
-live-provider, two-device and installed-package checks NOT RUN.
+Unsigned 0.27.2 is Jeff-only. Draft for Karen leftover/security/UX; no Codex
+merge, tag, signing, Pages, Release Trust, publish or GitHub Latest. Physical,
+two-device, installed-package and live-provider checks **NOT RUN**. Raw local
+logs, manifests, screenshots and intermediate failures are retained under
+`/private/tmp/webjam-post81-*`; initial failures are evidence, not final gates.

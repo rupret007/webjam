@@ -2053,6 +2053,7 @@ class ApplicationController(QObject):
             secondary_presence=secondary_presence,
         )
         setter(overview)
+        self._sync_shared_canvas_room()
         if callable(set_talk_share):
             set_talk_share(overview.conversation_enabled)
         return overview
@@ -13050,9 +13051,11 @@ class ApplicationController(QObject):
                 )
             else:
                 dialog.open_canvas_requested.connect(
-                    lambda: self._run_shared_canvas(coordinator.open_canvas)
+                    lambda: self._open_current_guest_canvas(coordinator, dialog)
                 )
+            dialog.return_requested.connect(lambda: self._return_from_shared_canvas(dialog))
             self._shared_canvas_dialog = dialog
+        self._sync_shared_canvas_room()
         if coordinator.hosting:
             dialog.set_host_snapshot(coordinator.host_snapshot)
         else:
@@ -13061,6 +13064,75 @@ class ApplicationController(QObject):
         if clock is not None:
             dialog.set_room_clock(clock.view)
         self._present_art_panel(dialog)
+
+    def _sync_shared_canvas_room(self) -> bool:
+        """Project guest room authority without releasing the artist's tools."""
+
+        dialog = getattr(self, "_shared_canvas_dialog", None)
+        coordinator = getattr(self, "_shared_canvas", None)
+        if dialog is None or coordinator is None or not coordinator.following:
+            return False
+        room = getattr(self, "_room_participant", None)
+        available = bool(
+            not getattr(self, "_shutdown", False)
+            and self.creator_profile.key == "art"
+            and room is not None and not room.blocked and not room.probing
+            and room.state is ArtRoomState.CONNECTED
+            and self._shared_canvas_binding == self._reference_video_identity()
+        )
+        if available:
+            source = getattr(self, "_remote_session", None)
+            if source is not None:
+                snapshot = source.snapshot
+                state = room.native_state
+                available = bool(
+                    room.native_source is source
+                    and snapshot.generation == room.native_generation
+                    and snapshot.role.value == "guest"
+                    and snapshot.phase.value == "connected"
+                )
+            else:
+                source = room.lan_guest
+                state = getattr(source, "last_state", None)
+                available = bool(source is not None and source.connection_available)
+            available = bool(
+                available and getattr(state, "creator_profile_key", "") == "art"
+                and coordinator.canvas_is_current(state)
+            )
+        dialog.set_room_available(available)
+        return available
+
+    def _open_current_guest_canvas(self, coordinator, dialog) -> None:
+        """A queued Open must still belong to this connected room's panel."""
+
+        if (coordinator is not getattr(self, "_shared_canvas", None)
+                or dialog is not getattr(self, "_shared_canvas_dialog", None)):
+            return
+        if not self._sync_shared_canvas_room():
+            return
+        room = self._room_participant
+        generation = room.generation
+        source = self._remote_session or room.lan_guest
+        available = source is not None and source.connection_available
+        # A native availability check may publish loss. Recheck ownership
+        # after that call before using any retained canvas invitation.
+        if (coordinator is not getattr(self, "_shared_canvas", None)
+                or dialog is not getattr(self, "_shared_canvas_dialog", None)):
+            return
+        current_source = self._remote_session or self._room_participant.lan_guest
+        if (not available or source is not current_source
+                or room is not self._room_participant or generation != room.generation
+                or not self._sync_shared_canvas_room()):
+            dialog.set_room_available(False)
+            return
+        self._run_shared_canvas(coordinator.open_canvas)
+
+    def _return_from_shared_canvas(self, dialog) -> None:
+        if (getattr(self, "_shutdown", False) or self.creator_profile.key != "art"
+                or dialog is not getattr(self, "_shared_canvas_dialog", None)):
+            return
+        dialog.hide()
+        self._return_to_art_room()
 
     def _open_drawpile_download(self) -> None:
         """Hand the artist to Drawpile's own download page, once, on request."""
@@ -13115,6 +13187,7 @@ class ApplicationController(QObject):
     def _on_shared_canvas_follow_snapshot(self, snapshot) -> None:
         dialog = getattr(self, "_shared_canvas_dialog", None)
         if dialog is not None:
+            self._sync_shared_canvas_room()
             dialog.set_follow_snapshot(snapshot)
         self._announce_shared_canvas_follow_state(snapshot)
 

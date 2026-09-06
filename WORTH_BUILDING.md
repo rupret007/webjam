@@ -1,40 +1,39 @@
-# Worth-Building — Art Leave and the next room
+# Worth Building — keep an open Art canvas panel tied to the room
 
-After a guest left Art, Start Session could either ask for an invitation or
-silently host a new room, depending on the transport and saved Host settings.
-The real controller fixture reproduced that mismatch before production edits.
-Notes could also keep the previous room action after failed cleanup. During
-native re-entry, Leave was inaccessible before the host profile arrived, and
-successful cleanup retained the pending invitation for another startup attempt.
+A guest opens Shared Canvas, then loses the WebJam room connection while the
+host changes or stops offering that canvas. The room overview correctly hides
+Open, but the already-open canvas panel still offered its retained invitation.
+A queued Open even launched Drawpile after a native runtime had failed or the
+LAN observer's five-second receipt had expired before the UI caught up.
 
-This is one room-exit/re-entry slice. A confirmed guest Leave offers Paste New
-Invite; a host End offers Start New Room. A finite local receipt preserves the
-exited role when the personal Art or Music workspace returns. The existing
-invitation-only dialog owns joining: cancellation preserves Notes/settings,
-and a new invitation creates a fresh guarded attempt. Local take review and
-export retain precedence. No room, meeting, canvas, player or audio launches
-from rendering or after cleanup alone.
+This fails the ten-second test: the room says reconnecting while its canvas
+panel still invites the artist into an unconfirmed activity. Ten new actual
+controller journeys failed on fetched master `171219a80935e80f4e00fbfeb59c8cc4f13eaee9`;
+all ten passed with the initial fix. Raw baseline and follow-up results are in
+`/private/tmp/webjam-post81-baseline.log` and `webjam-post81-first-fix.log`.
 
-Pending discovery exposes the existing Leave control. Failed Art cleanup
-immediately updates room and Notes guidance to Try Leave Room/Try End Room.
-Only confirmed cleanup and workspace restoration retire the captured pending
-native invitation; an unconfirmed owner remains available for cleanup retry.
-Private invitations stay in memory, outside public guidance and diagnostics.
-Existing bounded lifecycle events and rotating redacted logging remain in use.
+The guest panel now offers **Return to room** while its room or current canvas
+receipt is unavailable. Returning hides only this WebJam panel, preserving the
+room owner, notes, local video copy and any work already open in Drawpile. A
+current host receipt restores the latest offered canvas; a withdrawal removes
+Open. Dispatch checks the actual source, binding, generation, coordinator and
+panel, including the interval before queued UI updates arrive.
 
-Worth-Building: PASS. Verification and failure history are in PRE_KAREN_QA.md;
-exact-tip hosted job/build evidence belongs in the draft and coord AFTER.
+This is a guest connection/receipt slice. Host canvas publication and its
+share/change/stop/retry behavior remain the reviewed #74 implementation; #81's
+Leave/rejoin/invitation/cleanup logic remains intact. No new transport or video
+stack, automatic external launch, door copy or asset change. Webex stays beside
+WebJam. Public diagnostics receive no invitation, canvas URL, Notes or raw
+exception. Existing bounded rotating logs remain in use.
+
+Reviewed but deferred: Add Link from Talk & share currently opens generic
+Settings with an empty Conversation section collapsed. That is a separate
+contextual-navigation improvement, not part of this draft.
+
 Canonical checkout `/Users/jeffstory/Documents/WebJam`; branch
-`codex/webjam-finish-product-art-end-leave`; exact authorized master base
-`0f097e70130b6ef80668f2c4cd0df896f012a592` after Bob's #80 squash.
-BEFORE [5559172070](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5559172070)
-claims 07:20:13–11:20:13 CT on 2026-09-06, marker
-`OVERNIGHT_NEXT_ART_REBASE_20260906_0715`. The old 8d708d56 base blocker is superseded.
-
-One OPEN DRAFT for Karen, hosted green on four desktops, AFTER and agent:none,
-then stop for Bob. Preserve #80 and other original refs/stashes; parked #37/#49
-untouched; stay off #67. No merge/tag/sign/Pages/Release Trust/publish/GitHub
-Latest, short-code/public rendezvous, or other repositories. Unsigned 0.27.2
-is Jeff-only. Art Preview, own tools, silent local Paint along and Webex beside
-WebJam retain their boundaries. Physical/live-provider/package-install checks
-remain NOT RUN. Black/white/neutral gray/burnt orange.
+`codex/webjam-finish-product-art-room-actions`; BEFORE
+[5559660806](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5559660806),
+2026-09-06 08:50–12:50 CT. Bob's #81 squash tree matches the reviewed #81 tip;
+its source branch and parked #37/#49 are preserved. Draft only; no merge,
+tag, signing, Pages, release, publishing or GitHub Latest. Physical,
+installed-package and live-provider proof remains NOT RUN.
