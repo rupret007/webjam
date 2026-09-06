@@ -2254,12 +2254,19 @@ class ApplicationController(QObject):
             )
             return True
         except Exception:
-            LOGGER.exception("Could not start private recording service")
-            self._host_peer_warning = (
-                "Bandmates can still join and play. Automatic Local Originals "
-                "are unavailable, so use the band take or have each musician "
-                "record separately."
-            )
+            if self.creator_profile.key == "art":
+                # Listener exceptions may contain private addresses or paths.
+                LOGGER.warning("Art LAN room listener could not start")
+                self._host_peer_warning = (
+                    "The room could not open. Check your local network, then choose Try Again."
+                )
+            else:
+                LOGGER.exception("Could not start private recording service")
+                self._host_peer_warning = (
+                    "Bandmates can still join and play. Automatic Local Originals "
+                    "are unavailable, so use the band take or have each musician "
+                    "record separately."
+                )
             return False
 
     def peer_participant_id_for_channel(self, channel_id: int) -> str:

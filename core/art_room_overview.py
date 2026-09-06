@@ -107,11 +107,19 @@ def art_room_overview(
             )
     elif state is ArtRoomState.RECONNECTING:
         phase, label, title = "reconnecting", "Reconnecting", "Your work can stay open"
-        connection = "Waiting for the room connection"
-        detail = (
-            "New room changes are not confirmed yet. Your own tools can stay open "
-            "while WebJam checks the connection."
-        )
+        if hosting:
+            label = "Network interrupted"
+            connection = "Room network is unavailable"
+            detail = (
+                "Your own tools can stay open. Check your Wi-Fi or local network, "
+                "then choose Try Again."
+            )
+        else:
+            connection = "Waiting for the room connection"
+            detail = (
+                "New room changes are not confirmed yet. Your own tools can stay open "
+                "while WebJam checks the connection."
+            )
     elif probing or state is ArtRoomState.STARTING:
         phase, label, title = "opening", "Opening room" if hosting else "Joining room", "A place to make together"
         connection = "Preparing your room" if hosting else "Checking the host's room"

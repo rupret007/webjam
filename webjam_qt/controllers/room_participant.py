@@ -6,6 +6,7 @@ already authenticated connection. Neither path manufactures audio evidence.
 """
 from __future__ import annotations
 
+import logging
 import time
 import unicodedata
 from dataclasses import dataclass
@@ -20,6 +21,9 @@ from core.session_transfer import (
     ReferenceVideoSessionSnapshot,
     SharedCanvasSessionSnapshot,
 )
+
+
+LOGGER = logging.getLogger("webjam.qt.room_participant")
 
 
 @dataclass(frozen=True, repr=False)
@@ -129,6 +133,7 @@ class RoomParticipantController:
         self.lan_guest = None
         self._lan_terminal_owner = None
         self._lan_retry_in_progress = False
+        self._lan_host_retry_in_progress = False
         self.generation = 0
         self.role = ""
         self.state = ArtRoomState.NONE
@@ -150,9 +155,17 @@ class RoomParticipantController:
         return bool(self.probing or self.state is not ArtRoomState.NONE)
 
     @property
+    def _app_closing(self):
+        return bool(
+            self.app._shutdown or self.app.audio.stopping
+            or self.app.audio.cleanup_retry_required
+            or getattr(self.app, "_shutdown_cleanup_pending", False)
+            or getattr(self.app, "_shutdown_in_progress", False)
+        )
+
+    @property
     def blocked(self):
-        return bool(self.stopping or self.app._shutdown or self.app.audio.stopping
-                    or self.app.audio.cleanup_retry_required)
+        return bool(self.stopping or self._app_closing)
 
     @property
     def lan_failed(self):
@@ -317,30 +330,83 @@ class RoomParticipantController:
     def start_lan_host(self):
         from core.network_invite import local_band_address
 
-        self.role = "host"
-        self.stopping = False
-        self.app._conductor_setup_requested = True
-        self.app._start_session_conductor_attempt("host")
-        self.state = ArtRoomState.STARTING
+        if self._lan_host_retry_in_progress or self._app_closing:
+            return False
         address = local_band_address()
         host = self.app.host_peer
         bound = getattr(getattr(host, "server", None), "address", ("", 0))[0]
-        if host.active and bound != address:
-            # The artist explicitly chose Try Again after an interface change.
-            # Retain a failed listener and its retry rather than overwrite it.
-            if host.stop() is False:
-                self.state = ArtRoomState.FAILED
-                self.app.audio.require_cleanup_retry(
-                    hosting=True, art_room=True,
-                    error="The previous room is still closing.",
-                    title="Finish closing the room",
+        if (
+            host.active and self.role == "host"
+            and self.state in {
+                ArtRoomState.WAITING, ArtRoomState.CONNECTED, ArtRoomState.RECONNECTING,
+            }
+            and (not address or bound == address)
+        ):
+            # A retry cannot improve an absent route. Keep the listener,
+            # invitation and optional local work while its network can return.
+            if not address:
+                LOGGER.info("Art LAN room retry deferred: network unavailable")
+            self.tick()
+            self.app._refresh_readiness()
+            return True
+
+        self.role = "host"
+        self.stopping = False
+        self.app._conductor_setup_requested = True
+        self.state = ArtRoomState.STARTING
+        replacing = bool(host.active and bound != address)
+        if replacing:
+            self._lan_host_retry_in_progress = True
+            self.stopping = True
+            self.generation += 1
+            generation = self.generation
+
+            def still_current():
+                return bool(
+                    self.app.host_peer is host and self.generation == generation
+                    and self.role == "host" and self.app.creator_profile.key == "art"
+                    and self.app._remote_invite_owner is None and not self._app_closing
                 )
-                return False
-            self.app._release_reference_video()
-            self.app._release_shared_canvas()
-            self.app._release_room_clock()
+
+            try:
+                LOGGER.info("Art LAN room listener replacement requested")
+                try:
+                    stopped = host.stop() is True
+                except Exception:  # private listener errors never enter diagnostics
+                    stopped = False
+                # End/Quit or a newer owner can win while stop is in progress.
+                if not still_current():
+                    LOGGER.info("Art LAN room listener replacement abandoned")
+                    return False
+                if not stopped or host.active:
+                    LOGGER.warning("Art LAN room listener cleanup unconfirmed")
+                    self.state = ArtRoomState.FAILED
+                    self.app.audio.require_cleanup_retry(
+                        hosting=True, art_room=True,
+                        error="The previous room is still closing.",
+                        title="Finish closing the room",
+                    )
+                    return False
+                self.app._release_reference_video()
+                self.app._release_shared_canvas()
+                self.app._release_room_clock()
+                if not still_current():
+                    LOGGER.info("Art LAN room listener replacement abandoned")
+                    return False
+                # Confirmed old-listener cleanup permits a new attempt.
+                # A timer observation must never manufacture this boundary.
+                conductor = self.app._live_session_conductor()
+                self.app._session_conductor_token = conductor.reset_to_idle("host")
+                self.stopping = False
+            finally:
+                self._lan_host_retry_in_progress = False
+        self.app._start_session_conductor_attempt("host")
         self.state = (ArtRoomState.WAITING if address and self.app._ensure_host_peer(address)
                       else ArtRoomState.FAILED)
+        if replacing and self.state is ArtRoomState.WAITING:
+            LOGGER.info("Art LAN room listener replacement completed")
+        elif not address:
+            LOGGER.info("Art LAN room start deferred: network unavailable")
         self.app._refresh_readiness()
         return True
 
@@ -349,7 +415,7 @@ class RoomParticipantController:
 
         address = local_band_address()
         return RoomShareReadiness(address, bool(
-            address and self.role == "host" and not self.stopping
+            address and self.role == "host" and not self.blocked
             and self.app.host_peer.active
             and getattr(getattr(self.app.host_peer, "server", None), "address", ("", 0))[0] == address
         ))
@@ -484,9 +550,18 @@ class RoomParticipantController:
                               else ArtRoomState.FAILED if phase == "failed"
                               else ArtRoomState.WAITING)
             elif self.app.host_peer.active:
-                readers = self.app.host_peer.server.room_participants()
-                self.state = (ArtRoomState.CONNECTED if readers else ArtRoomState.WAITING
-                              ) if self.readiness().shareable else ArtRoomState.FAILED
+                previous = self.state
+                if self.readiness().shareable:
+                    readers = self.app.host_peer.server.room_participants()
+                    self.state = ArtRoomState.CONNECTED if readers else ArtRoomState.WAITING
+                    if previous is ArtRoomState.RECONNECTING:
+                        LOGGER.info("Art LAN room network route restored")
+                else:
+                    # A retained listener with a missing/mismatched local
+                    # route can recover. Ownership is not participant proof.
+                    self.state = ArtRoomState.RECONNECTING
+                    if previous is not ArtRoomState.RECONNECTING:
+                        LOGGER.info("Art LAN room network interrupted")
             self.app._update_session_hud()
 
     def stop_lan(self):
@@ -531,6 +606,13 @@ class RoomParticipantController:
                 "Ask the host for a fresh invitation, then choose Paste New Invite." if self.probe_failed else
                 "WebJam is opening the room from your invitation.",
                 SessionPrimaryAction.PASTE_NEW_INVITE if self.probe_failed else SessionPrimaryAction.WAIT,
+            )
+        if (self.role == "host" and self.state is ArtRoomState.RECONNECTING
+                and self.app._remote_invite_owner is None):
+            return GuidanceDisplayOverride(
+                "Room network interrupted",
+                "Check your Wi-Fi or local network, then choose Try Again.",
+                SessionPrimaryAction.RETRY_SETUP, "Try Again",
             )
         if (self.role == "host" and self.state is ArtRoomState.FAILED
                 and self.app._remote_invite_owner is None):

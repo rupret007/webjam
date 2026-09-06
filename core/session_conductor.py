@@ -748,7 +748,8 @@ def _presentation(
             return present(
                 SessionPrimaryAction.WAIT, "Reconnecting to the room",
                 "The room connection was interrupted. Your own work stays with you.",
-                "The host’s latest actions cannot be confirmed until the connection returns.",
+                "New room changes are not confirmed while the room network is unavailable."
+                if host else "The host’s latest actions cannot be confirmed until the connection returns.",
             )
         return present(
             SessionPrimaryAction.RESET_INVITE if host else SessionPrimaryAction.PASTE_NEW_INVITE,
