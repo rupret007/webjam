@@ -22,6 +22,8 @@ import threading
 import time
 import unicodedata
 import uuid
+from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
@@ -1580,82 +1582,83 @@ class ApplicationController(QObject):
                     or getattr(getattr(self, "_persistence", None), "_borrowed_title", None)
                 )
                 def restore_profile() -> None:
-                    if restore_borrowed:
-                        previous_profile = self._active_creator_profile_key
-                        previous_owner = self._creator_profile_host_owned
-                        persistence = getattr(self, "_persistence", None)
-                        previous_namespace = getattr(persistence, "profile_key", None)
-                        previous_borrowed_title = getattr(persistence, "_borrowed_title", None)
-                        strip = getattr(self.window, "session_strip", None)
-                        canvas = getattr(self.window, "session_canvas", None)
-                        current_title = getattr(strip, "current_title", None)
-                        current_notes = getattr(canvas, "current_notes", None)
-                        previous_title = current_title() if callable(current_title) else None
-                        previous_notes = current_notes() if callable(current_notes) else None
-                        try:
-                            saved_profile_key = (
-                                canonical_creator_profile_key(
-                                    getattr(self.settings, "last_creator_profile_key", "music")
-                                )
-                                or "music"
-                            )
-                            ApplicationController._apply_creator_profile_key(
-                                self,
-                                saved_profile_key,
-                                host_owned=False,
-                            )
+                    with ApplicationController._defer_session_pulse_refresh(self):
+                        if restore_borrowed:
+                            previous_profile = self._active_creator_profile_key
+                            previous_owner = self._creator_profile_host_owned
                             persistence = getattr(self, "_persistence", None)
-                            clear_borrowed_title = getattr(
-                                persistence,
-                                "clear_borrowed_title",
-                                None,
-                            )
-                            if callable(clear_borrowed_title):
-                                clear_borrowed_title()
-                            strip = getattr(getattr(self, "window", None), "session_strip", None)
-                            set_session_title = getattr(strip, "set_session_title", None)
-                            if callable(set_session_title):
-                                set_session_title(
-                                    _creator_profile_for_controller(self).default_template
+                            previous_namespace = getattr(persistence, "profile_key", None)
+                            previous_borrowed_title = getattr(persistence, "_borrowed_title", None)
+                            strip = getattr(self.window, "session_strip", None)
+                            canvas = getattr(self.window, "session_canvas", None)
+                            current_title = getattr(strip, "current_title", None)
+                            current_notes = getattr(canvas, "current_notes", None)
+                            previous_title = current_title() if callable(current_title) else None
+                            previous_notes = current_notes() if callable(current_notes) else None
+                            try:
+                                saved_profile_key = (
+                                    canonical_creator_profile_key(
+                                        getattr(self.settings, "last_creator_profile_key", "music")
+                                    )
+                                    or "music"
                                 )
-                            load_metadata = getattr(
-                                persistence,
-                                "_load_session_metadata",
-                                None,
-                            )
-                            if callable(load_metadata):
-                                load_metadata()
+                                ApplicationController._apply_creator_profile_key(
+                                    self,
+                                    saved_profile_key,
+                                    host_owned=False,
+                                )
+                                persistence = getattr(self, "_persistence", None)
+                                clear_borrowed_title = getattr(
+                                    persistence,
+                                    "clear_borrowed_title",
+                                    None,
+                                )
+                                if callable(clear_borrowed_title):
+                                    clear_borrowed_title()
+                                strip = getattr(getattr(self, "window", None), "session_strip", None)
+                                set_session_title = getattr(strip, "set_session_title", None)
+                                if callable(set_session_title):
+                                    set_session_title(
+                                        _creator_profile_for_controller(self).default_template
+                                    )
+                                load_metadata = getattr(
+                                    persistence,
+                                    "_load_session_metadata",
+                                    None,
+                                )
+                                if callable(load_metadata):
+                                    load_metadata()
 
-                        except Exception:
-                            self._active_creator_profile_key = previous_profile
-                            self._creator_profile_host_owned = previous_owner
-                            # Profile switching also changes the Notes owner.
-                            # Restore that namespace and the visible draft as
-                            # one unit before an artist can edit or save again.
-                            set_namespace = getattr(persistence, "set_profile_key", None)
-                            if callable(set_namespace) and previous_namespace is not None:
-                                set_namespace(previous_namespace)
-                            if previous_borrowed_title is None:
-                                restore_title_owner = getattr(persistence, "clear_borrowed_title", None)
-                                if callable(restore_title_owner):
-                                    restore_title_owner()
-                            else:
-                                restore_title_owner = getattr(persistence, "mark_title_borrowed", None)
-                                if callable(restore_title_owner):
-                                    restore_title_owner(previous_borrowed_title)
-                            restore_title = getattr(strip, "set_session_title", None)
-                            if callable(restore_title) and previous_title is not None:
-                                restore_title(previous_title)
-                            restore_notes = getattr(canvas, "restore_notes", None)
-                            if callable(restore_notes) and previous_notes is not None:
-                                restore_notes(previous_notes)
-                            refresh_notes = getattr(persistence, "_refresh_notes_state", None)
-                            if callable(refresh_notes):
-                                refresh_notes()
-                            setter = getattr(self.window, "set_creator_profile", None)
-                            if callable(setter):
-                                setter(self.creator_profile, locked=previous_owner)
-                            raise
+                            except Exception:
+                                self._active_creator_profile_key = previous_profile
+                                self._creator_profile_host_owned = previous_owner
+                                # Profile switching also changes the Notes owner.
+                                # Restore that namespace and the visible draft as
+                                # one unit before an artist can edit or save again.
+                                set_namespace = getattr(persistence, "set_profile_key", None)
+                                if callable(set_namespace) and previous_namespace is not None:
+                                    set_namespace(previous_namespace)
+                                if previous_borrowed_title is None:
+                                    restore_title_owner = getattr(persistence, "clear_borrowed_title", None)
+                                    if callable(restore_title_owner):
+                                        restore_title_owner()
+                                else:
+                                    restore_title_owner = getattr(persistence, "mark_title_borrowed", None)
+                                    if callable(restore_title_owner):
+                                        restore_title_owner(previous_borrowed_title)
+                                restore_title = getattr(strip, "set_session_title", None)
+                                if callable(restore_title) and previous_title is not None:
+                                    restore_title(previous_title)
+                                restore_notes = getattr(canvas, "restore_notes", None)
+                                if callable(restore_notes) and previous_notes is not None:
+                                    restore_notes(previous_notes)
+                                refresh_notes = getattr(persistence, "_refresh_notes_state", None)
+                                if callable(refresh_notes):
+                                    refresh_notes()
+                                setter = getattr(self.window, "set_creator_profile", None)
+                                if callable(setter):
+                                    setter(self.creator_profile, locked=previous_owner)
+                                raise
 
                 audio = getattr(self, "audio", None)
                 if getattr(audio, "_stop_art_room", False) and getattr(audio, "stopping", False):
@@ -2071,6 +2074,8 @@ class ApplicationController(QObject):
     ) -> None:
         """Apply one canonical profile; authenticated host state wins for guests."""
 
+        if getattr(self, "_shutdown", False):
+            return
         canonical = canonical_creator_profile_key(profile_key)
         if canonical is None:
             return
@@ -2093,37 +2098,38 @@ class ApplicationController(QObject):
         )
         if canonical == active_key and not owner_changed:
             return
-        if canonical != active_key:
-            self._chat_profile_generation = (
-                int(getattr(self, "_chat_profile_generation", 0)) + 1
-            )
-        self._active_creator_profile_key = canonical
-        self._creator_profile_host_owned = bool(host_owned)
-        if not host_owned:
-            self.settings.last_creator_profile_key = canonical
-        persistence = getattr(self, "_persistence", None)
-        switch_profile_key = getattr(persistence, "switch_profile_key", None)
-        if callable(switch_profile_key):
-            switch_profile_key(canonical)
-        else:
-            set_profile_key = getattr(persistence, "set_profile_key", None)
-            if callable(set_profile_key):
-                set_profile_key(canonical)
-        setter = getattr(self.window, "set_creator_profile", None)
-        if callable(setter):
-            setter(self.creator_profile, locked=self._creator_profile_host_owned)
-        # Unbound-method tests pass a stub strip. Only a real SessionStrip
-        # owns these setters; the HUD path still refreshes them on a live
-        # controller.
-        strip = getattr(getattr(self, "window", None), "session_strip", None)
-        set_recording = getattr(strip, "set_recording_available", None)
-        recording_available = getattr(self, "_session_recording_control_available", None)
-        if callable(set_recording) and callable(recording_available):
-            set_recording(recording_available())
-        set_shared_track = getattr(strip, "set_reference_track_available", None)
-        shared_track_available = getattr(self, "_shared_track_host_available", None)
-        if callable(set_shared_track) and callable(shared_track_available):
-            set_shared_track(shared_track_available())
+        with ApplicationController._defer_session_pulse_refresh(self):
+            if canonical != active_key:
+                self._chat_profile_generation = (
+                    int(getattr(self, "_chat_profile_generation", 0)) + 1
+                )
+            self._active_creator_profile_key = canonical
+            self._creator_profile_host_owned = bool(host_owned)
+            if not host_owned:
+                self.settings.last_creator_profile_key = canonical
+            persistence = getattr(self, "_persistence", None)
+            switch_profile_key = getattr(persistence, "switch_profile_key", None)
+            if callable(switch_profile_key):
+                switch_profile_key(canonical)
+            else:
+                set_profile_key = getattr(persistence, "set_profile_key", None)
+                if callable(set_profile_key):
+                    set_profile_key(canonical)
+            setter = getattr(self.window, "set_creator_profile", None)
+            if callable(setter):
+                setter(self.creator_profile, locked=self._creator_profile_host_owned)
+            # Unbound-method tests pass a stub strip. Only a real SessionStrip
+            # owns these setters; the HUD path still refreshes them on a live
+            # controller.
+            strip = getattr(getattr(self, "window", None), "session_strip", None)
+            set_recording = getattr(strip, "set_recording_available", None)
+            recording_available = getattr(self, "_session_recording_control_available", None)
+            if callable(set_recording) and callable(recording_available):
+                set_recording(recording_available())
+            set_shared_track = getattr(strip, "set_reference_track_available", None)
+            shared_track_available = getattr(self, "_shared_track_host_available", None)
+            if callable(set_shared_track) and callable(shared_track_available):
+                set_shared_track(shared_track_available())
 
     def _guest_media_state(self) -> tuple[GuestMediaState, EvidenceState]:
         """Map the guest transfer owner's finite facts without exposing errors."""
@@ -4070,6 +4076,7 @@ class ApplicationController(QObject):
             self._schedule_session_pulse_refresh
         )
         self.window.session_canvas.notes_changed.connect(self._schedule_notes_save)
+        self.window.session_canvas.notes_restored.connect(self._refresh_session_pulse)
         self.window.session_canvas.save_notes_requested.connect(self._recover_notes)
         self.window.session_canvas.brief_export_requested.connect(
             self._refresh_session_pulse
@@ -8901,6 +8908,49 @@ class ApplicationController(QObject):
                 "WebJam is connecting your music.",
             )
 
+    def _guest_profile_probe_pending(self, remote_session, remote_snapshot) -> bool:
+        """A current guest owner is still discovering the host's profile."""
+
+        from services.remote_session_runtime import RemoteSessionPhase, RemoteSessionSnapshot
+
+        room = getattr(self, "_room_participant", None)
+        if (
+            room is None or getattr(room, "role", "") != "guest"
+            or not getattr(room, "probing", False)
+            or getattr(room, "probe_failed", False)
+            or getattr(room, "blocked", True)
+            or getattr(self, "_shutdown_in_progress", False)
+            or getattr(self, "_shutdown_cleanup_pending", False)
+            or getattr(self, "_remote_invite_owner", None) is not None
+            or getattr(self, "guest_peer", None) is not None
+        ):
+            return False
+        if room.lan_guest is not None:
+            return bool(
+                not room.lan_failed and remote_session is None
+                and room.native_source is None
+            )
+        # Facts already captured this immutable snapshot from the current
+        # runtime. Its worker may advance the same attempt between reads;
+        # rereading object identity would reject valid in-progress evidence.
+        if (
+            not isinstance(remote_snapshot, RemoteSessionSnapshot)
+            or remote_session is not getattr(self, "_remote_session", None)
+            or remote_snapshot.role.value != SessionRole.GUEST.value
+            or remote_snapshot.generation <= 0
+            or remote_snapshot.phase not in {
+                RemoteSessionPhase.PREPARING, RemoteSessionPhase.CONNECTED,
+            }
+        ):
+            return False
+        # Before the first authenticated room receipt there is no captured
+        # source. Once captured, it must still identify this exact runtime.
+        return bool(
+            (room.native_source is None and room.native_generation == 0)
+            or (room.native_source is remote_session
+                and room.native_generation == remote_snapshot.generation)
+        )
+
     def _session_conductor_facts(self) -> SessionConductorFacts:
         """Collect authoritative facts for the pure musician-facing conductor.
 
@@ -9000,6 +9050,9 @@ class ApplicationController(QObject):
             or getattr(self, "_remote_invite_owner", None) is not None
         )
 
+        pending_guest_profile = ApplicationController._guest_profile_probe_pending(
+            self, remote_session, remote_snapshot,
+        )
         if bool(getattr(audio, "recovering", False)):
             music_path = MusicPathState.RECONNECTING
         elif connected:
@@ -9021,6 +9074,13 @@ class ApplicationController(QObject):
             music_path = MusicPathState.STARTING
         elif launch_intended or jamulus_state in {"Running", "Already running"}:
             music_path = MusicPathState.STARTING
+        elif pending_guest_profile and jamulus_state not in {
+            "Launch failed", "Not found", "Port in use",
+        }:
+            # An installed room observer has not selected or started audio.
+            # A prior session's Stopped/disconnected value cannot fail this
+            # new discovery attempt before its authenticated profile arrives.
+            music_path = MusicPathState.NOT_STARTED
         elif self._conductor_had_authenticated_connection:
             music_path = MusicPathState.DISCONNECTED
         elif jamulus_state in terminal_jamulus_states and setup_requested:
@@ -9078,7 +9138,7 @@ class ApplicationController(QObject):
         remote_phase = str(
             getattr(getattr(remote_snapshot, "phase", None), "value", "")
         )
-        if remote_phase in {"preparing", "connecting"}:
+        if pending_guest_profile or remote_phase in {"preparing", "connecting"}:
             guest_enrollment = EvidenceState.IN_PROGRESS
         elif connected and not hosting:
             guest_enrollment = EvidenceState.VERIFIED
@@ -9446,9 +9506,15 @@ class ApplicationController(QObject):
             LOGGER.warning("Session guidance timeline was unavailable", exc_info=True)
             events = ()
         try:
+            creative = getattr(self, "_current_session_pulse", None)
+            if creative is not None and (
+                creative.mode_key != snapshot.facts.creator_profile_key
+                or creative.mode_key != getattr(self, "_active_creator_profile_key", "music")
+            ):
+                creative = None
             guidance = build_musician_guidance(
                 snapshot,
-                creative=getattr(self, "_current_session_pulse", None),
+                creative=creative,
                 lifecycle_events=events,
                 display_override=display_override,
             )
@@ -14494,17 +14560,19 @@ class ApplicationController(QObject):
 
     def _load_session_title(self) -> None:
         """Restore the session title and last-used mode from disk."""
-        self._persistence._load_session_metadata()
+        with self._defer_session_pulse_refresh():
+            self._persistence._load_session_metadata()
 
     def _set_session_entry_title(self, title: str, *, borrowed: bool) -> None:
         """Apply entry context before any title signal can persist it."""
-        if borrowed:
-            self._persistence.mark_title_borrowed(title)
-        else:
-            self._persistence.clear_borrowed_title()
-        self.window.session_strip.set_session_title(title)
-        if not borrowed:
-            self._save_session_title()
+        with self._defer_session_pulse_refresh():
+            if borrowed:
+                self._persistence.mark_title_borrowed(title)
+            else:
+                self._persistence.clear_borrowed_title()
+            self.window.session_strip.set_session_title(title)
+            if not borrowed:
+                self._save_session_title()
 
     def _save_session_title(self) -> None:
         """Persist the current session title and mode to disk."""
@@ -14527,38 +14595,88 @@ class ApplicationController(QObject):
             if not participant.role.startswith("Preview ·")
         ]
 
-    def _refresh_session_pulse(self) -> None:
-        """Rebuild the local pulse from the current UI session state."""
+    @contextmanager
+    def _defer_session_pulse_refresh(self):
+        """Publish creative context only after its Notes and metadata settle."""
+
+        previous = bool(getattr(self, "_pulse_refresh_deferred", False))
+        self._pulse_refresh_deferred = True
         try:
+            yield
+        finally:
+            self._pulse_refresh_deferred = previous
+            refresh = getattr(self, "_refresh_session_pulse", None)
+            if not previous and callable(refresh):
+                refresh()
+
+    def _session_pulse_context(self) -> tuple[str, str, str, str]:
+        return (
+            getattr(self, "_active_creator_profile_key", "music"),
+            self.window.session_strip.current_mode_key(),
+            self.window.session_strip.current_title(),
+            self.window.session_canvas.current_notes(),
+        )
+
+    def _clear_creative_guidance(self) -> None:
+        """Retire creative text without changing accepted conductor facts."""
+
+        guidance = getattr(self, "_last_musician_guidance", None)
+        if guidance is None or guidance.creative is None:
+            return
+        guidance = replace(guidance, creative=None)
+        self._last_musician_guidance = guidance
+        self.window.session_canvas.set_musician_guidance(guidance)
+        self.window.recording_studio.set_musician_guidance(guidance)
+
+    def _refresh_session_pulse(self) -> None:
+        """Rebuild local creative guidance from the current owned document."""
+
+        if (getattr(self, "_shutdown", False)
+                or getattr(self, "_pulse_refresh_deferred", False)):
+            return
+        context = None
+        try:
+            context = self._session_pulse_context()
+            profile, mode, title, notes = context
             pulse = build_session_pulse(
-                mode_key=self.window.session_strip.current_mode_key(),
-                creator_profile_key=getattr(
-                    self,
-                    "_active_creator_profile_key",
-                    "music",
-                ),
-                title=self.window.session_strip.current_title(),
-                notes=self.window.session_canvas.current_notes(),
+                mode_key=mode,
+                creator_profile_key=profile,
+                title=title,
+                notes=notes,
                 participants=self._session_pulse_participants(),
             )
-            self._current_session_pulse = pulse
-            self.window.session_canvas.set_session_pulse(pulse)
-            snapshot = getattr(self, "_last_session_conductor_snapshot", None)
-            if snapshot is not None:
-                self._publish_musician_guidance(
-                    snapshot,
-                    display_override=getattr(
-                        self,
-                        "_last_guidance_display_override",
-                        None,
-                    ),
-                )
+            if (getattr(self, "_shutdown", False)
+                    or context != self._session_pulse_context()):
+                return
+            if pulse != getattr(self, "_current_session_pulse", None):
+                self._current_session_pulse = pulse
+                self.window.session_canvas.set_session_pulse(pulse)
         except Exception:
-            # Never leave stale derived content beside newer raw notes. Brief
-            # export then safely falls back to the notes themselves.
-            self.window.session_canvas.clear_session_pulse()
+            if getattr(self, "_shutdown", False):
+                return
+            try:
+                current_context = self._session_pulse_context()
+            except Exception:
+                current_context = None
+            if (context is not None and current_context is not None
+                    and context != current_context):
+                return
             self._current_session_pulse = None
-            LOGGER.warning("Session pulse refresh failed", exc_info=True)
+            self.window.session_canvas.clear_session_pulse()
+            # Notes and parser exceptions can contain private local text.
+            LOGGER.warning("Session pulse refresh failed")
+
+        snapshot = getattr(self, "_last_session_conductor_snapshot", None)
+        current_profile = getattr(self, "_active_creator_profile_key", "music")
+        if (getattr(self, "_current_session_pulse", None) is None
+                or snapshot is None
+                or snapshot.facts.creator_profile_key != current_profile):
+            self._clear_creative_guidance()
+        if snapshot is not None and snapshot.facts.creator_profile_key == current_profile:
+            self._publish_musician_guidance(
+                snapshot,
+                display_override=getattr(self, "_last_guidance_display_override", None),
+            )
 
     # ------------------------------------------------------------------
     # Audio routing detection (Phase 5)

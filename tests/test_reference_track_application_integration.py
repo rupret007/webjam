@@ -575,6 +575,8 @@ def test_host_projects_bounded_shared_track_truth_to_private_peers() -> None:
 
 def test_guest_renders_authoritative_shared_track_and_recording_count_in() -> None:
     controller = ApplicationController.__new__(ApplicationController)
+    # This partial fixture owns the track seam, not the Notes surface.
+    controller._refresh_session_pulse = MagicMock()
     strip = SimpleNamespace(
         set_recording_phase=MagicMock(),
         set_shared_track_snapshot=MagicMock(),
@@ -618,6 +620,8 @@ def test_guest_renders_authoritative_shared_track_and_recording_count_in() -> No
 
 def test_successful_peer_teardown_clears_guest_projection_only_after_proof() -> None:
     controller = ApplicationController.__new__(ApplicationController)
+    # This partial fixture owns the track seam, not the Notes surface.
+    controller._refresh_session_pulse = MagicMock()
     clear_projection = MagicMock()
     controller.window = SimpleNamespace(
         session_strip=SimpleNamespace(
