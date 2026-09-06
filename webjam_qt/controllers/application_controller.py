@@ -1345,6 +1345,38 @@ class ApplicationController(QObject):
             return "host" if getattr(audio, "_stop_hosting", False) else "guest"
         return room.role if room is not None else ""
 
+    def _completed_art_room_role(self) -> str:
+        """Return the exited role only after cleanup, until the next room intent.
+
+        A native guest may have saved Host settings, and a borrowed Art profile
+        may already be restored to Music. Neither changes what Leave completed.
+        Current owners and startup intent always supersede this historical receipt.
+        """
+        audio = getattr(self, "audio", None)
+        room = getattr(self, "_room_participant", None)
+        lifecycle = getattr(getattr(self, "session_lifecycle", None), "phase", None)
+        if (
+            not getattr(audio, "_stop_art_room", False)
+            or not getattr(audio, "ended_by_user", False)
+            or getattr(audio, "stopping", False)
+            or getattr(audio, "cleanup_retry_required", False)
+            or lifecycle not in {SessionLifecyclePhase.IDLE, SessionLifecyclePhase.COMPLETED}
+            or getattr(self, "_shutdown", False)
+            or getattr(self, "_shutdown_cleanup_pending", False)
+            or getattr(self, "_shutdown_in_progress", False)
+            or getattr(self, "_conductor_setup_requested", False)
+            or getattr(self, "_startup_attempt", None) is not None
+            or getattr(self, "_pending_room_profile_restore", None) is not None
+            or (room is not None and (room.active or room.lan_guest is not None))
+            or bool(getattr(getattr(self, "host_peer", None), "active", False))
+            or any(getattr(self, name, None) is not None for name in (
+                "_remote_session", "_remote_invite_owner", "_remote_invitation",
+                "guest_peer",
+            ))
+        ):
+            return ""
+        return "host" if getattr(audio, "_stop_hosting", False) else "guest"
+
     def _finish_art_room_profile_restore(self) -> None:
         restore = getattr(self, "_pending_room_profile_restore", None)
         if callable(restore):
@@ -4547,6 +4579,9 @@ class ApplicationController(QObject):
         if ApplicationController._art_room_active(self):
             self.audio.stop()
             return
+        if ApplicationController._completed_art_room_role(self) == "guest":
+            self._paste_new_invitation()
+            return
         # Lightweight legacy/controller-extension fixtures may construct this
         # QObject without the normal initializer. Keep that narrow compatibility
         # path on the old verifier instead of inventing incomplete startup
@@ -4605,6 +4640,12 @@ class ApplicationController(QObject):
             or getattr(self, "_invite_switch_in_flight", False)
             or getattr(self, "_primary_recovery_retire_inflight", False)
         ):
+            return False
+        if ApplicationController._completed_art_room_role(self) == "guest":
+            # A late startup callback cannot re-enter the room just left or
+            # silently host using the guest's restored personal settings.
+            if authorization_generation > 0:
+                self._paste_new_invitation()
             return False
         if getattr(self, "_reconnect_gave_up", False) and authorization_generation <= 0:
             self._sync_reference_track_primary_gate()
@@ -8111,9 +8152,10 @@ class ApplicationController(QObject):
                 getattr(snapshot, "stage", None)
                 is RemoteSessionStage.SECURING_CONNECTION
             )
-            # Refresh supporting controls first. Legacy permission/lobby copy
-            # must not overwrite this active join stage afterward.
-            self._update_session_hud()
+            # Refresh the actual Leave control as well as guidance. A guest
+            # can cancel discovery before the host profile arrives, including
+            # re-entry after the previous room hid its completed Leave button.
+            self._refresh_readiness()
             override = GuidanceDisplayOverride(
                 "Securing connection" if securing else "Contacting host",
                 "WebJam is verifying the private path to your room.",
@@ -8334,6 +8376,14 @@ class ApplicationController(QObject):
         """Reopen Join without changing the current invitation's retry policy."""
 
         if self._shutdown_cleanup_blocks_action():
+            return
+        audio = getattr(self, "audio", None)
+        if (
+            getattr(self, "_shutdown", False)
+            or getattr(self, "_shutdown_in_progress", False)
+            or getattr(audio, "stopping", False)
+            or getattr(audio, "cleanup_retry_required", False)
+        ):
             return
         from webjam_qt.windows.launch_dialog import LaunchDialog
 
@@ -9351,9 +9401,17 @@ class ApplicationController(QObject):
         except Exception:
             LOGGER.warning("Studio guidance facts were unavailable", exc_info=True)
             studio_facts = StudioGuidanceFacts()
+        completed_art_role = ApplicationController._completed_art_room_role(self)
+        art_room_closed = bool(
+            completed_art_role and not startup_cleanup_pending
+            and cleanup in {CleanupState.NOT_REQUESTED, CleanupState.COMPLETE}
+        )
+        if art_room_closed:
+            role = SessionRole(completed_art_role)
         return SessionConductorFacts(
             role=role,
             setup_requested=setup_requested,
+            art_room_closed=art_room_closed,
             # WebJam has no separate identity wizard in the production path;
             # Band Check remains the real, explicit sound setup gate.
             identity=EvidenceState.NOT_REQUIRED,
@@ -9530,7 +9588,7 @@ class ApplicationController(QObject):
         # Explain what this profile allows without claiming a recorder or
         # a completed setup. The HUD remains the only startup action.
         stage_hint = ""
-        if presentation.phase is SessionConductorPhase.IDLE:
+        if presentation.phase is SessionConductorPhase.IDLE and not facts.art_room_closed:
             if self.creator_profile.key == "art":
                 stage_hint = (
                     "Bring your own tools: paint, clay, paper or a printer. "
@@ -10003,10 +10061,12 @@ class ApplicationController(QObject):
         # that safe boundary so a late callback from the old attempt cannot
         # make the freshly idle lobby look failed, live, or reconnecting.
         conductor = self._live_session_conductor()
+        # Clear the finished intent before capturing the reset role. A guest's
+        # restored Host preference must not replace the confirmed Art exit role.
+        self._conductor_setup_requested = False
         self._session_conductor_token = conductor.reset_to_idle(
             self._session_conductor_facts().role
         )
-        self._conductor_setup_requested = False
         self._conductor_band_check = EvidenceState.NOT_STARTED
         self._conductor_had_authenticated_connection = False
         self._conductor_studio_reviewing = False
