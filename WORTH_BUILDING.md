@@ -1,38 +1,34 @@
-# Worth Building — keep an open Art Paint along panel tied to the room
+# Worth Building — add a meeting link from Art Talk & share
 
-A guest opens Paint along, then loses the WebJam room connection. The room
-overview correctly hides Open, but the already-open panel still said
-**Following the host** or **You are still in the room** and still offered
-Show/Hide or Open my copy. A queued Hide or file chooser could change local
-follow state after a native runtime had failed or the LAN observer's
-five-second receipt had expired before the UI caught up.
+An Art guest opens Notes → Talk & share → Add Link. Previously this opened
+generic Settings with Conversation collapsed and keyboard focus on Name.
+Change Link expanded Conversation but still focused Name. After Save, the
+confirmation said settings would apply next session, although the meeting
+card already used the new link. Four actual LAN/native guest journeys failed
+on base `6073a30a51cd1f616527c4b376caeeaaf9cb6037` before the source change.
 
-This fails the ten-second test: the room says reconnecting while Paint along
-still invites the artist to follow an unconfirmed host pulse. Fifteen new
-actual controller journeys failed on fetched master
-`6073a30a51cd1f616527c4b376caeeaaf9cb6037`; they pass with this fix.
+Add/Change Link now opens the existing meeting field, scrolled into view and
+ready to type or replace the selected link. Save applies immediately and says
+so. Back in the same visible Conversation, keyboard focus moves to Join / Open
+Meeting, or Add Link after removal. Joining remains an explicit action. An
+open external meeting stays open after changing or removing its saved link.
 
-The guest panel now offers **Return to room** while its room or current video
-receipt is unavailable. Returning hides only this WebJam panel, preserving the
-room owner, notes, and the local silent copy. A current host receipt restores
-the latest follow action, including replacement or withdrawal. Dispatch checks
-the actual source, binding, generation, coordinator and panel, including the
-interval before queued UI updates arrive. Auto-open waits for a confirmed room.
+Modal callbacks may change the room or workspace. The existing settings merge
+uses current personal preferences; the return only focuses Conversation when
+profile, room owners/generation and workspace still match. It never navigates
+back to a retired room. Notes, unsent text and room ownership are preserved.
+Ordinary Settings and optional keys retain their existing entry behavior.
 
-This is a guest connection/receipt slice, the Paint along sibling of #82's
-canvas binding. Host Paint along transport, #82 canvas recovery, and #81
-Leave/rejoin/invitation/cleanup remain intact. No new transport or video
-stack, automatic external launch, door copy or asset change. Webex stays beside
-WebJam. Public diagnostics receive no invitation, canvas URL, Notes, filename
-or raw exception. Existing bounded rotating logs remain in use.
+This closes the Add Link leftover recorded by #83, independently of that
+Paint along work. After Bob landed #83, this new branch was advanced to exact
+master `4128f374e870544b29298b592c49fc931d3e5555`, as Jeff authorized. No protected
+source branch was changed. Canonical checkout:
+`/Users/jeffstory/Documents/WebJam`; branch
+`codex/webjam-finish-product-art-conversation-link`.
 
-Reviewed but still deferred: Add Link from Talk & share currently opens generic
-Settings with an empty Conversation section collapsed. That remains a separate
-contextual-navigation leftover, not part of this draft.
-
-Canonical checkout `/workspace`; branch
-`cursor/art-paint-along-room-binding-f095`; BEFORE
-[5562041853](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5562041853),
-2026-09-06 15:41 CDT. Parked #37/#49 are preserved. Draft only; no merge,
-tag, signing, Pages, release, publishing or GitHub Latest. Physical,
-installed-package and live-provider proof remains NOT RUN.
+BEFORE [5562518611](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5562518611),
+base amendment [5562606345](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5562606345).
+Draft only. Parked #37/#49 and unsigned 0.27.2 remain Jeff-only holds. No new
+transport, video stack, door copy, short-code, public rendezvous or logging
+payload. Existing rotating/redacted diagnostics remain in use. Physical,
+two-device, installed-package and live-provider checks remain NOT RUN.

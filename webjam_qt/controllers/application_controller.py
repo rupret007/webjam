@@ -4100,7 +4100,7 @@ class ApplicationController(QObject):
         self.window.webex_embed.bring_forward_requested.connect(self._show_webex_app)
         self.window.webex_embed.mute_in_webex_requested.connect(self._focus_webex_mute)
         self.window.webex_embed.change_link_requested.connect(
-            self._open_settings_wizard
+            self._open_meeting_link_settings
         )
         self.window.webex_embed.install_webex_requested.connect(
             self._on_install_webex_requested
@@ -12016,7 +12016,42 @@ class ApplicationController(QObject):
                 audience_bridge_active=(self._webex_audio_mode() == "audience_bridge")
             )
 
-    def _open_settings_wizard(self, *, show_keys: bool = False) -> None:
+    def _meeting_link_settings_context(self) -> tuple:
+        participant = self._room_participant
+        remote = self._remote_session
+        return (
+            self.creator_profile.key,
+            participant,
+            participant.generation,
+            participant.lan_guest,
+            self.host_peer,
+            remote,
+            getattr(getattr(remote, "snapshot", None), "generation", None),
+            getattr(self, "_last_content_key", "stage"),
+            self.window.workspace_stack.currentWidget(),
+        )
+
+    def _open_meeting_link_settings(self) -> None:
+        if self._shutdown or self._shutdown_in_progress:
+            return
+        context = self._meeting_link_settings_context()
+        self._open_settings_wizard(show_meeting_link=True)
+        # Modal dialogs keep receiving room and navigation callbacks. Return
+        # keyboard focus only to the Conversation the person left visible.
+        if (
+            not self._shutdown
+            and not self._shutdown_in_progress
+            and not self._shutdown_cleanup_pending
+            and not self._room_participant.blocked
+            and not self._invite_switch_in_flight
+            and self._meeting_link_settings_context() == context
+            and self.window.webex_embed.isVisibleTo(self.window)
+        ):
+            self.window.webex_embed.focus_primary_action()
+
+    def _open_settings_wizard(
+        self, *, show_keys: bool = False, show_meeting_link: bool = False
+    ) -> None:
         from webjam_qt.windows.simple_settings import SimpleSettingsDialog
 
         if self._shutdown_cleanup_blocks_action():
@@ -12038,11 +12073,14 @@ class ApplicationController(QObject):
             self.settings,
             parent=self.window,
             settings_provider=lambda: self.settings,
+            show_band_check_action=not show_meeting_link,
         )
         wizard.audio_settings_requested.connect(self._bring_jamulus_forward)
         wizard.install_webex_requested.connect(
             lambda: self._on_install_webex_requested(parent=wizard)
         )
+        if show_meeting_link:
+            wizard.show_meeting_link()
         if show_keys:
             # Somebody arrived here from a feature that wanted a key. Opening
             # on a collapsed section would make them go looking twice.
@@ -12113,7 +12151,16 @@ class ApplicationController(QObject):
             ) != old_jamulus_server and self._is_jamulus_running():
                 warnings.append("End and restart the session to use the new band host.")
 
-            if warnings:
+            if show_meeting_link:
+                message = (
+                    "Meeting link saved. It’s ready in Conversation."
+                    if self.settings.webex_url
+                    else "Meeting link removed."
+                )
+                if warnings:
+                    message += " " + " ".join(warnings)
+                self.window.flash_message(message, ms=8000)
+            elif warnings:
                 self.window.flash_message(
                     "Settings saved. " + " ".join(warnings),
                     ms=8000,

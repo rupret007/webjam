@@ -14,7 +14,7 @@ from collections.abc import Callable
 from copy import deepcopy
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAccessible, QAccessibleEvent
+from PySide6.QtGui import QAccessible, QAccessibleEvent, QShowEvent
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -72,6 +72,7 @@ class SimpleSettingsDialog(QDialog):
         self._settings = deepcopy(settings)
         self._settings_provider = settings_provider or (lambda: settings)
         self._run_band_check_after_save = False
+        self._meeting_link_focus_requested = False
         if webex_opener is None:
             from webex_integration import open_webex_meeting
 
@@ -275,6 +276,26 @@ class SimpleSettingsDialog(QDialog):
         self._name.textChanged.connect(self._clear_error)
         self._video.textChanged.connect(self._on_webex_text_changed)
         self._on_webex_text_changed(self._video.text())
+
+    def show_meeting_link(self) -> None:
+        """Open Add/Change Link at the field the person asked to edit."""
+
+        self._meeting_link_focus_requested = True
+        self._conversation_toggle.setChecked(True)
+        self._video.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        if self.isVisible():
+            self._focus_meeting_link()
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        if self._meeting_link_focus_requested:
+            self._focus_meeting_link()
+
+    def _focus_meeting_link(self) -> None:
+        self._meeting_link_focus_requested = False
+        self._settings_scroll.ensureWidgetVisible(self._video)
+        self._video.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        self._video.selectAll()
 
     def show_optional_keys(self) -> None:
         """Open on the keys section, for a caller that came looking for one."""
