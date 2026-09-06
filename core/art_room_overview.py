@@ -86,8 +86,9 @@ def art_room_overview(
         title = "Keep making"
         connection = "This computer is no longer in the room"
         detail = (
-            "Your own tools are yours to keep using. A meeting opened separately "
-            "has its own leave controls."
+            ("Choose Start New Room to make together again. " if hosting else
+             "Ask the host for a new invitation, then choose Paste New Invite. ")
+            + "Your own tools can stay open. A separate meeting has its own leave controls."
         )
     elif state is ArtRoomState.FAILED:
         phase, title = "failed", "Your work can stay open"

@@ -332,6 +332,9 @@ class SessionFacts:
     participant_identity: EvidenceState = EvidenceState.NOT_STARTED
     had_authenticated_connection: bool = False
     art_room: ArtRoomState = ArtRoomState.NONE
+    # A confirmed Art exit survives restoration of the personal profile.
+    # The accompanying role belongs to that closed room, not saved Host settings.
+    art_room_closed: bool = False
 
     recorder: RecorderState = RecorderState.IDLE
     local_capture: EvidenceState = EvidenceState.NOT_REQUIRED
@@ -392,6 +395,7 @@ class SessionFacts:
             bool(self.had_authenticated_connection),
         )
         object.__setattr__(self, "art_room", ArtRoomState(self.art_room))
+        object.__setattr__(self, "art_room_closed", bool(self.art_room_closed))
         object.__setattr__(self, "recorder", RecorderState(self.recorder))
         object.__setattr__(
             self,
@@ -780,6 +784,18 @@ def _presentation(
         ), primary_label=label)
 
     if phase is SessionConductorPhase.IDLE:
+        if facts.art_room_closed:
+            return replace(present(
+                SessionPrimaryAction.START_SESSION if host else SessionPrimaryAction.PASTE_NEW_INVITE,
+                "Room ended" if host else "Room left",
+                (
+                    "Start a new room, then share its new invitation. Your own tools can stay open."
+                    if host else
+                    "Ask the host for a new invitation to join again. Your own tools can stay open."
+                ),
+                "This computer has left the room. Meetings and other tools have their own leave controls.",
+                preservation,
+            ), primary_label="Start New Room" if host else "Paste New Invite")
         if profile.key == "music":
             message = "Choose Host or Join to begin a rehearsal."
         elif profile.key == "art":

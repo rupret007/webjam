@@ -397,6 +397,11 @@ class AudioCoordinator:
         self._stop_art_room = (
             self._current_art_room() if art_room is None else bool(art_room)
         )
+        # Pending profile discovery still owns an entry invitation. Retain
+        # its identity until this exact Leave confirms all cleanup below.
+        self._stop_remote_invitation = (
+            getattr(self._c, "_remote_invitation", None) if self._stop_art_room else None
+        )
         # A later transport failure can outlive the audio/capture owner that
         # needed retirement. Keep that obligation across every cleanup retry.
         previous_recording_cleanup = (
@@ -547,6 +552,11 @@ class AudioCoordinator:
         self._c.window.session_hud.set_state(title, detail)
         self._c.window.session_strip.set_audio_state(retry_label, enabled=True)
         self._c.window.flash_message(error, ms=8000)
+        # Publish the cleanup receipt to Notes/Studio too. Room observers are
+        # blocked while cleanup is unresolved, so their polling is not a refresh.
+        refresh_guidance = getattr(self._c, "_update_session_hud", None)
+        if self._stop_art_room and callable(refresh_guidance):
+            refresh_guidance()
 
     def _finish_session_stop_ui(
         self,
@@ -602,6 +612,17 @@ class AudioCoordinator:
                     art_room=True,
                 )
                 return
+        if (
+            self._stop_art_room
+            and getattr(self._c, "_remote_session", None) is None
+            and getattr(self._c, "_remote_invitation", None)
+            is getattr(self, "_stop_remote_invitation", None)
+        ):
+            # Leave also retires a native invite whose host profile never
+            # arrived. A later Start must not replay that one-use enrollment.
+            self._c._remote_invitation = None
+            self._c._remote_invitation_requires_replacement = False
+        self._stop_remote_invitation = None
         self.cleanup_retry_required = False
         self._c.window.session_strip.reset_session_clock()
         if callable(complete_pocket_stage):
