@@ -79,6 +79,11 @@ recovery does not hide **Open canvas**. If you hid the video, return through
 **Open Paint along**, then choose **Show video** when you want it visible
 again. Your existing local copy stays open.
 
+In **Notes** or Paint along, choose **Back to room** to see the full room and
+its current activities or recovery action. Your notes, selection and undo
+history stay available; return through **Notes** to continue. Your local video
+copy and hidden-video choice also stay as they were.
+
 Joining borrows the host's room context. After **Leave Room** finishes,
 WebJam returns to your saved workspace, activity, personal title, and notes.
 A native invitation carries no title, so its room is called **Room** until
@@ -194,8 +199,9 @@ Things worth knowing:
 - **You can hide the video** at any time and keep working. A guest sees **Hide
   video** / **Show video** as the useful action for that state. You stay in the
   room and in the conversation.
-- **Back to room** or Escape returns to the conductor without withdrawing the
-  file, leaving the room, or closing the optional meeting app.
+- **Back to room** shows the full current Art room. Escape returns to the
+  previous workspace, which may be Notes. Neither action stops sharing or
+  leaves the room. The optional meeting app stays open.
 - **If the host changes videos or your copy moves**, choose **Open my copy…**
   again and select the matching file. You stay in the same room.
 - **If your copy cannot play here**, WebJam shows that local problem instead
