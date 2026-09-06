@@ -79,6 +79,7 @@ class ReferenceVideoCoordinator:
         self._generation = 0
         self._follow_operation = 0
         self._opening_follower: ReferenceVideoFollower | None = None
+        self._observed_video = None
 
     # -- lifecycle -----------------------------------------------------
 
@@ -148,6 +149,7 @@ class ReferenceVideoCoordinator:
         self._signer = None
         self._role = ""
         self._publish_failed = False
+        self._observed_video = None
 
     @property
     def player_surface(self):
@@ -273,6 +275,16 @@ class ReferenceVideoCoordinator:
             return
         projection = getattr(session_state, "reference_video", None)
         follower.observe(projection, received_monotonic_s=self._clock())
+        if follower is self._follower:
+            self._observed_video = projection
+
+    def video_is_current(self, session_state: object) -> bool:
+        """A new room receipt must be observed before follow actions can run."""
+
+        return bool(
+            self.following and self._observed_video is not None
+            and self._observed_video == getattr(session_state, "reference_video", None)
+        )
 
     def _require_follower(self) -> ReferenceVideoFollower:
         follower = self._follower

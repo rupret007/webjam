@@ -275,6 +275,33 @@ def test_hiding_the_video_flips_the_control_and_keeps_the_panel_usable(guest_dia
     assert requests == [True, False]
 
 
+def test_a_follower_panel_offers_return_when_the_room_is_unavailable(guest_dialog):
+    guest_dialog.set_follow_snapshot(_follow(ReferenceVideoFollowState.FOLLOWING))
+    assert guest_dialog._hide_button.isHidden() is False
+    assert guest_dialog._return_button.isHidden() is True
+
+    guest_dialog.set_room_available(False)
+
+    assert guest_dialog._headline.text() == "Waiting for the room"
+    assert "cannot confirm" in guest_dialog._status.text().casefold()
+    assert guest_dialog._return_button.isHidden() is False
+    assert guest_dialog._return_button.isEnabled() is True
+    assert guest_dialog._return_button.text() == "Return to room"
+    assert guest_dialog._hide_button.isHidden() is True
+    assert guest_dialog._open_button.isHidden() is True
+    assert guest_dialog._clock.isHidden() is True
+    assert guest_dialog._position.isHidden() is True
+    guest_dialog.set_follow_snapshot(_follow(ReferenceVideoFollowState.FOLLOWING))
+    assert guest_dialog._headline.text() == "Waiting for the room"
+    assert guest_dialog._return_button.isHidden() is False
+
+    guest_dialog.set_room_available(True)
+
+    assert guest_dialog._headline.text() == "lesson.mp4"
+    assert guest_dialog._hide_button.isHidden() is False
+    assert guest_dialog._return_button.isHidden() is True
+
+
 def test_a_following_panel_renders_the_host_position(guest_dialog):
     guest_dialog.set_follow_snapshot(
         _follow(
@@ -413,6 +440,7 @@ def test_a_guest_in_a_room_with_no_video_is_offered_nothing(qapp):
         for button in (
             dialog._open_button,
             dialog._hide_button,
+            dialog._return_button,
         ):
             assert button.isHidden() is True
         assert dialog._more_button.isHidden() is True

@@ -138,6 +138,8 @@ class ReferenceVideoDialog(QDialog):
         self._duration_s = 0.0
         self._scrubbing = False
         self._attached_surface: QWidget | None = None
+        self._last_follow_snapshot: ReferenceVideoFollowSnapshot | None = None
+        self._room_available = True
         self.setObjectName("PaintAlongWindow")
         self.setWindowTitle("Paint along")
         self.setModal(False)
@@ -250,6 +252,15 @@ class ReferenceVideoDialog(QDialog):
                 "Ignore the video and keep working. You stay in the room.",
                 self._toggle_hidden,
             )
+            self._return_button = self._add_button(
+                controls,
+                "Return to room",
+                "Return to the current room to check the connection. "
+                "Your local Paint along copy can stay.",
+                self.return_requested.emit,
+            )
+            self._return_button.setMinimumHeight(48)
+            self._return_button.setVisible(False)
         controls.addStretch(1)
         self._more_button = QToolButton()
         self._more_button.setText("More")
@@ -437,11 +448,49 @@ class ReferenceVideoDialog(QDialog):
         self._position.setEnabled(shared)
         self._clock.setVisible(shared)
 
+    def set_room_available(self, available: bool) -> None:
+        """A retained follow snapshot is usable only in its current guest room."""
+
+        if self._hosting:
+            return
+        available = bool(available)
+        if self._room_available == available:
+            if not available and self._last_follow_snapshot is not None:
+                self.set_follow_snapshot(self._last_follow_snapshot)
+            return
+        self._room_available = available
+        if self._last_follow_snapshot is not None:
+            self.set_follow_snapshot(self._last_follow_snapshot)
+
     def set_follow_snapshot(self, snapshot: ReferenceVideoFollowSnapshot) -> None:
         """Render exactly what this computer may honestly claim right now."""
 
         if self._hosting:
             return
+        self._last_follow_snapshot = snapshot
+        if not self._room_available:
+            self._headline.setText("Waiting for the room")
+            self._status.setText(
+                "WebJam cannot confirm the host's current video. "
+                "Your local copy can stay. Return to the room "
+                "to check the connection."
+            )
+            self._surface_placeholder.setText(
+                "Your silent process video can stay here"
+            )
+            self._open_button.setVisible(False)
+            self._open_button.setEnabled(False)
+            self._hide_button.setVisible(False)
+            self._hide_button.setEnabled(False)
+            self._return_button.setVisible(True)
+            self._return_button.setEnabled(True)
+            self._close_action.setVisible(False)
+            self._hide_action.setVisible(False)
+            self._sync_more_button()
+            self._position.setVisible(False)
+            self._clock.setVisible(False)
+            return
+        self._return_button.setVisible(False)
         state = snapshot.state
         self._hidden = state is ReferenceVideoFollowState.HIDDEN
         sharing = state is not ReferenceVideoFollowState.NO_VIDEO

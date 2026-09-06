@@ -2054,6 +2054,7 @@ class ApplicationController(QObject):
         )
         setter(overview)
         self._sync_shared_canvas_room()
+        self._sync_paint_along_room()
         if callable(set_talk_share):
             set_talk_share(overview.conversation_enabled)
         return overview
@@ -2114,6 +2115,14 @@ class ApplicationController(QObject):
             return
         if binding == getattr(self, "_announced_creator_start", ()):
             return
+        if role != "host":
+            room = getattr(self, "_room_participant", None)
+            if room is not None and (
+                room.blocked
+                or room.probing
+                or room.state is not ArtRoomState.CONNECTED
+            ):
+                return
         if role == "host":
             start = self.creator_start
             actionable = bool(start is not None and start.reference_video)
@@ -12788,22 +12797,25 @@ class ApplicationController(QObject):
                 )
             else:
                 dialog.open_local_copy_requested.connect(
-                    lambda path: self._run_reference_video(
-                        lambda: coordinator.open_local_copy(path)
+                    lambda path: self._run_current_guest_paint_along(
+                        coordinator, dialog, lambda: coordinator.open_local_copy(path)
                     )
                 )
                 dialog.close_local_copy_requested.connect(
-                    lambda: self._run_reference_video(coordinator.close_local_copy)
+                    lambda: self._run_current_guest_paint_along(
+                        coordinator, dialog, coordinator.close_local_copy
+                    )
                 )
                 dialog.hide_requested.connect(
-                    lambda hidden: self._run_reference_video(
-                        lambda: coordinator.set_hidden(bool(hidden))
+                    lambda hidden: self._run_current_guest_paint_along(
+                        coordinator, dialog, lambda: coordinator.set_hidden(bool(hidden))
                     )
                 )
             dialog.return_requested.connect(
                 lambda: self._return_to_art_room(dialog)
             )
             self._reference_video_dialog = dialog
+        self._sync_paint_along_room()
         if coordinator.hosting:
             dialog.set_host_snapshot(coordinator.host_snapshot)
         else:
@@ -12838,6 +12850,70 @@ class ApplicationController(QObject):
             hide_in_window(dialog)
         else:
             dialog.close()
+
+    def _sync_paint_along_room(self) -> bool:
+        """Project guest room authority without releasing the local copy."""
+
+        dialog = getattr(self, "_reference_video_dialog", None)
+        coordinator = getattr(self, "_reference_video", None)
+        if dialog is None or coordinator is None or not coordinator.following:
+            return False
+        room = getattr(self, "_room_participant", None)
+        available = bool(
+            not getattr(self, "_shutdown", False)
+            and self.creator_profile.key == "art"
+            and room is not None and not room.blocked and not room.probing
+            and room.state is ArtRoomState.CONNECTED
+            and self._reference_video_binding == self._reference_video_identity()
+        )
+        if available:
+            source = getattr(self, "_remote_session", None)
+            if source is not None:
+                snapshot = source.snapshot
+                state = room.native_state
+                available = bool(
+                    room.native_source is source
+                    and snapshot.generation == room.native_generation
+                    and snapshot.role.value == "guest"
+                    and snapshot.phase.value == "connected"
+                )
+            else:
+                source = room.lan_guest
+                state = getattr(source, "last_state", None)
+                available = bool(source is not None and source.connection_available)
+            available = bool(
+                available and getattr(state, "creator_profile_key", "") == "art"
+                and coordinator.video_is_current(state)
+            )
+        dialog.set_room_available(available)
+        if available:
+            dialog.set_follow_snapshot(coordinator.follow_snapshot)
+        return available
+
+    def _run_current_guest_paint_along(self, coordinator, dialog, operation) -> None:
+        """A queued follow intent must still belong to this connected room."""
+
+        if (coordinator is not getattr(self, "_reference_video", None)
+                or dialog is not getattr(self, "_reference_video_dialog", None)):
+            return
+        if not self._sync_paint_along_room():
+            return
+        room = self._room_participant
+        generation = room.generation
+        source = self._remote_session or room.lan_guest
+        available = source is not None and source.connection_available
+        # A native availability check may publish loss. Recheck ownership
+        # after that call before using any retained host video pulse.
+        if (coordinator is not getattr(self, "_reference_video", None)
+                or dialog is not getattr(self, "_reference_video_dialog", None)):
+            return
+        current_source = self._remote_session or self._room_participant.lan_guest
+        if (not available or source is not current_source
+                or room is not self._room_participant or generation != room.generation
+                or not self._sync_paint_along_room()):
+            dialog.set_room_available(False)
+            return
+        self._run_reference_video(operation)
 
     def _run_reference_video(self, operation) -> None:
         """Run one reference video intent, surfacing bounded failure text."""
@@ -12885,6 +12961,7 @@ class ApplicationController(QObject):
     def _on_reference_video_follow_snapshot(self, snapshot) -> None:
         dialog = getattr(self, "_reference_video_dialog", None)
         if dialog is not None:
+            self._sync_paint_along_room()
             dialog.set_follow_snapshot(snapshot)
             dialog.attach_surface(
                 self._paint_along_surface(
