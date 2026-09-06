@@ -134,6 +134,10 @@ class RoomParticipantController:
         self._lan_terminal_owner = None
         self._lan_retry_in_progress = False
         self._lan_host_retry_in_progress = False
+        self._music_host_retry_in_progress = False
+        self._music_host_retry_owner = None
+        self._music_network_owner = None
+        self._music_network_interrupted = False
         self.generation = 0
         self.role = ""
         self.state = ArtRoomState.NONE
@@ -291,18 +295,42 @@ class RoomParticipantController:
         self._lan_terminal_owner = None
         if profile != "art":
             invite = owner.invite
-            # Stop the observer before constructing the existing recording
-            # owner. No two workers can enroll this client concurrently.
-            if owner.stop() is False:
+            # Retire queued discovery receipts before the stop can deliver
+            # End/Quit or a replacement invitation on the owner thread.
+            self.generation += 1
+            generation = self.generation
+            self.stopping = True
+            try:
+                stopped = owner.stop() is True
+            except Exception:  # private invitation/error details stay local
+                stopped = False
+            if (self.lan_guest is not owner or self.generation != generation
+                    or self.role != "guest" or self._app_closing
+                    or self.app._guest_invite is not invite
+                    or self.app._remote_session is not None
+                    or self.app._remote_invite_owner is not None):
+                return
+            if not stopped:
+                LOGGER.warning("Music LAN room discovery cleanup unconfirmed")
                 self.app.audio.require_cleanup_retry(
-                    hosting=False, error="The previous room connection is still closing.",
+                    hosting=False, art_room=True,
+                    error="The previous room connection is still closing.",
                     title="Finish leaving the room", detail="Choose Try Leave Room, then open the invitation again.",
                 )
                 return
             self.lan_guest = None
             self.probing = False
             self.state = ArtRoomState.NONE
+            self.stopping = False
             if not self.app._configure_guest_peer(invite):
+                return
+            # Configuration retires the prior peer once. Any additional
+            # retirement or new invitation belongs to its newer owner.
+            if (self.generation != generation + 1 or self._app_closing
+                    or self.app._guest_invite is not invite
+                    or self.lan_guest is not None
+                    or self.app._remote_session is not None
+                    or self.app._remote_invite_owner is not None):
                 return
             self.music_invite = invite
             self.stopping = False
@@ -409,6 +437,155 @@ class RoomParticipantController:
             LOGGER.info("Art LAN room start deferred: network unavailable")
         self.app._refresh_readiness()
         return True
+
+    def _music_lan_host(self):
+        return bool(
+            self.app.creator_profile.key == "music"
+            and self.app.settings.host_server_enabled
+            and self.app._remote_invite_owner is None
+            and self.app._remote_session is None
+            and self.app._remote_invitation is None
+        )
+
+    def _music_host_blocked(self, *, ignore_retry=False):
+        return bool(
+            self._app_closing or self.app.audio.ended_by_user
+            or (self._music_host_retry_in_progress and not ignore_retry)
+            or getattr(self.app, "_invite_switch_in_flight", False)
+            or getattr(self.app, "_primary_recovery_retire_inflight", False)
+        )
+
+    def music_host_readiness(self, readiness):
+        """Observe the retained room endpoint; never repair it while rendering."""
+        from core.host_share_readiness import HostShareReadiness, HostShareReadinessStatus
+
+        if not self._music_lan_host():
+            return readiness
+        host = self.app.host_peer
+        if self._music_host_blocked():
+            return HostShareReadiness(HostShareReadinessStatus.ROOM_CONNECTION_UNAVAILABLE)
+        if self._music_host_retry_owner is not None and self._music_host_retry_owner is not host:
+            self._music_host_retry_owner = None
+        bound = getattr(getattr(host, "server", None), "address", ("", 0))[0]
+        if readiness.shareable and (
+            (host.active and bound != readiness.address)
+            or self._music_host_retry_owner is host
+        ):
+            readiness = HostShareReadiness(
+                HostShareReadinessStatus.ROOM_CONNECTION_UNAVAILABLE, readiness.address,
+            )
+        if self._music_network_owner is not host:
+            self._music_network_owner = host
+            self._music_network_interrupted = False
+        interrupted = bool(
+            (host.active or self._music_host_retry_owner is host)
+            and readiness.status in {
+                HostShareReadinessStatus.NETWORK_UNAVAILABLE,
+                HostShareReadinessStatus.ROOM_CONNECTION_UNAVAILABLE,
+            }
+        )
+        if interrupted and not self._music_network_interrupted:
+            LOGGER.info("Music LAN room network interrupted")
+        elif self._music_network_interrupted and readiness.shareable:
+            LOGGER.info("Music LAN room network route restored")
+        self._music_network_interrupted = interrupted
+        return readiness
+
+    def music_host_work_retained(self):
+        recording = self.app.recording
+        shared = getattr(getattr(self.app, "_reference_track", None), "snapshot", None)
+        return bool(
+            recording.take_in_progress or recording.is_recording_active
+            or self.app.host_peer.has_recording_work
+            or getattr(shared, "active", False)
+            or getattr(shared, "cleanup_pending", False)
+        )
+
+    def music_host_recovery_guidance(self):
+        if self.app.recording.take_in_progress or self.app.recording.is_recording_active:
+            # Stop Recording/finalization keeps its canonical action.
+            return None
+        return GuidanceDisplayOverride(
+            "Room network changed",
+            "Choose End Session to finish this room safely, then start a new jam on this Wi-Fi.",
+            SessionPrimaryAction.END_SESSION, "End Session",
+        )
+
+    def retry_music_lan_host(self):
+        """Repair only an idle Music room peer; audio keeps its own lifecycle."""
+        from core.host_share_readiness import HostShareReadinessStatus
+        from core.network_invite import local_band_address
+
+        if not self._music_lan_host():
+            return False
+        if self._music_host_blocked() or self.app._startup_attempt is not None:
+            return True
+        host = self.app.host_peer
+        readiness = self.app._host_share_readiness()
+        if not (host.active or self._music_host_retry_owner is host) or readiness.status not in {
+            HostShareReadinessStatus.NETWORK_UNAVAILABLE,
+            HostShareReadinessStatus.ROOM_CONNECTION_UNAVAILABLE,
+        }:
+            return False
+        address = readiness.address
+        if not address:
+            LOGGER.info("Music LAN room retry deferred: network unavailable")
+            self.app._update_session_hud()
+            return True
+        if self.music_host_work_retained():
+            LOGGER.info("Music LAN room retry deferred: recording work retained")
+            self.app._update_session_hud()
+            return True
+        self._music_host_retry_in_progress = True
+        self._music_host_retry_owner = host
+        self.generation += 1
+        generation = self.generation
+
+        def still_current():
+            return bool(
+                self.app.host_peer is host and self.generation == generation
+                and self._music_lan_host() and not self._app_closing
+                and not self.app.audio.ended_by_user
+                and not getattr(self.app, "_invite_switch_in_flight", False)
+                and self.app._startup_attempt is None
+            )
+
+        try:
+            LOGGER.info("Music LAN room listener replacement requested")
+            try:
+                stopped = host.stop() is True
+            except Exception:  # private bind/transfer details never enter logs
+                stopped = False
+            if not still_current():
+                LOGGER.info("Music LAN room listener replacement abandoned")
+                return True
+            if not stopped or host.active:
+                LOGGER.warning("Music LAN room listener cleanup unconfirmed")
+                self.app.audio.require_cleanup_retry(
+                    hosting=True, error="The previous room is still closing.",
+                    title="Finish ending the jam",
+                )
+                return True
+            # The route can change again while cleanup waits. Retain the
+            # explicit retry boundary instead of creating a stale endpoint.
+            if local_band_address() != address or self.music_host_work_retained():
+                LOGGER.info("Music LAN room listener replacement abandoned")
+                return True
+            # The normal creation helper is reused after the old peer is
+            # proven gone. No conductor reset, audio restart, or take cleanup.
+            started = self.app._ensure_host_peer(address)
+            if not still_current():
+                LOGGER.info("Music LAN room listener replacement abandoned")
+                return True
+            bound = getattr(getattr(host, "server", None), "address", ("", 0))[0]
+            if started and host.active and bound == address:
+                self._music_host_retry_owner = None
+                LOGGER.info("Music LAN room listener replacement completed")
+            return True
+        finally:
+            self._music_host_retry_in_progress = False
+            if still_current():
+                self.app._update_session_hud()
 
     def readiness(self):
         from core.network_invite import local_band_address
@@ -567,12 +744,18 @@ class RoomParticipantController:
     def stop_lan(self):
         self.stopping = True
         self.generation += 1
+        generation = self.generation
         owner = self.lan_guest
         if owner is not None and owner.stop() is False:
+            return False
+        if self.generation != generation or self.lan_guest is not owner:
             return False
         self.lan_guest = None
         self._lan_terminal_owner = None
         self.music_invite = None
+        self._music_host_retry_owner = None
+        self._music_network_owner = None
+        self._music_network_interrupted = False
         self.probing = False
         self.probe_failed = False
         self.native_state = None

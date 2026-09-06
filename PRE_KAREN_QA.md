@@ -1,100 +1,101 @@
-# Pre-Karen QA — Art host network recovery
+# Pre-Karen QA — Music Host/Join network recovery
 
-Canonical checkout: /Users/jeffstory/Documents/WebJam only. Fresh branch
-`codex/webjam-finish-product-art-host-recovery`; exact master base
-`ff198d790243a819aa1166ea6afa72fa2989380a` (Bob's post-#78 squash).
-[BEFORE 5557966863](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5557966863)
-claims 03:15:14–07:15:14 CT on 2026-09-06. All 45 previous branch refs and
-four stashes match; #78's branch and parked #37/#49 remain untouched.
+Canonical checkout `/Users/jeffstory/Documents/WebJam`; branch
+`codex/webjam-finish-product-music-recovery`; exact master base
+`8d708d568ff20d43c4850b44729f5957226c8e6d` after Bob's #79 squash.
+BEFORE [5558440677](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5558440677)
+and [addendum 5558444758](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5558444758)
+claim this same task through 08:52 CT on 2026-09-06. Marker
+`OVERNIGHT_NEXT_MUSIC_RECOVER_20260906_0449`. Local master was fast-forwarded
+as requested; old #79, other original branches and four stashes are preserved.
 
-A host's retained LAN listener now enters recoverable network interruption
-when its private local route disappears or changes. Same-address recovery
-preserves the listener, invitation, current conductor attempt and optional
-local work. Fresh authenticated-reader expiry remains the membership proof;
-a restored route alone only opens the room for guests to join.
+## Product and ownership
 
-Try Again with no usable address keeps the existing listener. A usable changed
-address triggers replacement only after confirmed old-listener cleanup. Stop
-must return True and leave the old listener inactive. End, Quit or replacement
-ownership wins over a stale retry; only confirmed cleanup permits a new
-conductor attempt. Cleanup also suppresses invitation copying if the old
-address returns. Initial startup failures remain failures.
+A Music host's copyable invite now matches its actual listener. Missing or
+changed Wi-Fi suppresses stale Copy. Same-address return preserves the listener
+and credentials; Try Again can replace an idle listener on a usable changed
+address only after stop returns True and the retained listener is inactive.
+Failed restart cannot silently downgrade a previously authenticated room to a
+legacy invite. Missing-address retry does not retire the current room.
 
-Host-specific interruption copy reaches the HUD, room overview and Notes;
-guests retain their existing reconnection explanation. The existing shared
-guidance override supplies the useful Try Again action. No renderer starts a
-new connection while showing state.
+Audio and the current conductor attempt are preserved. Recording, capture arm,
+completed takes and outstanding Local Originals obligations prevent peer
+replacement; the existing Stop Recording/finalization or End Session action
+owns that work. Failed cleanup points to the actual Try End Session/Try Leave
+Jam header action. New Record and Shared Track playback cannot start during
+listener replacement or cleanup; existing Stop Recording remains usable.
 
-Logging uses `webjam.qt.room_participant`, under WebJam's existing redacted,
-rotating handler. Fixed event messages distinguish network loss/return,
-deferred retry, requested/completed/abandoned listener replacement and
-unconfirmed cleanup. Repeated ticks produce no duplicate transition records.
-The Art listener startup warning omits raw exceptions; Music's existing path
-is unchanged. No addresses, invitation credentials, artist names, Notes,
-canvas passwords or private exception details are added to diagnostics.
+A running guest's retry enters the existing bounded Bridge supervisor. Repeated
+clicks reserve one request, retain capture/invitation ownership and never create
+a sixth retry after exhaustion. Authenticated Music discovery requires confirmed
+observer cleanup and checks generation/owner identity before handing off. End,
+Quit or replacement invitation cannot be undone by a late callback. Central
+peer cleanup checks captured identities between owners before clearing state.
+Native invitation ownership and Art's existing routes stay separate.
 
-**Final local gate and PRE_KAREN leftover/privacy/security/UX: PASS.**
+Logs use the existing `webjam` hierarchy and rotating redacted handler (1.5 MB,
+three backups). Fixed events distinguish loss/return, deferred retry,
+requested/completed/abandoned replacement and unconfirmed cleanup. An isolated
+real file-handler round trip checks event counts and absence of private invite,
+address, Notes and exception payloads. Independent source review traced lower
+stop exceptions through the configured handler's traceback/exception redaction.
 
-- Complete raw, unfiltered pytest: **8,420 passed, 26 existing skips, 99 subtests,
-  3 dependency deprecation warnings, 504.32s, exit 0**. One process:
+## Verification
+
+Final native Music journeys: **51 passed in 9.75s, Cocoa, exit 0**. The tests
+exercise real controllers, conductor snapshots, invite serialization and Bridge
+retry accounting; OS listener/process boundaries are controlled. Two asserted
+760×600 captures cover Conversation closed/open. Root inspected readable,
+reachable Try Again and End with no clipped recovery copy. No meeting launches.
+
+**Final local gate and PRE_KAREN leftover/security/UX: PASS.**
+
+- Full unfiltered suite: **8,471 passed, 26 existing skips, 99 subtests,
+  3 dependency deprecation warnings, 397.75s, exit 0**. One process:
   `QT_QPA_PLATFORM=offscreen .venv/bin/pytest -vv`.
-- Final focused Art/room/transport/guidance/logging gate: **72 modules, 2,604
-  passed, one existing opt-in native sidecar skip, 96.21s, exit 0**.
-- All **22 new cases passed on native Cocoa in 8.30s**, including the actual
-  configured rotating-log round trip, corrected Notes explanation and two
-  real 760×600 views. Their captures were refreshed during this final run.
-- Required Ruff, compileall, pip check, runtime dependency policy, UX smoke and
-  diff checks passed. Two independent reviews matched all six frozen source/
-  test hashes and found no remaining material leftover/privacy/security/UX issue.
+- Final focused Music/Art/room/invite/transport/recording/logging suite:
+  **64 modules, 2,268 passed, 2 existing skips, 2 subtests, 116.58s, exit 0**.
+- Required Ruff, compileall, pip check, runtime dependency policy, UX smoke
+  and diff checks passed. All six source/test hashes stayed fixed throughout.
+- Independent leftover/security and UX reviews matched that same six-file
+  freeze; both PASS. Both native compact captures were independently inspected.
+- All 45 protected original branch refs and four stashes match the pre-work
+  record. Local master alone was advanced to the authorized base before the
+  new branch was created. The old #79 branch remains `d1314d3d8db3b545c75fe570802169b04c5d26d6`.
 
-Hosted exact-tip SUCCESS including all four desktop builds is a separate gate.
-Its checkout, test, job and artifact evidence belongs in the PR and coord AFTER;
-a local passing suite is not hosted or release-package proof.
-
-Recorded supporting checks before the two final review corrections:
-
-- Native recovery matrix: 21 passed in 11.22s; six initial loss/return cases
-  also passed in 5.39s. Existing Art controller/overview/UI: 83 passed in 20.88s.
-- Focused 69 modules: 2,582 passed, one existing opt-in native sidecar integration
-  skipped, 91.01s. That process integration is exercised separately by hosted CI.
-- Two native 760×600 Cocoa/Inter 13px captures: 2 passed in 3.36s. Root and an
-  independent reviewer inspected both Conversation-open/closed views: Try Again,
-  own-tools guidance, Conversation and End are readable and reachable.
-- Ruff required directories and touched tests, compileall, pip check, source
-  UX smoke, runtime dependency policy and diff checks passed.
-
-Independent leftover/privacy/security review found no remaining source issue
-after the corrections below. Exact committed-tip review and hosted proof are
-recorded in the draft and coordination AFTER.
+Exact-tip hosted SUCCESS and four desktop artifacts remain a separate gate.
+Checkout SHAs, trees, job IDs and artifacts will be verified and recorded in the
+OPEN DRAFT and coord AFTER. Local checks are not release-package evidence.
 
 ## Failure and review history
 
-1. The first native baseline probe aborted during initial window construction
-   (exit 134), before a recovery assertion. Its fixture globally replaced Qt's
-   clipboard with a non-Qt object. The replacement is now scoped to explicit
-   Copy dispatches; no product widget or global Qt workaround was changed.
-2. The corrected native baseline failed at the intended assertion: the room
-   returned WAITING but the HUD still offered native-only Reset Invite (one
-   expected failure, 3.99s). The corrected production passed all six variations.
-3. Review found host Notes inherited guest-facing `why` text. Only Art host
-   recovery evidence wording was corrected; guest wording is unchanged.
-4. Review of logging configuration found that a module-name logger would miss
-   WebJam's configured handler. It now uses the existing `webjam` hierarchy;
-   an actual isolated log-file round trip is required, beyond captured messages.
-5. The first full run was deliberately interrupted for those two corrections:
-   2,775 passed, one skipped, 14 subtests, one dependency warning, 220.30s,
-   exit 2. This partial run is not full-suite proof. Its raw output is retained.
+- Before implementation: guest handoff/retry matrix **8 expected failures,
+  2 passes**; native host baseline **1 expected failure**, returning a nonempty
+  invite for a changed address while the old listener remained bound.
+- First corrected guest matrix: **10 passed**. Expanded native matrix exposed
+  stale retained-work HUD Copy, nested End/new-invite cleanup races and fixture
+  header refresh issues. Those were fixed; the stable expanded run passed
+  **44 cases**. The earlier mixed run is not final proof.
+- UX review regressions reproduced **8 failures / 2 passes**: lost network
+  displaced Stop/finalization, failed cleanup offered an ineffective Try Again,
+  and retained-work wording differed from End Session. Corrected native run:
+  **46 passed**.
+- Guest cleanup label regression reproduced **1 failure**, then was aligned to
+  the actual Try Leave Jam action; next native run **47 passed**.
+- Recording safety review reproduced **2 failures / 2 Stop-preservation passes**:
+  new-take dispatch remained possible during failed listener cleanup and a
+  synchronous replacement callback. The idle Record owner and existing Shared
+  Track lifecycle gate now block those transitions. Final native **51 passed**.
 
-Raw evidence is preserved under `/private/tmp/webjam-post78-*`: baseline
-construction abort, expected baseline failure, native/focused logs, native
-captures and metadata, interrupted full run, final proof manifests and logs.
-No exclusions, weakened transport assertions, forced conductor success,
-provider launches or hidden retries establish a passing gate.
+Raw logs, source hashes, screenshots and verification manifests are retained
+under `/private/tmp/webjam-post79-*`. The temporary capture plugin initially
+hooked a duplicate imported module and produced no captures; it was corrected
+to use the actual pytest module, then both images were captured and inspected.
+No tests were excluded or weakened to obtain final passing evidence.
 
-One OPEN DRAFT for Karen; exact-tip hosted SUCCESS with all four desktops;
-PRE_KAREN; AFTER and agent:none; stop for Bob conductor. Art remains Preview.
-Physical/two-device/live-provider/installed-package gates NOT RUN. Silent local
-Paint along, own tools, Webex beside WebJam and never on the Art door. No second
-video stack, auto-launch, short-code/public rendezvous, merge/tag/sign/Pages/
-Release Trust/publish/GitHub Latest release. Unsigned 0.27.2 remains Jeff-only.
-Black/white/neutral gray/burnt orange. WebJam only.
+Draft only for Karen leftover+security+UX; AFTER and agent:none, stop for Bob.
+Parked #37/#49 untouched; stay off #67. No short-code/public rendezvous,
+merge/tag/sign/Pages/Release Trust/publish/GitHub Latest. Unsigned 0.27.2 is
+Jeff-only. Art Preview, own tools, silent local Paint along and Webex beside
+WebJam remain unchanged. Physical/live-provider/two-device/installed-package
+checks NOT RUN. Black/white/neutral gray/burnt orange. WebJam only.
