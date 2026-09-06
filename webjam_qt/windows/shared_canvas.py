@@ -103,6 +103,7 @@ class SharedCanvasDialog(QDialog):
     retry_publication_requested = Signal()
     open_canvas_requested = Signal()
     install_drawpile_requested = Signal()
+    return_requested = Signal()
 
     def __init__(self, *, hosting: bool, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -112,6 +113,8 @@ class SharedCanvasDialog(QDialog):
         self._hosting_started = False
         self._changing_invitation = False
         self._last_host_snapshot = None
+        self._last_follow_snapshot = None
+        self._room_available = True
         self.setWindowTitle("Shared Canvas")
         self.setModal(False)
         # Deliberately narrow: an artist needs Drawpile and the faces of the
@@ -186,7 +189,9 @@ class SharedCanvasDialog(QDialog):
 
     def _chip_pressed(self) -> None:
         action = self._chip.property("action")
-        if action == "install":
+        if action == "return":
+            self.return_requested.emit()
+        elif action == "install":
             self.install_drawpile_requested.emit()
         elif action == "host":
             self._hosting_started = True
@@ -351,8 +356,33 @@ class SharedCanvasDialog(QDialog):
         else:
             self._quiet.withdraw()
 
+    def set_room_available(self, available: bool) -> None:
+        """A retained canvas offer is usable only in its current guest room."""
+
+        if self._hosting or self._room_available == bool(available):
+            return
+        self._room_available = bool(available)
+        if self._last_follow_snapshot is not None:
+            self.set_follow_snapshot(self._last_follow_snapshot)
+
     def set_follow_snapshot(self, snapshot: SharedCanvasFollowSnapshot) -> None:
         if self._hosting:
+            return
+        self._last_follow_snapshot = snapshot
+        if not self._room_available:
+            self._headline.setText("Waiting for the room")
+            self._set_status(
+                "WebJam cannot confirm the host's current canvas. "
+                "Your work in Drawpile can stay open. Return to the room "
+                "to check the connection."
+            )
+            self._chip.setProperty("action", "return")
+            self._chip.offer(
+                "Return to room", self._status.text(), tone=StatusChip.RECOVERY,
+            )
+            self._quiet.withdraw()
+            self._change_button.withdraw()
+            self._room_clock.setVisible(False)
             return
         state = snapshot.state
         if state is SharedCanvasFollowState.NO_CANVAS:
@@ -397,7 +427,7 @@ class SharedCanvasDialog(QDialog):
         """
 
         self._room_clock.set_view(view)
-        self._room_clock.setVisible(view.present)
+        self._room_clock.setVisible(view.present and self._room_available)
 
     def _set_status(self, text: str) -> None:
         self._status.setText(text)

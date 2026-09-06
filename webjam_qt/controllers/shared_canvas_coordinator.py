@@ -81,6 +81,7 @@ class SharedCanvasCoordinator:
         self._pending: _PendingPublication | None = None
         self._inflight: _PendingPublication | None = None
         self._publication_peer = None
+        self._observed_canvas = None
 
     # -- lifecycle -----------------------------------------------------
 
@@ -135,6 +136,7 @@ class SharedCanvasCoordinator:
         self._pending = None
         self._inflight = None
         self._publication_peer = None
+        self._observed_canvas = None
         generation = self._generation
         if host is not None:
             try:
@@ -258,7 +260,18 @@ class SharedCanvasCoordinator:
         if follower is None:
             return
         projection = getattr(session_state, "shared_canvas", None)
-        self._notify_follow(follower.observe(projection))
+        snapshot = follower.observe(projection)
+        if follower is self._follower:
+            self._observed_canvas = projection
+            self._notify_follow(snapshot)
+
+    def canvas_is_current(self, session_state: object) -> bool:
+        """A new room receipt must be observed before its canvas can open."""
+
+        return bool(
+            self.following and self._observed_canvas is not None
+            and self._observed_canvas == getattr(session_state, "shared_canvas", None)
+        )
 
     def _require_follower(self) -> SharedCanvasFollower:
         follower = self._follower
