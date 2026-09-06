@@ -4,12 +4,10 @@ The panel renders immutable snapshots and emits semantic intent. It decides
 nothing -- whether a link is a real Drawpile invitation, whether Drawpile is
 installed, and what a guest may do all belong to :mod:`core.shared_canvas`.
 
-Following ADR 0002, it offers exactly one thing to press at a time. The chip's
-label *is* the status, so "Install Drawpile" and "Open shared canvas" are the
-same control at different moments rather than two buttons competing. A guest
-therefore has one verb and a host has one verb per step, and the paste field
-only appears once hosting in Drawpile has actually been started -- there is
-nothing to paste before that.
+The chip carries one primary action. Hosts can also change or stop an
+accepted invitation through quiet controls. The masked paste field appears
+after the explicit Host action or while changing an accepted invitation;
+publication and retry never open Drawpile by themselves.
 
 There is no brush, colour, or layer control here, and no canvas. Not because
 they are hard, but because Drawpile already has them and a second, worse copy
@@ -18,11 +16,13 @@ inside WebJam would be a lie about where the painting happens.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -33,6 +33,7 @@ from core.shared_canvas import (
     NO_CANVAS_MESSAGE,
     SharedCanvasFollowSnapshot,
     SharedCanvasFollowState,
+    SharedCanvasPendingAction,
     SharedCanvasSnapshot,
     SharedCanvasState,
 )
@@ -57,9 +58,40 @@ _NO_PASSWORD_STATUS = (
     "session, re-copy it with the password included."
 )
 _HOSTING_STARTED_STATUS = (
-    "Drawpile is opening. Host a Personal session there, then copy its "
+    "Host a Personal session in Drawpile, then copy its "
     "invitation from Session, Invite and paste it below."
 )
+
+
+class _CanvasHeadline(QLabel):
+    """Elide bounded canvas labels while preserving their full spoken text."""
+
+    def __init__(self, text: str) -> None:
+        super().__init__()
+        self._full_text = ""
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setText(text)
+
+    def setText(self, text: str) -> None:
+        self._full_text = str(text)
+        self.setAccessibleDescription(self._full_text)
+        self.setToolTip(self._full_text)
+        self._render_text()
+
+    def _render_text(self) -> None:
+        super().setText(self.fontMetrics().elidedText(
+            self._full_text, Qt.TextElideMode.ElideRight, self.contentsRect().width()
+        ))
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._render_text()
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.FontChange and hasattr(self, "_full_text"):
+            self._render_text()
 
 
 class SharedCanvasDialog(QDialog):
@@ -68,6 +100,7 @@ class SharedCanvasDialog(QDialog):
     host_in_drawpile_requested = Signal()
     share_requested = Signal(str)
     withdraw_requested = Signal()
+    retry_publication_requested = Signal()
     open_canvas_requested = Signal()
     install_drawpile_requested = Signal()
 
@@ -77,6 +110,8 @@ class SharedCanvasDialog(QDialog):
         # Set once the host has actually opened Drawpile, which is the only
         # moment a paste field has anything to receive.
         self._hosting_started = False
+        self._changing_invitation = False
+        self._last_host_snapshot = None
         self.setWindowTitle("Shared Canvas")
         self.setModal(False)
         # Deliberately narrow: an artist needs Drawpile and the faces of the
@@ -88,7 +123,7 @@ class SharedCanvasDialog(QDialog):
         layout.setContentsMargins(Space.MD, Space.MD, Space.MD, Space.MD)
         layout.setSpacing(Space.SM)
 
-        self._headline = QLabel(_NO_CANVAS_HEADLINE)
+        self._headline = _CanvasHeadline(_NO_CANVAS_HEADLINE)
         self._headline.setObjectName("SharedCanvasHeadline")
         self._headline.setAccessibleName("Shared canvas")
         layout.addWidget(self._headline)
@@ -127,9 +162,15 @@ class SharedCanvasDialog(QDialog):
             self._invite_input.setVisible(False)
             layout.addWidget(self._invite_input)
 
+        self._change_button = QuietAction()
+        self._change_button.clicked.connect(self._toggle_invitation_change)
         self._quiet = QuietAction()
         self._quiet.clicked.connect(self._quiet_pressed)
-        layout.addWidget(self._quiet)
+        quiet_row = QHBoxLayout()
+        quiet_row.addWidget(self._change_button)
+        quiet_row.addStretch(1)
+        quiet_row.addWidget(self._quiet)
+        layout.addLayout(quiet_row)
 
         hint = QLabel(HOST_CANVAS_HINT if self._hosting else _GUEST_HINT)
         hint.setWordWrap(True)
@@ -152,6 +193,8 @@ class SharedCanvasDialog(QDialog):
             self.host_in_drawpile_requested.emit()
         elif action == "share":
             self._emit_share()
+        elif action == "retry_publication":
+            self.retry_publication_requested.emit()
         elif action == "open":
             self.open_canvas_requested.emit()
 
@@ -163,7 +206,18 @@ class SharedCanvasDialog(QDialog):
         value = self._invite_input.text()
         self._invite_input.clear()
         if value.strip():
+            self._changing_invitation = False
             self.share_requested.emit(value)
+
+    def _toggle_invitation_change(self) -> None:
+        snapshot = self._last_host_snapshot
+        if not self._hosting or snapshot is None:
+            return
+        self._changing_invitation = not self._changing_invitation
+        self._invite_input.clear()
+        self.set_host_snapshot(snapshot)
+        if self._changing_invitation:
+            self._invite_input.setFocus()
 
     def _sync_share_action(self) -> None:
         """Once there is something pasted, the chip becomes Share."""
@@ -172,13 +226,15 @@ class SharedCanvasDialog(QDialog):
         # state whether or not the panel's window has been shown yet.
         if not self._hosting or self._invite_input.isHidden():
             return
-        if self._invite_input.text().strip():
+        has_text = bool(self._invite_input.text().strip())
+        if has_text or self._changing_invitation:
             self._chip.setProperty("action", "share")
             self._chip.offer(
                 "Share with the room",
                 "Send this Drawpile invitation to everyone in the room, "
                 "including anyone who joins later.",
             )
+            self._chip.setEnabled(has_text)
         else:
             self._offer_host_action()
 
@@ -195,13 +251,22 @@ class SharedCanvasDialog(QDialog):
     def set_host_snapshot(self, snapshot: SharedCanvasSnapshot) -> None:
         if not self._hosting:
             return
+        self._last_host_snapshot = snapshot
         available = bool(snapshot.launcher_available)
         shared = bool(snapshot.shared)
+        pending = snapshot.pending_action
+        retrying_share = pending is SharedCanvasPendingAction.SHARE
+        retrying_withdraw = pending is SharedCanvasPendingAction.WITHDRAW
+        has_pending = retrying_share or retrying_withdraw
+        if has_pending or not shared:
+            self._changing_invitation = False
 
         if shared:
             self._headline.setText(
-                f"Painting on {snapshot.session_label} at {snapshot.server_label}"
+                f"Canvas offered: {snapshot.session_label} at {snapshot.server_label}"
             )
+        elif has_pending:
+            self._headline.setText("Canvas sharing needs attention")
         elif snapshot.state is SharedCanvasState.FAILED:
             self._headline.setText("Shared canvas needs attention")
         else:
@@ -209,6 +274,10 @@ class SharedCanvasDialog(QDialog):
 
         if snapshot.error:
             status = snapshot.error
+        elif retrying_share:
+            status = "Sharing the invitation is not confirmed. Try sharing again."
+        elif retrying_withdraw:
+            status = "Stopping the share is not confirmed. Try again."
         elif not available:
             status = _HOST_NO_DRAWPILE
         elif shared:
@@ -223,12 +292,25 @@ class SharedCanvasDialog(QDialog):
 
         # The paste field has nothing to receive until Drawpile is open, so it
         # is not shown before then.
-        show_invite = available and not shared and self._hosting_started
+        show_invite = not has_pending and (
+            self._changing_invitation
+            or available and not shared and self._hosting_started
+        )
         self._invite_input.setVisible(show_invite)
         if not show_invite:
             self._invite_input.clear()
 
-        if not available:
+        if has_pending:
+            self._chip.setProperty("action", "retry_publication")
+            self._chip.offer(
+                "Try sharing again" if retrying_share else "Try stop sharing",
+                status,
+                tone=StatusChip.RECOVERY,
+            )
+            self._chip.setEnabled(snapshot.can_retry_publication)
+        elif self._changing_invitation:
+            self._sync_share_action()
+        elif not available:
             self._chip.setProperty("action", "install")
             self._chip.offer(
                 "Install Drawpile",
@@ -247,13 +329,25 @@ class SharedCanvasDialog(QDialog):
         else:
             self._offer_host_action()
 
-        if shared:
+        if shared and not has_pending:
+            self._change_button.offer(
+                "Cancel change" if self._changing_invitation else "Change invitation",
+                "Keep the current invitation." if self._changing_invitation
+                else "Paste a different Drawpile invitation. The current canvas "
+                     "stays offered until the room accepts the change.",
+            )
+        else:
+            self._change_button.withdraw()
+
+        if retrying_share or shared and not retrying_withdraw:
             self._quiet.setProperty("action", "withdraw")
             self._quiet.offer(
                 "Stop sharing",
-                "Stop offering this canvas to the room. Drawpile keeps "
-                "running and nobody is disconnected.",
+                "Stop offering this canvas to the room, including any invitation "
+                "waiting to be shared. Drawpile keeps running.",
             )
+            if retrying_share:
+                self._quiet.setEnabled(snapshot.can_retry_publication)
         else:
             self._quiet.withdraw()
 
@@ -293,6 +387,7 @@ class SharedCanvasDialog(QDialog):
                 # nothing to press, so nothing is offered.
                 self._chip.withdraw()
         self._quiet.withdraw()
+        self._change_button.withdraw()
 
     def set_room_clock(self, view: RoomClockView) -> None:
         """Show the room's pulse, or nothing at all when it has none.

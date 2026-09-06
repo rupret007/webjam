@@ -262,8 +262,8 @@ def test_the_chip_becomes_share_once_something_is_pasted():
         dialog.deleteLater()
 
 
-def test_a_sharing_host_has_one_primary_and_one_quiet_action():
-    """Stopping a share is a real need and not the point of the panel."""
+def test_a_sharing_host_keeps_change_and_stop_quiet():
+    """Opening is primary; replacing or withdrawing stays available."""
 
     dialog = SharedCanvasDialog(hosting=True)
     try:
@@ -271,6 +271,8 @@ def test_a_sharing_host_has_one_primary_and_one_quiet_action():
 
         assert dialog._chip.text() == "Open canvas"
         assert dialog._quiet.text() == "Stop sharing"
+        assert dialog._change_button.text() == "Change invitation"
+        assert dialog._change_button.objectName() == "QuietAction"
         assert dialog._quiet.offered is True
         # The quiet action is visibly lesser, not a second equal CTA.
         assert dialog._quiet.objectName() == "QuietAction"
@@ -482,7 +484,9 @@ def _as_host(controller: ApplicationController) -> None:
         credentials=SimpleNamespace(
             session_id=SESSION_ID, invite_token=INVITE_TOKEN
         ),
-        publish_shared_canvas_state=MagicMock(),
+        publish_shared_canvas_state=MagicMock(
+            side_effect=lambda **values: SharedCanvasSessionSnapshot(**values)
+        ),
     )
     controller.guest_peer = None
 
@@ -575,7 +579,9 @@ def test_a_new_room_rebuilds_the_coordinator(fake_launchers):
         credentials=SimpleNamespace(
             session_id=str(uuid.uuid4()), invite_token=INVITE_TOKEN
         ),
-        publish_shared_canvas_state=MagicMock(),
+        publish_shared_canvas_state=MagicMock(
+            side_effect=lambda **values: SharedCanvasSessionSnapshot(**values)
+        ),
     )
 
     assert controller._shared_canvas_coordinator() is not first
@@ -623,7 +629,7 @@ def test_a_failing_intent_shows_bounded_text_and_keeps_the_room(fake_launchers):
     assert "example.com" not in message
 
 
-def test_an_unexpected_failure_never_leaks_a_raw_exception(fake_launchers):
+def test_an_unexpected_failure_never_leaks_a_raw_exception(fake_launchers, caplog):
     controller = _controller("art")
     _as_host(controller)
     controller._shared_canvas_coordinator()
@@ -635,6 +641,7 @@ def test_an_unexpected_failure_never_leaks_a_raw_exception(fake_launchers):
 
     message = controller.window.flash_message.call_args.args[0]
     assert "internal detail" not in message
+    assert "internal detail" not in caplog.text
     assert "room is still running" in message
 
 

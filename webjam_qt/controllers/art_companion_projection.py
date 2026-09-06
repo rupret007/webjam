@@ -69,6 +69,12 @@ def canvas_companion_state(snapshot: object, *, hosting: bool) -> CanvasCompanio
         return _CANVAS_STATES.get(
             _value(getattr(snapshot, "state", None)), CanvasCompanionState.NONE
         )
+    pending = {
+        "share": CanvasCompanionState.SHARE_PENDING,
+        "withdraw": CanvasCompanionState.WITHDRAW_PENDING,
+    }.get(_value(getattr(snapshot, "pending_action", None)))
+    if pending is not None:
+        return pending
     if _value(getattr(snapshot, "state", None)) == "failed" or str(
         getattr(snapshot, "error", "") or ""
     ):

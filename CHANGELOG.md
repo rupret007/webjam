@@ -10,6 +10,17 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Shared canvas publication recovery
+
+- Hosts can **Change invitation** while the previous canvas stays offered.
+  Failed share or stop requests retain the last accepted invitation and show
+  **Try sharing again** or **Try stop sharing**, with a persistent room action.
+- Rejected native updates stay out of later room publications. Retrying sends
+  only the current room's pending choice; ending the room retires it.
+- Long Drawpile addresses keep their complete joining URL and use bounded
+  display labels. **Canvas offered** describes the invitation, without claiming
+  that artists have opened Drawpile or started painting.
+
 ### Paint along guest copy recovery
 
 - **Open my copy…** now accepts the host’s next video or a moved matching

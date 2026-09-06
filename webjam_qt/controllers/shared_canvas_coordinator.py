@@ -15,8 +15,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass, replace
 from typing import Any
 
+from core.drawpile import DrawpileError, parse_canvas_invite
+from core.session_transfer import SharedCanvasSessionSnapshot
 from core.shared_canvas import (
     CanvasLauncher,
     SharedCanvasError,
@@ -24,6 +27,7 @@ from core.shared_canvas import (
     SharedCanvasFollowSnapshot,
     SharedCanvasFollowState,
     SharedCanvasHostController,
+    SharedCanvasPendingAction,
     SharedCanvasSnapshot,
 )
 
@@ -35,6 +39,20 @@ LAUNCHER_UNAVAILABLE_MESSAGE = (
 )
 NOT_HOSTING_MESSAGE = "Only the session host can share a canvas."
 NOT_FOLLOWING_MESSAGE = "Only a guest opens the host's canvas."
+
+SHARE_NOT_CONFIRMED_MESSAGE = (
+    "Sharing this canvas with the room is not confirmed. Try sharing again."
+)
+WITHDRAW_NOT_CONFIRMED_MESSAGE = (
+    "Stopping this canvas offer is not confirmed. Artists may still receive "
+    "the previous invitation. Try stop sharing again."
+)
+
+
+@dataclass(frozen=True, repr=False)
+class _PendingPublication:
+    action: SharedCanvasPendingAction
+    projection: SharedCanvasSessionSnapshot
 
 
 class SharedCanvasCoordinator:
@@ -58,7 +76,11 @@ class SharedCanvasCoordinator:
         self._host: SharedCanvasHostController | None = None
         self._follower: SharedCanvasFollower | None = None
         self._launcher: CanvasLauncher | None = None
-        self._publish_failed = False
+        self._generation = 0
+        self._intent_generation = 0
+        self._pending: _PendingPublication | None = None
+        self._inflight: _PendingPublication | None = None
+        self._publication_peer = None
 
     # -- lifecycle -----------------------------------------------------
 
@@ -101,18 +123,32 @@ class SharedCanvasCoordinator:
         canvas is released.
         """
 
-        host = self._host
-        if host is not None:
-            try:
-                host.close()
-            except Exception:  # noqa: BLE001 - teardown must not raise
-                LOGGER.debug("Shared canvas host close failed", exc_info=True)
-            self._publish_unshared()
+        # Retire the room before any foreign close/publication call can
+        # re-enter. An old completion must not change the next room.
+        self._generation += 1
+        self._intent_generation += 1
+        host, peer = self._host, self._publication_peer
         self._host = None
         self._follower = None
         self._launcher = None
         self._role = ""
-        self._publish_failed = False
+        self._pending = None
+        self._inflight = None
+        self._publication_peer = None
+        generation = self._generation
+        if host is not None:
+            try:
+                host.close()
+            except Exception:  # teardown has no private exception detail
+                LOGGER.debug("Shared canvas host close failed")
+        if peer is not None and generation == self._generation:
+            try:
+                current = self._host_peer_provider()
+                if (generation == self._generation and current is peer
+                        and bool(getattr(peer, "active", False))):
+                    peer.publish_shared_canvas_state(shared=False)
+            except Exception:
+                LOGGER.debug("Shared canvas teardown publish failed")
 
     @property
     def launcher_available(self) -> bool:
@@ -125,37 +161,72 @@ class SharedCanvasCoordinator:
 
     def open_drawpile_to_host(self) -> SharedCanvasSnapshot:
         return self._host_operation(
-            lambda host: host.open_drawpile_to_host(), publish=False
+            lambda host: host.open_drawpile_to_host()
         )
 
     def share(self, invite_text: str) -> SharedCanvasSnapshot:
-        return self._host_operation(lambda host: host.share(invite_text))
+        self._require_host()
+        try:
+            invite = parse_canvas_invite(invite_text)
+        except DrawpileError as exc:
+            raise SharedCanvasError(str(exc)) from exc
+        projection = SharedCanvasSessionSnapshot(
+            shared=True, join_url=invite.join_url,
+            server_label=invite.server_label, session_label=invite.session_label,
+        )
+        return self._request_publication(SharedCanvasPendingAction.SHARE, projection)
 
     def withdraw(self) -> SharedCanvasSnapshot:
-        return self._host_operation(lambda host: host.withdraw())
+        self._require_host()
+        return self._request_publication(
+            SharedCanvasPendingAction.WITHDRAW, SharedCanvasSessionSnapshot(),
+        )
+
+    def retry_publication(self) -> SharedCanvasSnapshot:
+        self._require_host()
+        pending = self._pending
+        if pending is None or pending is self._inflight:
+            return self.host_snapshot
+        return self._attempt_publication(pending)
 
     def open_canvas_as_host(self) -> SharedCanvasSnapshot:
-        return self._host_operation(lambda host: host.open_canvas(), publish=False)
+        return self._host_operation(lambda host: host.open_canvas())
 
     @property
     def host_snapshot(self) -> SharedCanvasSnapshot:
         host = self._host
-        if host is not None:
-            return host.snapshot
-        return SharedCanvasSnapshot(launcher_available=self.launcher_available)
+        snapshot = (host.snapshot if host is not None else
+                    SharedCanvasSnapshot(launcher_available=self.launcher_available))
+        pending = self._pending
+        if pending is None:
+            return snapshot
+        return replace(
+            snapshot, pending_action=pending.action,
+            can_retry_publication=self.hosting and pending is not self._inflight,
+            error=(SHARE_NOT_CONFIRMED_MESSAGE
+                   if pending.action is SharedCanvasPendingAction.SHARE
+                   else WITHDRAW_NOT_CONFIRMED_MESSAGE),
+        )
+
+    def _require_host(self) -> None:
+        if not self.hosting:
+            raise SharedCanvasError(NOT_HOSTING_MESSAGE)
 
     def _host_operation(
         self,
         operation: Callable[[SharedCanvasHostController], SharedCanvasSnapshot],
-        *,
-        publish: bool = True,
     ) -> SharedCanvasSnapshot:
-        if not self.hosting:
-            raise SharedCanvasError(NOT_HOSTING_MESSAGE)
-        snapshot = operation(self._host_controller())
-        if publish:
-            self._publish(snapshot)
-        if self._on_host_snapshot is not None:
+        self._require_host()
+        generation = self._generation
+        host = self._host_controller()
+        operation(host)
+        return self._notify_host(generation, host)
+
+    def _notify_host(self, generation, host, *, intent=None) -> SharedCanvasSnapshot:
+        snapshot = self.host_snapshot
+        if (generation == self._generation and host is self._host and self.hosting
+                and (intent is None or intent == self._intent_generation)
+                and self._on_host_snapshot is not None):
             self._on_host_snapshot(snapshot)
         return snapshot
 
@@ -204,42 +275,72 @@ class SharedCanvasCoordinator:
 
     # -- peer plane ----------------------------------------------------
 
-    def _publish(self, snapshot: SharedCanvasSnapshot) -> None:
-        publish = self._peer_publisher()
-        if publish is None:
-            return
+    def _request_publication(self, action, projection) -> SharedCanvasSnapshot:
+        self._host_controller()
+        self._intent_generation += 1
+        pending = _PendingPublication(action, projection)
+        self._pending = pending
+        return self._attempt_publication(pending)
+
+    @staticmethod
+    def _matching_receipt(receipt, requested) -> bool:
+        return type(receipt) is SharedCanvasSessionSnapshot and all(
+            getattr(receipt, name) == getattr(requested, name)
+            for name in ("shared", "join_url", "server_label", "session_label")
+        )
+
+    def _attempt_publication(self, pending) -> SharedCanvasSnapshot:
+        generation, intent = self._generation, self._intent_generation
         host = self._host
-        invite = host.invite() if host is not None else None
-        shared = bool(snapshot.shared and invite is not None)
+        self._inflight = pending
+        # A publisher may pump UI events. Disable the visible retry before
+        # entering it, then honor any newer intent or End from that callback.
+        self._notify_host(generation, host, intent=intent)
+        if not (generation == self._generation and intent == self._intent_generation
+                and host is self._host and self.hosting and pending is self._pending):
+            if self._inflight is pending:
+                self._inflight = None
+            return self.host_snapshot
+        peer = None
+        accepted = False
         try:
-            publish(
-                shared=shared,
-                join_url=invite.join_url if shared and invite is not None else "",
-                server_label=snapshot.server_label if shared else "",
-                session_label=snapshot.session_label if shared else "",
-            )
-        except Exception:  # noqa: BLE001 - peer boundary stays UI-optional
-            if not self._publish_failed:
-                LOGGER.warning("Shared canvas peer state could not be published")
-            self._publish_failed = True
-        else:
-            self._publish_failed = False
-
-    def _publish_unshared(self) -> None:
-        publish = self._peer_publisher()
-        if publish is None:
-            return
-        try:
-            publish(shared=False)
-        except Exception:  # noqa: BLE001 - teardown must not raise
-            LOGGER.debug("Shared canvas teardown publish failed", exc_info=True)
-
-    def _peer_publisher(self):
-        host_peer = self._host_peer_provider()
-        publish = getattr(host_peer, "publish_shared_canvas_state", None)
-        if not bool(getattr(host_peer, "active", False)) or not callable(publish):
-            return None
-        return publish
+            peer = self._host_peer_provider()
+            publish = getattr(peer, "publish_shared_canvas_state", None)
+            if (generation == self._generation and intent == self._intent_generation
+                    and host is self._host and self.hosting and pending is self._pending
+                    and bool(getattr(peer, "active", False)) and callable(publish)):
+                self._publication_peer = peer
+                projection = pending.projection
+                receipt = publish(
+                    shared=projection.shared, join_url=projection.join_url,
+                    server_label=projection.server_label,
+                    session_label=projection.session_label,
+                )
+                accepted = self._matching_receipt(receipt, projection)
+        except Exception:  # payloads and transport details stay private
+            accepted = False
+        current = (generation == self._generation and intent == self._intent_generation
+                   and host is self._host and self.hosting and pending is self._pending)
+        if current and accepted:
+            try:
+                accepted = (self._host_peer_provider() is peer
+                            and bool(getattr(peer, "active", False)))
+            except Exception:
+                accepted = False
+            # The provider may itself retire the room or supersede the intent.
+            current = (generation == self._generation and intent == self._intent_generation
+                       and host is self._host and self.hosting and pending is self._pending)
+            if current and accepted:
+                if pending.action is SharedCanvasPendingAction.SHARE:
+                    host.share(pending.projection.join_url)
+                else:
+                    host.withdraw()
+                if (generation == self._generation and intent == self._intent_generation
+                        and pending is self._pending):
+                    self._pending = None
+        if self._inflight is pending:
+            self._inflight = None
+        return self._notify_host(generation, host, intent=intent)
 
     # -- launcher ------------------------------------------------------
 
@@ -256,7 +357,7 @@ class SharedCanvasCoordinator:
             try:
                 self._launcher = self._launcher_factory()
             except Exception:  # noqa: BLE001 - reported as "no canvas here"
-                LOGGER.debug("Drawpile launcher unavailable", exc_info=True)
+                LOGGER.debug("Drawpile launcher unavailable")
                 self._launcher = _UnavailableLauncher()
         return self._launcher
 

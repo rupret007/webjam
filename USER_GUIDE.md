@@ -132,6 +132,19 @@ opens it, and carries the invitation so nobody has to be sent a second link.
    Drawpile opens on the host's canvas. Someone who joins the room later
    receives the same canvas invitation and chooses **Open shared canvas**.
 
+To replace a shared canvas, the host chooses **Change invitation**, pastes
+another Drawpile invitation, and chooses **Share with the room**. **Cancel
+change** keeps the current invitation. If sharing fails, the previous canvas
+stays offered and **Try sharing again** retries the new invitation. **Stop
+sharing** also needs confirmation; if it fails, **Try stop sharing** stays
+available and the room may still offer the previous canvas. The room overview
+keeps an action for returning to an unfinished share or stop.
+
+**Canvas offered** means WebJam accepted the invitation for the room. It does
+not confirm that each guest received it or connected to Drawpile. Opening a
+canvas remains each artist's choice, and stopping the offer leaves Drawpile
+running.
+
 Things worth knowing:
 
 - **Only the host chooses the canvas.** A guest can open it, and nothing more.

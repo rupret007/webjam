@@ -126,6 +126,20 @@ def art_room_presence(
         return ABSENT
 
     # 1. Requests first. Something is absent or out of step.
+    if projection.canvas is CanvasCompanionState.SHARE_PENDING:
+        return ArtRoomPresence(
+            label="Canvas sharing needs retry",
+            description="The new canvas invitation is not confirmed for the room. Open the panel to retry.",
+            tone=ArtPresenceTone.ATTENTION,
+            target=ArtPresenceTarget.CANVAS,
+        )
+    if projection.canvas is CanvasCompanionState.WITHDRAW_PENDING:
+        return ArtRoomPresence(
+            label="Canvas stop needs retry",
+            description="Stopping the invitation is not confirmed. The room may still offer the previous canvas.",
+            tone=ArtPresenceTone.ATTENTION,
+            target=ArtPresenceTarget.CANVAS,
+        )
     if projection.canvas is CanvasCompanionState.MISSING_APP:
         return ArtRoomPresence(
             label="Install Drawpile",

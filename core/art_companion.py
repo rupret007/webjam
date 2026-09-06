@@ -71,6 +71,10 @@ class CanvasCompanionState(str, Enum):
     #: Something was offered that this computer could not read, so nothing
     #: was opened.
     UNREADABLE = "unreadable"
+    #: The room has not confirmed a new or replacement canvas invitation.
+    SHARE_PENDING = "share_pending"
+    #: The room has not confirmed removal of its previous invitation.
+    WITHDRAW_PENDING = "withdraw_pending"
 
 
 class VideoCompanionState(str, Enum):

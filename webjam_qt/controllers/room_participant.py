@@ -38,6 +38,8 @@ class NativeRoomPublisher:
         self.revision = 0
         self.video = ReferenceVideoSessionSnapshot()
         self.canvas = SharedCanvasSessionSnapshot()
+        self._canvas_operation = 0
+        self._accepted_room_state: RoomState | None = None
 
     @property
     def active(self):
@@ -46,6 +48,9 @@ class NativeRoomPublisher:
                 and self.identity == self.owner.room_identity)
 
     def publish(self):
+        return self._publish_state(self.canvas)
+
+    def _publish_state(self, canvas):
         if not self.active:
             return False
         self.revision += 1
@@ -57,9 +62,17 @@ class NativeRoomPublisher:
         state = RoomState(
             self.revision, profile, art_start,
             reference_video=self.video if profile == "art" else ReferenceVideoSessionSnapshot(),
-            shared_canvas=self.canvas if profile == "art" else SharedCanvasSessionSnapshot(),
+            shared_canvas=canvas if profile == "art" else SharedCanvasSessionSnapshot(),
         )
-        return self.owner.publish_room_state(state)
+        accepted = self.owner.publish_room_state(state)
+        if accepted is True and (
+            self._accepted_room_state is None
+            or state.revision > self._accepted_room_state.revision
+        ):
+            # A nested full/video publication may have retained a newer
+            # state before this older owner's call returns.
+            self._accepted_room_state = state
+        return accepted
 
     def publish_reference_video_state(self, **values):
         if "source_display_name" in values:
@@ -74,15 +87,38 @@ class NativeRoomPublisher:
         self.publish()
         return self.video
 
-    def publish_shared_canvas_state(self, **values):
-        for name in ("server_label", "session_label"):
-            if name in values:
-                values[name] = unicodedata.normalize("NFC", values[name])
-        self.canvas = SharedCanvasSessionSnapshot(
-            generation=self.canvas.generation + 1, **values,
-        )
-        self.publish()
-        return self.canvas
+    def publish_shared_canvas_state(self, **values) -> SharedCanvasSessionSnapshot | None:
+        """Retain a canvas only after this owner accepts its full room state.
+
+        Acceptance means the native owner retained it for publication, not
+        that any guest received it or connected to Drawpile.
+        """
+        self._canvas_operation += 1
+        operation = self._canvas_operation
+        owner, identity = self.owner, self.identity
+        try:
+            if self.app.creator_profile.key != "art":
+                return None
+            for name in ("server_label", "session_label"):
+                if name in values:
+                    values[name] = unicodedata.normalize("NFC", values[name])
+            candidate = SharedCanvasSessionSnapshot(
+                generation=operation, **values,
+            )
+            accepted = self._publish_state(candidate)
+            if (
+                accepted is not True or operation != self._canvas_operation
+                or self._accepted_room_state is None
+                or self._accepted_room_state.shared_canvas is not candidate
+                or self.owner is not owner or self.identity != identity or not self.active
+                or self.app.creator_profile.key != "art"
+            ):
+                return None
+        except Exception:  # noqa: BLE001 - only a bounded missing receipt escapes
+            # Native exceptions can contain a private canvas invitation.
+            return None
+        self.canvas = candidate
+        return candidate
 
 
 class RoomParticipantController:

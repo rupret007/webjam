@@ -1,41 +1,49 @@
-# Worth-Building — Paint along copy recovery
+# Worth-Building — shared canvas publication and retry
 
-2026-09-05 CT. Branch `codex/webjam-art-activity-clarity`, audit base
-`origin/master cf311470fadcee1a688f3b675eb6d2ca4094926d`.
-After the verified #72 squash, this unpublished branch was refreshed onto exact
-`origin/master f27a6344abc18ec3af990d43827d4c74f869a088`.
-[Coord BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5555193410).
-#72 was subsequently squashed after Karen PASS; its branch remains untouched.
-Its invitation/room retry/Leave changes are baseline, outside this slice.
-[Refresh BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5555306061).
+2026-09-05 CT. Branch `codex/webjam-art-making-honesty`, exact base
+`origin/master 95536f31041199b63f1c3d962f87387af2905130`.
+[Coord BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5555625262).
+GitHub and git confirm this is the #73 squash, with tree MATCH to its reviewed
+f5260311 tip. #73's branch is untouched; #72/#73 behaviors are baseline.
 
-**Source/product Worth-Building: PASS.** When the host chooses another process
-video, a guest should be able to open its matching local copy and continue.
-The currently offered recovery action fails, and local playback failures can
-still be presented as following the host. These are one guest player journey.
+**Source/product Worth-Building: PASS.** An Art host must know whether the
+room is actually offering the canvas they chose. A guest's explicit Open must
+use the invitation accepted by the room, not a different one the host thinks
+was shared. Failed sharing or withdrawal needs a useful retry in the same room.
 
-| Guest task | Current-code evidence | Required behavior |
+| Task | Current-code proof | Required behavior |
 | --- | --- | --- |
-| Follow the host's next video | A direct real-coordinator probe opens copy A, observes host video B, and reaches `mismatched_file`. Opening matching copy B raises “Close the current Paint along video before changing players.” Exactly one cached player exists: `open_local_copy` reattaches that same instance, while `set_player` rejects it because an old identity exists. | The visible Open my copy action accepts a valid replacement using the same silent player; a different player still requires confirmed old-copy cleanup. |
-| Recover when a local copy moved or playback failed | A moved copy keeps its identity and hits the same attachment guard. `apply` drops its playing flag after a failed operation; coordinator error handling resolves the retained identity back to FOLLOWING. A refused pause can also lose the obligation to stop the picture. | Show bounded local playback trouble and an action that works. Preserve stop obligations until confirmed; never claim the local video is following after a known player failure. |
-| Replace without showing the wrong picture | The current load retains previous identity until load returns. Qt's duration wait pumps non-input events, so normal follower ticks can run during source replacement. | Retire previous proof before loading, keep reentrant ticks unable to play the changing source, and confirm the new proof only after successful loading in the same active operation. |
+| Share a valid canvas invitation | The real Drawpile parser accepts a 135-character invitation with a 101-character hostname. The real wire snapshot caps display labels at 80 and rejects the server label. Coordinator catches the rejection, but returns shared=True and needs_attention=False. Native UI says the room can open the canvas and hides the paste field. No retry exists. | Keep the full capability URL intact, bound display labels to the existing wire contract, and claim publication only after a matching typed acceptance. |
+| Change the room's canvas | The pure probe first publishes A through real SessionControlState, then selects the long-address B. Host says B is shared; accepted room state remains A and a real guest follower's explicit Open still launches A. | Distinguish the last accepted room canvas from the pending replacement. Show a bounded failure and retry the retained private candidate without re-pasting or auto-launching anything. |
+| Stop offering the canvas | Native button probe rejects withdrawal after successful share. Host says No shared canvas and removes Stop; actual guest state still contains the old invitation. | Keep the last accepted offer visible while withdrawal is unconfirmed and expose an explicit retry. A confirmed stop removes the invitation; Drawpile remains the artist's own program. |
+| Keep rejected native state out of later updates | NativeRoomPublisher assigns its canvas cache before calling owner.publish_room_state and ignores False. A later unrelated full-room publication can carry that rejected candidate. | Build a candidate without modifying accepted state; commit only on True acceptance from the same current owner and operation. Preserve the old canvas across rejection and unrelated updates. |
 
-Scope is guest Paint along copy replacement and local-player recovery,
-including real dialog/controller behavior and the existing Qt player boundary.
-Host keyboard seek and optional-canvas publication were separately identified
-but are deferred; they are not needed to complete this guest recovery path.
-No new video stack, file transfer, public rendezvous, or physical-playback claim.
+The probes use current parser/schema/coordinator/controller/widgets with
+controlled publishers and launchers, not live Drawpile sessions. Evidence:
+`/private/tmp/webjam-post73-canvas-publication-proof.json` and
+`/private/tmp/webjam-post73-surface-probe.log` with native screenshots.
 
-Required proof: model/coordinator replacement and fault regressions, actual
-Open my copy UI/controller recovery, silent-player adapter checks, stale and
-reentrant operation handling, compact/native UX, focused Art/session/invitation
-checks, full raw pytest, Ruff, compileall, pip check, UX smoke, PRE_KAREN, and
-exact-tip hosted SUCCESS including four desktop builds. An open draft and
-coord AFTER with released lease complete the slice; never merge it.
+Scope: one canvas share/change/withdraw publication-and-retry journey,
+including native acceptance, bounded display labels, persistent room/UI truth,
+private payload handling and stale/reentrant operation guards. Transport
+acceptance is not guest delivery, Drawpile connection or evidence of painting.
+Do not widen the wire label contract or alter the complete joining URL.
 
-Holds: #37/#49 parked; #67/#72 branches untouched. Art Preview, own tools,
-silent local-file Paint along; Webex conversation/share stays separate and
-never appears on the Art door. No automatic meeting/canvas launch, second
-video stack, short-code/public rendezvous, merge/tag/sign/release/Pages/Release
-Trust. Unsigned 0.27.2 Jeff-only. Physical/provider/installed-device gates NOT RUN.
-Canonical WebJam only; pre-existing stashes preserved.
+Deferred independently proven gaps: Art Notes offers a Jamulus-only message
+input while Art deliberately starts no Jamulus; its compact Notes layout also
+needs attention. Host Paint along keyboard seeking remains deferred. None is
+needed for this canvas publication slice; do not rehash #72/#73.
+
+Required proof: real-schema host→guest propagation, failed share/change/stop
+and explicit retry, native cache rejection, stale/reentrant owners/operations,
+actual Art room actions, privacy/no automatic launches, compact native UX,
+focused Art/door/session/invitation tests, full raw pytest, Ruff, compileall,
+pip check, UX smoke, PRE_KAREN and exact-tip hosted SUCCESS with four desktop
+builds. Finish one OPEN DRAFT for Karen and coord AFTER with agent=none/FREE.
+
+Holds: Art Preview; own tools; silent local-file Paint along; Webex conversation
+and share separate, never on the Art door. No second video stack, automatic
+meeting/canvas launch, short-code/public rendezvous/default Session Help claim,
+merge/tag/sign/release/Pages/Release Trust. Unsigned 0.27.2 Jeff-only; physical,
+public, live-provider and installed-device checks NOT RUN. #37/#49 parked;
+#67/#73 branches untouched. Canonical WebJam only; all four stashes preserved.

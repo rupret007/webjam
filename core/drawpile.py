@@ -127,6 +127,16 @@ def _hostname(value: str) -> str:
     return host.lower()
 
 
+def _server_label(host: str) -> str:
+    """Bound display text while retaining the full host in the joining URL."""
+
+    if len(host) <= MAX_CANVAS_LABEL_CHARS:
+        return host
+    left = (MAX_CANVAS_LABEL_CHARS - 1) // 2
+    right = MAX_CANVAS_LABEL_CHARS - left - 1
+    return f"{host[:left]}…{host[-right:]}"
+
+
 def _port(value: object) -> int | None:
     if value in (None, ""):
         return None
@@ -196,7 +206,7 @@ def parse_canvas_invite(text: object) -> CanvasInvite:
                 session=parts.path.strip("/"),
                 query_tokens=tokens,
             ),
-            server_label=host,
+            server_label=_server_label(host),
             session_label=session,
             carries_password=_carries_password(tokens),
         )
@@ -223,7 +233,7 @@ def parse_canvas_invite(text: object) -> CanvasInvite:
             session=session,
             query_tokens=tokens,
         ),
-        server_label=host,
+        server_label=_server_label(host),
         session_label=_session_label(session),
         carries_password=_carries_password(tokens),
     )
