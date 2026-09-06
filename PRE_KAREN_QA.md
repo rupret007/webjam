@@ -67,6 +67,11 @@ logging.
 - Fixture-first: fifteen controller failures plus UI/coordinator failures on
   master; they pass after the fix.
 - Related Art/Paint along/canvas/native selection: **399 passed**.
+- New Paint along + video UI/coordinator: **106 passed**.
+- Full `pytest` (`testpaths = tests`): **8,542 passed**, 27 existing skips,
+  99 subtests, 7 environmental warnings, 487.04s, exit 0.
+- compileall and `pip check`: **PASS**. Ruff is not installed in this Cloud
+  runner; hosted CI owns that gate.
 - Hosted proof will be added to the PR body for the exact committed tip; no
   hosted success is inferred from local results.
 
