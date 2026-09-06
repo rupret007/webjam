@@ -336,6 +336,7 @@ class ApplicationController(QObject):
             or "music"
         )
         self._creator_profile_host_owned = False
+        self._chat_profile_generation = 0
         creator_setter = getattr(self.window, "set_creator_profile", None)
         if callable(creator_setter):
             creator_setter(self.creator_profile, locked=False)
@@ -1921,6 +1922,10 @@ class ApplicationController(QObject):
     def _sync_art_room_overview(self, presence=None, *, secondary_presence=None):
         """Keep Art's stage tied to current room and cleanup owners."""
         setter = getattr(self.window, "set_art_room_overview", None)
+        canvas = getattr(self.window, "session_canvas", None)
+        set_talk_share = getattr(canvas, "set_talk_share_available", None)
+        if getattr(self, "_shutdown", False) and callable(set_talk_share):
+            set_talk_share(False)
         if (
             not callable(setter) or self.creator_profile.key != "art"
             or getattr(self, "_shutdown", False)
@@ -1985,6 +1990,8 @@ class ApplicationController(QObject):
             secondary_presence=secondary_presence,
         )
         setter(overview)
+        if callable(set_talk_share):
+            set_talk_share(overview.conversation_enabled)
         return overview
 
     def _on_art_overview_activity(self, action: str) -> None:
@@ -2002,6 +2009,13 @@ class ApplicationController(QObject):
         overview = self._sync_art_room_overview()
         if overview is not None and overview.conversation_enabled:
             self._show_webex_conversation()
+
+    def _on_art_notes_talk_share(self) -> None:
+        """Open Art's meeting controls without sending notes or opening a link."""
+
+        if getattr(self, "_shutdown", False) or self.creator_profile.key != "art":
+            return
+        self._on_art_overview_conversation()
 
     def _return_to_art_room(self, dialog=None) -> None:
         """Return from Art work to current room facts without closing that work."""
@@ -2079,6 +2093,10 @@ class ApplicationController(QObject):
         )
         if canonical == active_key and not owner_changed:
             return
+        if canonical != active_key:
+            self._chat_profile_generation = (
+                int(getattr(self, "_chat_profile_generation", 0)) + 1
+            )
         self._active_creator_profile_key = canonical
         self._creator_profile_host_owned = bool(host_owned)
         if not host_owned:
@@ -4047,6 +4065,7 @@ class ApplicationController(QObject):
         self.window._ready_check_shortcut.activated.connect(self._on_ready_check)
         self.window.session_canvas.return_to_room_requested.connect(self._return_to_art_room)
         self.window.session_canvas.chat_submitted.connect(self._on_chat_submitted)
+        self.window.session_canvas.talk_share_requested.connect(self._on_art_notes_talk_share)
         self.window.session_canvas.notes_changed.connect(
             self._schedule_session_pulse_refresh
         )
@@ -6166,6 +6185,11 @@ class ApplicationController(QObject):
         text = (text or "").strip()
         if not text:
             return
+        if _creator_profile_for_controller(self).key == "art":
+            return
+        if getattr(self, "_shutdown", False):
+            self.window.session_canvas.restore_unsent_chat(text, focus=False)
+            return
         if not self.jamulus.send_chat(text):
             self.window.session_canvas.restore_unsent_chat(text)
             self.window.flash_message(
@@ -6251,22 +6275,27 @@ class ApplicationController(QObject):
         """
         import re
 
+        if (getattr(self, "_shutdown", False)
+                or _creator_profile_for_controller(self).key == "art"):
+            return
+        generation = int(getattr(self, "_chat_profile_generation", 0))
         plain = re.sub(r"<[^>]+>", "", text or "").strip()
         if not plain:
             return
-        if source_identity is None:
-            # Compatibility seam for isolated application tests and extensions.
-            self._ui_invoker.invoke(
-                lambda: self.window.session_canvas.append_line(plain)
-            )
-            return
-        self._ui_invoker.invoke(
-            lambda identity=source_identity: (
-                self.window.session_canvas.append_line(plain)
-                if self._rpc_ui_source_is_current(identity)
-                else None
-            )
-        )
+
+        def deliver() -> None:
+            # A worker's receipt can outlive a profile switch, including a
+            # Music → Art → Music round trip. Recheck on the UI thread before
+            # touching whichever local Notes document is visible now.
+            if (getattr(self, "_shutdown", False)
+                    or generation != int(getattr(self, "_chat_profile_generation", 0))
+                    or _creator_profile_for_controller(self).key == "art"):
+                return
+            if source_identity is not None and not self._rpc_ui_source_is_current(source_identity):
+                return
+            self.window.session_canvas.append_line(plain)
+
+        self._ui_invoker.invoke(deliver)
 
     def _publish_ordered_recording_presence(
         self,
@@ -12078,17 +12107,18 @@ class ApplicationController(QObject):
                     self.window.center_splitter
                 )
                 self.window.session_canvas.setVisible(True)
-                # At the supported compact floor the squeezed stage repeats
-                # the same guidance and clips its large title. Give the notes
-                # record the workspace instead; normal desktops retain useful
-                # stage context beside it.
-                compact_canvas = self.window.width() < 900
-                self._set_room_stage_visible(not compact_canvas)
-                splitter.setSizes(
-                    [0, total]
-                    if compact_canvas
-                    else [int(total * 0.28), int(total * 0.72)]
-                )
+                art_notes_layout = getattr(self.window, "apply_art_notes_layout", None)
+                if self.creator_profile.key == "art" and callable(art_notes_layout):
+                    art_notes_layout()
+                else:
+                    # Preserve the existing Notes layout for other profiles.
+                    compact_canvas = self.window.width() < 900
+                    self._set_room_stage_visible(not compact_canvas)
+                    splitter.setSizes(
+                        [0, total]
+                        if compact_canvas
+                        else [int(total * 0.28), int(total * 0.72)]
+                    )
             elif key == "takes":
                 self.window.workspace_stack.setCurrentWidget(
                     self.window.reference_studio

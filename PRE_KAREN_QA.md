@@ -1,98 +1,107 @@
-# Pre-Karen QA — return to the current Art room
+# Pre-Karen QA — Art Notes to Talk & share
 
-2026-09-05 CT. Branch `codex/webjam-finish-product-art-continuity`; exact base
-`91567b3c3ba6c33836bc67c040142ddd65702bc3` (post-#75 squash).
-[Coord BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5556458377).
-Canonical `/Users/jeffstory/Documents/WebJam` was clean before this slice.
-The #75/#74 branches, protected branches and four prior stashes remain held.
+2026-09-06 CT. Branch `codex/webjam-finish-product-art-next-action`; exact base
+`c143185193d2722027a58a621e83d955ce7b977a` (post-#76 squash).
+[Coord BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5556911937),
+23:32:43–03:32:43 CT. Canonical `/Users/jeffstory/Documents/WebJam` only.
+This report covers the current slice; no earlier PR's test results count as
+its proof.
 
-An artist can choose **Back to room** from Art Notes or Paint along to reveal
-the full current room, including changed activities or connection recovery.
-Previously, Paint along restored the outer workspace container while compact
-Notes still hid the room. Notes had no direct room-return action. This slice
-selects the existing stage route and focuses its current overview; it adds no
-transport or creative service. Escape and lifecycle release retain their
-existing return to the previous workspace.
+Art Notes now offers **Talk & share**, revealing the existing Conversation
+controls without opening a meeting or sending notes. Previously, its enabled
+“Message artists” field sent only through Jamulus, then instructed an Art guest
+to reconnect to a band. Two actual-controller baseline assertions reproduced
+that dead end and stale chat text entering Art Notes; they are defect evidence,
+not post-change passes (`/private/tmp/webjam-post76-chat-before.log`).
 
-| Claim challenged | Product evidence |
+| Claim challenged | Current evidence |
 | --- | --- |
-| Explicit return reaches the room the artist is in now | Actual LAN and native ApplicationController journeys open Notes, then return directly or through Paint along. The full room is visible and focused, Notes is hidden, and the current activity actions are reachable. LAN journeys also cover the first authenticated video offer appearing while Notes is active. |
-| Returning does not discard local work | Saved Music/Art preferences, notes text, selection, cursor and undo remain intact. Tests retain saved or failed local drafts and unsent message text. A proven local video copy, player, playback position and the guest's hidden-video choice survive navigation without another load. |
-| Loss and cleanup retain a useful destination | LAN withdrawal, reconnecting, terminal failure and unfinished cleanup render current room facts on return. Native failure safely releases its old video panel to the previous Notes workspace; explicit Notes Back then shows the failed room. No native RECONNECTING behavior is invented. |
-| Retired callbacks cannot redirect a later workspace | Current Art profile and shutdown checks precede navigation. A captured return from a released video panel is rejected by object identity after replacement, native Leave/rejoin or profile return. A stale Notes click after leaving Art is also rejected. |
-| Optional tools remain optional and private | Return changes neither connection owner nor generation, creates no extra player, and launches no Drawpile, Jamulus or Webex. New signals carry no text or invitation. Private draft, invitation, filename and identity markers remain absent from room projections, accessibility and diagnostics. Conversation keeps its existing separate visibility. |
-| Compact Notes keeps its existing tools and recovery | The quiet return fits the existing 34-pixel header. An Art-only compact adaptation prevents the two Notes tool rows from overlapping; every existing action remains available. Expansion or a switch to another profile restores inherited button styles and normal spacing. Save-failure visibility and persistence logic are unchanged. |
+| The advertised Art communication action reaches a usable destination | Actual ApplicationController host and LAN/native guest journeys with controlled backends exercise the actual Talk & share button with configured/unconfigured meeting controls. The existing panel is revealed and focused; no meeting, Jamulus, player or canvas is launched. |
+| Local work stays local and intact | Notes bytes, cursor/selection, undo and save state survive navigation. Profile changes retain per-profile Notes bytes/pending drafts and preserve the hidden non-Art message draft and its selection. Art hides/disables the Jamulus composer. Failed non-Art sends retain their existing restoration behavior; shutdown restoration preserves a draft without stealing focus or overwriting newer typing. |
+| Queued chat cannot cross into Art | Art rejects hidden keyboard callbacks and direct send dispatch before clearing/restoring text. Incoming chat checks current profile and shutdown at receipt and UI delivery, retains existing RPC source validation, and rejects an earlier profile generation even after Music→Art→Music. |
+| Notes and Conversation remain usable at supported sizes | Actual room guidance and transition text are covered at 720×560, 760×600 and 1040×720, including 125% font widths and save failure. The same tools share a row only when their full widths fit; below 400px Suggestion retains its separate row. Focus, button identity and recovery visibility survive reflow and font changes. Readout content is retained and editor minimum size is asserted. |
+| Compact navigation preserves the independent meeting | Below 900px, Art Notes takes the full workspace and hides only WebJam's Conversation card, including on resize. The card's identity, link and status remain intact; Talk & share reveals it again. Wider Notes preserves current Conversation visibility. Art's narrow Conversation layout adapts its text/control arrangement and height without inventing a meeting state. |
+| Keyboard navigation preserves editing | Art's physical Control+Tab/Control+Shift+Tab leaves the editor in either direction without altering bytes, selection or undo. Plain Tab still inserts text and Music behavior is retained. Cocoa verified physical Control as `⌃⇥`; Command is `⌘⇥`. |
 
-**Independent source/privacy/leftover review: PASS.** The product diff is
-limited to the SessionCanvas return control/compact layout and the controller's
-shared return intent and two signal connections. Existing dismissal, local
-notes ownership, media ownership and canvas publication paths are unchanged.
-No actionable introduced privacy, stale-owner, profile/style restoration or
-save-failure issue was found in the final source review.
+**Independent source/privacy/leftover review: PASS.** Current-profile, queued
+receipt, save-recovery and optional-launch boundaries were reviewed. Creative
+Pulse's stale Music-derived content and Suggestion's Notes promise versus its
+Krita image handoff remain explicitly deferred. This slice does not fix them
+or add Art chat. Existing #74 publication, #75 dual activity routes and #76
+Back to room are baseline, not new claims.
 
-**Pre-Karen local gate: PASS, with the unreproduced focused-run crash recorded
-below.** Final proof on this source:
+**Pre-Karen local gate: PASS, with failed-run history retained below.**
+Passing current-slice evidence:
 
-- New return tests: **50 cases** — 17 UI, 24 LAN journeys and 9 native journeys.
-- Final native Cocoa verification: **61 tests passed, 5 subtests passed** in
-  **12.42 seconds**. This combines the 50 new cases with 11 existing
-  SessionCanvas export cases; the five are subtests, not additional tests.
-  Exact output was reported by Surface's tool exec session **95115**. That
-  run had no separate raw log file. Source was frozen after that run.
-- A subsequent diagnostic run of the new 50 cases plus 23 existing session
-  transfer cases passed **73 tests in 11.63 seconds**:
-  `/private/tmp/webjam-post75-return-transfer-diagnostic.log`.
-- The **first raw full-suite attempt**, in one process, passed **8,239 tests,
-  26 existing skips, 99 subtests and 3 dependency deprecation warnings** in
-  **302.57 seconds**, exit **0**. This was a raw full run, not a reconstruction
-  from isolated module results:
-  `/private/tmp/webjam-post75-full-pytest.log`.
-- Final focused diagnostic across the same **57 modules**: **2,352 tests and
-  5 subtests passed in 69.51 seconds**, exit **0**, with verbose ordering and a
-  read-only GC/thread callback probe. Assertions, module selection and GC
-  settings were unchanged: `/private/tmp/webjam-post75-focused-diagnostic.log`.
-- Final required Ruff scope plus all three new test modules, compileall,
-  pip check, UX smoke and `git diff --check`: **PASS**, each exit **0**.
-  Commands and results: `/private/tmp/webjam-post75-static-ux.log`.
+- **111 new tests:** 48 communication UI/dispatch, 18 real room journeys,
+  13 real-controller Notes layout and 32 Conversation layout/state cases.
+- Final consolidated native Cocoa run: **155 passed in 24.54s**, comprising
+  those 111 plus 17 existing return UI and 27 Webex lifecycle cases.
+  `/private/tmp/webjam-post76-communication-final-cocoa.log`.
+- Final focused run: **2,671 passed and 7 subtests passed in 99.17s**.
+  `/private/tmp/webjam-post76-focused.log`.
+- Native screenshot capture: **1 passed in 3.89s**. Root inspected four final
+  Cocoa/Inter 13px views: Notes and Conversation at 720×560 and 1040×720.
+  `/private/tmp/webjam-post76-native-capture.log`,
+  `/private/tmp/webjam-post76-communication-capture.json`, and
+  `/private/tmp/webjam-post76-communication-{notes,conversation}-{720,1040}.png`.
+  These are synthetic controller/desktop captures, not physical or two-computer
+  proof. The explicit note edit refreshed Pulse for the screenshots; that is
+  not a fix for its deferred profile-adoption refresh gap.
 
-The initial broad focused run ended in a **SIGSEGV**, with the macOS crash
-report showing Shiboken's `mainThreadDeletionHandler(void*)`. Its failed run
-is retained at `/private/tmp/webjam-post75-focused.log`; the crash report path
-is recorded in `/private/tmp/webjam-post75-crash-report-path.txt`. Subsequent
-73-case and first raw full-suite passes are evidence of those runs only.
-They do **not** establish the crash's cause or prove it fixed. The same-module
-focused diagnostic also completed without reproducing the crash. Its read-only
-probe recorded 386 GC events, including 68 on worker threads across existing
-Art, remote and transfer tests; it identified neither the deleted object nor a causal fix.
-Probe evidence is `/private/tmp/webjam-post75-focused-gc-events.log`. This was
-a proportionate investigation of an unreproduced failure. No speculative
-product/test changes, assertion weakening or GC workarounds were added, and
-the initial failure remains recorded separately from the passing runs.
+The **first raw full-suite run failed**: **7,964 passed, 110 failed, 279 errors,
+26 skipped, 84 subtests passed and 3 warnings in 488.40s**. The audit found
+explicit `ENOSPC` in 109 failing tests. The 279 errors comprised 270
+temp-directory setup errors, 8 SQLite errors and 1 soundfile error. The other
+failure was the stale accessibility-copy expectation at
+`tests/test_qt_widgets.py:1114`. Root updated that exact assertion to the
+current Talk & share contract, with no product change. This failed run remains
+recorded; the correction and storage-error audit do not constitute a full
+pass. Raw log: `/private/tmp/webjam-post76-full-pytest.log`.
 
-Four final Cocoa screenshots were inspected: compact Notes, compact connected
-room, compact reconnecting room and normal connected room. Evidence:
-`/private/tmp/webjam-post75-return-after-capture.json` and
-`/private/tmp/webjam-post75-return-after-*.png`. Controlled room/launcher facts
-created no player and launched no Drawpile. This proves widget/navigation
-usability, not physical decoding, canvas participation or two-computer behavior.
+A **second attempted raw full run exited 139** around 3%, reporting a
+segmentation fault in existing `test_art_activity_guest_journey.py:33` during
+its theme fixture teardown. This coincided with root's Ctrl+C request after
+the stale assertion was identified. Ordering and cause remain unresolved;
+the exit is neither a clean full run nor a proven fixed crash. Raw log:
+`/private/tmp/webjam-post76-full-pytest-retry.log`.
 
-Inherited Art Notes pulse/guidance and Jamulus-shaped chat remain outside this
-slice; preserving an unsent draft is not a claim that Art chat now works.
-The existing status-strip priority can still show missing-copy guidance while
-the returned room reports Reconnecting. This change exposes that current room
-and its recovery; it does not rewrite strip priority. Drawpile installation
-refresh, host keyboard video seeking, #74 canvas publication and #75 dual
-activity routing are separate or baseline work, not newly implemented claims.
+The ordered full-suite prefix plus the corrected `test_qt_widgets` module
+passed **427 tests and 53 subtests in 42.34s**, with one dependency warning,
+exit **0**. `/private/tmp/webjam-post76-crash-diagnostic.log` records verbose
+ordering; its 16-module inventory is retained beside it. The teardown crash
+did not reproduce. Native crash evidence is
+`/Users/jeffstory/Library/Logs/DiagnosticReports/python3.12-2026-09-06-003133.ips`:
+`QApplication::setStyle` / stylesheet restoration, `EXC_BAD_ACCESS`. Neither
+this diagnostic nor a later pass proves its cause or a fix; no speculative
+style/GC cleanup, suite exclusion or assertion weakening was added.
 
-The open draft must record its final SHA, exact-tip hosted run/job links and
-all four desktop artifact records. Hosted **SUCCESS remains required** before
-the Bob handoff; local proof does not substitute for it.
+The final complete raw suite, one process with verbose ordering,
+`QT_QPA_PLATFORM=offscreen .venv/bin/pytest -vv`, passed **8,350 tests,
+26 existing skips, 99 subtests and 3 dependency deprecation warnings in
+451.74s**, exit **0**. Log:
+`/private/tmp/webjam-post76-full-pytest-final.log`. It includes all 111 new
+cases and the corrected existing accessibility contract. Storage was checked
+before this run (4.69 GiB free) and remained sufficient. The first failed log
+and attempted rerun remain separate evidence.
 
-Holds: Art Preview; own tools; existing silent local-file Paint along; Webex
-talk/share first-class and separate, never on the Art door. No automatic
-meeting/canvas launch, second video stack, short-code/public rendezvous or
-default Session Help product claim. Music audio remains evidence-based.
-Physical/public/live-provider/installed-owner-package gates NOT RUN. Unsigned
-0.27.2 remains Jeff-only. No merge/tag/sign/release/Pages/Release Trust.
-#37/#49 parked; protected branches untouched. Canonical WebJam only. One
-OPEN DRAFT for Karen, then coord AFTER and agent:none/FREE.
+Required Ruff scope plus all four new modules and `test_qt_widgets`: **PASS**,
+`/private/tmp/webjam-post76-final-static.log`. Compileall, pip check and UX
+smoke: **PASS**, `/private/tmp/webjam-post76-compile.log`,
+`/private/tmp/webjam-post76-pip-check.log`,
+`/private/tmp/webjam-post76-ux-smoke.log`. `git diff --check`: **PASS**. The
+final legacy assertion update changes only the expected accessibility string;
+production code and the four new modules match the native/focused proof.
+
+Final commit SHA, exact-tip hosted run/job links and four desktop artifact
+records are recorded in the open draft PR and coord AFTER. Hosted **SUCCESS**
+remains required before handoff; local proof does not substitute for it.
+
+Holds: Art Preview; own tools; silent local-file Paint along; Webex talk/share
+first-class and separate, never on the Art door. No automatic meeting/canvas
+launch, new video stack, short-code/public rendezvous or default Session Help.
+Music audio remains evidence-based. Physical/public/live-provider/installed
+owner-package gates **NOT RUN**. Unsigned 0.27.2 remains Jeff-only. No
+merge/tag/sign/release/Pages/Release Trust. #37/#49 parked; #67, completed PR
+branches, protected branches and four existing stashes untouched. One OPEN
+DRAFT for Karen, then verified coord AFTER and agent:none / lease cleared.
