@@ -43,6 +43,7 @@ class SessionCanvas(QFrame):
     CANVAS_MIN_WIDTH = 280
 
     notes_changed = Signal(str)
+    notes_restored = Signal()  # owner-held document changed; never a user edit
     save_notes_requested = Signal()
     chat_submitted = Signal(str)   # user pressed Enter in the chat box
     brief_export_requested = Signal()
@@ -447,6 +448,7 @@ class SessionCanvas(QFrame):
         self._notes.setPlainText(text)
         self._notes.blockSignals(False)
         self._sync_export_actions()
+        self.notes_restored.emit()
 
     def set_notes(self, text: str) -> None:
         """Replace editable notes and notify their persistence owner."""

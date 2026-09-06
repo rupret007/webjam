@@ -76,6 +76,8 @@ def _controller(profile_key: str) -> ApplicationController:
     controller._reference_video_binding = ()
     controller._reference_video_notified_state = ""
     controller._announced_creator_start = ()
+    # This partial fixture owns the video seam, not the Notes surface.
+    controller._refresh_session_pulse = MagicMock()
     controller.window = SimpleNamespace(
         session_strip=SimpleNamespace(
             set_recording_phase=MagicMock(),

@@ -1088,6 +1088,8 @@ def test_failed_v2_peer_configuration_retains_invite_for_folder_repair(
     tmp_path,
 ) -> None:
     controller = _bare_controller()
+    # Folder repair uses a partial controller without a Notes surface.
+    controller._refresh_session_pulse = mock.Mock()
     controller.settings = AppSettings(
         config_file=str(tmp_path / "settings.json"),
         takes_directory=str(tmp_path / "missing"),

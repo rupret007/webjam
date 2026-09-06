@@ -64,6 +64,8 @@ class _AttemptStore:
 
 def _controller(*, hosting: bool) -> ApplicationController:
     controller = ApplicationController.__new__(ApplicationController)
+    # Native startup owns these seams; this fixture has no Notes surface.
+    controller._refresh_session_pulse = mock.Mock()
     controller._shutdown = False
     controller._startup_generation = 0
     controller._startup_attempt = None
