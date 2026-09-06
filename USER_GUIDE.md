@@ -72,7 +72,12 @@ connection is current, not that a meeting or drawing app has joined.
 The room view shows whether you are waiting for artists or connected to the
 host. It does not show a full artist list yet. Without a shared activity,
 **Bring your own tools** is a complete place to start; when the host shares
-a canvas or Paint along video, the room offers that existing panel.
+a canvas or Paint along video, the room offers that existing panel. When both
+are offered, each has its own status and Open action in the room. A canvas
+that needs a drawing app does not block **Open Paint along**, and video
+recovery does not hide **Open canvas**. If you hid the video, return through
+**Open Paint along**, then choose **Show video** when you want it visible
+again. Your existing local copy stays open.
 
 Joining borrows the host's room context. After **Leave Room** finishes,
 WebJam returns to your saved workspace, activity, personal title, and notes.

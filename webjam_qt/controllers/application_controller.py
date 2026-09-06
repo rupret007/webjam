@@ -1897,7 +1897,8 @@ class ApplicationController(QObject):
         strip = getattr(getattr(self, "window", None), "session_strip", None)
         if strip is None or not hasattr(strip, "set_art_room_presence"):
             return
-        from core.art_room_presence import ABSENT, art_room_presence
+        from core.art_room_activities import art_room_activities
+        from core.art_room_presence import ABSENT
 
         if not (self._shared_canvas_supported() or self._reference_video_supported()):
             strip.set_art_room_presence(ABSENT)
@@ -1906,16 +1907,18 @@ class ApplicationController(QObject):
         start = self.creator_start
         # Only a host chose a card. A guest's saved start says nothing about
         # the room they joined, so what the host shared is the only fact.
-        presence = art_room_presence(
+        activities = art_room_activities(
             projection,
             hosting=projection.transport_allowed,
             intended_canvas=bool(start is not None and start.shared_canvas),
             intended_video=bool(start is not None and start.reference_video),
         )
+        presence = activities[0] if activities else ABSENT
+        secondary = activities[1] if len(activities) > 1 else ABSENT
         strip.set_art_room_presence(presence)
-        self._sync_art_room_overview(presence)
+        self._sync_art_room_overview(presence, secondary_presence=secondary)
 
-    def _sync_art_room_overview(self, presence=None):
+    def _sync_art_room_overview(self, presence=None, *, secondary_presence=None):
         """Keep Art's stage tied to current room and cleanup owners."""
         setter = getattr(self.window, "set_art_room_overview", None)
         if (
@@ -1923,8 +1926,9 @@ class ApplicationController(QObject):
             or getattr(self, "_shutdown", False)
         ):
             return None
+        from core.art_room_activities import art_room_activities
         from core.art_room_overview import art_room_overview
-        from core.art_room_presence import ABSENT, art_room_presence
+        from core.art_room_presence import ABSENT
 
         room = getattr(self, "_room_participant", None)
         audio = getattr(self, "audio", None)
@@ -1943,19 +1947,24 @@ class ApplicationController(QObject):
         )
         # A retained optional-layer snapshot is not evidence that its room
         # is connected. Never offer it through a stale or closing room.
+        if secondary_presence is None:
+            secondary_presence = ABSENT
         if presence is None:
             presence = ABSENT
+            secondary_presence = ABSENT
             if state in {ArtRoomState.WAITING, ArtRoomState.CONNECTED} and not (
                 closing or cleanup or ended or quitting
             ):
                 projection = self.art_room_state()
                 start = self.creator_start
-                presence = art_room_presence(
+                activities = art_room_activities(
                     projection,
                     hosting=projection.transport_allowed,
                     intended_canvas=bool(start is not None and start.shared_canvas),
                     intended_video=bool(start is not None and start.reference_video),
                 )
+                presence = activities[0] if activities else ABSENT
+                secondary_presence = activities[1] if len(activities) > 1 else ABSENT
         role = self._art_room_role or (
             "host" if self.settings.host_server_enabled else "guest"
         )
@@ -1973,6 +1982,7 @@ class ApplicationController(QObject):
             cleanup_required=cleanup,
             quitting=quitting,
             presence=presence,
+            secondary_presence=secondary_presence,
         )
         setter(overview)
         return overview
@@ -1981,9 +1991,7 @@ class ApplicationController(QObject):
         # Re-read current owners at dispatch; a click queued before Leave
         # must not open an optional layer for a room that is now closing.
         overview = self._sync_art_room_overview()
-        if overview is None or not overview.activity_enabled:
-            return
-        if action != overview.activity_action:
+        if overview is None or action not in overview.activity_actions:
             return
         if action == "video":
             self._open_reference_video()

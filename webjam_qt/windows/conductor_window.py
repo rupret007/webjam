@@ -497,6 +497,7 @@ class ConductorWindow(QMainWindow):
             self.session_hud._secondary_action,
             self.session_hud._action,
             self.art_room_overview.activity_button(),
+            self.art_room_overview.secondary_activity_button(),
             self.art_room_overview.conversation_button(),
             self.participant_grid,
             self.participant_grid._empty_primary,

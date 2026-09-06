@@ -1,49 +1,59 @@
-# Worth-Building — shared canvas publication and retry
+# Worth-Building — keep offered Art activities reachable
 
-2026-09-05 CT. Branch `codex/webjam-art-making-honesty`, exact base
-`origin/master 95536f31041199b63f1c3d962f87387af2905130`.
-[Coord BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5555625262).
-GitHub and git confirm this is the #73 squash, with tree MATCH to its reviewed
-f5260311 tip. #73's branch is untouched; #72/#73 behaviors are baseline.
+2026-09-05 CT. Real WebJam Goal; branch
+`codex/webjam-finish-product-art-guest`, verified post-#74 base
+`2b84e5acd94ff7dee327e79480351334c5e15977`.
+[Coord BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5556059873).
+#74 landed during this slice. Only this new unpublished branch was refreshed
+from the original 95536f31 base after [refresh BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5556160339).
+Its canvas publication/change/stop/retry is now baseline; its protected branch
+remains untouched at 67a76ed1. All local changes and four stashes preserved.
 
-**Source/product Worth-Building: PASS.** An Art host must know whether the
-room is actually offering the canvas they chose. A guest's explicit Open must
-use the invitation accepted by the room, not a different one the host thinks
-was shared. Failed sharing or withdrawal needs a useful retry in the same room.
+**Source/product Worth-Building: PASS.** An artist should be able to return to
+an offered process video or canvas from the room without discovering a Tools
+menu or installing an unrelated drawing app. Both optional activities already
+coexist; the room currently advertises and dispatches only one of them.
 
-| Task | Current-code proof | Required behavior |
+| Guest task | Current-code evidence | Required behavior |
 | --- | --- | --- |
-| Share a valid canvas invitation | The real Drawpile parser accepts a 135-character invitation with a 101-character hostname. The real wire snapshot caps display labels at 80 and rejects the server label. Coordinator catches the rejection, but returns shared=True and needs_attention=False. Native UI says the room can open the canvas and hides the paste field. No retry exists. | Keep the full capability URL intact, bound display labels to the existing wire contract, and claim publication only after a matching typed acceptance. |
-| Change the room's canvas | The pure probe first publishes A through real SessionControlState, then selects the long-address B. Host says B is shared; accepted room state remains A and a real guest follower's explicit Open still launches A. | Distinguish the last accepted room canvas from the pending replacement. Show a bounded failure and retry the retained private candidate without re-pasting or auto-launching anything. |
-| Stop offering the canvas | Native button probe rejects withdrawal after successful share. Host says No shared canvas and removes Stop; actual guest state still contains the old invitation. | Keep the last accepted offer visible while withdrawal is unconfirmed and expose an explicit retry. A confirmed stop removes the invitation; Drawpile remains the artist's own program. |
-| Keep rejected native state out of later updates | NativeRoomPublisher assigns its canvas cache before calling owner.publish_room_state and ignores False. A later unrelated full-room publication can carry that rejected candidate. | Build a candidate without modifying accepted state; commit only on True acceptance from the same current owner and operation. Preserve the old canvas across rejection and unrelated updates. |
+| Return to a hidden Paint along video beside a canvas | Real LAN guest/controller/player journey opened the signed matching local copy, hid it, received a canvas offer and returned to the room. With Drawpile installed, the overview showed only Shared canvas/Open canvas. Its video dispatch was rejected even though the follower was HIDDEN and the room CONNECTED. | Keep a visible, explicit route to the offered video while retaining the canvas route. Opening its panel must not automatically show the hidden picture or load another file. |
+| Follow a process video without installing the painting app | The same actual guest journey with Drawpile unavailable showed only Install Drawpile/Open canvas. The offered video remained hidden and its room-level dispatch was rejected. | A missing canvas app must not hide another offered activity or its recovery. Give each activity its own factual status and panel action. |
+| Open the canvas while the video needs attention | Pure current model puts video NEEDS_FILE and other attention states ahead of a ready canvas. The same one-action overview/dispatcher then omits the ready canvas route. | Preserve the primary attention priority, but keep the other actually offered activity reachable. |
 
-The probes use current parser/schema/coordinator/controller/widgets with
-controlled publishers and launchers, not live Drawpile sessions. Evidence:
-`/private/tmp/webjam-post73-canvas-publication-proof.json` and
-`/private/tmp/webjam-post73-surface-probe.log` with native screenshots.
+Pure source derivation independently confirmed HIDDEN video maps to its own
+route when canvas is NONE, but maps only to canvas when it is READY or
+MISSING_APP. The actual probe is `/private/tmp/webjam-post74-activities-probe.py`;
+results are `/private/tmp/webjam-post74-activities-proof.json`, with compact
+native screenshots. These use controlled launchers/players/peer responses,
+not physical Drawpile or multi-computer playback.
 
-Scope: one canvas share/change/withdraw publication-and-retry journey,
-including native acceptance, bounded display labels, persistent room/UI truth,
-private payload handling and stale/reentrant operation guards. Transport
-acceptance is not guest delivery, Drawpile connection or evidence of painting.
-Do not widen the wire label contract or alter the complete joining URL.
+The existing Tools menu remains a working fallback. This is a room-navigation
+and task-continuation gap, not a missing video capability. It is independent
+of #74's publication receipts and pending canvas intents.
 
-Deferred independently proven gaps: Art Notes offers a Jamulus-only message
-input while Art deliberately starts no Jamulus; its compact Notes layout also
-needs attention. Host Paint along keyboard seeking remains deferred. None is
-needed for this canvas publication slice; do not rehash #72/#73.
+Build one bounded product slice: retain the strip's single priority status;
+show the other actually offered canvas/video as an additional route in the
+room overview, with its own status. Reuse existing panels and explicit
+Open/Show/Hide/Install controls. Derive routes from current room facts, not a
+guest's saved start preference. Revalidate connection, cleanup and offered
+activity at dispatch; withdrawal and closure retire unavailable actions.
 
-Required proof: real-schema host→guest propagation, failed share/change/stop
-and explicit retry, native cache rejection, stale/reentrant owners/operations,
-actual Art room actions, privacy/no automatic launches, compact native UX,
-focused Art/door/session/invitation tests, full raw pytest, Ruff, compileall,
-pip check, UX smoke, PRE_KAREN and exact-tip hosted SUCCESS with four desktop
-builds. Finish one OPEN DRAFT for Karen and coord AFTER with agent=none/FREE.
+Proof must cover both directions, hidden and attention states, missing app,
+withdrawal, stale dispatch, saved Music/Art preferences, no automatic launch,
+private-payload-free projections, and compact/native keyboard usability beside
+Conversation. Focused Art/door/session/invitation tests, full raw pytest, UX
+smoke, Ruff, compileall, pip check, PRE_KAREN and exact-tip hosted SUCCESS with
+all four desktop builds remain mandatory.
 
-Holds: Art Preview; own tools; silent local-file Paint along; Webex conversation
-and share separate, never on the Art door. No second video stack, automatic
-meeting/canvas launch, short-code/public rendezvous/default Session Help claim,
-merge/tag/sign/release/Pages/Release Trust. Unsigned 0.27.2 Jeff-only; physical,
-public, live-provider and installed-device checks NOT RUN. #37/#49 parked;
-#67/#73 branches untouched. Canonical WebJam only; all four stashes preserved.
+Deferred independently verified gap: Art Notes advertises Message artists,
+but its composer and queued incoming chat still use the Jamulus-only path.
+Correcting that private-note/messaging boundary is a separate slice; do not
+invent chat or substitute opt-in Session help here.
+
+Holds: Art Preview; own tools; silent local-file Paint along; Webex talk/share
+first-class beside WebJam, never on the Art door. No automatic meeting/canvas
+launch, second video stack, short-code/public rendezvous/default Session Help
+claim, merge/tag/sign/release/Pages/Release Trust. Unsigned 0.27.2 Jeff-only;
+physical/public/live-provider/installed-owner-package gates NOT RUN. #37/#49
+parked; #67/#74 branches untouched. Canonical WebJam only. One OPEN DRAFT for
+Karen, then coord AFTER and agent:none/FREE.

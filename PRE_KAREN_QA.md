@@ -1,55 +1,67 @@
-# Pre-Karen QA — shared canvas publication and retry
+# Pre-Karen QA — return to either Art activity
 
-2026-09-05 CT. Branch `codex/webjam-art-making-honesty`; exact base
-`95536f31041199b63f1c3d962f87387af2905130`, the verified #73 squash with tree
-MATCH to reviewed f5260311. [Coord BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5555625262).
-#72/#73 behavior is baseline; their branches and all four stashes are preserved.
+2026-09-05 CT. Branch `codex/webjam-finish-product-art-guest`; verified base
+`2b84e5acd94ff7dee327e79480351334c5e15977` (post-#74 squash).
+[Initial BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5556059873)
+and [master-refresh BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5556160339).
+The source audit started at 95536f31. #74 landed during implementation; only
+this unpublished branch was refreshed. All local changes and four prior
+stashes were preserved. #74's branch remains untouched at 67a76ed1.
 
-An Art host can change the canvas invitation while the previous offer stays
-available. Unconfirmed sharing or stopping retains that offer and exposes an
-explicit retry, both in the panel and through the room overview. Publication
-acceptance does not establish guest delivery, Drawpile connection or painting.
+When a room offers a canvas and Paint along, an artist can return to either
+existing panel from the room. Each has its own status and Open button. The
+strip retains its existing priority; a missing app or recovery request no
+longer hides the other activity's room route. Canvas publication, video copy
+replacement, invitation recovery and Leave are existing baseline behavior.
 
 | Claim challenged | Product evidence |
 | --- | --- |
-| The host and guest use an accepted invitation | Real parser, wire model and host/follower journeys carry a valid long hostname with the complete joining URL. Only display labels are bounded; the existing wire limits remain unchanged. Guests open the accepted invitation only on explicit action. |
-| Failed sharing or stopping stays recoverable | None, False, exceptions, unavailable publishers and mismatched typed receipts preserve the accepted canvas plus a private pending intent. Explicit retry confirms or remains pending. Stop can replace a pending share; a confirmed stop removes the offer without closing Drawpile. |
-| Native receipts reflect retained room state | Rejected candidates never replace the accepted cache or leak into unrelated room/video publications. The receipt also checks the latest accepted full-state revision: an older canvas completion cannot claim success after a newer accepted update supersedes it. |
-| An old operation cannot affect a new room | Duplicate retry, current-owner changes, End, guest/new-host rebinding and newer intents are covered. Retry is visibly disabled before external calls; callbacks can retire or replace the intent before an old send. End forgets the pending capability. |
-| Recovery belongs to the same Art room | Eight actual ApplicationController host/guest journeys cover saved Music/Art preferences, long invitations and rejected first-share/replacement/withdrawal. Room identity, generation and saved profile remain stable; Music audio and Webex are not launched. |
-| Private payloads remain private | The masked paste clears after submission/cancel. Pending URLs are absent from labels, accessibility text, diagnostics and finite companion projections. Unexpected canvas action failures log only bounded text. Local Drawpile launch failure cannot erase an accepted room offer. |
-| The controls remain usable in compact windows | Actual Change, Cancel, Share, Retry, Stop and guest Open actions are exercised. Twenty-four geometry cases cover compact/normal parents and 100/125% font width. Long labels use right elision with the Canvas offered prefix and full bounded tooltip/accessibility text. |
+| Both actual activities remain reachable | Real LAN and native guest/controller journeys visit both panels with hidden video, a required local copy or local playback attention, and with Drawpile installed or missing. The previous one-action room dispatcher rejected the other activity. |
+| Opening a panel preserves the artist's work | Navigation reuses the current panels and local player. It does not load another file, reveal hidden video, launch Drawpile or start a meeting. Explicit Show video and canvas Open remain separate tested actions. |
+| Recovery priority is still truthful | The strip's existing presence policy is unchanged. All canvas/video states and host/guest intent combinations retain that primary status; only another actual activity becomes secondary. #74's pending share/withdraw status still takes priority. Personal image work and saved guest preferences cannot invent another room offer. |
+| Old actions cannot reopen an unavailable activity | Both actions are derived again from current room/cleanup facts at dispatch. LAN/native withdrawal removes only the withdrawn route. Connection loss removes both; current LAN receipts restore them. Native loss followed by Leave rejects late receipts and stale panel intents. |
+| The room remains private and independent of Music | Journeys retain the same connection owner, generation and borrowed Art context while preserving saved Music/Art preferences. No Music startup or Webex launch occurs. Private invitation, filename, backend detail and identity markers stay out of public projections, accessibility and diagnostics. |
+| Both actions fit beside Conversation | Actual themed Cocoa widgets cover compact and normal windows, normal and 125% glyph width, video recovery and #74 canvas pending states. Without Conversation, both routes fit without scrolling. With Conversation open, keyboard focus reveals each action without overlap. Full keyboard navigation is enabled only for the Qt test process and restored; system preferences are unchanged. |
 
-**Worth-Building + Pre-Karen local: PASS.** Final frozen-source verification:
+**Pre-Karen local gate: PASS.** Final proof on the post-#74 base:
 
-- Focused Art/door/session/invitation/canvas set: **1,205 passed**.
-- Full raw `QT_QPA_PLATFORM=offscreen .venv/bin/pytest -q`: **7,477 passed,
+- Focused Art/door/session/invitation/canvas/video set: **2,355 passed** across
+  55 modules in 61.99 seconds.
+- Full raw `QT_QPA_PLATFORM=offscreen .venv/bin/pytest -q`: **8,189 passed,
   26 existing skips, 99 subtests passed, 3 dependency deprecation warnings**
-  in 253.94 seconds. No module isolation, exclusions, extra skips, warning
-  filters or retries in this full run.
-- Native Cocoa application journeys and UI: **93 passed**. Twelve final native
-  recovery/accepted/change renders at 400/600px were inspected with compact
-  720×560 and normal 1040×720 parents. These use controlled publishers and
-  launchers; they do not certify physical Drawpile sessions.
-- Pure coordinator/core set: **124 passed**; native publication set: **44
-  passed**, including twelve nested full/video publication cases. These are
-  included in the focused/full proof, not additional test totals.
+  in 287.30 seconds; process exit 0. No module isolation, exclusions, extra
+  skips, warning filters or retries in this full run.
+- Native Cocoa: **129 distinct tests passed** across final runs: 54 new
+  activity UI cases, 50 existing overview UI cases, 3 lifetime cases and
+  22 actual LAN/native guest journeys. The UI matrix includes the newly
+  landed canvas share/withdraw retry states.
+- Pure activity/overview model set: **644 passed**. All 77 canvas/video state
+  pairs preserve the original presence policy, including pending publication.
 - Required Ruff scope, compileall, pip check, whitespace and UX smoke: **PASS**.
-  Final independent source/receipt/privacy review found no actionable issue.
+  New and changed test modules also pass Ruff.
 
-Self-QA reproduced four false native receipts before the latest-revision fix.
-Visual review replaced clipped wrapping, then preserved the status prefix
-through right elision. Existing fake publishers now return typed receipts;
-old false-success expectations require pending recovery. Assertions were
-strengthened; no new skip or exclusion was added.
+Eight final native screenshots were inspected, including compact missing-app,
+hidden-video, share-pending and withdraw-pending states. These use synthetic
+room/player/launcher facts and establish widget usability, not physical codec,
+Drawpile or multi-computer performance. Independent source/privacy review
+found no actionable issue in the model/controller/widget integration.
 
-The draft records its exact SHA and hosted run/job/artifact links. Exact-tip
-hosted SUCCESS, including Windows x64, Linux x64, macOS arm64 and macOS x64
-Build Desktop, is mandatory before coord AFTER and lease release.
+Self-QA corrected the main window's tab order so the additional activity sits
+between the primary activity and Conversation. Compact density keeps both
+rows readable. Existing keyboard assertions were retained; their fixtures now
+exercise full Qt keyboard navigation independent of macOS text-only Tab mode.
+No product or operating-system keyboard preference was changed.
 
-Holds: Art Preview; own tools; silent local-file Paint along; Webex conversation
-and share separate, never on the Art door. No automatic meeting/canvas launch,
-second video stack, short-code/public rendezvous/default Session Help claim,
-merge/tag/sign/release/Pages/Release Trust. Music audio remains evidence-based.
-Physical/public/live-provider/installed-package checks NOT RUN. Unsigned 0.27.2
-Jeff-only. #37/#49 parked; #67 untouched. Canonical WebJam only.
+The open draft will record its final SHA, exact-tip hosted run/job links and
+all four desktop artifact records. Hosted SUCCESS is required before the Bob
+handoff; local proof does not substitute for it.
+
+Holds: Art Preview; own tools; existing silent local-file Paint along; Webex
+talk/share separate and never on the Art door. No automatic meeting/canvas
+launch, second video stack, short-code/public rendezvous or default Session
+Help product claim. Music audio remains evidence-based. Physical/public/
+live-provider/installed-owner-package gates NOT RUN. Unsigned 0.27.2 stays
+Jeff-only. No merge/tag/sign/release/Pages/Release Trust. #37/#49 parked;
+#67 and all protected branches untouched. Canonical WebJam only. One OPEN
+DRAFT for Karen, then coord AFTER and agent:none/FREE. Art Notes/chat remains
+a separately identified future slice.
