@@ -1,59 +1,62 @@
-# Worth-Building — keep offered Art activities reachable
+# Worth-Building — return to the current Art room
 
-2026-09-05 CT. Real WebJam Goal; branch
-`codex/webjam-finish-product-art-guest`, verified post-#74 base
-`2b84e5acd94ff7dee327e79480351334c5e15977`.
-[Coord BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5556059873).
-#74 landed during this slice. Only this new unpublished branch was refreshed
-from the original 95536f31 base after [refresh BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5556160339).
-Its canvas publication/change/stop/retry is now baseline; its protected branch
-remains untouched at 67a76ed1. All local changes and four stashes preserved.
+2026-09-05 CT. Branch `codex/webjam-finish-product-art-continuity`; exact base
+`91567b3c3ba6c33836bc67c040142ddd65702bc3` (post-#75 squash).
+[Coord BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5556458377).
+#3 body and latest BEFORE/AFTER were read before claiming the free four-hour
+lane. Canonical checkout was clean. #75/#74 branches and four stashes are held.
 
-**Source/product Worth-Building: PASS.** An artist should be able to return to
-an offered process video or canvas from the room without discovering a Tools
-menu or installing an unrelated drawing app. Both optional activities already
-coexist; the room currently advertises and dispatches only one of them.
+**Source/product Worth-Building: PASS.** An artist taking notes or following a
+process video needs an explicit way back to the current room. At compact
+sizes, Notes hides the room. Paint along's **Back to room** restores only the
+outer workspace container, so it returns that artist to Notes again. The room
+and both of #75's activity actions remain hidden. Notes itself has no direct
+room-return action; Conversation also changes the view, but exposes unrelated
+meeting controls to reach the room.
 
-| Guest task | Current-code evidence | Required behavior |
+| Artist task | Verified current behavior | Required behavior |
 | --- | --- | --- |
-| Return to a hidden Paint along video beside a canvas | Real LAN guest/controller/player journey opened the signed matching local copy, hid it, received a canvas offer and returned to the room. With Drawpile installed, the overview showed only Shared canvas/Open canvas. Its video dispatch was rejected even though the follower was HIDDEN and the room CONNECTED. | Keep a visible, explicit route to the offered video while retaining the canvas route. Opening its panel must not automatically show the hidden picture or load another file. |
-| Follow a process video without installing the painting app | The same actual guest journey with Drawpile unavailable showed only Install Drawpile/Open canvas. The offered video remained hidden and its room-level dispatch was rejected. | A missing canvas app must not hide another offered activity or its recovery. Give each activity its own factual status and panel action. |
-| Open the canvas while the video needs attention | Pure current model puts video NEEDS_FILE and other attention states ahead of a ready canvas. The same one-action overview/dispatcher then omits the ready canvas route. | Preserve the primary attention priority, but keep the other actually offered activity reachable. |
+| Open Paint along from Notes, then return to the room | Real LAN guest/controller, actual Notes action, actual Paint along action and actual Back button: the room stays hidden, Notes stays visible, and the selected content remains `canvas`. Both offered activity routes exist in the model but cannot be seen. | Back to room selects the existing full room view, showing current room/cleanup facts and available activity actions. |
+| Return after the host shares a video and canvas while the guest is taking notes | A second real guest journey receives the first video offer while Notes is active, then a canvas receipt while Paint along is shown. Back to room again restores Notes. The room is CONNECTED and both activities exist; the wrong destination is navigation, not missing transport evidence. | Explicit return reveals the latest room state without starting either activity, reopening an external app or changing the guest's saved creator profile. |
+| Leave Notes to inspect a changing room | The side rail is hidden, the More menu has Notes but no room route, and compact Notes hides the room stage. There is no direct room-return control on Notes. | Art Notes has a clear Back to room action. Notes, cursor/undo state and local persistence remain intact so the artist can continue later. |
 
-Pure source derivation independently confirmed HIDDEN video maps to its own
-route when canvas is NONE, but maps only to canvas when it is READY or
-MISSING_APP. The actual probe is `/private/tmp/webjam-post74-activities-probe.py`;
-results are `/private/tmp/webjam-post74-activities-proof.json`, with compact
-native screenshots. These use controlled launchers/players/peer responses,
-not physical Drawpile or multi-computer playback.
+The native baseline probe is `/private/tmp/test_webjam_post75_return_probe.py`,
+with two passing assertions of the existing defect and JSON/PNG evidence at
+`/private/tmp/webjam-post75-return-before-{False,True}.*`. It uses existing
+isolated test fixtures, synthetic host receipts and no media decoding or
+external app launch. The root independently reproduced and inspected the
+compact result after a separate source audit found the same chain.
 
-The existing Tools menu remains a working fallback. This is a room-navigation
-and task-continuation gap, not a missing video capability. It is independent
-of #74's publication receipts and pending canvas intents.
+Build one return-navigation slice: a shared, current Art room return intent
+for Notes and Paint along. Reuse the existing stage route and room projection;
+reject callbacks from retired video panels and after profile/shutdown changes.
+Returning must remain possible during room loss or unfinished cleanup so the
+artist can see the real next action. Preserve notes, local copy/player state,
+connection ownership and the existing separate Conversation visibility.
 
-Build one bounded product slice: retain the strip's single priority status;
-show the other actually offered canvas/video as an additional route in the
-room overview, with its own status. Reuse existing panels and explicit
-Open/Show/Hide/Install controls. Derive routes from current room facts, not a
-guest's saved start preference. Revalidate connection, cleanup and offered
-activity at dispatch; withdrawal and closure retire unavailable actions.
+Proof: LAN and native guests; saved Music/Art preferences; explicit and first-
+offer presentation from Notes; current room receipt, withdrawal, loss and
+cleanup; retired callbacks; compact/normal keyboard and focus; no launch,
+reload or lost notes. Focused Art/door/session/invitation tests, full raw pytest,
+UX smoke, Ruff, compileall, pip check, PRE_KAREN leftover/privacy review and
+exact-tip hosted SUCCESS with four desktop builds remain mandatory.
 
-Proof must cover both directions, hidden and attention states, missing app,
-withdrawal, stale dispatch, saved Music/Art preferences, no automatic launch,
-private-payload-free projections, and compact/native keyboard usability beside
-Conversation. Focused Art/door/session/invitation tests, full raw pytest, UX
-smoke, Ruff, compileall, pip check, PRE_KAREN and exact-tip hosted SUCCESS with
-all four desktop builds remain mandatory.
+Compact self-QA also reproduced a base-branch Notes toolbar overlap: two
+52-pixel tool rows received only 64 pixels of height. The new quiet return
+keeps the original 34-pixel header height; Art-only compact tool sizing and
+spacing keep every existing action reachable. Normal sizes and other profiles
+restore their original geometry. This changes layout, not notes/chat/guidance
+semantics.
 
-Deferred independently verified gap: Art Notes advertises Message artists,
-but its composer and queued incoming chat still use the Jamulus-only path.
-Correcting that private-note/messaging boundary is a separate slice; do not
-invent chat or substitute opt-in Session help here.
+Deferred distinct gaps: Art Notes chat/guidance still includes Music-shaped
+behavior, host keyboard video seeking, and refreshing an open canvas after
+local Drawpile installation. Do not combine these into this return slice.
+#74 publication/share/change/stop/retry and #75 dual activity routes are baseline.
 
 Holds: Art Preview; own tools; silent local-file Paint along; Webex talk/share
 first-class beside WebJam, never on the Art door. No automatic meeting/canvas
 launch, second video stack, short-code/public rendezvous/default Session Help
-claim, merge/tag/sign/release/Pages/Release Trust. Unsigned 0.27.2 Jeff-only;
+claim, merge/tag/sign/release/Pages/Release Trust. Unsigned0.27.2 Jeff-only;
 physical/public/live-provider/installed-owner-package gates NOT RUN. #37/#49
-parked; #67/#74 branches untouched. Canonical WebJam only. One OPEN DRAFT for
-Karen, then coord AFTER and agent:none/FREE.
+parked; protected branches untouched. Canonical WebJam only. One OPEN DRAFT
+for Karen, then coord AFTER and agent:none/FREE.

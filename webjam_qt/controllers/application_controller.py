@@ -2003,6 +2003,23 @@ class ApplicationController(QObject):
         if overview is not None and overview.conversation_enabled:
             self._show_webex_conversation()
 
+    def _return_to_art_room(self, dialog=None) -> None:
+        """Return from Art work to current room facts without closing that work."""
+
+        if getattr(self, "_shutdown", False) or self.creator_profile.key != "art":
+            return
+        if dialog is not None and dialog is not getattr(self, "_reference_video_dialog", None):
+            # A released video panel may still have a queued Back intent. It
+            # must not select a workspace for a later room or another profile.
+            return
+        # Loss and unfinished cleanup still need an honest room destination.
+        # This is navigation only; no transport, file or meeting action runs.
+        self.window.side_rail.set_active_key("stage")
+        self._on_rail_view_changed("stage")
+        overview = self.window.art_room_overview
+        overview.verticalScrollBar().setValue(0)
+        overview.setFocus(Qt.FocusReason.OtherFocusReason)
+
     def _maybe_open_paint_along(self, snapshot=None) -> None:
         """Show Paint along once when room truth makes it actionable.
 
@@ -4028,6 +4045,7 @@ class ApplicationController(QObject):
         # Diagnostics export shortcut (Ctrl+Shift+D)
         self.window._diagnostics_shortcut.activated.connect(self._on_export_diagnostics)
         self.window._ready_check_shortcut.activated.connect(self._on_ready_check)
+        self.window.session_canvas.return_to_room_requested.connect(self._return_to_art_room)
         self.window.session_canvas.chat_submitted.connect(self._on_chat_submitted)
         self.window.session_canvas.notes_changed.connect(
             self._schedule_session_pulse_refresh
@@ -12522,7 +12540,7 @@ class ApplicationController(QObject):
                     )
                 )
             dialog.return_requested.connect(
-                lambda: self._hide_paint_along(dialog)
+                lambda: self._return_to_art_room(dialog)
             )
             self._reference_video_dialog = dialog
         if coordinator.hosting:

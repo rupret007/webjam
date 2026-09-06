@@ -46,6 +46,7 @@ class SessionCanvas(QFrame):
     chat_submitted = Signal(str)   # user pressed Enter in the chat box
     brief_export_requested = Signal()
     suggestion_requested = Signal()  # Art: Suggestion on these notes/canvas
+    return_to_room_requested = Signal()  # Art: leave Notes without changing the draft
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -55,10 +56,35 @@ class SessionCanvas(QFrame):
         self._current_pulse: SessionPulse | None = None
         self._current_guidance: MusicianGuidanceSnapshot | None = None
         self._compact_guidance = False
+        self._compact_notes_controls = False
         self._art_profile = False
 
         self._header = QLabel("Session Canvas")
         self._header.setObjectName("CanvasHeader")
+        self._room_return_button = QPushButton("Back to room")
+        self._room_return_button.setObjectName("QuietButton")
+        # Match the existing notes header instead of inheriting the taller
+        # main-window action size and taking space from the artist's draft.
+        self._room_return_button.setStyleSheet(f"min-height: {Space.LG}px;")
+        self._room_return_button.setAccessibleName("Back to room")
+        self._room_return_button.setAccessibleDescription(
+            "Show the full Art room and its current activities. Keep your local notes."
+        )
+        self._room_return_button.setToolTip(
+            "Show the Art room. Your notes stay on this computer."
+        )
+        self._room_return_button.setSizePolicy(
+            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed
+        )
+        self._room_return_button.setVisible(False)
+        self._room_return_button.setEnabled(False)
+        self._room_return_button.clicked.connect(self._request_room_return)
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        self._header_row = header_row
+        header_row.setSpacing(Space.XS)
+        header_row.addWidget(self._header, 1)
+        header_row.addWidget(self._room_return_button)
 
         # Action buttons in a compact row
         ts_btn = QPushButton("+ Time")
@@ -245,7 +271,7 @@ class SessionCanvas(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, Space.MD)
         layout.setSpacing(Space.SM)
-        layout.addWidget(self._header)
+        layout.addLayout(header_row)
         layout.addLayout(toolbar)
         layout.addWidget(self._guidance)
         layout.addWidget(self._pulse)
@@ -254,6 +280,7 @@ class SessionCanvas(QFrame):
         chat_row.setContentsMargins(Space.MD, 0, Space.MD, 0)
         chat_row.addWidget(self._chat_input)
         layout.addLayout(chat_row)
+        QWidget.setTabOrder(self._room_return_button, ts_btn)
 
     # ------------------------------------------------------------------
     # Public API
@@ -325,12 +352,26 @@ class SessionCanvas(QFrame):
         self._suggestion_button.setVisible(art)
         self._suggestion_button.setEnabled(art)
         self._art_profile = art
+        self._room_return_button.setVisible(art)
+        self._room_return_button.setEnabled(art)
+        self._header.setWordWrap(art)
+        self._header_row.setContentsMargins(0, 0, Space.SM if art else 0, 0)
+        self._sync_notes_controls()
         self._suggestion_row.setVisible(art and self._notes_save_state not in {"failed", "too_large"})
         # Default NOW copy is Music-shaped until the HUD writes. A painter
         # should not read "live music path" on the notes.
         if art and self._current_guidance is None:
             self._guidance_why.setText("Why: WebJam has not checked this room yet.")
             self._guidance_next.setText("Next: follow the session bar")
+
+    def room_return_button(self) -> QPushButton:
+        return self._room_return_button
+
+    def _request_room_return(self) -> None:
+        # A queued Art click can arrive after a profile switch. Navigation
+        # remains Art-only even when delivery bypasses Qt's disabled button.
+        if self._art_profile:
+            self.return_to_room_requested.emit()
 
     def restore_notes(self, text: str) -> None:
         """Restore owner-held bytes without creating a new user edit."""
@@ -422,6 +463,17 @@ class SessionCanvas(QFrame):
         )
         self._guidance_recent.setVisible(True)
 
+    def _sync_notes_controls(self) -> None:
+        compact = self._art_profile and self.height() < 500
+        if compact == self._compact_notes_controls:
+            return
+        self._compact_notes_controls = compact
+        # Two full-height tool rows can otherwise overlap in a compact Art
+        # workspace. Keep every action and leave the editor its own space.
+        for button in (*self._toolbar_buttons, self._save_notes_button):
+            button.setStyleSheet(f"min-height: {Space.LG}px;" if compact else "")
+        self.layout().setSpacing(Space.XS if compact else Space.SM)
+
     def resizeEvent(self, event) -> None:
         compact = self.height() < 500
         if compact != self._compact_guidance:
@@ -430,6 +482,7 @@ class SessionCanvas(QFrame):
             self._pulse_summary.setVisible(not compact)
             self._pulse_signals.setVisible(not compact)
             self._render_guidance_record()
+        self._sync_notes_controls()
         super().resizeEvent(event)
 
     def clear_session_pulse(self) -> None:

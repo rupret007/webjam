@@ -10,6 +10,16 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Return to the current Art room
+
+- **Back to room** in Art Notes and Paint along shows the full current room,
+  including changed activities or connection recovery, even after compact Notes.
+- Returning keeps local notes, selection and undo history, the current video
+  copy, and the guest's hidden-video choice. Escape keeps its existing return
+  to the previous workspace.
+- Compact Art Notes keeps its return and editing controls in separate rows;
+  normal windows and other creator profiles retain their existing sizing.
+
 ### Return to either Art activity
 
 - When a room offers both a shared canvas and Paint along, the room keeps a
