@@ -124,6 +124,14 @@ class SharedCanvasState(str, Enum):
     CLOSED = "closed"
 
 
+class SharedCanvasPendingAction(str, Enum):
+    """The host's unconfirmed change to the room's canvas offer."""
+
+    NONE = ""
+    SHARE = "share"
+    WITHDRAW = "withdraw"
+
+
 @dataclass(frozen=True, slots=True)
 class SharedCanvasSnapshot:
     """Host-local canvas truth, safe to render and to project.
@@ -140,10 +148,13 @@ class SharedCanvasSnapshot:
     carries_password: bool = False
     launcher_available: bool = False
     error: str = ""
+    pending_action: SharedCanvasPendingAction = SharedCanvasPendingAction.NONE
+    can_retry_publication: bool = False
 
     @property
     def needs_attention(self) -> bool:
-        return self.state is SharedCanvasState.FAILED or bool(self.error)
+        return (self.state is SharedCanvasState.FAILED or bool(self.error)
+                or self.pending_action is not SharedCanvasPendingAction.NONE)
 
 
 class SharedCanvasHostController:
@@ -280,10 +291,11 @@ class SharedCanvasHostController:
                 self._launcher.open_canvas(invite)
             except (DrawpileError, SharedCanvasError):
                 raise
-            except Exception:
-                return self._fail_locked(
+            except Exception as exc:
+                # A local launcher failure cannot withdraw the room's offer.
+                raise SharedCanvasError(
                     "WebJam couldn't open Drawpile on this computer."
-                )
+                ) from exc
             return self._snapshot_locked()
 
     def close(self) -> SharedCanvasSnapshot:
@@ -468,5 +480,6 @@ __all__ = [
     "SharedCanvasFollower",
     "SharedCanvasHostController",
     "SharedCanvasSnapshot",
+    "SharedCanvasPendingAction",
     "SharedCanvasState",
 ]

@@ -16,7 +16,9 @@ from core.drawpile import (
     DrawpileUnavailableError,
 )
 from core.session_transfer import SharedCanvasSessionSnapshot
-from core.shared_canvas import SharedCanvasError, SharedCanvasFollowState
+from core.shared_canvas import (
+    SharedCanvasError, SharedCanvasFollowState, SharedCanvasPendingAction,
+)
 from webjam_qt.controllers.shared_canvas_coordinator import (
     LAUNCHER_UNAVAILABLE_MESSAGE,
     NOT_FOLLOWING_MESSAGE,
@@ -64,7 +66,7 @@ class FakeHostPeer:
         if self.explode:
             raise RuntimeError("peer plane is unhappy")
         self.published.append(kwargs)
-        return None
+        return SharedCanvasSessionSnapshot(**kwargs)
 
 
 def _coordinator(*, launcher=None, peer=None, follow=None):
@@ -227,7 +229,9 @@ def test_publication_is_skipped_while_the_peer_plane_is_inactive():
     coordinator.share(WEB_INVITE)
 
     assert peer.published == []
-    assert coordinator.host_snapshot.shared is True
+    assert coordinator.host_snapshot.shared is False
+    assert coordinator.host_snapshot.pending_action is SharedCanvasPendingAction.SHARE
+    assert coordinator.host_snapshot.can_retry_publication
 
 
 def test_a_peer_failure_never_breaks_the_hosts_canvas():
@@ -237,7 +241,9 @@ def test_a_peer_failure_never_breaks_the_hosts_canvas():
 
     snapshot = coordinator.share(WEB_INVITE)
 
-    assert snapshot.shared is True
+    assert snapshot.shared is False
+    assert snapshot.pending_action is SharedCanvasPendingAction.SHARE
+    assert snapshot.can_retry_publication
 
 
 # ---------------------------------------------------------------------------

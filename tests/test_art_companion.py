@@ -384,6 +384,8 @@ def test_nothing_is_accepted_outside_a_room():
         CanvasCompanionState.NONE,
         CanvasCompanionState.MISSING_APP,
         CanvasCompanionState.UNREADABLE,
+        CanvasCompanionState.SHARE_PENDING,
+        CanvasCompanionState.WITHDRAW_PENDING,
     ),
 )
 def test_opening_a_canvas_is_refused_when_there_is_nothing_to_open(canvas):

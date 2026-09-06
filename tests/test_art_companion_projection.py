@@ -27,6 +27,7 @@ from core.shared_canvas import (
     SharedCanvasFollowSnapshot,
     SharedCanvasFollowState,
     SharedCanvasSnapshot,
+    SharedCanvasPendingAction,
     SharedCanvasState,
 )
 from webjam_qt.controllers.art_companion_projection import (
@@ -69,6 +70,27 @@ def test_a_hosted_canvas_that_is_shared_and_openable_reads_as_ready():
     )
 
     assert canvas_companion_state(snapshot, hosting=True) is CanvasCompanionState.READY
+
+
+@pytest.mark.parametrize(("pending", "expected"), [
+    (SharedCanvasPendingAction.SHARE, CanvasCompanionState.SHARE_PENDING),
+    (SharedCanvasPendingAction.WITHDRAW, CanvasCompanionState.WITHDRAW_PENDING),
+])
+@pytest.mark.parametrize("accepted", [False, True])
+def test_pending_canvas_intents_project_recovery_instead_of_success(pending, expected, accepted):
+    snapshot = SharedCanvasSnapshot(
+        state=SharedCanvasState.SHARED if accepted else SharedCanvasState.IDLE,
+        shared=accepted, launcher_available=True,
+        server_label="PRIVATE_SERVER", session_label="PRIVATE_CANVAS",
+        pending_action=pending, can_retry_publication=True,
+    )
+    projection = build_art_companion_projection(
+        generation=1, revision=1, in_room=True, hosting=True,
+        canvas_snapshot=snapshot,
+    )
+    assert projection.canvas is expected
+    assert "PRIVATE_SERVER" not in repr(projection)
+    assert "PRIVATE_CANVAS" not in repr(projection)
 
 
 def test_a_room_with_no_canvas_does_not_advertise_a_missing_program():

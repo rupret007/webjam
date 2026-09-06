@@ -159,6 +159,17 @@ def test_every_video_state_this_computer_cannot_follow_asks_for_attention(
     assert presence.target is ArtPresenceTarget.VIDEO
 
 
+@pytest.mark.parametrize(("state", "label"), [
+    (CanvasCompanionState.SHARE_PENDING, "Canvas sharing needs retry"),
+    (CanvasCompanionState.WITHDRAW_PENDING, "Canvas stop needs retry"),
+])
+def test_unconfirmed_canvas_changes_keep_a_persistent_recovery_route(state, label):
+    presence = art_room_presence(_room(canvas=state, video=VideoCompanionState.PLAYING))
+    assert presence.label == label
+    assert presence.tone is ArtPresenceTone.ATTENTION
+    assert presence.target is ArtPresenceTarget.CANVAS
+
+
 def test_a_canvas_that_could_not_be_read_asks_rather_than_describes():
     presence = art_room_presence(_room(canvas=CanvasCompanionState.UNREADABLE))
 

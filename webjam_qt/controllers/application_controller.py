@@ -12756,6 +12756,9 @@ class ApplicationController(QObject):
                 dialog.withdraw_requested.connect(
                     lambda: self._run_shared_canvas(coordinator.withdraw)
                 )
+                dialog.retry_publication_requested.connect(
+                    lambda: self._run_shared_canvas(coordinator.retry_publication)
+                )
                 dialog.open_canvas_requested.connect(
                     lambda: self._run_shared_canvas(coordinator.open_canvas_as_host)
                 )
@@ -12804,7 +12807,7 @@ class ApplicationController(QObject):
         except (DrawpileError, SharedCanvasError) as exc:
             self.window.flash_message(str(exc), ms=8000)
         except Exception:  # noqa: BLE001 - never let a panel kill the room
-            LOGGER.exception("A shared canvas operation failed safely")
+            LOGGER.warning("A shared canvas operation failed safely")
             self.window.flash_message(
                 "WebJam couldn't complete that shared canvas request. The "
                 "room is still running.",
