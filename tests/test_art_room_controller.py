@@ -477,7 +477,7 @@ def test_lan_host_membership_uses_fresh_room_readers_and_actual_bind(
     address[0] = "192.168.1.21"
     room.tick()
     assert not room.readiness().shareable
-    assert room.state is ArtRoomState.FAILED
+    assert room.state is ArtRoomState.RECONNECTING
     assert app._current_invite_url() == ""
     app.host_peer.active = False
 
