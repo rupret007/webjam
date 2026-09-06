@@ -900,6 +900,25 @@ class ConductorWindow(QMainWindow):
         self.art_room_overview.set_overview(overview)
         self._setup_tab_order()
 
+    def apply_art_notes_layout(self) -> bool:
+        """Give compact Art Notes the workspace without changing its meeting."""
+
+        if (self._creator_profile.key != "art"
+                or self.workspace_stack.currentWidget() is not self.center_splitter
+                or self.session_canvas.isHidden()):
+            return False
+        compact = self.width() < 900
+        if compact:
+            # This only hides WebJam's controls. The external meeting and its
+            # saved link/status remain owned by the existing Conversation panel.
+            self.webex_embed.hide()
+        self.set_room_stage_visible(not compact)
+        total = sum(self.center_splitter.sizes()) or self.width()
+        self.center_splitter.setSizes(
+            [0, total] if compact else [int(total * 0.28), int(total * 0.72)]
+        )
+        return True
+
     def set_room_stage_visible(self, visible: bool) -> None:
         """Keep Art and Music aligned with the existing stage/notes layout."""
 
@@ -1026,6 +1045,8 @@ class ConductorWindow(QMainWindow):
             self._sync_room_help_density()
         if getattr(self, "song_overlay", None) is not None:
             self.song_overlay.set_available_width(self.width())
+        if hasattr(self, "workspace_stack"):
+            self.apply_art_notes_layout()
 
     # ------------------------------------------------------------------
     # Qt overrides

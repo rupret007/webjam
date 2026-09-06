@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QAccessible, QAccessibleEvent
 from PySide6.QtWidgets import (
     QApplication,
+    QBoxLayout,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -185,7 +186,7 @@ class WebexEmbed(QFrame):
         self._recheck_btn.setVisible(False)
         self._recheck_btn.clicked.connect(self.recheck_webex_requested.emit)
 
-        header = QHBoxLayout()
+        header = self._header_layout = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(Space.SM)
         header.addWidget(self._title_label, stretch=1)
@@ -197,7 +198,7 @@ class WebexEmbed(QFrame):
         text_column.addWidget(self._mode_label)
         text_column.addWidget(self._status_label)
 
-        actions = QGridLayout()
+        actions = self._actions_layout = QGridLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(Space.SM)
         actions.addWidget(self._bring_forward_btn, 0, 0)
@@ -208,7 +209,7 @@ class WebexEmbed(QFrame):
         actions.addWidget(self._install_btn, 2, 1)
         actions.addWidget(self._recheck_btn, 3, 0)
 
-        layout = QHBoxLayout(self)
+        layout = self._content_layout = QHBoxLayout(self)
         layout.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.SM)
         layout.setSpacing(Space.LG)
         layout.addLayout(text_column, stretch=1)
@@ -219,6 +220,90 @@ class WebexEmbed(QFrame):
         self._render_audio_guidance()
         self._render_launch_status()
         self._render_link_accessibility()
+
+    def event(self, event) -> bool:
+        if event.type() == QEvent.Type.LayoutRequest:
+            self._sync_art_layout()
+        return super().event(event)
+
+    def minimumSizeHint(self):
+        hint = super().minimumSizeHint()
+        layout = getattr(self, "_content_layout", None)
+        if layout is not None and self._creator_profile_key == "art":
+            # A wide layout must still permit its parent to reach the narrow
+            # breakpoint. Otherwise its old horizontal minimum prevents the
+            # resize event that would stack these same controls.
+            labels = (self._title_label, self._mode_label, self._status_label, self._app_status_label)
+            text_width = max(
+                (label.fontMetrics().horizontalAdvance(word)
+                 for label in labels if not label.isHidden()
+                 for word in label.text().split()),
+                default=0,
+            )
+            margins = layout.contentsMargins()
+            hint.setWidth(
+                max(text_width, self._actions_layout.minimumSize().width())
+                + margins.left() + margins.right() + 2 * self.frameWidth()
+            )
+        return hint
+
+    def resizeEvent(self, event) -> None:
+        self._sync_art_layout()
+        super().resizeEvent(event)
+
+    def _sync_art_layout(self) -> None:
+        """Fit Art's retained Conversation card without changing its controls."""
+
+        layout = getattr(self, "_content_layout", None)
+        if layout is None or getattr(self, "_updating_art_layout", False):
+            return
+        self._updating_art_layout = True
+        try:
+            art = self._creator_profile_key == "art"
+            margins = layout.contentsMargins()
+            available = self.width() - margins.left() - margins.right() - 2 * self.frameWidth()
+            header_width = self._title_label.sizeHint().width()
+            if not self._app_status_label.isHidden():
+                # Measure unwrapped text so changing the header direction
+                # cannot move its own breakpoint and oscillate on resize.
+                header_width += (
+                    self._app_status_label.fontMetrics().horizontalAdvance(
+                        self._app_status_label.text()
+                    ) + 2 * self._app_status_label.margin() + Space.SM
+                )
+            text_width = max(280, header_width)
+            narrow = art and available < text_width + self._actions_layout.minimumSize().width() + Space.LG
+            direction = (
+                QBoxLayout.Direction.TopToBottom if narrow
+                else QBoxLayout.Direction.LeftToRight
+            )
+            if layout.direction() != direction:
+                layout.setDirection(direction)
+                layout.setStretch(0, 0 if narrow else 1)
+            if self._header_layout.direction() != direction:
+                self._header_layout.setDirection(direction)
+            if self._app_status_label.wordWrap() != narrow:
+                self._app_status_label.setWordWrap(narrow)
+            alignment = (
+                Qt.AlignmentFlag.AlignLeft if narrow else Qt.AlignmentFlag.AlignRight
+            ) | Qt.AlignmentFlag.AlignVCenter
+            if self._app_status_label.alignment() != alignment:
+                self._app_status_label.setAlignment(alignment)
+            if art:
+                # QLayout accounts for the current wrapped labels, visible
+                # actions and stylesheet metrics. No timer or rebuilt widget
+                # can disturb the current meeting state or keyboard focus.
+                required = layout.totalHeightForWidth(self.width())
+                height = max(112, required + 2 * self.frameWidth())
+                if self.minimumHeight() != height or self.maximumHeight() != height:
+                    self.setFixedHeight(height)
+            else:
+                if self.minimumHeight() != 112:
+                    self.setMinimumHeight(112)
+                if self.maximumHeight() != 152:
+                    self.setMaximumHeight(152)
+        finally:
+            self._updating_art_layout = False
 
     def fallback_button(self) -> QPushButton:
         """Return the explicit external meeting-link handoff button."""
@@ -645,6 +730,7 @@ class WebexEmbed(QFrame):
         self._creator_profile_key = profile.key
         self._render_audio_guidance()
         self._sync_native_actions()
+        self._sync_art_layout()
 
     def _render_audio_guidance(self) -> None:
         service = self._service_label

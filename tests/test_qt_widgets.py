@@ -1113,7 +1113,7 @@ class TestConductorWindow(unittest.TestCase):
         self.assertNotIn("Jamulus", w.session_canvas._chat_input.placeholderText())
         self.assertEqual(
             w.session_canvas.accessibleDescription(),
-            "These notes stay on this computer. Live chat is separate.",
+            "These notes stay on this computer. Talk & share opens the separate meeting controls.",
         )
         self.assertNotIn("media timecode", w.session_canvas.accessibleDescription())
         self.assertEqual(

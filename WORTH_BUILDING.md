@@ -1,62 +1,84 @@
-# Worth-Building — return to the current Art room
+# Worth-Building — Art Notes to talk and share
 
-2026-09-05 CT. Branch `codex/webjam-finish-product-art-continuity`; exact base
-`91567b3c3ba6c33836bc67c040142ddd65702bc3` (post-#75 squash).
-[Coord BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5556458377).
-#3 body and latest BEFORE/AFTER were read before claiming the free four-hour
-lane. Canonical checkout was clean. #75/#74 branches and four stashes are held.
+2026-09-05 CT. Branch `codex/webjam-finish-product-art-next-action`; exact base
+`c143185193d2722027a58a621e83d955ce7b977a` (post-#76 squash).
+[Coord BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5556911937),
+23:32:43 CT through 03:32:43 CT. Read #3 body and latest BEFORE/AFTER first;
+Bob's latest AFTER released the earlier Grok lease. Verified merged #76 and
+GitHub master SHA, fetched that exact master, preserved the clean #76 branch,
+and created this fresh branch in `/Users/jeffstory/Documents/WebJam` only.
 
-**Source/product Worth-Building: PASS.** An artist taking notes or following a
-process video needs an explicit way back to the current room. At compact
-sizes, Notes hides the room. Paint along's **Back to room** restores only the
-outer workspace container, so it returns that artist to Notes again. The room
-and both of #75's activity actions remain hidden. Notes itself has no direct
-room-return action; Conversation also changes the view, but exposes unrelated
-meeting controls to reach the room.
+**Source/product Worth-Building: PASS.** An artist taking notes has an enabled
+“Message artists… (Enter to send)” composer. Its only implementation is Jamulus
+chat, which Art rooms do not start. Enter fails and instructs the artist to
+“Reconnect to your band,” so the advertised task has no successful Art retry.
+A sculptor or talk-only guest needs the existing Conversation controls to talk
+and share work while using their own tools.
 
-| Artist task | Verified current behavior | Required behavior |
-| --- | --- | --- |
-| Open Paint along from Notes, then return to the room | Real LAN guest/controller, actual Notes action, actual Paint along action and actual Back button: the room stays hidden, Notes stays visible, and the selected content remains `canvas`. Both offered activity routes exist in the model but cannot be seen. | Back to room selects the existing full room view, showing current room/cleanup facts and available activity actions. |
-| Return after the host shares a video and canvas while the guest is taking notes | A second real guest journey receives the first video offer while Notes is active, then a canvas receipt while Paint along is shown. Back to room again restores Notes. The room is CONNECTED and both activities exist; the wrong destination is navigation, not missing transport evidence. | Explicit return reveals the latest room state without starting either activity, reopening an external app or changing the guest's saved creator profile. |
-| Leave Notes to inspect a changing room | The side rail is hidden, the More menu has Notes but no room route, and compact Notes hides the room stage. There is no direct room-return control on Notes. | Art Notes has a clear Back to room action. Notes, cursor/undo state and local persistence remain intact so the artist can continue later. |
+The baseline uses the real ApplicationController and an authenticated native
+Art guest with isolated settings/notes/credentials, synthetic room receipts,
+and mocked outgoing message/meeting calls. Two passing defect assertions prove:
 
-The native baseline probe is `/private/tmp/test_webjam_post75_return_probe.py`,
-with two passing assertions of the existing defect and JSON/PNG evidence at
-`/private/tmp/webjam-post75-return-before-{False,True}.*`. It uses existing
-isolated test fixtures, synthetic host receipts and no media decoding or
-external app launch. The root independently reproduced and inspected the
-compact result after a separate source audit found the same chain.
+- A saved-Music guest adopted into Art sees the enabled composer; Enter calls
+  Jamulus, restores the draft on rejection, and displays the band retry text.
+- Direct stale Music send/receive dispatch can append its text into the Art
+  personal Notes even though Art has no Jamulus chat transport.
 
-Build one return-navigation slice: a shared, current Art room return intent
-for Notes and Paint along. Reuse the existing stage route and room projection;
-reject callbacks from retired video panels and after profile/shutdown changes.
-Returning must remain possible during room loss or unfinished cleanup so the
-artist can see the real next action. Preserve notes, local copy/player state,
-connection ownership and the existing separate Conversation visibility.
+Probe: `/private/tmp/test_webjam_post76_chat_before.py`; log:
+`/private/tmp/webjam-post76-chat-before.log` (2 passed, 1.82s). An initial pytest
+console entry could not import the external probe's tests plugin and collected
+nothing; using python -m pytest resolved that harness path. No live sends,
+external app launches or media decoding occurred.
 
-Proof: LAN and native guests; saved Music/Art preferences; explicit and first-
-offer presentation from Notes; current room receipt, withdrawal, loss and
-cleanup; retired callbacks; compact/normal keyboard and focus; no launch,
-reload or lost notes. Focused Art/door/session/invitation tests, full raw pytest,
-UX smoke, Ruff, compileall, pip check, PRE_KAREN leftover/privacy review and
-exact-tip hosted SUCCESS with four desktop builds remain mandatory.
+Build one communication slice: Art Notes replaces the unsupported composer
+with a clear **Talk & share** action revealing the existing Conversation panel.
+Explain that notes stay on this computer and talking/sharing happens in the
+meeting. Navigation must preserve notes, selection, undo, pending saves and
+hidden Music drafts. Opening the panel does not open a meeting or claim the
+artist joined it. Current-profile guards must reject delayed outgoing and
+incoming Jamulus chat work during Art, including dispatch after a profile
+change; non-Art chat keeps its existing accepted-send behavior. Reuse existing
+Conversation ownership, current cleanup guards and stage navigation.
 
-Compact self-QA also reproduced a base-branch Notes toolbar overlap: two
-52-pixel tool rows received only 64 pixels of height. The new quiet return
-keeps the original 34-pixel header height; Art-only compact tool sizing and
-spacing keep every existing action reachable. Normal sizes and other profiles
-restore their original geometry. This changes layout, not notes/chat/guidance
-semantics.
+Proof: actual host and LAN/native guest routes, borrowed Music preferences and
+restoration, stale dispatch, configured/unconfigured Conversation, compact and
+normal keyboard/focus, local note preservation, no external launches, and no
+private payloads in diagnostics. Focused Art/door/session/invite and chat tests,
+full raw pytest, UX smoke, Ruff, compileall, pip check, independent PRE_KAREN
+leftover/privacy review and exact-tip hosted SUCCESS with four desktop builds
+remain required.
 
-Deferred distinct gaps: Art Notes chat/guidance still includes Music-shaped
-behavior, host keyboard video seeking, and refreshing an open canvas after
-local Drawpile installation. Do not combine these into this return slice.
-#74 publication/share/change/stop/retry and #75 dual activity routes are baseline.
+Actual-controller Cocoa QA also exposed two layout failures on this same
+communication journey. With full room guidance, Notes can shrink below its
+editor minimum at 720×560 and beside the room at 1040×720. After opening
+Conversation and returning to Notes, the retained meeting card's fixed
+152-pixel height lets its title, guidance and status overlap in the narrow
+stage pane. The prior chat-row probe shows the compact Notes shortage is
+inherited; the real screenshot confirms the meeting-card issue is reachable
+on the new route. Preserve both panels' content/state while adapting spacing
+and Art Conversation layout; add actual-controller geometry assertions rather
+than relying only on shorter widget fixtures. Root captures are
+`/private/tmp/webjam-post76-communication-{notes,conversation}-{720,1040}.png`.
 
-Holds: Art Preview; own tools; silent local-file Paint along; Webex talk/share
-first-class beside WebJam, never on the Art door. No automatic meeting/canvas
-launch, second video stack, short-code/public rendezvous/default Session Help
-claim, merge/tag/sign/release/Pages/Release Trust. Unsigned0.27.2 Jeff-only;
-physical/public/live-provider/installed-owner-package gates NOT RUN. #37/#49
-parked; protected branches untouched. Canonical WebJam only. One OPEN DRAFT
-for Karen, then coord AFTER and agent:none/FREE.
+The compact layout decision is explicit: below 900 pixels, selecting Art
+Notes gives the draft the full workspace, including after a window resize.
+It hides only the internal Conversation card, preserving its identity, link,
+status and any externally owned meeting. Talk & share shows those same
+controls again. Wider Notes can retain the readable Conversation card beside
+the draft. This keeps Notes usable with full room guidance and larger text;
+it does not change the existing Back to room action or launch a meeting.
+
+Deferred independently: stale Music Creative Pulse after Art profile adoption;
+Suggestion's Notes promise versus its existing Krita image handoff; optional
+canvas presentation pressure for own-tools guests. Missing-copy Paint along
+remains useful local preparation during reconnect and correctly pauses an aged
+playing receipt; that is not a demonstrated transport defect. #74 publication,
+#75 dual Open routes and #76 return-to-room are baseline and are not repeated.
+
+Holds: Art Preview, own tools, silent local-file Paint along, Webex first-class
+beside the room and never on the Art door. No automatic meeting/canvas launch,
+second video stack, short-code/public rendezvous, merge/tag/sign/release/Pages/
+Release Trust. Unsigned 0.27.2 Jeff-only. Physical/public/live-provider/installed
+owner-package gates NOT RUN. #37/#49 parked; #67 and completed PR branches
+untouched; preserve all four stashes. Canonical WebJam only. One OPEN DRAFT for
+Karen, then coord AFTER and agent:none / lease cleared.

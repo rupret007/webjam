@@ -8,8 +8,9 @@ not media timecode. Chat is the separate live shared-text path.
 from __future__ import annotations
 
 from datetime import datetime
+import sys
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -47,6 +48,7 @@ class SessionCanvas(QFrame):
     brief_export_requested = Signal()
     suggestion_requested = Signal()  # Art: Suggestion on these notes/canvas
     return_to_room_requested = Signal()  # Art: leave Notes without changing the draft
+    talk_share_requested = Signal()  # Art: reveal the separate meeting controls
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -57,7 +59,10 @@ class SessionCanvas(QFrame):
         self._current_guidance: MusicianGuidanceSnapshot | None = None
         self._compact_guidance = False
         self._compact_notes_controls = False
+        self._narrow_notes_controls = False
+        self._suggestion_inline = False
         self._art_profile = False
+        self._talk_share_available = True
 
         self._header = QLabel("Session Canvas")
         self._header.setObjectName("CanvasHeader")
@@ -137,6 +142,7 @@ class SessionCanvas(QFrame):
         self._suggestion_row.setVisible(False)
 
         chrome_row = QHBoxLayout()
+        self._chrome_row = chrome_row
         chrome_row.setSpacing(Space.XS)
         chrome_row.setContentsMargins(Space.XS, 0, Space.XS, 0)
         chrome_row.addWidget(ts_btn)
@@ -246,6 +252,7 @@ class SessionCanvas(QFrame):
 
         self._notes = QTextEdit()
         self._notes.setObjectName("CanvasNotes")
+        self._notes.installEventFilter(self)
         self._notes.setAccessibleName("Session notes")
         self._notes.setAccessibleDescription(
             "Editable notes in the local session record, saved on this computer. "
@@ -268,6 +275,34 @@ class SessionCanvas(QFrame):
         self._chat_input.setPlaceholderText("Message your band… (Enter to send)")
         self._chat_input.returnPressed.connect(self._on_chat_entered)
 
+        self._art_communication = QWidget()
+        communication = QHBoxLayout(self._art_communication)
+        communication.setContentsMargins(0, 0, 0, 0)
+        communication.setSpacing(Space.SM)
+        self._communication_hint = QLabel(
+            "Notes stay here. Talk or share in your meeting."
+        )
+        self._communication_hint.setTextFormat(Qt.TextFormat.PlainText)
+        self._communication_hint.setWordWrap(True)
+        self._talk_share_button = QPushButton("Talk && share")
+        self._talk_share_button.setObjectName("QuietButton")
+        self._talk_share_button.setStyleSheet(f"min-height: {Space.LG}px;")
+        self._talk_share_button.setAccessibleName("Talk & share")
+        self._talk_share_button.setAccessibleDescription(
+            "Show the separate Conversation controls. Your local notes are not sent."
+        )
+        self._talk_share_button.setToolTip(
+            "Show Conversation controls for talking or showing your work in a meeting."
+        )
+        self._talk_share_button.setSizePolicy(
+            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed
+        )
+        self._talk_share_button.clicked.connect(self._request_talk_share)
+        communication.addWidget(self._communication_hint, 1)
+        communication.addWidget(self._talk_share_button)
+        self._art_communication.setVisible(False)
+        self._talk_share_button.setEnabled(False)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, Space.MD)
         layout.setSpacing(Space.SM)
@@ -279,8 +314,10 @@ class SessionCanvas(QFrame):
         chat_row = QHBoxLayout()
         chat_row.setContentsMargins(Space.MD, 0, Space.MD, 0)
         chat_row.addWidget(self._chat_input)
+        chat_row.addWidget(self._art_communication)
         layout.addLayout(chat_row)
         QWidget.setTabOrder(self._room_return_button, ts_btn)
+        QWidget.setTabOrder(self._notes, self._talk_share_button)
 
     # ------------------------------------------------------------------
     # Public API
@@ -295,7 +332,7 @@ class SessionCanvas(QFrame):
         self.setAccessibleName(f"{profile.label} local notes")
         if profile.key == "art":
             self.setAccessibleDescription(
-                "These notes stay on this computer. Live chat is separate."
+                "These notes stay on this computer. Talk & share opens the separate meeting controls."
             )
         else:
             self.setAccessibleDescription(
@@ -336,6 +373,17 @@ class SessionCanvas(QFrame):
                 "  · next session's starting point"
             )
         self._notes.setPlaceholderText(placeholder)
+        self._notes.setToolTip(
+            "Control+Tab: next control. Control+Shift+Tab: previous control."
+            if profile.key == "art" else ""
+        )
+        self._notes.setAccessibleDescription(
+            "Editable notes in the local session record, saved on this computer. "
+            "They are not shared with session participants and are not "
+            "media-timecode synchronized."
+            + (" Control+Tab moves to the next control; Control+Shift+Tab moves back."
+               if profile.key == "art" else "")
+        )
         participants = profile.vocabulary.participant_plural
         self._chat_input.setAccessibleName(
             f"Shared chat message for session {participants}"
@@ -352,12 +400,17 @@ class SessionCanvas(QFrame):
         self._suggestion_button.setVisible(art)
         self._suggestion_button.setEnabled(art)
         self._art_profile = art
+        # Hiding the Music composer preserves its draft and selection; Art
+        # has no Jamulus chat transport and must not offer a failed retry.
+        self._chat_input.setVisible(not art)
+        self._chat_input.setEnabled(not art)
+        self._art_communication.setVisible(art)
+        self._talk_share_button.setEnabled(art and self._talk_share_available)
         self._room_return_button.setVisible(art)
         self._room_return_button.setEnabled(art)
         self._header.setWordWrap(art)
         self._header_row.setContentsMargins(0, 0, Space.SM if art else 0, 0)
         self._sync_notes_controls()
-        self._suggestion_row.setVisible(art and self._notes_save_state not in {"failed", "too_large"})
         # Default NOW copy is Music-shaped until the HUD writes. A painter
         # should not read "live music path" on the notes.
         if art and self._current_guidance is None:
@@ -372,6 +425,19 @@ class SessionCanvas(QFrame):
         # remains Art-only even when delivery bypasses Qt's disabled button.
         if self._art_profile:
             self.return_to_room_requested.emit()
+
+    def talk_share_button(self) -> QPushButton:
+        return self._talk_share_button
+
+    def set_talk_share_available(self, available: bool) -> None:
+        """Render the current Conversation owner's availability."""
+
+        self._talk_share_available = bool(available)
+        self._talk_share_button.setEnabled(self._art_profile and self._talk_share_available)
+
+    def _request_talk_share(self) -> None:
+        if self._art_profile and self._talk_share_available:
+            self.talk_share_requested.emit()
 
     def restore_notes(self, text: str) -> None:
         """Restore owner-held bytes without creating a new user edit."""
@@ -419,7 +485,7 @@ class SessionCanvas(QFrame):
         # Keep the editor and recovery reachable at the compact window floor.
         if hasattr(self, "_pulse"):
             self._pulse.setVisible(not needs_attention)
-        self._suggestion_row.setVisible(self._art_profile and not needs_attention)
+        self._sync_suggestion_layout()
 
     def set_session_pulse(self, pulse: SessionPulse) -> None:
         """Render the current local pulse without interpreting note markup."""
@@ -463,16 +529,75 @@ class SessionCanvas(QFrame):
         )
         self._guidance_recent.setVisible(True)
 
+    def _sync_suggestion_layout(self) -> None:
+        """Use one tools row when every existing action fits at its full width."""
+
+        margins = self._chrome_row.contentsMargins()
+        required = (
+            sum(button.minimumSizeHint().width() for button in self._toolbar_buttons)
+            + self._chrome_row.spacing() * len(self._toolbar_buttons)
+            + margins.left() + margins.right()
+        )
+        inline = self._art_profile and self.width() >= max(400, required)
+        available = self._art_profile and self._notes_save_state not in {"failed", "too_large"}
+        focused = self._suggestion_button.hasFocus()
+        if inline != self._suggestion_inline:
+            self._suggestion_inline = inline
+            if inline:
+                self._suggestion_row.layout().removeWidget(self._suggestion_button)
+                self._chrome_row.insertWidget(1, self._suggestion_button)
+            else:
+                self._chrome_row.removeWidget(self._suggestion_button)
+                self._suggestion_row.layout().insertWidget(0, self._suggestion_button)
+        self._suggestion_button.setVisible(available)
+        self._suggestion_row.setVisible(available and not inline)
+        if focused and available and not self._suggestion_button.hasFocus():
+            self._suggestion_button.setFocus(Qt.FocusReason.OtherFocusReason)
+
     def _sync_notes_controls(self) -> None:
         compact = self._art_profile and self.height() < 500
-        if compact == self._compact_notes_controls:
-            return
-        self._compact_notes_controls = compact
-        # Two full-height tool rows can otherwise overlap in a compact Art
-        # workspace. Keep every action and leave the editor its own space.
-        for button in (*self._toolbar_buttons, self._save_notes_button):
-            button.setStyleSheet(f"min-height: {Space.LG}px;" if compact else "")
-        self.layout().setSpacing(Space.XS if compact else Space.SM)
+        narrow = self._art_profile and self.width() < 400
+        if compact != self._compact_notes_controls or narrow != self._narrow_notes_controls:
+            self._compact_notes_controls = compact
+            self._narrow_notes_controls = narrow
+            # Two full-height tool rows can otherwise overlap in a compact Art
+            # workspace. Keep every action and leave the editor its own space.
+            rules = [f"min-height: {Space.LG}px;"] if compact else []
+            if narrow:
+                rules.append(f"padding-left: {Space.XS}px; padding-right: {Space.XS}px;")
+            for button in (*self._toolbar_buttons, self._save_notes_button):
+                button.setStyleSheet(" ".join(rules))
+            self.layout().setSpacing(Space.XS if compact else Space.SM)
+            self.layout().setContentsMargins(0, 0, 0, Space.XS if compact else Space.MD)
+            # Keep the draft usable at the compact window floor. The readouts
+            # retain all their text; only their interior spacing becomes tighter.
+            for readout in (self._guidance, self._pulse):
+                margin = Space.XS if compact else Space.SM
+                readout.layout().setContentsMargins(Space.MD, margin, Space.MD, margin)
+                readout.layout().setSpacing(0 if compact else Space.XS)
+        self._sync_suggestion_layout()
+
+    def eventFilter(self, watched, event) -> bool:
+        if (watched is getattr(self, "_notes", None) and self._art_profile
+                and event.type() == QEvent.Type.KeyPress
+                and event.key() in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab)):
+            # Qt maps the physical Control key to MetaModifier on macOS.
+            # Plain Tab remains an edit; this explicit chord leaves the draft.
+            control = (Qt.KeyboardModifier.MetaModifier if sys.platform == "darwin"
+                       else Qt.KeyboardModifier.ControlModifier)
+            if event.modifiers() in (control, control | Qt.KeyboardModifier.ShiftModifier):
+                forward = (event.key() != Qt.Key.Key_Backtab
+                           and not event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+                return self.focusNextPrevChild(forward)
+        return super().eventFilter(watched, event)
+
+    def event(self, event) -> bool:
+        if (event.type() == QEvent.Type.LayoutRequest
+                and hasattr(self, "_talk_share_button") and self.layout() is not None):
+            # Child font/style changes can alter button widths without a
+            # panel resize. Re-evaluate the same controls before allocation.
+            self._sync_notes_controls()
+        return super().event(event)
 
     def resizeEvent(self, event) -> None:
         compact = self.height() < 500
@@ -507,21 +632,24 @@ class SessionCanvas(QFrame):
         return brief
 
     def _on_chat_entered(self) -> None:
+        if self._art_profile:
+            return
         text = self._chat_input.text().strip()
         if not text:
             return
         self._chat_input.clear()
         self.chat_submitted.emit(text)
 
-    def restore_unsent_chat(self, text: str) -> None:
+    def restore_unsent_chat(self, text: str, *, focus: bool = True) -> None:
         """Return a failed message to the composer without overwriting typing."""
 
         message = str(text or "").strip()
         if not message or self._chat_input.text():
             return
         self._chat_input.setText(message)
-        self._chat_input.selectAll()
-        self._chat_input.setFocus()
+        if focus and not self._art_profile:
+            self._chat_input.selectAll()
+            self._chat_input.setFocus()
 
     def append_line(self, text: str) -> None:
         """Append plain text to this computer's local notes surface."""
