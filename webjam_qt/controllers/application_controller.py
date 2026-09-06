@@ -1523,12 +1523,25 @@ class ApplicationController(QObject):
     def _stop_session_peer(self, *, clear_invite: bool = False) -> bool:
         cleanup_ok = True
         room = getattr(self, "_room_participant", None)
+        guest = getattr(self, "guest_peer", None)
+        host = getattr(self, "host_peer", None)
+        generation = room.generation + 1 if room is not None else None
+
+        def still_current():
+            return bool(
+                getattr(self, "_room_participant", None) is room
+                and (room is None or room.generation == generation)
+                and getattr(self, "guest_peer", None) is guest
+                and getattr(self, "host_peer", None) is host
+            )
+
         if room is not None:
             try:
                 cleanup_ok = room.stop_lan()
             except Exception:
                 cleanup_ok = False
-        guest = getattr(self, "guest_peer", None)
+        if not still_current():
+            return False
         if guest is not None:
             try:
                 if guest.stop() is False:
@@ -1536,7 +1549,8 @@ class ApplicationController(QObject):
             except Exception:
                 LOGGER.exception("Guest recording transfer cleanup failed")
                 cleanup_ok = False
-        host = getattr(self, "host_peer", None)
+        if not still_current():
+            return False
         if host is not None:
             try:
                 if host.stop() is False:
@@ -1544,6 +1558,8 @@ class ApplicationController(QObject):
             except Exception:
                 LOGGER.exception("Host recording service cleanup failed")
                 cleanup_ok = False
+        if not still_current():
+            return False
         # Keep every failed owner reachable so End/Leave can retry and
         # shutdown can still account for it. Clearing the typed invitation or
         # guest object after an unproved stop would orphan a private listener
@@ -1815,6 +1831,10 @@ class ApplicationController(QObject):
             borrowed or getattr(getattr(self, "settings", None), "last_creator_start_key", "")
         )
 
+    def _music_room_blocks_new_take(self) -> bool:
+        room = getattr(self, "_room_participant", None)
+        return bool(room is not None and room._music_lan_host() and room._music_host_blocked())
+
     def _session_recording_control_available(self, *, hosting: bool | None = None) -> bool:
         """Host Record chrome only when this profile may start a take."""
 
@@ -1822,6 +1842,14 @@ class ApplicationController(QObject):
         if hosting is None:
             hosting = bool(getattr(settings, "host_server_enabled", False))
         if getattr(self, "_conductor_studio_reviewing", False):
+            return False
+        recording = getattr(self, "recording", None)
+        if self._music_room_blocks_new_take() and not (
+            getattr(recording, "take_in_progress", False)
+            or getattr(recording, "is_recording_active", False)
+            or getattr(self, "_recorder_armed", False)
+            or getattr(self, "_server_recording", False)
+        ):
             return False
         profile = get_creator_profile_by_key_or_default(
             getattr(
@@ -2223,7 +2251,13 @@ class ApplicationController(QObject):
         if not bool(getattr(self.settings, "host_server_enabled", False)):
             self._host_peer_warning = ""
             return False
+        room = getattr(self, "_room_participant", None)
+        if self.creator_profile.key == "music" and room is not None and room._music_host_blocked(ignore_retry=True):
+            return False
         if self.host_peer.active:
+            if (self.creator_profile.key == "music"
+                    and getattr(getattr(self.host_peer, "server", None), "address", ("", 0))[0] != address):
+                return False
             self._host_peer_warning = ""
             self._apply_creator_profile_key(
                 self._active_creator_profile_key,
@@ -2261,7 +2295,7 @@ class ApplicationController(QObject):
                     "The room could not open. Check your local network, then choose Try Again."
                 )
             else:
-                LOGGER.exception("Could not start private recording service")
+                LOGGER.warning("Music LAN room listener could not start")
                 self._host_peer_warning = (
                     "Bandmates can still join and play. Automatic Local Originals "
                     "are unavailable, so use the band take or have each musician "
@@ -7075,6 +7109,12 @@ class ApplicationController(QObject):
                 "stop_failed",
             }
         )
+        if not recording_authority_active and self._music_room_blocks_new_take():
+            # A queued Record cannot create take obligations while its room
+            # listener is being replaced or awaiting confirmed cleanup. The
+            # existing recorder retains its Stop/Finish action.
+            self._update_session_hud()
+            return
         if (
             not recording_authority_active
             and not self.creator_profile.capabilities.session_recording
@@ -7751,6 +7791,19 @@ class ApplicationController(QObject):
             return
         if self._remote_join_retry_pending():
             self._begin_remote_join()
+            return
+        room = getattr(self, "_room_participant", None)
+        if room is not None and room.retry_music_lan_host():
+            return
+        if self._is_jamulus_running() and not bool(
+            getattr(self.settings, "host_server_enabled", False)
+        ):
+            # The guest's existing supervisor owns bounded process recovery.
+            # An alive process is not a connection, and guests have no host
+            # invitation to refresh. Recheck facts without replacing capture
+            # or transfer owners or claiming that the button restored audio.
+            self._on_reconnect_tick()
+            self._update_session_hud()
             return
         if self._is_jamulus_running():
             # A running host may only be missing its Wi-Fi address. Re-evaluate
@@ -8550,17 +8603,21 @@ class ApplicationController(QObject):
                         port_bound = not free
                 except Exception:  # noqa: BLE001 - fail closed before sharing
                     port_bound = None
-        return evaluate_host_share_readiness(
+        readiness = evaluate_host_share_readiness(
             server_alive=server_alive,
             audio_port_bound=port_bound,
             private_lan_address=local_band_address() if server_alive else "",
         )
+        return room.music_host_readiness(readiness) if room is not None else readiness
 
     def _current_invite_url(self, *, readiness=None) -> str:
         """Return one invite only after same-LAN pre-share facts are true."""
         if not bool(getattr(self.settings, "host_server_enabled", False)):
             return ""
         readiness = readiness or self._host_share_readiness()
+        room = getattr(self, "_room_participant", None)
+        if room is not None and self.creator_profile.key == "music":
+            readiness = room.music_host_readiness(readiness)
         if not readiness.shareable:
             return ""
         from core.network_invite import create_invite_link
@@ -8761,6 +8818,30 @@ class ApplicationController(QObject):
                         "WebJam is getting the band audio ready.",
                     )
                 return
+            from core.host_share_readiness import HostShareReadinessStatus
+
+            room = getattr(self, "_room_participant", None)
+            if (self.creator_profile.key == "music" and room is not None
+                    and share_readiness is not None
+                    and share_readiness.status in {
+                        HostShareReadinessStatus.NETWORK_UNAVAILABLE,
+                        HostShareReadinessStatus.ROOM_CONNECTION_UNAVAILABLE,
+                    }
+                    and (self.recording.take_in_progress or self.recording.is_recording_active)):
+                # Network guidance cannot take Stop Recording/finalization
+                # away from the retained recorder owner.
+                return None
+            if (self.creator_profile.key == "music" and room is not None
+                    and share_readiness is not None
+                    and share_readiness.status is HostShareReadinessStatus.ROOM_CONNECTION_UNAVAILABLE
+                    and room.music_host_work_retained()):
+                override = room.music_host_recovery_guidance()
+                if override is not None:
+                    self.window.session_hud.set_state(
+                        override.title, override.message, action_visible=False,
+                        invite_available=False,
+                    )
+                return override
             if remote_owner is None and self._lan_invite_needs_refresh(share_readiness):
                 self._transition_lifecycle(
                     SessionLifecyclePhase.DEGRADED,
@@ -9614,6 +9695,22 @@ class ApplicationController(QObject):
                 self._render_session_conductor()
             return
         display_override = self._update_session_hud_legacy()
+        if (self.creator_profile.key == "music" and self.audio.cleanup_retry_required
+                and not getattr(self.audio, "_stop_art_room", False)):
+            # The header's captured cleanup owner must remain the next action;
+            # retrying a connection cannot retire an unconfirmed old listener.
+            label = "Try End Session" if self.audio._stop_hosting else "Try Leave Jam"
+            display_override = GuidanceDisplayOverride(
+                "Session cleanup needs attention",
+                f"The session has not finished disconnecting. Choose {label} to finish.",
+                SessionPrimaryAction.END_SESSION, label,
+            )
+            self.window.session_hud.set_state(
+                display_override.title, display_override.message,
+                action_visible=False, invite_available=False,
+            )
+            self._render_session_conductor(display_override)
+            return
         if bool(getattr(self, "_conductor_studio_reviewing", False)):
             # Live-session recovery copy (for example a denied microphone
             # permission) must not replace the completed-take facts that own
@@ -14140,6 +14237,8 @@ class ApplicationController(QObject):
             or self._primary_recovery_retire_inflight
             or self._shutdown_in_progress
             or self._shutdown_cleanup_pending
+            or bool(getattr(getattr(self, "_room_participant", None),
+                            "_music_host_retry_in_progress", False))
         )
 
     def _stop_reference_track_for_session_end(

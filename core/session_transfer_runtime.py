@@ -607,6 +607,29 @@ class HostPeerSession:
         return self.server is not None and self.credentials is not None
 
     @property
+    def has_recording_work(self) -> bool:
+        """A room with take obligations must finish through ordered End.
+
+        Even completed takes may still receive Local Originals. A network
+        retry cannot discard their enrollment, inventory, or reconciliation
+        owner merely because the recorder has stopped.
+        """
+        with self._lock:
+            state = self.control.snapshot() if self.control is not None else None
+            return bool(
+                self._registered_takes or self._expected_by_take
+                or self._local_original_obligations_by_take
+                or self._prepared_local_original_obligation_takes
+                or self._capture_cursor_by_take
+                or self._presence_readiness_issue_by_take
+                or (state is not None and (
+                    state.take_id or state.capture_arm is not None
+                    or state.arm_handshake_take_id
+                    or state.signal is not RecordingSignal.IDLE
+                ))
+            )
+
+    @property
     def peer_port(self) -> int:
         return self.server.address[1] if self.server is not None else 0
 

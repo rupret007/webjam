@@ -19,6 +19,7 @@ class HostShareReadinessStatus(str, Enum):
     AUDIO_PORT_UNAVAILABLE = "audio_port_unavailable"
     PORT_INSPECTION_FAILED = "port_inspection_failed"
     NETWORK_UNAVAILABLE = "network_unavailable"
+    ROOM_CONNECTION_UNAVAILABLE = "room_connection_unavailable"
     READY_PRIVATE_LAN = "ready_private_lan"
 
 
@@ -37,6 +38,8 @@ class HostShareReadiness:
             return "Ready to share"
         if self.status is HostShareReadinessStatus.NETWORK_UNAVAILABLE:
             return "Connect to Wi-Fi"
+        if self.status is HostShareReadinessStatus.ROOM_CONNECTION_UNAVAILABLE:
+            return "Room connection interrupted"
         return "Getting your jam ready"
 
     @property
@@ -48,6 +51,8 @@ class HostShareReadiness:
             )
         if self.status is HostShareReadinessStatus.NETWORK_UNAVAILABLE:
             return "Connect this Mac to the band's Wi-Fi, then try again."
+        if self.status is HostShareReadinessStatus.ROOM_CONNECTION_UNAVAILABLE:
+            return "Choose Try Again to reconnect this room, then copy a new invite."
         if self.status is HostShareReadinessStatus.AUDIO_PORT_UNAVAILABLE:
             return "The band server is not listening yet. WebJam will keep checking."
         if self.status is HostShareReadinessStatus.PORT_INSPECTION_FAILED:
@@ -58,7 +63,8 @@ class HostShareReadiness:
     def action(self) -> str:
         if self.status is HostShareReadinessStatus.NETWORK_UNAVAILABLE:
             return "Connect to Wi-Fi"
-        if self.status is HostShareReadinessStatus.PORT_INSPECTION_FAILED:
+        if self.status in {HostShareReadinessStatus.PORT_INSPECTION_FAILED,
+                           HostShareReadinessStatus.ROOM_CONNECTION_UNAVAILABLE}:
             return "Try Again"
         return "Wait for WebJam"
 
