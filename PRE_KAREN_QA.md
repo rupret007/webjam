@@ -1,85 +1,55 @@
-# Pre-Karen QA — current-room Paint along recovery for Art guests
+# Pre-Karen QA — Art Conversation meeting-link entry
 
-Canonical checkout `/workspace`; branch
-`cursor/art-paint-along-room-binding-f095`; fetched master base
-`6073a30a51cd1f616527c4b376caeeaaf9cb6037` (post-#82). BEFORE
-[5562041853](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5562041853),
-2026-09-06 15:41 CDT; grok Cloud lease through 19:41 CDT.
+Branch `codex/webjam-finish-product-art-conversation-link`, exact master base
+`4128f374e870544b29298b592c49fc931d3e5555`. Canonical checkout:
+`/Users/jeffstory/Documents/WebJam`. BEFORE
+[5562518611](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5562518611),
+base amendment [5562606345](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5562606345).
 
-## Product and ownership
+## Product and leftover review — PASS
 
-An open guest Paint along panel follows actual room availability. During loss
-it shows **Return to room**, hides follow/open/hide chrome and the unconfirmed
-clock, and preserves the current room, local notes and silent local copy.
-Return hides this WebJam panel and exposes the existing room recovery
-guidance. A current receipt restores the latest video offer, including
-replacement or withdrawal. Auto-open does not present Paint along while the
-room is unconfirmed.
+Notes → Talk & share → Add/Change Link opens the existing meeting field,
+expanded, visible and focused. Existing text is selected for replacement.
+Save updates Conversation immediately; Cancel changes no settings. Return
+focus goes to the current useful meeting action only while the same room and
+workspace remain visible. Navigation and completed Leave during the modal win.
+Ordinary Settings and optional-key entry keep their previous behavior.
 
-Open rechecks current source availability, room generation, binding, current
-panel/coordinator, and observed video projection. Native availability checks
-can report loss; ownership is rechecked afterward. LAN receipt freshness also
-covers the interval before queued UI callbacks. Rendering does not probe the
-native backend, launch a process, or alter conductor facts. Public diagnostics
-receive no new field, invitation, URL, Notes, filename or raw exception.
-Existing rotating/redacted logging remains in use; no additional payload
-logging.
+The final source and 18 real-controller guest journeys received independent
+read-only leftover, security and UX review. No actionable findings remain.
+The room's named artist roster remains unimplemented; this slice adds no
+participant discovery claim. #81/#82 and the landed #83 lifecycle work remain
+outside this change, as do Art door copy, assets and host media publication.
 
-## Leftover notes
+## Privacy and ownership review — PASS
 
-- This is the Paint along sibling of #82 canvas room binding. Host canvas
-  publication (#74), host Paint along transport, and #81 Leave/rejoin/cleanup
-  are unchanged.
-- Talk & share **Add Link** still opens generic Settings with Conversation
-  collapsed when no meeting link is saved. Still deferred; not this slice.
-- Art door remains Make together + Paint along, then Host/Join. Preview/Webex
-  stay off the door. No harvest/copy change.
-- Art still does not show a named artist roster. Connection copy stays honest
-  about that limit.
-- Host Paint along while the host LAN route is interrupted is out of scope.
-
-## Security notes
-
-- Return-to-room copy is generic. It does not name the file, invitation,
-  session key, Drawpile URL or meeting link.
-- Companion projection and room overview stay on the existing allowlists.
-- Queued Hide / Open my copy / Close my copy cannot act on a retired panel or
-  an unconfirmed receipt.
-- No new log sink. Existing rotating redacted logging is unchanged. Native
-  exceptions are not interpolated into diagnostics.
-- Local copies are not closed, moved or re-read as a side effect of room loss.
-  Drawpile and meeting launch stay off this path.
-
-## UX notes
-
-- Loss replaces follow chrome with a 48 px **Return to room** action that
-  Space-key activates. Repeated HUD ticks do not churn the wording.
-- Compact 760×600 keeps the action on-screen beside the retained workspace.
-- Restored receipts restore the current follow action: same offer, replacement
-  (mismatch/open), or withdrawal (no follow action).
-- Back to room / stage navigation still returns without ending the room or
-  discarding the local copy.
-- Keyboard and mouse both use the same return signal as the existing Back
-  control.
+- Latest-settings merging preserves the current role and endpoints during
+  modal invitation/room callbacks; the room is never restarted for a link edit.
+- Save does not launch a browser, meeting, canvas, player or audio process.
+  A changed link clears the old handoff evidence; an external meeting already
+  open stays open until the person leaves it in that service.
+- Notes, undo/selection and unsent text remain local. Tests assert private
+  markers are absent from logs, public projections and user feedback.
+- No new log sink or payload field. Existing rotating/redacted diagnostics
+  and exception-type-only settings-save errors remain unchanged.
 
 ## Verification
 
-- Fixture-first: fifteen controller failures plus UI/coordinator failures on
-  master; they pass after the fix.
-- Related Art/Paint along/canvas/native selection: **399 passed**.
-- New Paint along + video UI/coordinator: **106 passed**.
-- Full `pytest` (`testpaths = tests`): **8,542 passed**, 27 existing skips,
-  99 subtests, 7 environmental warnings, 487.04s, exit 0.
-- compileall and `pip check`: **PASS**. Ruff is not installed in this Cloud
-  runner; hosted CI owns that gate.
-- Hosted proof will be added to the PR body for the exact committed tip; no
-  hosted success is inferred from local results.
+- Initial four Add/Change guest fixtures failed before the source change.
+- Native Cocoa: **18 passed**, 7.63s. Actual settings at 640×560 and room return
+  at 760×600 inspected; input, Save/Cancel and keyboard next action are reachable.
+- Focused 88-module suite, including landed #83 and meeting/privacy coverage:
+  **2,872 passed**, 2 existing skips, 18 subtests, 162.41s.
+- Ruff, compileall, pip check, runtime dependency policy and UX smoke: PASS.
+- Full pytest and hosted tests/integrations/four desktop builds are the final
+  handoff gates. Their completed results, exact tip/tree and run/artifact links
+  are recorded in the PR description and coord AFTER; native or focused success
+  alone does not authorize a green handoff.
 
-## Scope and limits
+## Holds
 
-Three product files, one new regression module, and two focused test updates.
-Host publication, #81 Leave/rejoin/cleanup, parked #37/#49, door copy and
-artwork remain outside the diff. Unsigned 0.27.2 is Jeff-only. Draft for Karen
-leftover/security/UX; no merge, tag, signing, Pages, Release Trust, publish or
-GitHub Latest. Physical, two-device, installed-package and live-provider
-checks **NOT RUN**.
+One OPEN DRAFT for Karen. Parked #37/#49 and protected predecessor branches
+remain untouched. Unsigned 0.27.2 is Jeff-only; no merge/tag/sign/Pages/Release
+Trust/publish/GitHub Latest. No short-code, public rendezvous, live Cisco or
+second video stack. Webex stays beside WebJam and off the Art door. Physical,
+two-device, installed-package and live-provider verification remain NOT RUN.
