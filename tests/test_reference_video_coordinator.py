@@ -394,6 +394,21 @@ def test_a_missing_session_state_member_is_treated_as_no_video():
     assert coordinator.follow_snapshot.state is ReferenceVideoFollowState.NO_VIDEO
 
 
+def test_a_guest_video_is_current_only_after_this_room_observes_it(tmp_path):
+    coordinator, _, _, _ = make_coordinator()
+    first = HostState(_host_projection(_digest_for(tmp_path)))
+    replacement = HostState(_host_projection(_digest_for(tmp_path), generation=2))
+    coordinator.begin_guest(session_id=SESSION_ID, session_key=SESSION_KEY)
+    assert coordinator.video_is_current(first) is False
+    coordinator.observe_host_state(first)
+    assert coordinator.video_is_current(first) is True
+    assert coordinator.video_is_current(replacement) is False
+    coordinator.observe_host_state(replacement)
+    assert coordinator.video_is_current(replacement) is True
+    coordinator.end()
+    assert coordinator.video_is_current(replacement) is False
+
+
 def test_a_computer_without_a_video_player_says_so_and_stays_in_the_room(tmp_path):
     def broken_factory():
         raise RuntimeError("no QtMultimedia on this machine")
