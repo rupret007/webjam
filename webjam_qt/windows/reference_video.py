@@ -170,6 +170,7 @@ class ReferenceVideoDialog(QDialog):
         self._last_follow_snapshot: ReferenceVideoFollowSnapshot | None = None
         self._last_host_snapshot: ReferenceVideoSnapshot | None = None
         self._room_available = True
+        self._copy_opening = False
         self.setObjectName("PaintAlongWindow")
         self.setWindowTitle("Paint along")
         self.setModal(False)
@@ -418,11 +419,26 @@ class ReferenceVideoDialog(QDialog):
             self.share_requested.emit(path)
 
     def _choose_local_copy(self) -> None:
+        if self._hosting or self._copy_opening or not self._room_available:
+            return
         path, _ = QFileDialog.getOpenFileName(
             self, "Open your copy for Paint along", "", self._video_filter()
         )
-        if path:
+        if not path or not isValid(self):
+            return
+        self._copy_opening = True
+        self.attach_surface(None)
+        if self._last_follow_snapshot is not None:
+            self.set_follow_snapshot(self._last_follow_snapshot)
+        try:
             self.open_local_copy_requested.emit(path)
+        finally:
+            # File/decoder callbacks can retire this panel or update room
+            # truth. Restore only this live panel's latest snapshot.
+            if isValid(self):
+                self._copy_opening = False
+                if self._last_follow_snapshot is not None:
+                    self.set_follow_snapshot(self._last_follow_snapshot)
 
     def _toggle_hidden(self) -> None:
         self.hide_requested.emit(not self._hidden)
@@ -607,6 +623,21 @@ class ReferenceVideoDialog(QDialog):
             self._clock.setVisible(False)
             return
         self._return_button.setVisible(False)
+        if self._copy_opening:
+            self._headline.setText("Opening your copy")
+            self._status.setText("Checking this local file before following the host.")
+            self._surface_placeholder.setText("Opening your silent process video")
+            self._open_button.setVisible(False)
+            self._open_button.setEnabled(False)
+            self._hide_button.setVisible(False)
+            self._hide_button.setEnabled(False)
+            self._close_action.setVisible(False)
+            self._hide_action.setVisible(False)
+            self._sync_more_button()
+            self._position.setVisible(False)
+            self._position.setEnabled(False)
+            self._clock.setVisible(False)
+            return
         state = snapshot.state
         self._hidden = state is ReferenceVideoFollowState.HIDDEN
         sharing = state is not ReferenceVideoFollowState.NO_VIDEO

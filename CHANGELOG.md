@@ -10,6 +10,15 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Paint along guest copy-opening clarity
+
+- Guests see **Opening your copy** while their selected local file opens;
+  another **Open my copy…** chooser cannot interrupt that attempt.
+- Completion restores the latest room action, including retry after a decoder
+  failure or waiting after the host withdraws. Room cleanup keeps its return
+  action, and a file chooser returning to a retired panel is ignored.
+- The existing silent player and host-only transport remain the owners.
+
 ### Guest work stays visible when Paint along arrives
 
 - A first host video offer keeps a guest's Notes, Conversation, or active
