@@ -79,6 +79,19 @@ def test_video_recovery_keeps_the_ready_canvas_reachable(video):
     assert activities[1].label == "Shared canvas"
 
 
+def test_a_guest_paint_along_room_offers_exactly_one_waiting_activity():
+    """The room fact seeds one VIDEO way in and never invents a second."""
+
+    activities = art_room_activities(
+        ArtCompanionProjection(in_room=True),
+        hosting=False,
+        paint_along_room=True,
+    )
+
+    assert [activity.target for activity in activities] == [ArtPresenceTarget.VIDEO]
+    assert activities[0].label == "Paint along is starting"
+
+
 @pytest.mark.parametrize("hosting", [False, True])
 def test_outside_the_room_saved_intents_offer_no_activity(hosting):
     assert art_room_activities(

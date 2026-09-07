@@ -105,6 +105,52 @@ def test_a_host_who_chose_the_video_is_offered_that_way_in_instead():
     assert presence.target is ArtPresenceTarget.VIDEO
 
 
+def test_a_guest_in_a_paint_along_room_is_told_the_video_is_coming():
+    """The host's published start is a room fact, so a guest waiting for the
+    first share gets the same one next click a waiting host does."""
+
+    presence = art_room_presence(
+        _room(), hosting=False, paint_along_room=True
+    )
+
+    assert presence.label == "Paint along is starting"
+    assert presence.target is ArtPresenceTarget.VIDEO
+    assert presence.tone is ArtPresenceTone.PRESENT
+    assert "own copy" in presence.description
+    assert len(presence.label) <= 28
+    assert len(presence.description) <= 140
+
+
+def test_a_paint_along_room_fact_is_ignored_once_the_host_has_shared():
+    """Step 2 already describes the real video; the waiting line must not
+    also fire and it must never outrank an attention state."""
+
+    shared = art_room_presence(
+        _room(video=VideoCompanionState.PLAYING),
+        hosting=False,
+        paint_along_room=True,
+    )
+    assert shared.label == "Paint along"
+
+    needs_file = art_room_presence(
+        _room(video=VideoCompanionState.NEEDS_FILE),
+        hosting=False,
+        paint_along_room=True,
+    )
+    assert needs_file.label == "Open your Paint along copy"
+
+
+def test_a_host_is_never_shown_the_guest_waiting_line():
+    """A host's waiting line comes from the card they chose. ``hosting`` wins,
+    so the room-fact branch cannot double it up."""
+
+    presence = art_room_presence(
+        _room(), hosting=True, intended_video=True, paint_along_room=True
+    )
+
+    assert presence.label == "Set up Paint along"
+
+
 def test_the_way_in_gives_way_to_what_the_room_actually_has():
     """Once a canvas exists, the line is about the canvas rather than about
     setting one up."""

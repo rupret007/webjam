@@ -180,7 +180,11 @@ another meeting beside it for conversation. The host can choose one video file:
 2. The host chooses **Choose process video…** and picks a local video file they
    have the right to play. WebJam does not ship, bundle, download, or fetch any
    video, and it will not open anything from a streaming service.
-3. When the host shares, each guest is notified and the same workspace becomes
+3. Before the host shares, a guest who joined a Paint along room sees
+   **Paint along is starting** in Room with one **Open Paint along** action.
+   Opening it early shows **Waiting for a process video** and lets you load
+   your own copy so you are following the moment the host shares.
+4. When the host shares, each guest is notified and the same workspace becomes
    available. A first offer opens it from the untouched Room. If you are using
    Notes, Conversation, or a dialog, your current work stays visible; choose
    **Open Paint along** in Room when ready. Returning to Room alone does not
@@ -190,7 +194,7 @@ another meeting beside it for conversation. The host can choose one video file:
    **Opening your copy** describes the pending local check; a second chooser
    is unavailable until it finishes. A failed copy offers **Open my copy…**
    again.
-4. The host gets one primary transport action at a time—**Play** or
+5. The host gets one primary transport action at a time—**Play** or
    **Pause**—and may drag the position. Change video, restart from the
    beginning, and stop sharing stay under **More**. Everyone follows; a guest
    joining partway through lands where the host currently is.

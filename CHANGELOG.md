@@ -10,6 +10,20 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### A Paint along room tells a waiting guest the next click
+
+- A guest who joins a **Paint along** room now sees **Paint along is
+  starting** with one **Open Paint along** action while they wait for the
+  host's first share, instead of the generic "bring your own tools" line
+  and no next step. Opening the panel early lets them load their own copy
+  of the video so they are following the moment it arrives.
+- The cue is drawn from the host's published start carried in the room
+  state — a room fact, never the guest's own saved preference — so a guest
+  who joins **Make together** still sees nothing to set up.
+- Once the host shares, hides, or the copy needs attention, the existing
+  lines take over unchanged. The way in returns if the host withdraws the
+  video, since the room is still a Paint along room.
+
 ### Paint along followers keep one steady action through a stall
 
 - When WebJam stops following because the host's position is out of date, a
