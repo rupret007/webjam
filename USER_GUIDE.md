@@ -187,6 +187,9 @@ another meeting beside it for conversation. The host can choose one video file:
    open a deferred offer. Choose **Open my copy…** and point at your own copy
    of the same file. WebJam checks that it really is the same file. If it is
    not, it says so and plays nothing rather than showing the wrong thing.
+   **Opening your copy** describes the pending local check; a second chooser
+   is unavailable until it finishes. A failed copy offers **Open my copy…**
+   again.
 4. The host gets one primary transport action at a time—**Play** or
    **Pause**—and may drag the position. Change video, restart from the
    beginning, and stop sharing stay under **More**. Everyone follows; a guest

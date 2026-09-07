@@ -1,75 +1,64 @@
-# PRE_KAREN — guest work stays visible when Paint along arrives
+# PRE_KAREN — guest copy-opening honesty
 
-Base `50e035e09997e891f08520d80d60cfae3383ce27`; fresh
-`codex/art-guest-video-offer`; canonical WebJam checkout.
-Marker: `OVERNIGHT_WEBJAM_CONTINUE_20260907_0215`.
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5566904922.
-Base-advance BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5567377754.
+Base `6484150117f949deacdbdb6f3a85017f1966994b` (master after #89 leftover-squash);
+branch `codex/art-guest-copy-opening`; canonical WebJam checkout.
+Marker: `OVERNIGHT_WEBJAM_CONTINUE_20260907_0430` (rebased onto #89 master).
+Rebase BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5573209855.
 
-## Product and ten-second self-QA
+## Leftover and ten-second self-QA
 
-The first host video offer previously replaced the guest’s embedded workspace,
-even when the guest was already writing in Notes or using Conversation. The
-pre-change baseline on master `159f4447` reproduced six such failures, with two untouched-Room cases
-already passing. This was a workspace replacement despite the old request’s
-no-activation flag.
+The valid baseline reproduced eight failures in ten guest journeys. A selected
+copy still offered another chooser during decoding; a retired native chooser
+could raise a deleted-widget error. Guests now see **Opening your copy** during
+the explicit attempt, with file/visibility controls withheld until completion.
+The existing Back to room route can retain its navigation when decoder
+callbacks process UI events. Completion restores current truth.
 
-Now the first automatic guest presentation checks the actual visible work.
-Notes, Conversation, another workspace, an active dialog, or a menu keeps its
-place. The existing room/presence action carries the offer. The automatic
-announcement is consumed when deferred, so closing a dialog or returning to
-Room later does not create a delayed navigation surprise. One deliberate
-Paint along action opens the existing file controls.
+Sixteen real Qt/ApplicationController regressions cover both LAN and native
+guests: success, bounded decoder error, host withdrawal, picker cancellation,
+retired picker returns, Back to room, incomplete cleanup and panel replacement
+inside a load callback. Duplicate chooser entry is suppressed; room and local
+notes stay owned; no guest seek signal or meeting handoff is introduced.
 
-Cold entry from the untouched Room and the host’s selected Paint along start
-still open directly. No extra door, confirmation, prompt or player is added.
-If canvas recovery owns the room chip, Paint along remains a separate existing
-action in Room. Withdrawal removes the video route; a replacement does not
-interrupt the guest’s notes.
+#89 guest-work-visible behavior is already on this base (leftover-squashed). A
+first host video offer still keeps Notes/Conversation/dialogs visible and
+reachable through the existing room action; returning to Room does not replay
+a deferred automatic presentation. This PR adds only the guest opening lifecycle.
 
-## Ownership and security self-QA
+## Security and ownership self-QA
 
-- The controller still requires the current authenticated video binding and a
-  connected, unblocked guest room before considering automatic presentation.
-  The window answers only whether presentation would replace current work.
-- Deferral changes no room/profile identity, peer payload, media state, URL,
-  launcher, private field, timer or log sink. Existing explicit activity
-  dispatch re-reads the current room before opening the panel.
-- Opening a panel loads no file and launches no meeting. The existing file
-  chooser, matching-copy checks, silent player and host transport remain the
-  owners of those actions; guests receive no seek authority.
-- Real Qt/controller journeys preserve focus, local notes, selection, undo and
-  save state on compact and wide windows. A pending meeting handoff is driven
-  through the existing explicit controller action with a controlled producer;
-  a background video offer does not issue another handoff or change its state.
-- Dialog/menu focus stays with its current owner. Dismissal, later room ticks,
-  withdrawal and replacement do not replay a deferred automatic presentation.
-- Tests use temporary settings/notes/databases, isolated credential storage,
-  synthetic room receipts and controlled launch/player fixtures. Private marker
-  names stay out of room projections, accessibility descriptions and logs.
+- The existing controller still validates the current coordinator, panel,
+  room generation and authenticated connection before opening the local copy.
+- The change adds a panel-local in-progress flag. It creates no player stack,
+  protocol field, timer, remote action, credential or log sink.
+- The existing follower owns exact-file proof, silent playback, host position
+  and invalidation when its room ends.
+- A try/finally restores only a still-live panel. Native picker returns check
+  widget lifetime before emitting. Cleanup takes precedence over the opening
+  presentation; completion does not force a navigated-away panel forward.
+- Paths stay in the existing explicit local chooser signal. UI status uses
+  fixed text; tests use temporary synthetic files and controlled decoders.
+- Guest position controls remain disabled, with no new transport authority.
+- #89's automatic presentation deferral remains the owner of busy-workspace
+  interruption; this PR does not reopen that path.
 
 ## Verification and honest limits
 
-New regressions cover both LAN and native guests, Notes/Conversation/pending
-handoffs at two widths, modal/nonmodal dialogs and menus, withdrawal and
-replacement, a secondary video action behind canvas recovery, cold Room entry
-and the host’s selected start. Existing Art room return, activity, meeting,
-Paint along opening and guest seek regressions remain in the focused suite.
-Final counts, commands, exact tip/tree and actual hosted test/integration/four
-desktop results belong in the OPEN DRAFT and coord AFTER.
+The focused Art/video/door suite passed **424 tests** on the pre-rebase tip.
+Commands, final full-suite counts, exact tip/tree and hosted test/integration/four
+desktop results belong in the OPEN DRAFT and coord AFTER. The new journeys use
+the existing controlled player at the decoder boundary, without live meetings
+or personal files.
 
-Live meetings, actual Webex activation, native OS focus behavior, installed-app
-feel, physical playback, signing/notarization and platform trust are **NOT RUN**.
-A local focus/workspace test does not prove an external meeting’s membership,
-selected window or screen sharing. This is Codex self-QA, not independent review
-or Karen PASS.
+Hashing/decoding remain synchronous. This is not an asynchronous-loading or
+performance claim. Physical playback, live Webex/Cisco, native OS focus,
+installed-app feel, signing/notarization and platform trust are **NOT RUN**.
+Codex self-QA is not independent review or Karen PASS.
 
-#88 passed Karen and was leftover-squashed by Bob onto this base. Its reviewed
-tip was `db82cb1f4fae04dced16a1785a6f82cada8ec7b5`; its completed handoff is
-https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5566652085.
-The saved-meeting behavior comes from that reviewed base. #37/#49 stay parked;
-#86/#87/#88 remain merged. Make together + Paint along → Host/Join and the
-squirrel-with-fro art are unchanged. No merge/squash/tag/sign/Pages/Release
-Trust/Publish/release/deploy/spend/live Cisco/public rendezvous/other-repo lane.
-Unsigned 0.27.2 stays Jeff-only. Stop for Karen leftover + security + WebJam
-ten-second UX on the exact draft tip; Bob only after PASS with tip MATCH.
+#89 is on master via leftover-squash; #37/#49 stay parked. No Music or other-repo
+lane, public rendezvous, Drawpile/shared-canvas work or second video stack. The
+two Art cards, Host/Join and squirrel-with-fro artwork remain unchanged.
+Unsigned 0.27.2 stays Jeff-only. No merge/squash/tag/sign/Pages/Release
+Trust/Publish/release/deploy/spend/live Cisco. Never merge unsigned WebJam.
+Stay OPEN DRAFT. Stop for Karen leftover + security + ten-second UX on the
+exact draft tip after rebase (tip MATCH required if tip changes).

@@ -105,6 +105,10 @@ While a host's process video opens, **Cancel opening** stops the attempt.
 **Choose process video…** again. Ending the room or starting another one
 discards the old attempt. Guests continue to follow the host's controls.
 
+After a guest chooses a file, **Opening your copy** describes the local check.
+Another file chooser is unavailable during that attempt. The latest room
+action returns when it finishes; a failed copy offers **Open my copy…** again.
+
 In Art, **Conversation** highlights **Add Link** when no meeting is saved,
 or **Join / Open Meeting** for the saved link. Opening the panel starts nothing.
 While a link opens, its status holds keyboard focus. After a Webex handoff,
