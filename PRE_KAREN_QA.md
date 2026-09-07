@@ -1,67 +1,58 @@
-# Pre-Karen QA — Art host room connections
+# Pre-Karen QA — Paint along timeline input
 
-Branch `codex/webjam-finish-product-art-room-presence`, exact master base
-`3f11f9d198c2ac7775c3b8b7730cb236fbf77c7b`. Canonical checkout:
-`/Users/jeffstory/Documents/WebJam`. BEFORE
-[5563025186](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5563025186).
+Exact master base `12920ebe35b96298e2c2b97fdcf78efc1d1720f7`; branch
+`codex/webjam-finish-product-paint-along-seeking`. Canonical checkout:
+`/Users/jeffstory/Documents/WebJam`. BEFORE:
+https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5563756244.
+Marker `OVERNIGHT_NEXT_ART_DOOR_20260906_2020`.
 
-## Worth-Building and product review — PASS
+## Product and leftover review
 
-When Alex and Sam enroll but only Sam connects, the Art LAN host previously
-saw only “An artist has connected.” The room now shows Sam's chosen name.
-Enrollment alone adds no row. Fresh authenticated room reads supply the list;
-the existing five-second expiry removes stale connections. Duplicate chosen
-names remain distinct connections. Native hosts and guests retain their
-honest unavailable-list guidance; this is not a complete cross-transport roster.
+Host keyboard and wheel timeline changes now seek the existing silent player
+and publish its real position. Mouse drag updates remain local until release.
+Snapshot rendering blocks both range and value signals. Host source identity
+and duration changes disarm an old gesture before rendering the new truth;
+failed/unshared/zero-duration states cannot seek. Hiding the view cancels a
+held gesture without leaving the timeline stuck on return.
 
-The list keeps every name in a viewport of at most four rows, preserves
-keyboard selection and pointer scrolling as membership changes, and reveals
-the focused action. A small room's names and Conversation fit at 760×600.
-Names, existing activities, and Conversation remain reachable in a short room.
-No Art door, Paint-along asset, canvas publication, meeting stack, or wire
-protocol changes. The #81–#84 work and parked #37/#49 remain outside this slice.
+Native macOS changes value before Qt's sliderPressed signal in some styles.
+The small slider subclass brackets the actual pointer event, ensuring that
+native click/drag behavior also commits once. The dialog remains a renderer;
+role, source, seek validation and publication stay with existing owners.
 
-## Ownership, privacy and leftover review — PASS
+## Privacy and scope
 
-- Host, server, room generation and host lifecycle are captured before route
-  and reader callbacks and checked again afterwards. Old work cannot overwrite
-  the replacement room's state or lend it old connection evidence.
-- Rendering reuses a recent route observation from the normal room tick; it
-  performs no additional OS network probe. A busy enrollment lock yields
-  immediately instead of holding the UI behind a disk write. Server expiry
-  and stop are rechecked after the name projection.
-- End, failed cleanup/Quit, changed network, room replacement and profile
-  change retire names. The next valid observation can restore current names.
-- The dedicated immutable projection constructs no credential-bearing
-  enrollment records or tokens. Names stay in the private list, outside the
-  public room summary, companion payloads, repr, logs and support facts.
-  Existing printable, 80-character name bounds remain in force.
-- Existing rotating/redacted logging and bounded network-transition messages
-  remain unchanged. No per-poll log noise, new sink, private name/ID payload,
-  automatic meeting launch, video player or canvas launch was introduced.
-- Independent read-only security, ownership, leftover and UX reviews: PASS.
+No new log sink, payload field or exception text. The private source identity
+stays inside the view; diagnostics/public projections are unchanged. No
+second player, video upload/download, browser/meeting launch, network gate,
+room lifecycle, Art door copy or asset change. Guests stay unable to seek.
+Local host control remains available during retained recovery ownership.
 
 ## Verification
 
-Fixture-first failures reproduced missing names, lock blocking, expired
-projection data, owner reentry, keyboard selection visibility and compact
-layout. Final verification used frozen product/test file hashes.
+Real Qt fixture baseline: 10 failed, 5 passed before the fix. Additional native
+Mac testing caught and verified the early mouse-press issue. Final input
+coverage has 21 cases, including actual synchronous coordinator/player/peer
+callbacks in READY, PLAYING and PAUSED states, passive render, keyboard,
+wheel, mouse, source replacement, failure/recovery and hide/return.
 
-- Native Cocoa: **33 passed**, 10.31s. Actual 1040×720 and 760×600 fixture
-  windows captured; compact room, Conversation and keyboard return inspected.
-- Focused 90-module Art/door/session/invite/Music recovery/privacy suite:
-  **2,924 passed**, 2 existing skips, 18 subtests, 149.06s.
-- Ruff, compileall, pip check, runtime dependency policy and UX smoke: PASS.
-- Full pytest: **8,613 passed**, 26 existing skips, 99 subtests, 3 existing
-  deprecation warnings, 452.15s.
-- Exact-tip hosted tests/integrations and all four desktop builds are the final
-  handoff gates. Completed run, tip/tree and artifact evidence belong in the
-  PR description and coord AFTER; local success alone is not a green handoff.
+Final focused/full suite results, native count, independent review, exact
+head/tree and hosted tests/integrations/four desktop artifacts are recorded
+in the OPEN DRAFT and coord AFTER. No pending test is called green. Jeff's
+Apple Silicon test artifact must carry the exact draft commit. A separate
+app folder still uses the user's ordinary WebJam settings and notes when
+launched; it is not an isolated installation.
 
-## Holds
+## Holds and preserved work
 
-One OPEN DRAFT for Karen. Parked #37/#49 and predecessor branch refs/stashes
-are preserved. Unsigned 0.27.2 is Jeff-only; no merge/tag/sign/Pages/Release
-Trust/publish/GitHub Latest. No short-code, public rendezvous, live Cisco or
-second video stack. Webex stays beside WebJam and off the Art door. Physical,
-two-device, installed-release and live-provider verification remain NOT RUN.
+#85/#84 remain merged and untouched. Parked #37/#49 unchanged. One OPEN DRAFT
+for Karen; no merge/tag/sign/Pages/Release Trust/publish/GitHub Latest. The
+existing unsigned/ad-hoc 0.27.2 private-test boundary stays Jeff-only. No
+short-code/public rendezvous/live Cisco/second video stack/other-repo task.
+Physical, two-device, installed-app and live-provider checks remain NOT RUN.
+
+The separate logging/support improvement is saved locally at
+`94c621e36ebe3ff7e2748b91d8a968021c30da92` on
+`codex/webjam-finish-product-test-readiness`. Its 23 new regressions and 2,271
+focused tests passed; full pytest was intentionally interrupted when Jeff
+steered this task to Art. That checkpoint has no PR and is excluded here.
