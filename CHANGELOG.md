@@ -16,6 +16,9 @@ All notable improvements and features for the WebJam creator collaboration platf
   follower keeps the same plain **Hide video** button they had while
   following, instead of it dropping into the **More** menu each time the
   host's transport goes briefly quiet.
+- The same is now true while the host's own player needs attention: a
+  follower cannot seek and cannot fix the host's video, so their one choice
+  stays a plain **Hide video** button rather than a menu item.
 - The stalled position is no longer left on screen as a live timeline: a
   follower never seeks, and WebJam has just said that position is out of
   date. The timeline returns as soon as following resumes.

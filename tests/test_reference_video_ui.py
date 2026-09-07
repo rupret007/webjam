@@ -281,6 +281,27 @@ def test_the_keep_working_action_holds_still_across_a_brief_stall(guest_dialog):
     assert guest_dialog._position.isHidden() is False
 
 
+def test_a_follower_waiting_on_the_host_keeps_one_plain_next_action(guest_dialog):
+    # The host's own player needs recovery. A guest never seeks and cannot fix
+    # it, so their one choice is the same as a stall: hide and keep working.
+    guest_dialog.set_follow_snapshot(
+        _follow(ReferenceVideoFollowState.HOST_ATTENTION)
+    )
+    assert "check the video" in guest_dialog._status.text().casefold()
+    assert guest_dialog._position.isHidden() is True
+    assert guest_dialog._clock.isHidden() is True
+    assert guest_dialog._hide_button.isHidden() is False
+    assert guest_dialog._hide_button.isEnabled() is True
+    assert guest_dialog._hide_button.text() == "Hide video"
+    # Not also buried in the More menu.
+    assert guest_dialog._hide_action.isVisible() is False
+
+    requests: list[bool] = []
+    guest_dialog.hide_requested.connect(requests.append)
+    guest_dialog._hide_button.click()
+    assert requests == [True]
+
+
 def test_a_stalled_follower_can_hide_and_keep_working(guest_dialog):
     requests: list[bool] = []
     guest_dialog.hide_requested.connect(requests.append)
