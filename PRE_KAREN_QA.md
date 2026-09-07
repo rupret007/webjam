@@ -1,55 +1,67 @@
-# Pre-Karen QA — Art Conversation meeting-link entry
+# Pre-Karen QA — Art host room connections
 
-Branch `codex/webjam-finish-product-art-conversation-link`, exact master base
-`4128f374e870544b29298b592c49fc931d3e5555`. Canonical checkout:
+Branch `codex/webjam-finish-product-art-room-presence`, exact master base
+`3f11f9d198c2ac7775c3b8b7730cb236fbf77c7b`. Canonical checkout:
 `/Users/jeffstory/Documents/WebJam`. BEFORE
-[5562518611](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5562518611),
-base amendment [5562606345](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5562606345).
+[5563025186](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5563025186).
 
-## Product and leftover review — PASS
+## Worth-Building and product review — PASS
 
-Notes → Talk & share → Add/Change Link opens the existing meeting field,
-expanded, visible and focused. Existing text is selected for replacement.
-Save updates Conversation immediately; Cancel changes no settings. Return
-focus goes to the current useful meeting action only while the same room and
-workspace remain visible. Navigation and completed Leave during the modal win.
-Ordinary Settings and optional-key entry keep their previous behavior.
+When Alex and Sam enroll but only Sam connects, the Art LAN host previously
+saw only “An artist has connected.” The room now shows Sam's chosen name.
+Enrollment alone adds no row. Fresh authenticated room reads supply the list;
+the existing five-second expiry removes stale connections. Duplicate chosen
+names remain distinct connections. Native hosts and guests retain their
+honest unavailable-list guidance; this is not a complete cross-transport roster.
 
-The final source and 18 real-controller guest journeys received independent
-read-only leftover, security and UX review. No actionable findings remain.
-The room's named artist roster remains unimplemented; this slice adds no
-participant discovery claim. #81/#82 and the landed #83 lifecycle work remain
-outside this change, as do Art door copy, assets and host media publication.
+The list keeps every name in a viewport of at most four rows, preserves
+keyboard selection and pointer scrolling as membership changes, and reveals
+the focused action. A small room's names and Conversation fit at 760×600.
+Names, existing activities, and Conversation remain reachable in a short room.
+No Art door, Paint-along asset, canvas publication, meeting stack, or wire
+protocol changes. The #81–#84 work and parked #37/#49 remain outside this slice.
 
-## Privacy and ownership review — PASS
+## Ownership, privacy and leftover review — PASS
 
-- Latest-settings merging preserves the current role and endpoints during
-  modal invitation/room callbacks; the room is never restarted for a link edit.
-- Save does not launch a browser, meeting, canvas, player or audio process.
-  A changed link clears the old handoff evidence; an external meeting already
-  open stays open until the person leaves it in that service.
-- Notes, undo/selection and unsent text remain local. Tests assert private
-  markers are absent from logs, public projections and user feedback.
-- No new log sink or payload field. Existing rotating/redacted diagnostics
-  and exception-type-only settings-save errors remain unchanged.
+- Host, server, room generation and host lifecycle are captured before route
+  and reader callbacks and checked again afterwards. Old work cannot overwrite
+  the replacement room's state or lend it old connection evidence.
+- Rendering reuses a recent route observation from the normal room tick; it
+  performs no additional OS network probe. A busy enrollment lock yields
+  immediately instead of holding the UI behind a disk write. Server expiry
+  and stop are rechecked after the name projection.
+- End, failed cleanup/Quit, changed network, room replacement and profile
+  change retire names. The next valid observation can restore current names.
+- The dedicated immutable projection constructs no credential-bearing
+  enrollment records or tokens. Names stay in the private list, outside the
+  public room summary, companion payloads, repr, logs and support facts.
+  Existing printable, 80-character name bounds remain in force.
+- Existing rotating/redacted logging and bounded network-transition messages
+  remain unchanged. No per-poll log noise, new sink, private name/ID payload,
+  automatic meeting launch, video player or canvas launch was introduced.
+- Independent read-only security, ownership, leftover and UX reviews: PASS.
 
 ## Verification
 
-- Initial four Add/Change guest fixtures failed before the source change.
-- Native Cocoa: **18 passed**, 7.63s. Actual settings at 640×560 and room return
-  at 760×600 inspected; input, Save/Cancel and keyboard next action are reachable.
-- Focused 88-module suite, including landed #83 and meeting/privacy coverage:
-  **2,872 passed**, 2 existing skips, 18 subtests, 162.41s.
+Fixture-first failures reproduced missing names, lock blocking, expired
+projection data, owner reentry, keyboard selection visibility and compact
+layout. Final verification used frozen product/test file hashes.
+
+- Native Cocoa: **33 passed**, 10.31s. Actual 1040×720 and 760×600 fixture
+  windows captured; compact room, Conversation and keyboard return inspected.
+- Focused 90-module Art/door/session/invite/Music recovery/privacy suite:
+  **2,924 passed**, 2 existing skips, 18 subtests, 149.06s.
 - Ruff, compileall, pip check, runtime dependency policy and UX smoke: PASS.
-- Full pytest and hosted tests/integrations/four desktop builds are the final
-  handoff gates. Their completed results, exact tip/tree and run/artifact links
-  are recorded in the PR description and coord AFTER; native or focused success
-  alone does not authorize a green handoff.
+- Full pytest: **8,613 passed**, 26 existing skips, 99 subtests, 3 existing
+  deprecation warnings, 452.15s.
+- Exact-tip hosted tests/integrations and all four desktop builds are the final
+  handoff gates. Completed run, tip/tree and artifact evidence belong in the
+  PR description and coord AFTER; local success alone is not a green handoff.
 
 ## Holds
 
-One OPEN DRAFT for Karen. Parked #37/#49 and protected predecessor branches
-remain untouched. Unsigned 0.27.2 is Jeff-only; no merge/tag/sign/Pages/Release
+One OPEN DRAFT for Karen. Parked #37/#49 and predecessor branch refs/stashes
+are preserved. Unsigned 0.27.2 is Jeff-only; no merge/tag/sign/Pages/Release
 Trust/publish/GitHub Latest. No short-code, public rendezvous, live Cisco or
 second video stack. Webex stays beside WebJam and off the Art door. Physical,
-two-device, installed-package and live-provider verification remain NOT RUN.
+two-device, installed-release and live-provider verification remain NOT RUN.
