@@ -10,6 +10,17 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Art Conversation follows the saved meeting
+
+- Art highlights one existing next action: **Add Link**, **Join / Open Meeting**,
+  or the appropriate return action after an external handoff. A Webex install
+  no longer takes keyboard priority over a saved link for another provider.
+- Pending link handoffs keep focus on their status, so repeated input cannot
+  activate a different control. Native app checks restore focus only while
+  the artist is still waiting on their status.
+- Art's meeting tooltip recommends Webex only after a Webex link was opened
+  and its native app is verified. All meeting/app actions remain explicit.
+
 ### Paint along host video opening
 
 - Hosts see **Opening process video…** with **Cancel opening** while WebJam
