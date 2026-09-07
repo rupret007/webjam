@@ -5,10 +5,12 @@ from __future__ import annotations
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QAccessible, QAccessibleEvent
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QBoxLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QListWidget,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -17,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.art_room_overview import ArtRoomOverview
+from core.session_transfer import RoomConnectionNames
 from webjam_qt.theme.tokens import Space
 
 
@@ -79,6 +82,19 @@ class ArtRoomOverviewWidget(QScrollArea):
         )
         connection.addWidget(self._connection)
         connection.addWidget(self._connection_detail)
+        self._connections_list = QListWidget()
+        self._connections_list.setObjectName("ArtRoomConnections")
+        self._connections_list.setAccessibleName("Connected to your room")
+        self._connections_list.setAccessibleDescription(
+            "Names chosen by guests with a recent WebJam room connection. "
+            "Use the arrow keys to read the list."
+        )
+        self._connections_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._connections_list.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self._connections_list.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self._connections_list.installEventFilter(self)
+        self._connections_list.hide()
+        connection.addWidget(self._connections_list)
         self._content_layout.addLayout(connection)
 
         divider = QFrame()
@@ -163,8 +179,49 @@ class ArtRoomOverviewWidget(QScrollArea):
         label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         return label
 
-    def set_overview(self, overview: ArtRoomOverview) -> None:
+    def clear_room_connections(self) -> None:
+        self._connections_list.clear()
+        self._connections_list.hide()
+
+    def connections_list(self) -> QListWidget:
+        return self._connections_list
+
+    def _set_room_connections(self, room_connections: RoomConnectionNames | None) -> None:
+        names = room_connections.names if room_connections is not None else ()
+        rows = self._connections_list
+        current = tuple(rows.item(i).text() for i in range(rows.count()))
+        if names != current:
+            previous_row = rows.currentRow()
+            previous_scroll = rows.verticalScrollBar().value()
+            selected = current[previous_row] if previous_row >= 0 else None
+            occurrence = current[:previous_row].count(selected)
+            rows.clear()
+            rows.addItems(names)
+            if previous_row >= 0 and names:
+                matches = [i for i, name in enumerate(names) if name == selected]
+                next_row = (
+                    matches[min(occurrence, len(matches) - 1)] if matches
+                    else min(previous_row, len(names) - 1)
+                )
+                rows.setCurrentRow(next_row)
+            rows.verticalScrollBar().setValue(previous_scroll)
+            if rows.hasFocus() and rows.currentItem() is not None:
+                rows.scrollToItem(rows.currentItem())
+        if names:
+            # A bounded viewport keeps the room's next action reachable; the
+            # list retains every name and keyboard scrolling for larger rooms.
+            row_height = max(24, rows.sizeHintForRow(0))
+            rows.setFixedHeight(row_height * min(4, len(names)) + 2 * (rows.frameWidth() + Space.XS))
+        rows.setVisible(bool(names))
+
+    def set_overview(
+        self, overview: ArtRoomOverview, *, room_connections: RoomConnectionNames | None = None,
+    ) -> None:
         self._overview = overview
+        self._set_room_connections(
+            room_connections if overview.phase == "connected" and overview.role_label == "Host"
+            else None
+        )
         self.setProperty("roomPhase", overview.phase)
         for label, text in (
             (self._phase, overview.phase_label),
@@ -255,7 +312,9 @@ class ArtRoomOverviewWidget(QScrollArea):
         return self._conversation_button
 
     def eventFilter(self, watched, event) -> bool:
-        if event.type() == QEvent.Type.FocusIn and watched in self._navigation_buttons():
+        if event.type() == QEvent.Type.FocusIn and watched in (
+            *self._navigation_buttons(), self._connections_list,
+        ):
             # Conversation can shorten the room on a compact display. A
             # keyboard action must scroll into view just like a pointer target.
             self.ensureWidgetVisible(watched, Space.SM, Space.SM)
@@ -265,7 +324,7 @@ class ArtRoomOverviewWidget(QScrollArea):
         if not self.isVisible():
             return
         focused = self.focusWidget()
-        if focused in self._navigation_buttons():
+        if focused in (*self._navigation_buttons(), self._connections_list):
             self.ensureWidgetVisible(focused, Space.SM, Space.SM)
 
     def resizeEvent(self, event) -> None:
@@ -277,18 +336,22 @@ class ArtRoomOverviewWidget(QScrollArea):
         two_activities = bool(
             self._overview is not None and self._overview.secondary_activity_action
         )
+        has_names = bool(self._connections_list.count())
         compact = (
             self.viewport().width() < 500 or height < 340
-            or (two_activities and height < 480)
+            or ((two_activities or has_names) and height < 480)
         )
         margin = Space.MD if compact else Space.XL
-        short = height < 300 or (two_activities and height < 400)
+        short = (
+            height < 300 or (two_activities and height < 400)
+            or (has_names and height < 460)
+        )
         vertical_margin = (
             Space.XS if short and two_activities else Space.SM if short else Space.LG
         )
         self._body_layout.setContentsMargins(margin, vertical_margin, margin, vertical_margin)
-        # Short rooms with two activities or Conversation retain every fact
-        # and action while omitting the additional display heading.
+        # Short rooms retain names, activities and actions while omitting
+        # the additional display heading.
         if self._overview is not None:
             self._title.setVisible(bool(self._overview.title) and not short)
         self._content_layout.setSpacing(Space.SM if compact else Space.LG)

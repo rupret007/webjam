@@ -1993,6 +1993,10 @@ class ApplicationController(QObject):
             not callable(setter) or self.creator_profile.key != "art"
             or getattr(self, "_shutdown", False)
         ):
+            room_view = getattr(self.window, "art_room_overview", None)
+            clear_names = getattr(room_view, "clear_room_connections", None)
+            if callable(clear_names):
+                clear_names()
             return None
         from core.art_room_activities import art_room_activities
         from core.art_room_overview import art_room_overview
@@ -2041,6 +2045,12 @@ class ApplicationController(QObject):
         quitting_role = getattr(self, "_shutdown_art_room_role", "")
         if quitting and quitting_role in {"host", "guest"}:
             role = quitting_role
+        room_connections = (
+            room.host_connection_names()
+            if room is not None and role == "host"
+            and not (closing or cleanup or ended or quitting or probing)
+            else None
+        )
         overview = art_room_overview(
             state=state,
             hosting=(role == "host"),
@@ -2051,8 +2061,9 @@ class ApplicationController(QObject):
             quitting=quitting,
             presence=presence,
             secondary_presence=secondary_presence,
+            named_connections=bool(room_connections and room_connections.names),
         )
-        setter(overview)
+        setter(overview, room_connections=room_connections)
         self._sync_shared_canvas_room()
         self._sync_paint_along_room()
         if callable(set_talk_share):

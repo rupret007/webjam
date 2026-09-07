@@ -19,6 +19,7 @@ from core.room_state import RoomState
 from core.session_conductor import ArtRoomState, SessionPrimaryAction
 from core.session_transfer import (
     ReferenceVideoSessionSnapshot,
+    RoomConnectionNames,
     SharedCanvasSessionSnapshot,
 )
 
@@ -138,6 +139,8 @@ class RoomParticipantController:
         self._music_host_retry_owner = None
         self._music_network_owner = None
         self._music_network_interrupted = False
+        self._host_names_owner = None
+        self._host_names_observed_at = 0.0
         self.generation = 0
         self.role = ""
         self.state = ArtRoomState.NONE
@@ -713,7 +716,35 @@ class RoomParticipantController:
             self.publisher = NativeRoomPublisher(self.app, owner)
         return self.publisher
 
+    def host_connection_names(self) -> RoomConnectionNames | None:
+        """Read private names only from this live Art LAN host, without caching."""
+        host = self.app.host_peer
+        server = getattr(host, "server", None)
+        generation = self.generation
+        lifecycle = getattr(host, "_lifecycle_generation", None)
+
+        def current():
+            return bool(
+                not self.blocked and self.role == "host"
+                and self.app.creator_profile.key == "art"
+                and self.state in {ArtRoomState.WAITING, ArtRoomState.CONNECTED}
+                and self.app._remote_invite_owner is None
+                and self.app.host_peer is host and host.active
+                and host.server is server and self.generation == generation
+                and getattr(host, "_lifecycle_generation", None) == lifecycle
+                and self._host_names_owner == (id(host), id(server), generation, lifecycle)
+                and 0 <= time.monotonic() - self._host_names_observed_at < 5.0
+            )
+
+        read = getattr(server, "room_connection_names", None)
+        if not callable(read) or not current():
+            return None
+        result = read()
+        # Retiring or replacing an owner during the read wins over its payload.
+        return result if current() and isinstance(result, RoomConnectionNames) else None
+
     def tick(self):
+        self._host_names_owner = None
         if self.blocked:
             return
         if self.role == "host" and self.app.creator_profile.key == "art":
@@ -727,18 +758,40 @@ class RoomParticipantController:
                               else ArtRoomState.FAILED if phase == "failed"
                               else ArtRoomState.WAITING)
             elif self.app.host_peer.active:
+                host = self.app.host_peer
+                server = host.server
+                generation = self.generation
+                lifecycle = getattr(host, "_lifecycle_generation", None)
+
+                def current():
+                    return bool(
+                        not self.blocked and self.role == "host"
+                        and self.app.creator_profile.key == "art"
+                        and self.app._remote_invite_owner is None
+                        and self.app.host_peer is host and host.active
+                        and host.server is server and self.generation == generation
+                        and getattr(host, "_lifecycle_generation", None) == lifecycle
+                    )
+
                 previous = self.state
-                if self.readiness().shareable:
-                    readers = self.app.host_peer.server.room_participants()
-                    self.state = ArtRoomState.CONNECTED if readers else ArtRoomState.WAITING
-                    if previous is ArtRoomState.RECONNECTING:
-                        LOGGER.info("Art LAN room network route restored")
-                else:
-                    # A retained listener with a missing/mismatched local
-                    # route can recover. Ownership is not participant proof.
-                    self.state = ArtRoomState.RECONNECTING
-                    if previous is not ArtRoomState.RECONNECTING:
-                        LOGGER.info("Art LAN room network interrupted")
+                readiness = self.readiness()
+                if current():
+                    if readiness.shareable:
+                        readers = server.room_participants()
+                        if current():
+                            self.state = ArtRoomState.CONNECTED if readers else ArtRoomState.WAITING
+                            # Reuse this owner's normal route observation.
+                            # Rendering never repeats OS interface discovery.
+                            self._host_names_owner = (id(host), id(server), generation, lifecycle)
+                            self._host_names_observed_at = time.monotonic()
+                            if previous is ArtRoomState.RECONNECTING:
+                                LOGGER.info("Art LAN room network route restored")
+                    else:
+                        # A retained listener with a missing/mismatched local
+                        # route can recover. Ownership is not participant proof.
+                        self.state = ArtRoomState.RECONNECTING
+                        if previous is not ArtRoomState.RECONNECTING:
+                            LOGGER.info("Art LAN room network interrupted")
             self.app._update_session_hud()
 
     def stop_lan(self):

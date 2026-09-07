@@ -59,6 +59,7 @@ def art_room_overview(
     quitting: bool = False,
     presence: ArtRoomPresence = ABSENT,
     secondary_presence: ArtRoomPresence = ABSENT,
+    named_connections: bool = False,
 ) -> ArtRoomOverview:
     """Keep closure and missing connection evidence ahead of optional layers."""
     role = "Host" if hosting else "Guest"
@@ -137,6 +138,12 @@ def art_room_overview(
             if hosting
             else "This room connection is confirmed. WebJam does not yet show a full artist list."
         )
+        if hosting and named_connections:
+            connection = "Connected to your room"
+            detail = (
+                "Names guests chose when joining WebJam. "
+                "Talk and screen sharing are separate."
+            )
     elif state is ArtRoomState.WAITING and hosting:
         phase, label, title = "waiting", "Room open", "Make room for each other"
         connection = "Waiting for artists to connect"

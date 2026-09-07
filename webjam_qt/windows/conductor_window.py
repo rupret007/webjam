@@ -51,6 +51,7 @@ from PySide6.QtWidgets import (
 
 from core.art_room_overview import ArtRoomOverview
 from core.creative_modes import CreatorProfile, get_creator_profile_by_key_or_default
+from core.session_transfer import RoomConnectionNames
 from core.meeting_link import (
     RECORD_SESSION_MEETING_CAPTURE_NOTICE,
     STUDIO_MEETING_CAPTURE_NOTICE,
@@ -498,6 +499,7 @@ class ConductorWindow(QMainWindow):
             self.session_hud._action,
             self.art_room_overview.activity_button(),
             self.art_room_overview.secondary_activity_button(),
+            self.art_room_overview.connections_list(),
             self.art_room_overview.conversation_button(),
             self.participant_grid,
             self.participant_grid._empty_primary,
@@ -894,10 +896,12 @@ class ConductorWindow(QMainWindow):
         self._paint_along_widget = None
         self._paint_along_return_widget = self.center_splitter
 
-    def set_art_room_overview(self, overview: ArtRoomOverview) -> None:
-        """Project the current Art room without changing workspace selection."""
+    def set_art_room_overview(
+        self, overview: ArtRoomOverview, *, room_connections: RoomConnectionNames | None = None,
+    ) -> None:
+        """Keep private names separate from the public room projection."""
 
-        self.art_room_overview.set_overview(overview)
+        self.art_room_overview.set_overview(overview, room_connections=room_connections)
         self._setup_tab_order()
 
     def apply_art_notes_layout(self) -> bool:
@@ -937,6 +941,8 @@ class ConductorWindow(QMainWindow):
         from webjam_qt import __version__
 
         self._creator_profile = profile
+        if profile.key != "art":
+            self.art_room_overview.clear_room_connections()
         suffix = " · Preview" if profile.is_preview else ""
         self.setWindowTitle(f"WebJam — {profile.label}{suffix} (v{__version__})")
         self.setAccessibleName(f"WebJam {profile.label} workspace{suffix}")

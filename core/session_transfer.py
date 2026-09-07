@@ -658,6 +658,16 @@ class _PresenceV2Epoch:
     by_participant: dict[str, PresenceV2Proof]
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class RoomConnectionNames:
+    """Private chosen names for fresh room readers, never audio presence."""
+
+    names: tuple[str, ...] = ()
+
+    def __repr__(self) -> str:
+        return "RoomConnectionNames(private=[redacted])"
+
+
 class EnrollmentRegistry:
     """Durable per-session mapping from installation UUID to participant UUID."""
 
@@ -1684,6 +1694,26 @@ class EnrollmentRegistry:
                     if bool(record.get("capture_enabled", False))
                 )
             )
+
+    def room_connection_names(self, participant_ids: frozenset[str]) -> RoomConnectionNames | None:
+        """Project chosen names without constructing credential-bearing records.
+
+        Enrollment inventory is not presence. The caller must supply only
+        current authenticated room readers; duplicate names remain distinct.
+        """
+        # Enrollment holds this lock while saving. A display-only reader
+        # must never wait behind that disk write on Qt's owner thread.
+        if not self._lock.acquire(blocking=False):
+            return None
+        try:
+            names = tuple(sorted(
+                (record["display_name"] for record in self._participants.values()
+                 if record["participant_id"] in participant_ids),
+                key=lambda name: (name.casefold(), name),
+            ))
+        finally:
+            self._lock.release()
+        return RoomConnectionNames(names)
 
     def participants(self) -> tuple[ParticipantEnrollment, ...]:
         """Return the internal enrollment inventory, including derived tokens.
@@ -4332,6 +4362,16 @@ class SessionPeerServer:
                 if 0 <= observed - seen < 5.0
             }
             return frozenset(self._room_polls)
+
+    def room_connection_names(self, *, now: float | None = None) -> RoomConnectionNames | None:
+        """Local host UI only; no identities or names enter the room protocol."""
+        readers = self.room_participants(now=now)
+        result = self.registry.room_connection_names(readers)
+        # Expiry or stop during the read wins. A later refresh can include
+        # arrivals; never publish names for readers that are no longer fresh.
+        if self._httpd.stopping or not readers.issubset(self.room_participants(now=now)):
+            return RoomConnectionNames()
+        return result
 
     def _handler(self):
         owner = self
