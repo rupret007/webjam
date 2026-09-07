@@ -550,6 +550,11 @@ class WebexEmbed(QFrame):
             else "Join / Open Meeting"
         )
         self._fallback_btn.setText(button_text)
+        if (self._creator_profile_key == "art" and status == "Opening…"
+                and self._fallback_btn.hasFocus()):
+            # Disabling a focused button otherwise lets Qt choose a different
+            # action. Repeated input during the handoff must remain inert.
+            self._status_label.setFocus(Qt.FocusReason.OtherFocusReason)
         self._launch_busy = status == "Opening…"
         self._sync_meeting_action()
         if service:
@@ -570,13 +575,6 @@ class WebexEmbed(QFrame):
             )
         self._fallback_btn.setAccessibleName(accessible_name)
         self._fallback_btn.setAccessibleDescription(description)
-        destination = f"{service} or your browser" if service else (
-            "its service or your browser"
-        )
-        self._fallback_btn.setToolTip(
-            f"Open the configured meeting link once in {destination}."
-            f"{self._show_webex_advice()}"
-        )
 
     def _render_link_accessibility(self) -> None:
         """Keep link-edit semantics aligned with the detected provider."""
@@ -616,6 +614,9 @@ class WebexEmbed(QFrame):
     def focus_primary_action(self) -> None:
         """Place keyboard focus on the safest useful Conversation action."""
 
+        if self._creator_profile_key == "art":
+            self._art_next_action().setFocus(Qt.FocusReason.ShortcutFocusReason)
+            return
         target = (
             self._bring_forward_btn
             if self._bring_forward_btn.isEnabled()
@@ -657,6 +658,47 @@ class WebexEmbed(QFrame):
         self._fallback_btn.setEnabled(
             self._meeting_configured and not self._launch_busy
         )
+        self._sync_art_next_action()
+
+    def _art_next_action(self) -> QWidget:
+        """A saved meeting is the destination; native app discovery is not."""
+
+        if not self._meeting_configured:
+            return self._change_link_btn
+        if self._launch_busy:
+            return self._status_label
+        if self._native_action_busy and self._native_focus_restore is not None:
+            return self._app_status_label
+        if (self._service_label == "Webex" and self._launch_status == "Opened externally"
+                and self._bring_forward_btn.isEnabled()):
+            return self._bring_forward_btn
+        return self._fallback_btn
+
+    def _sync_art_next_action(self) -> None:
+        """Emphasize one existing action without moving focus or emitting intent."""
+
+        art = self._creator_profile_key == "art"
+        target = self._art_next_action() if art else None
+        if target is self._status_label:
+            # Keep the pending link action visible but disabled while its
+            # status holds focus. Completion alone never takes focus back.
+            target = self._fallback_btn
+        for button in (self._change_link_btn, self._fallback_btn, self._bring_forward_btn):
+            name = "PrimaryButton" if button is target else "GhostButton"
+            if button.objectName() != name:
+                button.setObjectName(name)
+                button.style().unpolish(button)
+                button.style().polish(button)
+                button.update()
+        self._status_label.setFocusPolicy(
+            Qt.FocusPolicy.StrongFocus if art else Qt.FocusPolicy.NoFocus
+        )
+        service = self._service_label
+        destination = f"{service} or your browser" if service else "its service or your browser"
+        self._fallback_btn.setToolTip(
+            f"Open the configured meeting link once in {destination}."
+            f"{self._show_webex_advice()}"
+        )
 
     def _show_webex_label(self) -> str:
         """Name only the application activation WebJam can actually prove."""
@@ -674,6 +716,11 @@ class WebexEmbed(QFrame):
         """
 
         if not self._native_app_available:
+            return ""
+        if self._creator_profile_key == "art" and not (
+            self._meeting_configured and self._service_label == "Webex"
+            and self._launch_status == "Opened externally"
+        ):
             return ""
         return (
             "\nUse Show Webex App to bring Webex forward without reopening "
@@ -697,6 +744,7 @@ class WebexEmbed(QFrame):
         self._bring_forward_btn.setText(label)
         # Keep the announced name identical to the visible label.
         self._bring_forward_btn.setAccessibleName(label)
+        self._sync_art_next_action()
 
     def _set_native_busy(self, busy: bool) -> None:
         busy = bool(busy)
@@ -721,6 +769,7 @@ class WebexEmbed(QFrame):
         self._native_focus_restore = None
         if (
             target is not None
+            and QApplication.focusWidget() is self._app_status_label
             and target.isVisible()
             and target.isEnabled()
         ):

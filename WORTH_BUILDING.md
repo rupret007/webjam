@@ -1,55 +1,61 @@
-# Worth Building — a host can safely open a Paint along video
+# Worth Building — Art Conversation follows the saved meeting
 
-Base: post-#86 master `9845fc9069fa180ee7cf772a27069cc26ae27f2d`.
-Branch: `codex/paint-along-host-opening`. Checkout:
-`/Users/jeffstory/Documents/WebJam` only.
-Marker: `WEBJAM_NEW_SESSION_POST86_20260906_2213`.
+Base: fetched master `159f4447a78e05e324067088d02480682ab0e4d8`.
+Branch: `codex/art-conversation-next-action`.
+Canonical checkout: `/Users/jeffstory/Documents/WebJam`.
+Marker: `OVERNIGHT_WEBJAM_CONTINUE_20260906_2340`.
 
-## The leftover and its value
+## The real leftover
 
-While the host's player waited for a video's duration, WebJam still presented
-the previous idle/playing state. Reentrant controls could drive the changing
-source. A cancelled load could publish the old video into a replacement room
-and deliver a stale Ready snapshot. The fixture-first baseline reproduced
-15 failures and one pass before the fix.
+With Google Meet configured and a verified Webex installation, opening Art
+Conversation focused **Show Webex App**. Its meeting tooltip also recommended
+Webex as the way back to that unrelated meeting. The same preference sent an
+artist with no saved link toward an app instead of Add Link.
 
-This outranks adding guest roster detail: it changes whether the host's next
-action works and whether another room receives the right video. #86 already
-fixed timeline seeking; another seeking or door-decoration change would not
-address this failure. No stronger Music defect was needed to justify this
-Art slice.
+A real Qt reproduction established the wrong target before edits. The first
+regression run produced **23 failures / 1 pass**, including actual host, LAN
+guest and native guest Notes-to-Conversation journeys.
+
+The LAN host name list already covers authenticated freshness, privacy,
+duplicate names and keyboard recovery. A native named roster needs additional
+authenticated name facts. This slice fixes a present wrong-app action without
+inventing artists or another transport. It does not repeat room Leave/rejoin,
+shared canvas, timeline seeking or #87's host video opening.
 
 ## Before and after
 
-- Before: Choose or Play remained the apparent action during loading. A late
-  load or native file-picker result could outlive its room or dialog.
-- After: the view says **Opening process video…** and offers **Cancel opening**.
-  **Back to room** remains usable during the Qt duration wait. The old picture
-  is withdrawn while the new file opens; success offers **Play**, and a
-  missing or failed file returns to **Choose process video…** with the error.
-- Ending, withdrawing, replacing the room, or retiring the dialog invalidates
-  the pending result. The operation's return value, visible controls and peer
-  state all follow the current owner. An unavailable host control offers
-  **Return to room**. Guests still have no seek authority.
+Before, native installation determined the first keyboard action and every
+control had the same visual emphasis. After, the saved meeting and handoff
+state determine one highlighted existing action:
 
-This uses the existing silent player and existing idle/ready peer states.
-Loading is local state, not a new transport or media distribution format.
-The Art door remains Make together + Paint along, then Host/Join. External
-Conversation/Webex talk and screen sharing remain available beside WebJam.
+- No link: **Add Link**.
+- Saved link, including a failed handoff: **Join / Open Meeting**.
+- Opening: the disabled **Opening…** action and focused status; repeated input
+  does not activate another control.
+- Opened Webex link and verified app: **Show Webex App**, which promises only
+  app activation. Other providers or unavailable native proof: **Open Again**.
 
-## Evidence and limits
+Native controls stay explicitly Webex-only. Art tooltip advice never substitutes
+Webex for another meeting. Rendering never launches a meeting, app or player.
+A late native recheck also cannot take focus back after the artist moves on.
 
-`tests/test_paint_along_host_opening.py` exercises reentrant loading,
-cancellation, replacement, failed loading, player-factory retirement and
-withdrawal during publication. `tests/test_paint_along_host_opening_ui.py`
-uses the real application, room controls, view and queued Qt mouse events,
-including cancellation inside the actual duration wait, destroyed-dialog
-file-picker return, End Room followed by a new host, and compact layout.
+## Proof and limits
 
-The final focused/full results, exact tip and hosted checks belong in the
-draft PR and coord AFTER. Source fixtures use synthetic media/backends.
-Actual codecs, installed packages, two-computer playback and Jeff's subjective
-feel remain **NOT RUN**. File fingerprinting remains synchronous; this slice
-does not claim background hashing or an instant cancellation of that scan.
+The new suite covers real Qt focus and input, passive detection, profile return,
+pending handoffs, real Settings add/change/remove, and real host/LAN/native
+room journeys through Notes. Existing Conversation layout, room return, door,
+Music and native verification tests remain relevant.
 
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5564597608.
+Final local and hosted results, exact tip/tree and four desktop builds belong
+in the draft PR and coord AFTER. Tests use synthetic saved links and controlled
+provider/native evidence. Live meetings, actual app activation, installed-app
+feel, physical playback and platform trust remain **NOT RUN**. A successful
+external handoff is not proof of meeting membership or sharing.
+
+#87 was reviewed by Karen and leftover-squashed by Bob onto master
+`159f4447a78e05e324067088d02480682ab0e4d8`. This branch starts from that new tip.
+Parked #37/#49, the Art door and unsigned 0.27.2 holds remain untouched.
+
+BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5565319916.
+
+Base-advance BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5565690193.

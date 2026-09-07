@@ -1,70 +1,67 @@
-# PRE_KAREN — Paint along host opening
+# PRE_KAREN — Art Conversation next action
 
-Base `9845fc9069fa180ee7cf772a27069cc26ae27f2d`; branch
-`codex/paint-along-host-opening`; canonical checkout
-`/Users/jeffstory/Documents/WebJam`. Marker
-`WEBJAM_NEW_SESSION_POST86_20260906_2213`.
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5564597608.
+Base `159f4447a78e05e324067088d02480682ab0e4d8`, fresh
+`codex/art-conversation-next-action`, canonical WebJam checkout.
+Marker: `OVERNIGHT_WEBJAM_CONTINUE_20260906_2340`.
+BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5565319916.
 
 ## Product and ten-second self-QA
 
-The host sees one primary action: Choose process video when empty or failed,
-Cancel opening during the duration wait, Play when ready/paused, Pause when
-playing, or Return to room after losing the current binding. At 720×560,
-the real Qt view retains its action, navigation and explanatory line.
-Success never automatically starts playback. Back to room preserves the
-pending current-room load and local notes.
+An artist opening Conversation is directed to their saved meeting, regardless
+of whether a different native app is installed. One existing button is primary.
+Missing link offers Add Link; configured link offers Join / Open Meeting;
+Opening focuses non-actionable status. After a Webex handoff, verified native
+activation may be primary, without claiming a specific meeting window. Other
+providers keep their own Open Again link.
 
-The two-card Art door, squirrel-with-fro artwork, Music door and external
-Conversation/Webex demonstration workflow are unchanged. A guest remains a
-follower; #86's host keyboard/wheel/mouse seek behavior remains covered by
-its existing tests.
+The first run reproduced 23 failures / 1 pass. Actual host, LAN guest and native
+guest journeys prove that entering from Notes sends nothing and opens nothing;
+one deliberate keyboard activation reaches the existing link handoff, not
+native Webex activation. Notes, the current room identity and generation remain.
 
-## Ownership and security self-QA
+## Focus ownership and security self-QA
 
-- Host core state becomes LOADING before the Qt wait. It clears old source
-  facts and rejects competing share/play/pause/stop/seek operations. Withdraw
-  and close retire the load generation; neither success nor failure can
-  restore a cancelled source.
-- The coordinator checks host object and room generation before publishing
-  or rendering. A newer publication callback wins over an older notification
-  and over the operation's returned result. Player creation that outlives its
-  room cannot install that player into a replacement coordinator role.
-- All six host intent routes check the current dialog, coordinator and room
-  binding. A native file picker also checks that its Qt dialog still exists
-  before emitting its result. Actual End Room/new Host and stale-picker
-  regressions exercise these paths.
-- The existing Qt duration wait processes user input. A posted mouse press
-  and release cancels it through the real button and adapter, clears the
-  backend source, and returns to Choose. The same muted player can reopen
-  the same file afterward. Existing guest loading/close/room-replacement
-  tests cover the shared wait's follower boundary.
-- Loading maps to the existing unshared idle wire state: no new public field,
-  name, path, token, digest, diagnostic payload, persistence format or timer.
-  Backend failures stay bounded; the new retired-player cleanup log has no
-  raw exception. No live provider, customer data or credentials are used.
+- No new URL, parser, protocol, network request, launcher, payload, player,
+  public field, log sink or timer. The existing validated link handoff and
+  native publisher verification remain the action owners.
+- Art's visual emphasis and entry focus share one state-derived choice.
+  Passive detection/profile rendering changes presentation without intent
+  or taking focus away from the artist.
+- Disabling the focused link action first places focus on its status. Repeated
+  Space cannot fall through to another button while the handoff is pending.
+  Completion does not pull focus back.
+- Self-QA additionally reproduced a late native recheck stealing focus after
+  the artist moved to Change Link. Restoration now requires that the check's
+  status still has focus; a hidden or abandoned panel does not regain it.
+- Real Settings add/change/remove returns to the newly applicable action without
+  launching a meeting or restarting the room. Provider guidance uses bounded
+  service labels; no private meeting URL or notes are added to tooltips or logs.
+- Native controls retain explicit Webex-only names and require existing
+  publisher proof. Music retains its established entry focus and visual roles;
+  the shared native-check restoration also respects the current focus owner.
 
-## Findings corrected during self-QA
+## Verification and honest boundaries
 
-The initial 15-failure baseline proved stale loading and room replacement.
-Qt tests then reproduced a deleted-dialog exception on a late file-picker
-return. Publication reentrancy also exposed a stale returned Ready value
-after withdrawal, even when the view had already changed. Both have direct
-regressions and corrections. The new UI module explicitly activates the
-existing temporary database/credential fixtures; tests do not use Jeff's
-persistent application database.
+The new tests use actual Qt widgets/input and the ApplicationController with
+temporary settings/notes/databases, isolated credentials, synthetic links and
+controlled host/LAN/native/provider fixtures. Existing compact Conversation
+layout, Art door, room return, native busy-state and Music cases are retained.
+Final counts, commands, exact tip/tree and actual hosted test/integration/four
+desktop results belong in the OPEN DRAFT and coord AFTER.
 
-## Verification and handoff boundary
+Live provider meetings, real Webex activation, installed-app feel, physical
+playback and platform trust are **NOT RUN**. Successful external handoff is
+not authenticated meeting membership, a selected meeting window or screen
+sharing. Those stay with Webex/the selected service. This is Codex self-QA,
+not independent review or Karen PASS.
 
-Final local counts and exact tip/tree belong in the OPEN DRAFT and coord AFTER,
-together with actual hosted results for tests, integrations and all four
-desktop builds. A pending or failed hosted check is never called green.
-This document records Codex self-QA, not independent review or Karen's verdict.
+#87 passed Karen and was leftover-squashed by Bob onto this base. Its
+reviewed source tip was `5ac6afb1dedc32025b71fd8a8c89e22123712b37`; its handoff is
+https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5565158722.
+#37/#49 remain parked; #86 stays merged. Make together + Paint along → Host/Join
+and the squirrel-with-fro art are unchanged. No merge/squash/tag/sign/Pages/
+Release Trust/Publish/release/deploy/spend/live Cisco/public rendezvous/other-repo
+lane. Unsigned 0.27.2 stays Jeff-only. Stop at one new draft for Karen leftover
++ security + UX; Bob may leftover-squash only after PASS with tip MATCH.
 
-File hashing remains synchronous; the responsive cancellation proof covers
-the Qt duration wait. Physical codec playback, installed-app feel, two-machine
-sync, live meetings and platform trust are **NOT RUN**. Stop at one draft for
-Karen leftover + security + UX. Parked #37/#49 remain untouched; #86 stays
-merged. No merge/squash/tag/release/deploy/Pages, signing, Release Trust,
-Publish, spend, live Cisco, public rendezvous or second video stack. Unsigned
-0.27.2 remains Jeff-only.
+Base-advance BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5565690193.

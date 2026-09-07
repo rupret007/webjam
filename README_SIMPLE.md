@@ -99,6 +99,12 @@ While a host's process video opens, **Cancel opening** stops the attempt.
 **Choose process video…** again. Ending the room or starting another one
 discards the old attempt. Guests continue to follow the host's controls.
 
+In Art, **Conversation** highlights **Add Link** when no meeting is saved,
+or **Join / Open Meeting** for the saved link. Opening the panel starts nothing.
+While a link opens, its status holds keyboard focus. After a Webex handoff,
+the verified **Show Webex App** action can bring that app forward; another
+meeting provider keeps its own **Open Again** action.
+
 WebJam keeps a known-good Jamulus copy for offline use. **More → Jamulus
 Updates** checks only WebJam-approved, signed update information. Downloads do
 not interrupt a live session, and installation waits until audio, recording, practice,
