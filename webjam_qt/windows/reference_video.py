@@ -673,14 +673,17 @@ class ReferenceVideoDialog(QDialog):
             ReferenceVideoFollowState.FOLLOWING,
             ReferenceVideoFollowState.HIDDEN,
         }
-        # A stalled follower has the same one choice as a following one: keep
-        # working with the video hidden, or wait for the host's transport to be
-        # heard from again. Keep that action in the same place instead of
-        # dropping it into the More menu every time the host's position goes
-        # briefly quiet.
-        keep_working = following_or_hidden or (
-            state is ReferenceVideoFollowState.STALLED
-        )
+        # A follower waiting on the host has the same one choice as a following
+        # one: keep working with the video hidden, or wait for the host to be
+        # heard from again. That is true whether the host's position went out
+        # of date (STALLED) or the host's own player needs recovery
+        # (HOST_ATTENTION); both are transient and neither is this artist's to
+        # fix. Keep that action a plain button in the same place instead of
+        # dropping it into the More menu each time the host goes briefly quiet.
+        keep_working = following_or_hidden or state in {
+            ReferenceVideoFollowState.STALLED,
+            ReferenceVideoFollowState.HOST_ATTENTION,
+        }
         self._open_button.setVisible(needs_copy)
         self._open_button.setEnabled(needs_copy)
         self._hide_button.setVisible(keep_working)
