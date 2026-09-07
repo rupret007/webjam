@@ -673,19 +673,27 @@ class ReferenceVideoDialog(QDialog):
             ReferenceVideoFollowState.FOLLOWING,
             ReferenceVideoFollowState.HIDDEN,
         }
+        # A stalled follower has the same one choice as a following one: keep
+        # working with the video hidden, or wait for the host's transport to be
+        # heard from again. Keep that action in the same place instead of
+        # dropping it into the More menu every time the host's position goes
+        # briefly quiet.
+        keep_working = following_or_hidden or (
+            state is ReferenceVideoFollowState.STALLED
+        )
         self._open_button.setVisible(needs_copy)
         self._open_button.setEnabled(needs_copy)
-        self._hide_button.setVisible(following_or_hidden)
-        self._hide_button.setEnabled(following_or_hidden)
+        self._hide_button.setVisible(keep_working)
+        self._hide_button.setEnabled(keep_working)
         self._hide_button.setText("Show video" if self._hidden else "Hide video")
         self._close_action.setVisible(holds_copy)
-        self._hide_action.setVisible(sharing and not following_or_hidden)
+        self._hide_action.setVisible(sharing and not keep_working)
         self._hide_action.setText("Show video" if self._hidden else "Hide video")
         self._sync_more_button()
-        timeline_visible = state in {
-            ReferenceVideoFollowState.FOLLOWING,
-            ReferenceVideoFollowState.STALLED,
-        }
+        # A follower never seeks. The timeline only earns its place while it is
+        # actually tracking the host; a stalled position is one WebJam has just
+        # called out of date, so it is not left on screen as a live readout.
+        timeline_visible = state is ReferenceVideoFollowState.FOLLOWING
         self._position.setVisible(timeline_visible)
         self._clock.setVisible(timeline_visible)
 

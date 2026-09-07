@@ -216,7 +216,9 @@ Things worth knowing:
   available while WebJam still holds a copy, even when hidden or no longer
   shared by the host.
 - **If WebJam loses track of the host's position**, it holds rather than
-  guessing. Playback resumes when the host is heard from again.
+  guessing. Playback resumes when the host is heard from again. The stalled
+  position is not shown as a live timeline, and the **Hide video** button
+  stays where it was so you can keep making without waiting.
 - **This is not frame-accurate review.** Everyone stays within about a second
   of the host. There is no timecode, and Art is not a video review tool.
 
