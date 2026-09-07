@@ -63,6 +63,7 @@ class QtReferenceVideoPlayer:
         self._duration_s = 0.0
         self._closed = False
         self._failed = False
+        self._loading = False
 
     @property
     def surface(self):
@@ -95,6 +96,7 @@ class QtReferenceVideoPlayer:
         self._player.setSource(QUrl())
         self._duration_s = 0.0
         self._failed = False
+        self._loading = True
         try:
             self._player.setSource(QUrl.fromLocalFile(str(Path(path))))
             duration_ms = self._await_duration()
@@ -109,6 +111,8 @@ class QtReferenceVideoPlayer:
             self._failed = True
             self._player.setSource(QUrl())
             raise
+        finally:
+            self._loading = False
         self._duration_s = duration_ms / _MS
         return self._duration_s
 
@@ -125,6 +129,12 @@ class QtReferenceVideoPlayer:
         if self._closed:
             return
         self._player.stop()
+        if self._loading:
+            from PySide6.QtCore import QUrl
+
+            # NoMedia ends the bounded duration wait on its next iteration.
+            # The host owner decides whether the cancelled result may commit.
+            self._player.setSource(QUrl())
 
     def seek(self, position_s: float) -> None:
         self._require_healthy()
@@ -189,10 +199,10 @@ class QtReferenceVideoPlayer:
                 return duration
             if status == QMediaPlayer.MediaStatus.NoMedia:
                 return 0
-            # User input stays excluded so pumping events to resolve a
-            # duration cannot re-enter the transport that asked for it.
+            # Host/follower owners fence reentrant operations. Keep room
+            # navigation and the host's Cancel opening action responsive.
             QCoreApplication.processEvents(
-                QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents,
+                QEventLoop.ProcessEventsFlag.AllEvents,
                 _DURATION_POLL_MS,
             )
         self._require_healthy()

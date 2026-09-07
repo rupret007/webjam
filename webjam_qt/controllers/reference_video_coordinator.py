@@ -43,6 +43,8 @@ NOT_FOLLOWING_MESSAGE = "Only a guest opens their own copy of the host's video."
 # leaves the room with no video rather than a stale final frame.
 _PEER_STATES: dict[ReferenceVideoState, str] = {
     ReferenceVideoState.IDLE: "idle",
+    # Loading withdraws the previous picture through the existing protocol.
+    ReferenceVideoState.LOADING: "idle",
     ReferenceVideoState.READY: "ready",
     ReferenceVideoState.PLAYING: "playing",
     ReferenceVideoState.PAUSED: "paused",
@@ -77,6 +79,7 @@ class ReferenceVideoCoordinator:
         self._player: ReferenceVideoPlayer | None = None
         self._publish_failed = False
         self._generation = 0
+        self._host_notice = 0
         self._follow_operation = 0
         self._opening_follower: ReferenceVideoFollower | None = None
         self._observed_video = None
@@ -187,11 +190,31 @@ class ReferenceVideoCoordinator:
     ) -> ReferenceVideoSnapshot:
         if not self.hosting:
             raise ReferenceVideoError(NOT_HOSTING_MESSAGE)
-        snapshot = operation(self._host_controller())
+        generation = self._generation
+        try:
+            operation(self._host_controller())
+        except ReferenceVideoError:
+            if generation != self._generation:
+                return self.host_snapshot
+            raise
+        # A publication callback may already have withdrawn the video or
+        # replaced the room. Return the same truth that the view now renders.
+        return self.host_snapshot
+
+    def _current_host(self, host, generation: int) -> bool:
+        return self.hosting and self._host is host and self._generation == generation
+
+    def _notify_host(self, snapshot, *, host, generation: int) -> None:
+        if not self._current_host(host, generation):
+            return
+        self._host_notice += 1
+        notice = self._host_notice
         self._publish(snapshot)
-        if self._on_host_snapshot is not None:
+        # Publishing can dispatch callbacks too. A newer room or operation
+        # wins before the old result gets anywhere near the visible controls.
+        if (self._current_host(host, generation) and notice == self._host_notice
+                and self._on_host_snapshot is not None):
             self._on_host_snapshot(snapshot)
-        return snapshot
 
     def _host_controller(self) -> ReferenceVideoHostController:
         if self._host is not None:
@@ -199,11 +222,16 @@ class ReferenceVideoCoordinator:
         signer = self._signer
         if signer is None:  # pragma: no cover - guarded by ``hosting``
             raise ReferenceVideoError(NOT_HOSTING_MESSAGE)
-        self._host = ReferenceVideoHostController(
+        generation = self._generation
+        host = ReferenceVideoHostController(
             self._build_player(),
             identity_signer=signer,
-            is_host=lambda: self.hosting,
+            is_host=lambda: self._current_host(host, generation),
+            on_change=lambda snapshot: self._notify_host(
+                snapshot, host=host, generation=generation,
+            ),
         )
+        self._host = host
         return self._host
 
     # -- follower ------------------------------------------------------
@@ -317,10 +345,15 @@ class ReferenceVideoCoordinator:
         """
 
         if self.hosting and self._host is not None:
-            snapshot = self._host.refresh()
-            self._publish(snapshot)
-            if self._on_host_snapshot is not None:
-                self._on_host_snapshot(snapshot)
+            host, generation = self._host, self._generation
+            if host.snapshot.state is ReferenceVideoState.LOADING:
+                return
+            sampling = host.snapshot.state is ReferenceVideoState.PLAYING
+            snapshot = host.refresh()
+            # Playing refreshes notify through the host; paused/ready states
+            # still need their ordinary heartbeat for the guest follower.
+            if not sampling:
+                self._notify_host(snapshot, host=host, generation=generation)
             return
         follower = self._follower
         if follower is None:
@@ -384,6 +417,7 @@ class ReferenceVideoCoordinator:
     def _build_player(self) -> ReferenceVideoPlayer:
         if self._player is not None:
             return self._player
+        generation = self._generation
         try:
             player = self._player_factory()
         except ReferenceVideoError:
@@ -409,6 +443,12 @@ class ReferenceVideoCoordinator:
             if isinstance(exc, ReferenceVideoError):
                 raise
             raise ReferenceVideoError(PLAYER_UNAVAILABLE_MESSAGE) from exc
+        if generation != self._generation:
+            try:
+                player.close()
+            except Exception:
+                LOGGER.debug("Retired reference video player cleanup failed")
+            raise ReferenceVideoError("This Paint along request belongs to a room that has ended.")
         self._player = player
         return player
 

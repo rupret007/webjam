@@ -12832,24 +12832,24 @@ class ApplicationController(QObject):
             )
             if coordinator.hosting:
                 dialog.share_requested.connect(
-                    lambda path: self._run_reference_video(
+                    lambda path: self._run_current_host_paint_along(coordinator, dialog,
                         lambda: coordinator.share(path)
                     )
                 )
                 dialog.withdraw_requested.connect(
-                    lambda: self._run_reference_video(coordinator.withdraw)
+                    lambda: self._run_current_host_paint_along(coordinator, dialog, coordinator.withdraw)
                 )
                 dialog.play_requested.connect(
-                    lambda: self._run_reference_video(coordinator.play)
+                    lambda: self._run_current_host_paint_along(coordinator, dialog, coordinator.play)
                 )
                 dialog.pause_requested.connect(
-                    lambda: self._run_reference_video(coordinator.pause)
+                    lambda: self._run_current_host_paint_along(coordinator, dialog, coordinator.pause)
                 )
                 dialog.stop_requested.connect(
-                    lambda: self._run_reference_video(coordinator.stop)
+                    lambda: self._run_current_host_paint_along(coordinator, dialog, coordinator.stop)
                 )
                 dialog.seek_requested.connect(
-                    lambda seconds: self._run_reference_video(
+                    lambda seconds: self._run_current_host_paint_along(coordinator, dialog,
                         lambda: coordinator.seek(float(seconds))
                     )
                 )
@@ -12910,13 +12910,23 @@ class ApplicationController(QObject):
             dialog.close()
 
     def _sync_paint_along_room(self) -> bool:
-        """Project guest room authority without releasing the local copy."""
+        """Project current room authority without releasing the local copy."""
 
         dialog = getattr(self, "_reference_video_dialog", None)
         coordinator = getattr(self, "_reference_video", None)
-        if dialog is None or coordinator is None or not coordinator.following:
+        if dialog is None or coordinator is None:
             return False
         room = getattr(self, "_room_participant", None)
+        if coordinator.hosting:
+            available = bool(
+                not self._shutdown and self.creator_profile.key == "art"
+                and (room is None or not room.blocked)
+                and self._reference_video_binding == self._reference_video_identity()
+            )
+            dialog.set_room_available(available)
+            return available
+        if not coordinator.following:
+            return False
         available = bool(
             not getattr(self, "_shutdown", False)
             and self.creator_profile.key == "art"
@@ -12947,6 +12957,15 @@ class ApplicationController(QObject):
         if available:
             dialog.set_follow_snapshot(coordinator.follow_snapshot)
         return available
+
+    def _run_current_host_paint_along(self, coordinator, dialog, operation) -> None:
+        """A completed file chooser or queued host action must still be current."""
+
+        if (coordinator is not getattr(self, "_reference_video", None)
+                or dialog is not getattr(self, "_reference_video_dialog", None)
+                or not coordinator.hosting or not self._sync_paint_along_room()):
+            return
+        self._run_reference_video(operation)
 
     def _run_current_guest_paint_along(self, coordinator, dialog, operation) -> None:
         """A queued follow intent must still belong to this connected room."""

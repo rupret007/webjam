@@ -94,6 +94,11 @@ process video…** and controls play/pause; a guest chooses **Open my copy…** 
 the same local file. **Back to room** or Escape returns to the conductor
 without ending the room.
 
+While a host's process video opens, **Cancel opening** stops the attempt.
+**Play** appears when the file is ready; a missing or failed file offers
+**Choose process video…** again. Ending the room or starting another one
+discards the old attempt. Guests continue to follow the host's controls.
+
 WebJam keeps a known-good Jamulus copy for offline use. **More → Jamulus
 Updates** checks only WebJam-approved, signed update information. Downloads do
 not interrupt a live session, and installation waits until audio, recording, practice,
