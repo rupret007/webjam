@@ -10,6 +10,16 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Paint along followers keep one steady action through a stall
+
+- When WebJam stops following because the host's position is out of date, a
+  follower keeps the same plain **Hide video** button they had while
+  following, instead of it dropping into the **More** menu each time the
+  host's transport goes briefly quiet.
+- The stalled position is no longer left on screen as a live timeline: a
+  follower never seeks, and WebJam has just said that position is out of
+  date. The timeline returns as soon as following resumes.
+
 ### Paint along guest copy-opening clarity
 
 - Guests see **Opening your copy** while their selected local file opens;

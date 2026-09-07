@@ -257,6 +257,38 @@ def test_a_follower_panel_names_a_mismatched_file_as_the_reason(guest_dialog):
 def test_a_follower_panel_says_when_it_stopped_following(guest_dialog):
     guest_dialog.set_follow_snapshot(_follow(ReferenceVideoFollowState.STALLED))
     assert "out of date" in guest_dialog._status.text().casefold()
+    # A follower never seeks, and the stalled position is one WebJam just
+    # called out of date: it is not left on screen as a live readout.
+    assert guest_dialog._position.isHidden() is True
+    assert guest_dialog._clock.isHidden() is True
+    # The one thing this artist can still do stays a plain button.
+    assert guest_dialog._hide_button.isHidden() is False
+    assert guest_dialog._hide_button.isEnabled() is True
+    assert guest_dialog._hide_button.text() == "Hide video"
+    assert guest_dialog._hide_action.isVisible() is False
+
+
+def test_the_keep_working_action_holds_still_across_a_brief_stall(guest_dialog):
+    guest_dialog.set_follow_snapshot(_follow(ReferenceVideoFollowState.FOLLOWING))
+    assert guest_dialog._hide_button.isHidden() is False
+    assert guest_dialog._position.isHidden() is False
+
+    guest_dialog.set_follow_snapshot(_follow(ReferenceVideoFollowState.STALLED))
+    assert guest_dialog._hide_button.isHidden() is False
+
+    guest_dialog.set_follow_snapshot(_follow(ReferenceVideoFollowState.FOLLOWING))
+    assert guest_dialog._hide_button.isHidden() is False
+    assert guest_dialog._position.isHidden() is False
+
+
+def test_a_stalled_follower_can_hide_and_keep_working(guest_dialog):
+    requests: list[bool] = []
+    guest_dialog.hide_requested.connect(requests.append)
+    guest_dialog.set_follow_snapshot(_follow(ReferenceVideoFollowState.STALLED))
+
+    guest_dialog._hide_button.click()
+
+    assert requests == [True]
 
 
 def test_hiding_the_video_flips_the_control_and_keeps_the_panel_usable(guest_dialog):
