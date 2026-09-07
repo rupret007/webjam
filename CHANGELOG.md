@@ -10,6 +10,16 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Paint along host video opening
+
+- Hosts see **Opening process video…** with **Cancel opening** while WebJam
+  waits for the local video. **Back to room** keeps the current attempt; a
+  ready file offers **Play**, and a failed file offers **Choose process video…**.
+- Cancelling, ending, or replacing the room retires the pending result.
+  Old file-picker returns and queued host controls cannot change a new room.
+- The existing player stays silent and guests retain no seek authority.
+  Conversation and Webex sharing remain beside WebJam; the Art door is unchanged.
+
 ### Return to the current Art room
 
 - **Back to room** in Art Notes and Paint along shows the full current room,

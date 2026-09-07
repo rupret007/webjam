@@ -369,6 +369,7 @@ class ReferenceVideoState(str, Enum):
     #: Nothing is shared.  This is the first-class "just talk and work" path,
     #: not a degraded player.
     IDLE = "idle"
+    LOADING = "loading"
     READY = "ready"
     PLAYING = "playing"
     PAUSED = "paused"
@@ -433,6 +434,8 @@ class ReferenceVideoHostController:
         self._duration_s = 0.0
         self._playback_generation = 0
         self._error = ""
+        self._opening = False
+        self._load_generation = 0
 
     # -- reads ---------------------------------------------------------
 
@@ -474,6 +477,8 @@ class ReferenceVideoHostController:
             raise ReferenceVideoError(HOST_ONLY_TRANSPORT_MESSAGE)
 
     def _require_loaded(self) -> None:
+        if self._opening:
+            raise ReferenceVideoError("A Paint along video is still opening.")
         if self._state not in _HOST_LOADED_STATES or self._source is None:
             raise ReferenceVideoError("No Paint along video is shared yet.")
 
@@ -495,20 +500,50 @@ class ReferenceVideoHostController:
         with self._lock:
             if self._state is ReferenceVideoState.CLOSED:
                 raise ReferenceVideoError("This Paint along session has ended.")
+            if self._opening:
+                raise ReferenceVideoError("A Paint along video is still opening.")
+            self._opening = True
+            self._load_generation += 1
+            generation = self._load_generation
+            self._state = ReferenceVideoState.LOADING
+            self._source = None
+            self._identity_digest = ""
+            self._position_s = self._duration_s = 0.0
+            self._error = ""
+
+            def current() -> bool:
+                if self._state is ReferenceVideoState.LOADING and not self._is_host():
+                    self.close()
+                return (generation == self._load_generation
+                        and self._state is ReferenceVideoState.LOADING)
+
             try:
-                source = load_reference_video_source(path)
-                digest = self._identity_signer(source.content_sha256)
-                duration = _seconds(
-                    self._player.load(source.path),
-                    "duration",
-                    maximum=MAX_REFERENCE_VIDEO_DURATION_S,
-                )
-            except ReferenceVideoError as exc:
-                return self._fail_locked(str(exc))
-            except Exception:
-                return self._fail_locked(
-                    "WebJam couldn't open that video on this computer."
-                )
+                # Qt's duration wait dispatches events. Retire the previous
+                # picture and offer cancellation before entering that wait.
+                self._notify(self._snapshot_locked())
+                if not current():
+                    return self._snapshot_locked()
+                try:
+                    source = load_reference_video_source(path)
+                    digest = self._identity_signer(source.content_sha256)
+                    if not current():
+                        return self._snapshot_locked()
+                    duration = _seconds(
+                        self._player.load(source.path),
+                        "duration",
+                        maximum=MAX_REFERENCE_VIDEO_DURATION_S,
+                    )
+                except ReferenceVideoError as exc:
+                    return (self._fail_locked(str(exc)) if current()
+                            else self._snapshot_locked())
+                except Exception:
+                    return (self._fail_locked(
+                        "WebJam couldn't open that video on this computer."
+                    ) if current() else self._snapshot_locked())
+                if not current():
+                    return self._snapshot_locked()
+            finally:
+                self._opening = False
             if duration <= 0.0:
                 return self._fail_locked(
                     "That video reports no duration, so it cannot be shared."
@@ -528,6 +563,7 @@ class ReferenceVideoHostController:
         with self._lock:
             if self._state is ReferenceVideoState.CLOSED:
                 return self._snapshot_locked()
+            self._load_generation += 1
             try:
                 self._player.stop()
             except Exception:
@@ -633,6 +669,7 @@ class ReferenceVideoHostController:
         with self._lock:
             if self._state is ReferenceVideoState.CLOSED:
                 return self._snapshot_locked()
+            self._load_generation += 1
             self._safe_player_call("stop")
             self._safe_player_call("close")
             self._source = None

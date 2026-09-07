@@ -180,7 +180,8 @@ def test_host_transport_reaches_the_peer_plane(tmp_path):
     coordinator.share(str(write_video(tmp_path / "lesson.mp4")))
     coordinator.play()
 
-    assert [item["state"] for item in peer.published] == ["ready", "playing"]
+    assert [item["state"] for item in peer.published] == ["idle", "ready", "playing"]
+    assert peer.published[0]["shared"] is False
     playing = peer.published[-1]
     assert playing["shared"] is True
     assert playing["source_display_name"] == "lesson.mp4"

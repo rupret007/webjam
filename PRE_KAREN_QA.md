@@ -1,58 +1,70 @@
-# Pre-Karen QA — Paint along timeline input
+# PRE_KAREN — Paint along host opening
 
-Exact master base `12920ebe35b96298e2c2b97fdcf78efc1d1720f7`; branch
-`codex/webjam-finish-product-paint-along-seeking`. Canonical checkout:
-`/Users/jeffstory/Documents/WebJam`. BEFORE:
-https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5563756244.
-Marker `OVERNIGHT_NEXT_ART_DOOR_20260906_2020`.
+Base `9845fc9069fa180ee7cf772a27069cc26ae27f2d`; branch
+`codex/paint-along-host-opening`; canonical checkout
+`/Users/jeffstory/Documents/WebJam`. Marker
+`WEBJAM_NEW_SESSION_POST86_20260906_2213`.
+BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5564597608.
 
-## Product and leftover review
+## Product and ten-second self-QA
 
-Host keyboard and wheel timeline changes now seek the existing silent player
-and publish its real position. Mouse drag updates remain local until release.
-Snapshot rendering blocks both range and value signals. Host source identity
-and duration changes disarm an old gesture before rendering the new truth;
-failed/unshared/zero-duration states cannot seek. Hiding the view cancels a
-held gesture without leaving the timeline stuck on return.
+The host sees one primary action: Choose process video when empty or failed,
+Cancel opening during the duration wait, Play when ready/paused, Pause when
+playing, or Return to room after losing the current binding. At 720×560,
+the real Qt view retains its action, navigation and explanatory line.
+Success never automatically starts playback. Back to room preserves the
+pending current-room load and local notes.
 
-Native macOS changes value before Qt's sliderPressed signal in some styles.
-The small slider subclass brackets the actual pointer event, ensuring that
-native click/drag behavior also commits once. The dialog remains a renderer;
-role, source, seek validation and publication stay with existing owners.
+The two-card Art door, squirrel-with-fro artwork, Music door and external
+Conversation/Webex demonstration workflow are unchanged. A guest remains a
+follower; #86's host keyboard/wheel/mouse seek behavior remains covered by
+its existing tests.
 
-## Privacy and scope
+## Ownership and security self-QA
 
-No new log sink, payload field or exception text. The private source identity
-stays inside the view; diagnostics/public projections are unchanged. No
-second player, video upload/download, browser/meeting launch, network gate,
-room lifecycle, Art door copy or asset change. Guests stay unable to seek.
-Local host control remains available during retained recovery ownership.
+- Host core state becomes LOADING before the Qt wait. It clears old source
+  facts and rejects competing share/play/pause/stop/seek operations. Withdraw
+  and close retire the load generation; neither success nor failure can
+  restore a cancelled source.
+- The coordinator checks host object and room generation before publishing
+  or rendering. A newer publication callback wins over an older notification
+  and over the operation's returned result. Player creation that outlives its
+  room cannot install that player into a replacement coordinator role.
+- All six host intent routes check the current dialog, coordinator and room
+  binding. A native file picker also checks that its Qt dialog still exists
+  before emitting its result. Actual End Room/new Host and stale-picker
+  regressions exercise these paths.
+- The existing Qt duration wait processes user input. A posted mouse press
+  and release cancels it through the real button and adapter, clears the
+  backend source, and returns to Choose. The same muted player can reopen
+  the same file afterward. Existing guest loading/close/room-replacement
+  tests cover the shared wait's follower boundary.
+- Loading maps to the existing unshared idle wire state: no new public field,
+  name, path, token, digest, diagnostic payload, persistence format or timer.
+  Backend failures stay bounded; the new retired-player cleanup log has no
+  raw exception. No live provider, customer data or credentials are used.
 
-## Verification
+## Findings corrected during self-QA
 
-Real Qt fixture baseline: 10 failed, 5 passed before the fix. Additional native
-Mac testing caught and verified the early mouse-press issue. Final input
-coverage has 21 cases, including actual synchronous coordinator/player/peer
-callbacks in READY, PLAYING and PAUSED states, passive render, keyboard,
-wheel, mouse, source replacement, failure/recovery and hide/return.
+The initial 15-failure baseline proved stale loading and room replacement.
+Qt tests then reproduced a deleted-dialog exception on a late file-picker
+return. Publication reentrancy also exposed a stale returned Ready value
+after withdrawal, even when the view had already changed. Both have direct
+regressions and corrections. The new UI module explicitly activates the
+existing temporary database/credential fixtures; tests do not use Jeff's
+persistent application database.
 
-Final focused/full suite results, native count, independent review, exact
-head/tree and hosted tests/integrations/four desktop artifacts are recorded
-in the OPEN DRAFT and coord AFTER. No pending test is called green. Jeff's
-Apple Silicon test artifact must carry the exact draft commit. A separate
-app folder still uses the user's ordinary WebJam settings and notes when
-launched; it is not an isolated installation.
+## Verification and handoff boundary
 
-## Holds and preserved work
+Final local counts and exact tip/tree belong in the OPEN DRAFT and coord AFTER,
+together with actual hosted results for tests, integrations and all four
+desktop builds. A pending or failed hosted check is never called green.
+This document records Codex self-QA, not independent review or Karen's verdict.
 
-#85/#84 remain merged and untouched. Parked #37/#49 unchanged. One OPEN DRAFT
-for Karen; no merge/tag/sign/Pages/Release Trust/publish/GitHub Latest. The
-existing unsigned/ad-hoc 0.27.2 private-test boundary stays Jeff-only. No
-short-code/public rendezvous/live Cisco/second video stack/other-repo task.
-Physical, two-device, installed-app and live-provider checks remain NOT RUN.
-
-The separate logging/support improvement is saved locally at
-`94c621e36ebe3ff7e2748b91d8a968021c30da92` on
-`codex/webjam-finish-product-test-readiness`. Its 23 new regressions and 2,271
-focused tests passed; full pytest was intentionally interrupted when Jeff
-steered this task to Art. That checkpoint has no PR and is excluded here.
+File hashing remains synchronous; the responsive cancellation proof covers
+the Qt duration wait. Physical codec playback, installed-app feel, two-machine
+sync, live meetings and platform trust are **NOT RUN**. Stop at one draft for
+Karen leftover + security + UX. Parked #37/#49 remain untouched; #86 stays
+merged. No merge/squash/tag/release/deploy/Pages, signing, Release Trust,
+Publish, spend, live Cisco, public rendezvous or second video stack. Unsigned
+0.27.2 remains Jeff-only.

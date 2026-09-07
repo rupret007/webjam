@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shiboken6 import isValid
 
 from core.reference_video import (
     ReferenceVideoFollowSnapshot,
@@ -167,6 +168,7 @@ class ReferenceVideoDialog(QDialog):
         self._seek_source: tuple[str, float] | None = None
         self._attached_surface: QWidget | None = None
         self._last_follow_snapshot: ReferenceVideoFollowSnapshot | None = None
+        self._last_host_snapshot: ReferenceVideoSnapshot | None = None
         self._room_available = True
         self.setObjectName("PaintAlongWindow")
         self.setWindowTitle("Paint along")
@@ -269,6 +271,10 @@ class ReferenceVideoDialog(QDialog):
             self._pause_button = self._add_button(
                 controls, "Pause", "Pause for everyone.", self.pause_requested.emit
             )
+            self._cancel_open_button = self._add_button(
+                controls, "Cancel opening", "Cancel opening this process video.",
+                self.withdraw_requested.emit,
+            )
         else:
             self._open_button = self._add_button(
                 controls,
@@ -282,15 +288,15 @@ class ReferenceVideoDialog(QDialog):
                 "Ignore the video and keep working. You stay in the room.",
                 self._toggle_hidden,
             )
-            self._return_button = self._add_button(
-                controls,
-                "Return to room",
-                "Return to the current room to check the connection. "
-                "Your local Paint along copy can stay.",
-                self.return_requested.emit,
-            )
-            self._return_button.setMinimumHeight(48)
-            self._return_button.setVisible(False)
+        self._return_button = self._add_button(
+            controls,
+            "Return to room",
+            "Return to the current room to check the connection. "
+            "Your local Paint along copy can stay.",
+            self.return_requested.emit,
+        )
+        self._return_button.setMinimumHeight(48)
+        self._return_button.setVisible(False)
         controls.addStretch(1)
         self._more_button = QToolButton()
         self._more_button.setText("More")
@@ -408,7 +414,7 @@ class ReferenceVideoDialog(QDialog):
         path, _ = QFileDialog.getOpenFileName(
             self, "Choose a process video for Paint along", "", self._video_filter()
         )
-        if path:
+        if path and isValid(self):
             self.share_requested.emit(path)
 
     def _choose_local_copy(self) -> None:
@@ -469,8 +475,32 @@ class ReferenceVideoDialog(QDialog):
 
         if not self._hosting:
             return
+        self._last_host_snapshot = snapshot
+        if not self._room_available:
+            self._cancel_scrub()
+            self._seek_source = None
+            self._headline.setText("Return to the room")
+            self._status.setText("This video control no longer belongs to your current room.")
+            self._surface_placeholder.setText("Return to the room to continue")
+            self._role.setText("CHECK ROOM")
+            self._role.setAccessibleName("Check your current room")
+            for button in (self._share_button, self._play_button, self._pause_button,
+                           self._cancel_open_button):
+                button.setVisible(False)
+                button.setEnabled(False)
+            self._return_button.setVisible(True)
+            self._more_button.setVisible(False)
+            self._position.setEnabled(False)
+            self._position.setVisible(False)
+            self._clock.setVisible(False)
+            self.attach_surface(None)
+            return
+        self._return_button.setVisible(False)
+        self._role.setText("YOU CONTROL")
+        self._role.setAccessibleName("You control the video")
         shared = bool(snapshot.shared)
         state = snapshot.state
+        loading = state is ReferenceVideoState.LOADING
         self._duration_s = float(snapshot.duration_s or 0.0)
         can_seek = shared and self._duration_s > 0.0 and state in {
             ReferenceVideoState.READY,
@@ -486,12 +516,16 @@ class ReferenceVideoDialog(QDialog):
             # Hidden/disabled sliders may never receive the held release.
             self._cancel_scrub()
         self._headline.setText(
+            "Opening process video…" if loading else
             snapshot.source_display_name if shared else _HOST_EMPTY_HEADLINE
         )
         self._surface_placeholder.setText(
+            "Opening your silent process video" if loading else
             "Video unavailable" if snapshot.error else _EMPTY_SURFACE
         )
-        if snapshot.error:
+        if loading:
+            self._status.setText("Checking the video. You can go back to the room while it opens.")
+        elif snapshot.error:
             self._status.setText(snapshot.error)
         elif not shared:
             self._status.setText(_HOST_EMPTY_STATUS)
@@ -511,7 +545,10 @@ class ReferenceVideoDialog(QDialog):
         # someone looks at the panel, and a room with no video is a finished
         # state rather than a broken one.
         playing = state is ReferenceVideoState.PLAYING
-        self._share_button.setVisible(not shared)
+        self._share_button.setVisible(not shared and not loading)
+        self._share_button.setEnabled(not loading)
+        self._cancel_open_button.setVisible(loading)
+        self._cancel_open_button.setEnabled(loading)
         self._play_button.setVisible(shared and not playing)
         self._pause_button.setVisible(playing)
         self._play_button.setEnabled(shared and not playing)
@@ -525,9 +562,12 @@ class ReferenceVideoDialog(QDialog):
         self._clock.setVisible(shared)
 
     def set_room_available(self, available: bool) -> None:
-        """A retained follow snapshot is usable only in its current guest room."""
+        """Retained controls and pictures belong only to their current room."""
 
         if self._hosting:
+            self._room_available = bool(available)
+            if self._last_host_snapshot is not None:
+                self.set_host_snapshot(self._last_host_snapshot)
             return
         available = bool(available)
         if self._room_available == available:

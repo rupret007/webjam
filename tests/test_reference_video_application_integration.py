@@ -340,7 +340,8 @@ def test_a_host_share_reaches_the_peer_plane_through_the_controller(
     coordinator.play()
 
     published = controller.host_peer.publish_reference_video_state.call_args_list
-    assert [call.kwargs["state"] for call in published] == ["ready", "playing"]
+    assert [call.kwargs["state"] for call in published] == ["idle", "ready", "playing"]
+    assert published[0].kwargs["shared"] is False
     assert published[-1].kwargs["shared"] is True
     assert len(published[-1].kwargs["identity_digest"]) == 64
 
