@@ -117,6 +117,32 @@ class _VideoNameLabel(QLabel):
             self._render_text()
 
 
+class _PositionSlider(QSlider):
+    """Bracket mouse intent before native styles can change the value."""
+
+    gesture_started = Signal()
+    gesture_finished = Signal()
+    discrete_started = Signal()
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.gesture_started.emit()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        super().mouseReleaseEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.gesture_finished.emit()
+
+    def keyPressEvent(self, event) -> None:
+        self.discrete_started.emit()
+        super().keyPressEvent(event)
+
+    def wheelEvent(self, event) -> None:
+        self.discrete_started.emit()
+        super().wheelEvent(event)
+
+
 class ReferenceVideoDialog(QDialog):
     """The large, quiet making surface behind Art's Paint along door."""
 
@@ -137,6 +163,8 @@ class ReferenceVideoDialog(QDialog):
         self._hosting = bool(hosting)
         self._duration_s = 0.0
         self._scrubbing = False
+        self._pointer_active = False
+        self._seek_source: tuple[str, float] | None = None
         self._attached_surface: QWidget | None = None
         self._last_follow_snapshot: ReferenceVideoFollowSnapshot | None = None
         self._room_available = True
@@ -206,12 +234,14 @@ class ReferenceVideoDialog(QDialog):
         self._surface_layout.addWidget(self._surface_placeholder)
         layout.addWidget(self._surface_holder, stretch=1)
 
-        self._position = QSlider(Qt.Orientation.Horizontal)
+        self._position = _PositionSlider(Qt.Orientation.Horizontal)
         self._position.setAccessibleName("Paint along position")
         self._position.setRange(0, 0)
         self._position.setEnabled(False)
-        self._position.sliderPressed.connect(self._begin_scrub)
-        self._position.sliderReleased.connect(self._end_scrub)
+        self._position.gesture_started.connect(self._begin_scrub)
+        self._position.gesture_finished.connect(self._end_scrub)
+        self._position.discrete_started.connect(self._cancel_scrub)
+        self._position.valueChanged.connect(self._seek_without_drag)
         self._clock = QLabel("0:00 / 0:00")
         self._clock.setObjectName("PaintAlongClock")
         self._clock.setAccessibleName("Paint along position readout")
@@ -391,13 +421,46 @@ class ReferenceVideoDialog(QDialog):
     def _toggle_hidden(self) -> None:
         self.hide_requested.emit(not self._hidden)
 
+    def _can_seek(self) -> bool:
+        return (
+            self._hosting
+            and self._seek_source is not None
+            and self._position.isEnabled()
+        )
+
     def _begin_scrub(self) -> None:
-        self._scrubbing = True
+        self._pointer_active = True
+        self._scrubbing = self._can_seek()
 
     def _end_scrub(self) -> None:
+        was_scrubbing = self._scrubbing
+        self._pointer_active = False
         self._scrubbing = False
-        if self._hosting and self._duration_s > 0.0:
+        if was_scrubbing and self._can_seek():
             self.seek_requested.emit(float(self._position.value()))
+
+    def _seek_without_drag(self, value: int) -> None:
+        # Keyboard and wheel commit a discrete position. A cancelled pointer
+        # gesture stays separate until release, even when its native groove
+        # click never put the slider into the handle-dragging state.
+        if not self._pointer_active and not self._position.isSliderDown() and self._can_seek():
+            self.seek_requested.emit(float(value))
+
+    def _cancel_scrub(self) -> None:
+        # New discrete input or navigation retires a pointer gesture even if
+        # its release happened elsewhere. Cancelling never emits a seek.
+        self._scrubbing = False
+        self._pointer_active = False
+        self._position.setRepeatAction(QSlider.SliderAction.SliderNoAction)
+        blocked = self._position.blockSignals(True)
+        try:
+            self._position.setSliderDown(False)
+        finally:
+            self._position.blockSignals(blocked)
+
+    def hideEvent(self, event) -> None:
+        self._cancel_scrub()
+        super().hideEvent(event)
 
     # -- rendering -----------------------------------------------------
 
@@ -409,6 +472,19 @@ class ReferenceVideoDialog(QDialog):
         shared = bool(snapshot.shared)
         state = snapshot.state
         self._duration_s = float(snapshot.duration_s or 0.0)
+        can_seek = shared and self._duration_s > 0.0 and state in {
+            ReferenceVideoState.READY,
+            ReferenceVideoState.PLAYING,
+            ReferenceVideoState.PAUSED,
+        }
+        source = (snapshot.identity_digest, self._duration_s) if can_seek else None
+        if source != self._seek_source:
+            self._scrubbing = False
+            self._position.setRepeatAction(QSlider.SliderAction.SliderNoAction)
+        self._seek_source = source
+        if not can_seek:
+            # Hidden/disabled sliders may never receive the held release.
+            self._cancel_scrub()
         self._headline.setText(
             snapshot.source_display_name if shared else _HOST_EMPTY_HEADLINE
         )
@@ -445,7 +521,7 @@ class ReferenceVideoDialog(QDialog):
         self._withdraw_action.setVisible(shared)
         self._sync_more_button()
         self._position.setVisible(shared)
-        self._position.setEnabled(shared)
+        self._position.setEnabled(can_seek)
         self._clock.setVisible(shared)
 
     def set_room_available(self, available: bool) -> None:
@@ -544,11 +620,17 @@ class ReferenceVideoDialog(QDialog):
 
     def _render_position(self, position_s: float, duration_s: float) -> None:
         bounded_duration = max(0, int(duration_s or 0.0))
-        self._position.setRange(0, bounded_duration)
-        if not self._scrubbing:
-            self._position.setValue(
-                min(max(0, int(position_s or 0.0)), bounded_duration)
-            )
+        # Range changes can clamp the value too. Neither that nor a normal
+        # playback tick is a user request to move the video.
+        blocked = self._position.blockSignals(True)
+        try:
+            self._position.setRange(0, bounded_duration)
+            if not self._scrubbing:
+                self._position.setValue(
+                    min(max(0, int(position_s or 0.0)), bounded_duration)
+                )
+        finally:
+            self._position.blockSignals(blocked)
         self._clock.setText(
             f"{clock_text(position_s)} / {clock_text(duration_s)}"
         )

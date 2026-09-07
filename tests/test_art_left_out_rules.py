@@ -22,6 +22,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest  # noqa: E402
 from PySide6.QtGui import QColor, QImage, QPalette  # noqa: E402
+from PySide6.QtTest import QSignalSpy  # noqa: E402
 from PySide6.QtWidgets import QAbstractButton, QApplication  # noqa: E402
 
 from core.ai_image import (  # noqa: E402
@@ -244,25 +245,27 @@ def test_the_companion_can_neither_see_nor_change_any_mute():
 
 
 @pytest.mark.parametrize(("name", "factory"), ART_PANELS)
-def test_closing_an_art_panel_is_only_a_dismissal(name, factory):
-    """No Art panel intercepts its own close.
-
-    A panel that withdrew a share or left the room on close would make the
-    window's X button destructive, which is the sort of thing nobody discovers
-    until they lose a session by tidying their screen.
-    """
+def test_closing_an_art_panel_is_only_a_dismissal(name, factory, qapp):
+    """Dismissal may cancel a local gesture, but cannot request any action."""
 
     panel = factory()
-    panel.close()
-
-    tree = ast.parse(_source(f"webjam_qt/windows/{name.replace(' ', '_')}.py"))
-    overrides = {
-        node.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef)
-        and node.name in {"closeEvent", "hideEvent", "reject", "done"}
+    requested = {
+        signal: QSignalSpy(getattr(panel, signal))
+        for signal in dir(type(panel))
+        if signal.endswith("_requested")
+        and hasattr(getattr(panel, signal), "connect")
     }
-    assert not overrides, (name, overrides)
+    assert requested
+    try:
+        panel.show()
+        qapp.processEvents()
+        panel.close()
+        qapp.processEvents()
+        assert not panel.isVisible()
+        assert all(spy.count() == 0 for spy in requested.values()), name
+    finally:
+        panel.deleteLater()
+        qapp.processEvents()
 
 
 @pytest.mark.parametrize(("name", "factory"), ART_PANELS)
