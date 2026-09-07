@@ -208,6 +208,30 @@ def test_native_transport_waits_for_host_profile_then_enters_art(
     assert app.bridge.jamulus_process is None
 
 
+def test_paint_along_guest_room_names_the_next_click_before_the_video_arrives(
+    qapp, controllers, monkeypatch,
+):
+    """A guest who joined a Paint along room, before the host shares anything,
+    is told the video is coming and given the one action that readies it."""
+
+    monkeypatch.setattr("services.native_remote_transport.NativeGuestTransportBackend", RoomBackend)
+    app = controllers()
+    app._activate_remote_guest_route = mock.Mock()
+    assert app.accept_invitation(remote())
+    drain(qapp, lambda: app._remote_session.snapshot.phase is RemoteSessionPhase.CONNECTED)
+    backend = RoomBackend.instances[-1]
+    backend.emit(RoomState(1, "art", "paint_along"))
+    drain(qapp, lambda: app.creator_profile.key == "art")
+
+    assert app._art_room_runs_paint_along() is True
+    overview = app._sync_art_room_overview()
+    assert overview is not None
+    assert overview.activity_label == "Paint along is starting"
+    assert overview.activity_action == "video"
+    assert overview.activity_action_label == "Open Paint along"
+    assert overview.activity_enabled is True
+
+
 def test_native_missing_profile_has_bounded_update_rejoin_action(
     qapp, controllers, monkeypatch,
 ):

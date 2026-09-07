@@ -1863,6 +1863,23 @@ class ApplicationController(QObject):
             borrowed or getattr(getattr(self, "settings", None), "last_creator_start_key", "")
         )
 
+    def _art_room_runs_paint_along(self) -> bool:
+        """True when this computer's authenticated room state says the room
+        runs Paint along.
+
+        This reads the host's published start, carried in the room state a
+        guest received, never a guest's own saved preference -- so it is a
+        room fact a guest can be shown before the host shares the video. A
+        host's ``borrowed_start`` is empty, so a host is never counted here;
+        their waiting line comes from the start card they chose instead.
+        """
+
+        room = getattr(self, "_room_participant", None)
+        return bool(
+            room is not None
+            and getattr(room, "borrowed_start", "") == "paint_along"
+        )
+
     def _music_room_blocks_new_take(self) -> bool:
         room = getattr(self, "_room_participant", None)
         return bool(room is not None and room._music_lan_host() and room._music_host_blocked())
@@ -1976,6 +1993,7 @@ class ApplicationController(QObject):
             hosting=projection.transport_allowed,
             intended_canvas=bool(start is not None and start.shared_canvas),
             intended_video=bool(start is not None and start.reference_video),
+            paint_along_room=self._art_room_runs_paint_along(),
         )
         presence = activities[0] if activities else ABSENT
         secondary = activities[1] if len(activities) > 1 else ABSENT
@@ -2034,6 +2052,7 @@ class ApplicationController(QObject):
                     hosting=projection.transport_allowed,
                     intended_canvas=bool(start is not None and start.shared_canvas),
                     intended_video=bool(start is not None and start.reference_video),
+                    paint_along_room=self._art_room_runs_paint_along(),
                 )
                 presence = activities[0] if activities else ABSENT
                 secondary_presence = activities[1] if len(activities) > 1 else ABSENT

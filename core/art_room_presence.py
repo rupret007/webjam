@@ -111,6 +111,7 @@ def art_room_presence(
     hosting: bool = False,
     intended_canvas: bool = False,
     intended_video: bool = False,
+    paint_along_room: bool = False,
 ) -> ArtRoomPresence:
     """Return the one line this room should show, or nothing.
 
@@ -120,6 +121,9 @@ def art_room_presence(
 
     A guest's saved choice says nothing about the room they joined, so their
     intent is ignored -- what the host actually shared is the only fact.
+    ``paint_along_room`` is the one exception, and it is not a saved choice:
+    it is the host's published start, carried in the authenticated room
+    state, so a guest can be told a process video is coming before it lands.
     """
 
     if not projection.in_room:
@@ -215,6 +219,19 @@ def art_room_presence(
             description=(
                 "Open the panel to share one local "
                 "video each artist can follow on their own copy."
+            ),
+            target=ArtPresenceTarget.VIDEO,
+        )
+
+    # A guest who joined a Paint along room, before the host has shared the
+    # video. Give them the same one next click a waiting host gets, so they
+    # can open their own copy and be following the moment it arrives.
+    if not hosting and paint_along_room:
+        return ArtRoomPresence(
+            label="Paint along is starting",
+            description=(
+                "The host chose Paint along. Open the panel and load your "
+                "own copy of the video, then you follow when they share it."
             ),
             target=ArtPresenceTarget.VIDEO,
         )

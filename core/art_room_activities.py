@@ -24,12 +24,14 @@ def art_room_activities(
     hosting: bool = False,
     intended_canvas: bool = False,
     intended_video: bool = False,
+    paint_along_room: bool = False,
 ) -> tuple[ArtRoomPresence, ...]:
     """Return the existing priority presence and at most one other activity."""
 
     primary = art_room_presence(
         projection, hosting=hosting,
         intended_canvas=intended_canvas, intended_video=intended_video,
+        paint_along_room=paint_along_room,
     )
     if not primary.offered:
         return ()

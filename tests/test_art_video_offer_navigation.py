@@ -200,9 +200,15 @@ def test_deferred_offer_withdrawal_and_replacement_keep_the_current_notes(room, 
         assert panel.isVisibleTo(pair.app.window)
         assert _notes(pair.app) == notes
         assert pair.app._reference_video_dialog is None
-        assert pair.app.window.art_room_overview._overview.activity_actions == (
-            ("video",) if shared else ()
-        )
+        actions = pair.app.window.art_room_overview._overview.activity_actions
+        if shared:
+            assert actions == ("video",)
+        else:
+            # Between shares, a Paint along room keeps one way back to the
+            # panel where its room fact is known (native carries the host's
+            # published start; the LAN path does not yet). It never invents
+            # any other action.
+            assert actions in ((), ("video",))
     pair.player_factory.assert_not_called()
 
 
