@@ -1,61 +1,53 @@
-# Worth Building — Art Conversation follows the saved meeting
+# Worth building — preserve the guest’s chosen work
 
-Base: fetched master `159f4447a78e05e324067088d02480682ab0e4d8`.
-Branch: `codex/art-conversation-next-action`.
-Canonical checkout: `/Users/jeffstory/Documents/WebJam`.
-Marker: `OVERNIGHT_WEBJAM_CONTINUE_20260906_2340`.
+Base: `50e035e09997e891f08520d80d60cfae3383ce27`, fetched `origin/master`.
+Fresh branch: `codex/art-guest-video-offer`; canonical WebJam checkout.
+Marker: `OVERNIGHT_WEBJAM_CONTINUE_20260907_0215`.
+BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5566904922.
+Base-advance BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5567377754.
 
-## The real leftover
+## Demonstrated leftover
 
-With Google Meet configured and a verified Webex installation, opening Art
-Conversation focused **Show Webex App**. Its meeting tooltip also recommended
-Webex as the way back to that unrelated meeting. The same preference sent an
-artist with no saved link toward an app instead of Add Link.
+A host’s first Paint along offer calls automatic presentation without window
+activation. The production window nevertheless replaces its selected workspace
+with the embedded video page. A guest writing local notes or using Conversation
+loses sight of that work because somebody else offered an optional activity.
 
-A real Qt reproduction established the wrong target before edits. The first
-regression run produced **23 failures / 1 pass**, including actual host, LAN
-guest and native guest Notes-to-Conversation journeys.
+The pre-change baseline on master `159f4447` reproduced **6 failures / 2 passes** through actual LAN and
+native guest controllers: Notes, Conversation and a pending meeting handoff were
+replaced; direct entry from the untouched Room already worked. Earlier native
+fixture construction errors were corrected before recording this baseline.
 
-The LAN host name list already covers authenticated freshness, privacy,
-duplicate names and keyboard recovery. A native named roster needs additional
-authenticated name facts. This slice fixes a present wrong-app action without
-inventing artists or another transport. It does not repeat room Leave/rejoin,
-shared canvas, timeline seeking or #87's host video opening.
+## Why this slice
 
-## Before and after
+This makes Make together usable while an artist is already working or talking.
+The existing LAN named-artist list already has authenticated freshness, privacy
+and keyboard coverage. Native names require additional authenticated facts.
+Make together already starts with the artist’s own tools. Another roster or
+canvas setup claim would not address the observed interruption.
 
-Before, native installation determined the first keyboard action and every
-control had the same visual emphasis. After, the saved meeting and handoff
-state determine one highlighted existing action:
+Before: a background video offer replaces the guest’s current work.
+After: keep that work and focus visible; the existing room action offers the
+video. Deliberate entry reaches Open my copy without loading or sending anything.
+Returning to Room alone does not replay an offer that was deferred while busy.
+Untouched-Room first entry and the host’s selected start keep their behavior.
 
-- No link: **Add Link**.
-- Saved link, including a failed handoff: **Join / Open Meeting**.
-- Opening: the disabled **Opening…** action and focused status; repeated input
-  does not activate another control.
-- Opened Webex link and verified app: **Show Webex App**, which promises only
-  app activation. Other providers or unavailable native proof: **Open Again**.
+## Boundaries and review
 
-Native controls stay explicitly Webex-only. Art tooltip advice never substitutes
-Webex for another meeting. Rendering never launches a meeting, app or player.
-A late native recheck also cannot take focus back after the artist moves on.
+The change is limited to automatic guest presentation. It adds no player,
+network protocol, room field, timer, launcher or door. Existing room binding,
+connection checks and guest transport restrictions remain the action owners.
+Notes, selection, undo, meeting state and authenticated identity stay intact.
+This is distinct from #81/#82/#86/#87/#88.
 
-## Proof and limits
+The regression suite also covers compact/wide views, active dialogs and menus,
+withdrawal/replacement, and a video offered behind higher-priority canvas
+recovery. Full-suite counts, exact final tip/tree and actual hosted evidence,
+including all four desktop builds, belong in the OPEN DRAFT and coord AFTER.
 
-The new suite covers real Qt focus and input, passive detection, profile return,
-pending handoffs, real Settings add/change/remove, and real host/LAN/native
-room journeys through Notes. Existing Conversation layout, room return, door,
-Music and native verification tests remain relevant.
-
-Final local and hosted results, exact tip/tree and four desktop builds belong
-in the draft PR and coord AFTER. Tests use synthetic saved links and controlled
-provider/native evidence. Live meetings, actual app activation, installed-app
-feel, physical playback and platform trust remain **NOT RUN**. A successful
-external handoff is not proof of meeting membership or sharing.
-
-#87 was reviewed by Karen and leftover-squashed by Bob onto master
-`159f4447a78e05e324067088d02480682ab0e4d8`. This branch starts from that new tip.
-Parked #37/#49, the Art door and unsigned 0.27.2 holds remain untouched.
-
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5565319916.
-
-Base-advance BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5565690193.
+#88 passed Karen and was leftover-squashed by Bob onto this base. Its completed
+handoff remains at https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5566652085.
+#37/#49 remain parked; #86/#87/#88 stay merged. Stop at one OPEN DRAFT for Karen
+leftover + security + ten-second UX. No merge, squash, tag, signing, Pages,
+Release Trust, Publish, release, deploy, spend, live Cisco, public rendezvous
+or other-repo lane. Unsigned 0.27.2 remains Jeff-only.

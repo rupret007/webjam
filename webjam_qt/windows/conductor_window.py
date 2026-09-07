@@ -34,6 +34,7 @@ from PySide6.QtGui import (
     QShortcut,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -846,6 +847,19 @@ class ConductorWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Public helpers for ApplicationController
     # ------------------------------------------------------------------
+    def can_show_paint_along_automatically(self) -> bool:
+        """A guest's first offer may enter from Room, without replacing work."""
+
+        return bool(
+            self.workspace_stack.currentWidget() is self.center_splitter
+            and self.art_room_overview.isVisibleTo(self)
+            and not self.session_canvas.isVisibleTo(self)
+            and not self.webex_embed.isVisibleTo(self)
+            and QApplication.activeModalWidget() is None
+            and QApplication.activePopupWidget() is None
+            and QApplication.activeWindow() in (None, self)
+        )
+
     def show_paint_along(self, panel: QWidget) -> None:
         """Use WebJam's existing window as the Paint along surface.
 

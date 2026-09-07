@@ -2145,6 +2145,13 @@ class ApplicationController(QObject):
         if not actionable:
             return
         self._announced_creator_start = binding
+        if role != "host":
+            can_show = getattr(self.window, "can_show_paint_along_automatically", None)
+            if callable(can_show) and not can_show():
+                # The offer remains in room navigation. Consume this first
+                # announcement now so a later tick cannot replace work the
+                # guest chose, even after they return to Room.
+                return
         self._open_reference_video(take_focus=False)
 
     def _apply_creator_profile_key(

@@ -1,67 +1,75 @@
-# PRE_KAREN — Art Conversation next action
+# PRE_KAREN — guest work stays visible when Paint along arrives
 
-Base `159f4447a78e05e324067088d02480682ab0e4d8`, fresh
-`codex/art-conversation-next-action`, canonical WebJam checkout.
-Marker: `OVERNIGHT_WEBJAM_CONTINUE_20260906_2340`.
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5565319916.
+Base `50e035e09997e891f08520d80d60cfae3383ce27`; fresh
+`codex/art-guest-video-offer`; canonical WebJam checkout.
+Marker: `OVERNIGHT_WEBJAM_CONTINUE_20260907_0215`.
+BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5566904922.
+Base-advance BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5567377754.
 
 ## Product and ten-second self-QA
 
-An artist opening Conversation is directed to their saved meeting, regardless
-of whether a different native app is installed. One existing button is primary.
-Missing link offers Add Link; configured link offers Join / Open Meeting;
-Opening focuses non-actionable status. After a Webex handoff, verified native
-activation may be primary, without claiming a specific meeting window. Other
-providers keep their own Open Again link.
+The first host video offer previously replaced the guest’s embedded workspace,
+even when the guest was already writing in Notes or using Conversation. The
+pre-change baseline on master `159f4447` reproduced six such failures, with two untouched-Room cases
+already passing. This was a workspace replacement despite the old request’s
+no-activation flag.
 
-The first run reproduced 23 failures / 1 pass. Actual host, LAN guest and native
-guest journeys prove that entering from Notes sends nothing and opens nothing;
-one deliberate keyboard activation reaches the existing link handoff, not
-native Webex activation. Notes, the current room identity and generation remain.
+Now the first automatic guest presentation checks the actual visible work.
+Notes, Conversation, another workspace, an active dialog, or a menu keeps its
+place. The existing room/presence action carries the offer. The automatic
+announcement is consumed when deferred, so closing a dialog or returning to
+Room later does not create a delayed navigation surprise. One deliberate
+Paint along action opens the existing file controls.
 
-## Focus ownership and security self-QA
+Cold entry from the untouched Room and the host’s selected Paint along start
+still open directly. No extra door, confirmation, prompt or player is added.
+If canvas recovery owns the room chip, Paint along remains a separate existing
+action in Room. Withdrawal removes the video route; a replacement does not
+interrupt the guest’s notes.
 
-- No new URL, parser, protocol, network request, launcher, payload, player,
-  public field, log sink or timer. The existing validated link handoff and
-  native publisher verification remain the action owners.
-- Art's visual emphasis and entry focus share one state-derived choice.
-  Passive detection/profile rendering changes presentation without intent
-  or taking focus away from the artist.
-- Disabling the focused link action first places focus on its status. Repeated
-  Space cannot fall through to another button while the handoff is pending.
-  Completion does not pull focus back.
-- Self-QA additionally reproduced a late native recheck stealing focus after
-  the artist moved to Change Link. Restoration now requires that the check's
-  status still has focus; a hidden or abandoned panel does not regain it.
-- Real Settings add/change/remove returns to the newly applicable action without
-  launching a meeting or restarting the room. Provider guidance uses bounded
-  service labels; no private meeting URL or notes are added to tooltips or logs.
-- Native controls retain explicit Webex-only names and require existing
-  publisher proof. Music retains its established entry focus and visual roles;
-  the shared native-check restoration also respects the current focus owner.
+## Ownership and security self-QA
 
-## Verification and honest boundaries
+- The controller still requires the current authenticated video binding and a
+  connected, unblocked guest room before considering automatic presentation.
+  The window answers only whether presentation would replace current work.
+- Deferral changes no room/profile identity, peer payload, media state, URL,
+  launcher, private field, timer or log sink. Existing explicit activity
+  dispatch re-reads the current room before opening the panel.
+- Opening a panel loads no file and launches no meeting. The existing file
+  chooser, matching-copy checks, silent player and host transport remain the
+  owners of those actions; guests receive no seek authority.
+- Real Qt/controller journeys preserve focus, local notes, selection, undo and
+  save state on compact and wide windows. A pending meeting handoff is driven
+  through the existing explicit controller action with a controlled producer;
+  a background video offer does not issue another handoff or change its state.
+- Dialog/menu focus stays with its current owner. Dismissal, later room ticks,
+  withdrawal and replacement do not replay a deferred automatic presentation.
+- Tests use temporary settings/notes/databases, isolated credential storage,
+  synthetic room receipts and controlled launch/player fixtures. Private marker
+  names stay out of room projections, accessibility descriptions and logs.
 
-The new tests use actual Qt widgets/input and the ApplicationController with
-temporary settings/notes/databases, isolated credentials, synthetic links and
-controlled host/LAN/native/provider fixtures. Existing compact Conversation
-layout, Art door, room return, native busy-state and Music cases are retained.
+## Verification and honest limits
+
+New regressions cover both LAN and native guests, Notes/Conversation/pending
+handoffs at two widths, modal/nonmodal dialogs and menus, withdrawal and
+replacement, a secondary video action behind canvas recovery, cold Room entry
+and the host’s selected start. Existing Art room return, activity, meeting,
+Paint along opening and guest seek regressions remain in the focused suite.
 Final counts, commands, exact tip/tree and actual hosted test/integration/four
 desktop results belong in the OPEN DRAFT and coord AFTER.
 
-Live provider meetings, real Webex activation, installed-app feel, physical
-playback and platform trust are **NOT RUN**. Successful external handoff is
-not authenticated meeting membership, a selected meeting window or screen
-sharing. Those stay with Webex/the selected service. This is Codex self-QA,
-not independent review or Karen PASS.
+Live meetings, actual Webex activation, native OS focus behavior, installed-app
+feel, physical playback, signing/notarization and platform trust are **NOT RUN**.
+A local focus/workspace test does not prove an external meeting’s membership,
+selected window or screen sharing. This is Codex self-QA, not independent review
+or Karen PASS.
 
-#87 passed Karen and was leftover-squashed by Bob onto this base. Its
-reviewed source tip was `5ac6afb1dedc32025b71fd8a8c89e22123712b37`; its handoff is
-https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5565158722.
-#37/#49 remain parked; #86 stays merged. Make together + Paint along → Host/Join
-and the squirrel-with-fro art are unchanged. No merge/squash/tag/sign/Pages/
-Release Trust/Publish/release/deploy/spend/live Cisco/public rendezvous/other-repo
-lane. Unsigned 0.27.2 stays Jeff-only. Stop at one new draft for Karen leftover
-+ security + UX; Bob may leftover-squash only after PASS with tip MATCH.
-
-Base-advance BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5565690193.
+#88 passed Karen and was leftover-squashed by Bob onto this base. Its reviewed
+tip was `db82cb1f4fae04dced16a1785a6f82cada8ec7b5`; its completed handoff is
+https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5566652085.
+The saved-meeting behavior comes from that reviewed base. #37/#49 stay parked;
+#86/#87/#88 remain merged. Make together + Paint along → Host/Join and the
+squirrel-with-fro art are unchanged. No merge/squash/tag/sign/Pages/Release
+Trust/Publish/release/deploy/spend/live Cisco/public rendezvous/other-repo lane.
+Unsigned 0.27.2 stays Jeff-only. Stop for Karen leftover + security + WebJam
+ten-second UX on the exact draft tip; Bob only after PASS with tip MATCH.
