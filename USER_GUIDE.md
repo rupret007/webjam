@@ -181,9 +181,12 @@ another meeting beside it for conversation. The host can choose one video file:
    have the right to play. WebJam does not ship, bundle, download, or fetch any
    video, and it will not open anything from a streaming service.
 3. When the host shares, each guest is notified and the same workspace becomes
-   available. Choose **Open my copy…** and point at your own copy of the same
-   file. WebJam checks that it really is the same file. If it is not, it says
-   so and plays nothing rather than showing the wrong thing.
+   available. A first offer opens it from the untouched Room. If you are using
+   Notes, Conversation, or a dialog, your current work stays visible; choose
+   **Open Paint along** in Room when ready. Returning to Room alone does not
+   open a deferred offer. Choose **Open my copy…** and point at your own copy
+   of the same file. WebJam checks that it really is the same file. If it is
+   not, it says so and plays nothing rather than showing the wrong thing.
 4. The host gets one primary transport action at a time—**Play** or
    **Pause**—and may drag the position. Change video, restart from the
    beginning, and stop sharing stay under **More**. Everyone follows; a guest

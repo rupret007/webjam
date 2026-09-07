@@ -94,6 +94,12 @@ process video…** and controls play/pause; a guest chooses **Open my copy…** 
 the same local file. **Back to room** or Escape returns to the conductor
 without ending the room.
 
+If a host first offers Paint along while a guest is using Notes, Conversation,
+or a dialog, that work stays visible. The guest can choose **Open Paint along**
+in Room, or use the offered Paint along line, when ready. Returning to Room
+does not open the deferred video automatically. A first offer from the untouched
+Room still opens **Open my copy…** directly.
+
 While a host's process video opens, **Cancel opening** stops the attempt.
 **Play** appears when the file is ready; a missing or failed file offers
 **Choose process video…** again. Ending the room or starting another one

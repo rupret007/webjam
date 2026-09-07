@@ -191,7 +191,11 @@ def test_paint_along_back_restores_the_full_room_after_compact_notes(
     if entry == "first_host_offer":
         assert pair.app._reference_video_dialog is None
         _observe(pair.app, pair.invite, path, playing=False)
-        panel = pair.app._reference_video_dialog
+        # A first host offer keeps the guest's chosen Notes visible. Enter
+        # deliberately before checking the existing Back-to-Room behavior.
+        assert pair.app._reference_video_dialog is None
+        assert pair.app.window.session_canvas.isVisibleTo(pair.app.window)
+        panel = _open_video_from_notes(pair, qapp)
         assert panel.isVisibleTo(pair.app.window)
     else:
         panel = _open_video_from_notes(pair, qapp)

@@ -10,6 +10,15 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Guest work stays visible when Paint along arrives
+
+- A first host video offer keeps a guest's Notes, Conversation, or active
+  dialog/menu visible. It remains reachable through the existing room action;
+  returning to Room does not replay the deferred automatic presentation.
+- Direct first entry from the untouched Room and a host's selected Paint along
+  start retain their existing behavior. Opening the offered panel does not
+  load a video or start a meeting, and guests retain no seek authority.
+
 ### Art Conversation follows the saved meeting
 
 - Art highlights one existing next action: **Add Link**, **Join / Open Meeting**,
