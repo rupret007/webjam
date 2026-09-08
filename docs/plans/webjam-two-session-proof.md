@@ -1,6 +1,7 @@
 # WebJam: prove two creative sessions
 
-Evidence baseline: 2026-09-08, America/Chicago. This goal is **INCOMPLETE**.
+Evidence updated for the declared #96–#100 integration candidate, 2026-09-08,
+America/Chicago. This goal is **INCOMPLETE**.
 Draft readiness, green CI, and independent review are distinct from two-person
 proof. Karen's absence holds review and merging; independent implementation can
 continue in OPEN DRAFT slices. Nothing here authorizes deployment or live meetings.
@@ -19,17 +20,19 @@ named evidence at a full tip SHA, and `NOT RUN` is not a failure or a pass.
 
 | Acceptance item | Code / remaining gap | Automated evidence | Physical | Review |
 | --- | --- | --- | --- | --- |
-| One complete invitation | Implemented in this slice: full Art/Music paste retains a validated, temporary conversation link through joining. Personal settings stay separate; no auto-open. | New ingress, bootstrap, actual controller/handoff, modal and lifecycle regression tests added; final full-suite/tip evidence belongs in the draft. | NOT RUN | PENDING |
-| Different-home Art joining | Ordinary Art room peer endpoint is private/LAN; easy Internet reachability is unresolved. | Local transport tests cannot prove different-home reachability. | NOT RUN | PENDING architecture decision |
-| Any-artist room | Make together supports own-space work; #96 improves its first action. | #96 handoff records local/hosted proof; verify current PR tip before relying on it. | NOT RUN | PENDING Karen |
-| Local Paint along | PRESENT: matching local files, silent playback, host-only transport, guest-never-seek. This is not the YouTube journey. | File identity, host/guest, seek, loading, stale-state, and navigation suites exist. | NOT RUN | New work PENDING |
-| YouTube lesson + faces | External Conversation handoff PRESENT; concrete lesson/audio/guest pause guidance missing. | Handoff/layout tests pass; they do not exercise a live provider. | NOT RUN | PENDING |
-| Guest pause/resume | No peer pause-request route. External-source host must operate the browser; guest request path needs explicit guidance. | Existing tests preserve guest transport refusal. | NOT RUN | PENDING |
-| Art listening controls | Local video is muted; meeting owns microphones and speakers. Independent guest narration/voice mixing is unproven. | No live audio proof. | NOT RUN | PENDING |
-| Music reference track | PRESENT: capability-gated macOS backend and separate track participant; supported source inspection and transport. | Reference-track backend, route, integration, and transport suites exist; record current-tip results. | NOT RUN | PENDING |
+| One complete invitation | PRESENT from #97: full Art/Music paste retains a validated, temporary conversation link through joining. Personal settings stay separate; no auto-open. | Component ingress/bootstrap/lifecycle tests retained. Combined Art and Music journeys added; final full-suite/tip evidence belongs in the integration draft. | NOT RUN | PENDING Karen |
+| Different-home Art joining | Ordinary Art room peer endpoint is private/LAN; native v3 profile is loopback-only. Easy Internet reachability is unresolved. | Local transport tests cannot prove different-home reachability. | NOT RUN | PENDING architecture decision |
+| Any-artist room | PRESENT from #96: Make together names own-space work without requiring a canvas, instrument or file. | Original component evidence is historical; current combined Art/start/copy suites must pass. | NOT RUN | PENDING Karen |
+| Local Paint along | PRESENT: matching local files, silent playback, host-only transport, guest-never-seek. This is not the YouTube journey. | File identity, host/guest, seek, loading, stale-state and navigation suites retained. Combined lesson transitions also assert guest seek refusal. | NOT RUN | PENDING Karen |
+| YouTube lesson + faces | PRESENT from #98: Watch a shared lesson reaches existing Conversation and role-specific guidance. External browser/meeting still owns playback and media. | Combined tests use different personal/invited providers, replace/remove the room link and exercise Leave/retry. No live provider is exercised. | NOT RUN | PENDING Karen |
+| Guest pause/resume | Spoken request path is explicit in #98; host operates the external browser. No peer pause-request route or external playback control is added. | Host authority, guest transport refusal and room-role guidance are tested. | NOT RUN | PENDING human assessment |
+| Art listening controls | Guidance identifies shared source volume and personal meeting speaker/microphone controls. Local video is muted. Independent guest narration/voice mixing is unproven. | Guidance and UI ownership tests; no live audio proof. | NOT RUN | PENDING |
+| Music reference track | PRESENT from #99 and existing backend: capability-gated macOS sending, honest unsupported-host guidance and recording-intent guards. | Component route/support tests retained; combined host-to-guest recovery preserves deliberate Record/Stop intent and room meeting context. | NOT RUN | PENDING Karen |
+| Audio round-trip measurement | PRESENT from #100: explicit file-only standard probe and bounded single-clock capture analyzer; no automatic capture or playback. | Synthetic numerical/file/CLI proofs retained; not an actual latency result. | NOT RUN | PENDING Karen |
 | Music routing/latency/cleanup | Physical isolation, two-endpoint audibility, device-switch safety, sustained timing and teardown remain open. | Simulated state/route tests are supporting evidence only. | NOT RUN | PENDING |
+| Combined candidate | Source stack reuses #96–#100 with explicit provenance. Original PR heads remain unchanged. | New Art and Music integration journeys pass locally; full combined suite and final-tip hosted matrix are PENDING until recorded in the draft. | NOT RUN | PENDING Karen on combined tip |
 
-On baseline `41a26652387c855059402ae8986c4b0f91a0531f`, 168 tests passed across
+Historical evidence only: on baseline `41a26652387c855059402ae8986c4b0f91a0531f`, 168 tests passed across
 `test_art_conversation_next_action.py`, `test_art_conversation_layout.py`,
 `test_art_meeting_coexistence.py`, and `test_art_notes_communication.py`.
 This is limited automated evidence, not the full-suite or current-draft verdict.
@@ -67,25 +70,28 @@ This is limited automated evidence, not the full-suite or current-draft verdict.
 
 ## Work order and architecture decision
 
-1. Preserve the optional meeting in a full pasted invitation. Validate it,
-   reject ambiguous/malformed context safely, avoid accidental persistence or
-   launch, and bind application to the accepted current room attempt. Test
-   cancellation, retry, profile changes, and saved unrelated meeting state.
-2. Resolve remote joining: **what approved private reachability mechanism will
-   connect two home networks without manual guest addressing, short codes,
-   public discovery, or a public rendezvous service?** Inspect existing secure
-   transport support before proposing new infrastructure. A private overlay or
-   explicitly provisioned endpoint is a candidate to assess, not an authorized
-   deployment. Document setup burden, authentication, lifecycle, costs, and OS
-   coverage for Jeff's decision. Do not expose the LAN HTTP service publicly or
-   relabel LAN success as remote success.
-3. Make the YouTube path obvious through existing Conversation. Keep the Art
-   door Make together + Paint along → Host/Join and the squirrel mark. Guide
-   host browser sharing with sound, guest asking to pause, and returning to work.
-   Any later local-file pause request needs authenticated host validation,
-   current-room/source binding, bounded retries, and preserved guest-never-seek.
-4. Fix concrete Music rehearsal failures against the route and timing scripts
-   below; preserve fail-closed checks. Prepare independent drafts where possible.
+1. Verify this declared dependent candidate. Preserve source from the exact
+   #96–#100 heads recorded in PRE_KAREN_QA.md, resolve documentation/assertion
+   conflicts without dropping behavior, and run the complete combined suite
+   and desktop CI. The integration draft is not a merge authorization or a
+   replacement for reviewing the underlying changes and the final combined tip.
+2. Resolve the [prepared remote-joining decision](webjam-remote-joining-decision.md).
+   The recommended narrow exception permits design, implementation and isolated
+   tests of an invite-only Internet service using existing v3 transport; public
+   reachability would still violate the current absolute rendezvous hold until
+   Jeff explicitly changes it. No answer has been assumed. A private-network
+   pilot adds enrollment/setup and also needs transport work. Do not expose the
+   LAN HTTP service, assume a VPN toggle solves joining, deploy or spend.
+3. After the network path and candidate are authorized, execute the Art script
+   below. The shared-lesson route and role guidance already exist in #98; do not
+   build them again. Verify whether spoken pause requests, faces/lesson layout
+   and actual listening controls meet the two-person need. Any future local-file
+   request needs authenticated host validation, current-room/source binding,
+   bounded retries and preserved guest-never-seek.
+4. Execute the Music route/timing script and [offline measurement procedure](webjam-loopback-timing-evidence.md)
+   with separately authorized synthetic capture. #99's support/recording guards
+   and #100's file-only tools are implemented, but audibility, per-player mixes,
+   sustained timing and playable latency remain physical acceptance items.
 
 Each slice records observed failure, before/after, acceptance tests, dependencies,
 full tip SHA, PRE_KAREN self-QA, local results and hosted desktop CI. Use coord
@@ -95,7 +101,7 @@ spend, live Cisco, parked #37/#49 changes, or automatic media capture.
 
 ## Two-person script: invitation and return
 
-Run only after Jeff explicitly schedules the human test and approves its network
+Run only after Jeff explicitly authorizes the human test and its network
 setup. Use tester aliases A/B, synthetic room names, and the exact candidate hash.
 
 1. A selects Art → Paint along → Host, saves a meeting link, and copies the
@@ -104,8 +110,10 @@ setup. Use tester aliases A/B, synthetic room names, and the exact candidate has
    carried without requesting another message. Do not record the invitation.
 2. Repeat on separate home networks. If the endpoint cannot be reached, record
    FAIL and the safe next action; a separately joined meeting is not room proof.
-3. Exercise an installed-app guest and record the missing-app instructions
-   separately. Try malformed, expired/replaced and unsupported-version invites;
+3. Exercise first-time, returning and late guests, including ordinary message
+   formatting; record missing-app instructions separately. Try malformed,
+   expired/replaced/already-consumed and unsupported-version invites, plus an
+   unavailable host;
    require clear recovery, preserved unsent work, and no launch on rejected input.
 4. B cancels once, retries, leaves, and returns. A ends the room during another
    join. Verify no stale joining success, stale meeting adoption, or auto-play.
@@ -128,6 +136,8 @@ setup. Use tester aliases A/B, synthetic room names, and the exact candidate has
 5. On an ordinary laptop, keep faces and lesson visible; resize, visit Notes,
    return, and reconnect after a brief interruption. Verify no lost notes,
    unexpected playback, duplicate sound, or false connected/synchronized state.
+6. Run a sculptor/potter/model-maker or talk-only Make together trial. Confirm
+   the first action makes sense without a canvas, instrument or local file.
 
 ## Two-person script: Music and timing
 
@@ -148,7 +158,8 @@ setup. Use tester aliases A/B, synthetic room names, and the exact candidate has
    audio once through an isolated remote route with headphones; no speaker/mic
    feedback loop and no routing returned audio into another network send.
    First measure an equivalent local cable/interface loopback calibration.
-6. At known sample rate Fs, compute each matched click's round-trip delay as
+6. Use the [offline probe and analyzer](webjam-loopback-timing-evidence.md), or an
+   independently documented equivalent. At known sample rate Fs, compute each matched click's round-trip delay as
    `1000 * (return_sample - launch_sample) / Fs` ms. Use at least 100 distinct
    clicks; retain raw round-trip and separately label the calibration estimate.
    Report median, p95, range, missing/duplicate clicks, and change over time.

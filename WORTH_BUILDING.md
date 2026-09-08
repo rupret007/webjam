@@ -30,18 +30,21 @@ candidate. Intended after, subject to pending tests: one reviewable source stack
 preserves those existing behaviors together, including the correct room meeting,
 one useful next action, personal settings/work and deliberate recording intent.
 
-## Acceptance — PENDING
+## Acceptance and evidence
 
-New regressions will exercise full invitation → shared lesson with different
-personal/room meetings, replacement/removal and missing-link behavior, explicit
-Open, failed launch/Retry, queued replacement, successful/failed Leave, role
-reset, Notes/focus and compact layout. Music coverage combines room context with
-pending/loading/failed source intent, cleanup, active Stop and ROUTING/PLAYING.
-No source defect is claimed until a combined regression demonstrates one.
+Six new local cases pass on the assembled source: four Art cases use real
+LAN/native invitation ownership, different personal/room meetings, link
+replacement/removal, explicit Open, failed/successful Leave and stale callbacks;
+two Music cases preserve recording intent through host-to-guest cleanup and
+meeting replacement/absence. Existing component suites retain the broader
+modal, retry, queue, layout, route and supported-platform assertions.
 
-Source replay, combined integration tests, full local verification and hosted
-CI including all four desktops are PENDING. Final evidence must identify the
-actual combined tip; component results cannot certify conflict resolution.
+No production defect was found in these new journeys. Integration resolves an
+old Art copy assertion and overlapping first-session/changelog/handoff prose
+while preserving source behavior. No failed behavior assertion was removed.
+Full combined local verification and hosted CI including four desktops still
+must run on the final frozen tip; the draft body and coord AFTER carry that
+verdict. Original component results do not certify this candidate.
 
 ## Remaining gates and holds
 

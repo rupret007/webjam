@@ -18,12 +18,18 @@ Their common original master was `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`.
 Original green CI and local results are historical evidence for those heads.
 They do not establish the behavior of this combined application.
 
-## Combined verification — PENDING
+## Combined verification
 
-Source replay is in progress. New integration regressions, relevant suites,
-full local required checks and hosted CI including all four desktop builds
-are PENDING. Record the final combined SHA and actual results in the draft body
-and coord AFTER; do not inherit green status or aggregate old test counts.
+Source replay is complete. The new Art integration module passed four cases
+(LAN/native, change/remove room meeting); the Music module passed two cases
+(replaced/bare meeting through host-to-guest recovery). These are controlled
+local tests, not physical sessions. Music harness attempts 1–2 needed fixture
+corrections before the final two cases passed; no production failure was found.
+
+The full combined suite and hosted four-desktop matrix are the remaining
+verification bar at source freeze. Read their final result and exact combined
+SHA from the OPEN DRAFT body and coord AFTER; do not inherit green status or
+aggregate old component test counts.
 
 The new regression scope is composition of existing behavior, not a claimed
 new feature or an already-proven product bug:
@@ -34,16 +40,24 @@ new feature or an already-proven product bug:
 2. Replace/remove the room meeting while lesson guidance is active. Missing
    context must not select the personal meeting. Preserve Settings, Notes,
    local video selection, compact layout and intentional keyboard focus.
-3. Invalid/cancelled edits, failed Open/Retry, queued room replacement,
+3. Retained component tests cover invalid/cancelled edits, failed Open/Retry,
+   queued room replacement,
    successful/failed Leave, return and profile changes must preserve current
    room/generation ownership. Old URLs, callbacks and lesson roles cannot
    affect the next room. Successful Leave restores personal context; failed
    cleanup preserves current context until its existing recovery completes.
-4. Music in that room context must preserve supported host/primary/RPC/route
+4. The new Music journey covers a host with queued/loading/failed Shared Track
+   work through a failed invitation switch, an active-recording Stop decision,
+   cleanup retry, guest entry, replacement and Leave. Retained tests must
+   preserve supported host/primary/RPC/route
    gates, unsupported-host inspection/return, queued/loading/retained FAILED
    source refusal, cleanup/STOPPING, active-recording Stop and ROUTING/PLAYING
    track requirements. A refused Record must never replay after recovery.
-5. Preserve shared fixtures, existing assertions and tests/test_art_start_ux.py.
+5. Source comparison retained all 16 single-source production files and 43
+   uniquely changed methods exactly. Read-only comparison of
+   WebexEmbed.__init__ confirmed both drafts are retained. The full run must
+   also retain the existing layout/accessibility assertions.
+   Preserve shared fixtures, existing assertions and tests/test_art_start_ux.py.
    Document any newly reproduced integration failure and bounded fix separately.
 
 ## Security, product and human boundaries
