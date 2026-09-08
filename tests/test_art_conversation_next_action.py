@@ -149,15 +149,19 @@ def test_late_native_recheck_does_not_take_back_focus_after_the_artist_moves_on(
     (True, "https://meet.google.com/abc-defg-hij", "_fallback_btn"),
     (True, "", "_change_link_btn"),
 ])
+@pytest.mark.parametrize("role", ["host", "native"])
 def test_saving_the_real_link_editor_returns_to_its_new_meeting_action(
-    room, qapp, monkeypatch, saved_personal_settings, configured, new_url, target,
+    room, qapp, monkeypatch, saved_personal_settings, configured, new_url, target, role,
 ):
     from tests.test_art_conversation_link_journey import (
-        _button, _drive_settings, _raise_dialog_failures,
+        _button, _drive_room_meeting, _drive_settings, _raise_dialog_failures,
+        _room_meeting_field, _settings_bytes,
     )
 
-    pair = room(role="native", profile="art", configured=configured)
+    pair = room(role=role, profile="art", configured=configured)
     app, panel = pair.app, pair.app.window.webex_embed
+    personal_url = app.settings.webex_url
+    personal_bytes = _settings_bytes(app)
     panel.set_app_status("installed", publisher_verified=True)
     if configured:
         panel.set_launch_status("Opened externally")
@@ -165,14 +169,24 @@ def test_saving_the_real_link_editor_returns_to_its_new_meeting_action(
     generation = app._room_participant.generation
 
     def save(dialog):
-        dialog._video.setText(new_url)
-        QTest.mouseClick(_button(dialog, "Save"), Qt.MouseButton.LeftButton)
+        editor = dialog._video if role == "host" else _room_meeting_field(dialog)
+        editor.setText(new_url)
+        QTest.mouseClick(
+            _button(dialog, "Save" if role == "host" else "OK"),
+            Qt.MouseButton.LeftButton,
+        )
 
-    observed = _drive_settings(monkeypatch, save)
+    driver = _drive_settings if role == "host" else _drive_room_meeting
+    observed = driver(monkeypatch, save)
     panel._change_link_btn.click()
     _raise_dialog_failures(observed, accepted=True)
     qapp.processEvents()
-    assert app.settings.webex_url == new_url
+    assert app._effective_meeting_url() == new_url
+    if role == "host":
+        assert app.settings.webex_url == new_url
+    else:
+        assert app.settings.webex_url == personal_url
+        assert _settings_bytes(app) == personal_bytes
     assert app.window.focusWidget() is getattr(panel, target)
     assert getattr(panel, target).objectName() == "PrimaryButton"
     assert "Use Show Webex App" not in panel._fallback_btn.toolTip()
@@ -197,7 +211,10 @@ def test_real_art_notes_entry_opens_the_saved_meeting_only_on_explicit_input(
     _make_notes(pair)
     before = _notes_state(canvas)
     panel = app.window.webex_embed
-    app.settings.webex_url = url
+    if role == "host":
+        app.settings.webex_url = url
+    else:
+        app._set_session_meeting_url(url)
     panel.set_service_label(service)
     panel.set_app_status("installed", publisher_verified=True)
     _click_talk_share(pair, qapp)
@@ -206,7 +223,7 @@ def test_real_art_notes_entry_opens_the_saved_meeting_only_on_explicit_input(
     native.assert_not_called()
     app.bridge.launch_webex.assert_not_called()
     QTest.keyClick(app.window.focusWidget(), Qt.Key.Key_Space)
-    app.bridge.launch_webex.assert_called_once_with(manual=True)
+    app.bridge.launch_webex.assert_called_once_with(manual=True, meeting_url=url)
     native.assert_not_called()
     assert _notes_state(canvas) == before
     assert app._room_participant.generation == pair.generation

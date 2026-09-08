@@ -1163,7 +1163,8 @@ class SongToolsCoordinator:
     def _meeting_url(self) -> str:
         """The saved meeting link, whichever service it points at."""
 
-        return str(getattr(self._c.settings, "webex_url", "") or "").strip()
+        return (self._c._effective_meeting_url() if callable(getattr(self._c, "_effective_meeting_url", None))
+                       else str(getattr(self._c.settings, "webex_url", "") or "").strip())
 
     def _meeting_configured(self) -> bool:
         return bool(self._meeting_url())

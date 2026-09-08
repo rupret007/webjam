@@ -147,7 +147,7 @@ class WebexEmbed(QFrame):
             "Copy the saved meeting link to the clipboard to share it."
         )
         self._copy_link_btn.setToolTip(
-            "Copy the saved meeting link so you can paste it anywhere."
+            "Copy the meeting link used by Conversation so you can paste it anywhere."
         )
         self._copy_link_btn.clicked.connect(self.copy_link_requested.emit)
         self._copy_link_btn.setEnabled(False)
@@ -156,11 +156,11 @@ class WebexEmbed(QFrame):
         self._change_link_btn.setObjectName("GhostButton")
         self._change_link_btn.setAccessibleName("Add a meeting link from any platform")
         self._change_link_btn.setAccessibleDescription(
-            "Open WebJam Settings to add a public HTTPS meeting link from "
+            "Add or change the public HTTPS link used by Conversation, from "
             "any meeting platform."
         )
         self._change_link_btn.setToolTip(
-            "Open Settings to add or change the meeting link."
+            "Add or change the meeting link used by Conversation."
         )
         self._change_link_btn.clicked.connect(self.change_link_requested.emit)
 
@@ -608,7 +608,7 @@ class WebexEmbed(QFrame):
         self._change_link_btn.setToolTip(
             f"Open Settings to add or change the {service} meeting link."
             if service
-            else "Open Settings to add or change the meeting link."
+            else "Add or change the meeting link used by Conversation."
         )
 
     def focus_primary_action(self) -> None:

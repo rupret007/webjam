@@ -69,6 +69,14 @@ Invite**. The guest pastes that complete invitation once; WebJam follows the
 host's Art activity when the room responds. **You’re in** means the Art room
 connection is current, not that a meeting or drawing app has joined.
 
+If the full invitation includes an optional conversation link, **Conversation**
+uses that link for this room. You do not need to paste it again. Joining never
+opens it automatically: choose **Join / Open Meeting** when ready. An invitation
+without a conversation link does not select your previous personal meeting.
+**Add Link** / **Change Link** edits only this room's conversation while you are
+its guest. Your personal meeting stays saved for later; leaving the room restores
+it. Any meeting already open stays open until you leave it in that service.
+
 The room view shows whether you are waiting for artists or connected to the
 host. It does not show a full artist list yet. Without a shared activity,
 **Bring your own tools** is a complete place to start; when the host shares

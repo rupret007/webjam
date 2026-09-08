@@ -4679,7 +4679,7 @@ class BridgeService:
 
         self.schedule_ui_callback(_guarded)
 
-    def launch_webex(self, manual: bool = True, reconnect: bool = False):
+    def launch_webex(self, manual: bool = True, reconnect: bool = False, *, meeting_url: str | None = None):
         """Open the configured meeting link and report only the handoff result.
 
         ``reconnect`` remains in the signature for one compatibility cycle but
@@ -4689,7 +4689,11 @@ class BridgeService:
         if self.shutdown_requested():
             return
 
-        launch_url = str(getattr(self.settings, "webex_url", "") or "").strip()
+        # Explicit session context is captured per request; it never enters
+        # persistent settings. None preserves legacy personal-link callers.
+        launch_url = str(
+            (getattr(self.settings, "webex_url", "") or "") if meeting_url is None else meeting_url
+        ).strip()
         service_name = _meeting_service_name(launch_url)
         launch_generation = self._begin_webex_launch()
         if launch_generation is None:
@@ -4714,6 +4718,10 @@ class BridgeService:
             launch_generation,
             self.refresh_readiness,
         )
+
+        def _retry_current_meeting() -> None:
+            if not self.shutdown_requested() and self._webex_launch_is_current(launch_generation):
+                self.launch_webex(manual=True, meeting_url=launch_url)
 
         def _do_open() -> None:
             try:
@@ -4819,10 +4827,10 @@ class BridgeService:
                             "meeting URL, or transient launch issue."
                         ),
                         next_action=(
-                            "Open Settings, verify the meeting link, then try "
+                            "Open Conversation, verify the meeting link, then try "
                             "again."
                         ),
-                        retry_callback=lambda: self.launch_webex(manual=True),
+                        retry_callback=_retry_current_meeting,
                         copy_text=launch_url,
                     )
                 )

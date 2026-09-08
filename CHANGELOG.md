@@ -10,6 +10,21 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Keep the conversation with the invitation
+
+- Pasting the host's complete invitation now carries its optional meeting into
+  the joined room's **Conversation**. It previously discarded the meeting and
+  could open a guest's unrelated saved link.
+- Room links are temporary. **Add Link** / **Change Link** changes only the guest's
+  current room, and Leave restores their saved personal meeting. Empty invites
+  do not fall back to a previous meeting. No meeting opens automatically.
+- Opening and retrying use the same room link; a room change retires stale
+  launch results and retries. Malformed or ambiguous conversation blocks are
+  rejected with a private-input-safe explanation.
+- This completes invitation context, not Internet reachability. Different-home
+  Art joining and physical Art/Music proof remain open in the
+  [two-session proof plan](docs/plans/webjam-two-session-proof.md).
+
 ### Prepare a Paint along copy before the host shares
 
 - A guest who opens **Paint along** early can now choose **Open my copy…**,

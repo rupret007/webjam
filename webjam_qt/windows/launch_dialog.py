@@ -58,6 +58,7 @@ from webjam_qt.invitation_ingress import (
     Invitation,
     InvitationIngressError,
     InvitationSource,
+    conversation_url_from_pasted_invitation,
     invitation_from_arguments,
     parse_invitation_at_ingress,
 )
@@ -418,6 +419,7 @@ class LaunchDialog(QDialog):
         self.session_name = "Band Rehearsal"
         self.band_invite: BandInvite | None = None
         self.remote_invitation: RemoteInvitation | None = None
+        self.invitation_meeting_url = ""
         self.setObjectName("LaunchDialog")
         self.setWindowTitle("WebJam")
         self.setModal(True)
@@ -1067,6 +1069,7 @@ class LaunchDialog(QDialog):
             self.show_join()
             return
         self._restore_submission()
+        self.invitation_meeting_url = ""
         self._invite_input.clear()
         self._clear_join_error()
         self._join_status.setText("Paste your invitation")
@@ -1095,6 +1098,7 @@ class LaunchDialog(QDialog):
 
         if self._submitting:
             return
+        self.invitation_meeting_url = ""
         self._clear_join_error()
         self._join_status.setText(
             "Invitation pasted — choose Join"
@@ -1137,6 +1141,7 @@ class LaunchDialog(QDialog):
             self._restore_submission()
             return
         self.selected_role = "host"
+        self.invitation_meeting_url = ""
         self.session_name = "Band Rehearsal"
         self.band_invite = None
         self.remote_invitation = None
@@ -1152,6 +1157,7 @@ class LaunchDialog(QDialog):
             self._restore_submission()
             return
         self.selected_role = "studio"
+        self.invitation_meeting_url = ""
         preset = self._selected_creator_profile.default_studio_preset
         self.session_name = (
             "Reference Studio"
@@ -1171,6 +1177,7 @@ class LaunchDialog(QDialog):
         """Compatibility wrapper for an explicit paste into the one field."""
         if not self._begin_submission(self._join_button_primary, "Checking…"):
             return False
+        self.invitation_meeting_url = ""
         raw = str(value or "")
         self._invite_input.clear()
         self._join_status.setText("Checking invite")
@@ -1179,6 +1186,7 @@ class LaunchDialog(QDialog):
                 raw,
                 source=InvitationSource.PASTE,
             )
+            meeting_url = conversation_url_from_pasted_invitation(raw)
         except InvitationIngressError as exc:
             self._pages.setCurrentWidget(self._join_page)
             lowered = raw.casefold()
@@ -1200,13 +1208,16 @@ class LaunchDialog(QDialog):
             self._restore_submission()
             self._announce_error(self._join_error, focus=self._invite_input)
             return False
-        return self.accept_invitation(invitation, submission_started=True)
+        return self.accept_invitation(
+            invitation, submission_started=True, invitation_meeting_url=meeting_url,
+        )
 
     def accept_invitation(
         self,
         invitation: Invitation,
         *,
         submission_started: bool = False,
+        invitation_meeting_url: str = "",
     ) -> bool:
         """Accept one already-parsed invitation without retaining its URL."""
 
@@ -1259,6 +1270,9 @@ class LaunchDialog(QDialog):
         self.remote_invitation = (
             invitation if isinstance(invitation, RemoteInvitation) else None
         )
+        # The host's optional meeting belongs only to this accepted entry.
+        # Never copy it to AppSettings or launch it as part of joining.
+        self.invitation_meeting_url = invitation_meeting_url
         self._invite_input.clear()
         self.accept()
         return True
@@ -1267,6 +1281,7 @@ class LaunchDialog(QDialog):
         """Show only fixed-copy errors emitted by the application ingress."""
 
         self._pages.setCurrentWidget(self._join_page)
+        self.invitation_meeting_url = ""
         self._invite_input.clear()
         self._join_status.setText("Needs attention")
         self._join_error.setText(
@@ -1282,6 +1297,8 @@ class LaunchDialog(QDialog):
         return invitation
 
     def done(self, result: int) -> None:
+        if result != QDialog.DialogCode.Accepted:
+            self.invitation_meeting_url = ""
         self._submitting = True
         for action in self._workspace_actions.values():
             action.setEnabled(False)

@@ -707,7 +707,7 @@ def test_paste_new_invite_reopens_the_same_masked_join_door(
     controller._paste_new_invitation()
 
     assert events == ["created", "join", "deleted"]
-    controller.accept_invitation.assert_called_once_with(invitation)
+    controller.accept_invitation.assert_called_once_with(invitation, meeting_url="")
     controller.shutdown()
 
 

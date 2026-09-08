@@ -352,7 +352,8 @@ class AudioCoordinator:
         # Ending the jam does not end the meeting. WebJam runs beside an
         # independent Webex window and cannot close it, so the confirmation
         # says so rather than leaving a musician to discover it afterwards.
-        meeting_url = str(getattr(self._c.settings, "webex_url", "") or "").strip()
+        meeting_url = (self._c._effective_meeting_url() if callable(getattr(self._c, "_effective_meeting_url", None))
+                       else str(getattr(self._c.settings, "webex_url", "") or "").strip())
         prompt = end_session_prompt(
             hosting=hosting,
             recording_active=recording_active,
@@ -623,6 +624,9 @@ class AudioCoordinator:
             self._c._remote_invitation = None
             self._c._remote_invitation_requires_replacement = False
         self._stop_remote_invitation = None
+        restore_meeting = getattr(self._c, "_restore_personal_meeting", None)
+        if callable(restore_meeting):
+            restore_meeting()
         self.cleanup_retry_required = False
         self._c.window.session_strip.reset_session_clock()
         if callable(complete_pocket_stage):

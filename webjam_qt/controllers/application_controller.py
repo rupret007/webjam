@@ -325,6 +325,7 @@ class ApplicationController(QObject):
         session_invite: BandInvite | None = None,
         remote_invitation: RemoteInvitation | None = None,
         *,
+        session_meeting_url: str = "",
         operator_mode: bool | None = None,
         offline_reference_studio: bool = False,
     ) -> None:
@@ -370,6 +371,11 @@ class ApplicationController(QObject):
         # Remote invitation material remains typed and memory-only.  A
         # dedicated session transport consumes it; it is never copied into
         # AppSettings, Jamulus arguments, logs, or the Session HUD.
+        self._session_meeting_url: str | None = (
+            self._validated_session_meeting_url(session_meeting_url)
+            if session_invite is not None or remote_invitation is not None else None
+        )
+        self._session_meeting_generation = 0
         self._remote_invitation = remote_invitation
         self._remote_invitation_requires_replacement = False
         self._remote_session = None
@@ -426,7 +432,7 @@ class ApplicationController(QObject):
             port=self.settings.jamulus_port,
             rpc_port=self.settings.jamulus_rpc_port,
         )
-        self.webex = WebexController(meeting_url=self.settings.webex_url)
+        self.webex = WebexController(meeting_url=self._effective_meeting_url())
 
         self._attach_jamulus_callbacks()
         self._server_recording = False
@@ -637,6 +643,7 @@ class ApplicationController(QObject):
         # still retiring the old jam. Keep only the newest typed invitation:
         # cleanup remains single-flight and no serialized link is retained.
         self._pending_invitation: BandInvite | RemoteInvitation | None = None
+        self._pending_invitation_meeting_url = ""
         # A busy BandInvite switch may be replaced by a v3 RemoteInvitation.
         # The switch worker has already retired Shared Track in that case;
         # carry that one-shot fact until the authenticated remote route is
@@ -1317,6 +1324,8 @@ class ApplicationController(QObject):
             self.window.webex_embed.shutdown()
         except Exception:
             LOGGER.exception("Webex launch-card shutdown failed")
+        self._session_meeting_url = None
+        self._pending_invitation_meeting_url = ""
         self._shutdown = True
         return True
 
@@ -2081,7 +2090,7 @@ class ApplicationController(QObject):
             presence=presence,
             secondary_presence=secondary_presence,
             named_connections=bool(room_connections and room_connections.names),
-            conversation_configured=bool(str(self.settings.webex_url or "").strip()),
+            conversation_configured=bool(self._effective_meeting_url()),
         )
         setter(overview, room_connections=room_connections)
         self._sync_shared_canvas_room()
@@ -2312,6 +2321,7 @@ class ApplicationController(QObject):
         from copy import deepcopy
 
         settings = deepcopy(self.settings)
+        settings.webex_url = ApplicationController._effective_meeting_url(self)
         if not self._local_originals_available():
             settings.local_capture_enabled = False
         return settings
@@ -4241,13 +4251,13 @@ class ApplicationController(QObject):
         # whole grid instead of one per LevelMeter).
         self._meter_tick_timer.start()
         self.window.session_strip.set_video_configured(
-            bool(str(self.settings.webex_url or "").strip())
+            bool(self._effective_meeting_url())
         )
         self.window.webex_embed.set_meeting_configured(
-            bool(str(self.settings.webex_url or "").strip())
+            bool(self._effective_meeting_url())
         )
         self.window.webex_embed.set_service_label(
-            _meeting_service_name(self.settings.webex_url)
+            _meeting_service_name(self._effective_meeting_url())
         )
         self.window.session_strip.set_tools_enabled(True)
         self.window.webex_embed.set_audio_mode(self._webex_audio_mode())
@@ -5366,6 +5376,12 @@ class ApplicationController(QObject):
         if error:
             attempt["input_error"] = error
             self._render_startup_journey()
+            return
+        if getattr(self, "_session_meeting_url", None) is not None:
+            self._set_session_meeting_url(value)
+            attempt["webex_decision"] = "open_requested"
+            attempt.pop("input_error", None)
+            self._show_startup_invite_ready(int(attempt["generation"]))
             return
         previous_url = self.settings.webex_url
         previous_mode = self.settings.webex_audio_mode
@@ -7385,7 +7401,7 @@ class ApplicationController(QObject):
         invite_message = build_invite_message(
             join_link=invite_url,
             session_name=self.window.session_strip.current_title(),
-            meeting_url=str(getattr(self.settings, "webex_url", "") or ""),
+            meeting_url=ApplicationController._effective_meeting_url(self),
             participant_noun=_creator_profile_for_controller(
                 self
             ).vocabulary.participant_singular,
@@ -7445,13 +7461,20 @@ class ApplicationController(QObject):
                 value,
                 source=InvitationSource.PASTE,
             )
+            from webjam_qt.invitation_ingress import conversation_url_from_pasted_invitation
+
+            meeting_url = conversation_url_from_pasted_invitation(value)
         except InvitationIngressError as exc:
             self.window.flash_message(str(exc), ms=6000)
             return False
-        return self.accept_invitation(invite)
+        return self.accept_invitation(invite, meeting_url=meeting_url)
 
-    def accept_invitation(self, invitation: BandInvite | RemoteInvitation) -> bool:
-        """Join one typed invitation delivered by the trusted UI boundary."""
+    def accept_invitation(
+        self, invitation: BandInvite | RemoteInvitation, *, meeting_url: str = ""
+    ) -> bool:
+        """Join one typed invitation with optional memory-only paste context."""
+
+        meeting_url = self._validated_session_meeting_url(meeting_url)
 
         if self._shutdown_cleanup_blocks_action():
             return False
@@ -7475,6 +7498,7 @@ class ApplicationController(QObject):
             # deterministic latest-wins behavior without spawning a second
             # worker or persisting private invitation material.
             self._pending_invitation = invitation
+            self._pending_invitation_meeting_url = meeting_url
             self.window.flash_message(
                 "WebJam received a newer invitation. It will use that one "
                 "after the current jam finishes closing.",
@@ -7497,9 +7521,9 @@ class ApplicationController(QObject):
             )
             return False
         if isinstance(invitation, RemoteInvitation):
-            return self._accept_remote_invitation(invitation)
+            return self._accept_remote_invitation(invitation, meeting_url=meeting_url)
         if isinstance(invitation, BandInvite):
-            return self._accept_band_invitation(invitation)
+            return self._accept_band_invitation(invitation, meeting_url=meeting_url)
         raise TypeError("invitation must be a BandInvite or RemoteInvitation")
 
     def _accept_remote_invitation(
@@ -7507,6 +7531,7 @@ class ApplicationController(QObject):
         invitation: RemoteInvitation,
         *,
         reference_track_already_retired: bool = False,
+        meeting_url: str = "",
     ) -> bool:
         """Retain one typed v3 capability until the transport consumes it.
 
@@ -7553,6 +7578,7 @@ class ApplicationController(QObject):
         )
         # Native invitations contain no room title. Do not label the host's
         # room with this artist's previous personal project.
+        self._set_session_meeting_url(meeting_url)
         self._set_session_entry_title("Room", borrowed=True)
         self._remote_invitation = invitation
         self.window.session_strip.set_invite_available(False)
@@ -7564,7 +7590,7 @@ class ApplicationController(QObject):
         self._begin_remote_join()
         return True
 
-    def _accept_band_invitation(self, invite: BandInvite) -> bool:
+    def _accept_band_invitation(self, invite: BandInvite, *, meeting_url: str = "") -> bool:
         """Preserve the existing v1/v2 same-LAN join flow."""
 
         busy = bool(self._is_jamulus_running() or self.bridge.hosted_server_alive()
@@ -7603,6 +7629,7 @@ class ApplicationController(QObject):
             switch_generation = self._invite_switch_generation
             self._invite_switch_in_flight = True
             self._pending_invitation = None
+            self._pending_invitation_meeting_url = ""
             # A failed switch is retried through AudioCoordinator after the
             # invitation closure has returned. Preserve the role that owns the
             # unresolved services; the replacement invite must never turn a
@@ -7623,7 +7650,7 @@ class ApplicationController(QObject):
             else "WebJam is connecting your music.",
         )
 
-        def _apply_and_launch(invitation: BandInvite) -> bool:
+        def _apply_and_launch(invitation: BandInvite, conversation_url: str) -> bool:
             from core.settings import load_settings, save_settings
             from webjam_qt.windows.launch_dialog import apply_join_invite
 
@@ -7694,6 +7721,7 @@ class ApplicationController(QObject):
             # whoever sent it. Marking it borrowed keeps it out of the
             # musician's persisted default, so a joined session's name cannot
             # follow them into a jam they host later.
+            self._set_session_meeting_url(conversation_url)
             self._set_session_entry_title(invitation.session_name, borrowed=True)
             self.window.recording_studio.set_takes_directory(
                 self.settings.takes_directory
@@ -7715,7 +7743,7 @@ class ApplicationController(QObject):
             return True
 
         if not busy:
-            if not _apply_and_launch(invite):
+            if not _apply_and_launch(invite, meeting_url):
                 return False
             try:
                 self.begin_startup_journey()
@@ -7734,6 +7762,7 @@ class ApplicationController(QObject):
             if switch_generation != self._invite_switch_generation:
                 return
             self._pending_invitation = None
+            self._pending_invitation_meeting_url = ""
             self._invite_switch_in_flight = False
             self.audio.stopping = False
             self.audio.ended_by_user = False
@@ -7773,7 +7802,12 @@ class ApplicationController(QObject):
             if switch_generation != self._invite_switch_generation:
                 return
             selected = self._pending_invitation or invite
+            selected_meeting = (
+                self._pending_invitation_meeting_url
+                if self._pending_invitation is not None else meeting_url
+            )
             self._pending_invitation = None
+            self._pending_invitation_meeting_url = ""
             if isinstance(selected, RemoteInvitation):
                 # The old jam is now fully retired. Release the switch latch
                 # before entering the normal v3 path so its own cleanup
@@ -7792,6 +7826,7 @@ class ApplicationController(QObject):
                     accepted = self._accept_remote_invitation(
                         selected,
                         reference_track_already_retired=True,
+                        meeting_url=selected_meeting,
                     )
                 except Exception:
                     LOGGER.exception(
@@ -7804,7 +7839,7 @@ class ApplicationController(QObject):
                     )
                 return
             try:
-                applied = _apply_and_launch(selected)
+                applied = _apply_and_launch(selected, selected_meeting)
             except Exception:
                 LOGGER.exception("Could not apply the replacement invitation")
                 applied = False
@@ -8443,8 +8478,9 @@ class ApplicationController(QObject):
             self._update_session_hud()
             return
         invitation = dialog.take_remote_invitation() or dialog.band_invite
+        meeting_url = getattr(dialog, "invitation_meeting_url", "")
         dialog.deleteLater()
-        if invitation is None or not self.accept_invitation(invitation):
+        if invitation is None or not self.accept_invitation(invitation, meeting_url=meeting_url):
             self._update_session_hud()
 
     def _reset_remote_invite(self) -> None:
@@ -10854,6 +10890,77 @@ class ApplicationController(QObject):
         self.window.webex_embed.focus_primary_action()
         self._record_webex_event("conversation-panel", "shown")
 
+    @staticmethod
+    def _validated_session_meeting_url(value: str) -> str:
+        from core.meeting_link import is_allowed_meeting_link, normalize_meeting_url
+
+        url = normalize_meeting_url(value)
+        if url and not is_allowed_meeting_link(url):
+            raise ValueError("The invitation conversation link is not supported.")
+        return url
+
+    def _effective_meeting_url(self) -> str:
+        # Empty string means this invitation supplied no meeting. Never fall
+        # back to a guest's unrelated saved meeting while joining a room.
+        scoped = getattr(self, "_session_meeting_url", None)
+        return scoped if scoped is not None else str(getattr(self.settings, "webex_url", "") or "").strip()
+
+    def _set_session_meeting_url(self, value: str | None) -> None:
+        self._session_meeting_url = (
+            self._validated_session_meeting_url(value) if value is not None else None
+        )
+        self._session_meeting_generation = getattr(self, "_session_meeting_generation", 0) + 1
+        # Invalidate in-flight and queued handoffs even when two rooms use the
+        # same URL. A launch result belongs to the room that requested it.
+        self.bridge.invalidate_webex_launch()
+        from webex_integration import WebexLaunchState
+
+        url = self._effective_meeting_url()
+        self.webex.meeting_url = url
+        self.webex.launch_state = WebexLaunchState.NOT_OPENED
+        self.webex.browser_opened = False
+        self.webex.last_error = ""
+        self.bridge.webex_state = WebexLaunchState.NOT_OPENED.value
+        self.window.set_status_video(WebexLaunchState.NOT_OPENED.value)
+        self.window.session_strip.set_video_state(_meeting_open_action_label(url), enabled=True)
+        self.window.session_strip.set_video_configured(bool(url))
+        self.window.webex_embed.set_meeting_configured(bool(url))
+        self.window.webex_embed.set_service_label(_meeting_service_name(url))
+        self.window.webex_embed.set_launch_status(WebexLaunchState.NOT_OPENED.value)
+        self._sync_art_room_overview()
+
+    def _restore_personal_meeting(self) -> None:
+        if getattr(self, "_session_meeting_url", None) is not None:
+            self._set_session_meeting_url(None)
+
+    def _edit_session_meeting_link(self) -> None:
+        from PySide6.QtWidgets import QInputDialog, QLineEdit
+
+        if (self._shutdown_cleanup_blocks_action() or self.audio.stopping
+                or self.audio.cleanup_retry_required or self._invite_switch_in_flight):
+            return
+        context = self._meeting_link_settings_context()
+        value, accepted = QInputDialog.getText(
+            self.window, "Conversation for this room",
+            "Meeting link for this room (optional):\nYour saved meeting stays unchanged.",
+            QLineEdit.EchoMode.Password, self._effective_meeting_url(),
+        )
+        if (not accepted or self._shutdown or self._shutdown_in_progress
+                or self._shutdown_cleanup_pending or self.audio.stopping
+                or self.audio.cleanup_retry_required or self._invite_switch_in_flight
+                or self._meeting_link_settings_context() != context):
+            return
+        was_open = self._is_video_active()
+        try:
+            self._set_session_meeting_url(value)
+        except ValueError:
+            self.window.flash_message("Use a supported HTTPS meeting link for this room.", ms=6000)
+            return
+        message = "Conversation updated for this room only."
+        if was_open:
+            message += " Any meeting already open stays open in that service."
+        self.window.flash_message(message, ms=7000)
+
     def _on_copy_meeting_link(self) -> None:
         """Copy the saved, validated meeting link for sharing."""
 
@@ -10861,10 +10968,10 @@ class ApplicationController(QObject):
 
         from core.meeting_link import is_allowed_meeting_link, normalize_meeting_url
 
-        url = normalize_meeting_url(self.settings.webex_url)
+        url = normalize_meeting_url(self._effective_meeting_url())
         if not url or not is_allowed_meeting_link(url):
             self.window.flash_message(
-                "No valid meeting link is saved. Add one in Settings first.",
+                "No meeting link is available. Add one in Conversation first.",
                 ms=5000,
             )
             return
@@ -10892,7 +10999,7 @@ class ApplicationController(QObject):
                 ms=5000,
             )
             return
-        url = normalize_meeting_url(self.settings.webex_url)
+        url = normalize_meeting_url(self._effective_meeting_url())
         if not url:
             self._record_webex_event("meeting-handoff", "missing-link")
             self._show_actionable_error(
@@ -10900,7 +11007,7 @@ class ApplicationController(QObject):
                 what_failed="No meeting link is configured.",
                 likely_cause="A link hasn't been entered yet.",
                 next_action=(
-                    "Go to Settings and enter your meeting link "
+                    "Open Conversation and add a meeting link "
                     f"({SUPPORTED_MEETING_SERVICES_TEXT})."
                 ),
             )
@@ -10913,7 +11020,7 @@ class ApplicationController(QObject):
                 what_failed="WebJam will not open this meeting link.",
                 likely_cause=error,
                 next_action=(
-                    "Open Settings and paste an HTTPS meeting link "
+                    "Open Conversation and paste an HTTPS meeting link "
                     f"({SUPPORTED_MEETING_SERVICES_TEXT})."
                 ),
             )
@@ -10921,7 +11028,7 @@ class ApplicationController(QObject):
 
         service_name = _meeting_service_name(url, fallback="meeting service")
         self.webex.meeting_url = url
-        accepted = self.bridge.launch_webex(manual=True)
+        accepted = self.bridge.launch_webex(manual=True, meeting_url=url)
         if not accepted:
             self._record_webex_event("meeting-handoff", "busy")
             self.window.set_status_video(self.bridge.webex_state)
@@ -10962,7 +11069,7 @@ class ApplicationController(QObject):
     def _leave_video(self) -> None:
         """Compatibility entry point; WebJam cannot close an external meeting."""
 
-        service = _meeting_service_name(self.settings.webex_url)
+        service = _meeting_service_name(self._effective_meeting_url())
         destination = f"in {service}" if service else "in your meeting service"
         self.window.flash_message(
             f"Close or leave the meeting {destination}. WebJam does not control it.",
@@ -11042,9 +11149,9 @@ class ApplicationController(QObject):
             self.window.set_status_server("")
             self.window.set_status_video(self.bridge.webex_state)
             self.window.session_strip.set_video_state(
-                _meeting_open_action_label(self.settings.webex_url), enabled=True,
+                _meeting_open_action_label(self._effective_meeting_url()), enabled=True,
             )
-            self.window.session_strip.set_video_configured(bool(self.settings.webex_url))
+            self.window.session_strip.set_video_configured(bool(self._effective_meeting_url()))
             self.window.webex_embed.set_launch_status(self.bridge.webex_state)
             self._update_session_hud()
             return
@@ -11137,12 +11244,12 @@ class ApplicationController(QObject):
             webex_label, enabled = "Open Again", True
         else:
             webex_label, enabled = (
-                _meeting_open_action_label(self.settings.webex_url),
+                _meeting_open_action_label(self._effective_meeting_url()),
                 True,
             )
         self.window.session_strip.set_video_state(webex_label, enabled=enabled)
         self.window.session_strip.set_video_configured(
-            bool(str(self.settings.webex_url or "").strip())
+            bool(self._effective_meeting_url())
         )
         try:
             self.window.webex_embed.set_launch_status(self.bridge.webex_state)
@@ -11913,7 +12020,7 @@ class ApplicationController(QObject):
         reference_track_already_retired: bool = False,
     ) -> None:
         """Apply freshly saved settings to all long-lived integration objects."""
-        webex_url_changed = (
+        webex_url_changed = getattr(self, "_session_meeting_url", None) is None and (
             str(getattr(old_settings, "webex_url", "") or "").strip()
             != str(getattr(self.settings, "webex_url", "") or "").strip()
         )
@@ -11949,7 +12056,7 @@ class ApplicationController(QObject):
         # sync with the settings object rendered by the launch card.
         if webex_url_changed:
             self.bridge.invalidate_webex_launch()
-        self.webex.meeting_url = self.settings.webex_url
+        self.webex.meeting_url = self._effective_meeting_url()
         self.bridge.webex_controller = self.webex
         if webex_url_changed:
             # "Opened externally" belongs to the old URL handoff, not the
@@ -11964,20 +12071,20 @@ class ApplicationController(QObject):
             self.bridge.webex_state = WebexLaunchState.NOT_OPENED.value
             self.window.set_status_video(WebexLaunchState.NOT_OPENED.value)
             self.window.session_strip.set_video_state(
-                _meeting_open_action_label(self.settings.webex_url),
+                _meeting_open_action_label(self._effective_meeting_url()),
                 enabled=True,
             )
             self.window.webex_embed.set_launch_status(WebexLaunchState.NOT_OPENED.value)
         self._talk_break_intended = False
         self._self_transmit_muted = False
         self.window.session_strip.set_video_configured(
-            bool(str(self.settings.webex_url or "").strip())
+            bool(self._effective_meeting_url())
         )
         self.window.webex_embed.set_meeting_configured(
-            bool(str(self.settings.webex_url or "").strip())
+            bool(self._effective_meeting_url())
         )
         self.window.webex_embed.set_service_label(
-            _meeting_service_name(self.settings.webex_url)
+            _meeting_service_name(self._effective_meeting_url())
         )
         self.window.webex_embed.set_audio_mode(self._webex_audio_mode())
         self._start_routing_scan()
@@ -12067,13 +12174,17 @@ class ApplicationController(QObject):
             getattr(getattr(remote, "snapshot", None), "generation", None),
             getattr(self, "_last_content_key", "stage"),
             self.window.workspace_stack.currentWidget(),
+            getattr(self, "_session_meeting_generation", 0),
         )
 
     def _open_meeting_link_settings(self) -> None:
         if self._shutdown or self._shutdown_in_progress:
             return
         context = self._meeting_link_settings_context()
-        self._open_settings_wizard(show_meeting_link=True)
+        if getattr(self, "_session_meeting_url", None) is not None:
+            self._edit_session_meeting_link()
+        else:
+            self._open_settings_wizard(show_meeting_link=True)
         # Modal dialogs keep receiving room and navigation callbacks. Return
         # keyboard focus only to the Conversation the person left visible.
         if (
@@ -12082,7 +12193,7 @@ class ApplicationController(QObject):
             and not self._shutdown_cleanup_pending
             and not self._room_participant.blocked
             and not self._invite_switch_in_flight
-            and self._meeting_link_settings_context() == context
+            and self._meeting_link_settings_context()[:-1] == context[:-1]
             and self.window.webex_embed.isVisibleTo(self.window)
         ):
             self.window.webex_embed.focus_primary_action()
@@ -12170,7 +12281,14 @@ class ApplicationController(QObject):
             # Build a context-aware confirmation message so the user knows
             # whether they need to take any action for the change to apply.
             warnings: list[str] = []
-            if self.settings.webex_url != old_webex_url and webex_was_active:
+            if (self.settings.webex_url != old_webex_url
+                    and getattr(self, "_session_meeting_url", None) is not None):
+                warnings.append(
+                    "Your personal meeting link was saved for future sessions. "
+                    "This room's Conversation link stays unchanged."
+                )
+            if (self.settings.webex_url != old_webex_url and webex_was_active
+                    and getattr(self, "_session_meeting_url", None) is None):
                 warnings.append(
                     (
                         "Any meeting already open stays open in that service. Open "

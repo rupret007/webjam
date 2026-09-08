@@ -82,7 +82,10 @@ def room(qapp, monkeypatch, tmp_path):
             mode_entries=ApplicationController.mode_entries(),
             initial_mode_key="music_jam", initial_title="Personal studio",
         )
-        app = ApplicationController(window, settings=settings, session_invite=invite)
+        app = ApplicationController(
+            window, settings=settings, session_invite=invite,
+            session_meeting_url=_MEETING if configured else "",
+        )
         made.append(app)
         app._launch_native_jamulus_for_startup = Mock()
         app._start_hosted_server_for_startup = Mock()
@@ -127,7 +130,9 @@ def room(qapp, monkeypatch, tmp_path):
 
         def join():
             if role == "native":
-                assert app.accept_invitation(remote())
+                assert app.accept_invitation(
+                    remote(), meeting_url=_MEETING if configured else "",
+                )
                 drain(qapp, lambda: app._remote_session.snapshot.phase is RemoteSessionPhase.CONNECTED)
                 backend = RoomBackend.instances[-1]
                 backend.emit(RoomState(1, "art", "talk_and_make"))

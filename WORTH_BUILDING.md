@@ -1,53 +1,33 @@
-# Worth building — prepare a guest copy before the host shares
+# Worth building — one invitation carries Conversation
 
-Base: `e35f7352b42280814be0ea02f77b412f68231706`, fetched `origin/master`
-after #94; the fresh branch started at that exact tip.
-Branch: `codex/art-guest-prepare-copy`; canonical WebJam checkout only.
-Marker: `OVERNIGHT_WEBJAM_ART_20260907_2307`.
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5579240270.
+Base: fetched `origin/master` at `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`.
+Branch: `codex/invitation-conversation-context`.
+Canonical WebJam checkout only. Independent of pending #96; parked #37/#49 untouched.
 
-#93 gives a waiting guest an **Open Paint along** room action and says they can
-load a copy before the host shares. The panel actually hid **Open my copy…**
-until an offer arrived. The existing follower already supports holding a local
-copy without showing or playing it. This is a missing functional step, with a
-short path through existing code.
+A host already copies one invitation containing the WebJam room and optional
+meeting. Join previously discarded the labeled meeting block. A clean guest had
+to paste it again; a guest with a saved meeting could open that unrelated meeting.
+This directly broke the one-invitation promise before either Art or Music could
+be useful together. It takes priority over more Paint along copy or Music controls.
 
-The valid baseline reproduced **16 failed / 2 passed** in real Qt/controller
-journeys. The native fixture was corrected to carry an empty video snapshot
-before that baseline. All sixteen preparation journeys stopped at the missing
-file action; both Make together controls already passed.
+After this change, an accepted complete paste retains one validated conversation
+link for the joined room only. Conversation display, Copy, Open, error Retry and
+Band Check use that same context. Joining does not launch a meeting. An invitation
+without a meeting does not select the guest's saved personal meeting.
 
-Before: a guest follows the waiting-room action into a panel with no file
-action. After: the guest can open a copy early and see **Your copy is open**,
-explicitly waiting for WebJam to check it against the host's eventual offer.
-Matching, host state and connection still own following. A changed or failed
-copy offers another try. More → Close my copy works before a share.
+Add Link / Change Link in a joined room updates temporary room context; personal
+settings remain untouched. Successful Leave restores the personal meeting. Failed
+cleanup retains the current room's link until retry succeeds. Replacing a room
+invalidates old meeting handoffs and retries even when both use the same URL.
 
-Make together already starts with each artist's own tools; #94 supplies its
-Conversation next-click label. Completing an action that currently dead-ends
-beats adding more wording or another door choice. This slice changes only the
-existing local follower projection and Paint along panel, plus tests/docs.
+The transport invite models and wire formats are unchanged. Optional clipboard
+context is untrusted input, never authenticated host identity. Existing HTTPS
+validation, explicit external handoff, private-input limits and ambiguity checks
+remain the trust boundary. No new network service, automatic opening, recording,
+media capture, download or playback control is introduced.
 
-The early room cue uses the existing host-start fact available on native
-rooms. LAN guests can use the existing explicit Paint along entry; this slice
-does not add a host-start field or pretend LAN publishes one. Neither route
-adds a required video step to Make together.
-
-Focused proof: **425 tests passed**, including **24 new preparation journeys**
-across LAN/native, 720/1100 widths, later match/mismatch, repeated empty room
-state, withdrawal, changed/deleted copies, cancellation, decoder failure,
-connection loss during the chooser, closing a prepared copy and Make together.
-Actual Qt captures at 720×560 were inspected using synthetic files and a
-controlled decoder. Full local and hosted results, exact tip/tree and four
-desktop build evidence belong in the OPEN DRAFT and coord AFTER.
-
-No download, file transfer, protocol, player, timer, meeting action or guest
-transport input is added. Hashing and decoding remain synchronous. Physical
-playback, live meetings, OS focus/installed-app feel and signing are NOT RUN.
-
-One OPEN DRAFT PRE_KAREN, then stop for Karen leftover + security + ten-second
-UX. No rework of #89/#90; parked #37/#49 untouched. Art door retains exactly
-Make together + Paint along → Host/Join and the squirrel-with-fro artwork.
-Unsigned 0.27.2 is Jeff-only. No merge/squash/tag/sign/Pages/Release Trust/Publish/
-release/deploy/spend/live Cisco, short-code/public rendezvous, Music, Drawpile,
-shared-canvas work, second video stack, other-repo lane or parent injection.
+The two-session goal remains incomplete. Different-home Art reachability still
+needs an approved private connectivity design and physical proof. YouTube lesson
+sharing/voices, independent listening levels and Music latency also need their
+own work and two-person evidence. Track these in
+[the two-session proof plan](docs/plans/webjam-two-session-proof.md).

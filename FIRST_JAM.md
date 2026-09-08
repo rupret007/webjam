@@ -34,7 +34,9 @@ can follow there; **Paint along** is the separate silent local-video option.
    and send the complete invitation to your collaborator.
 3. To join, choose **Join** and paste that full invitation once. Wait for the
    host's room to respond. **You’re in** means the Art room is connected.
-   Art does not launch Jamulus or ask you to prove Music audio.
+   Art does not launch Jamulus or ask you to prove Music audio. The invitation's
+   optional meeting is ready in **Conversation**, without a second paste or an
+   automatic meeting launch. Your saved personal meeting stays unchanged.
 4. Work with your own tools, open **Conversation** for an optional meeting or
    shared demonstration, or follow the host's silent local video in **Paint
    along**. A shared canvas opens only when you choose it.

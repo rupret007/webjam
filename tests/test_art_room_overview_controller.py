@@ -54,12 +54,12 @@ def test_cold_guest_room_loss_and_leave_never_show_music_roster(qapp, controller
     assert panel._overview.connection_label == "Connected to the host"
     assert "0 artists" not in panel.accessibleDescription()
     assert panel._overview.activity_label == "Bring your own tools"
-    # Make together's next click is talk. With no saved link the room asks
-    # for one; saving it turns the button into the plain way back.
+    # Make together's next click is talk. An invitation without a meeting
+    # asks for one; adding a room-only link turns it into the way back.
     assert not str(app.settings.webex_url or "").strip()
     assert panel._overview.conversation_action_label == "Set Up Conversation"
     assert panel.conversation_button().text() == "Set Up Conversation"
-    app.settings.webex_url = "https://example.webex.com/meet/room"
+    app._set_session_meeting_url("https://example.webex.com/meet/room")
     app._sync_art_room_overview()
     assert panel._overview.conversation_action_label == "Conversation"
     assert panel.conversation_button().text() == "Conversation"
@@ -121,7 +121,7 @@ def test_native_shared_canvas_routes_existing_panel_and_rechecks_owner(
     monkeypatch.setattr("services.native_remote_transport.NativeGuestTransportBackend", RoomBackend)
     app: ApplicationController = controllers()
     app.bridge.launch_webex = mock.Mock()
-    app.settings.webex_url = "https://example.webex.com/meet/room"
+    app._set_session_meeting_url("https://example.webex.com/meet/room")
     assert app.accept_invitation(remote())
     drain(qapp, lambda: app._remote_session.snapshot.phase is RemoteSessionPhase.CONNECTED)
     backend = RoomBackend.instances[-1]
