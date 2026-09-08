@@ -6,6 +6,8 @@ import ipaddress
 from dataclasses import dataclass
 from pathlib import Path
 
+MAX_ACTIVE_SESSION_SECONDS = 8 * 60 * 60
+
 
 @dataclass(frozen=True, slots=True)
 class ServiceConfig:
@@ -29,6 +31,7 @@ class ServiceConfig:
     protocol_version: int = 3
     min_session_ttl_seconds: int = 30
     max_session_ttl_seconds: int = 600
+    max_active_session_seconds: int = MAX_ACTIVE_SESSION_SECONDS
     idle_timeout_seconds: int = 90
     cleanup_interval_seconds: float = 1.0
     tombstone_ttl_seconds: int = 600
@@ -101,6 +104,14 @@ class ServiceConfig:
             raise ValueError("service limits must be positive")
         if self.min_session_ttl_seconds > self.max_session_ttl_seconds:
             raise ValueError("minimum TTL cannot exceed maximum TTL")
+        if (
+            not isinstance(self.max_active_session_seconds, int)
+            or isinstance(self.max_active_session_seconds, bool)
+            or not 1 <= self.max_active_session_seconds <= MAX_ACTIVE_SESSION_SECONDS
+        ):
+            raise ValueError("active session limit must be an integer from 1 to 28800 seconds")
+        if self.max_active_session_seconds < self.max_session_ttl_seconds:
+            raise ValueError("active session limit cannot be shorter than maximum enrollment TTL")
         if self.max_relay_payload_bytes + 70 > self.max_datagram_bytes:
             raise ValueError("relay payload plus authenticated envelope exceeds datagram limit")
         encoded_signal_bound = ((self.max_signal_bytes + 2) // 3) * 4 + 512

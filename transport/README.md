@@ -57,10 +57,44 @@ one unsolicited `peer_connected` / `connected` event (`id=0`) only after mutual
 TLS, exact certificate pins, bidirectional exporter proofs, and peer pumps are
 ready. A guest emits its correlated `peer_connected` event only at the same
 authenticated boundary. There is no proxy-only success event. `peer_closed` /
-`closed` confirms bounded teardown; closing a host peer preserves only its
+`closed` confirms bounded local teardown; closing a host peer preserves only its
 prepared ephemeral identity inside the sidecar (including its private key) so
 the existing public pin remains valid for Reset Invite. Shutdown destroys that
 identity.
+
+Invitation admission and established-session duration are separate bounds. The
+existing default admission window remains ten minutes. Native bootstrap, mutual
+peer proof, and the room handshake run under that setup deadline. Successful
+admission cancels only the setup child context; the application pumps then use
+the separately owned operation context. Promotion is checked before launching
+those pumps, not when a later buffered `peer_connected` event reaches the runner.
+The operation's maximum lifetime is eight hours, clamped to its actual ephemeral
+certificate expiry. A prepared host identity may be older than the operation,
+so it can have less time left. Parent cancellation, explicit close/reset,
+failure, and shutdown can end it earlier.
+
+The reference service keeps its default 600-second admission and 90-second idle
+bounds. Once enrolled, its independent hard ceiling is eight hours from original
+registration; enrollment and subsequent traffic cannot extend that ceiling.
+Service enrollment is not proof of native mutual authentication. Register/Enroll
+response fields still describe admission TTL, not a renewed live-room lifetime.
+See [the service protocol](../reference_service/PROTOCOL.md) for the bounded
+downward configuration and erasure rules.
+
+Local teardown cancels and interrupts owned media/control workers and joins them
+before reporting completion. A bounded local Close failure retains the operation
+and identity for retry, fences stale callbacks and application actions, and
+blocks opening a second operation. It cannot emit a successful `peer_closed`
+receipt or destroy an identity still owned by unfinished work.
+
+The original service-control TCP connection can close after 30 idle seconds
+while the room continues over QUIC. Host cleanup therefore makes one fresh
+authenticated `reference-local` close attempt with its existing role token,
+generation, and next control sequence. Connection and acknowledgment share the
+bounded shutdown budget. This adds no enrollment, public address, or reconnect
+loop. A failed/uncertain reply leaves remote removal unconfirmed: the local
+`peer_closed` receipt does not imply a service-removal acknowledgment, and service
+idle/hard lifetime limits remain in force.
 
 `peer_connected` proves the authenticated fabric and running pumps. It does
 **not** prove public reachability, a real-home NAT path, suitable latency, a

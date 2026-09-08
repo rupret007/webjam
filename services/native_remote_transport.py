@@ -470,8 +470,10 @@ class NativeHostTransportOwner:
             schedule_callback if schedule_help_callback is None else schedule_help_callback
         )
         self._lock = threading.RLock()
+        self._close_lock = threading.Lock()
         self._generation = 0
         self._active_invitation: RemoteInvitation | None = None
+        self._close_pending = False
         self._room_identity: RoomIdentity | None = None
         self._room_state: RoomState | None = None
         self._room_sent_revision = 0
@@ -519,13 +521,20 @@ class NativeHostTransportOwner:
     @property
     def invitation_available(self) -> bool:
         owner = self._owner
-        return bool(not self._stopped and self.snapshot.phase is not RemoteSessionPhase.FAILED
-                    and owner is not None and owner.invitation_available)
+        with self._lock:
+            available = (
+                not self._stopped and not self._close_pending
+                and self._active_invitation is not None
+                and self._snapshot.phase is not RemoteSessionPhase.FAILED
+            )
+        return bool(available and owner is not None and owner.invitation_available)
 
     @property
     def invitation(self) -> RemoteInvitation | None:
-        owner = self._owner
-        return owner.invitation if owner is not None else None
+        with self._lock:
+            if self._stopped or self._close_pending:
+                return None
+            return self._active_invitation
 
     @property
     def snapshot(self) -> RemoteSessionSnapshot:
@@ -534,7 +543,8 @@ class NativeHostTransportOwner:
 
     def copy_for_clipboard(self) -> str:
         owner = self._owner
-        if (owner is None or self._stopped
+        if (owner is None or self._stopped or self._close_pending
+                or self._active_invitation is None
                 or self.snapshot.phase is RemoteSessionPhase.FAILED):
             raise RuntimeError("No remote invitation is active.")
         return owner.copy_for_clipboard()
@@ -543,7 +553,25 @@ class NativeHostTransportOwner:
         owner = self._owner
         if self._stopped or owner is None:
             raise RuntimeError("No remote invitation is active.")
-        owner.reset()
+        self._close_pending_peer()
+        try:
+            owner.reset()
+        except Exception:
+            with self._lock:
+                snapshot = None
+                if (not self._stopped and not self._close_pending
+                        and self._active_invitation is None
+                        and not self._registering_generation):
+                    self._snapshot = RemoteSessionSnapshot(
+                        phase=RemoteSessionPhase.FAILED, role=SessionRole.HOST,
+                        generation=max(1, self._generation),
+                        path=TransportPath.SECURE_RELAY,
+                        error_code=RemoteSessionErrorCode.TRANSPORT_FAILED,
+                    )
+                    snapshot = self._snapshot
+            if snapshot is not None:
+                self._publish(snapshot)
+            raise
         self._drain_pending_connection()
 
     @property
@@ -567,7 +595,8 @@ class NativeHostTransportOwner:
         if type(state) is not RoomState:
             raise ValueError("room state must be typed")
         with self._lock:
-            if self._stopped or self._snapshot.phase is RemoteSessionPhase.FAILED:
+            if (self._stopped or self._close_pending
+                    or self._snapshot.phase is RemoteSessionPhase.FAILED):
                 return False
             if self._room_state is not None and state.revision <= self._room_state.revision:
                 return state == self._room_state
@@ -709,7 +738,8 @@ class NativeHostTransportOwner:
 
     def register_invitation(self, invitation: RemoteInvitation) -> None:
         with self._lock:
-            if self._stopped or self._active_invitation is not None:
+            if (self._stopped or self._close_pending
+                    or self._active_invitation is not None):
                 raise RuntimeError("A remote invitation is already registered.")
             self._room_cancel.set()
             self._room_cancel = threading.Event()
@@ -748,12 +778,60 @@ class NativeHostTransportOwner:
                 return
             self._pending_connected = None
             self._room_cancel.set()
+            # Retire app authority immediately, but retain cleanup ownership
+            # until the native process acknowledges close or is reaped.
+            self._close_pending = True
             self._active_invitation = None
             self._room_identity = None
             self._room_state = None
             self._room_sent_revision = 0
-        if self._process.running:
-            self._process.close_peer()
+            self._snapshot = RemoteSessionSnapshot(
+                phase=RemoteSessionPhase.STOPPING, role=SessionRole.HOST,
+                generation=max(1, self._generation), path=TransportPath.SECURE_RELAY,
+            )
+            snapshot = self._snapshot
+        self._publish(snapshot)
+        self._close_pending_peer()
+
+    def _close_pending_peer(self) -> None:
+        snapshot = None
+        with self._close_lock:
+            with self._lock:
+                if not self._close_pending:
+                    return
+                generation = self._generation
+            try:
+                # A false `running` fact can mean a poisoned IPC client whose
+                # process still needs reaping; it is not a close receipt.
+                receipt = self._process.close_peer()
+                if (
+                    not isinstance(receipt, TransportEvent)
+                    or receipt.event_type != "peer_closed"
+                    or receipt.code != "ok" or receipt.state != "closed"
+                    or type(receipt.event_id) is not int or receipt.event_id <= 0
+                    or receipt.mode != "host" or receipt.generation != generation
+                    or receipt.profile_id != self._profile_id
+                ):
+                    raise TransportProcessError("The transport close was not confirmed.")
+            except Exception:
+                with self._lock:
+                    if not self._stopped:
+                        self._snapshot = RemoteSessionSnapshot(
+                            phase=RemoteSessionPhase.FAILED, role=SessionRole.HOST,
+                            generation=max(1, self._generation),
+                            path=TransportPath.SECURE_RELAY,
+                            error_code=RemoteSessionErrorCode.STOP_FAILED,
+                        )
+                        snapshot = self._snapshot
+            else:
+                with self._lock:
+                    self._close_pending = False
+                return
+        if snapshot is not None:
+            self._publish(snapshot)
+        raise TransportProcessError(
+            "The previous remote session did not close."
+        ) from None
 
     def stop(self) -> None:
         with self._lock:
@@ -774,6 +852,9 @@ class NativeHostTransportOwner:
             # A failed reap keeps both process and invitation owners reachable.
             # Retrying End Room must attempt the real cleanup again.
             self._process.stop()
+            with self._lock:
+                self._active_invitation = None
+                self._close_pending = False
             if owner is not None:
                 owner.stop()
         except Exception:

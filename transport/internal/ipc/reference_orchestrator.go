@@ -65,9 +65,22 @@ func (o *referenceFabricOrchestrator) Start(
 	if configuration.Mode == "host" && PublicPin(identity.SPKIFingerprint) != configuration.HostSPKISHA256 {
 		return nil, ErrEnrollmentInvalid
 	}
-	operationCtx, cancel := context.WithCancel(ctx)
+	operationDeadline, err := sessionOperationDeadline(o.now(), identity)
+	if err != nil {
+		return nil, err
+	}
+	operationCtx, cancel := context.WithDeadline(ctx, operationDeadline)
+	enrollmentCtx, cancelEnrollment := context.WithDeadline(
+		operationCtx, time.Unix(int64(configuration.ExpiresAtUnix), 0),
+	)
+	if enrollmentCtx.Err() != nil {
+		cancelEnrollment()
+		cancel()
+		return nil, ErrEnrollmentInvalid
+	}
 	operation := &referenceFabricOperation{
 		ctx: operationCtx, cancel: cancel, now: o.now, configuration: configuration,
+		enrollmentCtx: enrollmentCtx, cancelEnrollment: cancelEnrollment,
 		identity: identity, endpoint: endpoint,
 		updates: make(chan fabricUpdate, limits.MaxHelpEventQueueDepth), done: make(chan struct{}),
 		observe: o.observe,
@@ -77,16 +90,18 @@ func (o *referenceFabricOrchestrator) Start(
 }
 
 type referenceFabricOperation struct {
-	ctx           context.Context
-	cancel        context.CancelFunc
-	now           func() time.Time
-	configuration *enrollmentConfig
-	identity      *icequic.Identity
-	endpoint      loopback.Endpoint
-	updates       chan fabricUpdate
-	done          chan struct{}
-	observe       func(string, error)
-	stage         string
+	ctx              context.Context
+	cancel           context.CancelFunc
+	enrollmentCtx    context.Context
+	cancelEnrollment context.CancelFunc
+	now              func() time.Time
+	configuration    *enrollmentConfig
+	identity         *icequic.Identity
+	endpoint         loopback.Endpoint
+	updates          chan fabricUpdate
+	done             chan struct{}
+	observe          func(string, error)
+	stage            string
 
 	resourceMu sync.Mutex
 	client     *reference.Client
@@ -123,6 +138,8 @@ func (o *referenceFabricOperation) run() {
 	defer close(o.done)
 	defer close(o.updates)
 	defer o.cleanup()
+	defer o.cancelEnrollment()
+	defer o.cancel()
 	err := o.runFabric()
 	if err != nil && o.ctx.Err() == nil {
 		if o.observe != nil {
@@ -151,7 +168,7 @@ func (o *referenceFabricOperation) runFabric() error {
 	o.resourceMu.Unlock()
 
 	o.stage = "control_dial"
-	client, err := reference.DialLocal(o.ctx)
+	client, err := reference.DialLocal(o.enrollmentCtx)
 	if err != nil {
 		return err
 	}
@@ -173,7 +190,7 @@ func (o *referenceFabricOperation) runHost() error {
 	}
 	o.stage = "host_register"
 	if err := o.client.Register(
-		o.ctx, o.referenceSession(), o.token, o.enrollment, referenceWireGeneration, ttl,
+		o.enrollmentCtx, o.referenceSession(), o.token, o.enrollment, referenceWireGeneration, ttl,
 	); err != nil {
 		return err
 	}
@@ -199,8 +216,8 @@ func (o *referenceFabricOperation) runHost() error {
 	o.resourceMu.Lock()
 	o.listener = listener
 	o.resourceMu.Unlock()
-	if !o.send(fabricUpdate{kind: updateHostRegistered}) {
-		return o.ctx.Err()
+	if !o.sendWithContext(o.enrollmentCtx, fabricUpdate{kind: updateHostRegistered}) {
+		return o.enrollmentCtx.Err()
 	}
 
 	o.stage = "host_bootstrap_poll"
@@ -246,7 +263,7 @@ func (o *referenceFabricOperation) runHost() error {
 	}
 
 	o.stage = "host_quic_accept"
-	connection, err := listener.Accept(o.ctx)
+	connection, err := listener.Accept(o.enrollmentCtx)
 	if err != nil {
 		return err
 	}
@@ -300,7 +317,7 @@ func (o *referenceFabricOperation) runHost() error {
 func (o *referenceFabricOperation) runGuest() error {
 	o.stage = "guest_enroll"
 	if err := o.client.Enroll(
-		o.ctx, o.referenceSession(), o.enrollment, o.token,
+		o.enrollmentCtx, o.referenceSession(), o.enrollment, o.token,
 	); err != nil {
 		return err
 	}
@@ -362,7 +379,7 @@ func (o *referenceFabricOperation) runGuest() error {
 
 	o.stage = "guest_quic_dial"
 	connection, err := icequic.Dial(
-		o.ctx, relay, relay.PeerAddr(), *o.identity,
+		o.enrollmentCtx, relay, relay.PeerAddr(), *o.identity,
 		hex.EncodeToString(o.configuration.HostSPKISHA256[:]),
 	)
 	if err != nil {
@@ -436,18 +453,38 @@ func (o *referenceFabricOperation) runPeer(mode peer.Mode) error {
 	o.peer = livePeer
 	o.control = liveControl
 	o.resourceMu.Unlock()
-	if err := liveControl.Handshake(o.ctx); err != nil {
+	if err := liveControl.Handshake(o.enrollmentCtx); err != nil {
 		return err
 	}
+	if err := o.completeEnrollment(); err != nil {
+		return err
+	}
+	// Both application workers start with the established-operation context.
+	// Canceling the completed enrollment child cannot end live media/control.
+	pumpCtx, cancelPumps := context.WithCancel(o.ctx)
+	var workers sync.WaitGroup
+	defer func() {
+		cancelPumps()
+		o.interruptDataPlane()
+		workers.Wait()
+	}()
 	peerResult := make(chan error, 1)
 	helpResult := make(chan error, 1)
-	go func() { peerResult <- livePeer.Run(o.ctx) }()
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		peerResult <- livePeer.Run(pumpCtx)
+	}()
 	select {
 	case <-livePeer.Ready():
-		if !o.send(fabricUpdate{kind: updatePeerConnected}) {
-			return o.ctx.Err()
+		if !o.sendWithContext(pumpCtx, fabricUpdate{kind: updatePeerConnected}) {
+			return pumpCtx.Err()
 		}
-		go o.receiveControl(liveControl, helpResult)
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			o.receiveControl(pumpCtx, liveControl, helpResult)
+		}()
 	case err = <-peerResult:
 		if err == nil {
 			return ErrProtocol
@@ -478,9 +515,24 @@ func (o *referenceFabricOperation) runPeer(mode peer.Mode) error {
 	}
 }
 
-func (o *referenceFabricOperation) receiveControl(channel *room.Channel, result chan<- error) {
+// completeEnrollment is the final admission boundary, after mutual proof and
+// the room handshake but before any application pumps are launched. A buffered
+// peer_connected event is deliberately not used to decide this transition.
+func (o *referenceFabricOperation) completeEnrollment() error {
+	if o.ctx.Err() != nil {
+		return o.ctx.Err()
+	}
+	if o.enrollmentCtx.Err() != nil ||
+		!time.Unix(int64(o.configuration.ExpiresAtUnix), 0).After(o.now()) {
+		return ErrEnrollmentInvalid
+	}
+	o.cancelEnrollment()
+	return nil
+}
+
+func (o *referenceFabricOperation) receiveControl(ctx context.Context, channel *room.Channel, result chan<- error) {
 	for {
-		event, err := channel.Receive(o.ctx)
+		event, err := channel.Receive(ctx)
 		if err != nil {
 			result <- err
 			return
@@ -505,9 +557,9 @@ func (o *referenceFabricOperation) receiveControl(channel *room.Channel, result 
 			result <- ErrProtocol
 			return
 		}
-		if !o.send(update) {
+		if !o.sendWithContext(ctx, update) {
 			clear(update.helpText)
-			result <- o.ctx.Err()
+			result <- ctx.Err()
 			return
 		}
 	}
@@ -543,7 +595,7 @@ func (o *referenceFabricOperation) signal(role reference.Role, payload []byte) e
 		return err
 	}
 	return o.client.Signal(
-		o.ctx, o.referenceSession(), role, o.token, referenceWireGeneration, sequence, payload,
+		o.enrollmentCtx, o.referenceSession(), role, o.token, referenceWireGeneration, sequence, payload,
 	)
 }
 
@@ -553,8 +605,8 @@ func (o *referenceFabricOperation) pollSignal(role reference.Role) ([]byte, erro
 	pollDelay := referencePollInitial
 	for {
 		select {
-		case <-o.ctx.Done():
-			return nil, o.ctx.Err()
+		case <-o.enrollmentCtx.Done():
+			return nil, o.enrollmentCtx.Err()
 		case <-timer.C:
 		}
 		sequence, err := o.nextSequence()
@@ -562,7 +614,7 @@ func (o *referenceFabricOperation) pollSignal(role reference.Role) ([]byte, erro
 			return nil, err
 		}
 		payload, ok, err := o.client.Poll(
-			o.ctx, o.referenceSession(), role, o.token, referenceWireGeneration, sequence,
+			o.enrollmentCtx, o.referenceSession(), role, o.token, referenceWireGeneration, sequence,
 		)
 		if err != nil {
 			return nil, err
@@ -597,10 +649,17 @@ func (o *referenceFabricOperation) referenceCapability() reference.Capability {
 }
 
 func (o *referenceFabricOperation) send(update fabricUpdate) bool {
+	return o.sendWithContext(o.ctx, update)
+}
+
+func (o *referenceFabricOperation) sendWithContext(ctx context.Context, update fabricUpdate) bool {
+	if ctx.Err() != nil {
+		return false
+	}
 	select {
 	case o.updates <- update:
 		return true
-	case <-o.ctx.Done():
+	case <-ctx.Done():
 		return false
 	}
 }
@@ -633,11 +692,15 @@ func (o *referenceFabricOperation) cleanup() {
 		o.resourceMu.Lock()
 		client, token, enrollment, registered := o.client, o.token, o.enrollment, o.registered
 		o.resourceMu.Unlock()
-		if registered && client != nil && token != nil {
+		if registered && token != nil {
 			closeCtx, cancel := context.WithTimeout(context.Background(), limits.ShutdownLimit)
 			if sequence, err := o.nextSequence(); err == nil {
-				_ = client.CloseSession(
-					closeCtx, o.referenceSession(), reference.RoleHost, token,
+				// The original control connection may have idled out while QUIC
+				// carried the room. A fresh bounded attempt can confirm removal;
+				// failure does not establish a remote-deletion receipt. Local Stop
+				// still joins owned pumps, and service state has a finite cap.
+				_ = reference.CloseLocalSession(
+					closeCtx, o.referenceSession(), token,
 					referenceWireGeneration, sequence,
 				)
 			}
