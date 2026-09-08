@@ -12529,6 +12529,7 @@ class ApplicationController(QObject):
             self.window.side_rail.set_active_key(prev)
             self._open_settings_wizard()
         elif key in _CONTENT_KEYS:
+            self._clear_shared_lesson_context()
             hide_paint_along = getattr(self.window, "hide_paint_along", None)
             if callable(hide_paint_along):
                 hide_paint_along(
@@ -12927,6 +12928,7 @@ class ApplicationController(QObject):
     def _release_reference_video(self) -> None:
         """Return this computer to the no-video path and free its player."""
 
+        ApplicationController._clear_shared_lesson_context(self)
         timer = getattr(self, "_reference_video_timer", None)
         if timer is not None:
             timer.stop()
@@ -12969,6 +12971,7 @@ class ApplicationController(QObject):
                 ms=6000,
             )
             return
+        self._clear_shared_lesson_context()
         dialog = getattr(self, "_reference_video_dialog", None)
         if dialog is None:
             from webjam_qt.windows.reference_video import ReferenceVideoDialog
@@ -13018,6 +13021,9 @@ class ApplicationController(QObject):
             dialog.return_requested.connect(
                 lambda: self._return_to_art_room(dialog)
             )
+            dialog.watch_lesson_requested.connect(
+                lambda: self._watch_shared_lesson(coordinator, dialog)
+            )
             self._reference_video_dialog = dialog
         self._sync_paint_along_room()
         if coordinator.hosting:
@@ -13063,18 +13069,31 @@ class ApplicationController(QObject):
         if dialog is None or coordinator is None:
             return False
         room = getattr(self, "_room_participant", None)
+        audio = getattr(self, "audio", None)
+        closing = bool(
+            getattr(self, "_shutdown_in_progress", False)
+            or getattr(self, "_shutdown_cleanup_pending", False)
+            or getattr(audio, "stopping", False)
+            or getattr(audio, "cleanup_retry_required", False)
+        )
         if coordinator.hosting:
             available = bool(
-                not self._shutdown and self.creator_profile.key == "art"
+                not self._shutdown and not closing and self.creator_profile.key == "art"
                 and (room is None or not room.blocked)
                 and self._reference_video_binding == self._reference_video_identity()
             )
             dialog.set_room_available(available)
+            dialog.set_watch_lesson_available(available)
+            if not available:
+                self._clear_shared_lesson_context()
             return available
         if not coordinator.following:
+            dialog.set_watch_lesson_available(False)
+            self._clear_shared_lesson_context()
             return False
         available = bool(
             not getattr(self, "_shutdown", False)
+            and not closing
             and self.creator_profile.key == "art"
             and room is not None and not room.blocked and not room.probing
             and room.state is ArtRoomState.CONNECTED
@@ -13097,12 +13116,78 @@ class ApplicationController(QObject):
                 available = bool(source is not None and source.connection_available)
             available = bool(
                 available and getattr(state, "creator_profile_key", "") == "art"
-                and coordinator.video_is_current(state)
             )
+        # Reaching a lesson in Conversation needs a current Art room, not a
+        # matching local file or a healthy local player. Keep those facts apart.
+        dialog.set_watch_lesson_available(available)
+        if not available:
+            self._clear_shared_lesson_context()
+        if available:
+            available = coordinator.video_is_current(state)
         dialog.set_room_available(available)
         if available:
             dialog.set_follow_snapshot(coordinator.follow_snapshot)
         return available
+
+    def _clear_shared_lesson_context(self) -> None:
+        panel = getattr(getattr(self, "window", None), "webex_embed", None)
+        if getattr(panel, "_shared_lesson_hosting", None) is not None:
+            panel.set_shared_lesson_context(hosting=None)
+
+    def _watch_shared_lesson(self, coordinator, dialog) -> None:
+        """Navigate to meeting guidance; never open or control either video."""
+
+        from PySide6.QtWidgets import QApplication
+
+        if (
+            coordinator is not getattr(self, "_reference_video", None)
+            or dialog is not getattr(self, "_reference_video_dialog", None)
+            or getattr(self, "_shutdown", False)
+            or self.creator_profile.key != "art"
+            or QApplication.activeModalWidget() is not None
+            or QApplication.activePopupWidget() is not None
+        ):
+            return
+        stack = getattr(self.window, "workspace_stack", None)
+        if (stack is not None and stack.currentWidget() is not dialog) or not dialog.isVisible():
+            return
+        self._sync_paint_along_room()
+        if not dialog._watch_lesson_button.isEnabled():
+            return
+        room = self._room_participant
+        generation = room.generation
+        source = self._remote_session or room.lan_guest
+        # Reading availability may publish loss. Recheck the room and panel
+        # after that boundary before a queued intent can move anyone's focus.
+        # A native host can prepare the meeting before the first guest joins.
+        # PREPARING with this room's credentials is that waiting state, not
+        # evidence of a peer connection or a running lesson.
+        available = bool(
+            source is None
+            or (coordinator.hosting and source.snapshot.role.value == "host"
+                and source.snapshot.phase.value == "preparing")
+            or source.connection_available
+        )
+        if (
+            not available
+            or coordinator is not getattr(self, "_reference_video", None)
+            or dialog is not getattr(self, "_reference_video_dialog", None)
+            or room is not self._room_participant
+            or generation != room.generation
+            or source is not (self._remote_session or room.lan_guest)
+        ):
+            return
+        self._sync_paint_along_room()
+        if (
+            not dialog._watch_lesson_button.isEnabled()
+            or (stack is not None and stack.currentWidget() is not dialog)
+            or not dialog.isVisible()
+            or QApplication.activeModalWidget() is not None
+            or QApplication.activePopupWidget() is not None
+        ):
+            return
+        self._show_webex_conversation()
+        self.window.webex_embed.set_shared_lesson_context(hosting=coordinator.hosting)
 
     def _run_current_host_paint_along(self, coordinator, dialog, operation) -> None:
         """A completed file chooser or queued host action must still be current."""

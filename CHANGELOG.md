@@ -36,6 +36,18 @@ All notable improvements and features for the WebJam creator collaboration platf
 - No launch-door shape, meeting launch, room protocol, canvas, Paint along,
   recording, signing, release, or package behavior changes.
 
+### Reach a shared YouTube lesson from Paint along
+
+- **Watch a shared lesson** opens the existing Conversation controls from
+  Paint along, including when no local video is loaded. It focuses the
+  meeting's next action without opening a link or starting playback.
+- Host and guest guidance explains sharing lesson sound, keeping faces
+  visible, asking for a pause, and which listening controls are personal.
+  The browser and meeting app still own the shared lesson.
+- Local-file Paint along remains silent and host-controlled. A missing or
+  failed local copy does not block the Conversation route; stale room clicks
+  cannot replace Notes or reopen guidance after Leave.
+
 ### Prepare a Paint along copy before the host shares
 
 - A guest who opens **Paint along** early can now choose **Open my copy…**,

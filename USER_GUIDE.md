@@ -53,7 +53,8 @@ choose Art at launch, you pick one of two ways to start, and nothing more:
 
 - **Make together** — talk, make, or draw together in one room. Everyone may
   work locally; the host can open one shared canvas from inside the room.
-- **Paint along** — follow one silent process video while you paint.
+- **Paint along** — reach a shared lesson in Conversation or follow a
+  matching silent local video while you make.
 
 The first screen deliberately does not name the programs behind the optional
 canvas or video. You find out which one to install at the moment you need it,
@@ -135,7 +136,8 @@ panel, where you add a public HTTPS link. Once saved it reads
 share a demonstration or process video in Webex or the selected meeting app.
 That app owns its video, microphone, and sharing.
 WebJam does not open a meeting merely because the room or panel appeared.
-**Paint along** below is the separate silent local-file option.
+In **Paint along**, **Watch a shared lesson** reaches these same controls.
+The local-file option below is separate and silent.
 
 ### Painting together
 
@@ -181,9 +183,27 @@ Things worth knowing:
 
 ### Painting along to a video
 
-Paint along is the process-video companion, not a painting program. Paint in
-Procreate, Clip Studio Paint, Krita, or on paper beside WebJam. Keep Webex or
-another meeting beside it for conversation. The host can choose one video file:
+Bring your own materials or app. Choose **Watch a shared lesson** in Paint
+along to reach Conversation without choosing a local file. It works even
+when a local copy is missing or cannot play. The focused action is **Add
+Link**, **Join / Open Meeting**, or the available meeting-app action. Merely
+showing these controls does not join a meeting or start a lesson.
+
+For a YouTube lesson, such as a Bob Ross mountain painting, the host opens
+the lesson in their browser and shares it through the meeting. In the Webex
+desktop app, share the browser window with computer sound enabled; the video
+optimization option helps motion. In the Webex web client, share the browser
+tab with tab audio enabled. Keep participant videos visible in the meeting.
+These are provider-supported paths; the complete two-person WebJam experience
+still needs physical verification. See the [shared-lesson test guide](docs/plans/webjam-shared-lesson-entry.md).
+
+The host pauses and resumes **the YouTube player** when either person asks.
+A guest asks in Conversation; WebJam cannot control the external browser.
+The YouTube player's volume changes the shared narration. Your meeting
+speaker volume changes what you hear; microphone mute controls your own voice.
+This does not provide separate WebJam faders for narration and each voice.
+
+For the existing **silent local-file option**, the host chooses one video file:
 
 1. When a host chose **Paint along**, WebJam opens the large Paint along
    workspace once the room exists. It replaces the conductor surface inside

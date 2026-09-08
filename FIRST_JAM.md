@@ -25,8 +25,9 @@ is a newer Preview; the aim is to build it out to the same depth as Music.
 Make from your own space with paper, clay, a model, a printer, or your usual
 app. A shared canvas is optional. Inside the room, **Conversation** lets you
 open a meeting and share a demonstration in Webex or your chosen service.
-Everyone can follow there; **Paint along** is the separate silent local-video
-option.
+Everyone can follow there. In **Paint along**, choose **Watch a shared lesson**
+to reach Conversation for a YouTube lesson with sound. The local-file option
+stays available and silent.
 
 ## Start an Art room
 
@@ -38,9 +39,12 @@ option.
    Art does not launch Jamulus or ask you to prove Music audio. The invitation's
    optional meeting is ready in **Conversation**, without a second paste or an
    automatic meeting launch. Your saved personal meeting stays unchanged.
-4. Work with your own tools, open **Conversation** for an optional meeting or
-   shared demonstration, or follow the host's silent local video in **Paint
-   along**. A shared canvas opens only when you choose it.
+4. Work from your own space. For a YouTube lesson, choose **Paint along →
+   Watch a shared lesson**, then use Conversation's next action. Finish
+   joining the meeting there; WebJam cannot confirm who can see or hear it.
+   The host shares the lesson with sound and pauses the browser when asked.
+   You can also follow a matching silent local file in Paint along.
+   A shared canvas opens only when you choose it.
 5. If the room loses contact, follow its reconnecting or recovery guidance.
    Use **Paste New Invite** with a fresh invitation when the old one may have
    been used. Older peers must update WebJam before using a fresh invitation.
