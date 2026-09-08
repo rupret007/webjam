@@ -10,6 +10,16 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### The Art room's Conversation button names its next click
+
+- In **Make together**, talk is the main path, so the room's **Conversation**
+  button now reads **Set Up Conversation** until a meeting link is saved and
+  **Conversation** afterwards — the same wording the Music session strip
+  already uses, so the two modes read alike.
+- Nothing about when the button is available changed: it still opens the
+  existing panel with no meeting or audio side effect, and closing or
+  quitting a room disables it rather than relabelling it.
+
 ### A Paint along room tells a waiting guest the next click
 
 - A guest who joins a **Paint along** room now sees **Paint along is

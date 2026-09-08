@@ -2081,6 +2081,7 @@ class ApplicationController(QObject):
             presence=presence,
             secondary_presence=secondary_presence,
             named_connections=bool(room_connections and room_connections.names),
+            conversation_configured=bool(str(self.settings.webex_url or "").strip()),
         )
         setter(overview, room_connections=room_connections)
         self._sync_shared_canvas_room()

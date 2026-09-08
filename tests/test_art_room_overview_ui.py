@@ -267,6 +267,24 @@ def test_themed_room_context_and_actions_fit_compact_and_normal_windows(
         rects.append(rect)
 
 
+def test_conversation_button_shows_the_saved_meetings_next_click(window, qapp):
+    panel = window.art_room_overview
+    conversation = panel.conversation_button()
+
+    window.set_art_room_overview(overview(conversation_action_label="Set Up Conversation"))
+    _settle(qapp)
+    assert conversation.text() == "Set Up Conversation"
+    assert conversation.accessibleName() == "Set Up Conversation"
+    assert "add a meeting link" in conversation.toolTip()
+    assert "does not open a meeting" in conversation.accessibleDescription()
+
+    window.set_art_room_overview(overview(conversation_action_label="Conversation"))
+    _settle(qapp)
+    assert conversation.text() == "Conversation"
+    assert conversation.accessibleName() == "Conversation"
+    assert "does not open a meeting" in conversation.accessibleDescription()
+
+
 def test_room_text_renders_as_text_and_does_not_create_rich_links(window):
     panel = window.art_room_overview
     window.set_art_room_overview(overview(
