@@ -83,6 +83,14 @@ They trap unhandled Qt slot exceptions so silent callback failure cannot
 pass a rejection test. The existing Art start and host/guest media suites
 remain part of the full local test bar.
 
+The first hosted run found a Linux font-metric case where the two-column
+Conversation actions forced a requested 320-pixel card wider. The same
+buttons now stack only when their measured widths require it and return to
+two columns when space permits. A larger-font regression reproduces the
+overflow locally, then verifies 320 → 760 → 320 without shrinking the font,
+losing focus, replacing widgets or emitting an action. The original
+320-pixel acceptance assertion remains unchanged.
+
 Exact-tip local totals, hosted runs and the four desktop builds belong in the
 OPEN DRAFT PRE_KAREN body and coord AFTER. This document alone does not claim
 the final hosted checks passed. Karen review is pending while unavailable.

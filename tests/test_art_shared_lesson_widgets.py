@@ -253,3 +253,48 @@ def test_lesson_context_does_not_leak_through_music_profile_or_native_status(car
     assert "YouTube" not in panel._mode_label.text()
     assert "own tools" in panel._mode_label.text()
     assert events == []
+
+
+@pytest.mark.parametrize("hosting", (True, False))
+def test_lesson_actions_fit_larger_font_through_narrow_wide_roundtrip(card, qapp, hosting):
+    owner, panel, events = card
+    # A larger ordinary font reproduces the Linux card's two-column overflow
+    # on macOS too. The product must fit, without changing the user's font.
+    panel.setStyleSheet('QPushButton { font-family: "Helvetica"; font-size: 13pt; }')
+    panel.set_service_label("Webex")
+    panel.set_meeting_configured(True)
+    panel.set_app_status("installed", publisher_verified=True)
+    panel.set_launch_status("Not opened")
+    owner.resize(320, 1000)
+    owner.show()
+    _settle(qapp)
+    panel.focus_primary_action()
+    focused = QApplication.focusWidget()
+    assert focused is panel._fallback_btn
+    buttons = tuple(panel.findChildren(QPushButton))
+    for width in (320, 760, 320):
+        owner.resize(width, 1000)
+        panel.set_shared_lesson_context(hosting)
+        _settle(qapp)
+        assert panel.width() == width
+        assert QApplication.focusWidget() is focused
+        assert tuple(panel.findChildren(QPushButton)) == buttons
+        assert panel._fallback_btn.font().pointSize() == 13
+        visible = [button for button in buttons if button.isVisibleTo(panel)]
+        visible.extend(label for label in panel.findChildren(QLabel) if label.isVisibleTo(panel))
+        for widget in visible:
+            _assert_contained(widget, panel)
+        for index, widget in enumerate(visible):
+            for other in visible[index + 1:]:
+                assert not _rect(widget, panel).intersects(_rect(other, panel))
+        open_rect = _rect(panel._fallback_btn, panel)
+        edit_rect = _rect(panel._change_link_btn, panel)
+        if width == 320:
+            assert edit_rect.top() > open_rect.bottom()
+        else:
+            assert edit_rect.left() > open_rect.right()
+        panel.set_shared_lesson_context(None)
+        _settle(qapp)
+        assert panel.width() == width
+        assert QApplication.focusWidget() is focused
+    assert events == []
