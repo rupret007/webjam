@@ -202,13 +202,18 @@ class WebexEmbed(QFrame):
         actions = self._actions_layout = QGridLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(Space.SM)
-        actions.addWidget(self._bring_forward_btn, 0, 0)
-        actions.addWidget(self._mute_btn, 0, 1)
-        actions.addWidget(self._fallback_btn, 1, 0)
-        actions.addWidget(self._change_link_btn, 1, 1)
-        actions.addWidget(self._copy_link_btn, 2, 0)
-        actions.addWidget(self._install_btn, 2, 1)
-        actions.addWidget(self._recheck_btn, 3, 0)
+        self._action_positions = (
+            (self._bring_forward_btn, 0, 0),
+            (self._mute_btn, 0, 1),
+            (self._fallback_btn, 1, 0),
+            (self._change_link_btn, 1, 1),
+            (self._copy_link_btn, 2, 0),
+            (self._install_btn, 2, 1),
+            (self._recheck_btn, 3, 0),
+        )
+        self._actions_single_column = False
+        for button, row, column in self._action_positions:
+            actions.addWidget(button, row, column)
 
         layout = self._content_layout = QHBoxLayout(self)
         layout.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.SM)
@@ -242,11 +247,36 @@ class WebexEmbed(QFrame):
                 default=0,
             )
             margins = layout.contentsMargins()
+            action_width = max(self._action_column_widths(), default=0)
             hint.setWidth(
-                max(text_width, self._actions_layout.minimumSize().width())
+                max(text_width, action_width)
                 + margins.left() + margins.right() + 2 * self.frameWidth()
             )
         return hint
+
+    def _action_column_widths(self) -> tuple[int, int]:
+        """Measure the original grid independently of its current arrangement."""
+
+        widths = [0, 0]
+        for button, _row, column in self._action_positions:
+            if not button.isHidden():
+                widths[column] = max(
+                    widths[column], button.minimumSizeHint().width(), button.minimumWidth()
+                )
+        return widths[0], widths[1]
+
+    def _set_actions_single_column(self, single_column: bool) -> None:
+        if self._actions_single_column == single_column:
+            return
+        self._actions_single_column = single_column
+        # Move the existing layout items only. The widgets retain their
+        # connections, native ownership, keyboard focus, and tab order.
+        for button, _row, _column in self._action_positions:
+            self._actions_layout.removeWidget(button)
+        for index, (button, row, column) in enumerate(self._action_positions):
+            self._actions_layout.addWidget(
+                button, index if single_column else row, 0 if single_column else column
+            )
 
     def resizeEvent(self, event) -> None:
         self._sync_art_layout()
@@ -263,6 +293,11 @@ class WebexEmbed(QFrame):
             art = self._creator_profile_key == "art"
             margins = layout.contentsMargins()
             available = self.width() - margins.left() - margins.right() - 2 * self.frameWidth()
+            column_widths = self._action_column_widths()
+            two_column_width = sum(column_widths) + (
+                self._actions_layout.horizontalSpacing() if all(column_widths) else 0
+            )
+            self._set_actions_single_column(art and available < two_column_width)
             header_width = self._title_label.sizeHint().width()
             if not self._app_status_label.isHidden():
                 # Measure unwrapped text so changing the header direction
@@ -273,7 +308,7 @@ class WebexEmbed(QFrame):
                     ) + 2 * self._app_status_label.margin() + Space.SM
                 )
             text_width = max(280, header_width)
-            narrow = art and available < text_width + self._actions_layout.minimumSize().width() + Space.LG
+            narrow = art and available < text_width + two_column_width + Space.LG
             direction = (
                 QBoxLayout.Direction.TopToBottom if narrow
                 else QBoxLayout.Direction.LeftToRight
