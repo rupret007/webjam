@@ -10,6 +10,17 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Keep Music listening controls consistent
+
+- Muted and Solo-suppressed channels keep zero effective listening gain when
+  their faders move. Unmute or leaving Solo restores the chosen level.
+- A soloed musician leaving restores the remaining channels' native gains and
+  prior mute choices; a late arrival remains suppressed during Solo.
+- Delayed gain writes are coalesced and stay bound to their participant and
+  native connection. Mute/Solo card state follows the current listening mix.
+- This changes the listener's monitor mix, not source trim, microphone send,
+  recording, or transport. Physical two-person audio acceptance remains open.
+
 ### Prepare a Paint along copy before the host shares
 
 - A guest who opens **Paint along** early can now choose **Open my copy…**,

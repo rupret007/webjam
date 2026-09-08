@@ -232,6 +232,12 @@ class JamulusController:
         with self._lifecycle_guard():
             if getattr(self, "_stopping", False):
                 raise RuntimeError("JamulusController is still stopping")
+            with self._gain_dispatch_guard():
+                retired = self._gain_retiring_worker
+                if retired is not None:
+                    if retired.is_alive() or self._gain_worker is retired:
+                        raise RuntimeError("The listening-mix worker is still closing.")
+                    self._gain_retiring_worker = None
             if self.running:
                 current = getattr(self, "_rpc_monitor_identity", None)
                 if generation == 0 and pid == 0:
@@ -280,6 +286,8 @@ class JamulusController:
                 )
                 self._rpc_starting_process = None
                 self.running = True
+            with self._gain_dispatch_guard():
+                self._gain_dispatch_stopped = False
             self.protocol.start_receiving()
             self.monitor_thread = threading.Thread(
                 target=self._monitor_loop,
@@ -304,6 +312,11 @@ class JamulusController:
                 self.running = False
                 self._rpc_monitor_identity = None
                 self._rpc_starting_process = None
+            with self._gain_dispatch_guard():
+                self._gain_dispatch_stopped = True
+                self._gain_pending.clear()
+                gain_worker = self._gain_worker or self._gain_retiring_worker
+                self._gain_retiring_worker = gain_worker
         # Do not hold the controller lifecycle lock while RpcClient drains an
         # already-entered participant callback. A callback is allowed to call
         # controller lifecycle methods; `_stopping` makes those calls fail
@@ -327,6 +340,23 @@ class JamulusController:
             self.audio_engine.stop()
             # Keep registered UI callbacks across Stop Audio -> Launch Audio.
         finally:
+            # RPC stop closes the socket before this bounded join. Never keep
+            # participant or dispatch locks across socket I/O or worker waits.
+            if gain_worker is not None and gain_worker is not threading.current_thread():
+                try:
+                    gain_worker.join(timeout=2.0)
+                except RuntimeError:
+                    # Enqueue may have published a worker immediately before
+                    # stop, but not started it yet. Its stopped guard retires it.
+                    pass
+                if gain_worker.is_alive():
+                    self.last_error = "The listening-mix worker is still closing."
+                    self.logger.warning(self.last_error)
+                else:
+                    with self._gain_dispatch_guard():
+                        if (self._gain_retiring_worker is gain_worker
+                                and self._gain_worker is not gain_worker):
+                            self._gain_retiring_worker = None
             with self._lifecycle_guard():
                 self._stopping = False
 
@@ -565,18 +595,105 @@ class JamulusController:
         """Remove a participant."""
         self._state.remove_participant(channel_id)
     
+    def _gain_dispatch_guard(self):
+        """Lazy setup also supports controller fixtures built with __new__."""
+        with self._rpc_identity_guard():
+            if "_gain_dispatch_lock" not in self.__dict__:
+                self._gain_dispatch_lock = threading.Lock()
+                self._gain_pending = {}
+                self._gain_worker = None
+                self._gain_worker_token = None
+                self._gain_retiring_worker = None
+                self._gain_dispatch_stopped = False
+        return self._gain_dispatch_lock
+
+    @staticmethod
+    def _gain_snapshot_is_ready(snapshot):
+        return bool(
+            isinstance(snapshot, JamulusRpcMonitorSnapshot)
+            and snapshot.running and snapshot.available and snapshot.authenticated
+            and snapshot.identity.monitor_epoch > 0
+        )
+
     def _send_rpc_gain(self, channel_id: int, level: int) -> None:
-        """Fire-and-forget RPC gain command — always runs on a background thread."""
-        if not self.rpc_client.available:
-            return
+        """Coalesce local listening intent without reordering native writes.
 
-        def _go() -> None:
+        A pending item owns a participant object and RPC monitor epoch, never
+        an old scalar gain. One short-lived worker reads the effective mix at
+        dispatch; new intent during a send follows that send on the same worker.
+        """
+        del level
+        worker = None
+        dispatch_lock = self._gain_dispatch_guard()
+        # Snapshot and enqueue under the same local locks: a delayed enqueue
+        # cannot prune newer intent using an old roster or monitor snapshot.
+        # monitor_snapshot only copies local state; it performs no socket I/O.
+        with self._participants_lock, dispatch_lock:
+            if self._gain_dispatch_stopped:
+                return
+            rpc = self.rpc_client
+            if not rpc.available:
+                return
+            snapshot = rpc.monitor_snapshot()
+            if not self._gain_snapshot_is_ready(snapshot):
+                return
+            owners = self.participants
+            participant = owners.get(channel_id)
+            if participant is None:
+                return
+            # Churn cannot retain a queue of departed participants. At most
+            # one pending item per current channel survives a new mutation.
+            self._gain_pending = {
+                cid: pending for cid, pending in self._gain_pending.items()
+                if pending[0] is rpc and pending[1] == snapshot.identity
+                and pending[2] is owners.get(cid)
+            }
+            self._gain_pending[channel_id] = (rpc, snapshot.identity, participant)
+            if self._gain_worker is None:
+                token = object()
+                worker = threading.Thread(
+                    target=lambda: self._drain_rpc_gains(token),
+                    daemon=True, name="webjam-listening-mix",
+                )
+                self._gain_worker_token = token
+                self._gain_worker = worker
+        if worker is not None:
             try:
-                self.rpc_client.set_channel_gain(channel_id, level)
+                worker.start()
             except Exception:
-                pass
+                with self._gain_dispatch_guard():
+                    if self._gain_worker is worker:
+                        self._gain_worker = self._gain_worker_token = None
+                        self._gain_pending.clear()
+                self.logger.warning("The listening-mix update could not start.")
 
-        threading.Thread(target=_go, daemon=True).start()
+    def _drain_rpc_gains(self, token) -> None:
+        while True:
+            with self._gain_dispatch_guard():
+                if self._gain_worker_token is not token:
+                    return
+                if self._gain_dispatch_stopped or not self._gain_pending:
+                    self._gain_pending.clear()
+                    self._gain_worker = self._gain_worker_token = None
+                    return
+                channel_id = next(iter(self._gain_pending))
+                rpc, identity, participant = self._gain_pending.pop(channel_id)
+            try:
+                if self.rpc_client is not rpc:
+                    continue
+                snapshot = rpc.monitor_snapshot()
+                if (not self._gain_snapshot_is_ready(snapshot)
+                        or snapshot.identity != identity):
+                    continue
+                with self._participants_lock:
+                    if self.participants.get(channel_id) is not participant:
+                        continue
+                    effective = 0 if participant.muted else participant.fader_level
+                rpc.set_channel_gain(channel_id, effective, epoch=identity.monitor_epoch)
+            except Exception:
+                # A failed command never recreates a session, starts capture,
+                # retries stale gain, or exposes private RPC details.
+                pass
 
     def set_fader_level(self, channel_id: int, level: int):
         """Set the local mix fader for a Jamulus channel.

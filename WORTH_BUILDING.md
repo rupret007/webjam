@@ -1,53 +1,49 @@
-# Worth building — prepare a guest copy before the host shares
+# Worth building — Music listening controls match the native mix
 
-Base: `e35f7352b42280814be0ea02f77b412f68231706`, fetched `origin/master`
-after #94; the fresh branch started at that exact tip.
-Branch: `codex/art-guest-prepare-copy`; canonical WebJam checkout only.
-Marker: `OVERNIGHT_WEBJAM_ART_20260907_2307`.
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5579240270.
+Base: fetched origin/master 2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2.
+Independent branch: codex/music-effective-listening-mix.
+BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5592279206
 
-#93 gives a waiting guest an **Open Paint along** room action and says they can
-load a copy before the host shares. The panel actually hid **Open my copy…**
-until an offer arrived. The existing follower already supports holding a local
-copy without showing or playing it. This is a missing functional step, with a
-short path through existing code.
+A musician can Mute the reference track, adjust its fader to prepare a quieter
+level, and still see Mute selected while WebJam sends a nonzero native gain.
+Solo suppresses the other channels in the display, but their faders can likewise
+send nonzero gain. If the soloed collaborator leaves, the remaining channels
+look restored without receiving the native restoration command.
 
-The valid baseline reproduced **16 failed / 2 passed** in real Qt/controller
-journeys. The native fixture was corrected to carry an empty video snapshot
-before that baseline. All sixteen preparation journeys stopped at the missing
-file action; both Make together controls already passed.
+These are reproduced ordinary listening gestures in the production state
+manager and native RPC serializer, with a memory sink replacing the send
+boundary. Native monitor mute uses fader zero; there is no separate mute bit.
+The UDP adapter is dormant in the product and cannot repair a missing or
+contradictory native command. Physical audibility is NOT RUN.
 
-Before: a guest follows the waiting-room action into a panel with no file
-action. After: the guest can open a copy early and see **Your copy is open**,
-explicitly waiting for WebJam to check it against the host's eventual offer.
-Matching, host state and connection still own following. A changed or failed
-copy offers another try. More → Close my copy works before a share.
+Before → after: a muted or Solo-suppressed channel keeps zero effective gain
+while its chosen fader changes. Unmute, unsolo, or the soloed musician departing
+restores the appropriate stored level and prior mute choices. A late arrival
+stays suppressed while Solo is active. Ordinary roster refresh does not reset
+the listener's mix.
 
-Make together already starts with each artist's own tools; #94 supplies its
-Conversation next-click label. Completing an action that currently dead-ends
-beats adding more wording or another door choice. This slice changes only the
-existing local follower projection and Paint along panel, plus tests/docs.
+The existing one-thread-per-write path also allowed an older fader command
+to arrive after Mute, or to enter a replacement RPC connection. A coalesced,
+single-worker path applies current effective gain only for its participant and
+monitor epoch. Commands already sent remain distinct from queued intent.
 
-The early room cue uses the existing host-start fact available on native
-rooms. LAN guests can use the existing explicit Paint along entry; this slice
-does not add a host-start field or pretend LAN publishes one. Neither route
-adds a required video step to Make together.
+Real Qt journeys found that an existing participant card did not receive the
+model's changed Solo/mute state. The same slice must project the authoritative
+listening choices onto the existing cards so their controls agree with the mix.
 
-Focused proof: **425 tests passed**, including **24 new preparation journeys**
-across LAN/native, 720/1100 widths, later match/mismatch, repeated empty room
-state, withdrawal, changed/deleted copies, cancellation, decoder failure,
-connection loss during the chooser, closing a prepared copy and Make together.
-Actual Qt captures at 720×560 were inspected using synthetic files and a
-controlled decoder. Full local and hosted results, exact tip/tree and four
-desktop build evidence belong in the OPEN DRAFT and coord AFTER.
+This helps both reference-track and unaccompanied rehearsal through the existing
+mixer. It outranks a new Art request mechanism while the remote-network decision
+and complete physical sessions remain open. The change has no dependency on
+the pending Art/Music integration drafts, and does not compose their evidence.
 
-No download, file transfer, protocol, player, timer, meeting action or guest
-transport input is added. Hashing and decoding remain synchronous. Physical
-playback, live meetings, OS focus/installed-app feel and signing are NOT RUN.
+Acceptance must cover real native command serialization and real Qt listening
+gestures, preserved chosen levels and prior mutes, addressed-channel independence,
+roster entry/departure, and unchanged Art door/guest authority. Tests use
+synthetic devices and command sinks, never live audio, capture or meetings.
+Full local and hosted checks belong to the frozen exact tip; readiness for
+independent review does not certify physical sound.
 
-One OPEN DRAFT PRE_KAREN, then stop for Karen leftover + security + ten-second
-UX. No rework of #89/#90; parked #37/#49 untouched. Art door retains exactly
-Make together + Paint along → Host/Join and the squirrel-with-fro artwork.
-Unsigned 0.27.2 is Jeff-only. No merge/squash/tag/sign/Pages/Release Trust/Publish/
-release/deploy/spend/live Cisco, short-code/public rendezvous, Music, Drawpile,
-shared-canvas work, second video stack, other-repo lane or parent injection.
+OPEN DRAFT PRE_KAREN only. Existing #96–#104 and parked #37/#49 stay untouched.
+No merge/squash/tag/sign/release/Pages/Publish/deploy/spend/live Cisco, public
+rendezvous, short codes, second engine, other repository or new goal.
+Unsigned 0.27.2 remains Jeff-only. The sustained two-session goal remains open.
