@@ -588,25 +588,21 @@ class WebexEmbed(QFrame):
             )
         else:
             accessible_name = (
-                "Change the saved meeting link"
+                "Change the Conversation meeting link"
                 if self._meeting_configured
                 else "Add a meeting link from any platform"
             )
         self._change_link_btn.setAccessibleName(accessible_name)
         self._change_link_btn.setAccessibleDescription(
-            "Open WebJam Settings to "
-            + (
-                (
-                    f"change the saved {service} meeting link."
-                    if service
-                    else "change the saved meeting link."
-                )
-                if self._meeting_configured
-                else "add a public HTTPS link from any meeting platform."
+            (
+                f"Change the {service} meeting link used by Conversation."
+                if service else "Change the meeting link used by Conversation."
             )
+            if self._meeting_configured
+            else "Add a public HTTPS meeting link for Conversation."
         )
         self._change_link_btn.setToolTip(
-            f"Open Settings to add or change the {service} meeting link."
+            f"Add or change the {service} meeting link used by Conversation."
             if service
             else "Add or change the meeting link used by Conversation."
         )
