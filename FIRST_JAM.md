@@ -77,11 +77,15 @@ These steps apply to Music, Podcast & Voice, and Review & Rehearsal.
    want the same status plus output results, recent events, and your Creative
    Pulse in one session record.
 9. Hosts choose **Add Shared Track** or drop one supported file on the live
-   surface. Loading does not start playback. If Play is not ready, the strip
-   says **Set up the audio device** and opens Shared Track so you can choose
+   surface. Loading does not start playback. Windows and Linux cannot send a
+   Shared Track in this build: choose **Back to rehearsal** to keep playing,
+   or **Remove** the file before recording without it. Sending currently
+   needs a supported Mac. If that Mac needs its isolated audio device, the
+   strip says **Set up the audio device** and opens Shared Track for
    **Set Up Shared Track…** and **Recheck Route**. That step does not need a
    signed catalog. When the isolated route is already on this Mac, Play sends
-   the song to the room. Guests never receive transport authority.
+   the song through the existing session audio. Confirm that both people can
+   actually hear it. Guests never receive transport authority.
 10. Choose **Record Session** when the session is ready. Review every exact
     planned server track, Local Original, and Shared Track in the readiness
     sheet. Confirm its mono/stereo format, required/optional status, storage,

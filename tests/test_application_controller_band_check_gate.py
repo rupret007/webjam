@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest import mock
@@ -38,6 +39,9 @@ APP = QApplication.instance() or QApplication([])
 
 def _bare_controller(state: str = "Not launched") -> ApplicationController:
     controller = ApplicationController.__new__(ApplicationController)
+    controller._reference_track_worker_state_lock = threading.Lock()
+    controller._reference_track_load_pending = None
+    controller._reference_track_operation_kind = ""
     controller.bridge = SimpleNamespace(
         jamulus_state=state,
         hosted_server_alive=mock.Mock(return_value=False),

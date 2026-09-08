@@ -7289,35 +7289,106 @@ class ApplicationController(QObject):
                 None,
             )
             loaded_shared_track = bool(getattr(shared_snapshot, "loaded", False))
+            with self._reference_track_worker_state_lock:
+                source_load_pending = bool(
+                    self._reference_track_load_pending is not None
+                    or self._reference_track_operation_kind == "load"
+                )
+            source_loading = source_load_pending or shared_state == "loading"
             if (
-                loaded_shared_track
-                and shared_state in {"ready", "paused"}
-                and not bool(getattr(shared_snapshot, "can_play", False))
+                source_loading
+                or (
+                    loaded_shared_track
+                    and shared_state not in {"routing", "playing"}
+                    and not bool(getattr(shared_snapshot, "can_play", False))
+                )
             ):
+                # A failed replacement retains the old source; a queued
+                # replacement can still expose its old READY snapshot. Do
+                # not silently omit that intent or record the previous song.
+                # This gate only applies to a new take, never its Stop action.
                 if callable(planner):
                     planner(required=False)
                 self._shared_track_play_after_recording = ""
                 from webjam_qt.widgets.session_strip import (
                     shared_track_next_step_label,
                 )
+                from core.reference_track import reference_track_host_backend_unavailable
 
                 next_step = shared_track_next_step_label(shared_snapshot)
-                self._show_actionable_error(
-                    next_step,
-                    what_failed=(
-                        "The loaded Shared Track cannot play in this room yet. "
-                        "No recorder was started."
-                    ),
-                    likely_cause=(
+                capability = getattr(shared_snapshot, "capability", None)
+                what_failed = (
+                    "The loaded Shared Track cannot play in this room yet. "
+                    "No recorder was started."
+                )
+                if source_loading:
+                    next_step = "Open Shared Track"
+                    what_failed = (
+                        "The selected Shared Track is still loading or waiting "
+                        "to load. No recorder was started."
+                    )
+                    cause = "The selected song is not ready for this take."
+                    next_action = (
+                        "Wait for loading to finish, review Shared Track, "
+                        "then choose Record again. Loading will not start "
+                        "recording automatically."
+                    )
+                elif (
+                    shared_state in {"failed", "stopping", "closed"}
+                    or bool(getattr(shared_snapshot, "cleanup_pending", False))
+                ):
+                    next_step = "Open Shared Track"
+                    cause = (
+                        "The selected track needs recovery or its previous "
+                        "audio route has not finished stopping."
+                    )
+                    next_action = (
+                        "Open Shared Track and resolve the shown problem. "
+                        "If cleanup is pending, choose Stop to retry. Remove "
+                        "the track once it is safely stopped if this take "
+                        "should not include it, then choose Record again."
+                    )
+                elif reference_track_host_backend_unavailable(capability):
+                    cause = (
+                        "This build cannot send a Shared Track from this "
+                        "computer. A supported Mac is needed to host a track."
+                    )
+                    next_action = (
+                        f"Choose {next_step} to inspect or remove the track. "
+                        "Remove it before recording this take without a track, "
+                        "or use a supported host to include it."
+                    )
+                elif (
+                    str(getattr(capability, "platform", "")) == "macos"
+                    and getattr(capability, "reason_code", "") in {
+                        "blackhole_unavailable", "physical_certification_required",
+                    }
+                ):
+                    cause = (
                         "Play needs the official BlackHole 16ch or 64ch "
                         "device at 48 kHz on this Mac. A signed catalog is "
                         "not required."
-                    ),
-                    next_action=(
+                    )
+                    next_action = (
                         f"Choose {next_step}, then Recheck Route. Or remove "
                         "the track before recording if this take should not "
                         "include it."
-                    ),
+                    )
+                else:
+                    cause = (
+                        "The track's audio route or the current music "
+                        "connection is not ready."
+                    )
+                    next_action = (
+                        f"Choose {next_step} to review the current problem. "
+                        "Or remove the track before recording if this take "
+                        "should not include it."
+                    )
+                self._show_actionable_error(
+                    next_step,
+                    what_failed=what_failed,
+                    likely_cause=cause,
+                    next_action=next_action,
                 )
                 return
             if callable(planner):
@@ -13763,8 +13834,8 @@ class ApplicationController(QObject):
     def _offer_shared_track_next_step(self, snapshot) -> None:
         """Open Shared Track once after a local load that still cannot play.
 
-        A mute badge is not a next step. The host gets the panel that already
-        names Set Up Shared Track and Recheck Route — no signed catalog pin.
+        The host gets the existing panel's current support or setup guidance.
+        An unavailable platform cannot be repaired by another route check.
         """
 
         from webjam_qt.widgets.session_strip import shared_track_play_is_locked
@@ -13944,6 +14015,13 @@ class ApplicationController(QObject):
         """Coalesce route probes to the newest mode without queuing threads."""
 
         if self._shutdown_cleanup_blocks_action():
+            return
+        from core.reference_track import reference_track_host_backend_unavailable
+
+        snapshot = getattr(getattr(self, "_reference_track", None), "snapshot", None)
+        if reference_track_host_backend_unavailable(getattr(snapshot, "capability", None)):
+            # No sender backend exists on this platform in this build. An
+            # old queued Recheck intent must not restart a pointless probe.
             return
         audience_active = (
             self._webex_audio_mode() == "audience_bridge"
