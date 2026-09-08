@@ -73,7 +73,10 @@ class ParticipantStateManager:
                 return
             effective_level = 0 if participant.muted else participant.fader_level
         self._send_rpc_gain(channel_id, effective_level)
-        self._apply_mixer_setting(channel_id, notify=notify)
+        if notify:
+            self._apply_mixer_setting(channel_id)
+        else:
+            self._apply_mixer_setting(channel_id, notify=False)
 
     # -- Mutating ops -------------------------------------------------------
     def add_participant(

@@ -79,6 +79,13 @@ at that same tip, including all four desktop builds. Exact results, retries,
 skips, tip SHA and evidence links belong in the PR body and coord AFTER.
 Do not infer final or hosted green from this source document.
 
+The first frozen-tip full run at 305b7d3 completed 373 modules with 8,818
+passes and one failure: the new shared helper supplied notify=True to an
+existing positional-only callback in test_plan_regressions. The correction
+preserves the old default callback shape while retaining explicit notify=False
+on roster transitions. The initial run and hosted outcomes remain disclosed;
+the corrected tip requires its own complete local and hosted verification.
+
 Codex self-QA is not Karen PASS. Keep OPEN DRAFT, retain original component and
 parked heads, release the lease after handoff, and continue useful independent
 work under the sustained goal. No merge/squash/tag/sign/release/Pages/Release
