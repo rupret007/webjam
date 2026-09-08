@@ -89,6 +89,31 @@ def test_make_together_is_complete_without_optional_tools_or_a_roster():
         assert "setup required" not in public
 
 
+@pytest.mark.parametrize("hosting", [False, True])
+def test_conversation_button_names_its_next_click_from_the_saved_meeting(hosting):
+    """No saved link yet -> the room asks to set one up; once saved the
+    button is just the way back to the panel. The state never disables it."""
+
+    for state in (ArtRoomState.WAITING, ArtRoomState.CONNECTED, ArtRoomState.FAILED):
+        needs_setup = art_room_overview(
+            state=state, hosting=hosting, conversation_configured=False,
+        )
+        ready = art_room_overview(
+            state=state, hosting=hosting, conversation_configured=True,
+        )
+        assert needs_setup.conversation_action_label == "Set Up Conversation"
+        assert ready.conversation_action_label == "Conversation"
+
+    # A closing or quitting room still names the click honestly; the button
+    # is disabled by conversation_enabled, not relabelled.
+    closing = art_room_overview(
+        state=ArtRoomState.CONNECTED, hosting=hosting, stopping=True,
+        conversation_configured=False,
+    )
+    assert closing.conversation_action_label == "Set Up Conversation"
+    assert not closing.conversation_enabled
+
+
 def test_opening_never_promotes_a_cached_connected_state():
     opening = art_room_overview(
         state=ArtRoomState.CONNECTED, hosting=False, probing=True,

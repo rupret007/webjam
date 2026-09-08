@@ -254,6 +254,16 @@ class ArtRoomOverviewWidget(QScrollArea):
         secondary.setToolTip(overview.secondary_activity_detail)
         secondary.setEnabled(secondary_offered and overview.secondary_activity_enabled)
         self._secondary_activity_row.setVisible(secondary_offered)
+        self._conversation_button.setText(
+            overview.conversation_action_label.replace("&", "&&")
+        )
+        self._conversation_button.setAccessibleName(overview.conversation_action_label)
+        self._conversation_button.setToolTip(
+            "Optional. Show Conversation controls to talk and show your work."
+            if overview.conversation_action_label == "Conversation"
+            else "Optional. Show Conversation controls and add a meeting link "
+            "so the room can talk and show work."
+        )
         self._conversation_button.setEnabled(overview.conversation_enabled)
         secondary_description = (
             (overview.secondary_activity_label, overview.secondary_activity_detail)

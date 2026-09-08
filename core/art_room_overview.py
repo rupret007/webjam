@@ -29,6 +29,10 @@ class ArtRoomOverview:
     activity_action_label: str = ""
     activity_enabled: bool = False
     conversation_enabled: bool = True
+    #: What the Conversation button says its next click does. "Set Up
+    #: Conversation" when no meeting link is saved yet, "Conversation" once
+    #: one is. Mirrors the Music session strip so the two modes read alike.
+    conversation_action_label: str = "Conversation"
     secondary_activity_label: str = ""
     secondary_activity_detail: str = ""
     secondary_activity_action: str = ""
@@ -60,6 +64,7 @@ def art_room_overview(
     presence: ArtRoomPresence = ABSENT,
     secondary_presence: ArtRoomPresence = ABSENT,
     named_connections: bool = False,
+    conversation_configured: bool = False,
 ) -> ArtRoomOverview:
     """Keep closure and missing connection evidence ahead of optional layers."""
     role = "Host" if hosting else "Guest"
@@ -202,6 +207,11 @@ def art_room_overview(
         # Conversation only reveals the separate meeting controls. Its
         # availability is independent of the Art transport connection.
         conversation_enabled=not (stopping or cleanup_required or quitting),
+        # Name the next click: a room with no saved meeting link needs one
+        # set up before anyone can talk; after that the panel is just there.
+        conversation_action_label=(
+            "Conversation" if conversation_configured else "Set Up Conversation"
+        ),
     )
 
 
