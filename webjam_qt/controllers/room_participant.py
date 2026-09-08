@@ -22,6 +22,7 @@ from core.session_transfer import (
     RoomConnectionNames,
     SharedCanvasSessionSnapshot,
 )
+from services.lan_room_guest import LanRoomTerminalReason
 
 
 LOGGER = logging.getLogger("webjam.qt.room_participant")
@@ -180,6 +181,16 @@ class RoomParticipantController:
         return self.lan_guest is not None and self.lan_guest is self._lan_terminal_owner
 
     @property
+    def lan_invitation_rejected(self):
+        """A current observer's rejected credential never authorizes replay."""
+
+        return bool(
+            self.lan_guest is not None
+            and getattr(self.lan_guest, "terminal_reason", None)
+            is LanRoomTerminalReason.INVITATION_REJECTED
+        )
+
+    @property
     def can_retry_lan(self):
         """Only a terminal receipt from this LAN observer authorizes retry."""
         from core.network_invite import BandInvite
@@ -189,6 +200,7 @@ class RoomParticipantController:
         recording = getattr(self.app, "recording", None)
         return bool(
             self.lan_failed
+            and not self.lan_invitation_rejected
             and isinstance(invite, BandInvite) and invite.peer_enabled
             and self.role == "guest"
             and (self.probe_failed or self.state is ArtRoomState.FAILED)
@@ -289,7 +301,7 @@ class RoomParticipantController:
 
     def receive_lan(self, owner, generation, state):
         if (owner is not self.lan_guest or generation != self.generation
-                or self.blocked):
+                or self.blocked or self.lan_invitation_rejected):
             return
         profile = canonical_creator_profile_key(state.creator_profile_key)
         if profile is None:
@@ -350,6 +362,9 @@ class RoomParticipantController:
     def lose_lan(self, owner, generation, terminal):
         if owner is not self.lan_guest or generation != self.generation or self.blocked:
             return
+        # An earlier transient-loss callback must not erase a later rejected
+        # credential while both still belong to this exact observer.
+        terminal = bool(terminal or self.lan_invitation_rejected)
         self._lan_terminal_owner = owner if terminal else None
         self.probe_failed = bool(terminal and self.probing)
         if terminal:
@@ -829,6 +844,12 @@ class RoomParticipantController:
                 "Update WebJam on both computers. Choose End Room, then start a new room and copy its invitation."
                 if needs_update else "Choose End Room to close this connection, then start a new room and copy its invitation.",
                 SessionPrimaryAction.END_SESSION, "End Room",
+            )
+        if self.role == "guest" and self.lan_invitation_rejected and not self.blocked:
+            return GuidanceDisplayOverride(
+                "This invitation no longer opens the room",
+                "Ask the host for a fresh invitation, then choose Paste New Invite.",
+                SessionPrimaryAction.PASTE_NEW_INVITE, "Paste New Invite",
             )
         if self.can_retry_lan:
             return GuidanceDisplayOverride(

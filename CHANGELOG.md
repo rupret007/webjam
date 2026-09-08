@@ -10,6 +10,14 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### A rejected invitation leads to a fresh way in
+
+- A private-network guest whose invitation is rejected now gets **Paste New
+  Invite** promptly. WebJam stops that attempt instead of offering repeated
+  retries with the rejected invitation.
+- Temporary connection failures keep **Try Again**. Canceling Join keeps the
+  current draft; replacement still requires the previous connection to close.
+
 ### Recover a private room without replaying old audio intent
 
 - After a failed Reset Invite, a successful explicit retry restores Art room
@@ -94,6 +102,7 @@ All notable improvements and features for the WebJam creator collaboration platf
   capture provenance distinct from physical audibility and one-way latency.
 - No audio device, playback, recorder or network is opened. Existing output
   files are refused; the physical pilot now links the measurement procedure.
+
 
 ### Prepare a Paint along copy before the host shares
 
