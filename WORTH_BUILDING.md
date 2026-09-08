@@ -1,53 +1,45 @@
-# Worth building — prepare a guest copy before the host shares
+# Worth building — recover from a rejected LAN invitation
 
-Base: `e35f7352b42280814be0ea02f77b412f68231706`, fetched `origin/master`
-after #94; the fresh branch started at that exact tip.
-Branch: `codex/art-guest-prepare-copy`; canonical WebJam checkout only.
-Marker: `OVERNIGHT_WEBJAM_ART_20260907_2307`.
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5579240270.
+BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5591698362
+Branch: `codex/rejected-invitation-recovery`
+Independent base: fetched `origin/master` at `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`.
+All existing drafts, including #103 and parked #37/#49, stay unchanged.
 
-#93 gives a waiting guest an **Open Paint along** room action and says they can
-load a copy before the host shares. The panel actually hid **Open my copy…**
-until an offer arrived. The existing follower already supports holding a local
-copy without showing or playing it. This is a missing functional step, with a
-short path through existing code.
+## Observed failure and product delta
 
-The valid baseline reproduced **16 failed / 2 passed** in real Qt/controller
-journeys. The native fixture was corrected to carry an empty video snapshot
-before that baseline. All sixteen preparation journeys stopped at the missing
-file action; both Make together controls already passed.
+The actual peer client classifies HTTP 401 as an authentication rejection.
+The LAN room observer instead catches it as a temporary network fault, waits
+through the generic timeout, and lets the artist retry the same rejected
+invitation. A bounded no-socket reproduction against the production client,
+observer and room controller confirmed `retry_setup` with the identical invite.
 
-Before: a guest follows the waiting-room action into a panel with no file
-action. After: the guest can open a copy early and see **Your copy is open**,
-explicitly waiting for WebJam to check it against the host's eventual offer.
-Matching, host state and connection still own following. A changed or failed
-copy offers another try. More → Close my copy works before a share.
+Before: a rejected invitation leads to repeated Try Again attempts. After: a
+typed rejection stops that observer promptly and gives one Paste New Invite
+action through the existing Join/cleanup flow. Temporary network failures keep
+Try Again. This applies before host profile discovery and after joining an Art
+room, regardless of the guest's saved Art/Music preference.
 
-Make together already starts with each artist's own tools; #94 supplies its
-Conversation next-click label. Completing an action that currently dead-ends
-beats adding more wording or another door choice. This slice changes only the
-existing local follower projection and Paint along panel, plus tests/docs.
+This beats adding a new pause-request protocol now because it repairs the
+first required step: getting into a room. It cannot make private-network
+invitations work across different homes. That architecture decision stays open.
 
-The early room cue uses the existing host-start fact available on native
-rooms. LAN guests can use the existing explicit Paint along entry; this slice
-does not add a host-start field or pretend LAN publishes one. Neither route
-adds a required video step to Make together.
+## Acceptance and ownership
 
-Focused proof: **425 tests passed**, including **24 new preparation journeys**
-across LAN/native, 720/1100 widths, later match/mismatch, repeated empty room
-state, withdrawal, changed/deleted copies, cancellation, decoder failure,
-connection loss during the chooser, closing a prepared copy and Make together.
-Actual Qt captures at 720×560 were inspected using synthetic files and a
-controlled decoder. Full local and hosted results, exact tip/tree and four
-desktop build evidence belong in the OPEN DRAFT and coord AFTER.
+Prove rejection at enrollment and state read, no continued polling or revival
+by queued old state/loss callbacks, fixed secret-safe guidance, and no reuse of
+the rejected capability. Keep temporary loss retryable. Prove real HUD/canvas/
+Pocket guidance, canceled Join preserves Notes and rejection, and a new invite
+cannot replace unresolved cleanup. No source video, microphone, meeting,
+recording or live engine is launched by these checks.
 
-No download, file transfer, protocol, player, timer, meeting action or guest
-transport input is added. Hashing and decoding remain synchronous. Physical
-playback, live meetings, OS focus/installed-app feel and signing are NOT RUN.
+Run focused regressions, the full application suite and required local static/
+UX checks. Hosted CI must pass on the exact draft tip, including four desktops.
+Automated proof is separate from physical remote joining, audibility, latency
+and Karen leftover/security/ten-second UX PASS.
 
-One OPEN DRAFT PRE_KAREN, then stop for Karen leftover + security + ten-second
-UX. No rework of #89/#90; parked #37/#49 untouched. Art door retains exactly
-Make together + Paint along → Host/Join and the squirrel-with-fro artwork.
-Unsigned 0.27.2 is Jeff-only. No merge/squash/tag/sign/Pages/Release Trust/Publish/
-release/deploy/spend/live Cisco, short-code/public rendezvous, Music, Drawpile,
-shared-canvas work, second video stack, other-repo lane or parent injection.
+## Holds
+
+OPEN DRAFT PRE_KAREN only. No merge/squash/tag/sign/release/Pages/Publish/deploy/
+spend/live Cisco or automatic capture. Unsigned 0.27.2 remains Jeff-only. No
+other repo, new goal, parent injection, short codes or public rendezvous.
+Four-hour lease; BEFORE/AFTER in America/Chicago; release at handoff.

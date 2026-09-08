@@ -9403,7 +9403,11 @@ class ApplicationController(QObject):
             # The current observer can fail before it authenticates the host's
             # profile. Keep failure truth independent of a saved Music/Art
             # preference; neither means the invitation has connected.
-            failure = FailureDisposition.RETRYABLE
+            failure = (
+                FailureDisposition.BLOCKED
+                if self._room_participant.lan_invitation_rejected
+                else FailureDisposition.RETRYABLE
+            )
         elif lifecycle_phase is SessionLifecyclePhase.FAILED_FINAL:
             failure = FailureDisposition.FINAL
         elif lifecycle_phase is SessionLifecyclePhase.FAILED_RECOVERABLE:

@@ -10,6 +10,14 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### A rejected invitation leads to a fresh way in
+
+- A private-network guest whose invitation is rejected now gets **Paste New
+  Invite** promptly. WebJam stops that attempt instead of offering repeated
+  retries with the rejected invitation.
+- Temporary connection failures keep **Try Again**. Canceling Join keeps the
+  current draft; replacement still requires the previous connection to close.
+
 ### Prepare a Paint along copy before the host shares
 
 - A guest who opens **Paint along** early can now choose **Open my copy…**,

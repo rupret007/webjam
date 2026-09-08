@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
+from enum import Enum
 
 from core.network_invite import BandInvite, _validate_private_peer_host
 from core.session_transfer import (
@@ -18,7 +19,15 @@ from core.session_transfer import (
     SessionPeerClient,
     SessionStateSnapshot,
     SessionTransferError,
+    TransferAuthenticationError,
 )
+
+
+class LanRoomTerminalReason(str, Enum):
+    """Fixed local reasons; never retain a server's private error text."""
+
+    UNAVAILABLE = "unavailable"
+    INVITATION_REJECTED = "invitation_rejected"
 
 
 class LanRoomGuest:
@@ -50,6 +59,11 @@ class LanRoomGuest:
         self._last_seen = None
         self._started_at = None
         self.last_state = None
+        self._terminal_reason: LanRoomTerminalReason | None = None
+
+    @property
+    def terminal_reason(self) -> LanRoomTerminalReason | None:
+        return self._terminal_reason
 
     @property
     def connection_available(self) -> bool:
@@ -94,6 +108,15 @@ class LanRoomGuest:
         while not self._stop.is_set():
             try:
                 self.poll_once()
+            except TransferAuthenticationError:
+                if not self._stop.is_set():
+                    # A rejected enrollment or participant credential cannot
+                    # recover by replaying this invitation. Retire connection
+                    # authority before its queued UI notification is delivered.
+                    self._terminal_reason = LanRoomTerminalReason.INVITATION_REJECTED
+                    self.stop()
+                    self._on_loss(self, True)
+                break
             except Exception:  # private server details stay out of logs/UI
                 if not self._stop.is_set() and not self.connection_available:
                     origin = (
@@ -102,6 +125,8 @@ class LanRoomGuest:
                         else self._started_at
                     )
                     terminal = origin is not None and self._clock() - origin >= 30.0
+                    if terminal:
+                        self._terminal_reason = LanRoomTerminalReason.UNAVAILABLE
                     self._on_loss(self, terminal)
                     if terminal:
                         self.stop()
