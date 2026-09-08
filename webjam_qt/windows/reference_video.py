@@ -53,7 +53,9 @@ _SYNC_DETAIL = (
 )
 
 _FOLLOW_STATUS = {
-    ReferenceVideoFollowState.NO_VIDEO: "The host will choose the process video.",
+    ReferenceVideoFollowState.NO_VIDEO: (
+        "Already have the video? Open your copy, or keep making while the host prepares theirs."
+    ),
     ReferenceVideoFollowState.NEEDS_FILE: (
         "Open your own copy of the same file to follow along."
     ),
@@ -646,6 +648,18 @@ class ReferenceVideoDialog(QDialog):
             snapshot.source_display_name if sharing else _GUEST_EMPTY_HEADLINE
         )
         self._status.setText(_FOLLOW_STATUS[state])
+        if state is ReferenceVideoFollowState.NO_VIDEO:
+            if snapshot.local_copy_prepared:
+                self._headline.setText("Your copy is open")
+                self._status.setText(
+                    "Waiting for the host to share. WebJam will check that your copy "
+                    "matches before following. You can keep making."
+                )
+            elif snapshot.can_close_local_copy:
+                self._status.setText(
+                    "Your copy needs another try. Open it again, "
+                    "or keep making while you wait for the host."
+                )
         self._surface_placeholder.setText(
             {
                 ReferenceVideoFollowState.NO_VIDEO: _EMPTY_SURFACE,
@@ -663,7 +677,8 @@ class ReferenceVideoDialog(QDialog):
         # A retained local copy can still be closed when the host withdraws
         # the video or this artist hides it. Only the core owns that fact.
         holds_copy = snapshot.can_close_local_copy
-        needs_copy = state in {
+        needs_copy = (state is ReferenceVideoFollowState.NO_VIDEO
+                      and not snapshot.local_copy_prepared) or state in {
             ReferenceVideoFollowState.NEEDS_FILE,
             ReferenceVideoFollowState.MISMATCHED_FILE,
             ReferenceVideoFollowState.FILE_UNAVAILABLE,

@@ -10,6 +10,18 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Prepare a Paint along copy before the host shares
+
+- A guest who opens **Paint along** early can now choose **Open my copy…**,
+  completing the waiting-room action instead of reaching a panel with no
+  file-opening button.
+- **Your copy is open** means the local file is waiting for the host's offer.
+  It stays silent with no picture or transport control until the existing
+  matching-file and host-state checks allow following. Changed or failed
+  copies offer retry; **More → Close my copy** also works before a share.
+- Make together keeps its own-tools start. No player, room protocol, file
+  transfer, download, or meeting action is added.
+
 ### The Art room's Conversation button names its next click
 
 - In **Make together**, talk is the main path, so the room's **Conversation**
@@ -25,8 +37,8 @@ All notable improvements and features for the WebJam creator collaboration platf
 - A guest who joins a **Paint along** room now sees **Paint along is
   starting** with one **Open Paint along** action while they wait for the
   host's first share, instead of the generic "bring your own tools" line
-  and no next step. Opening the panel early lets them load their own copy
-  of the video so they are following the moment it arrives.
+  and no next step. The panel's early file action is completed by the
+  preparation change above; following still requires a matching host offer.
 - The cue is drawn from the host's published start carried in the room
   state — a room fact, never the guest's own saved preference — so a guest
   who joins **Make together** still sees nothing to set up.
