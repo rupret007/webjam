@@ -226,12 +226,12 @@ def test_a_follower_panel_offers_no_transport_at_all(guest_dialog):
 def test_a_follower_panel_starts_on_the_no_video_path(guest_dialog):
     assert guest_dialog.windowTitle() == "Paint along"
     assert guest_dialog._headline.text() == "Waiting for a process video"
-    assert guest_dialog._status.text() == "The host will choose the process video."
+    assert "Open your copy" in guest_dialog._status.text()
     assert guest_dialog._surface_placeholder.text() == (
         "Your silent process video appears here"
     )
     assert guest_dialog._role.text() == "YOU FOLLOW"
-    assert guest_dialog._open_button.isEnabled() is False
+    assert guest_dialog._open_button.isEnabled() is True
     assert guest_dialog._hide_button.isEnabled() is False
 
 
@@ -479,7 +479,7 @@ def test_paint_along_starts_as_a_deliberate_video_surface(qapp):
         dialog.deleteLater()
 
 
-def test_a_guest_in_a_room_with_no_video_is_offered_nothing(qapp):
+def test_a_guest_can_prepare_a_copy_without_a_host_video_offer(qapp):
     from webjam_qt.windows.reference_video import ReferenceVideoDialog
 
     dialog = ReferenceVideoDialog(hosting=False)
@@ -491,12 +491,13 @@ def test_a_guest_in_a_room_with_no_video_is_offered_nothing(qapp):
             "Your silent process video appears here"
         )
         for button in (
-            dialog._open_button,
             dialog._hide_button,
             dialog._return_button,
         ):
             assert button.isHidden() is True
         assert dialog._more_button.isHidden() is True
+        assert not dialog._open_button.isHidden()
+        assert dialog._open_button.isEnabled()
     finally:
         dialog.deleteLater()
 

@@ -750,6 +750,9 @@ class ReferenceVideoFollowSnapshot:
     message: str = NO_VIDEO_MESSAGE
     # Retained copy or unfinished player attempt, independent of host state.
     can_close_local_copy: bool = False
+    # A current local copy held before an offer. This proves neither a match
+    # with the host nor permission to show/play the video.
+    local_copy_prepared: bool = False
 
     @property
     def blocked(self) -> bool:
@@ -1015,6 +1018,7 @@ class ReferenceVideoFollower:
         duration_s: float = 0.0,
         source_display_name: str = "",
         playback_generation: int = 0,
+        local_copy_prepared: bool = False,
     ) -> ReferenceVideoFollowSnapshot:
         return ReferenceVideoFollowSnapshot(
             state=state,
@@ -1025,6 +1029,7 @@ class ReferenceVideoFollower:
             source_display_name=source_display_name,
             playback_generation=playback_generation,
             message=_FOLLOW_MESSAGES[state],
+            local_copy_prepared=local_copy_prepared,
             can_close_local_copy=bool(
                 self._local_identity or self._local_attention
                 or self._pause_pending
@@ -1040,7 +1045,14 @@ class ReferenceVideoFollower:
             # Deliberately leaves ``_playing_locally`` alone: ``apply`` owns
             # that flag and still has to pause a player that was running when
             # the host withdrew the video.
-            return self._decide(ReferenceVideoFollowState.NO_VIDEO)
+            return self._decide(
+                ReferenceVideoFollowState.NO_VIDEO,
+                local_copy_prepared=bool(
+                    self._local_identity and not self._local_attention
+                    and self._loading is None and not self._pause_pending
+                    and self._local_copy_is_current()
+                ),
+            )
 
         name = str(getattr(projection, "source_display_name", "") or "")
         duration = max(0.0, float(getattr(projection, "duration_s", 0.0) or 0.0))

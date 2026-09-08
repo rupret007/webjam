@@ -183,10 +183,13 @@ another meeting beside it for conversation. The host can choose one video file:
 2. The host chooses **Choose process video…** and picks a local video file they
    have the right to play. WebJam does not ship, bundle, download, or fetch any
    video, and it will not open anything from a streaming service.
-3. Before the host shares, a guest who joined a Paint along room sees
-   **Paint along is starting** in Room with one **Open Paint along** action.
-   Opening it early shows **Waiting for a process video** and lets you load
-   your own copy so you are following the moment the host shares.
+3. If Room shows **Paint along is starting**, choose **Open Paint along**.
+   Before the host shares, the panel shows **Waiting for a process video**.
+   If you already have the video, choose **Open my copy…**. **Your copy is
+   open** means it is waiting locally: WebJam still needs to check it against
+   the host's offer before following. No picture or playback starts early.
+   You can use **Back to room** and keep making while you wait. If your copy
+   changes, moves, or cannot open, the file action offers another try.
 4. When the host shares, each guest is notified and the same workspace becomes
    available. A first offer opens it from the untouched Room. If you are using
    Notes, Conversation, or a dialog, your current work stays visible; choose
