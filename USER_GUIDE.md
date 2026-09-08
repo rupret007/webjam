@@ -411,6 +411,20 @@ listen to one channel. Other channels stay suppressed even when you adjust
 their faders. Turning Solo off, or the soloed musician leaving, restores your
 chosen levels and mute choices. A new arrival stays suppressed during Solo.
 
+**Save Mix** (Ctrl+S) keeps your current listening balance; **Load Mix**
+(Ctrl+O) restores it. Use Ctrl+Shift+S / Ctrl+Shift+O for named mixes.
+Restoring applies matched participants' listening levels and updates their
+cards immediately. A successful new connection also tries your default saved
+mix. A participant whose channel number changed can match by a unique name;
+ambiguous or missing participants are left alone. If nothing matches, join
+the intended session or choose another mix.
+
+New saves made during Solo preserve both the current Solo sound and your mute
+choices for when Solo ends. Older saved files retain the mute values they
+contain; they cannot recover choices that were never saved. Loading a mix does
+not start a reference track, recording, microphone, or connection. These are
+saved control settings; confirm the intended sound through your headphones.
+
 Muting your own participant card affects your local monitor, not the microphone
 sent to other people. To stop your instrument or microphone reaching the room,
 use your audio interface's mute or stop WebJam audio. Conversation uses its own

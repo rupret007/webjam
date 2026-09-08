@@ -11860,7 +11860,8 @@ class ApplicationController(QObject):
 
     def _on_load_mix(self) -> None:
         """Load mixer state from ~/.webjam_mix.json and apply to Jamulus."""
-        self._mix_manager.load()
+        if self._mix_manager.load():
+            self.audio.refresh_listening_mix()
 
     def _on_save_mix_as(self) -> None:
         """Ctrl+Shift+S — open a Save dialog and write the mix to a chosen path.
@@ -11899,7 +11900,8 @@ class ApplicationController(QObject):
         )
         if not path:
             return
-        self._mix_manager.load_from(Path(path))
+        if self._mix_manager.load_from(Path(path)):
+            self.audio.refresh_listening_mix()
 
     def _restore_saved_mix(self) -> None:
         """Auto-apply ~/.webjam_mix.json when Jamulus first connects (best-effort)."""

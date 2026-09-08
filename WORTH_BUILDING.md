@@ -1,49 +1,44 @@
-# Worth building — Music listening controls match the native mix
+# Worth building — restore the saved Music listening mix
 
-Base: fetched origin/master 2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2.
-Independent branch: codex/music-effective-listening-mix.
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5592279206
+Declared dependency: OPEN DRAFT #105 at
+3811d3f0179bc03e90f7490ed8a9469fd8fec607, branch
+codex/music-effective-listening-mix. Fresh branch:
+codex/music-saved-mix-restore. Fetched master remains
+2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2.
+BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5592992664
 
-A musician can Mute the reference track, adjust its fader to prepare a quieter
-level, and still see Mute selected while WebJam sends a nonzero native gain.
-Solo suppresses the other channels in the display, but their faders can likewise
-send nonzero gain. If the soloed collaborator leaves, the remaining channels
-look restored without receiving the native restoration command.
+A musician saves a quiet, muted reference track and a balanced collaborator.
+After changing the mix, Load Mix restores those numbers and Mute in memory,
+but sends no native gain commands. The native mixer retains the previous loud
+levels. The same defect affects Load Mix From and automatic restore after a
+proved connection. Explicit Load also leaves existing cards unchanged until
+another authenticated roster arrives. Production controller/MixManager/native
+JSON serialization reproduces this with a memory socket; physical sound is
+NOT RUN.
 
-These are reproduced ordinary listening gestures in the production state
-manager and native RPC serializer, with a memory sink replacing the send
-boundary. Native monitor mute uses fader zero; there is no separate mute bit.
-The UDP adapter is dormant in the product and cannot repair a missing or
-contradictory native command. Physical audibility is NOT RUN.
+Before → after: matched saved listening levels and mute/Solo choices reach the
+current native mixer, and existing cards immediately show the restored values.
+Saving during Solo must preserve both its current effective mute and the
+personal mute choices restored when Solo ends. The complete final mix must be
+resolved before dispatch, including unmatched channels affected by Solo ending.
+An invalid or unrelated saved file must offer recovery instead of claiming
+that a mix loaded.
 
-Before → after: a muted or Solo-suppressed channel keeps zero effective gain
-while its chosen fader changes. Unmute, unsolo, or the soloed musician departing
-restores the appropriate stored level and prior mute choices. A late arrival
-stays suppressed while Solo is active. Ordinary roster refresh does not reset
-the listener's mix.
+This directly improves rehearsals with or without a track. It outranks more
+surface polish because the displayed listening mix currently disagrees with
+commands sent to the native engine. It reuses #105's ordered, bounded dispatcher
+and owner checks. It does not compose #103/#104 or certify their combined state.
 
-The existing one-thread-per-write path also allowed an older fader command
-to arrive after Mute, or to enter a replacement RPC connection. A coalesced,
-single-worker path applies current effective gain only for its participant and
-monitor epoch. Commands already sent remain distinct from queued intent.
+Acceptance covers real default/named/automatic save/load, exclusive Solo,
+legacy snapshots, changed IDs with unique names, ambiguous/unknown rows,
+current participant/monitor ownership, immediate Qt cards and authenticated
+reconnect. Preserve chosen faders, recording/source/device independence,
+Art's two-card door and guest-never-seek. New optional saved mute metadata must
+remain backward-compatible and contain no new identity or secret.
 
-Real Qt journeys found that an existing participant card did not receive the
-model's changed Solo/mute state. The same slice must project the authoritative
-listening choices onto the existing cards so their controls agree with the mix.
-
-This helps both reference-track and unaccompanied rehearsal through the existing
-mixer. It outranks a new Art request mechanism while the remote-network decision
-and complete physical sessions remain open. The change has no dependency on
-the pending Art/Music integration drafts, and does not compose their evidence.
-
-Acceptance must cover real native command serialization and real Qt listening
-gestures, preserved chosen levels and prior mutes, addressed-channel independence,
-roster entry/departure, and unchanged Art door/guest authority. Tests use
-synthetic devices and command sinks, never live audio, capture or meetings.
-Full local and hosted checks belong to the frozen exact tip; readiness for
-independent review does not certify physical sound.
-
-OPEN DRAFT PRE_KAREN only. Existing #96–#104 and parked #37/#49 stay untouched.
-No merge/squash/tag/sign/release/Pages/Publish/deploy/spend/live Cisco, public
-rendezvous, short codes, second engine, other repository or new goal.
-Unsigned 0.27.2 remains Jeff-only. The sustained two-session goal remains open.
+Keep OPEN DRAFT PRE_KAREN. Exact final local suite and both hosted workflows
+including all four desktops are required. Automated commands do not establish
+physical audibility, supported different-home joining or latency. Karen and
+physical acceptance remain open. Parked #37/#49 and all previous drafts stay
+untouched. No merge/tag/sign/release/Pages/Publish/deploy/spend/live Cisco,
+public rendezvous, short codes, second engine, automatic capture or new Goal.

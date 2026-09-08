@@ -1,93 +1,115 @@
-# PRE_KAREN — Music Mute and Solo reach the native mix
+# PRE_KAREN — saved Music listening mix restoration
 
-Independent master base: 2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2.
-Branch: codex/music-effective-listening-mix.
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5592279206
+Declared stack: this branch codex/music-saved-mix-restore depends on OPEN DRAFT
+#105 exact 3811d3f0179bc03e90f7490ed8a9469fd8fec607. PR base is
+codex/music-effective-listening-mix. Fetched origin/master is
+2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2. This does not compose #103/#104.
+BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5592992664
 
-## Product delta and leftover honesty
+## Leftover and product result
 
-Mute and Solo affect a musician's personal monitor mix. A fader edit must retain
-the chosen level without undoing effective mute. Roster entry during Solo and
-departure of the soloed musician must update the native mix as well as the
-participant display. Existing code updated only the dormant UDP path in those
-roster transitions.
+Actual default Load, named Load and connection auto-restore updated model
+faders/mutes but sent no native gains. The dormant UDP adapter cannot apply
+native listening gain. Explicit Load also left visible cards unchanged until
+another authenticated roster. A parsed invalid/unrelated file could falsely
+report success. These are ordinary saved-rehearsal journeys, not cosmetic
+wording gaps.
 
-The initial native-command regression suite reproduced 10 failures and 7
-passing controls, using the actual controller, gain mapping and JSON framing
-with an in-memory socket boundary. Real Qt Mute and keyboard-fader journeys
-also reproduced nonzero gains while Mute stayed selected. Test-fixture setup
-failures are retained separately from these valid product baselines.
+Resolve matches and the complete final Solo/mute state under the participant
+lock before applying any gain. Restore every matched row and any other row
+affected by a Solo transition. Apply current effective gain through #105's
+bounded ordered worker with exact participant ownership. Explicit successful
+Load refreshes existing listening cards through the existing guarded helper;
+auto-restore retains its authenticated local-connection proof gate.
 
-Review additionally reproduced independent gain workers delivering an old
-fader after a newer Mute, and a queued old write crossing into a replacement
-RPC monitor epoch. Native dispatch must preserve current effective gain and
-its originating connection/participant. Tests explicitly distinguish queued
-cancellation from bytes already sent.
-
-Real Qt Solo testing also found the existing-card projection copied identity
-and connection fields but omitted current mute, Solo and fader state. Retain
-the authority checks and refresh existing cards from the current local mixer,
-not detached queued roster fields. Explicit Mute/Solo gestures refresh these
-listening fields without changing connection proof. Blocked-signal card updates
-show suppression/restoration without feedback commands.
-
-The fix does not establish physical sound, independent narration/voice mixing,
-different-home joining, or reference-track routing support. It is independent
-of #96–#104; separate drafts' green checks do not compose this into #103.
-
-## Ten-second UX
-
-- A musician can move a muted listening fader to prepare the desired level.
-  Mute remains selected; Unmute applies that chosen level.
-- Solo suppresses other channels until explicitly released or its musician
-  leaves. Prior mute choices and current fader levels survive restoration.
-- A joining musician does not defeat Solo. An ordinary unchanged roster
-  refresh does not reset the listener's mix.
-- The guide distinguishes personal listening mix from outgoing microphone and
-  host source trim. No new door control, configuration choice or media action.
-- Tests exercise actual visible cards and keyboard input through application
-  handlers. Offscreen automation is not installed-laptop feel or audibility.
+Serialize a detached value snapshot under the same lock. During Solo, optional
+pre_solo_muted stores each personal post-Solo choice while the existing muted
+field retains the current effective mute. This distinguishes a previously
+muted channel made audible by Solo from an explicitly muted Solo channel.
+Both the restored immediate state and subsequent unsolo must agree. Legacy
+files without the optional field honor the mute values they actually contain;
+missing historical intent cannot be reconstructed. Non-Solo snapshots retain
+the previous field shape. An older reader can read the file but cannot use
+new metadata to restore post-Solo choices.
 
 ## Security and ownership
 
-Use the existing authenticated native command and participant model. No new
-endpoint, transport, credentials, recording or meeting handoff. Native gain
-remains bounded to the existing 0–127 model / 0–100 command mapping.
-Missing channels and retired participant/monitor owners must not receive queued
-writes. Preserve native method allowlisting and epoch/socket checks.
+No new endpoint, credential, media engine, device access, playback, capture or
+connection claim. Files still use the existing explicit/default mix paths and
+atomic write machinery. Optional metadata contains only a boolean listening
+choice. No participant identity, file path or credential is added to commands.
+Saved names are matching hints, not authenticated identity. Preserve exact-ID
+legacy matching and unique normalized-name fallback; reject ambiguous matches.
+Unknown rows cannot mutate or dispatch to an unrelated participant.
 
-One coalesced worker holds at most one pending item per current channel.
-Each item binds the RPC client, monitor identity and exact participant object.
-Before sending, it rechecks those owners and reads the current effective level;
-the actual RPC send also checks the originating epoch. Slow native writes hold
-neither the participant nor dispatch lock. New intent during a write follows it
-on the same worker. Stop retires pending intent, closes RPC, and performs a
-bounded join. A still-owned worker prevents restart until its exit is confirmed.
-An already-entered write cannot be described as canceled bytes.
+Stage rows before mutation so a callback cannot observe partial restoration.
+Bounds and existing value coercions remain; nonfinite integer conversions
+retain prior values rather than raising midway through a load. Resolve duplicate
+rows by their final values and exclusive Solo by the last final true candidate.
+An unmatched current Solo survives a partial load; clearing a matched Solo
+restores other affected participants' personal choices.
 
-No per-channel listening Mute is promoted to live microphone-send mute.
-No fader movement supplies meter or connection proof. Art's two-card door and
-host/guest playback authority remain unchanged. Saved-mix restoration and pan
-are not certified by this slice; physical listening/routing remains NOT RUN.
+Carry exact restored participant objects into native enqueue, then retain
+#105's participant/client/monitor-epoch checks at dispatch and socket send.
+A replacement row cannot inherit a saved command by reusing the same channel.
+Native I/O remains outside the participant and dispatch locks. Already-entered
+native writes are not cancellable bytes; commands are sequential, not an atomic
+multi-channel transaction. Pan retains its existing path and is not certified.
 
-## Verification and review
+## Ten-second UX
 
-Run the repository's full local bar at the frozen tip, including Art start UX,
-isolated application modules, native race/static/module/cross-build checks,
-real sidecars, service tests and dependency/UX checks. Run both hosted workflows
-at that same tip, including all four desktop builds. Exact results, retries,
-skips, tip SHA and evidence links belong in the PR body and coord AFTER.
-Do not infer final or hosted green from this source document.
+- Save a quiet reference track and a comfortable collaborator level. Load
+  restores those choices in existing cards and native gain commands together.
+- Save/load during Solo, then end Solo: prepared levels and personal mute
+  choices survive. A selected Solo channel explicitly muted stays muted.
+- Named and default loads show a useful message if nothing matches or the
+  file has no valid mix. Missing/corrupt/cancelled paths retain their recovery.
+- Automatic restore remains silent and runs only after existing local native
+  connection proof. A remote-only roster does not establish that proof.
+- Card projection creates no feedback gestures, new participant or connection
+  evidence. A queued older roster cannot overwrite the newer restored mix.
+- No new Art door control, configuration tour, guest playback authority or
+  musician-only restriction on Art. Notes and external Conversation stay owned
+  by their existing paths.
 
-The first frozen-tip full run at 305b7d3 completed 373 modules with 8,818
-passes and one failure: the new shared helper supplied notify=True to an
-existing positional-only callback in test_plan_regressions. The correction
-preserves the old default callback shape while retaining explicit notify=False
-on roster transitions. The initial run and hosted outcomes remain disclosed;
-the corrected tip requires its own complete local and hosted verification.
+## Evidence and limits
 
-Codex self-QA is not Karen PASS. Keep OPEN DRAFT, retain original component and
-parked heads, release the lease after handoff, and continue useful independent
-work under the sustained goal. No merge/squash/tag/sign/release/Pages/Release
-Trust/Publish/deploy/spend/live Cisco/public rendezvous/short codes, automatic
-capture, other repository or new goal. Unsigned 0.27.2 remains Jeff-only.
+Baseline native tests used exact saved #105 production sources: initial suite
+15 failures / 7 passes; revised schema/feedback suite 20 failures / 9 passes.
+The first version's personal-mute-in-existing-key expectation was replaced
+before implementation because it could not represent both selected-Solo
+histories. Both logs and baseline sources remain available. The revised suite
+passes 40 cases through real MixManager/controller/native JSON framing with
+synthetic readiness, device construction, worker scheduling and memory socket.
+
+Actual Qt shortcut and registered identity-callback baseline: 5 failures /
+3 passes, no setup errors. Ten final cases also cover both saved-Solo histories,
+actual empty-roster recovery, changed channel IDs, remote-only rejection,
+current local proof, stale queued roster and cancel/missing/corrupt/no-match.
+Existing mix-manager test doubles now return a real positive matched-row count
+instead of an unconstrained mock. This corrects the fixture contract rather
+than accepting arbitrary objects as successful product restoration.
+
+Ten ownership/atomicity cases cover row replacement before helper/enqueue,
+retired rows/epochs/Stop before dispatch, later explicit Mute winning, and
+complete final state at every native/legacy callback. Review also reproduced
+invalid mute values overwriting a suppressed row's personal choice: an explicit
+in-memory reconstruction of the reviewed one-line defect failed 4 of 8 cases;
+the corrected fallback passes all 8. Three real JSON nonfinite-value cases
+retain prior valid fields, skip an invalid identity and still restore finite
+rows without partial callback state. No frozen-tip or hosted failure has been
+observed at this pre-verification point.
+
+Full frozen-tip local verification and both hosted workflows including four
+desktops are required. Their exact tip, counts, outcomes and any failure/retry
+history belong in the PR body and coord AFTER; this source document alone
+claims no final hosted result. Automated command framing and offscreen cards
+do not prove physical sound, routing support, different-home joining, latency,
+endurance or installed-laptop feel. These remain NOT RUN. Karen is pending;
+Codex self-QA is not independent PASS.
+
+Keep OPEN DRAFT; preserve previous component heads and parked #37/#49. Release
+the lease at handoff. No merge/squash/tag/sign/release/Pages/Release Trust/Publish/
+deploy/spend/live Cisco/public rendezvous/short codes/automatic capture/other
+repo/new Goal. Unsigned 0.27.2 remains Jeff-only. The complete Art/Music goal
+remains incomplete; continue the next safe work under its sustained scope.
