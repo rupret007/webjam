@@ -8,6 +8,12 @@ This runbook records the gates automation cannot prove. Do not convert a
 connection, moving meter, decoded waveform, process state, or server roster
 entry into an audibility result.
 
+For new source-candidate timing evidence, also use
+[the single-clock loopback measurement procedure](webjam-loopback-timing-evidence.md).
+It keeps raw audio RTT separate from take alignment, human timing and network
+claims. Record the actual candidate's full SHA; the v0.22.4 package instructions
+below remain historical and do not authorize a new build's promotion.
+
 The immutable v0.22.4 packages keep playback fail-closed unless the production
 factory proves the local BlackHole route on that Mac. Run this procedure only
 against an exact published v0.22.4 package and record its filename and SHA-256
