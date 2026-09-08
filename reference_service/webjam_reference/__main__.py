@@ -96,6 +96,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--max-active-session-seconds",
+        type=int,
+        default=_env_int(
+            "WEBJAM_MAX_ACTIVE_SESSION_SECONDS", defaults.max_active_session_seconds
+        ),
+        help="enrolled-room hard limit from registration, at most 28800 seconds",
+    )
+    parser.add_argument(
         "--idle-timeout-seconds",
         type=int,
         default=_env_int("WEBJAM_IDLE_TIMEOUT_SECONDS", defaults.idle_timeout_seconds),
@@ -123,6 +131,7 @@ def config_from_args(argv: Sequence[str] | None = None) -> ServiceConfig:
             args.max_bandwidth_bytes_per_second * 2,
         ),
         max_session_ttl_seconds=args.max_session_ttl_seconds,
+        max_active_session_seconds=args.max_active_session_seconds,
         min_session_ttl_seconds=min(
             defaults.min_session_ttl_seconds, args.max_session_ttl_seconds
         ),

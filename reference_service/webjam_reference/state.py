@@ -72,7 +72,10 @@ class Session:
     enrollment_hash: bytes | None
     host: Peer
     created_at: float
+    # Enrollment admission and enrolled-room retention have independent bounds.
+    # Service enrollment does not attest native mutual peer authentication.
     expires_at: float
+    active_expires_at: float
     last_activity: float
     datagram_bucket: TokenBucket
     bandwidth_bucket: TokenBucket
@@ -197,6 +200,7 @@ class SessionRegistry:
             host=peer,
             created_at=now,
             expires_at=now + ttl_seconds,
+            active_expires_at=now + self.config.max_active_session_seconds,
             last_activity=now,
             datagram_bucket=TokenBucket(
                 self.config.datagrams_per_second,
@@ -386,8 +390,7 @@ class SessionRegistry:
         expired = [
             key
             for key, session in self._sessions.items()
-            if now >= session.expires_at
-            or now - session.last_activity >= self.config.idle_timeout_seconds
+            if self._is_expired(session, now=now)
         ]
         for key in expired:
             self._remove(key, "expired")
@@ -500,9 +503,13 @@ class SessionRegistry:
             raise ProtocolError(public_error)
         return session
 
-    def _is_expired(self, session: Session) -> bool:
-        now = self._clock()
-        return now >= session.expires_at or (
+    def _is_expired(self, session: Session, *, now: float | None = None) -> bool:
+        if now is None:
+            now = self._clock()
+        deadline = (
+            session.expires_at if session.guest is None else session.active_expires_at
+        )
+        return now >= deadline or (
             now - session.last_activity >= self.config.idle_timeout_seconds
         )
 

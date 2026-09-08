@@ -107,6 +107,9 @@ class ReferenceTrackDialog(QDialog):
         # primary Jamulus/session lifecycle. Fail closed until the application
         # controller proves one of the finite gate states below.
         self._primary_gate = ReferenceTrackPrimaryGate.NOT_CONNECTED
+        # Room cleanup can fail while the local audio process remains healthy.
+        # Retain its Stop/Pause and inspection controls; refuse only fresh starts.
+        self._room_recovery_pending = False
         # Controller snapshots arrive every 250 ms.  Keep a just-committed
         # keyboard edit on screen until the controller echoes it back instead
         # of briefly replacing it with the preceding snapshot.
@@ -491,6 +494,7 @@ class ReferenceTrackDialog(QDialog):
     def _emit_play(self) -> None:
         if (
             self._primary_gate is ReferenceTrackPrimaryGate.READY
+            and not self._room_recovery_pending
             and self._rendered_state in {"ready", "paused"}
         ):
             self.play_requested.emit()
@@ -505,6 +509,7 @@ class ReferenceTrackDialog(QDialog):
     def _emit_restart(self) -> None:
         if (
             self._primary_gate is ReferenceTrackPrimaryGate.READY
+            and not self._room_recovery_pending
             and self._rendered_state in {"playing", "paused"}
         ):
             self.restart_requested.emit()
@@ -826,6 +831,8 @@ class ReferenceTrackDialog(QDialog):
                     f"{ready_prefix}; start a clean band audio session before "
                     "playback; controls are locked"
                 )
+            elif self._room_recovery_pending:
+                status = f"{ready_prefix}; room recovery is needed before Play or Restart"
         if unsupported_host and state in {"unavailable", "idle", "ready", "failed"}:
             status = (
                 "Song loaded for inspection; track sharing is unavailable on this computer"
@@ -888,6 +895,15 @@ class ReferenceTrackDialog(QDialog):
                 "Choose Stop again. Loading, playback, and route rechecks stay "
                 "locked until WebJam confirms its private process, profile, "
                 "control, and audio-route cleanup."
+            )
+        elif (
+            self._room_recovery_pending
+            and self._primary_gate is ReferenceTrackPrimaryGate.READY
+        ):
+            guidance = (
+                "Room cleanup did not finish. Choose Reset Invite in WebJam, "
+                "then choose Play again. Your loaded track stays here; "
+                "an active track can still be paused or stopped."
             )
         elif unsupported_host:
             guidance = (
@@ -1243,6 +1259,16 @@ class ReferenceTrackDialog(QDialog):
         if self._snapshot is not None:
             self.set_snapshot(self._snapshot)
 
+    def set_room_recovery_pending(self, pending: bool) -> None:
+        """Block new room playback without taking ownership of existing audio."""
+
+        value = bool(pending)
+        if self._room_recovery_pending == value:
+            return
+        self._room_recovery_pending = value
+        if self._snapshot is not None:
+            self.set_snapshot(self._snapshot)
+
     @staticmethod
     def _set_dynamic_status(label: QLabel, text: str) -> None:
         """Update a changing status once and notify assistive technology."""
@@ -1360,12 +1386,15 @@ class ReferenceTrackDialog(QDialog):
             loaded
             and capability_available
             and self._primary_gate is ReferenceTrackPrimaryGate.READY
+            and not self._room_recovery_pending
             and state in {"ready", "paused"}
         )
         capability = getattr(self._snapshot, "capability", None)
         reason = str(getattr(capability, "reason_code", "") or "").casefold()
         if self._play.isEnabled():
             play_tooltip = "Play the loaded song through the isolated Jamulus route."
+        elif self._room_recovery_pending and primary_ready:
+            play_tooltip = "Choose Reset Invite in WebJam, then choose Play again."
         elif (
             loaded
             and capability_available
@@ -1440,9 +1469,12 @@ class ReferenceTrackDialog(QDialog):
         self._restart.setEnabled(
             capability_available
             and primary_ready
+            and not self._room_recovery_pending
             and state in {"playing", "paused"}
         )
-        if state not in {"playing", "paused"}:
+        if self._room_recovery_pending and primary_ready:
+            restart_tooltip = "Choose Reset Invite in WebJam, then choose Play again."
+        elif state not in {"playing", "paused"}:
             restart_tooltip = (
                 "Restart becomes available while the Shared Track is playing "
                 "or paused."

@@ -36,7 +36,8 @@ derived keys when a session ends.
 {"v":3,"op":"register","session":"<32B>","host_token":"<32B>","enrollment_token":"<32B>","generation":1,"ttl_seconds":600}
 ```
 
-`generation` defaults to 1. TTL is 30–600 seconds by default. The response fixes
+`generation` defaults to 1. Enrollment admission TTL is 30–600 seconds by default.
+The response echoes the accepted admission `ttl_seconds` and fixes
 `participant_limit` at 1. Duplicate live IDs conflict; recently closed/expired IDs
 are tombstoned and rejected as replays.
 
@@ -53,6 +54,30 @@ Consumption happens before guest bootstrap, QUIC TLS, exporter-proof exchange,
 or `peer_connected`. A bearer holder can therefore enroll and abandon the later
 proof, burning the invitation without opening the application data plane; the
 host must use Reset Invite.
+
+The response's `ttl_seconds` is the whole seconds remaining until the original
+admission deadline, including zero for a valid enrollment within the final
+fractional second. It does not report or extend the enrolled-room lifetime.
+
+### Room lifetime
+
+An unenrolled room expires at its original admission deadline. A successfully
+enrolled room instead has a hard active ceiling of eight hours from original
+registration, configurable downward with `max_active_session_seconds` but never
+above 28,800 seconds or below the configured maximum admission TTL. Enrollment
+and subsequent activity cannot reset that ceiling. All rooms also retain the
+90-second default idle timeout. Only accepted role-authenticated operations and
+relay traffic refresh activity; rejected authentication/replay/endpoint traffic
+cannot prolong idle lifetime.
+
+The service observes enrollment, not the later native mutual peer proof. An
+enrolled room remains subject to the finite ceiling even if the peer abandons
+proof or a single role keeps sending valid activity. Native clients must enforce
+their own proof deadline, certificate validity, active ceiling, and teardown.
+On any service expiry or authenticated host close, queued signaling and relay
+keys/endpoints are cleared, capacity is released, and the existing bounded
+registration tombstone is retained. This adds no control operation or response
+field and changes no listener or endpoint policy.
 
 ### Publish opaque authenticated signaling
 
@@ -80,6 +105,13 @@ queued only for the opposite role.
 Each poll consumes at most one sealed payload so the response stays below the
 control-frame bound. Only the host may close a session. All authenticated control
 operations share the role's replay window.
+
+Close authority belongs to the host role token, session, and generation, not
+the TCP connection that registered the room. A client whose original control
+connection has reached the 30-second default read-idle timeout may use a fresh
+connection with the same authenticated close operation and a valid subsequent
+control sequence. A failed/uncertain response is not proof of remote revocation;
+client retry and shutdown must remain bounded.
 
 Responses are `{"v":3,"ok":true,...}` or
 `{"v":3,"ok":false,"error":"<bounded-code>"}`. Public errors are categorical:

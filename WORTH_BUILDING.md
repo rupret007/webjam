@@ -1,62 +1,63 @@
-# Worth building — verify one combined invitation-to-session flow
+# Worth building — native-host recovery in the combined creative room
 
-Branch: `codex/two-session-integration`, canonical checkout only.
-Declared dependent stack rooted at #97
-`14aa874aa28cc3bc8cdfe647c888bc61547daa89`; original drafts remain untouched.
+Branch: `codex/two-session-recovery-integration`, canonical WebJam checkout.
+BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5590738249
 
-## Observed gap and why this comes next
+## Declared dependency
 
-Separate branch tests do not prove that the improvements work together. A guest
-may have a different personal meeting from the invitation's room meeting. The
-combined flow must retain the right context through shared-lesson entry, room
-meeting replacement/removal, Retry and Leave. Music recording intent must remain
-correct within that same room lifecycle.
+This candidate starts from #101 `5f09cf6fa7d9f747319c68c6b9b4f6be34aebae7`
+and replays independent #102 `4b7bf2ec6dd0b50ca8cfcb35b34b3145c4cdd511`.
+Fetched master remains `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`.
+#101 already composes #96–#100. Original component tips are unchanged.
+Only handoff documents overlap between #101 and #102; production changes are
+reused, not rebuilt. The PR base is #101's branch, with #102 declared explicitly.
 
-This is an unverified integration boundary, not a newly invented feature or a
-claim of a reproduced product defect. Reimplementing pending work would duplicate
-it. The approved sustained goal permits a documented stack for this dependency.
+## Observed gap and before/after
 
-## Source reuse and intended before/after
+Both components are green separately. #101's combined journeys mostly exercise
+guest and LAN cleanup; its native-host lesson tests prove successful reset.
+#102 adds native-host failed-close ownership and retry. Those results do not yet
+prove the combined Art Notes/Conversation or Music track/recording experience
+when a host resets an invitation and cleanup fails.
 
-The stack starts from #97 `14aa874` and reuses the existing source from #96
-`41a2665`, both #98 commits ending at `830bed1`, #99 `c2a088f`, and #100 `0cf1f2c`.
-Full original revisions are recorded in PRE_KAREN_QA.md. Their original master
-was `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`; their green results remain
-historical evidence for their own heads.
+Combined tests reproduced two product failures. Art's successful second Reset
+created native generation 2 but left the conductor and room guidance FAILED.
+Music's failed close (exception or wrong-generation receipt) retired the room
+and invitation yet still let Record create a take intent and Play reach audio
+component lookup. An already active recording retained its Stop correctly.
 
-Before: separate drafts improve own-space Art entry, invitations, shared lessons,
-Shared Track support/recording and offline timing, without a verified combined
-candidate. Intended after, subject to pending tests: one reviewable source stack
-preserves those existing behaviors together, including the correct room meeting,
-one useful next action, personal settings/work and deliberate recording intent.
+Before: recovered Art transport could still show failure, and Music accepted
+fresh audio intent during unresolved room cleanup. After: only a successful
+explicit retry of the current native host can recover terminal room guidance;
+fresh Record/Play/restart are blocked while owned room cleanup is unresolved.
+Notes, temporary Conversation, loaded source and active Stop remain owned.
+An old queued Play cannot run after recovery, and canceling an unpublished
+start must not stop audio already playing. Admission expiry alone retains a
+proved established room. These are concrete failure/recovery corrections,
+with component source reused on the declared stack.
 
-## Acceptance and evidence
+## Acceptance and review
 
-Six new local cases pass on the assembled source: four Art cases use real
-LAN/native invitation ownership, different personal/room meetings, link
-replacement/removal, explicit Open, failed/successful Leave and stale callbacks;
-two Music cases preserve recording intent through host-to-guest cleanup and
-meeting replacement/absence. Existing component suites retain the broader
-modal, retry, queue, layout, route and supported-platform assertions.
+- Art: preserve Notes and temporary Conversation through failure/retry; retire
+  old local-file playback authority and callbacks; never start a meeting/player
+  or give a guest seek authority as a recovery side effect.
+- Music: failed native cleanup blocks fresh track and Record intent, retains
+  active-take Stop, and does not advertise a replacement room before cleanup.
+- Established invitation expiry does not falsely clear live room context.
+- Run focused combined journeys, the full application and service suites,
+  native race/static checks and real sidecars; hosted CI must run on the frozen
+  draft tip, including all four desktop builds.
 
-No production defect was found in these new journeys. Integration resolves an
-old Art copy assertion and overlapping first-session/changelog/handoff prose
-while preserving source behavior. No failed behavior assertion was removed.
-Full combined local verification and hosted CI including four desktops still
-must run on the final frozen tip; the draft body and coord AFTER carry that
-verdict. Original component results do not certify this candidate.
+All external effects are intercepted or synthetic loopback fixtures. Automated
+proof is not physical two-home joining, video/audio mixing, audibility, latency,
+hour-long duration or independent Karen approval. The remote-joining decision
+remains unanswered and public-rendezvous constraints remain in force.
 
-## Remaining gates and holds
+## Holds
 
-The two-home network decision remains pending. No remote service, short code or
-public rendezvous is introduced. Real Art audio/faces/pause requests, any-artist
-usability, Music mixing/reference timing and sustained rehearsal remain NOT RUN.
-Synthetic RTT and packaging success do not establish physical acceptance.
-
-The goal remains INCOMPLETE. No Karen PASS is claimed; independent review must
-match the final combined tip. OPEN DRAFT only; originals and parked #37/#49 stay
-untouched. No merge/squash/tag/sign/release/Pages/Release Trust/Publish/deploy/
-spend/live Cisco, unsolicited send or automatic capture. Unsigned 0.27.2 stays
-Jeff-only. No second media
-engine, other repo, parent injection or second WebJam goal. Maintain the coord
-#3 four-hour codex lease and America/Chicago BEFORE/AFTER; release at handoff.
+OPEN DRAFT PRE_KAREN only. No merge/squash/tag/sign/release/Pages/Release Trust/
+Publish/deploy/spend/live Cisco, unsolicited send or automatic capture. Unsigned
+0.27.2 stays Jeff-only. Parked #37/#49 and original #96–#102 remain untouched.
+No short codes/public endpoint, second media engine, other repo, parent
+injection or second WebJam goal. Maintain four-hour codex lease, BEFORE/AFTER
+in America/Chicago and release at handoff. Self-QA is not Karen PASS.

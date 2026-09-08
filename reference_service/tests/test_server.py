@@ -21,6 +21,7 @@ from webjam_reference.protocol import (
     verify_relay,
 )
 from webjam_reference.server import ReferenceService
+from webjam_reference.state import SessionRegistry
 
 SESSION = b"s" * 32
 HOST = b"h" * 32
@@ -134,6 +135,32 @@ def test_control_registration_enrollment_and_opaque_signal_round_trip() -> None:
             assert replay_enrollment["error"] == "enrollment_used"
 
     asyncio.run(scenario())
+
+
+def test_control_enrollment_response_retains_admission_ttl_after_active_lifetime_split() -> None:
+    clock = [100.0]
+    service = ReferenceService(config())
+    service.registry = SessionRegistry(service.config, clock=lambda: clock[0])
+    assert service._dispatch(registration()) == {
+        "generation": 4, "ok": True, "participant_limit": 1, "ttl_seconds": 20,
+    }
+    clock[0] += 9
+    # Host activity keeps the original idle limit satisfied during enrollment.
+    poll = {
+        "v": 3, "op": "poll", "session": encode_fixed(SESSION), "role": "host",
+        "token": encode_fixed(HOST), "generation": 4, "sequence": 1,
+    }
+    assert service._dispatch(poll) == {"ok": True, "sealed_payloads": []}
+    clock[0] += 9
+    assert service._dispatch(enrollment()) == {
+        "ok": True, "participant_limit": 1, "ttl_seconds": 2,
+    }
+    clock[0] += 2
+    assert service._dispatch(poll | {"sequence": 2}) == {
+        "ok": True, "sealed_payloads": [],
+    }
+    assert service.registry.session_count == 1
+    service.registry.close()
 
 
 def test_control_rejects_downgrade_unknown_fields_malformed_and_oversize() -> None:

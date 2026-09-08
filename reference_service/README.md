@@ -7,6 +7,8 @@ rendezvous boundary. It provides:
 - atomic one-use service enrollment with a ten-minute default lifetime,
   consumed before QUIC peer proof (so an unused bearer can be burned and must
   then be reset);
+- a separate eight-hour maximum enrolled-room lifetime from registration,
+  with the existing 90-second idle timeout;
 - role-authenticated queues for opaque end-to-end sealed candidate envelopes;
 - an authenticated UDP relay that can forward only to the registered opposite
   peer in the same session and generation;
@@ -39,6 +41,31 @@ python3.12 -m ruff check .
 
 See [PROTOCOL.md](PROTOCOL.md) for the exact frames and privacy contract, and
 [INTEGRATION.md](INTEGRATION.md) for the smallest honest sidecar/QUIC proof.
+
+## Enrollment and room duration
+
+The default 600-second invitation TTL limits when a guest may enroll. Unenrolled
+rooms still expire at that deadline even if the host is active. After successful
+service enrollment, authenticated activity can keep the room alive beyond the
+invitation deadline, until its independent hard limit of eight hours from the
+original registration. Enrollment and traffic never reset that hard limit.
+The 90-second idle timeout, authenticated host close, and service shutdown can
+end it earlier.
+
+`--max-active-session-seconds` or `WEBJAM_MAX_ACTIVE_SESSION_SECONDS` can lower
+the room limit. It must be an integer at least as large as the configured maximum
+enrollment TTL and no greater than 28,800 seconds. The existing
+`--max-session-ttl-seconds` / `WEBJAM_MAX_SESSION_TTL_SECONDS` still configure
+enrollment admission; the registration and enrollment wire responses still
+report admission TTL, not active-room duration.
+
+Service enrollment does not prove native mutual peer authentication. A bearer
+holder can still enroll and abandon the later proof. Both that room and a room
+whose remaining role keeps sending valid traffic remain bounded by the hard
+limit, idle timeout, capacity/rate limits, and authenticated host revocation.
+Native peers must enforce their own admission, identity, active-lifetime, and
+cleanup bounds. These service tests do not establish physical session duration
+or Internet reachability.
 
 ## Container
 

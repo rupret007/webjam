@@ -1,92 +1,71 @@
-# PRE_KAREN — combined two-session integration
+# PRE_KAREN — combined native-host recovery
 
-Branch: `codex/two-session-integration`, canonical WebJam checkout only.
-This is a declared dependent stack rooted at #97
-`14aa874aa28cc3bc8cdfe647c888bc61547daa89`. The approved sustained goal permits
-stacks for dependent work. Original drafts remain untouched.
+Branch: `codex/two-session-recovery-integration`; canonical WebJam checkout.
+BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5590738249
+State: combined verification in progress. Final exact-tip local and hosted
+results belong in the draft PR body; no Karen or physical PASS is implied.
 
-## Existing source being reused
+## Source ownership
 
-- #96 `41a26652387c855059402ae8986c4b0f91a0531f`: Make together own-space first action.
-- #97 `14aa874aa28cc3bc8cdfe647c888bc61547daa89`: temporary room Conversation context.
-- #98, both source commits ending at `830bed1fe2591c44d2bafc136b5ee84633e96c67`:
-  shared-lesson navigation, source-owned guidance and compact Conversation layout.
-- #99 `c2a088fdbfd537d7ad342fda2a6810cab2bd9ca5`: Shared Track support and recording intent.
-- #100 `0cf1f2c6103fd10a5b507e3ff378dc4c92ff1bb8`: offline audio round-trip evidence tools.
+- Base #101 `5f09cf6fa7d9f747319c68c6b9b4f6be34aebae7`: declared composition
+  of #96–#100, with existing Art/Music invitation and session journeys.
+- Replayed #102 `4b7bf2ec6dd0b50ca8cfcb35b34b3145c4cdd511`: admission versus
+  finite active lifetime, owned native cleanup, fresh authenticated host removal,
+  and Python failed-close reset recovery.
+- Common fetched master: `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`.
 
-Their common original master was `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`.
-Original green CI and local results are historical evidence for those heads.
-They do not establish the behavior of this combined application.
+Original draft tips remain unchanged. This dependent branch is permitted by the
+approved sustained goal and makes the composition reviewable without merging.
+#101 and #102 both have separate green local/hosted evidence, including all four
+desktop builds. Those results are not proof of this candidate.
 
-## Combined verification
+## Leftover honesty
 
-Source replay is complete. The new Art integration module passed four cases
-(LAN/native, change/remove room meeting); the Music module passed two cases
-(replaced/bare meeting through host-to-guest recovery). These are controlled
-local tests, not physical sessions. Music harness attempts 1–2 needed fixture
-corrections before the final two cases passed; no production failure was found.
+New combined journeys reproduced Art's terminal failure persisting after a
+successful Reset and Music accepting fresh Record/Play after failed native
+close. The correction recovers only an explicitly replaced current native host,
+keeps independent startup ownership/failure facts intact, and blocks fresh Music
+intent while preserving Stop and local levels. Separate room-generation and
+core cancellation fences retire old pending Play work without stopping a route
+already playing. Tests distinguish these boundaries from component-only proof.
 
-The full combined suite and hosted four-desktop matrix are the remaining
-verification bar at source freeze. Read their final result and exact combined
-SHA from the OPEN DRAFT body and coord AFTER; do not inherit green status or
-aggregate old component test counts.
+## Security and ownership checks
 
-The new regression scope is composition of existing behavior, not a claimed
-new feature or an already-proven product bug:
+Keep admission expiry separate from established connection authority. Preserve
+single-use admission, actual native peer proof, replay/generation fences, idle
+and eight-hour hard caps, certificate expiry, bounded acknowledged cleanup and
+process reap ownership. Failed close cannot authorize a fresh room; stale or
+invalid receipts cannot release its owner. A local-close receipt does not prove
+remote service removal when that service acknowledgment is missing.
 
-1. Full Art invitation with a guest's different personal meeting, then Paint
-   along → Watch a shared lesson → Conversation. Verify room provider/link,
-   explicit-only opening, room-neutral accessibility and guest-never-seek.
-2. Replace/remove the room meeting while lesson guidance is active. Missing
-   context must not select the personal meeting. Preserve Settings, Notes,
-   local video selection, compact layout and intentional keyboard focus.
-3. Retained component tests cover invalid/cancelled edits, failed Open/Retry,
-   queued room replacement,
-   successful/failed Leave, return and profile changes must preserve current
-   room/generation ownership. Old URLs, callbacks and lesson roles cannot
-   affect the next room. Successful Leave restores personal context; failed
-   cleanup preserves current context until its existing recovery completes.
-4. The new Music journey covers a host with queued/loading/failed Shared Track
-   work through a failed invitation switch, an active-recording Stop decision,
-   cleanup retry, guest entry, replacement and Leave. Retained tests must
-   preserve supported host/primary/RPC/route
-   gates, unsupported-host inspection/return, queued/loading/retained FAILED
-   source refusal, cleanup/STOPPING, active-recording Stop and ROUTING/PLAYING
-   track requirements. A refused Record must never replay after recovery.
-5. Source comparison retained all 16 single-source production files and 43
-   uniquely changed methods exactly. Read-only comparison of
-   WebexEmbed.__init__ confirmed both drafts are retained. The full run must
-   also retain the existing layout/accessibility assertions.
-   Preserve shared fixtures, existing assertions and tests/test_art_start_ux.py.
-   Document any newly reproduced integration failure and bounded fix separately.
+Conversation links remain temporary room context and never silently fall back
+to an unrelated saved meeting. Notes survive non-terminal recovery. No browser,
+meeting, player, audio capture or network send may start merely from rendering
+or resetting the room. Guest seek remains unavailable. Active recording Stop
+must remain usable while fresh recording/track intent is refused.
 
-## Security, product and human boundaries
+## Ten-second UX and evidence boundary
 
-Supplemental meeting links remain bounded, validated, untrusted clipboard
-context; existing session authentication owns authority. Borrowed links stay
-outside persisted personal Settings. No ingress, edit or navigation opens media.
-Recording and route cleanup retain their existing owners and worker guards.
-Offline tools remain explicit-file only and cannot enable audio or certify
-physical routing, device accuracy, drift, one-way latency or playability.
+During recovery, room status and the one useful next action must match actual
+ownership. A room that cannot finish cleanup cannot show a usable new invitation
+or enable stale transport controls. Make together remains usable by non-painters;
+Art keeps its two-card door and squirrel mark. Shared lesson help describes the
+external source honestly and does not claim remote video or microphone control.
 
-Keep Art's Make together + Paint along → Host/Join door and squirrel mark.
-Non-painters and talk-only guests need no canvas, instrument or local file to
-enter Make together. External browser playback and meeting audio remain
-source-owned; guest pause requests and narration/voice/personal-volume behavior
-still need human proof. The local-file Paint along option remains silent.
+Full application, native/service and hosted checks on the final candidate are
+required; record every failed attempt and distinguish infrastructure failures
+from source defects. The two-person acceptance script retains NOT RUN until
+Jeff explicitly performs/authorizes the physical checks. Different-home joining,
+lesson/voice independence, Music audibility, sustained recovery and audio latency
+remain uncertified. The public-service architecture decision is still pending.
 
-Two-home joining still needs the pending network architecture decision.
-LAN/loopback tests and meeting admission do not prove remote WebJam connection.
-Art faces/audio and Music monitoring, per-player reference timing, jitter,
-dropouts, sustained timing, 25 transport cycles and a 60-minute rehearsal remain
-NOT RUN. The sustained goal is INCOMPLETE. Codex self-QA is not Karen PASS;
-independent leftover/security/ten-second UX review must match the combined tip.
+## Holds
 
-## Holds and handoff
-
-OPEN DRAFT only. Original #96–#100 and parked #37/#49 remain untouched.
+OPEN DRAFT only. Karen is unavailable; independent leftover/security/ten-second
+UX PASS must match the final tip and remains distinct from Codex self-QA.
 No merge/squash/tag/sign/release/Pages/Release Trust/Publish/deploy/spend/live
 Cisco, unsolicited send, secrets/customer data or automatic media capture.
-Unsigned 0.27.2 stays Jeff-only. No short-code/public rendezvous, second media
-engine, other repository, parent injection or second WebJam goal. Maintain the four-hour codex lease
-before push; coord #3 BEFORE/AFTER use America/Chicago; release lease at handoff.
+Unsigned 0.27.2 stays Jeff-only. Parked #37/#49 and source drafts remain untouched.
+No short-code/public rendezvous, second media engine, other repository, parent
+injection or second Goal. Four-hour lease before push; timestamped BEFORE/AFTER;
+release the lease at handoff.

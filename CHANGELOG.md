@@ -10,6 +10,32 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Recover a private room without replaying old audio intent
+
+- After a failed Reset Invite, a successful explicit retry restores Art room
+  guidance instead of leaving the recovered room marked failed. Notes and the
+  temporary Conversation stay in place; retired lesson controls stay retired.
+- Music refuses fresh Record, Play and restart while native room cleanup is
+  unresolved. Stop and local level controls remain available for retained work.
+  Recovery never replays an old queued Play or cancels audio already playing.
+
+### Established sessions outlast their invitation window
+
+- Existing private native sessions keep admission expiry separate from the
+  connected room's lifetime. Invitations retain the default ten-minute admission
+  window; enrolled rooms keep the 90-second idle timeout and gain a hard maximum
+  of eight hours from registration, with native lifetime capped by the actual
+  ephemeral certificate expiry.
+- Setup must still complete mutual peer proof and the room handshake before its
+  deadline. Local teardown joins owned workers and retains an unfinished close
+  for retry. Host cleanup uses a fresh, bounded authenticated service-close
+  attempt; local close success does not imply a remote removal acknowledgment.
+- Reset Invite can retry a failed native close before creating a fresh invite.
+  The retired room stays unavailable, and stale or invalid close receipts cannot
+  release cleanup ownership.
+- No public profile or endpoint, media player, or guest transport authority is
+  added. Physical long-session and audio-latency validation remain separate work.
+
 ### Keep the conversation with the invitation
 
 - Pasting the host's complete invitation now carries its optional meeting into

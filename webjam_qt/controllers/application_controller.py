@@ -1891,7 +1891,29 @@ class ApplicationController(QObject):
 
     def _music_room_blocks_new_take(self) -> bool:
         room = getattr(self, "_room_participant", None)
-        return bool(room is not None and room._music_lan_host() and room._music_host_blocked())
+        return bool(
+            self._native_host_recovery_pending()
+            or (room is not None and room._music_lan_host() and room._music_host_blocked())
+        )
+
+    def _native_host_recovery_pending(self) -> bool:
+        """Read room ownership before accepting fresh Music intent."""
+
+        from services.remote_session_runtime import RemoteSessionPhase, RemoteSessionSnapshot
+
+        owner = getattr(self, "_remote_invite_owner", None)
+        if owner is None or owner is not getattr(self, "_remote_session", None):
+            return False
+        if getattr(self, "_remote_invite_reset_in_progress", False):
+            return True
+        snapshot = getattr(owner, "snapshot", None)
+        return bool(
+            isinstance(snapshot, RemoteSessionSnapshot)
+            and snapshot.role.value == "host"
+            and snapshot.phase in {
+                RemoteSessionPhase.FAILED, RemoteSessionPhase.STOPPING, RemoteSessionPhase.STOPPED,
+            }
+        )
 
     def _session_recording_control_available(self, *, hosting: bool | None = None) -> bool:
         """Host Record chrome only when this profile may start a take."""
@@ -7218,6 +7240,7 @@ class ApplicationController(QObject):
             # A queued Record cannot create take obligations while its room
             # listener is being replaced or awaiting confirmed cleanup. The
             # existing recorder retains its Stop/Finish action.
+            self._shared_track_play_after_recording = ""
             self._update_session_hud()
             return
         if (
@@ -8559,6 +8582,18 @@ class ApplicationController(QObject):
 
         if self._shutdown_cleanup_blocks_action():
             return
+        audio = getattr(self, "audio", None)
+        room = getattr(self, "_room_participant", None)
+        if (
+            getattr(self, "_shutdown", False)
+            or getattr(self, "_shutdown_in_progress", False)
+            or getattr(audio, "stopping", False)
+            or getattr(audio, "cleanup_retry_required", False)
+            or getattr(self, "_invite_switch_in_flight", False)
+            or getattr(self, "_remote_invite_reset_in_progress", False)
+            or getattr(room, "blocked", False)
+        ):
+            return
         owner = getattr(self, "_remote_invite_owner", None)
         if owner is None:
             self.window.flash_message(
@@ -8573,9 +8608,21 @@ class ApplicationController(QObject):
         self._release_reference_video()
         self._release_shared_canvas()
         self._release_room_clock()
-        room = getattr(self, "_room_participant", None)
         if room is not None:
             room.publisher = None
+        previous_snapshot = getattr(owner, "snapshot", None)
+        previous_generation = getattr(previous_snapshot, "generation", 0)
+        # Retire a queued/unpublished track start without stopping a running
+        # take or discarding the loaded source. A later successful reset cannot
+        # replay a Play gesture belonging to the old room.
+        self._reference_track_room_generation = (
+            int(getattr(self, "_reference_track_room_generation", 0)) + 1
+        )
+        track = getattr(self, "_reference_track", None)
+        if track is not None:
+            track.cancel_pending_start()
+        self._shared_track_play_after_recording = ""
+        self._remote_invite_reset_in_progress = True
         try:
             owner.reset()
         except Exception:
@@ -8585,6 +8632,48 @@ class ApplicationController(QObject):
                 ms=6000,
             )
             return
+        finally:
+            self._remote_invite_reset_in_progress = False
+            self._sync_reference_track_primary_gate()
+        if (
+            owner is not getattr(self, "_remote_invite_owner", None)
+            or getattr(self, "_shutdown", False)
+            or getattr(self, "_shutdown_in_progress", False)
+            or getattr(self, "_shutdown_cleanup_pending", False)
+            or getattr(audio, "stopping", False)
+            or getattr(audio, "cleanup_retry_required", False)
+        ):
+            return
+        from services.remote_session_runtime import RemoteSessionPhase, RemoteSessionSnapshot
+        from webjam_qt.windows.reference_track import ReferenceTrackPrimaryGate
+
+        snapshot = getattr(owner, "snapshot", None)
+        if (
+            owner is getattr(self, "_remote_session", None)
+            and isinstance(previous_snapshot, RemoteSessionSnapshot)
+            and previous_snapshot.phase is RemoteSessionPhase.FAILED
+            and isinstance(snapshot, RemoteSessionSnapshot)
+            and snapshot.role.value == "host"
+            and snapshot.phase in {RemoteSessionPhase.PREPARING, RemoteSessionPhase.CONNECTED}
+            and snapshot.generation > previous_generation
+            and getattr(owner, "room_identity", None) is not None
+            and getattr(self, "_startup_attempt", None) is None
+            and (
+                self.creator_profile.key == "art"
+                or self._reference_track_primary_gate() is ReferenceTrackPrimaryGate.READY
+            )
+        ):
+            # Only this explicit, successful replacement may leave a terminal
+            # room failure. Render callbacks cannot retry an attempt, and an
+            # independently owned Music startup or engine recovery keeps its
+            # own conductor token and failure facts.
+            if self.session_lifecycle.phase is SessionLifecyclePhase.FAILED_RECOVERABLE:
+                self._transition_lifecycle(
+                    SessionLifecyclePhase.STARTING_HOST, "A fresh private room is ready", role="host",
+                )
+            self._start_session_conductor_attempt(SessionRole.HOST)
+            if room is not None:
+                room.tick()
         room_help = getattr(self, "_room_help", None)
         if room_help is not None:
             room_help.arm(owner)
@@ -13964,7 +14053,7 @@ class ApplicationController(QObject):
                 lambda: self._run_reference_track_fast(controller.pause)
             )
             dialog.restart_requested.connect(
-                lambda: self._run_reference_track_fast(controller.restart)
+                lambda: self._run_reference_track_fast(controller.restart, starts_playback=True)
             )
             dialog.stop_requested.connect(self._request_reference_track_teardown)
             dialog.seek_requested.connect(
@@ -14335,10 +14424,13 @@ class ApplicationController(QObject):
                 thread_name=thread_name,
             )
 
-    def _run_reference_track_fast(self, operation) -> None:
+    def _run_reference_track_fast(self, operation, *, starts_playback: bool = False) -> None:
         """Apply a bounded in-memory control only when no launch is in flight."""
 
         if self._shutdown_cleanup_blocks_action():
+            return
+        if starts_playback and self._native_host_recovery_pending():
+            self._sync_reference_track_primary_gate()
             return
         from webjam_qt.windows.reference_track import ReferenceTrackPrimaryGate
 
@@ -14683,10 +14775,21 @@ class ApplicationController(QObject):
         )
         if target is not None:
             target.set_primary_gate(self._reference_track_primary_gate())
+            set_room_recovery = getattr(target, "set_room_recovery_pending", None)
+            if callable(set_room_recovery):
+                set_room_recovery(self._native_host_recovery_pending())
 
     def _play_reference_track(self) -> None:
         if self._shutdown_cleanup_blocks_action():
             self._sync_reference_track_primary_gate()
+            return
+        if self._native_host_recovery_pending():
+            self._sync_reference_track_primary_gate()
+            self.window.flash_message(
+                "Choose Reset Invite to recover the private room, then choose Play again. "
+                "Your loaded track is safe.",
+                ms=7000,
+            )
             return
         from webjam_qt.widgets.session_strip import shared_track_play_is_locked
         from webjam_qt.windows.reference_track import ReferenceTrackPrimaryGate
@@ -14792,11 +14895,14 @@ class ApplicationController(QObject):
             audience_bridge_active=(self._webex_audio_mode() == "audience_bridge"),
         )
         generation = self._reference_track_session_generation
+        room_generation = getattr(self, "_reference_track_room_generation", 0)
 
         def _play_for_current_session() -> None:
             current_primary = self._primary_jamulus_recovery_snapshot()
             if (
                 generation != self._reference_track_session_generation
+                or room_generation != getattr(self, "_reference_track_room_generation", 0)
+                or self._native_host_recovery_pending()
                 or self._shutdown
                 or not self._reference_track_primary_identity_ready(
                     current_primary,
