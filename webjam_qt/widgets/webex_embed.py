@@ -51,6 +51,7 @@ class WebexEmbed(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._audio_mode = "talkback"
         self._creator_profile_key = "music"
+        self._shared_lesson_hosting: bool | None = None
         self._meeting_configured = False
         self._launch_busy = False
         self._native_app_available = False
@@ -777,14 +778,46 @@ class WebexEmbed(QFrame):
 
     def set_creator_profile(self, profile) -> None:
         self._creator_profile_key = profile.key
+        if profile.key != "art":
+            self._shared_lesson_hosting = None
         self._render_audio_guidance()
         self._sync_native_actions()
+        self._sync_art_layout()
+
+    def set_shared_lesson_context(self, hosting: bool | None) -> None:
+        """Explain an explicitly selected meeting lesson; never open anything."""
+
+        if hosting is not None and not isinstance(hosting, bool):
+            raise ValueError("Shared lesson context must be a room role or None.")
+        self._shared_lesson_hosting = hosting if self._creator_profile_key == "art" else None
+        self._render_audio_guidance()
         self._sync_art_layout()
 
     def _render_audio_guidance(self) -> None:
         service = self._service_label
         if self._creator_profile_key == "art":
             self._title_label.setText("Conversation")
+            if self._shared_lesson_hosting is not None:
+                meeting = service or "your meeting"
+                if self._shared_lesson_hosting:
+                    share = (
+                        "Webex app: Share your YouTube window with Include computer sound. "
+                        "Browser meeting: share the YouTube tab with tab audio. "
+                        if service == "Webex" else
+                        f"Share a YouTube browser window or tab with computer sound in {meeting}. "
+                    )
+                    self._mode_label.setText(
+                        share
+                        + "Keep faces visible there. Pause and resume in your browser when asked. "
+                        "YouTube player volume changes the shared lesson; your meeting's speaker volume and microphone mute are yours."
+                    )
+                else:
+                    self._mode_label.setText(
+                        f"Watch the host's shared YouTube lesson and faces in {meeting}. "
+                        "Ask the host to pause or resume when you need time; the host controls the browser. "
+                        "Use your meeting's speaker volume for what you hear and microphone mute for your voice."
+                    )
+                return
             self._mode_label.setText(
                 f"Talk and share a demonstration in {service or 'Webex or your meeting app'} if you like. "
                 "Use your own tools. Paint along plays a separate silent local video."

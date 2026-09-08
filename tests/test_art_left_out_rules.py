@@ -208,7 +208,13 @@ def test_no_art_panel_claims_to_touch_the_meeting_or_a_microphone(name, factory)
 
     text = _all_text(factory()).lower()
 
-    for claim in ("your microphone", "mic ", "webex", "the meeting", "everyone hears"):
+    # Paint along may now explain navigation to Conversation. Mentioning a
+    # meeting is not a control claim; the journey tests separately prove that
+    # this explicit route opens no media or meeting app.
+    for claim in (
+        "your microphone", "mic ", "webex", "everyone hears",
+        "mute the meeting", "pause the meeting", "control the meeting",
+    ):
         assert claim not in text, (name, claim)
 
 

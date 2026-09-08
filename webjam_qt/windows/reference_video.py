@@ -160,6 +160,7 @@ class ReferenceVideoDialog(QDialog):
     close_local_copy_requested = Signal()
     hide_requested = Signal(bool)
     return_requested = Signal()
+    watch_lesson_requested = Signal()
 
     def __init__(self, *, hosting: bool, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -222,6 +223,29 @@ class ReferenceVideoDialog(QDialog):
         self._status.setObjectName("PaintAlongStatus")
         self._status.setAccessibleName("Paint along status")
         layout.addWidget(self._status)
+
+        lesson_row = QHBoxLayout()
+        lesson_row.setSpacing(Space.SM)
+        self._watch_lesson_button = QPushButton("Watch a shared lesson")
+        self._watch_lesson_button.setObjectName("GhostButton")
+        self._watch_lesson_button.setMinimumHeight(36)
+        self._watch_lesson_button.setAccessibleName("Watch a shared lesson")
+        self._watch_lesson_button.setAccessibleDescription(
+            "Show Conversation to follow a YouTube lesson in your meeting. "
+            "You choose when to open the meeting."
+        )
+        self._watch_lesson_button.setToolTip(
+            self._watch_lesson_button.accessibleDescription()
+        )
+        self._watch_lesson_button.clicked.connect(self._watch_shared_lesson)
+        lesson_row.addWidget(self._watch_lesson_button)
+        self._lesson_hint = QLabel("YouTube, faces and voices in your meeting.")
+        self._lesson_hint.setWordWrap(True)
+        self._lesson_hint.setObjectName("PaintAlongHint")
+        lesson_row.addWidget(self._lesson_hint, stretch=1)
+        # Keep the meeting route ahead of the local-file heading so "Choose a
+        # process video" describes only the existing local player beneath it.
+        layout.insertLayout(1, lesson_row)
 
         self._surface_holder = QFrame()
         self._surface_holder.setObjectName("PaintAlongSurface")
@@ -407,6 +431,17 @@ class ReferenceVideoDialog(QDialog):
         self._surface_placeholder.setVisible(widget is None)
 
     # -- user intent ---------------------------------------------------
+
+    def set_watch_lesson_available(self, available: bool) -> None:
+        """Navigation follows room ownership, independently of a local file."""
+
+        self._watch_lesson_button.setEnabled(bool(available))
+
+    def _watch_shared_lesson(self) -> None:
+        # Disabled or hidden controls may still receive queued semantic input.
+        # The controller independently verifies the current room and workspace.
+        if self._watch_lesson_button.isEnabled() and self._watch_lesson_button.isVisible():
+            self.watch_lesson_requested.emit()
 
     def _video_filter(self) -> str:
         from webjam_qt.widgets.reference_video_player import qt_video_name_filter
