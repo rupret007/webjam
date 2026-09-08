@@ -343,8 +343,9 @@ def build_invite_message(
                     f"Optional {service} conversation and work sharing ({site}):",
                     candidate,
                     "",
-                    "WebJam opens the art room. Bring your own tools, paper, or usual app. "
-                    "The meeting is separate and optional; WebJam does not run it.",
+                    "WebJam opens the art room. Make from your own space with paper, "
+                    "clay, a model, a printer, or your usual app. The meeting is "
+                    "separate and optional; WebJam does not run it.",
                 ]
             )
         else:
@@ -363,8 +364,9 @@ def build_invite_message(
         lines.extend(
             [
                 "",
-                "WebJam opens the art room. Bring your own tools, paper, or usual app. "
-                "You can make together without a meeting.",
+                "WebJam opens the art room. Make from your own space with paper, "
+                "clay, a model, a printer, or your usual app. You can make "
+                "together without a meeting.",
             ]
         )
     elif not manual_paste:

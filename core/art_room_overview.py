@@ -21,9 +21,9 @@ class ArtRoomOverview:
     role_label: str = "Guest"
     connection_label: str = "No room connected"
     connection_detail: str = "Use a host's invitation to join their room."
-    activity_label: str = "Bring your own tools"
+    activity_label: str = "Make from your own space"
     activity_detail: str = (
-        "Paint, sculpt, sketch or make with the tools you already use."
+        "Use paper, clay, a model, printer, or your usual app."
     )
     activity_action: str = ""
     activity_action_label: str = ""
@@ -136,7 +136,7 @@ def art_room_overview(
             else "The host's room details will appear after the connection is confirmed."
         )
     elif state is ArtRoomState.CONNECTED:
-        phase, label, title = "connected", "In the room", "Make together, in your own way"
+        phase, label, title = "connected", "In the room", "Make from your own space"
         connection = "Artist connection confirmed" if hosting else "Connected to the host"
         detail = (
             "An artist has connected to this room. WebJam does not yet show a full artist list."
@@ -150,7 +150,7 @@ def art_room_overview(
                 "Talk and screen sharing are separate."
             )
     elif state is ArtRoomState.WAITING and hosting:
-        phase, label, title = "waiting", "Room open", "Make room for each other"
+        phase, label, title = "waiting", "Room open", "Make from your own space"
         connection = "Waiting for artists to connect"
         detail = (
             "Your room is open. Share its invitation using the action above; "
@@ -166,10 +166,10 @@ def art_room_overview(
         )
 
     active = phase in {"waiting", "connected"}
-    activity = "Bring your own tools"
+    activity = "Make from your own space"
     activity_detail = (
-        "Paint, sculpt, sketch or make with the tools you already use. "
-        "Conversation is optional when you want to talk or show your work."
+        "Use paper, clay, a model, printer, or your usual app. "
+        "Conversation can carry talk or a screen share."
     )
     action = ""
     action_label = ""

@@ -9675,8 +9675,9 @@ class ApplicationController(QObject):
         if presentation.phase is SessionConductorPhase.IDLE and not facts.art_room_closed:
             if self.creator_profile.key == "art":
                 stage_hint = (
-                    "Bring your own tools: paint, clay, paper or a printer. "
-                    "Talk and show your work through Conversation."
+                    "Make from your own space: use paper, clay, a model, "
+                    "a printer, or your usual app. Conversation can carry "
+                    "talk or a screen share."
                 )
             else:
                 stage_hint = (

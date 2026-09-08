@@ -404,8 +404,11 @@ def test_art_invite_describes_own_tools_and_optional_work_sharing(meeting_url):
     )
     assert JOIN_LINK in message.text.splitlines()
     assert message.text.startswith("Join this art room on WebJam:")
-    assert "own tools" in message.text
+    assert "Make from your own space" in message.text
     assert "paper" in message.text
+    assert "clay" in message.text
+    assert "model" in message.text
+    assert "printer" in message.text
     assert "usual app" in message.text
     for phrase in ("carries the music", "between takes", "need it to play", "Song:"):
         assert phrase not in message.text

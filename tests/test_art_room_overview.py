@@ -80,13 +80,20 @@ def test_make_together_is_complete_without_optional_tools_or_a_roster():
     assert "Waiting for artists" in waiting.connection_label
     assert joined.connection_label == "Connected to the host"
     for overview in (waiting, joined):
-        assert overview.activity_label == "Bring your own tools"
+        assert overview.title == "Make from your own space"
+        assert overview.activity_label == "Make from your own space"
+        assert "paper, clay, a model, printer, or your usual app" in overview.activity_detail
+        assert "screen share" in overview.activity_detail
         assert overview.conversation_enabled
         assert not overview.activity_action
         public = repr(asdict(overview)).lower()
         assert "0 artists" not in public
+        assert "band check" not in public
+        assert "shared track" not in public
+        assert "jamulus" not in public
         assert "mixer" not in public
         assert "setup required" not in public
+        assert "open canvas" not in public
 
 
 @pytest.mark.parametrize("hosting", [False, True])
@@ -195,7 +202,7 @@ def test_unknown_primary_target_does_not_publish_an_activity():
         state=ArtRoomState.CONNECTED, hosting=False,
         presence=ArtRoomPresence(label="Unknown", target="unknown"),
     )
-    assert overview.activity_label == "Bring your own tools"
+    assert overview.activity_label == "Make from your own space"
     assert overview.activity_actions == ()
 
 

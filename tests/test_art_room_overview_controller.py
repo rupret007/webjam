@@ -53,7 +53,8 @@ def test_cold_guest_room_loss_and_leave_never_show_music_roster(qapp, controller
     assert not app.window.participant_grid.isVisibleTo(app.window)
     assert panel._overview.connection_label == "Connected to the host"
     assert "0 artists" not in panel.accessibleDescription()
-    assert panel._overview.activity_label == "Bring your own tools"
+    assert panel._overview.activity_label == "Make from your own space"
+    assert "paper, clay, a model, printer, or your usual app" in panel._overview.activity_detail
     # Make together's next click is talk. An invitation without a meeting
     # asks for one; adding a room-only link turns it into the way back.
     assert not str(app.settings.webex_url or "").strip()

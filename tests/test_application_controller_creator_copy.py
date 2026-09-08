@@ -652,6 +652,6 @@ def test_art_copy_invite_names_the_room_and_optional_work_sharing():
     assert "webjam://join?v=3" in copied
     assert "Open WebJam, choose Join, then paste this full invitation." in copied
     assert "Optional Webex conversation and work sharing" in copied
-    assert "Bring your own tools" in copied
+    assert "Make from your own space" in copied
     assert "carries the music" not in copied
     assert "room link and meeting link" in controller.window.flash_message.call_args.args[0]

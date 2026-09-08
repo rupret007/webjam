@@ -1,80 +1,78 @@
-# PRE_KAREN — preserve Conversation in a complete invitation
+# PRE_KAREN — combined two-session integration
 
-Base: `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`.
-Branch: `codex/invitation-conversation-context`.
-Exact pushed tip and final local/hosted results belong in the OPEN DRAFT body.
+Branch: `codex/two-session-integration`, canonical WebJam checkout only.
+This is a declared dependent stack rooted at #97
+`14aa874aa28cc3bc8cdfe647c888bc61547daa89`. The approved sustained goal permits
+stacks for dependent work. Original drafts remain untouched.
 
-## Product and leftover honesty
+## Existing source being reused
 
-A complete copied invitation previously lost its optional meeting at Join.
-Guests either needed a second paste or could open an unrelated personal meeting.
-This slice carries that optional link as temporary room context through cold and
-warm joining, native credential consumption, LAN discovery, explicit opening,
-Retry, and Leave. It does not add remote reachability or a media feature.
+- #96 `41a26652387c855059402ae8986c4b0f91a0531f`: Make together own-space first action.
+- #97 `14aa874aa28cc3bc8cdfe647c888bc61547daa89`: temporary room Conversation context.
+- #98, both source commits ending at `830bed1fe2591c44d2bafc136b5ee84633e96c67`:
+  shared-lesson navigation, source-owned guidance and compact Conversation layout.
+- #99 `c2a088fdbfd537d7ad342fda2a6810cab2bd9ca5`: Shared Track support and recording intent.
+- #100 `0cf1f2c6103fd10a5b507e3ff378dc4c92ff1bb8`: offline audio round-trip evidence tools.
 
-#96 remains independent and untouched. Its own-space copy is not duplicated here.
-The sustained Art/Music goal remains incomplete; see
-[the capability map and physical scripts](docs/plans/webjam-two-session-proof.md).
+Their common original master was `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`.
+Original green CI and local results are historical evidence for those heads.
+They do not establish the behavior of this combined application.
 
-## Ten-second UX self-QA
+## Combined verification — PENDING
 
-- One complete paste supplies the room and optional Conversation destination.
-- Guests do not choose the host activity again or extract a second link.
-- No meeting opens from paste, room arrival, navigation, or link editing.
-- Conversation still requires the explicit Join / Open Meeting action.
-- A bare/no-meeting invite does not select a previous personal meeting.
-- Add Link / Change Link uses a compact masked room editor for guests; it says
-  the personal meeting stays unchanged. Hosts retain the existing saved editor.
-- Cancel, invalid input, navigation and Leave during editing cannot change the
-  wrong room. Accepted edits return focus to the appropriate Conversation action.
-- Door remains Make together + Paint along → Host/Join; squirrel mark and banned
-  first-screen words are unchanged. Notes and local-file Paint along still work.
+Source replay is in progress. New integration regressions, relevant suites,
+full local required checks and hosted CI including all four desktop builds
+are PENDING. Record the final combined SHA and actual results in the draft body
+and coord AFTER; do not inherit green status or aggregate old test counts.
 
-## Security and ownership self-QA
+The new regression scope is composition of existing behavior, not a claimed
+new feature or an already-proven product bug:
 
-- The supplemental URL is local untrusted clipboard context, not authenticated
-  host state. Room connection credentials and wire formats remain unchanged.
-- Extraction is bounded, requires a valid single room invitation first, and
-  accepts only the generated labeled optional block. Quoted forwarding and URL
-  wrappers are supported. Unrelated signature URLs are ignored. Conflicting,
-  malformed or mismatched labeled blocks produce fixed errors with no URL.
-- Existing public-HTTPS meeting validation is reapplied before use. No arbitrary
-  URL opens at ingress. Native/argv bearer restrictions remain unchanged.
-- Personal AppSettings and its persisted file never receive the borrowed link.
-  Current-room settings edits are memory-only and room/generation guarded.
-- Native enrollment can discard its capability without discarding Conversation.
-  Discovery/retry preserves the same room context; queued replacement carries
-  the corresponding new link, including explicit absence.
-- Bridge opening snapshots the explicit effective URL. Error Retry retains it
-  and rechecks the request generation; a replaced/left room cannot reuse Retry
-  or publish a stale launch result. Existing external meetings are never closed.
-- Proved Leave restores personal context; failed cleanup preserves the current
-  context until retry succeeds. Shutdown drops retained room/pending links.
-- No permission, routing, guest playback authority, authentication, media capture,
-  signing, package or release safeguards are relaxed.
+1. Full Art invitation with a guest's different personal meeting, then Paint
+   along → Watch a shared lesson → Conversation. Verify room provider/link,
+   explicit-only opening, room-neutral accessibility and guest-never-seek.
+2. Replace/remove the room meeting while lesson guidance is active. Missing
+   context must not select the personal meeting. Preserve Settings, Notes,
+   local video selection, compact layout and intentional keyboard focus.
+3. Invalid/cancelled edits, failed Open/Retry, queued room replacement,
+   successful/failed Leave, return and profile changes must preserve current
+   room/generation ownership. Old URLs, callbacks and lesson roles cannot
+   affect the next room. Successful Leave restores personal context; failed
+   cleanup preserves current context until its existing recovery completes.
+4. Music in that room context must preserve supported host/primary/RPC/route
+   gates, unsupported-host inspection/return, queued/loading/retained FAILED
+   source refusal, cleanup/STOPPING, active-recording Stop and ROUTING/PLAYING
+   track requirements. A refused Record must never replay after recovery.
+5. Preserve shared fixtures, existing assertions and tests/test_art_start_ux.py.
+   Document any newly reproduced integration failure and bounded fix separately.
 
-## Verification
+## Security, product and human boundaries
 
-New regression modules cover ingress/dialog/bootstrap, actual controller and
-Bridge handoff behavior, and native/LAN lifecycle ownership. Existing conversation
-modal and navigation tests now assert temporary guest links versus personal host
-settings, including actual modal events, keyboard focus and compact containment.
+Supplemental meeting links remain bounded, validated, untrusted clipboard
+context; existing session authentication owns authority. Borrowed links stay
+outside persisted personal Settings. No ingress, edit or navigation opens media.
+Recording and route cleanup retain their existing owners and worker guards.
+Offline tools remain explicit-file only and cannot enable audio or certify
+physical routing, device accuracy, drift, one-way latency or playability.
 
-Run the entire repository test bar using its isolated-module pattern, including
-new test files. Record final module/test counts and logs in the PR body. Hosted
-CI must run on the final pushed tip with the four desktop builds. Local logs live
-under `out/invitation-conversation-context/` and are not product artifacts.
+Keep Art's Make together + Paint along → Host/Join door and squirrel mark.
+Non-painters and talk-only guests need no canvas, instrument or local file to
+enter Make together. External browser playback and meeting audio remain
+source-owned; guest pause requests and narration/voice/personal-volume behavior
+still need human proof. The local-file Paint along option remains silent.
 
-Physical two-person Art/Music sessions, live Webex/Cisco, OS-native installed-app
-feel, physical audio routing/latency, signing and release trust remain NOT RUN.
-Codex self-QA and agent review are not independent Karen PASS.
+Two-home joining still needs the pending network architecture decision.
+LAN/loopback tests and meeting admission do not prove remote WebJam connection.
+Art faces/audio and Music monitoring, per-player reference timing, jitter,
+dropouts, sustained timing, 25 transport cycles and a 60-minute rehearsal remain
+NOT RUN. The sustained goal is INCOMPLETE. Codex self-QA is not Karen PASS;
+independent leftover/security/ten-second UX review must match the combined tip.
 
 ## Holds and handoff
 
-OPEN DRAFT only. Karen is unavailable; no merge until required independent
-review and separate authorization. Additional independent product slices may
-continue under the updated goal. No merge/squash/tag/sign/release/Pages/Publish/
-deploy/spend/live Cisco or unsolicited send. Unsigned 0.27.2 remains Jeff-only.
-No short-code/public rendezvous, second video stack, parked #37/#49 changes,
-other-repository lane or parent-task injection. Publish coord AFTER and release
-the codex lease when the draft's verification is ready.
+OPEN DRAFT only. Original #96–#100 and parked #37/#49 remain untouched.
+No merge/squash/tag/sign/release/Pages/Release Trust/Publish/deploy/spend/live
+Cisco, unsolicited send, secrets/customer data or automatic media capture.
+Unsigned 0.27.2 stays Jeff-only. No short-code/public rendezvous, second media
+engine, other repository, parent injection or second WebJam goal. Maintain the four-hour codex lease
+before push; coord #3 BEFORE/AFTER use America/Chicago; release lease at handoff.
