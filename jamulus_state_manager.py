@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Dict, List, Optional
 
 
@@ -41,7 +41,7 @@ class ParticipantStateManager:
         self,
         apply_mixer_setting: Callable[..., None],
         set_cached_participants: Callable[[Dict[int, str]], None],
-        send_rpc_gain: Callable[[int, int], None],
+        send_rpc_gain: Callable[..., None],
         notify_callbacks: Callable[[], None],
         logger: Optional[logging.Logger] = None,
     ) -> None:
@@ -60,7 +60,10 @@ class ParticipantStateManager:
         with self._participants_lock:
             return list(self.participants.values())
 
-    def _apply_listening_gain(self, channel_id: int, *, notify: bool = True) -> None:
+    def _apply_listening_gain(
+        self, channel_id: int, *, notify: bool = True,
+        expected_participant: JamulusParticipant | None = None,
+    ) -> None:
         """Apply the effective monitor gain while retaining the chosen fader.
 
         Native monitor mute is gain zero, including Solo suppression. Roster
@@ -69,10 +72,22 @@ class ParticipantStateManager:
         """
         with self._participants_lock:
             participant = self.participants.get(channel_id)
-            if participant is None:
+            if participant is None or (
+                expected_participant is not None and participant is not expected_participant
+            ):
                 return
             effective_level = 0 if participant.muted else participant.fader_level
-        self._send_rpc_gain(channel_id, effective_level)
+        if expected_participant is None:
+            self._send_rpc_gain(channel_id, effective_level)
+        else:
+            self._send_rpc_gain(
+                channel_id, effective_level, expected_participant=expected_participant,
+            )
+        # The native queue checks ownership again at enqueue and dispatch.
+        # Keep the legacy adapter from following an already-replaced row too.
+        with self._participants_lock:
+            if self.participants.get(channel_id) is not participant:
+                return
         if notify:
             self._apply_mixer_setting(channel_id)
         else:
@@ -263,21 +278,25 @@ class ParticipantStateManager:
         return str(name).strip().casefold()
 
     def serialize_mix(self) -> dict:
+        # Copy values while locked: the file must describe one complete mix,
+        # not references that a roster or listening gesture can mutate later.
         with self._participants_lock:
-            participants = list(self.participants.values())
-        return {
-            "participants": [
-                {
-                    "channel_id": p.channel_id,
-                    "name": p.name,
-                    "fader_level": p.fader_level,
-                    "pan": p.pan,
-                    "muted": p.muted,
-                    "solo": p.solo,
-                }
-                for p in participants
-            ]
-        }
+            has_solo = any(p.solo for p in self.participants.values())
+            return {
+                "participants": [
+                    {
+                        "channel_id": p.channel_id,
+                        "name": p.name,
+                        "fader_level": p.fader_level,
+                        "pan": p.pan,
+                        "muted": p.muted,
+                        "solo": p.solo,
+                        **({"pre_solo_muted": self._pre_solo_mute.get(cid, p.muted)}
+                           if has_solo else {}),
+                    }
+                    for cid, p in self.participants.items()
+                ]
+            }
 
     def apply_mix_data(self, mix_data: object) -> Optional[int]:
         def _coerce_bool(value: object, default: bool) -> bool:
@@ -296,7 +315,7 @@ class ParticipantStateManager:
         def _coerce_int(value: object, default: int) -> int:
             try:
                 return int(value)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 return default
 
         participants_data = mix_data.get("participants") if isinstance(mix_data, dict) else None
@@ -304,59 +323,98 @@ class ParticipantStateManager:
             self._logger.warning("Mix payload is missing a valid participants list.")
             return None
 
+        # Resolve names and stage all rows against one current roster. No
+        # callback can observe a partially restored Solo/mute mix.
         with self._participants_lock:
             name_by_id = {
                 cid: self._normalize_participant_name(p.name)
                 for cid, p in self.participants.items()
             }
-        ids_by_name: Dict[str, List[int]] = {}
-        for cid, name in name_by_id.items():
-            if name:
-                ids_by_name.setdefault(name, []).append(cid)
-
-        solo_candidates: List[int] = []
-        applied: set[int] = set()
-        for p_data in participants_data:
-            if not isinstance(p_data, dict):
-                continue
-            try:
-                payload_cid = int(p_data.get("channel_id"))
-            except (TypeError, ValueError):
-                payload_cid = None
-            payload_name = self._normalize_participant_name(p_data.get("name"))
-            cid = None
-            if payload_cid is not None and payload_cid in name_by_id:
-                if not payload_name or name_by_id[payload_cid] == payload_name:
-                    cid = payload_cid
-            if cid is None and payload_name:
-                matches = ids_by_name.get(payload_name, [])
-                if len(matches) == 1:
-                    cid = matches[0]
-            if cid is None:
-                continue
-
-            with self._participants_lock:
-                if cid not in self.participants:
+            ids_by_name: Dict[str, List[int]] = {}
+            for cid, name in name_by_id.items():
+                if name:
+                    ids_by_name.setdefault(name, []).append(cid)
+            current_solo = next(
+                (cid for cid, p in self.participants.items() if p.solo), None,
+            )
+            personal_mutes = {
+                cid: self._pre_solo_mute.get(cid, p.muted)
+                if current_solo is not None else p.muted
+                for cid, p in self.participants.items()
+            }
+            staged: Dict[int, JamulusParticipant] = {}
+            for row in participants_data:
+                if not isinstance(row, dict):
                     continue
-                p = self.participants[cid]
-                p.fader_level = max(0, min(127, _coerce_int(p_data.get("fader_level", p.fader_level), p.fader_level)))
-                p.pan = max(0, min(100, _coerce_int(p_data.get("pan", p.pan), p.pan)))
-                p.muted = _coerce_bool(p_data.get("muted", p.muted), p.muted)
-                p.solo = _coerce_bool(p_data.get("solo", p.solo), p.solo)
-                if p.solo:
-                    solo_candidates.append(cid)
-            # Best-effort apply; may race with protocol monitor updates.
-            self._apply_mixer_setting(cid)
-            applied.add(cid)
+                try:
+                    payload_cid = int(row.get("channel_id"))
+                except (TypeError, ValueError, OverflowError):
+                    payload_cid = None
+                payload_name = self._normalize_participant_name(row.get("name"))
+                cid = None
+                if payload_cid is not None and payload_cid in name_by_id:
+                    if not payload_name or name_by_id[payload_cid] == payload_name:
+                        cid = payload_cid
+                if cid is None and payload_name:
+                    matches = ids_by_name.get(payload_name, [])
+                    if len(matches) == 1:
+                        cid = matches[0]
+                if cid is None:
+                    continue
 
-        # Exclusive solo semantics: if multiple solo=true entries in payload,
-        # the last one wins.
-        if solo_candidates:
-            self.set_solo(solo_candidates[-1], True)
-        else:
-            with self._participants_lock:
-                if not any(p.solo for p in self.participants.values()):
-                    self._pre_solo_mute.clear()
-        if participants_data and not applied:
-            self._logger.warning("Mix payload did not match any current participants.")
-        return len(applied)
+                # Reinsert duplicate rows so the last final Solo candidate
+                # wins, and a later solo=false cannot reactivate an old one.
+                candidate = staged.pop(cid, None) or replace(self.participants[cid])
+                candidate.fader_level = max(0, min(127, _coerce_int(
+                    row.get("fader_level", candidate.fader_level), candidate.fader_level,
+                )))
+                candidate.pan = max(0, min(100, _coerce_int(
+                    row.get("pan", candidate.pan), candidate.pan,
+                )))
+                was_solo = candidate.solo
+                candidate.solo = _coerce_bool(row.get("solo", candidate.solo), candidate.solo)
+                if "muted" in row:
+                    candidate.muted = _coerce_bool(row["muted"], candidate.muted)
+                    personal_mutes[cid] = _coerce_bool(row["muted"], personal_mutes[cid])
+                elif candidate.solo and not was_solo:
+                    candidate.muted = False
+                if "pre_solo_muted" in row:
+                    personal_mutes[cid] = _coerce_bool(
+                        row["pre_solo_muted"], personal_mutes[cid],
+                    )
+                staged[cid] = candidate
+
+            if not staged:
+                if participants_data:
+                    self._logger.warning("Mix payload did not match any current participants.")
+                return 0
+
+            solo_channel = next(
+                (cid for cid in reversed(staged) if staged[cid].solo), None,
+            )
+            if solo_channel is None and current_solo not in staged:
+                solo_channel = current_solo
+            selected = staged.get(solo_channel) or self.participants.get(solo_channel)
+            solo_muted = selected.muted if selected is not None else False
+            affected = {}
+            for cid, participant in self.participants.items():
+                before = (participant.muted, participant.solo)
+                candidate = staged.get(cid)
+                if candidate is not None:
+                    participant.fader_level = candidate.fader_level
+                    participant.pan = candidate.pan
+                participant.solo = cid == solo_channel
+                participant.muted = (
+                    personal_mutes[cid] if solo_channel is None
+                    else solo_muted if participant.solo else True
+                )
+                if candidate is not None or before != (participant.muted, participant.solo):
+                    affected[cid] = participant
+            self._pre_solo_mute = personal_mutes if solo_channel is not None else {}
+
+        # Queue current effective gains with the exact restored row owner.
+        # Native I/O remains outside the state lock; #105's dispatcher also
+        # guards its originating RPC epoch and reads the latest local intent.
+        for cid, participant in affected.items():
+            self._apply_listening_gain(cid, expected_participant=participant)
+        return len(staged)

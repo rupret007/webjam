@@ -10,6 +10,17 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Restore saved Music listening levels
+
+- Default, named and automatic mix restoration now apply the final matched
+  listening gains through the current native participant and connection owner.
+- Explicit Load updates existing cards immediately. Invalid or unrelated files
+  offer a useful next action instead of claiming a mix was loaded.
+- New saves during Solo retain both effective mute and the personal mute
+  choices restored when Solo ends. Older snapshots remain readable.
+- No source playback, recording, device selection or connection proof changes.
+  Physical two-person audibility and independent review remain open.
+
 ### Keep Music listening controls consistent
 
 - Muted and Solo-suppressed channels keep zero effective listening gain when

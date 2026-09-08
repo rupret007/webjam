@@ -615,7 +615,10 @@ class JamulusController:
             and snapshot.identity.monitor_epoch > 0
         )
 
-    def _send_rpc_gain(self, channel_id: int, level: int) -> None:
+    def _send_rpc_gain(
+        self, channel_id: int, level: int, *,
+        expected_participant: JamulusParticipant | None = None,
+    ) -> None:
         """Coalesce local listening intent without reordering native writes.
 
         A pending item owns a participant object and RPC monitor epoch, never
@@ -639,7 +642,9 @@ class JamulusController:
                 return
             owners = self.participants
             participant = owners.get(channel_id)
-            if participant is None:
+            if participant is None or (
+                expected_participant is not None and participant is not expected_participant
+            ):
                 return
             # Churn cannot retain a queue of departed participants. At most
             # one pending item per current channel survives a new mutation.
