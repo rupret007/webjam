@@ -71,13 +71,15 @@ connection is current, not that a meeting or drawing app has joined.
 
 The room view shows whether you are waiting for artists or connected to the
 host. It does not show a full artist list yet. Without a shared activity,
-**Bring your own tools** is a complete place to start; when the host shares
-a canvas or Paint along video, the room offers that existing panel. When both
-are offered, each has its own status and Open action in the room. A canvas
-that needs a drawing app does not block **Open Paint along**, and video
-recovery does not hide **Open canvas**. If you hid the video, return through
-**Open Paint along**, then choose **Show video** when you want it visible
-again. Your existing local copy stays open.
+**Make from your own space** is a complete place to start: use paper, clay, a
+model, a printer, or your usual app while the room stays open beside you.
+Conversation is optional when you want to talk or share your screen. When the
+host shares a canvas or Paint along video, the room offers that existing
+panel. When both are offered, each has its own status and Open action in the
+room. A canvas that needs a drawing app does not block **Open Paint along**,
+and video recovery does not hide **Open canvas**. If you hid the video, return
+through **Open Paint along**, then choose **Show video** when you want it
+visible again. Your existing local copy stays open.
 
 In **Notes** or Paint along, choose **Back to room** to see the full room and
 its current activities or recovery action. Your notes, selection and undo

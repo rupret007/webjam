@@ -253,7 +253,7 @@ def test_make_together_still_requires_no_video_preparation(room, qapp, role):
     pair.app.settings.last_creator_start_key = "paint_along"
     pair.app._tick_creator_start()
     overview = pair.app.window.art_room_overview._overview
-    assert overview.activity_label == "Bring your own tools"
+    assert overview.activity_label == "Make from your own space"
     assert "video" not in overview.activity_actions
     assert pair.app._reference_video_dialog is None
     pair.player_factory.assert_not_called()

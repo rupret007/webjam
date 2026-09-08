@@ -1,53 +1,52 @@
-# Worth building — prepare a guest copy before the host shares
+# Worth building — Make together starts from any artist's own space
 
-Base: `e35f7352b42280814be0ea02f77b412f68231706`, fetched `origin/master`
-after #94; the fresh branch started at that exact tip.
-Branch: `codex/art-guest-prepare-copy`; canonical WebJam checkout only.
-Marker: `OVERNIGHT_WEBJAM_ART_20260907_2307`.
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5579240270.
+Base: `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`, fetched `origin/master`
+after #95; the fresh branch started at that exact tip.
+Branch: `codex/art-copy-first-action`; canonical WebJam checkout only.
+Marker: `OVERNIGHT_WEBJAM_ART_20260908_0056`.
+BEFORE lease: Bob-the-Bot coord #3, 2026-09-08 01:00 CT.
 
-#93 gives a waiting guest an **Open Paint along** room action and says they can
-load a copy before the host shares. The panel actually hid **Open my copy…**
-until an offer arrived. The existing follower already supports holding a local
-copy without showing or playing it. This is a missing functional step, with a
-short path through existing code.
+The remaining high-impact Art gap is the first in-room Make together read.
+The door is already the locked two-card shape, and Paint along's guest path
+was just completed. After Host, though, a sculptor, potter, 3D/object maker,
+or talk-only artist still needed the room to say plainly that their own
+bench, material, or app is already enough. More Paint along copy would help a
+smaller branch of the flow; this one improves the default Make together room
+for every non-musician Art session.
 
-The valid baseline reproduced **16 failed / 2 passed** in real Qt/controller
-journeys. The native fixture was corrected to carry an empty video snapshot
-before that baseline. All sixteen preparation journeys stopped at the missing
-file action; both Make together controls already passed.
+Before: the room's default activity was the softer **Bring your own tools**,
+with a generic make/draw line. It did not strongly counter the old music
+gravity after Host, and it left a non-painter to infer that canvas or setup
+might still be the real next step.
 
-Before: a guest follows the waiting-room action into a panel with no file
-action. After: the guest can open a copy early and see **Your copy is open**,
-explicitly waiting for WebJam to check it against the host's eventual offer.
-Matching, host state and connection still own following. A changed or failed
-copy offers another try. More → Close my copy works before a share.
+After: a waiting host or connected guest sees **Make from your own space**.
+The detail names paper, clay, a model, a printer, or the artist's usual app,
+then leaves **Conversation** as the optional talk or screen-share path. There
+is still no default canvas action, no Paint along requirement, no Music setup,
+and no first-screen wording change.
 
-Make together already starts with each artist's own tools; #94 supplies its
-Conversation next-click label. Completing an action that currently dead-ends
-beats adding more wording or another door choice. This slice changes only the
-existing local follower projection and Paint along panel, plus tests/docs.
+The invite text now carries the same promise, because the invitation is what a
+guest receives before joining the already-chosen session. The first-session
+and user docs use the same words so this source tree no longer teaches Art as
+a band setup with a visual skin.
 
-The early room cue uses the existing host-start fact available on native
-rooms. LAN guests can use the existing explicit Paint along entry; this slice
-does not add a host-start field or pretend LAN publishes one. Neither route
-adds a required video step to Make together.
+This is copy-only product work on existing Art surfaces. It changes no room
+protocol, transport, meeting launch, player, file handling, canvas launcher,
+authentication, recording, signing, package, release, or deployment behavior.
 
-Focused proof: **425 tests passed**, including **24 new preparation journeys**
-across LAN/native, 720/1100 widths, later match/mismatch, repeated empty room
-state, withdrawal, changed/deleted copies, cancellation, decoder failure,
-connection loss during the chooser, closing a prepared copy and Make together.
-Actual Qt captures at 720×560 were inspected using synthetic files and a
-controlled decoder. Full local and hosted results, exact tip/tree and four
-desktop build evidence belong in the OPEN DRAFT and coord AFTER.
+Focused proof: `tests/test_art_start_ux.py`, Art overview model/UI/controller,
+creator invite copy, and the Paint along prepared-copy guard passed together:
+**178 passed**. The focused checks cover the locked door, banned first-screen
+words, compact 720x560 Art room layout, no hidden Music roster, no default
+canvas action, no video preparation for Make together, and the invite copy.
 
-No download, file transfer, protocol, player, timer, meeting action or guest
-transport input is added. Hashing and decoding remain synchronous. Physical
-playback, live meetings, OS focus/installed-app feel and signing are NOT RUN.
-
-One OPEN DRAFT PRE_KAREN, then stop for Karen leftover + security + ten-second
-UX. No rework of #89/#90; parked #37/#49 untouched. Art door retains exactly
-Make together + Paint along → Host/Join and the squirrel-with-fro artwork.
-Unsigned 0.27.2 is Jeff-only. No merge/squash/tag/sign/Pages/Release Trust/Publish/
-release/deploy/spend/live Cisco, short-code/public rendezvous, Music, Drawpile,
-shared-canvas work, second video stack, other-repo lane or parent injection.
+Full local proof on the final tree: **8,778 passed / 26 skipped / 99 subtests
+/ 5 warnings** across **370 modules** using the repository's isolated-module
+CI pattern. Hosted evidence on the frozen tip belongs in the OPEN DRAFT and
+coord AFTER. Keep the PR OPEN DRAFT and stop for Karen leftover + security +
+ten-second UX. Parked #37/#49 stay untouched. Do not rework #89/#90/#95. Door
+stays exactly Make together + Paint along → Host/Join with the squirrel mark
+unchanged. Unsigned 0.27.2 remains Jeff-only. No merge/squash/tag/sign/Pages/
+Release Trust/Publish/release/deploy/spend/live Cisco, short-code/public
+rendezvous, Music lane, second video stack, other repo, second Goal, or parent
+injection.

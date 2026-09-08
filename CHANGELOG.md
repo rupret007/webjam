@@ -10,6 +10,17 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Make together starts from any artist's own space
+
+- The Art room's default Make together activity now says **Make from your own
+  space**, naming paper, clay, a model, a printer, or the artist's usual app
+  before any optional canvas or Paint along activity appears.
+- The same promise is carried in Art invitations and first-session guidance, so
+  a sculptor, potter, object maker, painter, or talk-only guest does not read
+  the room as a Music setup.
+- No launch-door shape, meeting launch, room protocol, canvas, Paint along,
+  recording, signing, release, or package behavior changes.
+
 ### Prepare a Paint along copy before the host shares
 
 - A guest who opens **Paint along** early can now choose **Open my copy…**,

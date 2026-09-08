@@ -607,8 +607,10 @@ def test_art_idle_guidance_supports_own_tools_without_recording_claim(tmp_path):
         controller._conductor_setup_requested = False
         controller._render_session_conductor()
         hint = window.participant_grid._empty_hint.text()
-        assert "paint, clay, paper or a printer" in hint
+        assert "Make from your own space" in hint
+        assert "paper, clay, a model, a printer, or your usual app" in hint
         assert "Conversation" in hint
+        assert "screen share" in hint
         assert "recording" not in hint.casefold()
         assert controller.creator_start.talk_only
     finally:

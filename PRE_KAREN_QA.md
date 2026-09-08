@@ -1,88 +1,89 @@
-# PRE_KAREN — an early copy waits for the host
+# PRE_KAREN — Make together starts from the artist's own space
 
-Base: `e35f7352b42280814be0ea02f77b412f68231706` (master after #94).
-Branch: `codex/art-guest-prepare-copy`; canonical WebJam checkout only.
-Marker: `OVERNIGHT_WEBJAM_ART_20260907_2307`.
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5579240270.
+Base: `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2` (master after #95).
+Branch: `codex/art-copy-first-action`; canonical WebJam checkout only.
+Marker: `OVERNIGHT_WEBJAM_ART_20260908_0056`.
+BEFORE lease: Bob-the-Bot coord #3, 2026-09-08 01:00 CT.
 
 ## Leftover honesty
 
-#93 names a waiting Paint along guest's next click, but that click led to a
-panel that hid its file action until a host offer. The existing follower
-already accepts an early copy and waits for an identity match. This slice
-completes that explicit path; it does not revisit guest opening/busy handling
-from #90 or first-offer navigation from #89.
+The Art door is already the locked shape: **Make together** and **Paint along**,
+then **Host** or **Join**. The remaining failure is after Host, where Make
+together needed to read as a room for any artist, not a softened music session
+or a canvas setup. This slice names the already-existing first action instead
+of adding a new feature.
 
-An empty guest panel now offers Open my copy. The local snapshot gains one
-bounded boolean for a retained, unchanged copy before an offer. Your copy is
-open means exactly that; it grants no following or play permission. The new
-status disappears when the file changes, fails, closes or the room is lost.
-Withdrawal pauses and retains a valid copy as waiting.
+The default Art room activity is now **Make from your own space**. Its detail
+names paper, clay, a model, a printer, or the artist's usual app, then points
+to **Conversation** as the optional talk or screen-share path. That same
+promise appears in the Art invite text and first-session docs, because the
+invite carries the session to guests.
 
 ## Ten-second UX self-QA
 
-- Before a share: one file action, with permission to keep making instead.
-- During the existing local check: Opening your copy; no duplicate chooser.
-- After opening: Your copy is open; the next dependency is explicitly the
-  host's matching offer. Back to room remains available.
-- After the offer: a matching copy follows; a different one offers the existing
-  matching-copy recovery. No picture is shown before proof.
-- Changed/deleted or failed copies offer another try. Close my copy works while
-  waiting. Lost-room return takes priority over any stale chooser result.
-- Make together keeps Bring your own tools and no automatic video requirement.
-  Native room-start evidence supplies the early room cue. LAN is tested via its
-  existing explicit in-room Paint along entry; no new LAN start fact is claimed.
-- The real compact Qt window was captured at 720×560 and visually inspected.
-  New journey assertions also cover 1100-pixel width, keyboard activation and
-  visible controls staying within the embedded panel.
+- First screen still has exactly Art/Music, then Art's two cards, then Host/Join.
+- The door still has no banned engine/vendor/setup words and no fourth card.
+- A Make together host gets one current room truth: the room is open, make from
+  your own space, and copy the invite.
+- A Make together guest does not re-pick the door. After joining, the room says
+  their own space is enough and leaves Conversation as the optional talk/share
+  route.
+- A sculptor, potter, model maker, 3D printer user, painter, or talk-only
+  participant can start without a canvas, video, music setup, or file picker.
+- Paint along remains the separate silent local-file path. Its guest preparation
+  behavior from #95 is preserved and Make together still requires no video setup.
+- Compact 720x560 Art room layout stays inside the panel with no scroll in the
+  focused production-copy states.
 
 ## Security and ownership self-QA
 
-- Production changes are confined to core/reference_video.py and the existing
-  Paint along dialog. The controller, coordinator, transport and player are
-  unchanged.
-- local_copy_prepared is a path-free boolean. It checks the retained identity,
-  current file token and absence of loading/player attention/pending pause.
-  It never replaces the host's per-session matching proof.
-- NO_VIDEO still means can_follow=false and should_play=false. The surface
-  stays detached, position stays disabled/hidden, and the guest has no seek,
-  play, pause, stop or publication authority.
-- Existing controller checks still validate the current panel/coordinator,
-  authenticated connection, room generation and current video state after
-  the native chooser returns. Both transports reject the new action after loss.
-- The early file uses the sole silent player and the same explicit local picker.
-  No path, file bytes, secret or new field crosses the room protocol. No extra
-  persistence, logging, process, thread, timer, URL, download or meeting handoff.
-- Tests use temporary synthetic files and controlled decoders. Private markers
-  are checked absent from logs. Make together and Conversation remain independent.
+- Production changes are copy-only in the Art overview model, existing startup
+  stage hint, and invitation text. No protocol, transport, authentication,
+  meeting launch, player, file picker, canvas launcher, recorder, updater,
+  package, or release path changed.
+- The room still publishes no participant roster beyond existing bounded
+  connection-name evidence for hosts. The text names no private meeting URL,
+  file path, invite secret, or local project data.
+- Conversation remains an explicit panel action. The copy does not launch a
+  meeting, capture media, change audio, or claim provider success.
+- Optional canvas and Paint along actions still appear only from their existing
+  offered room state. Unknown or stale activity targets fall back to the same
+  own-space room text with no action.
+- Music, Podcast & Voice, and Review & Rehearsal launch and live-audio flows are
+  not rewritten.
 
 ## Verification
 
-The valid pre-change baseline was 16 failed / 2 passed. After implementation,
-the focused suite passed **425 tests in 19.41s**, including 24 new preparation
-journeys. A separate capture run passed its selected real Qt journey.
+Focused product proof passed: `tests/test_art_start_ux.py`,
+`tests/test_art_room_overview.py`, `tests/test_art_room_overview_ui.py`,
+`tests/test_art_room_overview_controller.py`,
+`tests/test_application_controller_creator_copy.py`, and
+`tests/test_paint_along_prepared_copy.py`: **178 passed**. After the invite
+copy assertions were aligned, the broader affected group passed **274 tests**.
 
-Ruff across core/webjam_qt/ui/services/api/tests, compileall, pip check, runtime
-dependency policy and git diff --check passed. Final full local and hosted
-evidence on the frozen tip is recorded in the PR body and coord AFTER; do not
-infer hosted green from this document.
+Ruff across core/webjam_qt/ui/services/api/tests, compileall, pip check,
+runtime dependency policy, and git diff --check passed.
 
-The full local run uses the repository CI procedure: every tracked test module,
-sorted by git, in a fresh Python interpreter, fail-fast with no retries. The
-workflow documents Qt's process-lifetime reason for this existing isolation.
-No tests are omitted and the workflow is unchanged.
+Full local proof on the final tree used the repository CI isolation pattern:
+every tracked `tests/test_*.py` module, in git order, in a fresh Python
+interpreter with `QT_QPA_PLATFORM=offscreen` and cache disabled. Result:
+**8,778 passed / 26 skipped / 99 subtests / 5 warnings** across **370 modules**.
+Log: `out/art-copy-first-action/isolated-tests.log`; JSON:
+`out/art-copy-first-action/isolated-results.json`.
+
+Hosted CI evidence belongs in the draft PR body and coord AFTER after it runs
+on the frozen pushed tip.
 
 ## Limits and holds
 
-Hashing/decoding remain synchronous; this is not a responsiveness or background
-loading claim. Physical playback, live Webex/Cisco, OS-native focus,
-installed-app feel, signing/notarization/platform trust are **NOT RUN**.
-Codex self-QA is not independent review or Karen PASS.
+Physical playback, live Webex/Cisco, OS-native focus, installed-app feel,
+signing/notarization/platform trust are **NOT RUN**. Codex self-QA is not
+independent review or Karen PASS.
 
-Keep the PR OPEN DRAFT. Stop for Karen leftover + security + ten-second UX on the
-exact final tip. No merge/squash/tag/sign/Pages/Release Trust/Publish/release/
-deploy/spend/live Cisco. Unsigned 0.27.2 stays Jeff-only; never merge unsigned
-WebJam. #89/#90 are not reworked and parked #37/#49 remain untouched. No
-short-code/public rendezvous, Music, Drawpile/shared-canvas work, second video
-stack, other repo, second Goal or parent injection. Door stays exactly Make
-together + Paint along → Host/Join with the squirrel-with-fro artwork.
+Keep the PR OPEN DRAFT. Stop for Karen leftover + security + ten-second UX on
+the exact final tip. No merge/squash/tag/sign/Pages/Release Trust/Publish/
+release/deploy/spend/live Cisco. Unsigned 0.27.2 stays Jeff-only; never merge
+unsigned WebJam. Parked #37/#49 remain untouched. No short-code/public
+rendezvous, Music lane, Drawpile/shared-canvas work, second video stack, other
+repo, second Goal, or parent injection. Door stays exactly Make together +
+Paint along → Host/Join with the squirrel mark unchanged.
