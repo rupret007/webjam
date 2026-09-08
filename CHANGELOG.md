@@ -10,6 +10,15 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Explicit offline audio timing evidence
+
+- New file-only tools create a synthetic calibration probe and analyze one
+  explicitly supplied capture's direct/return channels on a shared clock.
+  Reports keep round-trip delay, uncertain or missing events and unverified
+  capture provenance distinct from physical audibility and one-way latency.
+- No audio device, playback, recorder or network is opened. Existing output
+  files are refused; the physical pilot now links the measurement procedure.
+
 ### Prepare a Paint along copy before the host shares
 
 - A guest who opens **Paint along** early can now choose **Open my copy…**,
