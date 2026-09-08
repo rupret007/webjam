@@ -428,6 +428,24 @@ After Jamulus connects, the session canvas includes Jamulus band chat. That
 chat is unavailable while the private connection itself is still being set
 up, so use the invitation recovery shown by WebJam for connection trouble.
 
+## Your Music listening mix
+
+The participant cards control what you hear through the Music connection.
+Each card's fader adjusts that channel in your own mix, including **WebJam
+Track** when a reference track is present. It does not change another
+musician's listening level or the host's source trim.
+
+**Mute** silences that channel in your mix. You can move its fader while muted
+to prepare a level; it stays silent until you unmute it. **Solo** lets you
+listen to one channel. Other channels stay suppressed even when you adjust
+their faders. Turning Solo off, or the soloed musician leaving, restores your
+chosen levels and mute choices. A new arrival stays suppressed during Solo.
+
+Muting your own participant card affects your local monitor, not the microphone
+sent to other people. To stop your instrument or microphone reaching the room,
+use your audio interface's mute or stop WebJam audio. Conversation uses its own
+microphone and speaker controls.
+
 ## Main session actions and More
 
 The main session rail keeps the everyday destinations visible:

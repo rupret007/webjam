@@ -11280,6 +11280,7 @@ class ApplicationController(QObject):
         self._mix_dirty = True
         if self._jamulus_connected:
             self.jamulus.set_mute(channel_id, muted)
+            self.audio.refresh_listening_mix()
 
     def _on_solo_toggled(self, channel_id: int, solo: bool) -> None:
         p = self.participants.get(channel_id)
@@ -11288,6 +11289,7 @@ class ApplicationController(QObject):
         self._mix_dirty = True
         if self._jamulus_connected:
             self.jamulus.set_solo(channel_id, solo)
+            self.audio.refresh_listening_mix()
 
     # ------------------------------------------------------------------
     # BridgeService callbacks (already on UI thread via invoker)

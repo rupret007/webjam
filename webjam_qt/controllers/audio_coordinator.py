@@ -811,6 +811,28 @@ class AudioCoordinator:
         """Compatibility alias retained for older extensions."""
         self.reset_to_idle()
 
+    def refresh_listening_mix(self, *, redraw: bool = True) -> None:
+        """Project current local listening choices without changing room proof.
+
+        RPC roster deliveries can wait behind a newer local fader gesture.
+        Read the current owned model instead of their detached mixer fields.
+        Only existing cards are eligible; this never admits a participant.
+        """
+        if not self.connected or self.stopping or self.cleanup_retry_required:
+            return
+        changed = False
+        for current in self._c.jamulus.get_participants():
+            existing = self._c.participants.get(current.channel_id)
+            if existing is None:
+                continue
+            for field in ("fader_level", "muted", "solo"):
+                value = getattr(current, field)
+                if getattr(existing, field) != value:
+                    setattr(existing, field, value)
+                    changed = True
+        if redraw and changed:
+            self._c._push_participants_to_grid()
+
     def apply_participants(
         self,
         jamulus_participants: list,
@@ -1043,6 +1065,8 @@ class AudioCoordinator:
                 if new_role != existing.role:
                     existing.role = new_role
 
+        if local_session_proven:
+            self.refresh_listening_mix(redraw=False)
         self._c._push_participants_to_grid()
         return local_session_proven
 

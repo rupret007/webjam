@@ -60,6 +60,21 @@ class ParticipantStateManager:
         with self._participants_lock:
             return list(self.participants.values())
 
+    def _apply_listening_gain(self, channel_id: int, *, notify: bool = True) -> None:
+        """Apply the effective monitor gain while retaining the chosen fader.
+
+        Native monitor mute is gain zero, including Solo suppression. Roster
+        changes must use the same native path as explicit listening gestures;
+        the dormant UDP adapter cannot restore the native mix by itself.
+        """
+        with self._participants_lock:
+            participant = self.participants.get(channel_id)
+            if participant is None:
+                return
+            effective_level = 0 if participant.muted else participant.fader_level
+        self._send_rpc_gain(channel_id, effective_level)
+        self._apply_mixer_setting(channel_id, notify=notify)
+
     # -- Mutating ops -------------------------------------------------------
     def add_participant(
         self, name: str, channel_id: Optional[int] = None
@@ -81,7 +96,7 @@ class ParticipantStateManager:
             cached = {cid: p.name for cid, p in self.participants.items()}
         self._set_cached_participants(cached)
         if should_apply:
-            self._apply_mixer_setting(channel_id, notify=False)
+            self._apply_listening_gain(channel_id, notify=False)
         self._notify_callbacks()
         return participant
 
@@ -107,7 +122,7 @@ class ParticipantStateManager:
         if cached is not None:
             self._set_cached_participants(cached)
         for cid in sorted(set(apply_mixer_ids)):
-            self._apply_mixer_setting(cid, notify=False)
+            self._apply_listening_gain(cid, notify=False)
         if should_notify:
             self._notify_callbacks()
 
@@ -118,8 +133,7 @@ class ParticipantStateManager:
                 self.participants[channel_id].fader_level = clamped
             else:
                 return
-        self._send_rpc_gain(channel_id, clamped)
-        self._apply_mixer_setting(channel_id)
+        self._apply_listening_gain(channel_id)
 
     def set_pan(self, channel_id: int, pan: int) -> None:
         with self._participants_lock:
@@ -151,10 +165,7 @@ class ParticipantStateManager:
                     # Preserve the requested post-solo mute without breaking
                     # exclusive solo monitoring in the current mix.
                     self.participants[channel_id].muted = True
-            target = self.participants[channel_id]
-            effective_level = 0 if target.muted else target.fader_level
-        self._send_rpc_gain(channel_id, effective_level)
-        self._apply_mixer_setting(channel_id)
+        self._apply_listening_gain(channel_id)
 
     def set_solo(self, channel_id: int, solo: bool) -> None:
         """Solo/unsolo a channel, preserving prior mute state.  Exclusive
@@ -179,12 +190,7 @@ class ParticipantStateManager:
                     p.muted = self._pre_solo_mute.get(cid, False)
                 self._pre_solo_mute.clear()
         for cid in affected_ids:
-            with self._participants_lock:
-                participant = self.participants.get(cid)
-            if participant is not None:
-                effective_level = 0 if participant.muted else participant.fader_level
-                self._send_rpc_gain(cid, effective_level)
-            self._apply_mixer_setting(cid)
+            self._apply_listening_gain(cid)
 
     # -- Sync paths (RPC + UDP) -------------------------------------------
     def _merge_protocol_payload(
@@ -234,7 +240,7 @@ class ParticipantStateManager:
         soloed channel disappears, the pre-solo snapshot is restored."""
         apply_ids = self._merge_protocol_payload(incoming, clear_stale_snapshot=False)
         for cid in sorted(set(apply_ids)):
-            self._apply_mixer_setting(cid, notify=False)
+            self._apply_listening_gain(cid, notify=False)
         self._notify_callbacks()
 
     def apply_udp_clients_payload(self, normalized: Dict[int, str]) -> None:
@@ -243,7 +249,7 @@ class ParticipantStateManager:
         the original ``_check_participants``."""
         apply_ids = self._merge_protocol_payload(normalized, clear_stale_snapshot=True)
         for cid in sorted(set(apply_ids)):
-            self._apply_mixer_setting(cid, notify=False)
+            self._apply_listening_gain(cid, notify=False)
         self._notify_callbacks()
 
     # -- Mix snapshot (save / load) ---------------------------------------
