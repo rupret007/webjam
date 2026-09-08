@@ -324,22 +324,28 @@ class _UnavailableReferenceBackend:
         del audience_bridge_active
         if self._platform.startswith("win"):
             detail = (
-                "Shared Track is not available on Windows yet. Its "
-                "VB-CABLE/JACK isolation backend still needs physical proof."
+                "Sending a Shared Track is not available on Windows in this "
+                "build. Keep rehearsing without a track, or use a supported "
+                "Mac to host the track."
             )
             platform = "windows"
             backend = "vb-cable-jack"
             reason_code = "windows_backend_unavailable"
         elif self._platform.startswith("linux"):
             detail = (
-                "Shared Track is not available on Linux yet. Its JACK "
-                "isolation backend still needs physical proof."
+                "Sending a Shared Track is not available on Linux in this "
+                "build. Keep rehearsing without a track, or use a supported "
+                "Mac to host the track."
             )
             platform = "linux"
             backend = "jack"
             reason_code = "linux_backend_unavailable"
         else:
-            detail = "Shared Track routing is not available on this platform."
+            detail = (
+                "This build cannot send a Shared Track on this platform. "
+                "Keep rehearsing without a track, or use a supported Mac "
+                "to host the track."
+            )
             platform = self._platform or "unknown"
             backend = "unavailable"
             reason_code = "unsupported_platform"

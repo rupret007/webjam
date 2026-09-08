@@ -48,6 +48,18 @@ All notable improvements and features for the WebJam creator collaboration platf
   failed local copy does not block the Conversation route; stale room clicks
   cannot replace Notes or reopen guidance after Leave.
 
+### Shared Track support tells hosts what they can do
+
+- Windows and Linux hosts now see that this build cannot send a Shared Track,
+  with **Back to rehearsal** instead of an impossible setup/recheck loop.
+  Local inspection and explicit removal remain available.
+- Recording now waits for queued/loading tracks and refuses a retained track
+  after a failed replacement, instead of silently omitting it. The explanation
+  distinguishes source recovery, unavailable sending support and Mac setup.
+  Existing recording Stop remains available.
+- Supported Mac route checks remain required. Timing guidance describes
+  device and network delay without promising equal delay for every musician.
+
 ### Prepare a Paint along copy before the host shares
 
 - A guest who opens **Paint along** early can now choose **Open my copy…**,

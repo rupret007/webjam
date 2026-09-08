@@ -61,6 +61,23 @@ _ROUTE_WARNING = (
     "normal buffering, jitter handling, and network latency. "
     "A server recording captures it as a separate stem."
 )
+_UNAVAILABLE_HOST_BACKEND_REASONS = frozenset({
+    "windows_backend_unavailable",
+    "linux_backend_unavailable",
+    "unsupported_platform",
+})
+
+
+def reference_track_host_backend_unavailable(capability: object) -> bool:
+    """Distinguish missing sender support from an available backend's setup.
+
+    This is presentation truth only. Playback authority still belongs to the
+    capability, current host and primary connection, and live route proof.
+    Guest projections without a capability and unknown reasons stay unknown.
+    """
+
+    reason = getattr(capability, "reason_code", None)
+    return isinstance(reason, str) and reason in _UNAVAILABLE_HOST_BACKEND_REASONS
 
 
 def _bounded_diagnostic_counter(value: object) -> int:
@@ -2289,5 +2306,6 @@ __all__ = [
     "ReferenceTrackState",
     "ReferenceTrackStream",
     "reference_track_file_filter",
+    "reference_track_host_backend_unavailable",
     "reference_track_supported_extensions",
 ]

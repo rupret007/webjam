@@ -579,6 +579,23 @@ until recorded against exact builds.
 
 ## Shared Track — macOS private test release
 
+**Sending a Shared Track currently needs a supported Mac.** This build has no
+Windows or Linux sender backend; installing a driver or rechecking the route
+cannot enable one. Their panel shows **Track sharing unavailable** and offers
+**Back to rehearsal**. Closing it keeps the file loaded; **Remove** explicitly
+discards that local selection. Remove an unplayable track before starting a
+recording without it. WebJam never silently omits the loaded track and starts
+the recorder. A selected track that is queued or still loading also blocks a
+new recording. Wait for loading to finish, resolve a retained-source failure
+or remove that source, then choose Record again; recovery does not start a
+recorder automatically. Stop Recording remains available for an active take.
+
+This restriction concerns sending the track. A guest hears a supported host's
+track through the ordinary session audio, subject to their existing audio
+connection and device setup. Four successful desktop builds do not establish
+two-endpoint audibility on those platforms. Guests do not need the host's
+sender backend and do not gain transport control.
+
 The host can choose **Add Shared Track**, drop one supported local file on the
 live-session surface, or open **Shared Track** / **More → Shared Track…** for
 the same complete transport. Loading and route readiness are independent:
@@ -593,13 +610,14 @@ block, so a source that cannot produce usable audio fails during load. If
 playback ever starves and emits silence, the panel reports audible dropouts
 instead of silently claiming clean playback. The live deck and full transport
 show the path-free source name, duration, progressive waveform, playhead,
-count-in, and separate route/cleanup state. **Recheck Route** refreshes route
-evidence without starting playback. Play, pause, stop, restart, paused seeking,
+count-in, and separate route/cleanup state. Where the sender backend exists,
+**Recheck Route** refreshes route evidence without starting playback. Play,
+pause, stop, restart, paused seeking,
 loop in/out, source trim, and an audible count-in remain transport controls.
 **Replace…** and **Remove** require a safe stopped state; an attempted change
 during playback is refused. Guests do not get the transport.
 
-Shared Track is not Studio playback. Once the route is certified, its design
+Shared Track is not Studio playback. Once the runtime route checks pass, it
 streams the song at 48 kHz into BlackHole channels 1/2, launches a separately
 owned Jamulus client named `WebJam Track`, and isolates that client's returns
 on BlackHole channels 3/4. The host must then hear it only through the normal
@@ -655,8 +673,8 @@ Track**, not as another participant. WebJam shows only the source filename; the
 folder path is never saved to settings or written to logs.
 
 Machine-derived route eligibility is not a claim that anyone can hear clean
-audio. Windows/Linux routing and physical two-endpoint macOS audibility are
-not yet certified. Device-switch truth, BlackHole exclusivity, independent
+audio. Windows/Linux sending is unimplemented, and physical two-endpoint
+macOS audibility remains unverified. Device-switch truth, BlackHole exclusivity, independent
 mixes, no-direct-monitor proof, server-stem alignment, route removal, repeated
 teardown, and a long session remain **NOT RUN** until recorded against an
 exact controlled source build using the
