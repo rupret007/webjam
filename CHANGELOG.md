@@ -10,6 +10,17 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Ask for time during a shared Art lesson
+
+- Guests in a supported Art LAN room can choose **Ask for a pause** or
+  **Ready to continue** from Conversation's shared-lesson helper.
+- The host sees a temporary named request and can acknowledge it. The host
+  still operates the browser; a delivered or acknowledged request never means
+  the lesson has actually paused or resumed.
+- Requests expire, preserve ordering and retire with their room/lesson context.
+  Unsupported rooms keep the spoken fallback; no new player or guest seek.
+- Physical pause usability and independent lesson/voice mixing remain unverified.
+
 ### Keep the replacement Music connection on screen
 
 - A delayed participant message from a retired native process or monitor no

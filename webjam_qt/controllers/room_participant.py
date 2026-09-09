@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from PySide6.QtCore import QTimer
 
 from core.creative_modes import canonical_creator_profile_key
+from core.lesson_request import LessonRequestIntent, LessonRequestNotice
 from core.musician_guidance import GuidanceDisplayOverride
 from core.room_state import RoomState
 from core.session_conductor import ArtRoomState, SessionPrimaryAction
@@ -22,7 +23,7 @@ from core.session_transfer import (
     RoomConnectionNames,
     SharedCanvasSessionSnapshot,
 )
-from services.lan_room_guest import LanRoomTerminalReason
+from services.lan_room_guest import LanRoomTerminalReason, LessonRequestGuestState
 
 
 LOGGER = logging.getLogger("webjam.qt.room_participant")
@@ -32,6 +33,20 @@ LOGGER = logging.getLogger("webjam.qt.room_participant")
 class RoomShareReadiness:
     address: str = ""
     shareable: bool = False
+
+
+@dataclass(frozen=True, eq=False, repr=False)
+class _LessonBinding:
+    """Local action ownership, never a meeting or browser playback claim."""
+
+    role: str
+    owner: object
+    server: object
+    generation: int
+    lifecycle: object
+    meeting_generation: int
+    coordinator: object
+    context_id: str = ""
 
 
 class NativeRoomPublisher:
@@ -157,6 +172,9 @@ class RoomParticipantController:
         self.native_wait_started = 0.0
         self.publisher = None
         self.stopping = False
+        self._lesson_binding = None
+        self._lesson_slots = []
+        self._lesson_actions_identity = None
 
     @property
     def active(self):
@@ -291,9 +309,15 @@ class RoomParticipantController:
         def on_loss(owner, terminal):
             self.app._ui_invoker.invoke(lambda: self.lose_lan(owner, generation, terminal))
 
+        def on_lesson_request_state(owner, state):
+            self.app._ui_invoker.invoke(
+                lambda: self.receive_lesson_request(owner, generation, state)
+            )
+
         self.lan_guest = LanRoomGuest(
             invite, display_name=self.app.settings.musician_name,
             on_state=on_state, on_loss=on_loss,
+            on_lesson_request_state=on_lesson_request_state,
         )
         self.lan_guest.start()
         self.app._refresh_readiness()
@@ -309,6 +333,7 @@ class RoomParticipantController:
             return
         self._lan_terminal_owner = None
         if profile != "art":
+            self.retire_lesson_requests()
             invite = owner.invite
             # Retire queued discovery receipts before the stop can deliver
             # End/Quit or a replacement invitation on the owner thread.
@@ -362,6 +387,7 @@ class RoomParticipantController:
     def lose_lan(self, owner, generation, terminal):
         if owner is not self.lan_guest or generation != self.generation or self.blocked:
             return
+        self.retire_lesson_requests()
         # An earlier transient-loss callback must not erase a later rejected
         # credential while both still belong to this exact observer.
         terminal = bool(terminal or self.lan_invitation_rejected)
@@ -402,6 +428,7 @@ class RoomParticipantController:
         self.state = ArtRoomState.STARTING
         replacing = bool(host.active and bound != address)
         if replacing:
+            self.retire_lesson_requests()
             self._lan_host_retry_in_progress = True
             self.stopping = True
             self.generation += 1
@@ -758,9 +785,245 @@ class RoomParticipantController:
         # Retiring or replacing an owner during the read wins over its payload.
         return result if current() and isinstance(result, RoomConnectionNames) else None
 
+    def retire_lesson_requests(self):
+        """Remove authority synchronously, including before failed cleanup."""
+        binding, self._lesson_binding = self._lesson_binding, None
+        if binding is None:
+            return
+        if binding.role == "host":
+            binding.server.retire_lesson_requests()
+        else:
+            binding.owner.set_lesson_requests_enabled(False)
+
+    def _lesson_current(self, binding):
+        app = self.app
+        panel = getattr(getattr(app, "window", None), "webex_embed", None)
+        if (
+            binding is None or binding is not self._lesson_binding
+            or self.blocked or self.generation != binding.generation
+            or self.role != binding.role or app.creator_profile.key != "art"
+            or getattr(app, "_session_meeting_generation", 0) != binding.meeting_generation
+            or getattr(app, "_reference_video", None) is not binding.coordinator
+            or getattr(panel, "_shared_lesson_hosting", None) is not (binding.role == "host")
+            or app._remote_session is not None or app._remote_invite_owner is not None
+        ):
+            return False
+        if binding.role == "guest":
+            return bool(
+                self.lan_guest is binding.owner and not self.probing
+                and not self.lan_invitation_rejected and self.state is ArtRoomState.CONNECTED
+                and binding.owner.connection_available
+                and binding is self._lesson_binding
+                and self.generation == binding.generation and not self.blocked
+                and self.lan_guest is binding.owner
+            )
+        host = binding.owner
+        return bool(
+            app.host_peer is host and host.active and host.server is binding.server
+            and getattr(host, "_lifecycle_generation", None) == binding.lifecycle
+            and self.state in {ArtRoomState.WAITING, ArtRoomState.CONNECTED}
+            and self._host_names_owner == (
+                id(host), id(binding.server), binding.generation, binding.lifecycle,
+            )
+            and 0 <= time.monotonic() - self._host_names_observed_at < 5.0
+        )
+
+    def activate_lesson_requests(self, *, hosting):
+        """Only the existing explicit shared-lesson action calls this method."""
+        self.retire_lesson_requests()
+        app = self.app
+        if self.blocked or app.creator_profile.key != "art":
+            return
+        # Refresh the existing route observation once for this explicit action.
+        # The panel's render path never starts/discovers a service.
+        self.tick()
+        owner = app.host_peer if hosting else self.lan_guest
+        server = getattr(owner, "server", None) if hosting else None
+        if owner is None or (
+            hosting and not callable(getattr(server, "activate_lesson_requests", None))
+        ):
+            self.project_lesson_requests()
+            return
+        binding = _LessonBinding(
+            "host" if hosting else "guest", owner, server, self.generation,
+            getattr(owner, "_lifecycle_generation", None),
+            getattr(app, "_session_meeting_generation", 0),
+            getattr(app, "_reference_video", None),
+        )
+        self._lesson_binding = binding
+        if not self._lesson_current(binding):
+            self.retire_lesson_requests()
+            self.project_lesson_requests()
+            return
+        if hosting:
+            context = server.activate_lesson_requests()
+            if not self._lesson_current(binding):
+                server.retire_lesson_requests()
+                self.retire_lesson_requests()
+                return
+            self._lesson_binding = _LessonBinding(
+                binding.role, owner, server, binding.generation, binding.lifecycle,
+                binding.meeting_generation, binding.coordinator, context,
+            )
+        else:
+            owner.set_lesson_requests_enabled(True)
+        self.project_lesson_requests()
+
+    def _wire_lesson_actions(self, binding, guest_identity=None):
+        """Queued old Qt signals retain their original room/admission binding."""
+        identity = (binding, guest_identity)
+        if identity == self._lesson_actions_identity:
+            return
+        for signal, callback in self._lesson_slots:
+            try:
+                signal.disconnect(callback)
+            except (RuntimeError, TypeError):
+                pass
+        self._lesson_slots = []
+        self._lesson_actions_identity = identity
+        panel = self.app.window.webex_embed
+        if binding is None:
+            return
+        if binding.role == "host":
+            callbacks = [(panel.lesson_request_acknowledge,
+                          lambda context, admission, revision: self.acknowledge_lesson_request(
+                              binding, context, admission, revision,
+                          ))]
+        else:
+            callbacks = [
+                (panel.lesson_request_intent,
+                 lambda intent: self.submit_lesson_request(binding, guest_identity, intent)),
+                (panel.lesson_request_retry,
+                 lambda: self.submit_lesson_request(binding, guest_identity, None)),
+            ]
+        for signal, callback in callbacks:
+            signal.connect(callback)
+        self._lesson_slots = callbacks
+
+    def _lesson_gesture_current(self, binding):
+        from PySide6.QtWidgets import QApplication
+
+        return bool(
+            self._lesson_current(binding)
+            and QApplication.activeModalWidget() is None
+            and QApplication.activePopupWidget() is None
+            and self.app.window.webex_embed.isVisibleTo(self.app.window)
+        )
+
+    def submit_lesson_request(self, binding, identity, intent):
+        if not self._lesson_gesture_current(binding) or binding.role != "guest":
+            return False
+        state = binding.owner.lesson_request_state
+        view = state.view if isinstance(state, LessonRequestGuestState) else None
+        if (
+            view is None or view.availability != "active"
+            or identity != (view.context_id, view.admission_id)
+            or not self._lesson_current(binding)
+        ):
+            return False
+        if intent is None:
+            accepted = binding.owner.retry_lesson_request()
+        else:
+            try:
+                intent = LessonRequestIntent(intent)
+            except (ValueError, TypeError):
+                return False
+            accepted = binding.owner.queue_lesson_request(intent)
+        if self._lesson_current(binding):
+            self.project_lesson_requests()
+        return accepted
+
+    def acknowledge_lesson_request(self, binding, context, admission, revision):
+        if (
+            not self._lesson_gesture_current(binding) or binding.role != "host"
+            or context != binding.context_id
+        ):
+            return False
+        from core.lesson_request import LessonRequestError
+
+        try:
+            binding.server.acknowledge_lesson_request(context, admission, revision)
+        except LessonRequestError:
+            return False
+        if self._lesson_current(binding):
+            self.project_lesson_requests()
+        return True
+
+    def receive_lesson_request(self, owner, generation, state):
+        binding = self._lesson_binding
+        if (
+            generation != self.generation or owner is not self.lan_guest
+            or binding is None or binding.owner is not owner
+            or not isinstance(state, LessonRequestGuestState)
+            or not self._lesson_current(binding)
+            or state is not owner.lesson_request_state
+        ):
+            return
+        self.project_lesson_requests()
+
+    def project_lesson_requests(self):
+        """Read only current bounded request evidence; never infer media state."""
+        panel = getattr(getattr(self.app, "window", None), "webex_embed", None)
+        if panel is None or getattr(panel, "_shared_lesson_hosting", None) is None:
+            return
+        binding = self._lesson_binding
+        if not self._lesson_current(binding):
+            self.retire_lesson_requests()
+            self._wire_lesson_actions(None)
+            panel.set_lesson_request_guest(status="Ask the host aloud.")
+            panel.set_lesson_request_host(())
+            return
+        if binding.role == "host":
+            notices = binding.server.lesson_request_notices()
+            if not self._lesson_current(binding):
+                return
+            notices = tuple(
+                notice for notice in notices[:32]
+                if isinstance(notice, LessonRequestNotice)
+                and notice.context_id == binding.context_id
+            )
+            names = binding.server.lesson_request_names(
+                frozenset(notice.participant_id for notice in notices)
+            )
+            if not self._lesson_current(binding):
+                return
+            self._wire_lesson_actions(binding)
+            panel.set_lesson_request_host(tuple(
+                (names[notice.participant_id], notice) for notice in notices
+                if names is not None and notice.participant_id in names
+            ))
+            return
+        state = binding.owner.lesson_request_state
+        if not isinstance(state, LessonRequestGuestState) or not self._lesson_current(binding):
+            return
+        view = state.view
+        identity = (view.context_id, view.admission_id) if view and view.availability == "active" else None
+        self._wire_lesson_actions(binding, identity)
+        status = {
+            "inactive": "Ask the host aloud.",
+            "available": "Ask for a pause, or tell the host you're ready to continue.",
+            "sending": "Sending your request…",
+            "unconfirmed": "Delivery unconfirmed. Ask aloud, or retry this request.",
+            "refused": "Your request could not be delivered. Ask the host aloud.",
+            "accepted": "Delivered to the host's WebJam. Waiting for acknowledgement.",
+            "acknowledged": "Host acknowledged your request.",
+            "expired": "Request expired. Ask again if you still need time.",
+        }.get(state.status, "Ask the host aloud.")
+        if (view and view.reason == "capacity") or state.error == "capacity":
+            status = "Requests are full for this lesson. Ask the host aloud."
+        elif state.error == "rate_limited":
+            status = "Please wait a moment before asking again. You can ask aloud."
+        elif state.status == "unconfirmed" and not state.can_retry:
+            status = "Delivery unconfirmed. Ask the host aloud."
+        panel.set_lesson_request_guest(
+            status=status, can_pause=state.can_submit, can_ready=state.can_submit,
+            can_retry=state.can_retry,
+        )
+
     def tick(self):
         self._host_names_owner = None
         if self.blocked:
+            self.retire_lesson_requests()
             return
         if self.role == "host" and self.app.creator_profile.key == "art":
             owner = self.app._remote_invite_owner
@@ -808,8 +1071,11 @@ class RoomParticipantController:
                         if previous is not ArtRoomState.RECONNECTING:
                             LOGGER.info("Art LAN room network interrupted")
             self.app._update_session_hud()
+        self.project_lesson_requests()
 
     def stop_lan(self):
+        # Request authority goes away before a possibly blocking/failed stop.
+        self.retire_lesson_requests()
         self.stopping = True
         self.generation += 1
         generation = self.generation

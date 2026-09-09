@@ -1,75 +1,64 @@
-# Worth building — invitation recovery and a stable Music listening mix
+# Worth building — ask for time during a shared Art lesson
 
-Branch: `codex/recovery-mix-composition`, canonical WebJam checkout.
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5593490508
+Branch: `codex/art-lesson-requests`, canonical WebJam checkout.
+BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5593972013
 
-## Declared composition
+## One observed gap
 
-Base #103 `1e35d7ac51a6ab9e5d95f3edbe2a8a68c0b748c5` already composes the
-Art/Music journeys from #96–#102. This branch replays #104
-`08efa86384bf6378ce49a2e3e3150444dc028081`, both #105 commits ending at
-`3811d3f0179bc03e90f7490ed8a9469fd8fec607`, and #106's delta
-`e1e4b2ba3c8b4c48f4fc1b246cb63b38a9ddce2d`. PR base is #103's branch,
-`codex/two-session-recovery-integration`. Fetched master remains
-`2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`. Original draft tips are unchanged.
-Production hunks applied cleanly; overlapping handoff documents were rewritten
-for this candidate. Separate component CI is not combined verification.
+A guest following the shared Bob Ross browser lesson can ask aloud for a pause,
+but narration or a muted microphone can hide that request. The existing Art
+Conversation helper has no in-room request or host acknowledgement. This gap
+interrupts the actual paint-together journey after joining has already worked.
 
-## Observed failure and before/after
+Before: the guest must speak over the lesson and has no visible receipt.
+After: **Ask for a pause** and **Ready to continue** send fixed, temporary requests
+to the current host's WebJam. The host sees the guest's chosen name and can
+**Acknowledge request**, then operates the browser manually. Delivery, uncertain
+delivery, acknowledgement, refusal and expiry have distinct meanings.
 
-The previous combined candidate lacked the newer invitation and listening-mix
-fixes. A rejected invitation could still offer an ineffective retry; restoring
-saved faders did not restore native gains or preserve personal mute choices
-through Solo. The component fixes must coexist with real failed-room cleanup,
-retained Notes/Conversation, fresh Music joining and replacement audio owners.
+This advances a supported existing Art path while the different-home networking
+decision remains unanswered. It introduces no player, video/canvas stack,
+public route or guest playback authority. Host attention while another app is
+foreground and actual picture/audio pause remain physical acceptance items.
 
-New composed tests found an additional failure: a queued roster from a retired
-Music process replaced the replacement's participant cards before local proof,
-and demoted a healthy replacement after proof. Native gain ownership was already
-protected, but screen and recovery state still accepted obsolete evidence.
+## Declared dependency
 
-The UI now rejects a supplied roster unless its process generation, process ID
-and monitor epoch still match the current owner. This check precedes participant,
-recovery and recorder-presence changes. Current-owner failure evidence remains
-usable even when the process has died or RPC is stale. It neither manufactures
-connection proof nor starts audio.
+This branch starts from exact #107 `392c959a74af135fe2a92c13ef09fbfe541fb476`,
+branch `codex/recovery-mix-composition`. That candidate already composes the
+invitation, room recovery, Art Conversation and Music listening changes.
+Fetched master was `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`. Original drafts
+remain unchanged. #107's completed verification does not verify this new delta.
 
-After: a rejected invite leads to a fresh explicit Join; the joined room owns its
-Conversation; a proved current Music connection restores saved personal listening
-choices and cards. Failed room Reset still blocks fresh Play/Record while keeping
-local listening controls and an existing recording's Stop. Retired connection
-messages cannot undo the replacement's displayed state.
+## Acceptance and boundaries
 
-A broader combined run also exposed readiness work queued before successful
-application shutdown executing afterward. It still changed closed-room UI and
-read microphone permission state. An isolated reproduction confirmed the real
-shutdown flag; completed shutdown now retires that queued readiness work.
-Canceled shutdown retains its live readiness behavior.
+- The existing authenticated LAN state poll supplies only the guest's own
+  request capability/receipt. One bounded POST carries pause or ready; there
+  is no remote activation or host-acknowledgement endpoint.
+- Fixed schemas, 512-byte bodies, 32 retained admissions, monotonic revisions,
+  30-second notices, individual/global rate limits and five-second presence
+  checks bound the feature. Expiry never permits replay of older intent.
+- One existing guest worker handles at most one POST per poll cycle, then the
+  normal room GET. No automatic POST retry. Explicit uncertain-delivery retry
+  uses the same request; a later GET can reconcile a lost reply.
+- Each signal and reply stays bound to its current room, owner and request.
+  Navigation, meeting/source replacement, route loss, End/Leave and shutdown
+  retire authority before cleanup waits. Guest navigation never retires the host.
+- Host notices retain exact request identity and PlainText chosen names.
+  Acknowledgement never means paused, resumed, heard or seen. Old/unsupported
+  rooms keep the spoken fallback and their ordinary connection semantics.
+- Real Qt/controller plus authenticated localhost journeys verify integration;
+  model/HTTP/worker/widget tests exercise limits, ordering and refusal.
+  Run the complete required bar and exact-tip hosted desktop matrix.
 
-## Acceptance and evidence
-
-- Exercise full pasted invitation, cancellation, failed cleanup/retry, stale
-  receipts, actual Music peer handoff and remote-only versus local roster proof.
-- Exercise Save/Load with both Solo mute histories during failed native Reset,
-  preserving Notes, Conversation, source ownership and Stop/fresh-intent fences.
-- Replace the actual controller/RPC owner, hold old gain and UI deliveries, and
-  verify restored native JSON commands and cards without replay or false recovery.
-- Run the repository's full local bar and hosted CI on the frozen composed tip,
-  including four desktop builds. Keep baseline failures and fixture corrections
-  distinct. Final counts and exact SHA belong in the PR body.
-
-Machine/process/authentication/socket receipts are controlled in new journeys;
-no real device, meeting or recording starts. Physical two-home joining, faces,
-lesson narration, independently audible levels, Music routing, latency/endurance
-and laptop usability remain unverified. The remote-network decision remains
-unanswered. This draft is a combined candidate, not completion of the goal.
+Physical two-home joining, Art attention/faces/narration/independent listening,
+Music routing/audibility/latency/endurance and Karen review remain open.
+This change cannot certify those outcomes or resolve provider limitations.
 
 ## Holds
 
-OPEN DRAFT PRE_KAREN only. Independent Karen review remains pending.
-No merge/squash/tag/sign/release/Pages/Release Trust/Publish/deploy/spend/live
-Cisco, unsolicited send, automatic capture, short codes/public rendezvous,
-second media engine, other repo, parent injection or new Goal. Unsigned0.27.2
-stays Jeff-only. Art's two-card door, squirrel and guest-never-seek remain.
-Parked #37/#49 and source drafts remain untouched. Maintain the four-hour codex
-lease, timestamped BEFORE/AFTER in America/Chicago and release at handoff.
+OPEN DRAFT PRE_KAREN only. No merge/squash/tag/sign/release/Pages/Release Trust/
+Publish/deploy/spend/live Cisco, unsolicited send, automatic media/capture,
+short codes/public rendezvous, second engine, other repo or new goal.
+Unsigned 0.27.2 remains Jeff-only. Parked #37/#49, source drafts, Art's two-card
+door, squirrel mark and guest-never-seek remain. Maintain the four-hour lease,
+timestamped BEFORE/AFTER in America/Chicago and release at handoff.

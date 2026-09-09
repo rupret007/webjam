@@ -1044,6 +1044,7 @@ class ApplicationController(QObject):
         if not getattr(self, "_shutdown_cleanup_pending", False):
             self._shutdown_art_room_role = getattr(self, "_art_room_role", "")
         self._shutdown_cleanup_pending = True
+        ApplicationController._clear_shared_lesson_context(self)
         room_help = getattr(self, "_room_help", None)
         if room_help is not None:
             room_help.shutdown()
@@ -11087,8 +11088,12 @@ class ApplicationController(QObject):
         return scoped if scoped is not None else str(getattr(self.settings, "webex_url", "") or "").strip()
 
     def _set_session_meeting_url(self, value: str | None) -> None:
+        # Validate before retiring an otherwise usable context. Once accepted,
+        # even the same URL can represent a different room's meeting.
+        validated = self._validated_session_meeting_url(value) if value is not None else None
+        ApplicationController._clear_shared_lesson_context(self)
         self._session_meeting_url = (
-            self._validated_session_meeting_url(value) if value is not None else None
+            validated
         )
         self._session_meeting_generation = getattr(self, "_session_meeting_generation", 0) + 1
         # Invalidate in-flight and queued handoffs even when two rooms use the
@@ -12211,6 +12216,8 @@ class ApplicationController(QObject):
             str(getattr(old_settings, "webex_url", "") or "").strip()
             != str(getattr(self.settings, "webex_url", "") or "").strip()
         )
+        if webex_url_changed:
+            self._clear_shared_lesson_context()
         reference_route_changed = any(
             (
                 getattr(old_settings, "host_server_enabled", False)
@@ -13316,6 +13323,10 @@ class ApplicationController(QObject):
         return available
 
     def _clear_shared_lesson_context(self) -> None:
+        room = getattr(self, "_room_participant", None)
+        retire = getattr(room, "retire_lesson_requests", None)
+        if callable(retire):
+            retire()
         panel = getattr(getattr(self, "window", None), "webex_embed", None)
         if getattr(panel, "_shared_lesson_hosting", None) is not None:
             panel.set_shared_lesson_context(hosting=None)
@@ -13374,6 +13385,7 @@ class ApplicationController(QObject):
             return
         self._show_webex_conversation()
         self.window.webex_embed.set_shared_lesson_context(hosting=coordinator.hosting)
+        room.activate_lesson_requests(hosting=coordinator.hosting)
 
     def _run_current_host_paint_along(self, coordinator, dialog, operation) -> None:
         """A completed file chooser or queued host action must still be current."""

@@ -1,6 +1,6 @@
 # WebJam: prove two creative sessions
 
-Evidence updated for the declared #96–#100 integration candidate, 2026-09-08,
+Evidence updated for the Art lesson-request slice on combined #107, 2026-09-08,
 America/Chicago. This goal is **INCOMPLETE**.
 Draft readiness, green CI, and independent review are distinct from two-person
 proof. Karen's absence holds review and merging; independent implementation can
@@ -25,12 +25,12 @@ named evidence at a full tip SHA, and `NOT RUN` is not a failure or a pass.
 | Any-artist room | PRESENT from #96: Make together names own-space work without requiring a canvas, instrument or file. | Original component evidence is historical; current combined Art/start/copy suites must pass. | NOT RUN | PENDING Karen |
 | Local Paint along | PRESENT: matching local files, silent playback, host-only transport, guest-never-seek. This is not the YouTube journey. | File identity, host/guest, seek, loading, stale-state and navigation suites retained. Combined lesson transitions also assert guest seek refusal. | NOT RUN | PENDING Karen |
 | YouTube lesson + faces | PRESENT from #98: Watch a shared lesson reaches existing Conversation and role-specific guidance. External browser/meeting still owns playback and media. | Combined tests use different personal/invited providers, replace/remove the room link and exercise Leave/retry. No live provider is exercised. | NOT RUN | PENDING Karen |
-| Guest pause/resume | Spoken request path is explicit in #98; host operates the external browser. No peer pause-request route or external playback control is added. | Host authority, guest transport refusal and room-role guidance are tested. | NOT RUN | PENDING human assessment |
+| Guest pause/resume | Art LAN guests can send fixed pause/ready requests through the existing helper; the host acknowledges and manually operates the browser. Unsupported rooms keep spoken fallback. | Model, authenticated localhost HTTP, worker, Qt and combined controller journeys; exact final-tip verification belongs in the new draft. No external playback control. | NOT RUN | PENDING Karen and human assessment |
 | Art listening controls | Guidance identifies shared source volume and personal meeting speaker/microphone controls. Local video is muted. Independent guest narration/voice mixing is unproven. | Guidance and UI ownership tests; no live audio proof. | NOT RUN | PENDING |
 | Music reference track | PRESENT from #99 and existing backend: capability-gated macOS sending, honest unsupported-host guidance and recording-intent guards. | Component route/support tests retained; combined host-to-guest recovery preserves deliberate Record/Stop intent and room meeting context. | NOT RUN | PENDING Karen |
 | Audio round-trip measurement | PRESENT from #100: explicit file-only standard probe and bounded single-clock capture analyzer; no automatic capture or playback. | Synthetic numerical/file/CLI proofs retained; not an actual latency result. | NOT RUN | PENDING Karen |
 | Music routing/latency/cleanup | Physical isolation, two-endpoint audibility, device-switch safety, sustained timing and teardown remain open. | Simulated state/route tests are supporting evidence only. | NOT RUN | PENDING |
-| Combined candidate | Source stack reuses #96–#100 with explicit provenance. Original PR heads remain unchanged. | New Art and Music integration journeys pass locally; full combined suite and final-tip hosted matrix are PENDING until recorded in the draft. | NOT RUN | PENDING Karen on combined tip |
+| Combined candidate | Base #107 `392c959a74af135fe2a92c13ef09fbfe541fb476` combines #96–#106; this dependent Art slice adds lesson requests. Original PR heads remain unchanged. | #107's recorded 9,357 local passes and both hosted four-desktop workflows are historical base evidence. The new delta needs its own final-tip verification. | NOT RUN | PENDING Karen on combined tip |
 
 Historical evidence only: on baseline `41a26652387c855059402ae8986c4b0f91a0531f`, 168 tests passed across
 `test_art_conversation_next_action.py`, `test_art_conversation_layout.py`,
@@ -42,8 +42,11 @@ This is limited automated evidence, not the full-suite or current-draft verdict.
 - [Invitation ingress](../../webjam_qt/invitation_ingress.py) and
   [invitation copy](../../core/meeting_companion.py): preserve validated room and
   optional meeting context through the same user-selected invitation.
-- [Session peer protocol](../../core/session_transfer.py): private peer service;
-  current guest POST routes do not include a Paint along pause request.
+- [Session peer protocol](../../core/session_transfer.py): existing private peer
+  service with an optional own-receipt state extension and authenticated fixed
+  lesson-request POST; no remote activation, ACK or media-control endpoint.
+  [Bounded request model](../../core/lesson_request.py) retains admission/revision
+  ownership across notice expiry; it stores no media, URL or free-text request.
 - [Reference video](../../core/reference_video.py): identical local-file proof,
   approximately 0.75-second polling tolerance, five-second stale-state guard.
 - [Video adapter](../../webjam_qt/widgets/reference_video_player.py): muted before
@@ -70,11 +73,10 @@ This is limited automated evidence, not the full-suite or current-draft verdict.
 
 ## Work order and architecture decision
 
-1. Verify this declared dependent candidate. Preserve source from the exact
-   #96–#100 heads recorded in PRE_KAREN_QA.md, resolve documentation/assertion
-   conflicts without dropping behavior, and run the complete combined suite
-   and desktop CI. The integration draft is not a merge authorization or a
-   replacement for reviewing the underlying changes and the final combined tip.
+1. Verify this declared dependent Art candidate on exact #107, as recorded in
+   PRE_KAREN_QA.md. Preserve original draft heads and completed handoffs. Run
+   the complete combined suite and desktop CI for the new tip. The draft is
+   not merge authorization or a replacement for independent and physical review.
 2. Resolve the [prepared remote-joining decision](webjam-remote-joining-decision.md).
    The recommended narrow exception permits design, implementation and isolated
    tests of an invite-only Internet service using existing v3 transport; public
@@ -84,7 +86,7 @@ This is limited automated evidence, not the full-suite or current-draft verdict.
    LAN HTTP service, assume a VPN toggle solves joining, deploy or spend.
 3. After the network path and candidate are authorized, execute the Art script
    below. The shared-lesson route and role guidance already exist in #98; do not
-   build them again. Verify whether spoken pause requests, faces/lesson layout
+   build them again. Verify whether in-room/spoken pause requests, faces/lesson layout
    and actual listening controls meet the two-person need. Any future local-file
    request needs authenticated host validation, current-room/source binding,
    bounded retries and preserved guest-never-seek.

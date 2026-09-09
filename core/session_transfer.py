@@ -48,6 +48,15 @@ from urllib.parse import parse_qs, quote, urlsplit
 
 from core.creative_modes import canonical_creator_profile_key
 from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
+from core.lesson_request import (
+    MAX_ADMISSIONS,
+    MAX_REQUEST_BYTES,
+    LessonRequestCommand,
+    LessonRequestError,
+    LessonRequestNotice,
+    LessonRequestStore,
+    LessonRequestView,
+)
 from core.logical_sources import canonical_logical_source_id
 from core.redaction import redact_text
 
@@ -1735,6 +1744,21 @@ class EnrollmentRegistry:
             )
             for installation_id, record in records
         )
+
+    def room_participant_names(self, participant_ids: frozenset[str]) -> dict[str, str] | None:
+        """Bounded host-local name lookup, without tokens or waiting for disk I/O."""
+        if type(participant_ids) is not frozenset or len(participant_ids) > MAX_ADMISSIONS:
+            return {}
+        if not self._lock.acquire(blocking=False):
+            return None
+        try:
+            return {
+                record["participant_id"]: record["display_name"]
+                for record in self._participants.values()
+                if record["participant_id"] in participant_ids
+            }
+        finally:
+            self._lock.release()
 
 
 class RecordingSignal(str, Enum):
@@ -4338,10 +4362,16 @@ class SessionPeerServer:
     ) -> None:
         self.registry = registry
         self.control = control
+        # Creator profile is immutable for this control owner. Cache it once
+        # so host-local presentation never waits behind durable state writes.
+        self._lesson_control_owner = control
+        self._lesson_creator_profile = control.snapshot().creator_profile_key
         self.transfers = transfers
         self._room_poll_lock = threading.Lock()
         self._room_poll_clock = time.monotonic
         self._room_polls: dict[str, float] = {}
+        self._lesson_request_lock = threading.RLock()
+        self._lesson_requests = LessonRequestStore(clock=lambda: self._room_poll_clock())
         self._httpd = _ReusableThreadingHTTPServer((host, int(port)), self._handler())
         self._thread: threading.Thread | None = None
 
@@ -4372,6 +4402,58 @@ class SessionPeerServer:
         if self._httpd.stopping or not readers.issubset(self.room_participants(now=now)):
             return RoomConnectionNames()
         return result
+
+    def _lesson_requests_available(self) -> bool:
+        if (self._httpd.stopping or self.control is not self._lesson_control_owner
+                or self._lesson_creator_profile != "art"):
+            self._lesson_requests.retire()
+            return False
+        return True
+
+    def activate_lesson_requests(self) -> str:
+        """Explicit current host action only; never available as an HTTP route."""
+        with self._lesson_request_lock:
+            if not self._lesson_requests_available():
+                raise LessonRequestError("context_stale")
+            return self._lesson_requests.activate()
+
+    def retire_lesson_requests(self) -> None:
+        with self._lesson_request_lock:
+            self._lesson_requests.retire()
+
+    def lesson_request_notices(self) -> tuple[LessonRequestNotice, ...]:
+        with self._lesson_request_lock:
+            if not self._lesson_requests_available():
+                return ()
+            return self._lesson_requests.host_notices()
+
+    def lesson_request_names(self, participant_ids: frozenset[str]) -> dict[str, str] | None:
+        """Names for current host notices only; never serialized to guests."""
+        if type(participant_ids) is not frozenset or len(participant_ids) > MAX_ADMISSIONS:
+            return {}
+        readers = participant_ids & self.room_participants()
+        names = self.registry.room_participant_names(readers)
+        if self._httpd.stopping or not readers.issubset(self.room_participants()):
+            return {}
+        return names
+
+    def acknowledge_lesson_request(self, context_id: str, admission_id: str, revision: int) -> None:
+        with self._lesson_request_lock:
+            if not self._lesson_requests_available():
+                raise LessonRequestError("context_stale")
+            self._lesson_requests.acknowledge(context_id, admission_id, revision)
+
+    def _lesson_request_view(self, participant_id: str, read_at: float) -> LessonRequestView:
+        with self._lesson_request_lock:
+            if not self._lesson_requests_available():
+                return LessonRequestView("unavailable", reason="inactive")
+            return self._lesson_requests.record_state_read(participant_id, read_at=read_at)
+
+    def _submit_lesson_request(self, participant_id: str, command: LessonRequestCommand) -> LessonRequestView:
+        with self._lesson_request_lock:
+            if not self._lesson_requests_available():
+                raise LessonRequestError("context_stale")
+            return self._lesson_requests.submit(participant_id, command)
 
     def _handler(self):
         owner = self
@@ -4448,10 +4530,49 @@ class SessionPeerServer:
                     "/v1/presence",
                     "/v2/presence",
                     "/v2/capture-arm-ack",
+                    "/v1/lesson-requests",
                 }:
                     self._error(
                         HTTPStatus.NOT_FOUND, "not_found", "Unknown WebJam route."
                     )
+                    return
+                if route == "/v1/lesson-requests":
+                    try:
+                        participant_id = self._participant()
+                        if self.headers.get_content_type() != "application/json":
+                            raise LessonRequestError("invalid_request")
+
+                        def unique_object(pairs):
+                            result = {}
+                            for key, value in pairs:
+                                if key in result:
+                                    raise LessonRequestError("invalid_request")
+                                result[key] = value
+                            return result
+
+                        payload = json.loads(
+                            self._body(maximum=MAX_REQUEST_BYTES),
+                            object_pairs_hook=unique_object,
+                        )
+                        command = LessonRequestCommand.from_mapping(payload)
+                        # An authenticated header checked before a body read is
+                        # not permission to bypass later ownership retirement.
+                        self._participant()
+                        view = owner._submit_lesson_request(participant_id, command)
+                    except TransferAuthenticationError:
+                        self._error(HTTPStatus.UNAUTHORIZED, "unauthorized", "Participant authentication failed.")
+                        return
+                    except (LessonRequestError, ValueError, TypeError, UnicodeError) as exc:
+                        error = exc if isinstance(exc, LessonRequestError) else LessonRequestError("invalid_request")
+                        status = (HTTPStatus.BAD_REQUEST if error.code == "invalid_request"
+                                  else HTTPStatus.TOO_MANY_REQUESTS if error.code == "rate_limited"
+                                  else HTTPStatus.CONFLICT)
+                        result = {"version": 1, "error": error.code}
+                        if error.retry_after_ms is not None:
+                            result["retry_after_ms"] = error.retry_after_ms
+                        self._json(status, result)
+                        return
+                    self._json(HTTPStatus.OK, view.to_mapping())
                     return
                 if route == "/v2/capture-arm-ack":
                     try:
@@ -4632,7 +4753,8 @@ class SessionPeerServer:
                     # Authentication above is required. Enrollment alone is
                     # deliberately not evidence of an artist still being here.
                     with owner._room_poll_lock:
-                        owner._room_polls[participant_id] = owner._room_poll_clock()
+                        read_at = owner._room_poll_clock()
+                        owner._room_polls[participant_id] = read_at
                     snapshot = owner.control.snapshot_for_participant(participant_id)
                     if (
                         owner.registry.presence_v2_configured()
@@ -4645,14 +4767,16 @@ class SessionPeerServer:
                         # capture permission from session-wide RECORDING;
                         # legacy servers omit the member entirely.
                         snapshot = replace(snapshot, arm_handshake_required=True)
-                    self._json(
-                        HTTPStatus.OK,
-                        _session_state_mapping(
-                            snapshot,
-                            include_shared_track=True,
-                            include_capture_arm=True,
-                        ),
+                    payload = _session_state_mapping(
+                        snapshot, include_shared_track=True, include_capture_arm=True,
                     )
+                    if snapshot.creator_profile_key == "art":
+                        try:
+                            view = owner._lesson_request_view(participant_id, read_at)
+                        except LessonRequestError:
+                            view = LessonRequestView("unavailable", reason="inactive")
+                        payload["lesson_requests"] = view.to_mapping()
+                    self._json(HTTPStatus.OK, payload)
                     return
                 if parsed.path == "/v1/transfer-status":
                     try:
@@ -4760,7 +4884,9 @@ class SessionPeerServer:
         self._thread.start()
 
     def stop(self) -> None:
-        self._httpd.begin_shutdown()
+        with self._lesson_request_lock:
+            self._lesson_requests.retire()
+            self._httpd.begin_shutdown()
         with self._room_poll_lock:
             self._room_polls.clear()
         if self._thread is None:
@@ -4776,6 +4902,12 @@ class SessionPeerServer:
         """Return the number of outstanding peer HTTP handler workers."""
 
         return self._httpd.active_handler_count
+
+
+@dataclass(frozen=True, repr=False)
+class LanRoomPollResult:
+    snapshot: SessionStateSnapshot
+    lesson_requests: LessonRequestView | None
 
 
 class SessionPeerClient:
@@ -4807,6 +4939,8 @@ class SessionPeerClient:
         participant_id: str = "",
         body: bytes = b"",
         headers: Mapping[str, str] | None = None,
+        lesson_request: bool = False,
+        authentication_first: bool = False,
     ) -> dict[str, Any]:
         request_headers = {
             "Authorization": f"Bearer {token}",
@@ -4817,11 +4951,18 @@ class SessionPeerClient:
         if participant_id:
             request_headers["X-WebJam-Participant"] = participant_id
         connection = http.client.HTTPConnection(
-            self.host, self.port, timeout=self.timeout_s
+            self.host, self.port, timeout=min(self.timeout_s, 1.0) if lesson_request else self.timeout_s
         )
         try:
             connection.request(method, path, body=body, headers=request_headers)
             response = connection.getresponse()
+            if (lesson_request or authentication_first) and response.status == HTTPStatus.UNAUTHORIZED:
+                # The authenticated status itself retires the credential. An
+                # unreadable, oversized, or stalled body must not turn it into
+                # a retryable feature error. finally still closes the socket.
+                raise TransferAuthenticationError("Participant authentication failed.")
+            if lesson_request and response.status == HTTPStatus.NOT_FOUND:
+                raise LessonRequestError("unsupported")
             raw = response.read(MAX_JSON_BYTES + 1)
         except OSError as exc:
             raise SessionTransferError(
@@ -4842,8 +4983,28 @@ class SessionPeerClient:
         if response.status >= 400:
             if response.status == HTTPStatus.UNAUTHORIZED:
                 raise TransferAuthenticationError(
-                    str(payload.get("message", "Unauthorized."))
+                    "Participant authentication failed." if lesson_request
+                    else str(payload.get("message", "Unauthorized."))
                 )
+            if lesson_request:
+                code = payload.get("error")
+                allowed = {
+                    HTTPStatus.BAD_REQUEST: {"invalid_request"},
+                    HTTPStatus.CONFLICT: {"context_stale", "admission_stale", "presence_stale",
+                                          "superseded", "revision_conflict", "revision_exhausted", "expired"},
+                    HTTPStatus.TOO_MANY_REQUESTS: {"rate_limited"},
+                }.get(response.status, set())
+                fields = {"version", "error"}
+                retry = payload.get("retry_after_ms")
+                retry_valid = True
+                if response.status == HTTPStatus.TOO_MANY_REQUESTS:
+                    fields.add("retry_after_ms")
+                    retry_valid = type(retry) is int and 1 <= retry <= 10_000
+                if (set(payload) == fields and type(payload.get("version")) is int
+                        and payload["version"] == 1 and type(code) is str
+                        and code in allowed and retry_valid):
+                    raise LessonRequestError(code, retry_after_ms=retry)
+                raise SessionTransferError("The lesson request could not be confirmed.")
             if response.status == HTTPStatus.CONFLICT:
                 raise TransferConflictError(
                     str(payload.get("message", "Transfer conflict.")),
@@ -4885,6 +5046,10 @@ class SessionPeerClient:
             token=enrollment.participant_token,
             participant_id=enrollment.participant_id,
         )
+        return self._parse_state(payload)
+
+    @staticmethod
+    def _parse_state(payload: Mapping[str, Any]) -> SessionStateSnapshot:
         return SessionStateSnapshot(
             session_id=str(payload["session_id"]),
             generation=int(payload["generation"]),
@@ -4922,6 +5087,43 @@ class SessionPeerClient:
                 "capture_arm" in payload or "capture_arm_cancellation" in payload
             ),
         )
+
+    def state_with_lesson_requests(self, enrollment: ParticipantEnrollment) -> LanRoomPollResult:
+        payload = self._request(
+            "GET", "/v1/state", token=enrollment.participant_token,
+            participant_id=enrollment.participant_id, authentication_first=True,
+        )
+        snapshot = self._parse_state(payload)
+        if snapshot.session_id != self.credentials.session_id:
+            raise SessionTransferError("The host returned a different room.")
+        try:
+            view = LessonRequestView.from_mapping(payload.get("lesson_requests"))
+        except (LessonRequestError, TypeError, ValueError):
+            view = None
+        if snapshot.creator_profile_key != "art":
+            view = None
+        return LanRoomPollResult(snapshot, view)
+
+    def post_lesson_request(self, enrollment: ParticipantEnrollment,
+                            command: LessonRequestCommand) -> LessonRequestView:
+        if not isinstance(command, LessonRequestCommand):
+            raise LessonRequestError("invalid_request")
+        payload = self._request(
+            "POST", "/v1/lesson-requests", token=enrollment.participant_token,
+            participant_id=enrollment.participant_id,
+            body=json.dumps(command.to_mapping(), separators=(",", ":")).encode("utf-8"),
+            headers={"Content-Type": "application/json"}, lesson_request=True,
+        )
+        try:
+            view = LessonRequestView.from_mapping(payload)
+        except (LessonRequestError, TypeError, ValueError):
+            raise SessionTransferError("The lesson request receipt could not be confirmed.") from None
+        if (view.availability != "active" or view.context_id != command.context_id
+                or view.admission_id != command.admission_id or view.own_receipt is None
+                or view.own_receipt.revision != command.revision
+                or view.own_receipt.intent != command.intent):
+            raise SessionTransferError("The lesson request receipt did not match.")
+        return view
 
     def acknowledge_capture_arm(
         self,

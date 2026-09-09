@@ -416,6 +416,9 @@ class AudioCoordinator:
         )
         self.cleanup_retry_required = False
         self.stopping = True
+        retire_lesson = getattr(self._c, "_clear_shared_lesson_context", None)
+        if callable(retire_lesson):
+            retire_lesson()
         self.ended_by_user = True
         self.recovering = False
         self._c._clear_primary_local_roster_proof()

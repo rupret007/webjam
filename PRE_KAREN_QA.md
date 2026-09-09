@@ -1,81 +1,82 @@
-# PRE_KAREN — composed invitation recovery and Music listening
+# PRE_KAREN — Art shared-lesson pause and ready requests
 
-Branch: `codex/recovery-mix-composition`; canonical WebJam checkout.
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5593490508
-State: combined verification in progress. Exact final tip, local results and
-hosted checks belong in the draft PR body. No physical or Karen PASS implied.
+Branch: `codex/art-lesson-requests`; base #107 exact
+`392c959a74af135fe2a92c13ef09fbfe541fb476` (`codex/recovery-mix-composition`).
+BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5593972013
+Verification is in progress. Exact final SHA/results belong in the draft PR
+body. No physical acceptance or independent Karen PASS is implied.
 
-## Dependencies and leftover honesty
+## Leftover honesty and ten-second UX
 
-Base #103 `1e35d7ac51a6ab9e5d95f3edbe2a8a68c0b748c5` includes #96–#102.
-Replayed #104 `08efa86384bf6378ce49a2e3e3150444dc028081`, #105 ending at
-`3811d3f0179bc03e90f7490ed8a9469fd8fec607`, and #106's delta
-`e1e4b2ba3c8b4c48f4fc1b246cb63b38a9ddce2d`. Master was fetched and matched
-`2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`. The original drafts are unchanged;
-this declared dependent branch is allowed by the sustained goal.
+A guest previously had only spoken pause requests while following the shared
+browser lesson. The existing Art Conversation helper now offers **Ask for a
+pause** and **Ready to continue**. The host sees a temporary named request and
+chooses **Acknowledge request**. The host still operates the browser manually.
+Requests do not seek, pause, resume, launch or affect any media or device.
 
-Clean production composition alone was insufficient. New replacement-process
-journeys reproduced two actual failures: obsolete cards before new local proof,
-and false disconnection after the replacement was proved. The fix rejects a
-retired process/monitor's queued roster before changing UI or recording presence.
-Current-owner negative evidence still reaches recovery. Component proof and
-fixture setup errors are recorded separately from these product reproductions.
+Guest text distinguishes sending, delivery uncertain, delivered, acknowledged,
+refused and expired. There is no claim of synchronization or everyone ready.
+Old/native/unsupported rooms retain **Ask the host aloud**. Ordinary Art door,
+Make together, Notes, focus and the current meeting remain intact. The host
+may miss a notice while watching a browser; physical notice visibility and
+response remain unverified. An in-app acknowledgement is insufficient proof
+of actual video/narration stopping or of independent received audio mixing.
 
-A broader combined run also exposed readiness work queued before successful
-application shutdown executing afterward. It still changed closed-room UI and
-read microphone permission state. An isolated reproduction confirmed the real
-shutdown flag; completed shutdown now retires that queued readiness work.
-Canceled shutdown retains its live readiness behavior.
+## Security and ownership self-QA
 
-## Security and ownership
+- Reuse the existing private-LAN listener and guest worker. Authentication uses
+  existing participant/bearer proof; no unauthenticated activation/ACK route.
+  No change to LAN address validation, native transport or durable room schema.
+- The fixed optional state extension carries only this guest's current receipt.
+  Requests contain no URL, free text, media, name or chosen destination.
+  DTO repr and fixed error messages reveal no identifiers or request contents.
+- Retain at most 32 admissions per host context until retirement. Each keeps
+  one high-water revision/latest receipt; no request-history or eviction cache.
+  Duplicate intent/revision is idempotent even after acknowledgement/expiry;
+  older revisions remain superseded. An invitation holder can consume slots;
+  capacity refusal is honest, not a claim of perfect denial-of-service protection.
+- Five-second authenticated-read freshness is rechecked under the model lock
+  for requests and ACK. POST and ACK do not refresh room presence. Notices
+  last 30 seconds; acknowledgement and retries never extend that deadline.
+- Enforce strict object shape/types, 512-byte input, per-person two-second
+  throttling and 20 new requests per rolling ten seconds globally.
+- Keep at most one in-flight POST and one latest queued explicit intent in the
+  existing poll worker. No automatic retry; uncertain retries keep exact tuple.
+  Feature faults do not invalidate good room state; actual 401 remains terminal.
+- Host activation requires the explicit current shared-lesson action. Captured
+  owner/server/lifecycle/room/meeting/request identities fence queued UI work.
+  Retire before source/meeting replacement, navigation and cleanup waits,
+  including failed Leave and shutdown. Merely hiding the window keeps notices.
+- Registry names use a bounded, nonblocking name-only host projection and Qt
+  PlainText. No guest receives another guest's name, capability or receipt.
+  Names are chosen labels, not proof of a unique human identity.
+- The one-second POST socket timeout is not an absolute end-to-end deadline
+  against a trickling peer. Existing bounded response and cleanup rules remain.
 
-- Revalidate process generation, PID and RPC monitor epoch at UI consumption,
-  before even an empty retired roster can change current ownership or cards.
-  Source-less calls retain the existing compatibility seam; the registered
-  production callback carries typed identity. Current proof still requires a
-  real local row, live intended process and fresh RPC under existing gates.
-- A remote-only roster never auto-restores a mix or claims local connection.
-  Exact participant/client/epoch checks and the final socket fence retain native
-  gain ownership. Saved mix matching never authorizes a connection or identity.
-- Saved Solo includes optional personal mute metadata; old snapshots only restore
-  information they contain. Whole mix state is resolved before native commands;
-  multi-channel native writes remain sequential, not an atomic audio transaction.
-- Rejected private-network admission stops the old attempt. Full-message Join
-  still requires explicit acceptance and successful owned cleanup. Temporary
-  Conversation never falls back to an unrelated personal link.
-- Native room Reset ownership is distinct from primary audio process ownership.
-  Failed room cleanup retains active Stop and local listening but blocks fresh
-  Play/Record. Primary cleanup keeps its stronger teardown fences. Stale callbacks
-  must not release either owner or replay media intent.
-- Existing invitation validation, bounded workers, authenticated native transport,
-  admission/lifetime bounds, certificate expiry and acknowledged cleanup remain.
-  No public endpoint, secret logging, browser/meeting launch or capture is added.
+## Verification and remaining acceptance
 
-## Ten-second UX and testing limits
+New isolated model, authenticated localhost HTTP, worker and real widget tests
+cover ordering, lost replies, expiry, capacity, limits and unsupported/refused
+states. Combined real-controller journeys cover host ACK/ready, Notes, focus,
+ordinary navigation versus OS hiding, both meeting replacement paths, route
+loss, old signals, failed Leave, End-worker ordering and actual shutdown.
+Controlled socket/OS/worker boundaries are explicit; no live provider or audio
+was opened. Preserve fixture/setup errors separately from observed product failures.
 
-A rejected invitation offers Paste New Invite; temporary network faults retain
-Try Again. Cancel/retry preserves work. A fresh Music room shows the current
-participants and their saved listening choices after actual local proof; an old
-connection cannot replace those cards or falsely send the room into recovery.
-Art retains Make together/Paint along, its squirrel and host-authoritative
-playback. External lesson and camera/microphone controls remain with the existing
-meeting/browser provider; this draft claims no control over them.
+Run the full application/native/service/static/UX bar and both hosted events
+on the final tip, including four desktop builds. Preserve skips/retries/failures.
+The draft body owns the final counts and source SHA, not this pre-freeze file.
 
-New journeys use production controllers, handlers, parsers, Qt cards and native
-JSON serialization with controlled machine/readiness/socket/worker boundaries.
-They do not prove real acoustic output or two-home connectivity. Real sidecar
-checks and desktop builds are separate evidence, also not physical audio proof.
-Run the full application/native/service bar and both hosted events on the final
-tip; record failures and reruns honestly. Short two-person acceptance remains
-NOT RUN until explicitly performed. Public-network design decision, Art sound/
-faces/pause usability, Music routing/latency/endurance and Karen are still open.
+Physical two-home joining, actual lesson/faces/narration, host response,
+independent Art audio controls, Music routing/latency/endurance, package selection
+and Karen review remain pending. The public-network decision is unanswered.
+No automation result establishes any of those physical claims.
 
-## Holds and handoff
+## Holds
 
-All PRs remain OPEN DRAFT. No merge/squash/tag/sign/release/Pages/Release Trust/
-Publish/deploy/spend/live Cisco, automatic recording, unsolicited messages,
-short-code/public rendezvous, second video/music engine, other repo or new Goal.
-Unsigned0.27.2 is Jeff-only. Parked #37/#49 and dependency tips stay untouched.
-Four-hour codex lease before push; timestamped BEFORE/AFTER; release at handoff.
-Codex self-QA is distinct from independent Karen leftover/security/ten-second UX
-PASS and from physical acceptance. The sustained goal remains incomplete.
+OPEN DRAFT only. No merge/squash/tag/sign/release/Pages/Release Trust/Publish/
+deploy/spend/live Cisco, automatic recording/capture, unsolicited messages,
+short-code/public rendezvous, second media engine, other repo or new goal.
+Unsigned 0.27.2 is Jeff-only; parked #37/#49 and dependency tips untouched.
+Four-hour codex lease before push, timestamped BEFORE/AFTER, release at handoff.
+Codex self-QA is separate from Karen leftover/security/ten-second UX PASS.
