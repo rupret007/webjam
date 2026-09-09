@@ -210,20 +210,25 @@ def test_an_invite_without_a_jam_link_is_a_programming_error():
 
 
 def test_the_invite_names_the_session_and_the_participant_noun():
+    from core.network_invite import create_invite_link
+
     named = build_invite_message(join_link=JOIN_LINK, session_name="Tuesday Jam")
     assert named.text.startswith("Join Tuesday Jam on WebJam:")
+    assert "choose Join, then paste this full invitation" in named.text
 
-    unnamed = build_invite_message(join_link=JOIN_LINK, participant_noun="speaker")
+    legacy_link = create_invite_link("192.168.1.5")
+    unnamed = build_invite_message(join_link=legacy_link, participant_noun="speaker")
     assert unnamed.text.startswith("Join this jam on WebJam:")
     assert "as a speaker" in unnamed.text
 
 
 def test_the_invite_stays_short_enough_to_paste_into_a_chat():
     message = build_invite_message(
-        join_link=JOIN_LINK, session_name="Tuesday Jam", meeting_url=MEETING_URL
+        join_link=JOIN_LINK, session_name="Tuesday Jam", meeting_url=MEETING_URL,
+        same_network_required=True,
     )
-    assert message.line_count <= 8
-    assert len(message.text) < 500
+    assert message.line_count <= 9
+    assert len(message.text) < 600
 
 
 # ----------------------------------------------------------------------

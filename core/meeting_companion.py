@@ -294,10 +294,10 @@ def build_invite_message(
     clipboard holds, not the invitation protocol. A meeting link is included
     only when it passes the same validation the rest of WebJam applies, so a
     malformed or unsupported link is dropped. Art copy describes the making
-    room and optional work sharing; the default preserves existing Music
-    callers. Art invitations always name the supported manual-paste route.
-    Their network requirement comes from the host's actual sharing path via
-    ``same_network_required``, never from inspecting the serialized link.
+    room and optional work sharing. Art and canonical v2/v3 invitations name
+    the supported manual-paste route. The network requirement comes from the
+    host's actual sharing path via ``same_network_required``, never from
+    inspecting the serialized link.
     """
 
     link = str(join_link or "").strip()
@@ -312,12 +312,12 @@ def build_invite_message(
     )
     # This is copy around an already-created link, not a second parser or a
     # rewrite of its opaque capability. Art always names the portable paste
-    # route; other workspaces retain their existing canonical-v3 instruction.
+    # route; canonical v2/v3 bearer invitations require it in every workspace.
     manual_paste = art or (link.startswith("webjam://join?") and (
-        "v=3" in link.partition("?")[2].split("&")
+        bool({"v=2", "v=3"}.intersection(link.partition("?")[2].split("&")))
     ))
     lines = [headline]
-    if art and same_network_required:
+    if same_network_required:
         lines.append(
             "Join on the same Wi-Fi or local network as the host. "
             "The host needs to keep this room open."

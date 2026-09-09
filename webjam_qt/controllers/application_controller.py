@@ -7411,9 +7411,14 @@ class ApplicationController(QObject):
             self
         ).vocabulary.participant_singular
         link_noun = "room" if _creator_profile_for_controller(self).key == "art" else "jam"
-        if _creator_profile_for_controller(self).key == "art" and owner is None:
+        if owner is None:
+            recipient = (
+                "an artist"
+                if _creator_profile_for_controller(self).key == "art"
+                else f"another {participant}"
+            )
             copied_detail = (
-                "Invitation copied. Send the whole message to an artist on "
+                f"Invitation copied. Send the whole message to {recipient} on "
                 "your same Wi-Fi or local network. Keep this room open."
             )
         else:

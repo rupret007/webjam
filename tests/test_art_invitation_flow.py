@@ -1,24 +1,28 @@
-"""Actual invitation-copy and recovery-action behavior for Art guests."""
+"""Actual invitation-copy and recovery actions for Art and Music guests."""
 
 from __future__ import annotations
 
+import logging
+import sys
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 import shiboken6
 from PySide6.QtCore import QCoreApplication, QEvent
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication, QDialog
 
 from core.network_invite import create_invite_link
 from core.remote_invitation import issue_remote_invitation
 from core.session_conductor import SessionPrimaryAction
 from core.session_transfer import SessionCredentials
-from core.settings import AppSettings
+from core.settings import AppSettings, load_settings, save_settings
 from tests.test_art_room_controller import arm_lan, invitation
 from webjam_qt.controllers.application_controller import ApplicationController
 from webjam_qt.invitation_ingress import InvitationSource, parse_invitation_at_ingress
 from webjam_qt.windows.conductor_window import ConductorWindow
+from webjam_qt.windows.launch_dialog import LaunchDialog
 
 
 @pytest.fixture(scope="module")
@@ -64,11 +68,14 @@ def _lan_link():
     )
 
 
-@pytest.mark.parametrize("meeting", ["", "https://example.webex.com/meet/artist"])
-def test_actual_art_host_copies_route_requirements_with_the_complete_invitation(
-    controllers, monkeypatch, meeting,
+@pytest.mark.parametrize(
+    "meeting", ["", "https://example.webex.com/meet/artist"], ids=["without-meeting", "with-meeting"],
+)
+@pytest.mark.parametrize("profile", ["art", "music"])
+def test_actual_host_copy_leads_to_explicit_join_with_the_complete_invitation(
+    controllers, monkeypatch, tmp_path, caplog, meeting, profile,
 ):
-    app = controllers(hosting=True)
+    app = controllers(profile=profile, hosting=True)
     app.settings.webex_url = meeting
     link = _lan_link()
     readiness = SimpleNamespace(shareable=True, address="192.168.1.20")
@@ -77,27 +84,93 @@ def test_actual_art_host_copies_route_requirements_with_the_complete_invitation(
     app.window.flash_message = Mock()
     clipboard = Mock()
     monkeypatch.setattr(QApplication, "clipboard", lambda: clipboard)
+    monkeypatch.setattr(
+        "webjam_qt.windows.launch_dialog._windows_jamulus_installer", lambda settings: None,
+    )
+    qt_errors = []
+    monkeypatch.setattr(
+        sys, "excepthook", lambda error_type, _error, _traceback: qt_errors.append(error_type),
+    )
+    effects = [Mock(name=name) for name in ("browser", "process", "provider", "startup", "audio")]
+    monkeypatch.setattr("webbrowser.open", effects[0])
+    monkeypatch.setattr("subprocess.Popen", effects[1])
+    monkeypatch.setattr(QDesktopServices, "openUrl", effects[2])
+    monkeypatch.setattr(app, "begin_startup_journey", effects[3])
+    monkeypatch.setattr(app, "_launch_native_jamulus_for_startup", effects[4])
 
     app._copy_band_invite()
 
+    assert clipboard.setText.call_count == 1
     message = clipboard.setText.call_args.args[0]
-    assert "same Wi-Fi or local network" in message
-    assert "choose Join" in message and "paste this full invitation" in message
+    # Assertion diagnostics must not include the private clipboard payload.
+    visible_copy = message.replace(link, "[private invitation]")
+    if meeting:
+        visible_copy = visible_copy.replace(meeting, "[optional meeting]")
+    link_count = message.splitlines().count(link)
+    assert link_count == 1
+    assert "same Wi-Fi or local network" in visible_copy
+    assert "choose Join" in visible_copy and "paste this full invitation" in visible_copy
+    assert "host needs to keep this room open" in visible_copy
+    assert "Open the link in WebJam" not in visible_copy
     parsed = parse_invitation_at_ingress(message, source=InvitationSource.PASTE)
     expected = parse_invitation_at_ingress(link, source=InvitationSource.PASTE)
     assert parsed == expected
-    assert (meeting in message) if meeting else ("Optional" not in message)
+    meeting_preserved = (meeting in message) if meeting else ("Optional" not in message)
+    assert meeting_preserved
     feedback = app.window.flash_message.call_args.args[0]
-    assert "same Wi-Fi or local network" in feedback
-    assert "whole message" in feedback and "Keep this room open" in feedback
-    assert link not in feedback and expected.invite_token not in feedback
+    feedback_exposes_invitation = link in feedback or expected.invite_token in feedback
+    assert not feedback_exposes_invitation
+    visible_feedback = feedback.replace(link, "[private invitation]")
+    visible_feedback = visible_feedback.replace(expected.invite_token, "[private token]")
+    if meeting:
+        visible_feedback = visible_feedback.replace(meeting, "[optional meeting]")
+    assert "same Wi-Fi or local network" in visible_feedback
+    assert "whole message" in visible_feedback and "Keep this room open" in visible_feedback
     assert app._last_shared_lan_address == readiness.address
 
+    personal_meeting = "https://zoom.us/j/987654321"
+    guest_settings = AppSettings(
+        config_file=str(tmp_path / "guest-settings.json"),
+        musician_name="Guest",
+        last_creator_profile_key="music",
+        webex_url=personal_meeting,
+    )
+    save_settings(guest_settings)
+    door = LaunchDialog(load_settings(guest_settings.config_file))
+    try:
+        door.show_join()
+        door._invite_input.setText(message)
+        door._join_button_primary.click()
+        assert not qt_errors
+        assert door.result() == QDialog.DialogCode.Accepted
+        assert door.selected_role == "join"
+        paste_empty = door._invite_input.text() == ""
+        assert paste_empty
+        assert door.band_invite == expected
+        assert door.remote_invitation is None
+        persisted = load_settings(guest_settings.config_file)
+        assert persisted.webex_url == personal_meeting
+        assert persisted.last_creator_profile_key == "music"
+        assert guest_settings.webex_url == personal_meeting
+        # Master accepts the transport invitation. Room-scoped Conversation
+        # adoption is a separate, unmerged feature and is not inferred here.
+        for effect in effects:
+            assert effect.call_count == 0
+        assert not any(
+            record.name == "webjam.ui_thread" and record.levelno >= logging.ERROR
+            for record in caplog.records
+        )
+    finally:
+        door.deleteLater()
+        QCoreApplication.sendPostedEvents(door, QEvent.Type.DeferredDelete)
+        assert not shiboken6.isValid(door)
 
-def test_native_art_owner_does_not_inherit_lan_or_public_reachability_claim(
-    controllers, monkeypatch,
+
+@pytest.mark.parametrize("profile", ["art", "music"])
+def test_native_owner_does_not_inherit_lan_or_public_reachability_claim(
+    controllers, monkeypatch, profile,
 ):
-    app = controllers(hosting=True)
+    app = controllers(profile=profile, hosting=True)
     issued = issue_remote_invitation(
         "reference-local", allowed_profiles={"reference-local"},
         host_spki_sha256=bytes.fromhex("44" * 32),
@@ -106,6 +179,7 @@ def test_native_art_owner_does_not_inherit_lan_or_public_reachability_claim(
     # this owner path, not by reparsing or guessing from the URL.
     owner = SimpleNamespace(copy_for_clipboard=Mock(return_value=issued.private_link.reveal_for_clipboard()))
     app._remote_invite_owner = owner
+    app.window.flash_message = Mock()
     clipboard = Mock()
     monkeypatch.setattr(QApplication, "clipboard", lambda: clipboard)
     try:
@@ -113,10 +187,19 @@ def test_native_art_owner_does_not_inherit_lan_or_public_reachability_claim(
     finally:
         app._remote_invite_owner = None
     message = clipboard.setText.call_args.args[0]
-    assert "choose Join" in message and "paste this full invitation" in message
-    assert "same Wi-Fi" not in message
-    assert "public" not in message.casefold()
-    assert "anywhere" not in message.casefold()
+    visible_copy = message.replace(issued.private_link.reveal_for_clipboard(), "[private invitation]")
+    assert "choose Join" in visible_copy and "paste this full invitation" in visible_copy
+    assert "same Wi-Fi" not in visible_copy
+    assert "public" not in visible_copy.casefold()
+    assert "anywhere" not in visible_copy.casefold()
+    feedback = app.window.flash_message.call_args.args[0]
+    private_link = issued.private_link.reveal_for_clipboard()
+    feedback_exposes_invitation = private_link in feedback
+    assert not feedback_exposes_invitation
+    visible_feedback = feedback.replace(private_link, "[private invitation]")
+    assert "same Wi-Fi" not in visible_feedback
+    assert "public" not in visible_feedback.casefold()
+    assert "anywhere" not in visible_feedback.casefold()
     parsed = parse_invitation_at_ingress(
         message, source=InvitationSource.PASTE,
         allowed_remote_profiles=frozenset({"reference-local"}),
@@ -131,8 +214,9 @@ def test_native_art_owner_does_not_inherit_lan_or_public_reachability_claim(
     assert preserved
 
 
-def test_failed_lan_share_does_not_copy_unusable_invitation(controllers, monkeypatch):
-    app = controllers(hosting=True)
+@pytest.mark.parametrize("profile", ["art", "music"])
+def test_failed_lan_share_does_not_copy_unusable_invitation(controllers, monkeypatch, profile):
+    app = controllers(profile=profile, hosting=True)
     app._host_share_readiness = Mock(
         return_value=SimpleNamespace(shareable=False, address="")
     )
@@ -141,7 +225,7 @@ def test_failed_lan_share_does_not_copy_unusable_invitation(controllers, monkeyp
     clipboard = Mock()
     monkeypatch.setattr(QApplication, "clipboard", lambda: clipboard)
     app._copy_band_invite()
-    clipboard.setText.assert_not_called()
+    assert clipboard.setText.call_count == 0
 
 
 def _replace_join_dialog(monkeypatch, *, result, value=None):

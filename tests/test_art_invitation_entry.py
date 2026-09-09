@@ -1,4 +1,4 @@
-"""Art invitation copy must lead to a supported, private paste entry."""
+"""Art and Music invitations must lead to a supported, private paste entry."""
 
 from __future__ import annotations
 
@@ -140,10 +140,11 @@ def test_art_copy_requires_explicit_host_scope_instead_of_inspecting_url(kind):
 
 @pytest.mark.parametrize("platform", PLATFORMS)
 @pytest.mark.parametrize("kind", ("private_lan", "native"))
-def test_art_private_invitation_copy_does_not_enable_bearer_process_arguments(platform, kind):
+@pytest.mark.parametrize("profile", ("art", "music"))
+def test_private_invitation_copy_does_not_enable_bearer_process_arguments(platform, kind, profile):
     link = _lan_link() if kind == "private_lan" else _remote_issue().private_link.reveal_for_clipboard()
     message = build_invite_message(
-        join_link=link, creator_profile_key="art", same_network_required=kind == "private_lan",
+        join_link=link, creator_profile_key=profile, same_network_required=kind == "private_lan",
     )
     _copy_without_link(message, link)
     with pytest.raises(InvitationIngressError) as caught:
@@ -187,9 +188,28 @@ def test_art_rejects_invalid_optional_meeting_without_changing_invitation():
     assert PASTE_INSTRUCTION in copy
 
 
-def test_explicit_network_fact_preserves_existing_music_copy():
+@pytest.mark.parametrize(
+    "meeting_url", ("", "https://band.webex.com/meet/musician"),
+    ids=("without-meeting", "with-meeting"),
+)
+def test_explicit_network_fact_gives_music_a_working_private_join_action(meeting_url):
     link = _lan_link()
-    message = build_invite_message(join_link=link, same_network_required=True)
+    message = build_invite_message(
+        join_link=link, same_network_required=True, meeting_url=meeting_url,
+    )
+    copy = _copy_without_link(message, link)
+    if meeting_url:
+        copy = copy.replace(meeting_url, "[optional meeting]")
+    assert PASTE_INSTRUCTION in copy
+    assert "same Wi-Fi or local network as the host" in copy
+    assert "host needs to keep this room open" in copy
+    assert "Open the link in WebJam" not in copy
+    assert message.includes_meeting is bool(meeting_url)
+
+
+def test_music_legacy_endpoint_copy_keeps_existing_entry_without_inferred_scope():
+    link = create_invite_link("203.0.113.42")
+    message = build_invite_message(join_link=link)
     copy = _copy_without_link(message, link)
     assert "Open the link in WebJam to join as a musician." in copy
     assert PASTE_INSTRUCTION not in copy
