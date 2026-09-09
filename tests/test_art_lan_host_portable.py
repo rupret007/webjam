@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import platform
 import socket
 import sys
 import tempfile
@@ -45,6 +46,11 @@ class ArtLanHostPortableTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        # Python may query Windows version metadata through a subprocess on
+        # its first uname(). Warm the real OS identity before application
+        # guards; subsequent component checks still use this runner's actual
+        # architecture, with every application process launch forbidden.
+        platform.uname()
         cls.qapp = QApplication.instance() or QApplication([])
         cls.qapp.setQuitOnLastWindowClosed(False)
 

@@ -69,6 +69,22 @@ failures. The fixture restores only its optional-audio module entry. The bounded
 real-listener test runs with the required local socket permission, while guards
 continue to deny unrelated effects. Final portable evidence is in the PR body.
 
+At the original `8ecbdf0` tip, one full local run had 8,813 passes and a
+20-second timeout in the unchanged Pocket Stage WebSocket upgrade test. The
+unchanged gateway module then passed 40 tests, followed by a complete local
+run with 8,814 passes and all 14 checks green. The first timeout is unexplained;
+no source or timeout workaround was applied. Both full records are retained.
+
+Both original Windows hosted jobs stopped before Art startup because Python
+3.11's first platform lookup reads Windows version metadata through a process.
+The fixture's application-process guard rejected that standard-library lookup.
+The correction reads the real `platform.uname()` once before installing the
+application guards. No OS/architecture value is invented or patched, and every
+application/network/provider/media guard and ownership assertion remains.
+The corrected portable module passes three tests locally on macOS; final-tip
+Windows evidence still requires the actual hosted run. Original hosted failures
+remain in `out/art-lan-host-platforms/tip-8ecbdf0` and the PR evidence.
+
 Every tracked top-level application test module runs in a fresh Python process,
 matching the existing Qt lifetime isolation. Required static, dependency, native,
 sidecar, service and UX checks run on the frozen source. Hosted CI remains
