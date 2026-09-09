@@ -149,7 +149,7 @@ Responses are `{"v":3,"ok":true,...}` or
 without exception details.
 
 Control setup is separately bounded before TLS allocation: 64 pending setups by
-default, with a process-wide monotonic bucket of 32 starts/second and burst 64.
+default, with a listener-wide monotonic bucket of 32 starts/second and burst 64.
 Plain loopback lab setup shares these bounds. Completed control connections have
 a separate default cap of 512, rechecked synchronously before handler dispatch;
 HTTP has a default active cap of 64. A transport refused at capacity/rate/closing

@@ -22,6 +22,13 @@ acceptance gate bounds pending setup and its start rate before TLS work; verifie
 connections reserve active capacity before handler scheduling. Owned startup and
 teardown retire late resources and remain responsible after caller cancellation.
 
+The first hosted checks exposed a same-size policy rewrite missed by unchanged
+filesystem timestamps. The correction requires two bounded reads to agree while
+preserving metadata checks. Review also found that a transient peer accept error
+could stop future joining; those documented errors now retain bounded polling,
+while invalid listener state and resource failures still fail closed. The original
+hosted failures are retained and the corrected source needs its own verification.
+
 This beats adding door copy while the authorized Internet path still lacks a
 bounded service lifecycle. It is infrastructure progress, not proof that a person
 joined, sees/hears the lesson, can pause or has acceptable musical latency.

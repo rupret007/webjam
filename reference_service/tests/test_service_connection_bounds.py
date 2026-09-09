@@ -137,15 +137,18 @@ def test_close_retires_writers_before_waiting_for_server_and_wipes_registry():
         assert service._dispatch(registration())["ok"]
         writers = [HeldWriter(block_close=True) for _ in range(8)]
         service._writers.update(writers)
+        retirement_observations = []
 
         class HeldServer:
             def close(self):
                 pass
 
             async def wait_closed(self):
-                # Real Server.wait_closed can retain connected transports.
-                # This independent fake exposes that ordering explicitly.
-                await asyncio.gather(*(writer.released.wait() for writer in writers))
+                # Observe the ordering directly. Spawning eight already-ready
+                # Event tasks adds scheduler work to a 25ms ordering fixture.
+                retired = tuple(writer.aborted and writer.released.is_set() for writer in writers)
+                retirement_observations.append(retired)
+                assert all(retired), "Listener join began before owned peers were aborted"
 
         service._control_server = HeldServer()
         finished, result = await completed_within(asyncio.create_task(service.close()), writers)
@@ -154,6 +157,7 @@ def test_close_retires_writers_before_waiting_for_server_and_wipes_registry():
         assert finished, "Listener retirement waited for peers before closing them"
         assert result is None
         assert all(writer.aborted for writer in writers)
+        assert retirement_observations == [(True,) * len(writers)]
         assert remaining == 0 and not service._writers and not service._http_writers
         await service.close()
 

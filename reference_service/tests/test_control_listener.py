@@ -13,6 +13,8 @@ from types import SimpleNamespace
 
 import pytest
 
+import webjam_reference.control_listener as listener_module
+
 from webjam_reference.config import ServiceConfig
 from webjam_reference.control_listener import OwnedControlListener
 
@@ -588,6 +590,14 @@ def test_literal_and_localhost_binding_do_not_resolve_and_share_one_port(monkeyp
     run(scenario())
 
 
+def patch_listener_socket(monkeypatch, factory):
+    # Preserve the actual socket class used by Proactor and other stdlib code.
+    namespace = SimpleNamespace(**vars(socket))
+    namespace.socket = factory
+    monkeypatch.setattr(listener_module, "socket", namespace)
+    assert isinstance(socket.socket, type)
+
+
 def test_localhost_falls_back_only_when_ipv6_is_unavailable(monkeypatch):
     async def scenario():
         original = socket.socket
@@ -597,7 +607,7 @@ def test_localhost_falls_back_only_when_ipv6_is_unavailable(monkeypatch):
                 raise OSError(errno.EAFNOSUPPORT, "controlled IPv6 unavailable")
             return original(family, *args, **kwargs)
 
-        monkeypatch.setattr(socket, "socket", factory)
+        patch_listener_socket(monkeypatch, factory)
         listener = OwnedControlListener(config(control_bind="localhost"), None,
                                          lambda r, w: None, active_count=lambda: 0)
         await listener.start()
@@ -614,7 +624,6 @@ def test_localhost_falls_back_only_when_ipv6_is_unavailable(monkeypatch):
 
 def test_partial_bind_failure_retires_all_created_sockets(monkeypatch):
     async def scenario():
-        original = socket.socket
         made = []
 
         class FakeSocket:
@@ -642,7 +651,7 @@ def test_partial_bind_failure_retires_all_created_sockets(monkeypatch):
             def close(self):
                 self.closed = True
 
-        monkeypatch.setattr(socket, "socket", FakeSocket)
+        patch_listener_socket(monkeypatch, FakeSocket)
         listener = OwnedControlListener(config(control_bind="localhost"), None,
                                          lambda r, w: None, active_count=lambda: 0)
         with pytest.raises(OSError, match="^control listener bind failed$"):
@@ -650,7 +659,6 @@ def test_partial_bind_failure_retires_all_created_sockets(monkeypatch):
         assert len(made) == 2 and all(item.closed for item in made)
         assert not listener.sockets
         await retired(listener)
-        monkeypatch.setattr(socket, "socket", original)
 
     run(scenario())
 
@@ -664,7 +672,7 @@ def test_invalid_name_refused_before_socket_creation(monkeypatch, bind):
         def forbidden(*args, **kwargs):
             raise AssertionError("invalid bind reached socket creation")
 
-        monkeypatch.setattr(socket, "socket", forbidden)
+        patch_listener_socket(monkeypatch, forbidden)
         with pytest.raises(ValueError):
             OwnedControlListener(SimpleNamespace(**values), None,
                                  lambda r, w: None, active_count=lambda: 0)
@@ -736,5 +744,176 @@ def test_callback_failure_is_safe_and_does_not_detach_a_handler():
             listener.close()
             with contextlib.suppress(RuntimeError):
                 await listener.wait_closed()
+
+    run(scenario())
+
+
+@pytest.mark.parametrize("failure", [ConnectionAbortedError(errno.ECONNABORTED, "pending abort"),
+                                     ConnectionResetError(errno.ECONNRESET, "pending reset")],
+                         ids=["aborted", "reset"])
+def test_pending_peer_error_keeps_actual_listener_available(failure):
+    async def scenario():
+        adopted, peers = [], []
+        listener = await OwnedControlListener(config(), None,
+                                             lambda r, w: adopted.append((r, w)), active_count=lambda: 0).start()
+        raw = listener.sockets[0]
+        port = raw.getsockname()[1]
+
+        class FailedOnce:
+            def __init__(self):
+                self.calls = 0
+
+            def accept(self):
+                self.calls += 1
+                if self.calls == 1:
+                    raise failure
+                return raw.accept()
+
+            def close(self):
+                raw.close()
+
+        wrapper = FailedOnce()
+        listener._listeners[0] = wrapper
+        try:
+            listener._poll_handle.cancel()
+            listener._poll_handle = None
+            listener._poll()  # inject only the documented pre-auth accept error
+            assert not listener._closed and not listener._failure, "pending peer error retired listener"
+            assert listener.poll_pending and listener.owned_task_count == 0
+            peers.append(await asyncio.open_connection("127.0.0.1", port))
+            await until(lambda: len(adopted) == 1)
+            peers[0][1].write(b"new guest\n")
+            await peers[0][1].drain()
+            assert await asyncio.wait_for(adopted[0][0].readline(), 1) == b"new guest\n"
+            adopted[0][1].write(b"room still available\n")
+            await adopted[0][1].drain()
+            assert await asyncio.wait_for(peers[0][0].readline(), 1) == b"room still available\n"
+        finally:
+            listener.close()
+            await listener.wait_closed()
+            for peer in peers:
+                await drop_peer(peer)
+        assert raw.fileno() == -1 and listener.owned_task_count == listener.pending_count == 0
+
+    run(scenario())
+
+
+@pytest.mark.parametrize("name", ["ENETDOWN", "EPROTO", "ENOPROTOOPT", "EHOSTDOWN",
+                                 "ENONET", "EHOSTUNREACH", "ENETUNREACH"])
+def test_linux_pending_network_errors_keep_bounded_polling(monkeypatch, name):
+    async def scenario():
+        import webjam_reference.control_listener as implementation
+
+        # The error classification is deliberately Linux-only. This controlled
+        # branch probe does not change the real event loop or claim Linux I/O.
+        monkeypatch.setattr(implementation, "sys", SimpleNamespace(platform="linux"), raising=False)
+        code = getattr(errno, name, None)
+        if code is None:
+            # Some non-Linux runtimes omit Linux-only errno symbols. Supply
+            # that single symbolic definition only in this classifier probe.
+            namespace = SimpleNamespace(**vars(errno))
+            code = 64001
+            setattr(namespace, name, code)
+            monkeypatch.setattr(implementation, "errno", namespace)
+
+        class FailedAccept:
+            calls = 0
+            closed = False
+
+            def accept(self):
+                self.calls += 1
+                raise OSError(code, "controlled pending TCP error")
+
+            def close(self):
+                self.closed = True
+
+        raw = FailedAccept()
+        listener = OwnedControlListener(config(), None, lambda r, w: None, active_count=lambda: 0)
+        listener._listeners.append(raw)
+        try:
+            listener._poll()
+            assert not listener._closed and not listener._failure, "Linux pending error retired listener"
+            assert 1 <= raw.calls <= 16 and listener.poll_pending
+            assert listener.owned_task_count == listener.pending_count == 0
+        finally:
+            listener.close()
+            await listener.wait_closed()
+        assert raw.closed and not listener.poll_pending
+
+    run(scenario())
+
+
+def test_transient_family_does_not_starve_next_family_or_exceed_poll_bound():
+    async def scenario():
+        peers = []
+
+        class AbortingFamily:
+            calls = 0
+            closed = False
+
+            def accept(self):
+                self.calls += 1
+                raise ConnectionAbortedError(errno.ECONNABORTED, "pending peer abort")
+
+            def close(self):
+                self.closed = True
+
+        class ReadyFamily(AbortingFamily):
+            def accept(self):
+                self.calls += 1
+                accepted, peer = socket.socketpair()
+                peers.append(peer)
+                return accepted, ("controlled", 0)
+
+        aborted, ready = AbortingFamily(), ReadyFamily()
+        listener = OwnedControlListener(config(max_pending_handshakes=64), None,
+                                         lambda r, w: None, active_count=lambda: 0)
+        listener._listeners.extend((aborted, ready))
+        try:
+            listener._poll()
+            assert not listener._closed and not listener._failure
+            assert aborted.calls == ready.calls == 8
+            assert listener.pending_count == listener.owned_task_count == 8
+            assert listener.poll_pending
+        finally:
+            listener.close()
+            await listener.wait_closed()
+            for peer in peers:
+                peer.close()
+        assert aborted.closed and ready.closed and not listener.poll_pending
+        assert listener.pending_count == listener.owned_task_count == 0
+
+    run(scenario())
+
+
+@pytest.mark.parametrize("name", ["EBADF", "EINVAL", "ENOTSOCK", "EMFILE", "ENFILE",
+                                 "ENOBUFS", "ENOMEM", "EOPNOTSUPP", "EACCES", "ENETDOWN"])
+def test_invalid_listener_resource_and_unknown_accept_errors_remain_fatal(monkeypatch, name):
+    async def scenario():
+        if name == "ENETDOWN":
+            # Winsock documents subsystem failure, unlike Linux's pending
+            # connection error. This is classification, not Windows I/O proof.
+            monkeypatch.setattr(listener_module, "sys", SimpleNamespace(platform="win32"))
+
+        class FailedAccept:
+            calls = 0
+            closed = False
+
+            def accept(self):
+                self.calls += 1
+                raise OSError(getattr(errno, name), "private accept detail")
+
+            def close(self):
+                self.closed = True
+
+        raw = FailedAccept()
+        listener = OwnedControlListener(config(), None, lambda r, w: None, active_count=lambda: 0)
+        listener._listeners.append(raw)
+        listener._poll()
+        assert raw.closed and raw.calls == 1 and listener._closed and listener._failure
+        assert not listener.poll_pending
+        with pytest.raises(RuntimeError, match="^control listener ownership failed$"):
+            await listener.wait_closed()
+        assert listener.pending_count == listener.owned_task_count == 0
 
     run(scenario())

@@ -7,6 +7,7 @@ import errno
 import os
 import socket
 import ssl
+import sys
 import time
 from collections.abc import Callable
 
@@ -15,6 +16,17 @@ from .config import ServiceConfig, numeric_listener_host
 
 _POLL_INTERVAL = 0.01
 _ACCEPT_BATCH = 16
+
+
+def _pending_accept_error(error: OSError) -> bool:
+    if isinstance(error, (ConnectionAbortedError, ConnectionResetError)):
+        return True
+    # Linux accept(2) exposes these pending TCP errors on the listening call.
+    # EOPNOTSUPP stays fatal: it can also mean an invalid listener socket type.
+    return sys.platform == "linux" and error.errno is not None and any(
+        error.errno == getattr(errno, name, None) for name in (
+            "ENETDOWN", "EPROTO", "ENOPROTOOPT", "EHOSTDOWN",
+            "ENONET", "EHOSTUNREACH", "ENETUNREACH"))
 
 
 class _ControlGate(asyncio.Protocol):
@@ -228,10 +240,18 @@ class OwnedControlListener:
                 if empty >= len(self._listeners):
                     break
                 continue
-            except OSError:
-                self._failure = True
-                self.close()
-                return
+            except OSError as error:
+                if not _pending_accept_error(error):
+                    self._failure = True
+                    self.close()
+                    return
+                # A rejected pending connection did not invalidate this owned
+                # listener. Count the attempt and retain the ordinary bounded
+                # poll, giving the other address family a chance this tick.
+                empty += 1
+                if empty >= len(self._listeners):
+                    break
+                continue
             empty = 0
             # No await or task factory runs between accept and owned admission.
             self._admit(accepted)

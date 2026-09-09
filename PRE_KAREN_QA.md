@@ -47,6 +47,14 @@ remain incomplete.
   full before/after comparisons within each API retain ctime mutation detection.
   POSIX retains its cross-API ctime check. File type, size, symlink refusal, bounded
   reads, descriptor cleanup and categorical errors remain enforced.
+- Two bounded reads through the same descriptor must also agree on policy bytes.
+  This detects the observed same-size rewrite when filesystem timestamps remain
+  unchanged. Both metadata checks repeat after verification. This finite check
+  is not an atomic snapshot against a writer deliberately changing both reads.
+- Documented transient accept errors retain the listener and its ordinary bounded
+  poll; invalid-state, resource and unknown errors still fail closed. The Linux
+  pending-network allowlist is platform-specific; ambiguous EOPNOTSUPP stays fatal.
+  A refused unauthenticated peer must not permanently stop subsequent joining.
 - Diagnostics and errors are categorical. No address-keyed accounting, identity,
   token, certificate or media logging. Test certificates are disposable; runtime
   remains Python standard-library-only.
@@ -109,6 +117,30 @@ Intel Mac's Python 3.12 service-test setup builds the hash-verified cryptography
 recording that OpenSSL version. It is test-only dependency setup; it neither calls
 the Python 3.11 application installer nor claims its separate private OpenSSL
 3.5.7 packaging provenance. All four real desktop service runs remain required.
+
+The initial published tip `847d22063c75b416026f5089728915f555c516a0` passed all
+14 local checks (9,571 application tests, 381 service tests). Its own hosted
+Linux service run then failed the real same-size policy rewrite test; Windows
+also exposed socket-class fixture patching, a timing-sensitive ordering fixture,
+forced-process termination assumptions, and a pytest environment limit caused by
+an oversized parameter ID. These failures remain preserved, not retried away.
+
+The correction retains the original mutation test and adds deterministic stable-
+metadata/content-change cases. The oversized certificate remains 65,537 bytes;
+only its test ID is shortened. Listener fixtures replace only their module's
+socket namespace, preserving the runtime's socket class and exception trap.
+The ordering test directly checks all writer aborts before listener join, with
+the same 25 ms budget and separate negative timeout coverage. Windows's process
+fixture translates a scoped CTRL_BREAK to SIGINT around the unchanged real CLI
+and Runner; it requires actual stopped output and Ctrl-C exit, without claiming
+native CLI support for CTRL_BREAK. POSIX retains actual CLI/SIGTERM behavior.
+
+Separate review reproduced the transient-accept availability defect before its
+correction. Twenty added helper cases cover real local recovery after an injected
+peer error, bounded address-family progress and preserved fatal failures. The
+corrected pre-freeze service suite passes **407 tests in 3.66 seconds**, with strict
+resource/unraisable warning checks. The revised source still needs its own frozen-
+tip full local and hosted evidence; the original tip's results cannot substitute.
 
 ## Ten-second UX and remaining acceptance
 

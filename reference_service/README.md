@@ -118,9 +118,12 @@ a room. Its strict JSON shape is:
 Principals are opaque operator-assigned IDs, not participant display names.
 The fingerprint is SHA-256 of the leaf's DER encoding. The regular file must be
 nonempty, at most 65,536 bytes, and contain 1–128 unique principals and unique
-fingerprints with no additional fields. Symbolic links and files changed during
-loading are rejected. Treat the file and its containing directory as trusted
-operator configuration. No client keys belong in it.
+fingerprints with no additional fields. Symbolic links are rejected. Loading
+requires two bounded reads through the same descriptor to agree, with file
+identity and metadata checks before and after. Detected content or metadata
+changes are refused; this finite check is not an atomic filesystem snapshot.
+Treat the file and its containing directory as trusted operator configuration.
+No client keys belong in it.
 
 Registration rechecks certificate validity against wall-clock time on every
 request, including on a connection opened before expiry. Each approved host can
@@ -194,7 +197,7 @@ itself.
 
 ## Connection setup and shutdown
 
-Control setup has its own process-wide capacity and monotonic rate bucket before
+Control setup has its own listener capacity and monotonic rate bucket before
 TLS allocation. Defaults are 64 pending setups, 32 setup starts per second and a
 burst of 64. The corresponding flags are `--max-pending-handshakes` (1–512),
 `--control-accepts-per-second` (1–1024) and `--control-accept-burst` (1–1024);
@@ -208,6 +211,9 @@ traffic cannot consume the control bucket. Each listener uses one 10 ms polling
 timer with at most 16 nonblocking accept attempts per callback, rotating fairly
 across address families. Event-loop load can delay a callback. This polling is
 only for control/health connection setup; it is outside the media and UDP paths.
+Documented transient peer-accept errors retain that bounded polling and allow
+later guests to connect. Invalid listener state, resource exhaustion and unknown
+errors still fail closed; the pending-network error list is platform-specific.
 
 Transport-capacity refusal closes the connection without a TLS, control JSON or
 HTTP response. Requests already admitted to a handler retain their protocol error

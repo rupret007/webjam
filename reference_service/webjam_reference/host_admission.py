@@ -173,21 +173,38 @@ def _read_policy(path: Path) -> bytes:
             or _cross_api_identity(opened) != _cross_api_identity(original)
         ):
             raise ValueError(_POLICY_ERROR)
-        data = bytearray()
-        while len(data) <= MAX_POLICY_BYTES:
-            chunk = os.read(descriptor, min(8192, MAX_POLICY_BYTES + 1 - len(data)))
-            if not chunk:
-                break
-            data.extend(chunk)
+        data = _read_bounded_policy(descriptor)
         if (
             len(data) != original.st_size
             or _identity(os.fstat(descriptor)) != _identity(opened)
             or _identity(path.lstat()) != _identity(original)
         ):
             raise ValueError(_POLICY_ERROR)
-        return bytes(data)
+        # Same-size rewrites can share filesystem timestamps. Verify the bytes
+        # again through the owned descriptor, then repeat the metadata checks.
+        # This is a finite stable-read check, not an atomic snapshot against a
+        # writer deliberately changing the file between both observations.
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        verified = _read_bounded_policy(descriptor)
+        if (
+            verified != data
+            or _identity(os.fstat(descriptor)) != _identity(opened)
+            or _identity(path.lstat()) != _identity(original)
+        ):
+            raise ValueError(_POLICY_ERROR)
+        return data
     finally:
         os.close(descriptor)
+
+
+def _read_bounded_policy(descriptor: int) -> bytes:
+    data = bytearray()
+    while len(data) <= MAX_POLICY_BYTES:
+        chunk = os.read(descriptor, min(8192, MAX_POLICY_BYTES + 1 - len(data)))
+        if not chunk:
+            break
+        data.extend(chunk)
+    return bytes(data)
 
 
 def _unique_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
