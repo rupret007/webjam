@@ -65,6 +65,11 @@ def copied_room(qapp, monkeypatch, tmp_path):
     # Music's idle HUD reads this status. Supply an unknown result without
     # consulting the OS or implying permission/device readiness.
     monkeypatch.setattr("webjam_qt.platform_permissions.microphone_permission_status", lambda: "unavailable")
+    # The real Studio picker and metering-engine import otherwise discover
+    # PortAudio through sounddevice (including ldconfig on Linux). This test
+    # has no audio device: exercise the existing optional-dependency fallback
+    # without library discovery, while keeping process and media guards intact.
+    monkeypatch.setitem(sys.modules, "sounddevice", None)
 
     for target in (
         "subprocess.Popen",
@@ -73,6 +78,7 @@ def copied_room(qapp, monkeypatch, tmp_path):
         "PySide6.QtGui.QDesktopServices.openUrl",
         "webex_integration.open_webex_meeting",
         "core.session_transfer_runtime.GuestPeerSession.start",
+        "core.audio_engine.RealAudioEngine.start",
     ):
         guard = Mock(name=target, side_effect=AssertionError("No machine or media action in this journey"))
         monkeypatch.setattr(target, guard)
