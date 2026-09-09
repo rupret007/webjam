@@ -10,6 +10,16 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Keep the replacement Music connection on screen
+
+- A delayed participant message from a retired native process or monitor no
+  longer replaces the new room's cards or marks its healthy connection lost.
+- Queued readiness updates also stop after successful application shutdown.
+  Canceling shutdown keeps the room usable.
+- Current connection failures still reach recovery. This composes invitation
+  retry, saved listening choices and owned room cleanup in one draft candidate;
+  it does not certify real two-person audio or different-home joining.
+
 ### Restore saved Music listening levels
 
 - Default, named and automatic mix restoration now apply the final matched

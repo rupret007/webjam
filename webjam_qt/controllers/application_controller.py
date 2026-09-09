@@ -6563,6 +6563,22 @@ class ApplicationController(QObject):
         roster_proof: JamulusOrderedRosterProof | None = None,
     ) -> None:
         """Update the participant grid on the UI thread from real Jamulus data."""
+        if source_identity is not None:
+            # A queued roster can outlive its native process or RPC monitor.
+            # Reject it before it changes cards, recovery or recorder presence.
+            # Current-owner negative evidence must still reach recovery even
+            # when that process has died or its RPC observation is stale.
+            recovery = self._primary_jamulus_recovery_snapshot()
+            if (
+                not isinstance(source_identity, JamulusRpcMonitorIdentity)
+                or not source_identity.is_process_bound
+                or source_identity.monitor_epoch <= 0
+                or recovery is None
+                or source_identity.process_generation != recovery.generation
+                or source_identity.process_id != recovery.process_id
+                or source_identity.monitor_epoch != recovery.rpc_monitor_epoch
+            ):
+                return
         local_session_proven = self.audio.apply_participants(
             jamulus_participants,
             source_identity=source_identity,
@@ -11298,6 +11314,8 @@ class ApplicationController(QObject):
         self.window.flash_message(text, color=color)
 
     def _refresh_readiness(self) -> None:
+        if getattr(self, "_shutdown", False):
+            return
         room = getattr(self, "_room_participant", None)
         if room is not None and (self.creator_profile.key == "art" or self._art_room_active()):
             hosting = (getattr(self.audio, "_stop_hosting", False)
