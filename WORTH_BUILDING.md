@@ -1,39 +1,43 @@
-# Worth building — one candidate carries the complete Music invitation
+# Art desktop Host with the complete invitation journey
 
-Branch `codex/two-session-invitation-composition` is explicitly based on #108
-`0c334c02d0ed1373680e8407eac0e32b45ebf665`, with the independent #109 delta
-`54c4af3baac16cf56051a6d1780cfbc34c9cc895`. Common fetched master is
-`2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`.
-[BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5594991192)
-posted 2026-09-08 21:45 CT. Original drafts remain unchanged.
+The verified combined Art/Music candidate #110 still disables Art Host on
+Windows and Linux. Independent #111 fixes that door, but does not contain
+#110's room-scoped Conversation, lesson requests or Music listening/recovery
+work. A user needs those existing capabilities in one candidate.
 
-The combined #108 candidate still had Music's misleading open-link instruction
-and omitted the actual LAN requirement. Independent #109 fixes that first-minute
-failure, but its master base does not include the current room Conversation,
-Art lesson requests or listening/recovery work. A person needs these behaviors
-in the same application. Separate passing component suites do not prove their
-interaction.
+This is deliberate composition, not a new claim that the parent fixes are
+unfinished. Fresh branch `codex/art-host-invitation-composition` starts from
+#110 `686aa2b639aea2183ef53d327c3940782d6d21f3`. It applies the base-relative
+#111 `89a36efda1332555201a40f0623fe0e67a020aba` LaunchDialog, test and CI delta.
+Common fetched master is `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`.
+The original drafts, including parked #37/#49, remain unchanged.
 
-Apply only #109's message/confirmation and test deltas to #108. Keep the current
-room's effective meeting when copying an invitation, the wider any-artist Art
-wording, pause-request ownership and Music listening/recovery behavior. This
-composition introduces no new product mechanism or transport authority.
+Before: a Windows/Linux artist cannot Host from the combined candidate's
+Make together or Paint along door. The independent platform fix has separate
+proof, without the newer complete invitation/context behavior.
 
-Before: either the combined candidate's unclear Music invitation or the smaller
-independent correction without the other completed work. After: the combined
-candidate names **Open WebJam → Join → paste this full invitation**, carries the
-current optional meeting, and explains the actual same-network scope. The host
-sees whole-message/keep-room-open guidance.
+After: ordinary Art Host is available on Windows, Linux and Mac in that
+combined candidate. One full copied invitation carries the host's saved
+meeting. A guest joins through the actual paste/bootstrap path, adopts that
+meeting for the room, and retains their own saved meeting and Notes after
+Leave. A guest starting in Music does not choose Art again: authenticated room
+state selects Art, then Leave restores the saved profile. The authenticated
+room still uses the existing LAN transport.
 
-Verify the continuous Music journey from actual host Copy through the real Join
-dialog and launch handoff to Music owner discovery. The invited meeting, including
-explicit absence, must survive without overwriting a guest's personal setting.
-Failed cleanup must retain the room's context until an intentional successful
-retry; a stale owner callback must not restore a departed room or launch media.
+The worth-building proof is the joined-up runtime boundary: enabled Host,
+real owned listener, Copy, actual guest bootstrap, authenticated named
+presence, temporary guest meeting adoption, and real Leave/End cleanup.
+A fresh Host uses its saved meeting; no temporary host context is invented
+merely to make the test pass. Parent greens alone do not prove composition.
 
-Retain all component regression coverage, run the full required local bar and
-both hosted workflows on the exact combined tip, including four desktops each.
-The OPEN DRAFT PRE_KAREN body and coord AFTER own final results. Physical
-joining, Art lesson/faces/audio/volume and Music audibility/timing remain NOT RUN;
-network decision and Karen are open. No merge, signing, release, deployment,
-spending or live provider action. Unsigned 0.27.2 remains Jeff-only.
+Keep both Art cards and the squirrel mark. Preserve guest-never-seek, explicit
+provider/player opening, the lesson request/acknowledgment limits, and Music
+mix/recovery behavior. An explicit native lab request keeps its existing
+platform gate; it never silently falls back to an ordinary LAN room.
+
+Success requires the relevant component and composed runtime tests, the full
+local test bar, and both exact-tip hosted workflows including all four desktop
+builds and their actual-platform Art runtime steps. Source loopback evidence
+and packaging do not prove installed-app networking, physical media or
+separate-home usability. Network decision and physical Art/Music acceptance
+remain open. OPEN DRAFT PRE_KAREN only; Karen review remains pending.

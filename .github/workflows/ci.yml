@@ -836,7 +836,7 @@ jobs:
   #   windows-x64  → windows-2025   (x86-64)
   #   macos-arm64  → macos-14       (Apple Silicon M1/M2)
   #   macos-x64    → macos-15-intel (Intel x86-64)
-  #   linux-x64    → ubuntu-22.04   (x86-64, join-only desktop)
+  #   linux-x64    → ubuntu-22.04   (x86-64, Music join; Art LAN host/join)
   #
   # Windows: dist/WebJam/ directory → zipped with 7z
   # macOS:   dist/WebJam.app bundle → zipped with ditto
@@ -1160,6 +1160,12 @@ jobs:
           python tools/runtime_dependency_policy.py --check
           python -VV
           python -m pip freeze --all
+
+      - name: Verify Art host and guest runtime on this desktop
+        timeout-minutes: 3
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest tests.test_art_lan_host_portable -v
 
       - name: Verify macOS PyInstaller pkg_resources compatibility
         if: startsWith(matrix.target, 'macos-')
