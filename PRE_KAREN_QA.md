@@ -1,78 +1,129 @@
-# PRE_KAREN: approved host allocation and bounded service cleanup
+# PRE_KAREN: control setup limits and startup ownership
 
-OPEN DRAFT only. Declared dependent base: #113
-`68deee7eb21c584866f894fb2401da2b3dc569b0`. Internet implementation/isolated tests
-are authorized. Physical Art/Music acceptance and independent Karen review remain
-separate, incomplete requirements.
+OPEN DRAFT only. Declared dependent base: #114
+`89274f756567ed6422b93e193560800ef126667f`. Internet implementation and isolated
+tests are authorized. Physical Art/Music acceptance and independent Karen review
+remain incomplete.
 
 ## Security and ownership self-QA
 
-- Exposing control OR relay requires built-in TLS plus paired dedicated client CA
-  and manifest. The legacy insecure flag cannot bypass that boundary. All-loopback
-  lab behavior remains available; no compiled public profile is added.
-- TLS 1.3 verifies any presented host client certificate. Registration additionally
-  requires an exact approved leaf fingerprint and current validity. Identity comes
-  from the completed server TLS connection, never wire fields or display names.
-- Strict manifest: at most 64 KiB and 128 unique opaque principals/fingerprints,
-  regular stable file, no symlink/duplicate/unknown fields; immutable until restart.
-  Startup/extraction errors remain categorical. No client private keys in policy.
-- Wall-clock certificate expiry is rechecked for every registration. Room TTL,
-  idle and fixed rate buckets retain monotonic time. Certificate authority grants
-  allocation only; invitation enrollment and room role tokens remain independent.
-- Guests and fresh authenticated Close require no client certificate. Invalid
-  certificates presented anyway fail TLS: future clients must omit expired host
-  credentials on these connections. Expiry does not itself revoke existing rooms.
-- Fixed approved-principal buckets permit one attempt/second, burst four, before
-  the global bucket. Waiting/enrolled rooms share a per-host cap (default four).
-  Unknown principals cannot grow accounting; removal decrements exactly once
-  before wiping the identity, signaling, keys and endpoints. Diagnostics stay
-  aggregate and omit identities, fingerprints, tokens and paths.
-- Response writes and retirement are bounded, including overload/error/HTTP.
-  Shutdown marks closed, stops accepting, wipes rooms, aborts tracked writers,
-  cancels/joins handlers and rejects late callbacks. One overall default eight
-  seconds includes pending five-second handshakes; join failure is not success.
-- Temporary certificate fixtures use test-only cryptography; production remains
-  standard-library-only. Real tests use owned loopback endpoints, no live issuer,
-  media, trust-store mutation or deployment.
+- Control admission reserves pending capacity and rate before creating TLS work.
+  Defaults: 64 pending setups, 32 starts/second, burst 64. Settings are bounded
+  positive integers and reject booleans. Plain loopback lab shares these limits.
+  HTTP uses a separate bucket/cap with those same settings, so health traffic
+  cannot consume control tokens. One 10 ms timer per listener admits at most
+  16 nonblocking accepts per callback, with address-family rotation. This is
+  connection setup only, outside the media and UDP paths.
+- Completed control capacity remains 512 and is reserved synchronously before
+  handler scheduling. HTTP capacity remains 64. Rejected transports close without
+  a protocol response or application task; admitted protocol errors remain.
+- A plain underlying transport is owned and paused before server-side TLS starts.
+  TLS-configured control has no plaintext application parsing, reply or protocol
+  negotiation: only verified TLS reaches its handler. Early decrypted input stays
+  bounded until promotion. This is direct TLS, not a wire-level STARTTLS mode;
+  explicitly configured plain-loopback lab compatibility remains.
+- Raw acceptance is synchronous, nonblocking and bounded per timer callback.
+  Each accepted socket is owned before asynchronous setup begins. Control and
+  HTTP use this path; it avoids both cancellation of a hidden accept result and
+  Python's delayed acceptance before transport attachment. Kernel/network floods
+  still require upstream protection; no volumetric protection claim is made.
+- Startup and Close belong to the service instance. Closing prevents publication
+  as running, cancels/joins startup, retires late resources and joins UDP closure,
+  control acceptance/setup, handlers and cleanup within one absolute deadline.
+  Caller cancellation cannot abandon owned teardown. Timeout reports failure and
+  retains ownership; sets are not cleared to manufacture success. An unpublished
+  plain transport attachment remains owned until publication or failed completion;
+  it is not canceled and forgotten before its transport can be retired.
+- Bind settings are validated before I/O: numeric unscoped IPv4/IPv6 or exact
+  case-insensitive localhost only. Control localhost shares one chosen port across
+  available loopback families; explicit IPv6 fails honestly. HTTP/UDP localhost
+  explicitly use IPv4. No resolver/executor task or new desktop endpoint field.
+- TLS 1.3, dedicated host CA, approved immutable leaf policy, live registration
+  expiry, allocation quotas and role/enrollment authority remain inherited.
+  Guests and fresh role-token Close remain certificate-free. No public discovery,
+  short codes, credential issuer, native profile or UDP framing changes.
+- Policy-file loading handles CPython 3.12 Windows path/descriptor ctime semantics:
+  cross-API comparisons retain device, file ID, size and modification time, while
+  full before/after comparisons within each API retain ctime mutation detection.
+  POSIX retains its cross-API ctime check. File type, size, symlink refusal, bounded
+  reads, descriptor cleanup and categorical errors remain enforced.
+- Diagnostics and errors are categorical. No address-keyed accounting, identity,
+  token, certificate or media logging. Test certificates are disposable; runtime
+  remains Python standard-library-only.
 
 ## Verification and retained failures
 
-Focused results before freeze: 166 policy/config/protocol tests; 64 state/lifetime
-tests; 22 server/connection tests; 15 actual TLS integration scenarios. Ruff passed.
-Read-only internal reviews found no actionable issue; this is not Karen PASS.
+Configuration tests reproduced the missing settings and acceptance of arbitrary
+bind hostnames. Lifecycle tests reproduced ten behavioral failures before the
+fix. Preserve original failures, fixture mismatches and any sandbox socket denial
+as distinct evidence under `out/service-connection-ownership`.
 
-Retain the seven-failure configuration baseline, ten behavioral bounds failures,
-and actual plain-connection shutdown baseline under `out/internet-host-admission`.
-Early import/fixture mismatches and sandbox bind denials are separate setup
-failures. The first root TLS command failed all 15 scenarios at sandbox loopback
-bind; the same tests with authorized local sockets passed in 0.50 seconds. No
-TLS behavioral failure was observed in that first denied run. All evidence is
-preserved rather than relabeled green.
+The abandoned manual-accept helper had two actual ownership failures: a completed
+accept could lose its socket on cancellation, and a setup failure before transport
+creation could retain a socket. Both motivated the public transport gate. Its
+initial eleven bind failures were sandbox denials; the same initial source passed
+18 tests with authorized sockets, before those two deeper defects were exposed.
+The failing source/tests and subsequent public-gate results remain separate.
 
-The frozen tip needs its own complete required local bar, full reference-service
-suite, native race and real sidecar tests, full application suite including Art
-start UX, and hosted CI including four desktop builds. Exact counts, tip/tree,
-workflow results and any recovery history belong in the PR body and AFTER.
+A broader default-event-loop probe then exposed Python's pre-transport acceptance
+race in the public-server design: 30 Close calls appeared successful despite 40
+runtime assertions and 80 unraisable resource warnings. This was a real normal
+scheduler failure. A custom-factory restriction did not fix it. Preserve that
+failed source/probe and require the corrected owned-acceptance regression to pass;
+focused TLS tests alone are insufficient.
+
+The same raw-client regression against preserved public-gate source records 16
+assertions, 32 ResourceWarnings and two EOF timeouts. The owned-polling version
+passes its 24-service burst/Close journey. Current focused results are 27 helper
+tests, 40 lifecycle/server tests and three actual local TLS integration tests.
+An initial polling failure was also retained: completed-task callbacks had not
+retired bookkeeping before join returned. Explicit idempotent retirement after
+joining corrected it; an extra scheduling delay is not the remedy.
+
+Windows policy-stat tests first reproduced three failures caused by rejecting
+different path/descriptor ctime receipts before reading. Eight new cases cover
+normal loading, separate same-API metadata changes, stable-identity mismatches
+and preserved POSIX checks; the focused policy module passes 83 tests. Those
+receipts are synthetic around real bounded file I/O, not a Windows execution
+claim. The actual Windows Python 3.12 service suite remains required.
+
+The first full pre-freeze service run recorded **1 failed / 380 passed** in
+`out/service-connection-ownership/service-prefreeze-attempt-1.log`. The inherited
+unfinished-handshake test closed before polling had proved socket ownership and
+assumed EOF alone; its read/teardown path raised ConnectionResetError. The corrected
+test proves actual pending ownership and accepts only EOF/reset retirement, while
+timeouts and protocol bytes still fail. The original result remains retained;
+the corrected full pre-freeze rerun passed **381 tests in 3.52 seconds** under
+Python development mode with ResourceWarning and unraisable warnings as errors.
+Frozen-tip verification is still required.
+
+The frozen tip requires its own full local bar, complete reference-service suite,
+native race and real sidecar tests, full application suite including Art start UX,
+and both hosted workflows including four desktop builds. Each desktop now runs
+the service suite using real Python 3.12 before returning to its existing packaging
+Python. Record exact results, tip/tree and any failure/recovery history in the PR
+body and AFTER; do not infer hosted success from local tests or workflow text.
+
+Intel Mac's Python 3.12 service-test setup builds the hash-verified cryptography
+50.0.0 source using pinned Rust 1.88.0 and explicitly selected Homebrew OpenSSL,
+recording that OpenSSL version. It is test-only dependency setup; it neither calls
+the Python 3.11 application installer nor claims its separate private OpenSSL
+3.5.7 packaging provenance. All four real desktop service runs remain required.
 
 ## Ten-second UX and remaining acceptance
 
-Guests gain no account, credential setup, extra decision or public discovery
-screen in this slice. Existing invitation, room truth and Art/Music controls are
-unchanged. No claim that an invitation copy or successful TLS connection means a
-person joined, sees/hears the lesson, controls the mix or has acceptable latency.
+No new guest decisions or credentials. The private invitation remains the join
+mechanism; this slice does not activate an Internet profile or prove two-home
+reachability. Art faces/voices/narration, either-person pause, independent listening
+levels and Music reference/no-reference routing, mix and latency remain physical
+acceptance requirements. CI cannot establish these outcomes.
 
-An inherited API-only lifecycle edge remains: concurrently calling start/close
-while listener creation awaits can escape the close snapshot. The CLI awaits
-startup sequentially. This review did not exercise or fix concurrent startup;
-that lifecycle case remains follow-on work before exposure.
-
-Ordinary host provisioning, a public profile, pending TLS concurrency bounds and
-UDP return-path proof are unfinished. A first authenticated UDP BIND does not
-prove its source is reachable. Public exposure, real two-home joining, Art faces/
-voices/narration/guest pause/listening levels and Music routing/mix/latency remain
-unverified. Deployment and physical acceptance are not replaced by CI.
+Remaining implementation includes authenticated UDP return-path proof, ordinary
+host credential issuance/storage/recovery, a compiled Internet profile, and native
+Art names/lesson requests. Deployment and physical media checks need their own
+existing authorization boundaries; Internet implementation is already authorized.
 
 No merge/squash/tag/sign/release/Pages/Publish/deploy/spend/live Cisco, automatic
 capture or unsolicited send. Unsigned 0.27.2 remains Jeff-only. No short codes,
 public discovery, second media engine, other repository or second goal. Parked
-#37/#49 and prior drafts remain untouched. Karen remains pending.
+#37/#49 and all prior drafts remain untouched. Karen remains pending.

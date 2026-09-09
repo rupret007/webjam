@@ -18,6 +18,9 @@ services:
       WEBJAM_HOST_ADMISSION_FILE: "/run/secrets/hosts.json"
       WEBJAM_MAX_SESSIONS: "256"
       WEBJAM_MAX_SESSIONS_PER_HOST: "4"
+      WEBJAM_MAX_PENDING_HANDSHAKES: "64"
+      WEBJAM_CONTROL_ACCEPTS_PER_SECOND: "32"
+      WEBJAM_CONTROL_ACCEPT_BURST: "64"
     volumes:
       - type: bind
         source: ./secrets/tls.crt

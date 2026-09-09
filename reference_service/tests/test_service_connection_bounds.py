@@ -203,8 +203,14 @@ def test_plain_open_control_and_partial_http_connections_do_not_hold_shutdown():
             assert remaining == 0 and service._active_connections == service._active_http_connections == 0
             assert not service._writers and not service._http_writers
             assert not service._connection_tasks
-            assert await asyncio.wait_for(control_reader.read(), 0.5) == b""
-            assert await asyncio.wait_for(http_reader.read(), 0.5) == b""
+            for reader in (control_reader, http_reader):
+                try:
+                    remainder = await asyncio.wait_for(reader.read(), 0.5)
+                except ConnectionResetError:
+                    # Immediate owned abort may reset unread partial HTTP data.
+                    # Both reset and EOF prove refusal; neither may carry a reply.
+                    remainder = b""
+                assert remainder == b""
         finally:
             control_writer.transport.abort()
             http_writer.transport.abort()

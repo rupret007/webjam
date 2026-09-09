@@ -5,6 +5,7 @@ import json
 import os
 import ssl
 from dataclasses import FrozenInstanceError, replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -180,6 +181,98 @@ def test_policy_mutation_during_read_is_refused_and_descriptor_closed(tmp_path, 
     with pytest.raises(ValueError, match='^invalid host admission policy$'):
         HostAdmissionPolicy.load(target)
     assert changed and len(closed) == 1
+
+
+def _split_stat_policy_file(tmp_path, monkeypatch, *, platform='nt', mutation=None,
+                           mismatched_field=None):
+    """Real file I/O with synthetic stat receipts; not a Windows execution test.
+
+    CPython 3.12 Windows path stat reports creation time in ctime while fstat
+    reports change time. Only those receipts and this module's OS name change.
+    """
+    import webjam_reference.host_admission as module
+
+    target = tmp_path / 'host-policy.json'
+    target.write_text(json.dumps(manifest()))
+    initial = target.lstat()
+    observed = SimpleNamespace(reads=0, closed=[])
+
+    def receipt(api):
+        values = {name: getattr(initial, name) for name in
+                  ('st_mode', 'st_dev', 'st_ino', 'st_size', 'st_mtime_ns')}
+        values['st_ctime_ns'] = 100 if api == 'lstat' else 200
+        if mutation == api and observed.reads:
+            values['st_ctime_ns'] += 1
+        if mismatched_field is not None and api == 'fstat':
+            values[mismatched_field] += 1
+        return SimpleNamespace(**values)
+
+    class PolicyPath:
+        def __init__(self, supplied):
+            assert supplied == target
+
+        def __fspath__(self):
+            return os.fspath(target)
+
+        def lstat(self):
+            return receipt('lstat')
+
+    class PolicyOS:
+        name = platform
+
+        def __getattr__(self, name):
+            return getattr(os, name)
+
+        def fstat(self, descriptor):
+            os.fstat(descriptor)  # The descriptor must really remain open.
+            return receipt('fstat')
+
+        def read(self, descriptor, size):
+            observed.reads += 1
+            return os.read(descriptor, size)
+
+        def close(self, descriptor):
+            observed.closed.append(descriptor)
+            os.close(descriptor)
+
+    monkeypatch.setattr(module, 'Path', PolicyPath)
+    monkeypatch.setattr(module, 'os', PolicyOS())
+    return target, observed
+
+
+def test_policy_accepts_distinct_windows_path_and_descriptor_ctime(tmp_path, monkeypatch):
+    target, observed = _split_stat_policy_file(tmp_path, monkeypatch)
+    assert HostAdmissionPolicy.load(target).principals == (PRINCIPAL,)
+    assert observed.reads > 0 and len(observed.closed) == 1
+    with pytest.raises(OSError):
+        os.fstat(observed.closed[0])
+
+
+@pytest.mark.parametrize('mutation', ['fstat', 'lstat'])
+def test_policy_refuses_same_api_metadata_mutation_despite_windows_ctime_split(
+        tmp_path, monkeypatch, mutation):
+    target, observed = _split_stat_policy_file(tmp_path, monkeypatch, mutation=mutation)
+    with pytest.raises(ValueError, match='^invalid host admission policy$'):
+        HostAdmissionPolicy.load(target)
+    assert observed.reads > 0  # Rejection is after reading, not the initial API difference.
+    assert len(observed.closed) == 1
+    with pytest.raises(OSError):
+        os.fstat(observed.closed[0])
+
+
+@pytest.mark.parametrize('field', ['st_dev', 'st_ino', 'st_size', 'st_mtime_ns'])
+def test_policy_refuses_windows_cross_api_file_identity_mismatch(tmp_path, monkeypatch, field):
+    target, observed = _split_stat_policy_file(tmp_path, monkeypatch, mismatched_field=field)
+    with pytest.raises(ValueError, match='^invalid host admission policy$'):
+        HostAdmissionPolicy.load(target)
+    assert observed.reads == 0 and len(observed.closed) == 1
+
+
+def test_policy_keeps_posix_cross_api_ctime_check(tmp_path, monkeypatch):
+    target, observed = _split_stat_policy_file(tmp_path, monkeypatch, platform='posix')
+    with pytest.raises(ValueError, match='^invalid host admission policy$'):
+        HostAdmissionPolicy.load(target)
+    assert observed.reads == 0 and len(observed.closed) == 1
 
 
 @pytest.mark.parametrize('when,allowed', [(START - 1, False), (START, True), (END - 0.1, True),

@@ -148,13 +148,26 @@ Responses are `{"v":3,"ok":true,...}` or
 `overloaded`. Unexpected handler failures return categorical `internal_error`
 without exception details.
 
+Control setup is separately bounded before TLS allocation: 64 pending setups by
+default, with a process-wide monotonic bucket of 32 starts/second and burst 64.
+Plain loopback lab setup shares these bounds. Completed control connections have
+a separate default cap of 512, rechecked synchronously before handler dispatch;
+HTTP has a default active cap of 64. A transport refused at capacity/rate/closing
+has no application response. An admitted operation can still return the existing
+categorical protocol errors. No peer address or certificate keyed history is
+created by setup accounting.
+HTTP uses its own setup bucket/cap with the same configured values; it cannot
+spend the control listener's tokens. Bounded synchronous polling owns accepted
+raw sockets before asynchronous setup. It does not alter the UDP/media path.
+
 Control and HTTP response writes and connection retirement each have finite
 three-second default deadlines. TLS handshakes have a five-second deadline.
-Shutdown rejects late handlers, stops listeners, erases registry state and
-aborts tracked writers before joining listeners and tasks, using one overall
-eight-second default budget including pending handshakes. A failed join reports
-failure. The completed-control-connection cap does not bound simultaneous TLS
-handshakes; this still needs a pre-exposure concurrency boundary.
+Shutdown rejects late handlers, owns cancellation of startup and any late-created
+listeners, erases registry state and aborts tracked peers before joining listeners
+and tasks, using one overall eight-second default budget. Caller cancellation
+does not cancel owned teardown. A failed join reports failure while retaining
+observable ownership. See README for the intentionally numeric/localhost-only
+service bind configuration and independent upstream protection requirements.
 
 ## Exact-peer UDP relay
 

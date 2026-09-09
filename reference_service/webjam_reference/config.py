@@ -41,6 +41,11 @@ class ServiceConfig:
     max_sessions: int = 256
     max_sessions_per_host: int = 4
     max_connections: int = 512
+    # Accepted setup is separately bounded before TLS state or a lab handler
+    # is constructed. Completed connections retain max_connections above.
+    max_pending_handshakes: int = 64
+    control_accepts_per_second: int = 32
+    control_accept_burst: int = 64
     max_http_connections: int = 64
     max_ops_per_connection: int = 1_024
     connection_read_timeout_seconds: int = 30
@@ -71,6 +76,15 @@ class ServiceConfig:
     replay_window_size: int = 64
 
     def __post_init__(self) -> None:
+        for host in (self.control_bind, self.relay_bind, self.http_bind):
+            numeric_listener_host(host)
+        for value, upper in (
+            (self.max_pending_handshakes, 512),
+            (self.control_accepts_per_second, 1_024),
+            (self.control_accept_burst, 1_024),
+        ):
+            if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= upper:
+                raise ValueError("control setup limits must be bounded positive integers")
         for path in (self.host_client_ca_path, self.host_admission_path):
             if path is not None and not isinstance(path, Path):
                 raise ValueError("host admission paths must be filesystem paths")
@@ -162,10 +176,23 @@ class ServiceConfig:
         return self.host_client_ca_path is not None and self.host_admission_path is not None
 
 
-def _is_loopback(host: str) -> bool:
-    if not isinstance(host, str):
-        raise ValueError("listener addresses must be strings")
+def numeric_listener_host(host: str) -> str:
+    """Return an IP literal without DNS; HTTP/UDP map localhost to IPv4.
+
+    The control listener may expand the explicitly recognized localhost name
+    into both loopback families. Configured strings remain available for that
+    choice. Arbitrary DNS names and IPv6 zone identifiers are unsupported.
+    """
+    error = "listener addresses must be unscoped IP addresses or localhost"
+    if not isinstance(host, str) or not host.isascii() or "%" in host:
+        raise ValueError(error)
+    if host.lower() == "localhost":
+        return "127.0.0.1"
     try:
-        return ipaddress.ip_address(host).is_loopback
+        return str(ipaddress.ip_address(host))
     except ValueError:
-        return host.casefold() == "localhost"
+        raise ValueError(error) from None
+
+
+def _is_loopback(host: str) -> bool:
+    return ipaddress.ip_address(numeric_listener_host(host)).is_loopback
