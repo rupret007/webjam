@@ -22,6 +22,12 @@ may miss a notice while watching a browser; physical notice visibility and
 response remain unverified. An in-app acknowledgement is insufficient proof
 of actual video/narration stopping or of independent received audio mixing.
 
+Accepted in-room meeting edits retire request authority and stale notices while
+preserving the useful host/guest lesson guidance. Requests stay inactive until
+explicit helper reentry. WebJam cannot detect an arbitrary source change in the
+external browser: changing that lesson requires explicit helper exit/reentry to
+retire its prior request context; no automatic browser-source detection is claimed.
+
 ## Security and ownership self-QA
 
 - Reuse the existing private-LAN listener and guest worker. Authentication uses

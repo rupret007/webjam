@@ -41,8 +41,10 @@ remain unchanged. #107's completed verification does not verify this new delta.
   normal room GET. No automatic POST retry. Explicit uncertain-delivery retry
   uses the same request; a later GET can reconcile a lost reply.
 - Each signal and reply stays bound to its current room, owner and request.
-  Navigation, meeting/source replacement, route loss, End/Leave and shutdown
+  Navigation, WebJam meeting/source replacement, route loss, End/Leave and shutdown
   retire authority before cleanup waits. Guest navigation never retires the host.
+  Meeting edits retain lesson instructions with inactive requests. Browser-only
+  lesson changes require explicit helper exit/reentry; WebJam cannot observe them.
 - Host notices retain exact request identity and PlainText chosen names.
   Acknowledgement never means paused, resumed, heard or seen. Old/unsupported
   rooms keep the spoken fallback and their ordinary connection semantics.

@@ -1,4 +1,4 @@
-"""Real Art controllers and authenticated LAN requests, without any live media."""
+"""Real ApplicationController Art journeys and authenticated LAN requests, without live media."""
 
 from __future__ import annotations
 
@@ -21,6 +21,12 @@ from core.session_transfer import (
     SessionPeerClient,
     SessionPeerServer,
     TransferStore,
+)
+from tests.test_art_conversation_link_journey import (
+    _button,
+    _drive_room_meeting,
+    _raise_dialog_failures,
+    _room_meeting_field,
 )
 from tests.test_art_notes_conversation_journey import (
     _make_notes,
@@ -170,6 +176,15 @@ def test_host_navigation_or_meeting_replacement_retires_old_request_and_ack(pair
         app._set_session_meeting_url(value)
     assert room._lesson_binding is None
     assert pair.server.lesson_request_notices() == ()
+    if destination in {"meeting", "same_meeting"}:
+        panel = app.window.webex_embed
+        assert panel._shared_lesson_hosting is True
+        assert panel.isVisibleTo(app.window)
+        assert room._lesson_slots == []
+        assert panel._lesson_request_rows == {}
+        assert panel._lesson_request_notices == {}
+        pair.poll()
+        assert room._lesson_binding is None  # Rendering cannot create a new context.
     assert not room.acknowledge_lesson_request(
         binding, notice.context_id, notice.admission_id, notice.revision,
     )
@@ -181,6 +196,75 @@ def test_host_navigation_or_meeting_replacement_retires_old_request_and_ack(pair
     assert room._lesson_binding.context_id != notice.context_id
     pair.poll()
     assert pair.owner.lesson_request_state.view.own_receipt is None
+
+
+def test_guest_meeting_edit_keeps_guidance_but_retires_only_local_pending_intent(
+    pair, qapp, monkeypatch,
+):
+    notice = _pause(pair, qapp)
+    app = pair.guest.app
+    room, panel = app._room_participant, app.window.webex_embed
+    notes = _make_notes(pair.guest)
+    personal_meeting = app.settings.webex_url
+    room_generation, room_identity = room.generation, app._reference_video_identity()
+    host_binding = pair.host.app._room_participant._lesson_binding
+    binding = room._lesson_binding
+    identity = (notice.context_id, notice.admission_id)
+    old_submit = room._lesson_slots[0][1]
+    pair.clock[0] += 2.1
+    pair.poll()
+    QTest.mouseClick(panel._lesson_ready_button, Qt.MouseButton.LeftButton)
+    pending = pair.owner.lesson_request_state
+    assert pending.status == "sending" and pending.command.intent.value == "ready"
+
+    replacement = "https://studio.webex.com/meet/replacement-lesson"
+
+    def edit_meeting(modal):
+        field = _room_meeting_field(modal)
+        field.selectAll()
+        QTest.keyClicks(field, replacement)
+        QTest.mouseClick(_button(modal, "OK"), Qt.MouseButton.LeftButton)
+
+    observed = _drive_room_meeting(monkeypatch, edit_meeting)
+    QTest.mouseClick(panel._change_link_btn, Qt.MouseButton.LeftButton)
+    _raise_dialog_failures(observed, accepted=True)
+    assert app._effective_meeting_url() == replacement
+    assert panel._shared_lesson_hosting is False and panel.isVisibleTo(app.window)
+    assert room._lesson_binding is None and room._lesson_slots == []
+    assert pair.owner.lesson_request_state.command is None
+    assert not pair.owner.lesson_request_state.can_submit
+    assert not panel._lesson_pause_button.isEnabled()
+    assert not panel._lesson_ready_button.isEnabled()
+    assert not panel._lesson_retry_button.isEnabled()
+    assert room.generation == room_generation
+    assert app._reference_video_identity() == room_identity
+    assert app.settings.webex_url == personal_meeting
+    assert _notes_state(app.window.session_canvas) == notes
+
+    # A guest's local edit must not erase the host's accepted pause request,
+    # send the abandoned Ready intent, or restore its captured control slots.
+    assert not room.submit_lesson_request(binding, identity, "ready")
+    old_submit("ready")
+    room.receive_lesson_request(pair.owner, room.generation, pending)
+    panel.lesson_request_intent.emit("ready")
+    pair.poll()
+    assert room._lesson_binding is None and room._lesson_slots == []
+    assert not pair.owner.lesson_request_state.can_submit
+    assert pair.host.app._room_participant._lesson_binding is host_binding
+    current = pair.server.lesson_request_notices()
+    assert len(current) == 1
+    assert current[0].context_id == notice.context_id
+    assert current[0].revision == notice.revision and current[0].intent.value == "pause"
+
+    pair.enter(pair.guest)
+    pair.poll()
+    assert room._lesson_binding is not binding
+    assert pair.owner.lesson_request_state.can_submit
+    assert pair.server.lesson_request_notices()[0].revision == notice.revision
+    QTest.mouseClick(panel._lesson_ready_button, Qt.MouseButton.LeftButton)
+    pair.poll()
+    fresh = pair.server.lesson_request_notices()[0]
+    assert fresh.intent.value == "ready" and fresh.revision > pending.command.revision
 
 
 def test_host_os_hiding_keeps_notice_without_attention_or_playback_claim(pair, qapp):

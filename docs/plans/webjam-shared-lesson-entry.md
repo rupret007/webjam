@@ -10,6 +10,9 @@ slice on combined #107 adds fixed **Ask for a pause / Ready to continue** and
 host acknowledgement in supported LAN rooms. Its code/evidence is separate;
 see [the current two-session proof plan](webjam-two-session-proof.md).
 All browser operation, actual attention, narration and mixing remain physical gates.
+Accepted meeting edits retain the role-specific guidance but retire requests until
+explicit helper reentry. A browser-only lesson change is unobservable to WebJam;
+exit and reenter the helper to retire the old request context before a new lesson.
 
 ## Worth building
 

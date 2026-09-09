@@ -11091,7 +11091,7 @@ class ApplicationController(QObject):
         # Validate before retiring an otherwise usable context. Once accepted,
         # even the same URL can represent a different room's meeting.
         validated = self._validated_session_meeting_url(value) if value is not None else None
-        ApplicationController._clear_shared_lesson_context(self)
+        ApplicationController._retire_shared_lesson_requests(self)
         self._session_meeting_url = (
             validated
         )
@@ -12217,7 +12217,7 @@ class ApplicationController(QObject):
             != str(getattr(self.settings, "webex_url", "") or "").strip()
         )
         if webex_url_changed:
-            self._clear_shared_lesson_context()
+            self._retire_shared_lesson_requests()
         reference_route_changed = any(
             (
                 getattr(old_settings, "host_server_enabled", False)
@@ -13322,11 +13322,18 @@ class ApplicationController(QObject):
             dialog.set_follow_snapshot(coordinator.follow_snapshot)
         return available
 
-    def _clear_shared_lesson_context(self) -> None:
+    def _retire_shared_lesson_requests(self) -> None:
+        """Retire requests while preserving useful same-room lesson guidance."""
         room = getattr(self, "_room_participant", None)
         retire = getattr(room, "retire_lesson_requests", None)
         if callable(retire):
             retire()
+        project = getattr(room, "project_lesson_requests", None)
+        if callable(project):
+            project()
+
+    def _clear_shared_lesson_context(self) -> None:
+        ApplicationController._retire_shared_lesson_requests(self)
         panel = getattr(getattr(self, "window", None), "webex_embed", None)
         if getattr(panel, "_shared_lesson_hosting", None) is not None:
             panel.set_shared_lesson_context(hosting=None)
