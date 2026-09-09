@@ -1,43 +1,42 @@
-# Art desktop Host with the complete invitation journey
+# Internet joining: verified service control
 
-The verified combined Art/Music candidate #110 still disables Art Host on
-Windows and Linux. Independent #111 fixes that door, but does not contain
-#110's room-scoped Conversation, lesson requests or Music listening/recovery
-work. A user needs those existing capabilities in one candidate.
+Jeff authorized private-invitation Internet joining on 2026-09-09. This is the
+first transport slice toward ordinary people joining from different homes.
 
-This is deliberate composition, not a new claim that the parent fixes are
-unfinished. Fresh branch `codex/art-host-invitation-composition` starts from
-#110 `686aa2b639aea2183ef53d327c3940782d6d21f3`. It applies the base-relative
-#111 `89a36efda1332555201a40f0623fe0e67a020aba` LaunchDialog, test and CI delta.
-Common fetched master is `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`.
-The original drafts, including parked #37/#49, remain unchanged.
+## Observed failure and priority
 
-Before: a Windows/Linux artist cannot Host from the combined candidate's
-Make together or Paint along door. The independent platform fix has separate
-proof, without the newer complete invitation/context behavior.
+The current native client only opens plaintext `reference-local` control.
+It cannot authenticate a provisioned Internet service, and its fresh host-close
+path also targets localhost. A service's existing TLS listener therefore cannot
+be used by the native client. This blocks the approved remote joining path before
+Art or Music can exchange room state. More invitation copy cannot supply it.
 
-After: ordinary Art Host is available on Windows, Linux and Mac in that
-combined candidate. One full copied invitation carries the host's saved
-meeting. A guest joins through the actual paste/bootstrap path, adopts that
-meeting for the room, and retains their own saved meeting and Notes after
-Leave. A guest starting in Music does not choose Art again: authenticated room
-state selects Art, then Leave restores the saved profile. The authenticated
-room still uses the existing LAN transport.
+## Before and after
 
-The worth-building proof is the joined-up runtime boundary: enabled Host,
-real owned listener, Copy, actual guest bootstrap, authenticated named
-presence, temporary guest meeting adoption, and real Leave/End cleanup.
-A fresh Host uses its saved meeting; no temporary host context is invented
-merely to make the test pass. Parent greens alone do not prove composition.
+Before: initial control and fresh authenticated removal hardcode local dialing.
+After: an immutable connector supports verified TLS 1.3 control, and both initial
+connection and fresh close use the same bound endpoint. Unknown/modified profiles
+are rejected before work starts. Existing local behavior is retained.
 
-Keep both Art cards and the squirrel mark. Preserve guest-never-seek, explicit
-provider/player opening, the lesson request/acknowledgment limits, and Music
-mix/recovery behavior. An explicit native lab request keeps its existing
-platform gate; it never silently falls back to an ordinary LAN room.
+The actual Python service and Go client are exercised with temporary test trust
+and a loopback DNS route: host registration, invitation-only guest enrollment,
+role authorization, bidirectional opaque signaling, failed unverified close,
+then successful fresh close with the original authority and observed removal.
+No system trust, real DNS, live server, user credential or media is involved.
 
-Success requires the relevant component and composed runtime tests, the full
-local test bar, and both exact-tip hosted workflows including all four desktop
-builds and their actual-platform Art runtime steps. Source loopback evidence
-and packaging do not prove installed-app networking, physical media or
-separate-home usability. Network decision and physical Art/Music acceptance
-remain open. OPEN DRAFT PRE_KAREN only; Karen review remains pending.
+## Scope and dependency
+
+Fresh branch `codex/internet-control-tls` explicitly depends on OPEN DRAFT #112,
+`df18426dd195dcda8265d6979d869eaad8a463f8`. It needs the unmerged lifetime and
+fresh authenticated cleanup already composed there. Earlier drafts are unchanged.
+
+The shipped profile registry remains local-only until provisioning, host
+admission and relay protections are implemented and reviewed. This slice does
+not make Internet joining available in the app. That larger outcome remains the
+active goal; this is its necessary secure control foundation.
+
+Next stages: host admission; relay return-path/reachability and resource bounds;
+provisioned profile/ordinary Host routing; native Art names and lesson requests;
+full same-invitation Art/Music journeys; separately approved deployment and
+physical two-home tests. Existing local Notes/Conversation, two Art cards/squirrel,
+Music routing and guest-never-seek protections remain.

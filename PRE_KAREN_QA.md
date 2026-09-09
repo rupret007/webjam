@@ -1,117 +1,63 @@
-# PRE_KAREN — Art desktop Host and complete invitation composition
+# PRE_KAREN: verified Internet service control
 
-## Declared candidate
+Declared dependent base: #112 `df18426dd195dcda8265d6979d869eaad8a463f8`.
+Jeff authorized Internet implementation/isolated testing on 2026-09-09. This is
+transport groundwork toward both complete creative sessions, not a claim of
+separate-home joining or physical acceptance. OPEN DRAFT only; Karen pending.
 
-- Branch: `codex/art-host-invitation-composition`.
-- Direct base: #110 `686aa2b639aea2183ef53d327c3940782d6d21f3`, branch
-  `codex/two-session-invitation-composition`.
-- Independent input: corrected #111 `89a36efda1332555201a40f0623fe0e67a020aba`.
-- Common fetched master: `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`.
-- The OPEN DRAFT body records the exact unsigned tip/tree after source freeze,
-  actual local/hosted evidence, BEFORE/AFTER and verified lease release.
-- Parent drafts, including parked #37/#49, stay unchanged. This candidate is
-  explicitly stacked; neither parent result is a combined PASS.
+## Acceptance and security review
 
-## Leftover honesty and ten-second UX
+- Immutable endpoint and TLS policy; only the exact shipped profile can start
+  an operation. No address, trust, redirect or certificate-policy input in IPC.
+- TLS 1.3 minimum with ordinary chain and DNS-name verification and platform
+  trusted roots. No exported custom TLS configuration or WebJam trust override.
+- Endpoint validation before I/O, including raw non-ASCII and ambiguous names;
+  zero connector, unknown/modified profile, cancelled inputs fail closed.
+- DNS/TCP/handshake share a bounded deadline; no role/enrollment request can be
+  written until verification succeeds. Errors omit network/certificate details.
+- Initial control and fresh authenticated close retain the same connector.
+  Close shares the existing total shutdown budget and does not re-enroll/retry.
+  Failed TLS close leaves remote deletion unconfirmed and existing authority live.
+- Underlying connection ownership must close directly on all failure/cancel/Close
+  paths, avoiding TLS close-notify waits beyond the caller's budget.
+- Test-only temporary CA and DNS-route injection stay package-private. Real Python
+  service tests bind only owned ephemeral loopback listeners and preserve bounded
+  startup/probe/shutdown. No system trust, public endpoint or live media change.
 
-#110 contains the complete invitation/Conversation, Art lesson-request and
-Music listening/recovery work, but still disables Art Host on Windows/Linux.
-#111 independently enables ordinary Art Host. This combines those already-built
-capabilities and proves their interaction; it does not invent a new product
-failure or duplicate an independent implementation.
+## Verification
 
-An artist can choose Make together or Paint along, then Host. The full copied
-invitation leads the guest to Join and paste the whole message. The current
-meeting stays with the room while the guest's saved meeting and Notes survive
-Leave. Copying, accepting a dialog, authenticated connection, meeting
-membership and audible media remain different facts.
+Focused race checks passed: native TLS plus both independent Python-service
+cases (9.496s), profile policy (1.187s), IPC profile/override guards (1.261s),
+and the final local-only DNS-name regression (1.246s). Integration was required,
+not skipped. Full required local checks
+and both exact-tip hosted workflows must pass; each desktop executes the TLS
+control tests with Python required, alongside existing Art runtime and packaging.
+The exact tip, counts, workflow links and retained failures belong in the PR body
+and AFTER. Do not substitute parent proof, skipped tests or a compiled binary
+for execution. Physical Art/Music rows remain NOT RUN.
 
-The two Art cards and squirrel remain. Ordinary Art uses the existing LAN
-listener; no instrument, canvas application or video file is required to enter
-Make together. No engine/provider name is added to the door. Explicit native
-lab/non-Mac Music restrictions remain, along with host playback ownership and
-guest-never-seek. Lesson request/ACK does not control the external browser.
+Retain the early evidence: the first launch hit a sandbox Go-cache permission
+denial. The first executable connector run then reproduced a real five-second
+fresh-close failure caused by TLS close-notify. The corrected client owns and
+closes the underlying connection directly on every teardown path; dedicated
+held-peer tests exercise explicit close, acknowledged fresh close, malformed,
+canceled and lost receipts. Preserve `connector-unit-attempt-1.log`,
+`connector-unit-attempt-2.log` and subsequent distinct verification logs in
+`out/internet-control-tls`; a later green result does not erase the red baseline.
+The first corrected race attempt was denied owned loopback binding by the
+sandbox; the same bounded command passed with authorized local-socket access.
+These development attempts were not frozen-tip verification. The final full
+run must establish its own exact-source result.
 
-## Source, security and ownership checks
+## Limits and remaining work
 
-- Apply only #111's base-relative LaunchDialog, platform/Art UX/runtime test and
-  CI delta. Retain #110's newer controller, invitation/meeting, lesson, Music
-  mix, lifetime and recovery source; never replace whole files from master.
-- Recheck current platform, creator profile, native opt-in and submission state
-  before Host settings mutation. Keep Mac behavior and unavailable choices
-  consistent in visible and accessible descriptions, retry and profile changes.
-- Preserve native-first dispatch, signatures, credentials and fail-closed host
-  readiness. No new protocol, endpoint, permission or persistence format.
-- Portable tests run on actual OS identity and real Qt/controller/host/guest
-  owners. Read real `platform.uname()` before application process guards;
-  never synthesize an OS identity or permit application launches to pass a test.
-- Use only an owned loopback listener behind the existing logical RFC1918
-  adapter. Authentication/authorization remain production behavior; enrollment
-  alone or invalid credentials cannot create connected reader presence.
-- A fresh host has its actual saved ROOM meeting. A guest has a different
-  PERSONAL saved meeting. Real Copy → Join → `_run_app` must forward the
-  accepted invitation and temporary meeting to the real controller. Do not
-  manufacture adoption with a post-construction setter. The new guest starts
-  from saved Music with no Art-card click: authenticated host state selects Art,
-  and Leave restores the saved Music profile and its Notes. Both Art and Music
-  Notes files remain unchanged. An explicit absent room meeting must suppress
-  the personal URL until Leave.
-- Check real guest Leave restores PERSONAL and preserves Notes/settings; host
-  remains active until real End. Confirm owned workers/handlers/sockets stop.
-  The in-process fixture shares a temporary Notes root; do not claim separate
-  physical users' storage has been tested.
-- Keep process, unrelated-network, browser/provider, Music capture, player and
-  native lab guards, plus asynchronous callback traps. No credentials, private
-  invitation material, live customer data or media in diagnostics.
+No Internet profile is exposed yet. Host admission, relay return-path validation,
+resource limits, deployment ownership and exact endpoint remain follow-on work.
+Native Art peer names and lesson requests need authenticated protocol support;
+existing local-only guards are not removed here. TLS service identity alone does
+not authorize host registration or certify the relay against abuse.
 
-## Verification and retained history
-
-Focused checks passed **313 tests across 11 isolated modules**, including the
-Art start UX suite, platform policy, invitation/Conversation/lifetime, Music
-bootstrap, Art lesson requests and Notes. The final portable stdlib unittest
-passed **all four cases in 4.050 seconds** on actual macOS, including the saved
-Music guest refinement; Ruff passed. The earlier four-case Art-first fixture
-run also passed and remains recorded. No component failure was observed here.
-Evidence is under `out/art-host-invitation-composition`.
-
-Full exact-tip local/hosted verification
-follows source freeze and is recorded in the PR body; no result is inherited
-from a parent. The full bar includes every isolated tracked application module,
-source/static/dependency/UX checks, native/race/module/cross-build checks, two
-real sidecars and the reference-service suite. Both hosted workflows must pass
-all four existing desktop builds and the Art runtime step on each desktop.
-
-Keep the three original portable cases: both Art starts with authenticated
-Host/Copy/Join/Leave/End, and missing-address → bind-failure → retry. Add a cold
-entry composition journey for genuine guest meeting adoption and Notes
-preservation, with existing no-meeting controls retained.
-
-Retained parent failures are part of the evidence:
-
-- Original #111 `8ecbdf0` first full run hit an unexplained unchanged Pocket
-  Stage loopback WSS handshake timeout. Unchanged-module reproduction and
-  complete original/corrected revalidation passed without a source/timeout
-  workaround. Original logs remain in `out/art-lan-host-platforms/attempt-1-local`.
-- Both original #111 Windows runtime jobs failed the fixture's first OS-metadata
-  subprocess discovery. Corrected `89a36ef` warms real `platform.uname()` before
-  process guards. Its own local and both hosted runs/all four desktops passed.
-  The original complete failures and correction evidence remain in
-  `out/art-lan-host-platforms/tip-8ecbdf0` and the #111 PRE_KAREN handoff.
-- #110's original optional-PortAudio discovery fixture failure/correction and
-  #108's original Art guidance failures remain in their own archives and PRs.
-  This composition does not rewrite those histories.
-
-## Remaining acceptance and holds
-
-Source-runtime loopback and four builds do not certify installed packages,
-physical LAN/firewall usability, Windows ACLs, media or separate-home joining.
-Ordinary Art Host is cross-platform in this source; Music hosting/Shared Track
-sending still needs a supported Mac and physical route proof. Exact package
-selection, the separate-home network decision, Art faces/lesson/narration/
-independent levels/pause attention, and Music audibility/routing/timing/endurance
-remain open. Physical NOT RUN; Karen PENDING; full goal INCOMPLETE.
-
-OPEN DRAFT only. No merge/squash/tag/sign/release/Pages/Release Trust/Publish/
-deploy/spend/live Cisco, automatic capture, unsolicited send, short codes/public
-rendezvous, second media engine, other repository, parent injection or second
-goal. Unsigned 0.27.2 is Jeff-only. Codex self-QA is not Karen PASS.
+No merge/squash/tag/sign/release/Pages/Publish/deploy/spend/live Cisco, automatic
+capture or unsolicited send. Unsigned 0.27.2 remains Jeff-only. No short codes,
+public room discovery, second media engine, other repo or second goal. Parked
+#37/#49 and all prior drafts untouched. Self-QA is not Karen PASS.

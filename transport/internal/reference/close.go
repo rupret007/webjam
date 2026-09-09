@@ -18,7 +18,7 @@ func CloseLocalSession(
 	generation uint32,
 	sequence uint64,
 ) error {
-	return closeLocalSession(ctx, session, hostToken, generation, sequence, DialLocal)
+	return LocalControlConnector().CloseSession(ctx, session, hostToken, generation, sequence)
 }
 
 func closeLocalSession(
