@@ -4,6 +4,8 @@ This is the smallest self-hostable reference implementation of WebJam's v3
 rendezvous boundary. It provides:
 
 - bounded, versioned, one-host/one-guest registration;
+- approved-host registration over verified client TLS when admission is enabled,
+  while invited guests need no client certificate;
 - atomic one-use service enrollment with a ten-minute default lifetime,
   consumed before QUIC peer proof (so an unused bearer can be burned and must
   then be reset);
@@ -35,9 +37,13 @@ Listeners are control TCP `127.0.0.1:47131`, exact-peer relay UDP
 plaintext only because it is loopback. Never expose it that way.
 
 ```sh
+python3.12 -m pip install '.[test]'
 python3.12 -m pytest -q
 python3.12 -m ruff check .
 ```
+
+The test extra includes `cryptography` solely to generate disposable certificates
+for real loopback TLS tests. The service runtime remains standard-library-only.
 
 See [PROTOCOL.md](PROTOCOL.md) for the exact frames and privacy contract, and
 [INTEGRATION.md](INTEGRATION.md) for the smallest honest sidecar/QUIC proof.
@@ -78,12 +84,55 @@ docker build -t webjam-reference:0.1.0 .
 docker run --rm webjam-reference:0.1.0
 ```
 
-For an externally reachable native-protocol test, provide a real certificate and
-key and explicitly bind control and relay. `compose.example.yaml` shows the
-required opt-ins and a restricted runtime. Do not put token values in environment
+Exposing either control or relay requires a server certificate/key, a dedicated
+host client CA, and an approved-host manifest. The legacy insecure-control flag
+cannot bypass these checks. `compose.example.yaml` shows the required mounts and
+a restricted runtime; it is not deployment approval or proof of Internet safety.
+Do not put token values in environment
 variables, command arguments, image layers, or compose files. Certificate files
 mounted into the example must be readable by the image's unprivileged UID/GID
 10001 without making the private key broadly writable.
+
+## Host admission
+
+Configure `--host-client-ca` / `WEBJAM_HOST_CLIENT_CA` and
+`--host-admission-file` / `WEBJAM_HOST_ADMISSION_FILE` together with built-in TLS.
+The dedicated CA verifies client certificate chains. The manifest additionally
+approves exact leaf certificates; a CA-signed certificate alone cannot allocate
+a room. Its strict JSON shape is:
+
+```json
+{"v":1,"hosts":[{"principal":"<32 lowercase hex characters>","certificate_sha256":"<64 lowercase hex characters>"}]}
+```
+
+Principals are opaque operator-assigned IDs, not participant display names.
+The fingerprint is SHA-256 of the leaf's DER encoding. The regular file must be
+nonempty, at most 65,536 bytes, and contain 1–128 unique principals and unique
+fingerprints with no additional fields. Symbolic links and files changed during
+loading are rejected. Treat the file and its containing directory as trusted
+operator configuration. No client keys belong in it.
+
+Registration rechecks certificate validity against wall-clock time on every
+request, including on a connection opened before expiry. Each approved host can
+allocate at most four waiting or enrolled rooms by default, also subject to the
+global capacity. `--max-sessions-per-host` / `WEBJAM_MAX_SESSIONS_PER_HOST` accepts
+1–256. A fixed per-host bucket permits one attempt per second with a burst of
+four, before the global registration bucket. Rejected or unknown host identities
+cannot create quota entries. Close, expiry and shutdown release room counts.
+
+Invited guests and fresh role-token-authenticated Close connections omit client
+certificates. An invalid certificate that a client does present fails TLS before
+any operation, so clients must not attach expired host credentials to these
+connections. A valid certificate never substitutes for a room's role token.
+
+Policy replacement or revocation requires a deliberate restart, which ends all
+rooms and clears their secrets. There is no hot reload or online issuer.
+Certificate expiry removes new registration authority; it does not itself end
+an existing room. Room idle and lifetime limits still apply.
+
+This service-side boundary does not provision ordinary hosts. Desktop credential
+issuance, protected storage, renewal/recovery and an approved Internet profile
+remain unfinished; guests must not inherit certificate setup requirements.
 
 ## Desktop integration boundary
 
@@ -120,9 +169,14 @@ An actual Internet deployment needs all of the following outside this process:
 - session-affine routing. State is deliberately local and is not shared between
   replicas; failover ends the affected session instead of copying secrets;
 - upstream volumetric DDoS protection and connection-rate limiting;
+- a limit on simultaneous pending TLS handshakes; the five-second handshake
+  deadline is not a concurrency cap, and `max_connections` counts completed
+  control connections only;
 - capacity alerts based on `/healthz` and private `/diagnostics` aggregate data;
 - certificate rotation, image scanning/signing, OS patching, and secret delivery
   outside container arguments/environment;
+- reviewed host credential provisioning and an authenticated UDP return-path
+  proof before treating an observed source address as reachable;
 - a separately reviewed compiled public profile, plus real
   dual-stack/NAT/MTU/impairment and geographic latency validation before
   production use.
@@ -130,3 +184,10 @@ An actual Internet deployment needs all of the following outside this process:
 The service does not provide DNS, certificates, a TURN-compatible listener, load
 balancing, durable sessions, cross-replica migration, or Internet availability by
 itself.
+
+Owned response writes and connection retirement have three-second default
+deadlines. Shutdown stops listeners, wipes room state and aborts tracked writers
+before joining handlers. Pending TLS contributes its five-second handshake
+deadline to one overall eight-second default shutdown budget. A timed-out join
+reports failure. These bounds do not establish Internet availability or complete
+abuse resistance.

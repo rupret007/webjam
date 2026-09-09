@@ -13,9 +13,9 @@ MAX_ACTIVE_SESSION_SECONDS = 8 * 60 * 60
 class ServiceConfig:
     """Resource limits and listeners for one reference-service process.
 
-    Listener defaults are loopback-only.  A public control listener must either
-    use the built-in TLS support or opt in to insecure public control explicitly;
-    that escape hatch exists for a TLS sidecar in the same trust boundary.
+    Listener defaults are loopback-only. Exposing control or relay requires
+    built-in TLS and an approved-host admission policy. The former insecure
+    sidecar flag cannot authorize an exposed listener.
     """
 
     control_bind: str = "127.0.0.1"
@@ -26,6 +26,8 @@ class ServiceConfig:
     http_port: int = 47133
     tls_cert_path: Path | None = None
     tls_key_path: Path | None = None
+    host_client_ca_path: Path | None = None
+    host_admission_path: Path | None = None
     allow_insecure_public_control: bool = False
 
     protocol_version: int = 3
@@ -37,10 +39,14 @@ class ServiceConfig:
     tombstone_ttl_seconds: int = 600
 
     max_sessions: int = 256
+    max_sessions_per_host: int = 4
     max_connections: int = 512
     max_http_connections: int = 64
     max_ops_per_connection: int = 1_024
     connection_read_timeout_seconds: int = 30
+    tls_handshake_timeout_seconds: float = 5.0
+    connection_write_timeout_seconds: float = 3.0
+    connection_shutdown_timeout_seconds: float = 3.0
     registrations_per_second: int = 20
     registration_burst: int = 40
     max_control_frame_bytes: int = 16_384
@@ -65,6 +71,26 @@ class ServiceConfig:
     replay_window_size: int = 64
 
     def __post_init__(self) -> None:
+        for path in (self.host_client_ca_path, self.host_admission_path):
+            if path is not None and not isinstance(path, Path):
+                raise ValueError("host admission paths must be filesystem paths")
+        if (
+            not isinstance(self.max_sessions_per_host, int)
+            or isinstance(self.max_sessions_per_host, bool)
+            or not 1 <= self.max_sessions_per_host <= 256
+        ):
+            raise ValueError("host session limit must be an integer from 1 to 256")
+        for timeout in (
+            self.tls_handshake_timeout_seconds,
+            self.connection_write_timeout_seconds,
+            self.connection_shutdown_timeout_seconds,
+        ):
+            if (
+                not isinstance(timeout, (int, float))
+                or isinstance(timeout, bool)
+                or not 0 < timeout <= 30
+            ):
+                raise ValueError("connection timeouts must be finite numbers above 0 and at most 30 seconds")
         for port in (self.control_port, self.relay_port, self.http_port):
             if not 0 <= port <= 65_535:
                 raise ValueError("listener ports must be between 0 and 65535")
@@ -121,15 +147,24 @@ class ServiceConfig:
             raise ValueError("replay windows larger than 256 are not supported")
         if (self.tls_cert_path is None) != (self.tls_key_path is None):
             raise ValueError("TLS certificate and key must be configured together")
-        if not _is_loopback(self.control_bind):
-            tls_configured = self.tls_cert_path is not None
-            if not tls_configured and not self.allow_insecure_public_control:
-                raise ValueError(
-                    "public control bind requires TLS or explicit insecure-sidecar opt-in"
-                )
+        if (self.host_client_ca_path is None) != (self.host_admission_path is None):
+            raise ValueError("host client CA and admission policy must be configured together")
+        if self.host_admission_enabled and self.tls_cert_path is None:
+            raise ValueError("host admission requires built-in TLS")
+        if not _is_loopback(self.control_bind) or not _is_loopback(self.relay_bind):
+            if self.allow_insecure_public_control:
+                raise ValueError("insecure public control is unsupported; configure built-in TLS and host admission")
+            if self.tls_cert_path is None or not self.host_admission_enabled:
+                raise ValueError("exposed control or relay requires built-in TLS and host admission")
+
+    @property
+    def host_admission_enabled(self) -> bool:
+        return self.host_client_ca_path is not None and self.host_admission_path is not None
 
 
 def _is_loopback(host: str) -> bool:
+    if not isinstance(host, str):
+        raise ValueError("listener addresses must be strings")
     try:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:

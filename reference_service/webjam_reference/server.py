@@ -7,10 +7,12 @@ import contextlib
 import json
 import logging
 import ssl
-from collections.abc import Mapping
+import time
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from .config import ServiceConfig
+from .host_admission import HostAdmissionPolicy, HostPrincipal
 from .protocol import (
     PROTOCOL_VERSION,
     SESSION_BYTES,
@@ -73,15 +75,27 @@ class _RelayProtocol(asyncio.DatagramProtocol):
 class ReferenceService:
     """Self-contained v3 reference service with no persistence or audio parsing."""
 
-    def __init__(self, config: ServiceConfig | None = None) -> None:
+    def __init__(
+        self, config: ServiceConfig | None = None, *, wall_clock: Callable[[], float] = time.time
+    ) -> None:
         self.config = config or ServiceConfig()
-        self.registry = SessionRegistry(self.config)
+        self._wall_clock = wall_clock
+        self._host_admission = (
+            HostAdmissionPolicy.load(self.config.host_admission_path)
+            if self.config.host_admission_enabled else None
+        )
+        self.registry = SessionRegistry(
+            self.config,
+            host_principals=self._host_admission.principals if self._host_admission else (),
+        )
         self._control_server: asyncio.AbstractServer | None = None
         self._http_server: asyncio.AbstractServer | None = None
         self._relay_transport: asyncio.DatagramTransport | None = None
         self._cleanup_task: asyncio.Task[None] | None = None
         self._writers: set[asyncio.StreamWriter] = set()
         self._http_writers: set[asyncio.StreamWriter] = set()
+        self._connection_tasks: set[asyncio.Task[None]] = set()
+        self._close_task: asyncio.Task[None] | None = None
         self._active_connections = 0
         self._active_http_connections = 0
         self._started = False
@@ -103,11 +117,17 @@ class ReferenceService:
         return int(address[1])
 
     async def start(self) -> ReferenceService:
-        if self._started:
+        if self._started or self._closed:
             raise RuntimeError("service can only be started once")
         self._started = True
-        ssl_context = self._ssl_context()
         try:
+            ssl_context = self._ssl_context()
+            tls_limits = {}
+            if ssl_context is not None:
+                tls_limits = {
+                    "ssl_handshake_timeout": self.config.tls_handshake_timeout_seconds,
+                    "ssl_shutdown_timeout": self.config.connection_shutdown_timeout_seconds,
+                }
             self._control_server = await asyncio.start_server(
                 self._handle_control,
                 self.config.control_bind,
@@ -115,6 +135,7 @@ class ReferenceService:
                 ssl=ssl_context,
                 limit=self.config.max_control_frame_bytes,
                 backlog=min(self.config.max_connections, 256),
+                **tls_limits,
             )
             loop = asyncio.get_running_loop()
             relay_transport, _ = await loop.create_datagram_endpoint(
@@ -145,34 +166,104 @@ class ReferenceService:
         return self
 
     async def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        if self._cleanup_task is not None:
-            self._cleanup_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._cleanup_task
-            self._cleanup_task = None
-        for server in (self._control_server, self._http_server):
-            if server is not None:
-                server.close()
-        for server in (self._control_server, self._http_server):
-            if server is not None:
-                await server.wait_closed()
-        all_writers = self._writers | self._http_writers
-        for writer in tuple(all_writers):
-            writer.close()
-        for writer in tuple(all_writers):
-            with contextlib.suppress(Exception):
-                await writer.wait_closed()
-        self._writers.clear()
-        self._http_writers.clear()
-        if self._relay_transport is not None:
-            self._relay_transport.close()
-            self._relay_transport = None
+        if self._close_task is None:
+            self._closed = True
+            self._close_task = asyncio.create_task(self._close_connections(), name="webjam-reference-close")
+        # Caller cancellation cannot abandon owned handlers or registry erasure.
+        await asyncio.shield(self._close_task)
+
+    async def _close_connections(self) -> None:
+        loop = asyncio.get_running_loop()
+        budget = self.config.connection_shutdown_timeout_seconds
+        if self.config.tls_cert_path is not None:
+            # Pending TLS has no StreamWriter yet. Its finite handshake timer
+            # is part of this one overall budget, not an extra wait per peer.
+            budget += self.config.tls_handshake_timeout_seconds
+        deadline = loop.time() + budget
         active = self.registry.session_count
-        self.registry.close()
-        self._privacy_log("stopped", active_sessions=active)
+        waits: set[asyncio.Task] = set()
+        try:
+            for server in (self._control_server, self._http_server):
+                if server is not None:
+                    server.close()
+            if self._relay_transport is not None:
+                self._relay_transport.close()
+                self._relay_transport = None
+            self.registry.close()
+            # Retire connected transports before Server.wait_closed, which may
+            # itself wait for those clients. No peer can hold close-notify open.
+            for writer in tuple(self._writers | self._http_writers):
+                self._abort_writer(writer)
+            for task in tuple(self._connection_tasks):
+                task.cancel()
+                waits.add(task)
+            if self._cleanup_task is not None:
+                self._cleanup_task.cancel()
+                waits.add(self._cleanup_task)
+            for server in (self._control_server, self._http_server):
+                if server is not None:
+                    waits.add(asyncio.create_task(server.wait_closed()))
+            if waits:
+                done, pending = await asyncio.wait(waits, timeout=max(0, deadline - loop.time()))
+                for task in done:
+                    if not task.cancelled():
+                        task.result()
+                if pending:
+                    for task in pending:
+                        task.cancel()
+                    # A timed-out join must never report successful teardown.
+                    raise RuntimeError("service connection shutdown timed out")
+            self._cleanup_task = None
+            self._writers.clear()
+            self._http_writers.clear()
+            self._privacy_log("stopped", active_sessions=active)
+        finally:
+            for task in waits:
+                if not task.done():
+                    task.cancel()
+            for writer in tuple(self._writers | self._http_writers):
+                self._abort_writer(writer)
+            self.registry.close()
+
+    @staticmethod
+    def _abort_writer(writer: asyncio.StreamWriter) -> None:
+        with contextlib.suppress(Exception):
+            writer.close()
+        with contextlib.suppress(Exception):
+            writer.transport.abort()
+
+    def _track_connection(self, writer: asyncio.StreamWriter, *, http: bool) -> bool:
+        if self._closed:
+            self._abort_writer(writer)
+            return False
+        (self._http_writers if http else self._writers).add(writer)
+        task = asyncio.current_task()
+        if task is not None:
+            self._connection_tasks.add(task)
+        return True
+
+    async def _retire_connection(self, writer: asyncio.StreamWriter, *, http: bool) -> None:
+        try:
+            if self._closed:
+                self._abort_writer(writer)
+            else:
+                writer.close()
+                try:
+                    await asyncio.wait_for(writer.wait_closed(), self.config.connection_shutdown_timeout_seconds)
+                except (OSError, TimeoutError):
+                    self._abort_writer(writer)
+                except asyncio.CancelledError:
+                    self._abort_writer(writer)
+                    raise
+        finally:
+            (self._http_writers if http else self._writers).discard(writer)
+            self._connection_tasks.discard(asyncio.current_task())
+
+    async def _write(self, writer: asyncio.StreamWriter, payload: bytes) -> None:
+        if self._closed:
+            raise ConnectionError("service closed")
+        writer.write(payload)
+        await asyncio.wait_for(writer.drain(), self.config.connection_write_timeout_seconds)
 
     async def __aenter__(self) -> ReferenceService:
         return await self.start()
@@ -183,24 +274,26 @@ class ReferenceService:
     async def _handle_control(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
-        if self._active_connections >= self.config.max_connections:
-            writer.write(_response(ok=False, error="overloaded"))
-            with contextlib.suppress(Exception):
-                await writer.drain()
-            writer.close()
-            with contextlib.suppress(Exception):
-                await writer.wait_closed()
+        if not self._track_connection(writer, http=False):
             return
-        self._active_connections += 1
-        self._writers.add(writer)
-        bucket = TokenBucket(
-            self.config.max_control_ops_per_second,
-            self.config.max_control_ops_per_second,
-            asyncio.get_running_loop().time,
-        )
-        operations = 0
+        counted = False
         try:
-            while operations < self.config.max_ops_per_connection:
+            if self._active_connections >= self.config.max_connections:
+                await self._write(writer, _response(ok=False, error="overloaded"))
+                return
+            self._active_connections += 1
+            counted = True
+            host_receipt = (
+                self._host_admission.identify(writer.get_extra_info("ssl_object"))
+                if self._host_admission else None
+            )
+            bucket = TokenBucket(
+                self.config.max_control_ops_per_second,
+                self.config.max_control_ops_per_second,
+                asyncio.get_running_loop().time,
+            )
+            operations = 0
+            while not self._closed and operations < self.config.max_ops_per_connection:
                 try:
                     line = await asyncio.wait_for(
                         reader.readline(), self.config.connection_read_timeout_seconds
@@ -208,21 +301,19 @@ class ReferenceService:
                 except TimeoutError:
                     break
                 except ValueError:
-                    writer.write(_response(ok=False, error="frame_too_large"))
-                    await writer.drain()
+                    await self._write(writer, _response(ok=False, error="frame_too_large"))
                     break
-                if not line:
+                if self._closed or not line:
                     break
                 operations += 1
                 if not bucket.allow():
-                    writer.write(_response(ok=False, error="rate_limited"))
-                    await writer.drain()
+                    await self._write(writer, _response(ok=False, error="rate_limited"))
                     break
                 try:
                     message = parse_control_line(
                         line, self.config.max_control_frame_bytes
                     )
-                    response = self._dispatch(message)
+                    response = self._dispatch(message, host_receipt=host_receipt)
                 except ProtocolError as exc:
                     response = {"ok": False, "error": exc.code}
                 except Exception:
@@ -230,24 +321,31 @@ class ReferenceService:
                     # public response and log remain categorical.
                     self._privacy_log("internal_error", component="control")
                     response = {"ok": False, "error": "internal_error"}
-                writer.write(_response(**response))
-                await writer.drain()
-        except (ConnectionError, asyncio.IncompleteReadError):
+                await self._write(writer, _response(**response))
+        except (OSError, TimeoutError, asyncio.IncompleteReadError):
             pass
         finally:
-            self._writers.discard(writer)
-            self._active_connections -= 1
-            writer.close()
-            with contextlib.suppress(Exception):
-                await writer.wait_closed()
+            try:
+                await self._retire_connection(writer, http=False)
+            finally:
+                if counted:
+                    self._active_connections -= 1
 
-    def _dispatch(self, message: dict[str, Any]) -> dict[str, object]:
+    def _dispatch(
+        self, message: dict[str, Any], *, host_receipt: HostPrincipal | None = None
+    ) -> dict[str, object]:
+        if self._closed:
+            raise ProtocolError("overloaded")
         op = message["op"]
         if op == "register":
             require_exact_fields(
                 message,
                 {"v", "op", "session", "host_token", "enrollment_token"},
                 {"generation", "ttl_seconds"},
+            )
+            host_principal = (
+                self._host_admission.authorize(host_receipt, self._wall_clock())
+                if self._host_admission else None
             )
             ttl = self._bounded_int(
                 message.get("ttl_seconds", self.config.max_session_ttl_seconds),
@@ -261,6 +359,7 @@ class ReferenceService:
                 decode_fixed(message["enrollment_token"], TOKEN_BYTES),
                 generation,
                 ttl,
+                host_principal=host_principal,
             )
             return {
                 "ok": True,
@@ -333,17 +432,17 @@ class ReferenceService:
     async def _handle_http(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
-        self._http_writers.add(writer)
-        if self._active_http_connections >= self.config.max_http_connections:
-            try:
-                await self._write_http(writer, 503, {"status": "overloaded"})
-            finally:
-                self._http_writers.discard(writer)
+        if not self._track_connection(writer, http=True):
             return
-        self._active_http_connections += 1
+        counted = False
         status = 400
         body: dict[str, object] = {"status": "bad_request"}
         try:
+            if self._active_http_connections >= self.config.max_http_connections:
+                await self._write_http(writer, 503, {"status": "overloaded"})
+                return
+            self._active_http_connections += 1
+            counted = True
             try:
                 request_line = await asyncio.wait_for(reader.readline(), 5)
                 header_bytes = len(request_line)
@@ -354,6 +453,8 @@ class ReferenceService:
                         raise ProtocolError("frame_too_large")
                     if line in (b"\r\n", b"\n", b""):
                         break
+                if self._closed:
+                    return
                 parts = request_line.decode("ascii", "strict").strip().split(" ")
                 if (
                     len(parts) != 3
@@ -380,13 +481,17 @@ class ReferenceService:
                 status = 500
                 body = {"status": "internal_error"}
             await self._write_http(writer, status, body)
+        except (OSError, TimeoutError, asyncio.IncompleteReadError):
+            pass
         finally:
-            self._http_writers.discard(writer)
-            self._active_http_connections -= 1
+            try:
+                await self._retire_connection(writer, http=True)
+            finally:
+                if counted:
+                    self._active_http_connections -= 1
 
-    @staticmethod
     async def _write_http(
-        writer: asyncio.StreamWriter, status: int, body: Mapping[str, object]
+        self, writer: asyncio.StreamWriter, status: int, body: Mapping[str, object]
     ) -> None:
         payload = _json_bytes(body)
         reason = {
@@ -396,18 +501,14 @@ class ReferenceService:
             500: "Error",
             503: "Unavailable",
         }[status]
-        with contextlib.suppress(Exception):
-            writer.write(
-                f"HTTP/1.1 {status} {reason}\r\n".encode("ascii")
-                + b"Content-Type: application/json\r\n"
-                + f"Content-Length: {len(payload)}\r\n".encode("ascii")
-                + b"Cache-Control: no-store\r\nConnection: close\r\n\r\n"
-                + payload
-            )
-            await writer.drain()
-        writer.close()
-        with contextlib.suppress(Exception):
-            await writer.wait_closed()
+        await self._write(
+            writer,
+            f"HTTP/1.1 {status} {reason}\r\n".encode("ascii")
+            + b"Content-Type: application/json\r\n"
+            + f"Content-Length: {len(payload)}\r\n".encode("ascii")
+            + b"Cache-Control: no-store\r\nConnection: close\r\n\r\n"
+            + payload,
+        )
 
     async def _cleanup_loop(self) -> None:
         while True:
@@ -421,6 +522,11 @@ class ReferenceService:
         context.minimum_version = ssl.TLSVersion.TLSv1_3
         assert self.config.tls_key_path is not None
         context.load_cert_chain(self.config.tls_cert_path, self.config.tls_key_path)
+        if self._host_admission is not None:
+            context.load_verify_locations(cafile=self.config.host_client_ca_path)
+            # A certificate is needed for host registration, not for an invited
+            # guest or a fresh role-token-authenticated cleanup connection.
+            context.verify_mode = ssl.CERT_OPTIONAL
         return context
 
     @staticmethod

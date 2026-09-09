@@ -1,63 +1,78 @@
-# PRE_KAREN: verified Internet service control
+# PRE_KAREN: approved host allocation and bounded service cleanup
 
-Declared dependent base: #112 `df18426dd195dcda8265d6979d869eaad8a463f8`.
-Jeff authorized Internet implementation/isolated testing on 2026-09-09. This is
-transport groundwork toward both complete creative sessions, not a claim of
-separate-home joining or physical acceptance. OPEN DRAFT only; Karen pending.
+OPEN DRAFT only. Declared dependent base: #113
+`68deee7eb21c584866f894fb2401da2b3dc569b0`. Internet implementation/isolated tests
+are authorized. Physical Art/Music acceptance and independent Karen review remain
+separate, incomplete requirements.
 
-## Acceptance and security review
+## Security and ownership self-QA
 
-- Immutable endpoint and TLS policy; only the exact shipped profile can start
-  an operation. No address, trust, redirect or certificate-policy input in IPC.
-- TLS 1.3 minimum with ordinary chain and DNS-name verification and platform
-  trusted roots. No exported custom TLS configuration or WebJam trust override.
-- Endpoint validation before I/O, including raw non-ASCII and ambiguous names;
-  zero connector, unknown/modified profile, cancelled inputs fail closed.
-- DNS/TCP/handshake share a bounded deadline; no role/enrollment request can be
-  written until verification succeeds. Errors omit network/certificate details.
-- Initial control and fresh authenticated close retain the same connector.
-  Close shares the existing total shutdown budget and does not re-enroll/retry.
-  Failed TLS close leaves remote deletion unconfirmed and existing authority live.
-- Underlying connection ownership must close directly on all failure/cancel/Close
-  paths, avoiding TLS close-notify waits beyond the caller's budget.
-- Test-only temporary CA and DNS-route injection stay package-private. Real Python
-  service tests bind only owned ephemeral loopback listeners and preserve bounded
-  startup/probe/shutdown. No system trust, public endpoint or live media change.
+- Exposing control OR relay requires built-in TLS plus paired dedicated client CA
+  and manifest. The legacy insecure flag cannot bypass that boundary. All-loopback
+  lab behavior remains available; no compiled public profile is added.
+- TLS 1.3 verifies any presented host client certificate. Registration additionally
+  requires an exact approved leaf fingerprint and current validity. Identity comes
+  from the completed server TLS connection, never wire fields or display names.
+- Strict manifest: at most 64 KiB and 128 unique opaque principals/fingerprints,
+  regular stable file, no symlink/duplicate/unknown fields; immutable until restart.
+  Startup/extraction errors remain categorical. No client private keys in policy.
+- Wall-clock certificate expiry is rechecked for every registration. Room TTL,
+  idle and fixed rate buckets retain monotonic time. Certificate authority grants
+  allocation only; invitation enrollment and room role tokens remain independent.
+- Guests and fresh authenticated Close require no client certificate. Invalid
+  certificates presented anyway fail TLS: future clients must omit expired host
+  credentials on these connections. Expiry does not itself revoke existing rooms.
+- Fixed approved-principal buckets permit one attempt/second, burst four, before
+  the global bucket. Waiting/enrolled rooms share a per-host cap (default four).
+  Unknown principals cannot grow accounting; removal decrements exactly once
+  before wiping the identity, signaling, keys and endpoints. Diagnostics stay
+  aggregate and omit identities, fingerprints, tokens and paths.
+- Response writes and retirement are bounded, including overload/error/HTTP.
+  Shutdown marks closed, stops accepting, wipes rooms, aborts tracked writers,
+  cancels/joins handlers and rejects late callbacks. One overall default eight
+  seconds includes pending five-second handshakes; join failure is not success.
+- Temporary certificate fixtures use test-only cryptography; production remains
+  standard-library-only. Real tests use owned loopback endpoints, no live issuer,
+  media, trust-store mutation or deployment.
 
-## Verification
+## Verification and retained failures
 
-Focused race checks passed: native TLS plus both independent Python-service
-cases (9.496s), profile policy (1.187s), IPC profile/override guards (1.261s),
-and the final local-only DNS-name regression (1.246s). Integration was required,
-not skipped. Full required local checks
-and both exact-tip hosted workflows must pass; each desktop executes the TLS
-control tests with Python required, alongside existing Art runtime and packaging.
-The exact tip, counts, workflow links and retained failures belong in the PR body
-and AFTER. Do not substitute parent proof, skipped tests or a compiled binary
-for execution. Physical Art/Music rows remain NOT RUN.
+Focused results before freeze: 166 policy/config/protocol tests; 64 state/lifetime
+tests; 22 server/connection tests; 15 actual TLS integration scenarios. Ruff passed.
+Read-only internal reviews found no actionable issue; this is not Karen PASS.
 
-Retain the early evidence: the first launch hit a sandbox Go-cache permission
-denial. The first executable connector run then reproduced a real five-second
-fresh-close failure caused by TLS close-notify. The corrected client owns and
-closes the underlying connection directly on every teardown path; dedicated
-held-peer tests exercise explicit close, acknowledged fresh close, malformed,
-canceled and lost receipts. Preserve `connector-unit-attempt-1.log`,
-`connector-unit-attempt-2.log` and subsequent distinct verification logs in
-`out/internet-control-tls`; a later green result does not erase the red baseline.
-The first corrected race attempt was denied owned loopback binding by the
-sandbox; the same bounded command passed with authorized local-socket access.
-These development attempts were not frozen-tip verification. The final full
-run must establish its own exact-source result.
+Retain the seven-failure configuration baseline, ten behavioral bounds failures,
+and actual plain-connection shutdown baseline under `out/internet-host-admission`.
+Early import/fixture mismatches and sandbox bind denials are separate setup
+failures. The first root TLS command failed all 15 scenarios at sandbox loopback
+bind; the same tests with authorized local sockets passed in 0.50 seconds. No
+TLS behavioral failure was observed in that first denied run. All evidence is
+preserved rather than relabeled green.
 
-## Limits and remaining work
+The frozen tip needs its own complete required local bar, full reference-service
+suite, native race and real sidecar tests, full application suite including Art
+start UX, and hosted CI including four desktop builds. Exact counts, tip/tree,
+workflow results and any recovery history belong in the PR body and AFTER.
 
-No Internet profile is exposed yet. Host admission, relay return-path validation,
-resource limits, deployment ownership and exact endpoint remain follow-on work.
-Native Art peer names and lesson requests need authenticated protocol support;
-existing local-only guards are not removed here. TLS service identity alone does
-not authorize host registration or certify the relay against abuse.
+## Ten-second UX and remaining acceptance
+
+Guests gain no account, credential setup, extra decision or public discovery
+screen in this slice. Existing invitation, room truth and Art/Music controls are
+unchanged. No claim that an invitation copy or successful TLS connection means a
+person joined, sees/hears the lesson, controls the mix or has acceptable latency.
+
+An inherited API-only lifecycle edge remains: concurrently calling start/close
+while listener creation awaits can escape the close snapshot. The CLI awaits
+startup sequentially. This review did not exercise or fix concurrent startup;
+that lifecycle case remains follow-on work before exposure.
+
+Ordinary host provisioning, a public profile, pending TLS concurrency bounds and
+UDP return-path proof are unfinished. A first authenticated UDP BIND does not
+prove its source is reachable. Public exposure, real two-home joining, Art faces/
+voices/narration/guest pause/listening levels and Music routing/mix/latency remain
+unverified. Deployment and physical acceptance are not replaced by CI.
 
 No merge/squash/tag/sign/release/Pages/Publish/deploy/spend/live Cisco, automatic
 capture or unsolicited send. Unsigned 0.27.2 remains Jeff-only. No short codes,
-public room discovery, second media engine, other repo or second goal. Parked
-#37/#49 and all prior drafts untouched. Self-QA is not Karen PASS.
+public discovery, second media engine, other repository or second goal. Parked
+#37/#49 and prior drafts remain untouched. Karen remains pending.

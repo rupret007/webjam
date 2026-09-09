@@ -1,42 +1,46 @@
-# Internet joining: verified service control
+# Internet invitations: approved host allocation
 
-Jeff authorized private-invitation Internet joining on 2026-09-09. This is the
-first transport slice toward ordinary people joining from different homes.
+Jeff approved private-invitation Internet implementation and isolated testing on
+2026-09-09. This slice addresses a service prerequisite for both Art and Music.
 
 ## Observed failure and priority
 
-The current native client only opens plaintext `reference-local` control.
-It cannot authenticate a provisioned Internet service, and its fresh host-close
-path also targets localhost. A service's existing TLS listener therefore cannot
-be used by the native client. This blocks the approved remote joining path before
-Art or Music can exchange room state. More invitation copy cannot supply it.
+The service accepted configurations exposing control or relay without host
+admission. Any reachable caller could allocate rooms using newly chosen tokens;
+room tokens protected later operations but did not authorize allocation. Seven
+configuration baseline cases reproduced the gap. Bounded connection tests also
+reproduced ten unbounded response/cleanup or closed-dispatch failures, plus a
+real loopback shutdown failure. Fixture and sandbox failures are recorded apart.
 
 ## Before and after
 
-Before: initial control and fresh authenticated removal hardcode local dialing.
-After: an immutable connector supports verified TLS 1.3 control, and both initial
-connection and fresh close use the same bound endpoint. Unknown/modified profiles
-are rejected before work starts. Existing local behavior is retained.
+Before: an anonymous remote client could reserve room capacity. After: an exposed
+service requires direct TLS and an approved, currently valid host certificate to
+register. Each approved host has a fixed rate bucket and room quota. Guests still
+join with their existing private invitation and need no client certificate.
+Fresh room-token-authenticated Close also remains certificate-free. The app's
+ordinary host credential provisioning remains unfinished; this is not yet a
+user-accessible Internet hosting flow.
 
-The actual Python service and Go client are exercised with temporary test trust
-and a loopback DNS route: host registration, invitation-only guest enrollment,
-role authorization, bidirectional opaque signaling, failed unverified close,
-then successful fresh close with the original authority and observed removal.
-No system trust, real DNS, live server, user credential or media is involved.
+Response and retirement waits now have deadlines. Shutdown rejects late handlers,
+stops listeners, wipes rooms and aborts tracked peers before joining tasks within
+one overall budget, including pending TLS handshakes.
 
-## Scope and dependency
+## Acceptance and dependency
 
-Fresh branch `codex/internet-control-tls` explicitly depends on OPEN DRAFT #112,
-`df18426dd195dcda8265d6979d869eaad8a463f8`. It needs the unmerged lifetime and
-fresh authenticated cleanup already composed there. Earlier drafts are unchanged.
+Fresh branch `codex/internet-host-admission` explicitly stacks on OPEN DRAFT #113,
+`68deee7eb21c584866f894fb2401da2b3dc569b0`, which supplies verified native TLS and
+fresh authenticated cleanup. Common fetched master remains
+`2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`. Prior drafts remain untouched.
 
-The shipped profile registry remains local-only until provisioning, host
-admission and relay protections are implemented and reviewed. This slice does
-not make Internet joining available in the app. That larger outcome remains the
-active goal; this is its necessary secure control foundation.
+Real temporary loopback TLS tests exercise approved hosts, absent/unapproved and
+invalid certificates, invitation-only guests, role-token boundaries, fresh Close,
+expiry during a connection, per-host quota, restart revocation and shutdown with
+an unfinished handshake. No system trust or live infrastructure changes occur.
 
-Next stages: host admission; relay return-path/reachability and resource bounds;
-provisioned profile/ordinary Host routing; native Art names and lesson requests;
-full same-invitation Art/Music journeys; separately approved deployment and
-physical two-home tests. Existing local Notes/Conversation, two Art cards/squirrel,
-Music routing and guest-never-seek protections remain.
+Remaining prerequisites: pending-handshake concurrency bounds, UDP return-path
+proof, ordinary host credential issuance/storage/recovery, an approved Internet
+profile, deployment authorization and physical two-home journeys. Admission does
+not prove return-path reachability or public service readiness. Native Art names
+and lesson requests also remain open. Existing Art door/squirrel, guest-never-seek,
+Notes/Conversation and Music routing protections remain inherited unchanged.
