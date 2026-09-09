@@ -54,6 +54,7 @@ from core.settings import (
     hosted_server_secret_path,
     save_settings,
 )
+from services.native_remote_transport import reference_local_host_requested
 from webjam_qt.invitation_ingress import (
     Invitation,
     InvitationIngressError,
@@ -407,6 +408,7 @@ class LaunchDialog(QDialog):
         self._creator_choice_explicit = False
         self._allow_workspace_choices = allow_workspace_choices
         self._host_available = sys.platform == "darwin"
+        self._art_lan_host_platform = sys.platform in {"win32", "linux"}
         self._jamulus_installer = _windows_jamulus_installer(settings)
         if self._jamulus_installer:
             LOGGER.info("Verified bundled Jamulus installer is available")
@@ -756,6 +758,16 @@ class LaunchDialog(QDialog):
             self.selected_start_key
         )
 
+    def _can_host(self) -> bool:
+        # Ordinary Art uses the existing Python LAN listener, without the
+        # Music engine. An explicit native lab request must keep its existing
+        # platform gate; it must never silently become an ordinary LAN host.
+        return self._host_available or (
+            self._art_lan_host_platform
+            and self.selected_creator_profile_key == "art"
+            and not reference_local_host_requested()
+        )
+
     def _refresh_start_presentation(self) -> None:
         """Bind Host to the chosen card without repeating the card's words.
 
@@ -768,12 +780,13 @@ class LaunchDialog(QDialog):
         if start is None:
             return
         copy = _CREATOR_LAUNCH_COPY[self._selected_creator_profile.key]
-        self._set_choice_helper(
-            "" if self._host_available else "Hosting is available in the macOS app."
-        )
+        available = self._can_host()
+        restriction = "" if available else "Hosting is available in the macOS app."
+        self._set_choice_helper(restriction)
+        self._host_button.setEnabled(available and not self._submitting)
         self._host_button.setAccessibleDescription(
             f"Start {start.label} as the host. {start.detail} "
-            f"{copy.host_description}"
+            f"{copy.host_description}" + (f" {restriction}" if restriction else "")
         )
 
     def _install_jamulus(self) -> None:
@@ -908,11 +921,12 @@ class LaunchDialog(QDialog):
         copy = _CREATOR_LAUNCH_COPY[profile.key]
         self._host_button.setText(copy.host)
         self._host_button.setAccessibleName(copy.host)
+        host_available = self._can_host()
         host_description = copy.host_description
-        if not self._host_available:
+        if not host_available:
             host_description += " Hosting is available in the macOS app."
         self._host_button.setAccessibleDescription(host_description)
-        self._host_button.setEnabled(self._host_available and not self._submitting)
+        self._host_button.setEnabled(host_available and not self._submitting)
 
         self._join_button.setText(copy.join)
         self._join_button.setAccessibleName(copy.join)
@@ -958,12 +972,12 @@ class LaunchDialog(QDialog):
             self._music_profile_card.setVisible(True)
 
         helper = copy.helper
-        if not self._host_available:
+        if not host_available:
             helper += " Hosting is available in the macOS app."
         # The Music card already says "Play live together." Repeating it
         # under Host is chrome. Art cards already say what they do.
         if first_screen_door:
-            helper = "" if self._host_available else "Hosting is available in the macOS app."
+            helper = "" if host_available else "Hosting is available in the macOS app."
         self._set_choice_helper(helper)
         if hasattr(self, "_start_cards"):
             self._apply_start_card_visibility()
@@ -1124,6 +1138,10 @@ class LaunchDialog(QDialog):
 
     def _host(self) -> None:
         if not self._allow_workspace_choices:
+            return
+        if not self._can_host():
+            if not self._submitting:
+                self._apply_creator_profile_presentation()
             return
         musician_name = self._validated_musician_name()
         if musician_name is None:

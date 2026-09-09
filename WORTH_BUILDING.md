@@ -1,53 +1,63 @@
-# Worth building — prepare a guest copy before the host shares
+# Worth building — artists can Host on the desktop they have
 
-Base: `e35f7352b42280814be0ea02f77b412f68231706`, fetched `origin/master`
-after #94; the fresh branch started at that exact tip.
-Branch: `codex/art-guest-prepare-copy`; canonical WebJam checkout only.
-Marker: `OVERNIGHT_WEBJAM_ART_20260907_2307`.
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5579240270.
+Fresh independent branch: `codex/art-lan-host-platforms`, from fetched
+`origin/master` `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`.
+[BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5595493289),
+2026-09-08 22:49 CT; codex lease through 2026-09-09 02:49 CT.
 
-#93 gives a waiting guest an **Open Paint along** room action and says they can
-load a copy before the host shares. The panel actually hid **Open my copy…**
-until an offer arrived. The existing follower already supports holding a local
-copy without showing or playing it. This is a missing functional step, with a
-short path through existing code.
+## The observed failure
 
-The valid baseline reproduced **16 failed / 2 passed** in real Qt/controller
-journeys. The native fixture was corrected to carry an empty video snapshot
-before that baseline. All sixteen preparation journeys stopped at the missing
-file action; both Make together controls already passed.
+Both Make together and Paint along disable Host on Windows and Linux, with
+“Hosting is available in the macOS app.” This applies Music's platform gate to
+ordinary Art even though Art already starts the authenticated Python LAN room
+before the Music engine. A sculptor or painter cannot take the first action.
+The policy baseline reproduces the barrier and direct-call bypasses:
+**23 failed / 10 passed** before production changes.
 
-Before: a guest follows the waiting-room action into a panel with no file
-action. After: the guest can open a copy early and see **Your copy is open**,
-explicitly waiting for WebJam to check it against the host's eventual offer.
-Matching, host state and connection still own following. A changed or failed
-copy offers another try. More → Close my copy works before a share.
+This beats another copy-only slice: it enables an existing room on the user's
+platform. It adds neither a creative tool requirement nor a network service.
 
-Make together already starts with each artist's own tools; #94 supplies its
-Conversation next-click label. Completing an action that currently dead-ends
-beats adding more wording or another door choice. This slice changes only the
-existing local follower projection and Paint along panel, plus tests/docs.
+## Before and after
 
-The early room cue uses the existing host-start fact available on native
-rooms. LAN guests can use the existing explicit Paint along entry; this slice
-does not add a host-start field or pretend LAN publishes one. Neither route
-adds a required video step to Make together.
+Before: Windows/Linux artists can only Join from the Art door. A disabled Host
+button also fails to protect a direct or stale programmatic Host submission.
+After: supported Windows/Linux desktop Art users can choose either activity
+and Host an ordinary LAN room. Current profile, platform and native opt-in are
+checked again at submission. Disabled choices explain their restriction in
+both visible and accessible text, including after switching Art activities.
 
-Focused proof: **425 tests passed**, including **24 new preparation journeys**
-across LAN/native, 720/1100 widths, later match/mismatch, repeated empty room
-state, withdrawal, changed/deleted copies, cancellation, decoder failure,
-connection loss during the chooser, closing a prepared copy and Make together.
-Actual Qt captures at 720×560 were inspected using synthetic files and a
-controlled decoder. Full local and hosted results, exact tip/tree and four
-desktop build evidence belong in the OPEN DRAFT and coord AFTER.
+Mac hosting remains as before. Non-Mac Music, other profiles and an explicit
+native reference-local request remain unavailable; an opt-in never silently
+falls back to ordinary LAN. Runtime dispatch and signature checks are unchanged.
 
-No download, file transfer, protocol, player, timer, meeting action or guest
-transport input is added. Hashing and decoding remain synchronous. Physical
-playback, live meetings, OS focus/installed-app feel and signing are NOT RUN.
+## Acceptance and evidence
 
-One OPEN DRAFT PRE_KAREN, then stop for Karen leftover + security + ten-second
-UX. No rework of #89/#90; parked #37/#49 untouched. Art door retains exactly
-Make together + Paint along → Host/Join and the squirrel-with-fro artwork.
-Unsigned 0.27.2 is Jeff-only. No merge/squash/tag/sign/Pages/Release Trust/Publish/
-release/deploy/spend/live Cisco, short-code/public rendezvous, Music, Drawpile,
-shared-canvas work, second video stack, other-repo lane or parent injection.
+- Both Art starts accept Host without installing or starting a Music component.
+- Profile/start/back changes and failed saves retain the correct next action;
+  stale/direct calls cannot grant unavailable hosting or replace a submission.
+- Real host settings, room listener, credentials, guest invitation ingestion,
+  authenticated state and named-reader presence work together on loopback.
+- Missing address or failed bind prevents sharing; Retry can open the real
+  listener. Guest Leave releases its worker; End Room closes the owned listener.
+- Actual desktop CI runtimes execute the same bounded stdlib unittest before
+  packaging, using their existing locked dependencies. OS-selection mocks
+  alone are not evidence for Windows or Linux runtime behavior.
+
+Focused policy is **33 passed**. Art's existing UX suite is **43 passed** after
+updating two obsolete Windows-host assumptions and retaining denied controls.
+Portable, full local and exact-tip hosted results belong in the OPEN DRAFT
+PRE_KAREN body and coord AFTER; do not infer final green from this document.
+
+## Scope and remaining work
+
+This is independent master-based work. It does not include unmerged #110
+`686aa2b639aea2183ef53d327c3940782d6d21f3` or replace that verified combined
+Art/Music candidate. Later composition must preserve its newer behavior.
+
+Real installed-app LAN/firewall use, separate-home joining, lesson/voice levels,
+physical Music timing and Karen review remain open. Windows chmod is not proof
+of an owner-only ACL. Source-runtime tests do not certify frozen packages or
+media. The Art door remains two cards with the squirrel mark; guests never seek.
+OPEN DRAFT only; no merge/squash/tag/sign/release/Pages/Publish/deploy/spend/live
+Cisco, automatic media/capture, unsolicited send, short codes/public rendezvous,
+second engine, other repo or second goal. Parked #37/#49 untouched.

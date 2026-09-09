@@ -1,88 +1,92 @@
-# PRE_KAREN — an early copy waits for the host
+# PRE_KAREN — ordinary Art hosting across desktop platforms
 
-Base: `e35f7352b42280814be0ea02f77b412f68231706` (master after #94).
-Branch: `codex/art-guest-prepare-copy`; canonical WebJam checkout only.
-Marker: `OVERNIGHT_WEBJAM_ART_20260907_2307`.
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5579240270.
+Branch `codex/art-lan-host-platforms`, fresh fetched master
+`2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`.
+[BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5595493289)
+at 2026-09-08 22:49 CT. Exact frozen tip, full local results and actual hosted
+receipts are recorded in the OPEN DRAFT body and coord AFTER.
 
 ## Leftover honesty
 
-#93 names a waiting Paint along guest's next click, but that click led to a
-panel that hid its file action until a host offer. The existing follower
-already accepts an early copy and waits for an identity match. This slice
-completes that explicit path; it does not revisit guest opening/busy handling
-from #90 or first-offer navigation from #89.
+This fixes a real first-action barrier, not a new transport: the Art door's
+Mac-only Host gate hid an existing authenticated Python LAN path on Windows
+and Linux. It now permits that ordinary Art path on supported desktop platforms.
+The submission boundary also rejects stale/direct calls for unavailable hosts.
+No room-connected or media-playing status is inferred from pressing Host.
 
-An empty guest panel now offers Open my copy. The local snapshot gains one
-bounded boolean for a retained, unchanged copy before an offer. Your copy is
-open means exactly that; it grants no following or play permission. The new
-status disappears when the file changes, fails, closes or the room is lost.
-Withdrawal pauses and retains a valid copy as waiting.
+The slice starts independently from master. #110 at
+`686aa2b639aea2183ef53d327c3940782d6d21f3` remains the separately verified
+combined candidate. Its Conversation, lesson-request, Music listening and
+recovery changes are not claimed here; composition is explicit future work.
 
 ## Ten-second UX self-QA
 
-- Before a share: one file action, with permission to keep making instead.
-- During the existing local check: Opening your copy; no duplicate chooser.
-- After opening: Your copy is open; the next dependency is explicitly the
-  host's matching offer. Back to room remains available.
-- After the offer: a matching copy follows; a different one offers the existing
-  matching-copy recovery. No picture is shown before proof.
-- Changed/deleted or failed copies offer another try. Close my copy works while
-  waiting. Lost-room return takes priority over any stale chooser result.
-- Make together keeps Bring your own tools and no automatic video requirement.
-  Native room-start evidence supplies the early room cue. LAN is tested via its
-  existing explicit in-room Paint along entry; no new LAN start fact is claimed.
-- The real compact Qt window was captured at 720×560 and visually inspected.
-  New journey assertions also cover 1100-pixel width, keyboard activation and
-  visible controls staying within the embedded panel.
+- An artist chooses Make together or Paint along, then Host. No Music install,
+  video file, drawing program or extra setup choice is required to open the room.
+- Available Art hosting adds no helper line or door chrome. Make together,
+  Paint along, Host and Join remain the existing visible actions.
+- Unavailable profile/platform/native choices retain the restriction in both
+  the helper and accessible Host description, even after changing Art cards.
+- Back/profile transitions reevaluate the action. Save failure restores the
+  current Art action; an ongoing Join cannot be overwritten by a Host call.
+- Real runtime tests distinguish a waiting host, enrollment without presence,
+  an authenticated guest reader, failed startup and completed cleanup.
+- Missing address or bind failure cannot produce a copied invite. Retry uses
+  the existing owner. No new loader, player, audio or provider workflow is added.
 
 ## Security and ownership self-QA
 
-- Production changes are confined to core/reference_video.py and the existing
-  Paint along dialog. The controller, coordinator, transport and player are
-  unchanged.
-- local_copy_prepared is a path-free boolean. It checks the retained identity,
-  current file token and absence of loading/player attention/pending pause.
-  It never replaces the host's per-session matching proof.
-- NO_VIDEO still means can_follow=false and should_play=false. The surface
-  stays detached, position stays disabled/hidden, and the guest has no seek,
-  play, pause, stop or publication authority.
-- Existing controller checks still validate the current panel/coordinator,
-  authenticated connection, room generation and current video state after
-  the native chooser returns. Both transports reject the new action after loss.
-- The early file uses the sole silent player and the same explicit local picker.
-  No path, file bytes, secret or new field crosses the room protocol. No extra
-  persistence, logging, process, thread, timer, URL, download or meeting handoff.
-- Tests use temporary synthetic files and controlled decoders. Private markers
-  are checked absent from logs. Make together and Conversation remain independent.
+Production changes are confined to LaunchDialog. The predicate preserves Mac
+behavior and admits only Windows/Linux + current Art + no explicit native lab
+request. It uses the existing trimmed `WEBJAM_ENABLE_REFERENCE_LOCAL == "1"`
+interpretation. The actual Host callback rechecks it before settings mutation.
+The existing submission lock still owns duplicate prevention.
 
-## Verification
+The controller's native-first dispatch, signature/integrity verification,
+Music startup, private-address validation, bearer authorization and cleanup
+logic are unchanged. Native opt-in never silently becomes an ordinary LAN host.
+No protocol, public endpoint, token lifetime, persistence format, permission,
+media capture, browser action or automatic send is added.
 
-The valid pre-change baseline was 16 failed / 2 passed. After implementation,
-the focused suite passed **425 tests in 19.41s**, including 24 new preparation
-journeys. A separate capture run passed its selected real Qt journey.
+Portable tests isolate settings, repositories, notes, logs and secrets in
+explicit temporary storage. The real host owner binds through a controlled
+loopback seam and the real guest talks only to that owned listener. Enrollment
+alone and rejected authentication do not count as presence. Guards reject
+unrelated network/process/provider/audio actions; callback and teardown errors
+fail the test. Windows filesystem permission behavior is not an ACL guarantee.
 
-Ruff across core/webjam_qt/ui/services/api/tests, compileall, pip check, runtime
-dependency policy and git diff --check passed. Final full local and hosted
-evidence on the frozen tip is recorded in the PR body and coord AFTER; do not
-infer hosted green from this document.
+## Verification and failure history
 
-The full local run uses the repository CI procedure: every tracked test module,
-sorted by git, in a fresh Python interpreter, fail-fast with no retries. The
-workflow documents Qt's process-lifetime reason for this existing isolation.
-No tests are omitted and the workflow is unchanged.
+Policy baseline: **23 failed / 10 passed**. Corrected policy: **33 passed**.
+Existing Art UX: **43 passed**. Its first corrected run had one obsolete
+Windows-host assertion fail; the test now retains a denied-platform control and
+checks that available Art hosts have no redundant helper line. Earlier compact
+Windows expectations were updated without removing layout/door assertions.
 
-## Limits and holds
+The initial portable fixture had a module-restoration problem and a sandbox
+loopback-bind denial; those failures are retained separately from product
+failures. The fixture restores only its optional-audio module entry. The bounded
+real-listener test runs with the required local socket permission, while guards
+continue to deny unrelated effects. Final portable evidence is in the PR body.
 
-Hashing/decoding remain synchronous; this is not a responsiveness or background
-loading claim. Physical playback, live Webex/Cisco, OS-native focus,
-installed-app feel, signing/notarization/platform trust are **NOT RUN**.
-Codex self-QA is not independent review or Karen PASS.
+Every tracked top-level application test module runs in a fresh Python process,
+matching the existing Qt lifetime isolation. Required static, dependency, native,
+sidecar, service and UX checks run on the frozen source. Hosted CI remains
+allowed to run and adds one bounded, dependency-free unittest invocation to
+each existing desktop job before packaging. Release/manual gates are unchanged.
+Do not claim hosted green until the exact-tip runs and all four desktop runtime
+steps/builds have been inspected. Evidence: `out/art-lan-host-platforms`.
 
-Keep the PR OPEN DRAFT. Stop for Karen leftover + security + ten-second UX on the
-exact final tip. No merge/squash/tag/sign/Pages/Release Trust/Publish/release/
-deploy/spend/live Cisco. Unsigned 0.27.2 stays Jeff-only; never merge unsigned
-WebJam. #89/#90 are not reworked and parked #37/#49 remain untouched. No
-short-code/public rendezvous, Music, Drawpile/shared-canvas work, second video
-stack, other repo, second Goal or parent injection. Door stays exactly Make
-together + Paint along → Host/Join with the squirrel-with-fro artwork.
+## Open acceptance and holds
+
+Physical LAN reachability/firewall prompts, installed-app behavior, different
+home networks, Art faces/narration/independent listening and Music audibility,
+routing/timing/endurance are **NOT RUN**. The separate-home architecture decision
+remains unanswered. Four builds and loopback do not complete either real session.
+Codex self-QA is not Karen PASS; independent review remains pending.
+
+Keep OPEN DRAFT. No merge/squash/tag/sign/release/Pages/Release Trust/Publish/
+deploy/spend/live Cisco, unsolicited messages or automatic capture. Unsigned
+0.27.2 remains Jeff-only. Parked #37/#49 untouched; no second goal, other repo,
+short codes/public rendezvous or second media engine. The two Art cards, squirrel
+mark, guest-never-seek rule and all original draft heads remain protected.
