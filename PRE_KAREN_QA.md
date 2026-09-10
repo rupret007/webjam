@@ -142,6 +142,33 @@ corrected pre-freeze service suite passes **407 tests in 3.66 seconds**, with st
 resource/unraisable warning checks. The revised source still needs its own frozen-
 tip full local and hosted evidence; the original tip's results cannot substitute.
 
+The next source `ae97273fcbe2e7e8ee1cd882a60468fdf11ceca5` passed all 14 local
+checks and its PR's Windows desktop job. Its own push then recorded **1 failed /
+406 passed** on Windows: the real control/partial-HTTP shutdown test exceeded its
+configured 25 ms service deadline. That failure remains under
+`out/service-connection-ownership/revision-2-ae97273`; the passing PR job does not
+erase it. The log does not identify a permanent leaked owner or measure the
+runner's clock resolution. Python's [Windows platform notes](https://docs.python.org/3.12/library/asyncio-platforms.html#windows)
+describe platform-dependent timer resolution; this is context, not a diagnosis
+of that runner.
+
+This real-socket success case now uses the existing production configuration
+with ephemeral ports, including its 3 s plain shutdown budget. It observes the
+real HTTP handler entering its second, incomplete header read before Close,
+then checks both accepted descriptors, handlers, setup tasks and listener polls
+are retired, with no HTTP reply and an erased registry. Aggregate failure
+diagnostics distinguish attachment, open descriptors and unfinished join work.
+The deliberately short held-peer, pending-attachment and failed-retirement tests
+remain required and unchanged. No production timeout or ownership code changes.
+
+A retained local diagnostic deliberately delayed real abort/poll scheduling:
+25 ms failed while owned cleanup subsequently completed; the existing 3 s
+budget succeeded. Its first probe's wrapper-lifetime warnings and corrected
+clean run are both retained. This controlled model is not Windows emulation or
+a reproduction of the hosted cause. The final corrected source still requires
+fresh full local verification and both exact-tip hosted workflows, including
+actual Windows execution; neither prior tip supplies that proof.
+
 ## Ten-second UX and remaining acceptance
 
 No new guest decisions or credentials. The private invitation remains the join
