@@ -91,7 +91,9 @@ class MixManager:
             return False
         try:
             payload = json.loads(mix_path.read_text())
-            self._jamulus.apply_mix_data(payload)
+            applied = self._jamulus.apply_mix_data(payload)
+            if not self._loaded_participants(applied):
+                return False
             self._log.info("Mix loaded from %s", mix_path)
             self._flash("Mix loaded", 4000)
             return True
@@ -121,6 +123,19 @@ class MixManager:
                 6000,
             )
             return False
+
+    def _loaded_participants(self, applied: object) -> bool:
+        """A parsed file is not proof that any current listening row matched."""
+        if type(applied) is int and applied > 0:
+            return True
+        if type(applied) is int and applied == 0:
+            message = (
+                "No matching participants. Join the intended session or choose another mix."
+            )
+        else:
+            message = "This file has no valid mix. Choose another file or save a fresh mix."
+        self._flash(message, 6000)
+        return False
 
     def save_to(self, path: Path) -> bool:
         """Serialize current mixer state to ``path`` (atomic, indented JSON).
@@ -168,7 +183,9 @@ class MixManager:
             return False
         try:
             payload = json.loads(path.read_text())
-            self._jamulus.apply_mix_data(payload)
+            applied = self._jamulus.apply_mix_data(payload)
+            if not self._loaded_participants(applied):
+                return False
             self._log.info("Mix loaded from %s", path)
             self._flash(f"Mix loaded from {path.name}", 4000)
             return True
@@ -211,7 +228,8 @@ class MixManager:
             return
         try:
             payload = json.loads(mix_path.read_text())
-            self._jamulus.apply_mix_data(payload)
-            self._log.info("Restored saved mix from %s", mix_path)
+            applied = self._jamulus.apply_mix_data(payload)
+            if type(applied) is int and applied > 0:
+                self._log.info("Restored saved mix from %s", mix_path)
         except Exception:  # noqa: BLE001
             self._log.debug("Failed to restore saved mix from %s", mix_path, exc_info=True)

@@ -38,6 +38,16 @@ inside the Go transport boundary, not in the desktop process. It must:
    opaque fields without interpreting them. Pion's separate `WJSE`
    candidate-envelope path remains virtual-network evidence, not this native
    relay protocol.
+6. Keep the invitation deadline as an admission/proof bound, distinct from an
+   established peer's lifetime. The service retains an enrolled room past that
+   deadline only while it satisfies its idle limit and independent maximum
+   active lifetime, which defaults to eight hours from registration. This is
+   service enrollment, not evidence of mutual peer authentication. Native live
+   lifetime must also respect the actual ephemeral certificate expiry; a reused
+   identity can have less than eight hours left. Preserve explicit Leave/Reset,
+   failure, and process shutdown cancellation. After an idle service-control
+   TCP connection closes, authenticated host cleanup may reconnect to the same
+   configured service, with replay-safe sequencing and a bounded shutdown budget.
 
 For a two-process loopback proof, use the reference defaults. A public proof
 needs a separately reviewed compiled endpoint profile and trusted TLS

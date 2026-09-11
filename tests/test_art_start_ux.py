@@ -257,9 +257,9 @@ def test_the_name_field_asks_for_a_name(qapp, tmp_path: Path):
 def test_the_page_never_says_the_same_thing_twice(qapp, tmp_path: Path):
     """A card already says what it does; repeating it below is noise.
 
-    On a Mac, where hosting works, the helper line has nothing left to add and
-    stays empty. Elsewhere it carries the one thing a card cannot: that
-    hosting is unavailable here at all.
+    Where Art hosting works, the helper line has nothing left to add and
+    stays empty. An unavailable platform carries the one thing a card cannot:
+    that hosting is unavailable here at all.
     """
 
     dialog = _dialog(tmp_path)
@@ -274,12 +274,16 @@ def test_the_page_never_says_the_same_thing_twice(qapp, tmp_path: Path):
 
     settings = _settings(tmp_path)
     settings.last_creator_profile_key = "art"
-    with patch.object(sys, "platform", "win32"):
-        elsewhere = LaunchDialog(settings)
-    try:
-        assert "macOS app" in elsewhere._choice_helper.text()
-    finally:
-        elsewhere.deleteLater()
+    for platform, available in (("win32", True), ("linux", True), ("freebsd14", False)):
+        with patch.object(sys, "platform", platform):
+            elsewhere = LaunchDialog(settings)
+        try:
+            assert elsewhere._host_button.isEnabled() is available
+            assert elsewhere._choice_helper.text() == (
+                "" if available else "Hosting is available in the macOS app."
+            )
+        finally:
+            elsewhere.deleteLater()
 
 
 def test_a_profile_without_cards_keeps_its_headline_and_helper(
@@ -667,7 +671,7 @@ def test_windows_door_with_missing_music_component_stays_compact(qapp, tmp_path,
         qapp.processEvents()
         assert dialog.height() + 40 <= 600
         assert dialog.width() <= 760
-        assert not dialog._host_button.isEnabled()
+        assert dialog._host_button.isEnabled() is (profile == "art")
         assert dialog._join_button.isEnabled()
         assert not dialog._install_jamulus_button.isVisibleTo(dialog)
         assert_no_banned_first_screen_words(harvest_first_screen(dialog))

@@ -1,62 +1,62 @@
-# Worth building — verify one combined invitation-to-session flow
+# Internet invitations: bounded setup and owned shutdown
 
-Branch: `codex/two-session-integration`, canonical checkout only.
-Declared dependent stack rooted at #97
-`14aa874aa28cc3bc8cdfe647c888bc61547daa89`; original drafts remain untouched.
+Jeff approved private-invitation Internet implementation and isolated testing on
+2026-09-09. This slice addresses one remaining service prerequisite for both Art
+and Music; it adds no guest setup screen.
 
-## Observed gap and why this comes next
+## Observed failure and priority
 
-Separate branch tests do not prove that the improvements work together. A guest
-may have a different personal meeting from the invitation's room meeting. The
-combined flow must retain the right context through shared-lesson entry, room
-meeting replacement/removal, Retry and Leave. Music recording intent must remain
-correct within that same room lifecycle.
+The completed-connection cap began after TLS. A stalled peer could therefore use
+accepted sockets and handshake state outside that cap. A handshake deadline alone
+is not a concurrency bound. Separately, Close could finish while startup was
+creating a listener, leaving the late listener outside its cleanup snapshot.
+Deterministic lifecycle baselines reproduce that race and missing synchronous
+capacity reservations. These resource ownership gaps need fixing before an
+ordinary Internet invitation can safely depend on the service.
 
-This is an unverified integration boundary, not a newly invented feature or a
-claim of a reproduced product defect. Reimplementing pending work would duplicate
-it. The approved sustained goal permits a documented stack for this dependency.
+## Before and after
 
-## Source reuse and intended before/after
+Before: unfinished handshakes bypassed completed capacity, and successful Close
+did not prove retirement of concurrently created listeners. After: a synchronous
+acceptance gate bounds pending setup and its start rate before TLS work; verified
+connections reserve active capacity before handler scheduling. Owned startup and
+teardown retire late resources and remain responsible after caller cancellation.
 
-The stack starts from #97 `14aa874` and reuses the existing source from #96
-`41a2665`, both #98 commits ending at `830bed1`, #99 `c2a088f`, and #100 `0cf1f2c`.
-Full original revisions are recorded in PRE_KAREN_QA.md. Their original master
-was `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`; their green results remain
-historical evidence for their own heads.
+The first hosted checks exposed a same-size policy rewrite missed by unchanged
+filesystem timestamps. The correction requires two bounded reads to agree while
+preserving metadata checks. Review also found that a transient peer accept error
+could stop future joining; those documented errors now retain bounded polling,
+while invalid listener state and resource failures still fail closed. The original
+hosted failures are retained and the corrected source needs its own verification.
 
-Before: separate drafts improve own-space Art entry, invitations, shared lessons,
-Shared Track support/recording and offline timing, without a verified combined
-candidate. Intended after, subject to pending tests: one reviewable source stack
-preserves those existing behaviors together, including the correct room meeting,
-one useful next action, personal settings/work and deliberate recording intent.
+This beats adding door copy while the authorized Internet path still lacks a
+bounded service lifecycle. It is infrastructure progress, not proof that a person
+joined, sees/hears the lesson, can pause or has acceptable musical latency.
 
-## Acceptance and evidence
+## Acceptance and dependency
 
-Six new local cases pass on the assembled source: four Art cases use real
-LAN/native invitation ownership, different personal/room meetings, link
-replacement/removal, explicit Open, failed/successful Leave and stale callbacks;
-two Music cases preserve recording intent through host-to-guest cleanup and
-meeting replacement/absence. Existing component suites retain the broader
-modal, retry, queue, layout, route and supported-platform assertions.
+Branch `codex/service-connection-ownership` explicitly stacks on OPEN DRAFT #114,
+`89274f756567ed6422b93e193560800ef126667f`, which supplies approved-host allocation
+and invitation-only guests. Common fetched master remains
+`2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`. Prior drafts remain untouched.
 
-No production defect was found in these new journeys. Integration resolves an
-old Art copy assertion and overlapping first-session/changelog/handoff prose
-while preserving source behavior. No failed behavior assertion was removed.
-Full combined local verification and hosted CI including four desktops still
-must run on the final frozen tip; the draft body and coord AFTER carry that
-verdict. Original component results do not certify this candidate.
+Real owned-loopback TLS cases hold unfinished peers at capacity, release one and
+register an approved host, enroll a certificate-free guest, use fresh role-token
+Close, and close a mixture of active TLS, incomplete TLS and HTTP peers. Gated
+lifecycle tests cover late creation, canceled callers and honest cleanup failure.
+Four desktop CI jobs run the complete service suite on actual Python 3.12 event
+loops, including Windows Proactor, before the existing desktop packaging steps.
+Results must be attached to this slice's exact frozen tip; a workflow edit alone
+is not platform evidence.
 
-## Remaining gates and holds
+Service bind settings intentionally accept only unscoped numeric addresses or
+`localhost`, avoiding executor DNS work that cannot be reliably canceled. This
+does not change certificate DNS identity or expose IPC endpoint overrides.
+A broader ordinary-loop burst probe exposed Python's delayed acceptance before
+transport attachment even though service counters looked clear. Control and HTTP
+therefore need owned raw acceptance; the original failing evidence is retained.
 
-The two-home network decision remains pending. No remote service, short code or
-public rendezvous is introduced. Real Art audio/faces/pause requests, any-artist
-usability, Music mixing/reference timing and sustained rehearsal remain NOT RUN.
-Synthetic RTT and packaging success do not establish physical acceptance.
-
-The goal remains INCOMPLETE. No Karen PASS is claimed; independent review must
-match the final combined tip. OPEN DRAFT only; originals and parked #37/#49 stay
-untouched. No merge/squash/tag/sign/release/Pages/Release Trust/Publish/deploy/
-spend/live Cisco, unsolicited send or automatic capture. Unsigned 0.27.2 stays
-Jeff-only. No second media
-engine, other repo, parent injection or second WebJam goal. Maintain the coord
-#3 four-hour codex lease and America/Chicago BEFORE/AFTER; release at handoff.
+Ordinary host credential provisioning, UDP return-path proof, a compiled Internet
+profile, deployment authorization and physical two-home journeys remain open.
+Native Art names and lesson requests remain open. Art's two-card door, squirrel,
+guest-never-seek, Notes/Conversation and Music routing protections are inherited.

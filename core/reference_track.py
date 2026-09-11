@@ -1427,10 +1427,10 @@ class ReferenceTrackController:
         # failure and no owned Jamulus client remains. A successful explicit
         # capability recheck may then return the loaded source to READY.
         self._recoverable_route_failure = False
-        # Incrementing this token cancels a prepare/start operation that has
-        # temporarily released the controller lock. Stop, close, and an
-        # incompatible capability refresh all use it so a stale worker cannot
-        # resurrect an owned Jamulus client.
+        # Incrementing this token cancels a play operation that has released
+        # the controller lock for capability, health, or prepare/start work.
+        # Stop, close, and an incompatible capability refresh also use it so
+        # a stale worker cannot resurrect an owned Jamulus client.
         self._launch_generation = 0
         self._source_generation = 0
         self._playback_generation = 0
@@ -1778,9 +1778,12 @@ class ReferenceTrackController:
                 and self._session is not None
             ):
                 resume_session = self._session
+            intent_generation = self._launch_generation
         if resume_session is not None:
             checked = self.refresh_health()
             with self._lock:
+                if intent_generation != self._launch_generation:
+                    return self._snapshot_locked()
                 if (
                     checked.state is ReferenceTrackState.FAILED
                     or self._session is not resume_session
@@ -1795,6 +1798,9 @@ class ReferenceTrackController:
             self._notify(resumed)
             return resumed
         capability = self._safe_capability(context.audience_bridge_active)
+        with self._lock:
+            if intent_generation != self._launch_generation:
+                return self._snapshot_locked()
         if capability.reason_code == "cleanup_pending":
             cleanup_error = self._retry_backend_cleanup()
             if cleanup_error:
@@ -1807,6 +1813,8 @@ class ReferenceTrackController:
                 context.audience_bridge_active
             )
         with self._lock:
+            if intent_generation != self._launch_generation:
+                return self._snapshot_locked()
             self._capability = capability
             if not self._capability.available:
                 return self._fail_locked(
@@ -2032,17 +2040,20 @@ class ReferenceTrackController:
         return self.stop()
 
     def cancel_pending_start(self) -> ReferenceTrackSnapshot:
-        """Synchronously revoke an unpublished route start without blocking."""
+        """Revoke admitted Play work without stopping a published route."""
 
         with self._lock:
             if self._state is ReferenceTrackState.CLOSED:
                 return self._snapshot_locked()
+            # Play can still be inspecting capability while READY, or checking
+            # health before resuming PAUSED. Revoke that intent too; changing
+            # this epoch never stops an already published session or stream.
+            self._launch_generation += 1
             if (
                 self._state is not ReferenceTrackState.ROUTING
                 or self._session is not None
             ):
                 return self._snapshot_locked()
-            self._launch_generation += 1
             self._state = (
                 ReferenceTrackState.READY
                 if self._stream is not None
