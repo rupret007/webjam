@@ -43,7 +43,8 @@ pretending to own systems that remain independent.
 > checkout or branch artifact for those checksum-bound bytes.
 
 New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
-[First Jam](FIRST_JAM.md); this README is the complete technical story.
+[First Jam](FIRST_JAM.md); this README is the complete technical story. Just
+showing someone the door? See the [two-minute demo script](DEMO.md).
 
 ## At a glance
 
