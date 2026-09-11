@@ -16,10 +16,11 @@ import (
 const controlOperationLimit = 5 * time.Second
 
 type Client struct {
-	mu     sync.Mutex
-	conn   net.Conn
-	reader *bufio.Reader
-	closed bool
+	mu      sync.Mutex
+	conn    net.Conn
+	rawConn net.Conn
+	reader  *bufio.Reader
+	closed  bool
 }
 
 type wireRequest struct {
@@ -58,22 +59,24 @@ const (
 )
 
 func DialLocal(ctx context.Context) (*Client, error) {
-	if ctx == nil {
-		return nil, ErrInvalidInput
-	}
-	dialer := net.Dialer{Timeout: controlOperationLimit, KeepAlive: -1}
-	conn, err := dialer.DialContext(ctx, "tcp4", ControlAddress)
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		return nil, ErrControlUnavailable
-	}
-	return newClient(conn), nil
+	return LocalControlConnector().Dial(ctx)
 }
 
 func newClient(conn net.Conn) *Client {
-	return &Client{conn: conn, reader: bufio.NewReaderSize(conn, MaxControlFrameBytes)}
+	return &Client{conn: conn, rawConn: conn, reader: bufio.NewReaderSize(conn, MaxControlFrameBytes)}
+}
+
+// closeConnection retires the owned transport without a TLS close_notify
+// write. TLS shutdown otherwise starts its own write deadline and can exceed
+// the caller's cancellation or the total authenticated-close budget.
+func (c *Client) closeConnection() error {
+	if c.rawConn != nil {
+		return c.rawConn.Close()
+	}
+	if c.conn != nil {
+		return c.conn.Close()
+	}
+	return nil
 }
 
 func (c *Client) Register(
@@ -198,7 +201,7 @@ func (c *Client) Close() error {
 	}
 	c.closed = true
 	if c.conn != nil {
-		if err := c.conn.Close(); err != nil {
+		if err := c.closeConnection(); err != nil {
 			return ErrControlUnavailable
 		}
 	}
@@ -247,7 +250,7 @@ func (c *Client) roundTrip(
 			_ = c.conn.SetDeadline(time.Time{})
 		} else if !stopped && !c.closed {
 			c.closed = true
-			_ = c.conn.Close()
+			_ = c.closeConnection()
 		}
 	}()
 	if err = writeAll(c.conn, encoded); err != nil {
@@ -425,7 +428,7 @@ func mapServiceError(code string) error {
 func (c *Client) protocolFailure() error {
 	c.closed = true
 	if c.conn != nil {
-		_ = c.conn.Close()
+		_ = c.closeConnection()
 	}
 	return ErrControlProtocol
 }
@@ -433,7 +436,7 @@ func (c *Client) protocolFailure() error {
 func (c *Client) unavailableFailure() error {
 	c.closed = true
 	if c.conn != nil {
-		_ = c.conn.Close()
+		_ = c.closeConnection()
 	}
 	return ErrControlUnavailable
 }

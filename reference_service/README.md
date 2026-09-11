@@ -4,6 +4,8 @@ This is the smallest self-hostable reference implementation of WebJam's v3
 rendezvous boundary. It provides:
 
 - bounded, versioned, one-host/one-guest registration;
+- approved-host registration over verified client TLS when admission is enabled,
+  while invited guests need no client certificate;
 - atomic one-use service enrollment with a ten-minute default lifetime,
   consumed before QUIC peer proof (so an unused bearer can be burned and must
   then be reset);
@@ -34,10 +36,24 @@ Listeners are control TCP `127.0.0.1:47131`, exact-peer relay UDP
 `127.0.0.1:47132`, and health HTTP `127.0.0.1:47133`. The control listener is
 plaintext only because it is loopback. Never expose it that way.
 
+Bind settings accept unscoped numeric IPv4/IPv6 addresses or the exact name
+`localhost` (case-insensitive). Other hostnames, zone identifiers and empty values
+are rejected before creating resources; startup never starts a DNS lookup.
+Control `localhost` binds IPv6 and IPv4 loopback to the same port, falling back
+to IPv4 only when IPv6 loopback is unavailable. An explicit IPv6 bind remains
+IPv6-only and fails if unavailable. HTTP and UDP `localhost` use `127.0.0.1`.
+This intentionally narrows service bind configuration; it does not restrict the
+DNS name used to verify the service's TLS certificate or add desktop endpoint
+settings.
+
 ```sh
+python3.12 -m pip install '.[test]'
 python3.12 -m pytest -q
 python3.12 -m ruff check .
 ```
+
+The test extra includes `cryptography` solely to generate disposable certificates
+for real loopback TLS tests. The service runtime remains standard-library-only.
 
 See [PROTOCOL.md](PROTOCOL.md) for the exact frames and privacy contract, and
 [INTEGRATION.md](INTEGRATION.md) for the smallest honest sidecar/QUIC proof.
@@ -78,12 +94,58 @@ docker build -t webjam-reference:0.1.0 .
 docker run --rm webjam-reference:0.1.0
 ```
 
-For an externally reachable native-protocol test, provide a real certificate and
-key and explicitly bind control and relay. `compose.example.yaml` shows the
-required opt-ins and a restricted runtime. Do not put token values in environment
+Exposing either control or relay requires a server certificate/key, a dedicated
+host client CA, and an approved-host manifest. The legacy insecure-control flag
+cannot bypass these checks. `compose.example.yaml` shows the required mounts and
+a restricted runtime; it is not deployment approval or proof of Internet safety.
+Do not put token values in environment
 variables, command arguments, image layers, or compose files. Certificate files
 mounted into the example must be readable by the image's unprivileged UID/GID
 10001 without making the private key broadly writable.
+
+## Host admission
+
+Configure `--host-client-ca` / `WEBJAM_HOST_CLIENT_CA` and
+`--host-admission-file` / `WEBJAM_HOST_ADMISSION_FILE` together with built-in TLS.
+The dedicated CA verifies client certificate chains. The manifest additionally
+approves exact leaf certificates; a CA-signed certificate alone cannot allocate
+a room. Its strict JSON shape is:
+
+```json
+{"v":1,"hosts":[{"principal":"<32 lowercase hex characters>","certificate_sha256":"<64 lowercase hex characters>"}]}
+```
+
+Principals are opaque operator-assigned IDs, not participant display names.
+The fingerprint is SHA-256 of the leaf's DER encoding. The regular file must be
+nonempty, at most 65,536 bytes, and contain 1–128 unique principals and unique
+fingerprints with no additional fields. Symbolic links are rejected. Loading
+requires two bounded reads through the same descriptor to agree, with file
+identity and metadata checks before and after. Detected content or metadata
+changes are refused; this finite check is not an atomic filesystem snapshot.
+Treat the file and its containing directory as trusted operator configuration.
+No client keys belong in it.
+
+Registration rechecks certificate validity against wall-clock time on every
+request, including on a connection opened before expiry. Each approved host can
+allocate at most four waiting or enrolled rooms by default, also subject to the
+global capacity. `--max-sessions-per-host` / `WEBJAM_MAX_SESSIONS_PER_HOST` accepts
+1–256. A fixed per-host bucket permits one attempt per second with a burst of
+four, before the global registration bucket. Rejected or unknown host identities
+cannot create quota entries. Close, expiry and shutdown release room counts.
+
+Invited guests and fresh role-token-authenticated Close connections omit client
+certificates. An invalid certificate that a client does present fails TLS before
+any operation, so clients must not attach expired host credentials to these
+connections. A valid certificate never substitutes for a room's role token.
+
+Policy replacement or revocation requires a deliberate restart, which ends all
+rooms and clears their secrets. There is no hot reload or online issuer.
+Certificate expiry removes new registration authority; it does not itself end
+an existing room. Room idle and lifetime limits still apply.
+
+This service-side boundary does not provision ordinary hosts. Desktop credential
+issuance, protected storage, renewal/recovery and an approved Internet profile
+remain unfinished; guests must not inherit certificate setup requirements.
 
 ## Desktop integration boundary
 
@@ -123,6 +185,8 @@ An actual Internet deployment needs all of the following outside this process:
 - capacity alerts based on `/healthz` and private `/diagnostics` aggregate data;
 - certificate rotation, image scanning/signing, OS patching, and secret delivery
   outside container arguments/environment;
+- reviewed host credential provisioning and an authenticated UDP return-path
+  proof before treating an observed source address as reachable;
 - a separately reviewed compiled public profile, plus real
   dual-stack/NAT/MTU/impairment and geographic latency validation before
   production use.
@@ -130,3 +194,41 @@ An actual Internet deployment needs all of the following outside this process:
 The service does not provide DNS, certificates, a TURN-compatible listener, load
 balancing, durable sessions, cross-replica migration, or Internet availability by
 itself.
+
+## Connection setup and shutdown
+
+Control setup has its own listener capacity and monotonic rate bucket before
+TLS allocation. Defaults are 64 pending setups, 32 setup starts per second and a
+burst of 64. The corresponding flags are `--max-pending-handshakes` (1–512),
+`--control-accepts-per-second` (1–1024) and `--control-accept-burst` (1–1024);
+environment names are `WEBJAM_MAX_PENDING_HANDSHAKES`,
+`WEBJAM_CONTROL_ACCEPTS_PER_SECOND` and `WEBJAM_CONTROL_ACCEPT_BURST`.
+These limits also apply to plain loopback lab setup. The separate completed
+control cap remains 512; HTTP's active cap remains 64. Successful TLS still needs
+an available completed-connection slot before application dispatch.
+HTTP has its own setup capacity and bucket using these same settings; health
+traffic cannot consume the control bucket. Each listener uses one 10 ms polling
+timer with at most 16 nonblocking accept attempts per callback, rotating fairly
+across address families. Event-loop load can delay a callback. This polling is
+only for control/health connection setup; it is outside the media and UDP paths.
+Documented transient peer-accept errors retain that bounded polling and allow
+later guests to connect. Invalid listener state, resource exhaustion and unknown
+errors still fail closed; the pending-network error list is platform-specific.
+
+Transport-capacity refusal closes the connection without a TLS, control JSON or
+HTTP response. Requests already admitted to a handler retain their protocol error
+responses. Nonblocking acceptance uses an owned, bounded polling callback so each
+raw socket is tracked before any asynchronous setup. These are application
+resource bounds; an upstream flood can still
+saturate kernel queues or the network. They do not replace upstream protection.
+
+Owned response writes and connection retirement have three-second default
+deadlines. Startup and teardown belong to a single-use service instance. Close
+immediately refuses new work, cancels and joins startup, retires late-created
+listeners, wipes room state and aborts tracked peers before joining tasks. The
+five-second TLS handshake deadline contributes to one overall eight-second
+default shutdown budget; the budget does not reset per peer or cleanup stage.
+Cancelling a caller awaiting Close does not cancel teardown. A failed join reports
+failure and retains cleanup ownership; it never reports success by dropping task
+records. These bounds do not establish Internet availability or complete abuse
+resistance.

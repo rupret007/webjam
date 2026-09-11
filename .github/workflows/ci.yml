@@ -868,6 +868,44 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Set up service test Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install service test dependencies
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --only-binary=:all: "pytest==8.3.5"
+          if [[ "${{ matrix.target }}" == "macos-x64" ]]; then
+            # Test-only certificates need the same reviewed source version;
+            # upstream no longer provides Intel Mac cryptography wheels.
+            rustup toolchain install 1.88.0-x86_64-apple-darwin --profile minimal --no-self-update
+            export RUSTUP_TOOLCHAIN=1.88.0-x86_64-apple-darwin
+            test "$(rustc --version)" = "rustc 1.88.0 (6b00bc388 2025-06-23)"
+            export OPENSSL_DIR="$(brew --prefix openssl@3)"
+            test -x "$OPENSSL_DIR/bin/openssl"
+            test -f "$OPENSSL_DIR/include/openssl/ssl.h"
+            export OPENSSL_STATIC=1
+            export CC="$(xcrun -f clang)"
+            export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+            "$OPENSSL_DIR/bin/openssl" version
+            python -m pip install "cryptography @ https://files.pythonhosted.org/packages/de/41/6cbdcf9142d00fe82836fbb51e503e58088575cf7a0fe1dbff6695bf0840/cryptography-50.0.0.tar.gz#sha256=eeac2acb5a20ed25e0ad6d1df9891a520b78b404266b6d11778f25d5d691a6c9"
+          else
+            python -m pip install --only-binary=:all: "cryptography==50.0.0"
+          fi
+          python -c "from cryptography.hazmat.backends.openssl.backend import backend; print(backend.openssl_version_text())"
+
+      - name: Verify service connection ownership on this desktop
+        timeout-minutes: 5
+        env:
+          PYTHONPATH: reference_service
+        run: |
+          python -c "import asyncio, sys; loop = asyncio.new_event_loop(); print(sys.version, type(loop).__name__); assert sys.platform != 'win32' or isinstance(loop, asyncio.ProactorEventLoop); loop.close()"
+          python -X dev -m pytest -q -W error::ResourceWarning -W error::pytest.PytestUnraisableExceptionWarning reference_service/tests
+
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
@@ -878,6 +916,14 @@ jobs:
         with:
           go-version: "1.25.13"
           cache-dependency-path: transport/go.sum
+
+      - name: Verify TLS service control on this desktop
+        working-directory: transport
+        shell: bash
+        timeout-minutes: 3
+        env:
+          WEBJAM_REQUIRE_TLS_INTEGRATION: "1"
+        run: go test -count=1 -timeout 90s ./internal/reference -run 'Test(TLS|ControlConnector)'
 
       - name: Download Pocket Stage owner-device setup kit
         if: startsWith(matrix.target, 'macos-')

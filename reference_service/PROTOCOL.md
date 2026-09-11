@@ -8,9 +8,11 @@ invitation URL.
 
 ## Control transport
 
-Control uses newline-delimited canonical JSON over TCP. Internet deployments MUST
-use TLS 1.3, either directly with `WEBJAM_TLS_CERT` and `WEBJAM_TLS_KEY` or through
-a trusted local TLS sidecar. Each input line is at most 16,384 bytes. Every request
+Control uses newline-delimited canonical JSON over TCP. Exposing either control
+or relay requires built-in TLS 1.3 (`WEBJAM_TLS_CERT`, `WEBJAM_TLS_KEY`) and host
+admission (`WEBJAM_HOST_CLIENT_CA`, `WEBJAM_HOST_ADMISSION_FILE`). The legacy
+insecure-control flag cannot authorize exposure through a TLS sidecar.
+Each input line is at most 16,384 bytes. Every request
 contains `"v":3` and an operation name; unknown and extra fields are rejected.
 Binary values are unpadded canonical base64url.
 
@@ -41,6 +43,24 @@ The response echoes the accepted admission `ttl_seconds` and fixes
 `participant_limit` at 1. Duplicate live IDs conflict; recently closed/expired IDs
 are tombstoned and rejected as replays.
 
+When host admission is enabled, registration additionally requires a currently
+valid client leaf certificate verified by the dedicated host CA and explicitly
+listed in the startup manifest. The service derives the principal from the
+completed TLS connection, never a control field, certificate name or display
+name. Missing or unapproved identity yields `unauthorized` before registry
+allocation or quota mutation. Invalid presented certificates fail TLS itself.
+Validity is checked against wall-clock time on every registration; existing room
+lifetime and rate buckets use a monotonic clock.
+
+The immutable manifest approves 1–128 unique opaque principals and leaf SHA-256
+fingerprints. Replacing it takes effect only at restart, which wipes all rooms.
+Certificate expiry denies new registration but does not confer or revoke room
+role authority. Per-principal allocation attempts are limited to one per second,
+burst four, before the global bucket. Waiting and enrolled rooms both count
+toward the default four-room host cap and global capacity; removal releases the
+count exactly once. No host identity or fingerprint appears in diagnostics.
+All-loopback lab operation without admission retains its existing behavior.
+
 ### Enroll once
 
 ```json
@@ -54,6 +74,9 @@ Consumption happens before guest bootstrap, QUIC TLS, exporter-proof exchange,
 or `peer_connected`. A bearer holder can therefore enroll and abandon the later
 proof, burning the invitation without opening the application data plane; the
 host must use Reset Invite.
+
+An invited guest does not need a client certificate. Neither an approved host
+certificate nor a known principal replaces the enrollment capability.
 
 The response's `ttl_seconds` is the whole seconds remaining until the original
 admission deadline, including zero for a valid enrollment within the final
@@ -113,12 +136,38 @@ connection with the same authenticated close operation and a valid subsequent
 control sequence. A failed/uncertain response is not proof of remote revocation;
 client retry and shutdown must remain bounded.
 
+A fresh Close connection also needs no client certificate. Clients must omit
+invalid or expired host certificates on guest/Close connections: TLS rejects an
+invalid presented certificate even when the operation itself needs none.
+
 Responses are `{"v":3,"ok":true,...}` or
 `{"v":3,"ok":false,"error":"<bounded-code>"}`. Public errors are categorical:
 `malformed`, `frame_too_large`, `unsupported_version`, `unknown_operation`,
 `invalid_ttl`, `session_conflict`, `session_replayed`, `invalid_enrollment`,
 `enrollment_used`, `unauthorized`, `replay`, `queue_full`, `rate_limited`, and
-`overloaded`.
+`overloaded`. Unexpected handler failures return categorical `internal_error`
+without exception details.
+
+Control setup is separately bounded before TLS allocation: 64 pending setups by
+default, with a listener-wide monotonic bucket of 32 starts/second and burst 64.
+Plain loopback lab setup shares these bounds. Completed control connections have
+a separate default cap of 512, rechecked synchronously before handler dispatch;
+HTTP has a default active cap of 64. A transport refused at capacity/rate/closing
+has no application response. An admitted operation can still return the existing
+categorical protocol errors. No peer address or certificate keyed history is
+created by setup accounting.
+HTTP uses its own setup bucket/cap with the same configured values; it cannot
+spend the control listener's tokens. Bounded synchronous polling owns accepted
+raw sockets before asynchronous setup. It does not alter the UDP/media path.
+
+Control and HTTP response writes and connection retirement each have finite
+three-second default deadlines. TLS handshakes have a five-second deadline.
+Shutdown rejects late handlers, owns cancellation of startup and any late-created
+listeners, erases registry state and aborts tracked peers before joining listeners
+and tasks, using one overall eight-second default budget. Caller cancellation
+does not cancel owned teardown. A failed join reports failure while retaining
+observable ownership. See README for the intentionally numeric/localhost-only
+service bind configuration and independent upstream protection requirements.
 
 ## Exact-peer UDP relay
 
@@ -146,6 +195,13 @@ role's first authenticated BIND fixes its exact observed IP/port for that sessio
 generation; packets from any other endpoint are dropped. DATA is never reflected
 to its sender and is never forwarded until the opposite role is enrolled and
 bound.
+
+An authenticated first BIND proves possession of a role key, not return-path
+reachability of its source address. This protocol has no challenge/confirmation
+exchange yet. Host admission alone does not close that gap: an admitted hostile
+host could control both role keys. A reviewed return-path proof is required
+before public exposure; exact-peer forwarding must not be described as such a
+proof.
 
 The default envelope is at most 1,420 bytes, per-session traffic is bounded by
 datagram and byte token buckets, and duplicate/old/malformed/version-mismatched

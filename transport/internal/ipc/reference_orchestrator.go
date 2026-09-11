@@ -65,6 +65,10 @@ func (o *referenceFabricOrchestrator) Start(
 	if configuration.Mode == "host" && PublicPin(identity.SPKIFingerprint) != configuration.HostSPKISHA256 {
 		return nil, ErrEnrollmentInvalid
 	}
+	connector, ok := configuration.Profile.ControlConnector()
+	if !ok {
+		return nil, ErrEnrollmentInvalid
+	}
 	operationDeadline, err := sessionOperationDeadline(o.now(), identity)
 	if err != nil {
 		return nil, err
@@ -81,7 +85,7 @@ func (o *referenceFabricOrchestrator) Start(
 	operation := &referenceFabricOperation{
 		ctx: operationCtx, cancel: cancel, now: o.now, configuration: configuration,
 		enrollmentCtx: enrollmentCtx, cancelEnrollment: cancelEnrollment,
-		identity: identity, endpoint: endpoint,
+		identity: identity, endpoint: endpoint, connector: connector,
 		updates: make(chan fabricUpdate, limits.MaxHelpEventQueueDepth), done: make(chan struct{}),
 		observe: o.observe,
 	}
@@ -98,6 +102,7 @@ type referenceFabricOperation struct {
 	configuration    *enrollmentConfig
 	identity         *icequic.Identity
 	endpoint         loopback.Endpoint
+	connector        reference.ControlConnector
 	updates          chan fabricUpdate
 	done             chan struct{}
 	observe          func(string, error)
@@ -168,7 +173,7 @@ func (o *referenceFabricOperation) runFabric() error {
 	o.resourceMu.Unlock()
 
 	o.stage = "control_dial"
-	client, err := reference.DialLocal(o.enrollmentCtx)
+	client, err := o.connector.Dial(o.enrollmentCtx)
 	if err != nil {
 		return err
 	}
@@ -699,7 +704,7 @@ func (o *referenceFabricOperation) cleanup() {
 				// carried the room. A fresh bounded attempt can confirm removal;
 				// failure does not establish a remote-deletion receipt. Local Stop
 				// still joins owned pumps, and service state has a finite cap.
-				_ = reference.CloseLocalSession(
+				_ = o.connector.CloseSession(
 					closeCtx, o.referenceSession(), token,
 					referenceWireGeneration, sequence,
 				)

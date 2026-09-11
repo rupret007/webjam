@@ -10,6 +10,7 @@ type Profile struct {
 	ControlAddress string
 	RelayAddress   string
 	LabOnly        bool
+	control        reference.ControlConnector
 }
 
 const ReferenceLocalID = "reference-local"
@@ -19,6 +20,18 @@ var referenceLocal = Profile{
 	ControlAddress: reference.ControlAddress,
 	RelayAddress:   reference.RelayAddress,
 	LabOnly:        true,
+	control:        reference.LocalControlConnector(),
+}
+
+// ControlConnector resolves only an unmodified, shipped profile value. The
+// caller cannot turn an ID into authority for a substituted address, TLS
+// policy, or relay by editing the descriptive exported fields.
+func (p Profile) ControlConnector() (reference.ControlConnector, bool) {
+	canonical, ok := Lookup(p.ID)
+	if !ok || p != canonical {
+		return reference.ControlConnector{}, false
+	}
+	return p.control, true
 }
 
 func Lookup(id string) (Profile, bool) {
