@@ -10,6 +10,57 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Ask for time during a shared Art lesson
+
+- Guests in a supported Art LAN room can choose **Ask for a pause** or
+  **Ready to continue** from Conversation's shared-lesson helper.
+- The host sees a temporary named request and can acknowledge it. The host
+  still operates the browser; a delivered or acknowledged request never means
+  the lesson has actually paused or resumed.
+- Requests expire, preserve ordering and retire with their room/lesson context.
+  Unsupported rooms keep the spoken fallback; no new player or guest seek.
+- Physical pause usability and independent lesson/voice mixing remain unverified.
+
+### Keep the replacement Music connection on screen
+
+- A delayed participant message from a retired native process or monitor no
+  longer replaces the new room's cards or marks its healthy connection lost.
+- Queued readiness updates also stop after successful application shutdown.
+  Canceling shutdown keeps the room usable.
+- Current connection failures still reach recovery. This composes invitation
+  retry, saved listening choices and owned room cleanup in one draft candidate;
+  it does not certify real two-person audio or different-home joining.
+
+### Restore saved Music listening levels
+
+- Default, named and automatic mix restoration now apply the final matched
+  listening gains through the current native participant and connection owner.
+- Explicit Load updates existing cards immediately. Invalid or unrelated files
+  offer a useful next action instead of claiming a mix was loaded.
+- New saves during Solo retain both effective mute and the personal mute
+  choices restored when Solo ends. Older snapshots remain readable.
+- No source playback, recording, device selection or connection proof changes.
+  Physical two-person audibility and independent review remain open.
+
+### Keep Music listening controls consistent
+
+- Muted and Solo-suppressed channels keep zero effective listening gain when
+  their faders move. Unmute or leaving Solo restores the chosen level.
+- A soloed musician leaving restores the remaining channels' native gains and
+  prior mute choices; a late arrival remains suppressed during Solo.
+- Delayed gain writes are coalesced and stay bound to their participant and
+  native connection. Mute/Solo card state follows the current listening mix.
+- This changes the listener's monitor mix, not source trim, microphone send,
+  recording, or transport. Physical two-person audio acceptance remains open.
+
+### A rejected invitation leads to a fresh way in
+
+- A private-network guest whose invitation is rejected now gets **Paste New
+  Invite** promptly. WebJam stops that attempt instead of offering repeated
+  retries with the rejected invitation.
+- Temporary connection failures keep **Try Again**. Canceling Join keeps the
+  current draft; replacement still requires the previous connection to close.
+
 ### Recover a private room without replaying old audio intent
 
 - After a failed Reset Invite, a successful explicit retry restores Art room
@@ -94,6 +145,7 @@ All notable improvements and features for the WebJam creator collaboration platf
   capture provenance distinct from physical audibility and one-way latency.
 - No audio device, playback, recorder or network is opened. Existing output
   files are refused; the physical pilot now links the measurement procedure.
+
 
 ### Prepare a Paint along copy before the host shares
 

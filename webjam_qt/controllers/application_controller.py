@@ -1044,6 +1044,7 @@ class ApplicationController(QObject):
         if not getattr(self, "_shutdown_cleanup_pending", False):
             self._shutdown_art_room_role = getattr(self, "_art_room_role", "")
         self._shutdown_cleanup_pending = True
+        ApplicationController._clear_shared_lesson_context(self)
         room_help = getattr(self, "_room_help", None)
         if room_help is not None:
             room_help.shutdown()
@@ -6563,6 +6564,22 @@ class ApplicationController(QObject):
         roster_proof: JamulusOrderedRosterProof | None = None,
     ) -> None:
         """Update the participant grid on the UI thread from real Jamulus data."""
+        if source_identity is not None:
+            # A queued roster can outlive its native process or RPC monitor.
+            # Reject it before it changes cards, recovery or recorder presence.
+            # Current-owner negative evidence must still reach recovery even
+            # when that process has died or its RPC observation is stale.
+            recovery = self._primary_jamulus_recovery_snapshot()
+            if (
+                not isinstance(source_identity, JamulusRpcMonitorIdentity)
+                or not source_identity.is_process_bound
+                or source_identity.monitor_epoch <= 0
+                or recovery is None
+                or source_identity.process_generation != recovery.generation
+                or source_identity.process_id != recovery.process_id
+                or source_identity.monitor_epoch != recovery.rpc_monitor_epoch
+            ):
+                return
         local_session_proven = self.audio.apply_participants(
             jamulus_participants,
             source_identity=source_identity,
@@ -7521,9 +7538,14 @@ class ApplicationController(QObject):
             self
         ).vocabulary.participant_singular
         link_noun = "room" if _creator_profile_for_controller(self).key == "art" else "jam"
-        if _creator_profile_for_controller(self).key == "art" and owner is None:
+        if owner is None:
+            recipient = (
+                "an artist"
+                if _creator_profile_for_controller(self).key == "art"
+                else f"another {participant}"
+            )
             copied_detail = (
-                "Invitation copied. Send the whole message to an artist on "
+                f"Invitation copied. Send the whole message to {recipient} on "
                 "your same Wi-Fi or local network. Keep this room open."
             )
         else:
@@ -9599,7 +9621,11 @@ class ApplicationController(QObject):
             # The current observer can fail before it authenticates the host's
             # profile. Keep failure truth independent of a saved Music/Art
             # preference; neither means the invitation has connected.
-            failure = FailureDisposition.RETRYABLE
+            failure = (
+                FailureDisposition.BLOCKED
+                if self._room_participant.lan_invitation_rejected
+                else FailureDisposition.RETRYABLE
+            )
         elif lifecycle_phase is SessionLifecyclePhase.FAILED_FINAL:
             failure = FailureDisposition.FINAL
         elif lifecycle_phase is SessionLifecyclePhase.FAILED_RECOVERABLE:
@@ -11067,8 +11093,12 @@ class ApplicationController(QObject):
         return scoped if scoped is not None else str(getattr(self.settings, "webex_url", "") or "").strip()
 
     def _set_session_meeting_url(self, value: str | None) -> None:
+        # Validate before retiring an otherwise usable context. Once accepted,
+        # even the same URL can represent a different room's meeting.
+        validated = self._validated_session_meeting_url(value) if value is not None else None
+        ApplicationController._retire_shared_lesson_requests(self)
         self._session_meeting_url = (
-            self._validated_session_meeting_url(value) if value is not None else None
+            validated
         )
         self._session_meeting_generation = getattr(self, "_session_meeting_generation", 0) + 1
         # Invalidate in-flight and queued handoffs even when two rooms use the
@@ -11276,6 +11306,7 @@ class ApplicationController(QObject):
         self._mix_dirty = True
         if self._jamulus_connected:
             self.jamulus.set_mute(channel_id, muted)
+            self.audio.refresh_listening_mix()
 
     def _on_solo_toggled(self, channel_id: int, solo: bool) -> None:
         p = self.participants.get(channel_id)
@@ -11284,6 +11315,7 @@ class ApplicationController(QObject):
         self._mix_dirty = True
         if self._jamulus_connected:
             self.jamulus.set_solo(channel_id, solo)
+            self.audio.refresh_listening_mix()
 
     # ------------------------------------------------------------------
     # BridgeService callbacks (already on UI thread via invoker)
@@ -11292,6 +11324,8 @@ class ApplicationController(QObject):
         self.window.flash_message(text, color=color)
 
     def _refresh_readiness(self) -> None:
+        if getattr(self, "_shutdown", False):
+            return
         room = getattr(self, "_room_participant", None)
         if room is not None and (self.creator_profile.key == "art" or self._art_room_active()):
             hosting = (getattr(self.audio, "_stop_hosting", False)
@@ -12126,7 +12160,8 @@ class ApplicationController(QObject):
 
     def _on_load_mix(self) -> None:
         """Load mixer state from ~/.webjam_mix.json and apply to Jamulus."""
-        self._mix_manager.load()
+        if self._mix_manager.load():
+            self.audio.refresh_listening_mix()
 
     def _on_save_mix_as(self) -> None:
         """Ctrl+Shift+S — open a Save dialog and write the mix to a chosen path.
@@ -12165,7 +12200,8 @@ class ApplicationController(QObject):
         )
         if not path:
             return
-        self._mix_manager.load_from(Path(path))
+        if self._mix_manager.load_from(Path(path)):
+            self.audio.refresh_listening_mix()
 
     def _restore_saved_mix(self) -> None:
         """Auto-apply ~/.webjam_mix.json when Jamulus first connects (best-effort)."""
@@ -12185,6 +12221,8 @@ class ApplicationController(QObject):
             str(getattr(old_settings, "webex_url", "") or "").strip()
             != str(getattr(self.settings, "webex_url", "") or "").strip()
         )
+        if webex_url_changed:
+            self._retire_shared_lesson_requests()
         reference_route_changed = any(
             (
                 getattr(old_settings, "host_server_enabled", False)
@@ -13289,7 +13327,18 @@ class ApplicationController(QObject):
             dialog.set_follow_snapshot(coordinator.follow_snapshot)
         return available
 
+    def _retire_shared_lesson_requests(self) -> None:
+        """Retire requests while preserving useful same-room lesson guidance."""
+        room = getattr(self, "_room_participant", None)
+        retire = getattr(room, "retire_lesson_requests", None)
+        if callable(retire):
+            retire()
+        project = getattr(room, "project_lesson_requests", None)
+        if callable(project):
+            project()
+
     def _clear_shared_lesson_context(self) -> None:
+        ApplicationController._retire_shared_lesson_requests(self)
         panel = getattr(getattr(self, "window", None), "webex_embed", None)
         if getattr(panel, "_shared_lesson_hosting", None) is not None:
             panel.set_shared_lesson_context(hosting=None)
@@ -13348,6 +13397,7 @@ class ApplicationController(QObject):
             return
         self._show_webex_conversation()
         self.window.webex_embed.set_shared_lesson_context(hosting=coordinator.hosting)
+        room.activate_lesson_requests(hosting=coordinator.hosting)
 
     def _run_current_host_paint_along(self, coordinator, dialog, operation) -> None:
         """A completed file chooser or queued host action must still be current."""
