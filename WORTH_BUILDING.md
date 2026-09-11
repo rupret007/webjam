@@ -1,75 +1,62 @@
-# Worth building — invitation recovery and a stable Music listening mix
+# Internet invitations: bounded setup and owned shutdown
 
-Branch: `codex/recovery-mix-composition`, canonical WebJam checkout.
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5593490508
+Jeff approved private-invitation Internet implementation and isolated testing on
+2026-09-09. This slice addresses one remaining service prerequisite for both Art
+and Music; it adds no guest setup screen.
 
-## Declared composition
+## Observed failure and priority
 
-Base #103 `1e35d7ac51a6ab9e5d95f3edbe2a8a68c0b748c5` already composes the
-Art/Music journeys from #96–#102. This branch replays #104
-`08efa86384bf6378ce49a2e3e3150444dc028081`, both #105 commits ending at
-`3811d3f0179bc03e90f7490ed8a9469fd8fec607`, and #106's delta
-`e1e4b2ba3c8b4c48f4fc1b246cb63b38a9ddce2d`. PR base is #103's branch,
-`codex/two-session-recovery-integration`. Fetched master remains
-`2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`. Original draft tips are unchanged.
-Production hunks applied cleanly; overlapping handoff documents were rewritten
-for this candidate. Separate component CI is not combined verification.
+The completed-connection cap began after TLS. A stalled peer could therefore use
+accepted sockets and handshake state outside that cap. A handshake deadline alone
+is not a concurrency bound. Separately, Close could finish while startup was
+creating a listener, leaving the late listener outside its cleanup snapshot.
+Deterministic lifecycle baselines reproduce that race and missing synchronous
+capacity reservations. These resource ownership gaps need fixing before an
+ordinary Internet invitation can safely depend on the service.
 
-## Observed failure and before/after
+## Before and after
 
-The previous combined candidate lacked the newer invitation and listening-mix
-fixes. A rejected invitation could still offer an ineffective retry; restoring
-saved faders did not restore native gains or preserve personal mute choices
-through Solo. The component fixes must coexist with real failed-room cleanup,
-retained Notes/Conversation, fresh Music joining and replacement audio owners.
+Before: unfinished handshakes bypassed completed capacity, and successful Close
+did not prove retirement of concurrently created listeners. After: a synchronous
+acceptance gate bounds pending setup and its start rate before TLS work; verified
+connections reserve active capacity before handler scheduling. Owned startup and
+teardown retire late resources and remain responsible after caller cancellation.
 
-New composed tests found an additional failure: a queued roster from a retired
-Music process replaced the replacement's participant cards before local proof,
-and demoted a healthy replacement after proof. Native gain ownership was already
-protected, but screen and recovery state still accepted obsolete evidence.
+The first hosted checks exposed a same-size policy rewrite missed by unchanged
+filesystem timestamps. The correction requires two bounded reads to agree while
+preserving metadata checks. Review also found that a transient peer accept error
+could stop future joining; those documented errors now retain bounded polling,
+while invalid listener state and resource failures still fail closed. The original
+hosted failures are retained and the corrected source needs its own verification.
 
-The UI now rejects a supplied roster unless its process generation, process ID
-and monitor epoch still match the current owner. This check precedes participant,
-recovery and recorder-presence changes. Current-owner failure evidence remains
-usable even when the process has died or RPC is stale. It neither manufactures
-connection proof nor starts audio.
+This beats adding door copy while the authorized Internet path still lacks a
+bounded service lifecycle. It is infrastructure progress, not proof that a person
+joined, sees/hears the lesson, can pause or has acceptable musical latency.
 
-After: a rejected invite leads to a fresh explicit Join; the joined room owns its
-Conversation; a proved current Music connection restores saved personal listening
-choices and cards. Failed room Reset still blocks fresh Play/Record while keeping
-local listening controls and an existing recording's Stop. Retired connection
-messages cannot undo the replacement's displayed state.
+## Acceptance and dependency
 
-A broader combined run also exposed readiness work queued before successful
-application shutdown executing afterward. It still changed closed-room UI and
-read microphone permission state. An isolated reproduction confirmed the real
-shutdown flag; completed shutdown now retires that queued readiness work.
-Canceled shutdown retains its live readiness behavior.
+Branch `codex/service-connection-ownership` explicitly stacks on OPEN DRAFT #114,
+`89274f756567ed6422b93e193560800ef126667f`, which supplies approved-host allocation
+and invitation-only guests. Common fetched master remains
+`2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`. Prior drafts remain untouched.
 
-## Acceptance and evidence
+Real owned-loopback TLS cases hold unfinished peers at capacity, release one and
+register an approved host, enroll a certificate-free guest, use fresh role-token
+Close, and close a mixture of active TLS, incomplete TLS and HTTP peers. Gated
+lifecycle tests cover late creation, canceled callers and honest cleanup failure.
+Four desktop CI jobs run the complete service suite on actual Python 3.12 event
+loops, including Windows Proactor, before the existing desktop packaging steps.
+Results must be attached to this slice's exact frozen tip; a workflow edit alone
+is not platform evidence.
 
-- Exercise full pasted invitation, cancellation, failed cleanup/retry, stale
-  receipts, actual Music peer handoff and remote-only versus local roster proof.
-- Exercise Save/Load with both Solo mute histories during failed native Reset,
-  preserving Notes, Conversation, source ownership and Stop/fresh-intent fences.
-- Replace the actual controller/RPC owner, hold old gain and UI deliveries, and
-  verify restored native JSON commands and cards without replay or false recovery.
-- Run the repository's full local bar and hosted CI on the frozen composed tip,
-  including four desktop builds. Keep baseline failures and fixture corrections
-  distinct. Final counts and exact SHA belong in the PR body.
+Service bind settings intentionally accept only unscoped numeric addresses or
+`localhost`, avoiding executor DNS work that cannot be reliably canceled. This
+does not change certificate DNS identity or expose IPC endpoint overrides.
+A broader ordinary-loop burst probe exposed Python's delayed acceptance before
+transport attachment even though service counters looked clear. Control and HTTP
+therefore need owned raw acceptance; the original failing evidence is retained.
 
-Machine/process/authentication/socket receipts are controlled in new journeys;
-no real device, meeting or recording starts. Physical two-home joining, faces,
-lesson narration, independently audible levels, Music routing, latency/endurance
-and laptop usability remain unverified. The remote-network decision remains
-unanswered. This draft is a combined candidate, not completion of the goal.
-
-## Holds
-
-OPEN DRAFT PRE_KAREN only. Independent Karen review remains pending.
-No merge/squash/tag/sign/release/Pages/Release Trust/Publish/deploy/spend/live
-Cisco, unsolicited send, automatic capture, short codes/public rendezvous,
-second media engine, other repo, parent injection or new Goal. Unsigned0.27.2
-stays Jeff-only. Art's two-card door, squirrel and guest-never-seek remain.
-Parked #37/#49 and source drafts remain untouched. Maintain the four-hour codex
-lease, timestamped BEFORE/AFTER in America/Chicago and release at handoff.
+Ordinary host credential provisioning, UDP return-path proof, a compiled Internet
+profile, deployment authorization and physical two-home journeys remain open.
+Native Art names and lesson requests remain open. Art's two-card door, squirrel,
+guest-never-seek, Notes/Conversation and Music routing protections are inherited.

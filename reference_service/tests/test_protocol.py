@@ -25,12 +25,11 @@ def test_config_is_loopback_only_by_default() -> None:
     assert config.control_bind == config.relay_bind == config.http_bind == "127.0.0.1"
 
 
-def test_public_control_requires_explicit_transport_security() -> None:
-    with pytest.raises(ValueError, match="public control bind requires TLS"):
+def test_public_control_requires_direct_tls_and_host_admission() -> None:
+    with pytest.raises(ValueError, match="exposed control or relay requires built-in TLS and host admission"):
         ServiceConfig(control_bind="0.0.0.0")
-    assert ServiceConfig(
-        control_bind="0.0.0.0", allow_insecure_public_control=True
-    ).control_bind == "0.0.0.0"
+    with pytest.raises(ValueError, match="insecure public control is unsupported"):
+        ServiceConfig(control_bind="0.0.0.0", allow_insecure_public_control=True)
 
 
 def test_canonical_fixed_values_round_trip() -> None:

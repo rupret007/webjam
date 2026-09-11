@@ -37,6 +37,20 @@ def _env_bool(name: str, default: bool = False) -> bool:
     raise SystemExit(f"{name} must be true or false")
 
 
+def _host_limit(raw: str) -> int:
+    try:
+        return int(raw, 10)
+    except ValueError:
+        raise argparse.ArgumentTypeError("host session limit must be an integer") from None
+
+
+def _control_setup_limit(raw: str) -> int:
+    try:
+        return int(raw, 10)
+    except ValueError:
+        raise argparse.ArgumentTypeError("control setup limit must be an integer") from None
+
+
 def build_parser() -> argparse.ArgumentParser:
     defaults = ServiceConfig()
     parser = argparse.ArgumentParser(
@@ -69,11 +83,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--tls-cert", default=os.environ.get("WEBJAM_TLS_CERT"))
     parser.add_argument("--tls-key", default=os.environ.get("WEBJAM_TLS_KEY"))
+    parser.add_argument("--host-client-ca", default=os.environ.get("WEBJAM_HOST_CLIENT_CA"),
+                        help="dedicated host client CA; configure together with --host-admission-file")
+    parser.add_argument("--host-admission-file", default=os.environ.get("WEBJAM_HOST_ADMISSION_FILE"),
+                        help="approved host leaf policy; replacement takes effect on service restart")
+    parser.add_argument("--max-sessions-per-host", type=_host_limit,
+                        default=_env_int("WEBJAM_MAX_SESSIONS_PER_HOST", defaults.max_sessions_per_host),
+                        help="active room cap per approved host, from 1 to 256 (default 4)")
+    for name, help_text in (
+        ("max_pending_handshakes", "setup cap per control/health listener, including TLS; 1 to 512 (default 64)"),
+        ("control_accepts_per_second", "setup starts/second per control/health listener; 1 to 1024 (default 32)"),
+        ("control_accept_burst", "setup burst per control/health listener; 1 to 1024 (default 64)"),
+    ):
+        parser.add_argument(
+            "--" + name.replace("_", "-"),
+            type=_control_setup_limit,
+            default=_env_int("WEBJAM_" + name.upper(), getattr(defaults, name)),
+            help=help_text,
+        )
     parser.add_argument(
         "--allow-insecure-public-control",
         action="store_true",
         default=_env_bool("WEBJAM_ALLOW_INSECURE_PUBLIC_CONTROL"),
-        help="only for a trusted local TLS sidecar; never expose this mode directly",
+        help="legacy spelling; exposed listeners now require built-in TLS and host admission",
     )
     parser.add_argument(
         "--max-sessions",
@@ -123,6 +155,12 @@ def config_from_args(argv: Sequence[str] | None = None) -> ServiceConfig:
         http_port=args.http_port,
         tls_cert_path=Path(args.tls_cert) if args.tls_cert else None,
         tls_key_path=Path(args.tls_key) if args.tls_key else None,
+        host_client_ca_path=Path(args.host_client_ca) if args.host_client_ca else None,
+        host_admission_path=Path(args.host_admission_file) if args.host_admission_file else None,
+        max_sessions_per_host=args.max_sessions_per_host,
+        max_pending_handshakes=args.max_pending_handshakes,
+        control_accepts_per_second=args.control_accepts_per_second,
+        control_accept_burst=args.control_accept_burst,
         allow_insecure_public_control=args.allow_insecure_public_control,
         max_sessions=args.max_sessions,
         bandwidth_bytes_per_second=args.max_bandwidth_bytes_per_second,
@@ -155,11 +193,14 @@ async def run(config: ServiceConfig) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    config = config_from_args(argv)
     try:
+        config = config_from_args(argv)
         asyncio.run(run(config))
     except KeyboardInterrupt:
         return 130
+    except (OSError, ValueError):
+        logging.error("reference service configuration or startup failed")
+        return 1
     return 0
 
 

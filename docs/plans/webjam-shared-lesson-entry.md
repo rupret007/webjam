@@ -5,6 +5,15 @@ Independent draft slice from fetched `origin/master`
 Branch: `codex/art-shared-lesson-entry`.
 BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5587102705.
 
+This document records #98's original entry slice. The later Art lesson-request
+slice on combined #107 adds fixed **Ask for a pause / Ready to continue** and
+host acknowledgement in supported LAN rooms. Its code/evidence is separate;
+see [the current two-session proof plan](webjam-two-session-proof.md).
+All browser operation, actual attention, narration and mixing remain physical gates.
+Accepted meeting edits retain the role-specific guidance but retire requests until
+explicit helper reentry. A browser-only lesson change is unobservable to WebJam;
+exit and reenter the helper to retire the old request context before a new lesson.
+
 ## Worth building
 
 The goal is two people following a YouTube painting lesson while seeing and
@@ -71,8 +80,8 @@ on the actual provider/client pair, or resolved by a separate design.
 The meeting's pause-sharing command is not a promise that YouTube playback
 or narration stopped. Pause the YouTube player itself. WebJam's host-only
 local-file transport does not control the browser. The guest's current
-request path is speaking or using the meeting's chat; an authenticated
-in-WebJam guest request for browser playback is not implemented.
+request path in the original #98 slice is speaking or using the meeting's chat.
+The later in-room request path still does not control browser playback.
 
 ## Automated and physical evidence are separate
 

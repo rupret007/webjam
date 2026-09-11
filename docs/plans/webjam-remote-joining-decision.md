@@ -1,11 +1,26 @@
-# WebJam remote joining: decision prepared for Jeff
+# WebJam remote joining: Internet implementation authorized
+
+Jeff approved on 2026-09-09: “yeah allow the internet, we want all kinds of
+people to join this.” Proceed with design, implementation and isolated tests
+of private-invitation Internet joining through the existing transport. This
+supersedes the earlier blanket public-rendezvous implementation prohibition
+for this path. No short codes or public room discovery. Deployment, spending,
+signing/release and live meetings/media remain separately held.
+
+Current implementation starts from verified draft #112
+`df18426dd195dcda8265d6979d869eaad8a463f8`, preserving its unmerged session
+lifetime, cleanup, Art and Music work. The first declared dependent slice is
+native verified TLS control and cleanup bound to the same service profile.
+An Internet endpoint is not selected or enabled by that slice. Public host
+admission, relay reachability/return-path checks, ordinary Host wiring and
+native Art names/lesson requests remain subsequent implementation work.
 
 Prepared 2026-09-08 against common master `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`.
 Carried into the declared #96–#100 integration candidate; those slices do not
 change the networking implementation described here. No deployment, configuration, account,
 certificate, firewall, signing, spending, or live meeting action was performed.
 
-## Decision in plain language
+## Approved direction in plain language
 
 The smallest route to ordinary first-time guests joining from different homes
 with one WebJam invitation is to finish the existing v3 transport against a
@@ -13,8 +28,8 @@ self-operated, Internet-reachable service with private invitations and no room
 directory. It would still be a publicly reachable rendezvous endpoint. Calling
 its rooms private does not satisfy an absolute ban on public rendezvous.
 
-Recommended next authorization: allow **design, implementation, and isolated
-testing** of that specific v3 service path, with no public room discovery, short
+**Design, implementation, and isolated testing are authorized** for that
+specific v3 service path, with no public room discovery, short
 codes, arbitrary destination proxying, deployment, or spending. Public exposure
 would require a separate concrete deployment approval after review.
 
@@ -60,7 +75,7 @@ both that zero-extra-setup experience and the absolute networking prohibition.
 | Every later session | One WebJam invitation | One WebJam invitation while VPN remains connected and authorized |
 | Reachability | Known service DNS, trusted TLS control, reachable UDP relay; neither home needs inbound port forwarding to WebJam | Both devices need a working route to the private service; VPN deployment/onboarding is a prerequisite |
 | Public rendezvous hold | Requires explicit narrow exception even with no public rooms | WebJam service can remain private; approval still needed for the VPN's own endpoints and any vendor coordination/relay |
-| Transport work | Non-lab compiled profile, TLS native client, non-loopback fixed relay endpoint, admission and lifetime work | The same endpoint/profile/lifetime work, plus overlay binding and MTU compatibility; not a settings-only workaround |
+| Transport work | Non-lab compiled profile, TLS native client, non-loopback fixed relay endpoint and admission; preserve the completed lifetime work | The same endpoint/profile/admission work, plus overlay binding and MTU compatibility; not a settings-only workaround |
 | Security admission | New host-admission control; guests retain one-use invitation capability | VPN access policy limits service users; existing per-session authorization still required |
 | Music suitability | Relay geography and actual path must be measured; direct native path remains a later separate project | VPN can itself relay before WebJam relays; actual topology/latency must be measured |
 | Claim possible after successful pilot | Evidence for the exact tested separate-home setup and platforms | Evidence for the pre-enrolled private-network setup only |
@@ -99,7 +114,7 @@ both that zero-extra-setup experience and the absolute networking prohibition.
    flag is not an acceptable guest setup instruction or production feature flag.
    Host/Join must remain simple and unavailable service/profile must fail clearly.
 
-## Three additional prerequisites that endpoint provisioning does not solve
+## Prerequisites that endpoint provisioning does not solve
 
 **Host admission.** Existing service Register accepts a newly chosen session ID
 and host/enrollment tokens supplied by the requester; it has no provisioned host
@@ -111,18 +126,28 @@ Guests should continue to use their one-use invite, without a second service
 account. For option B, explicit VPN grants can provide network admission to a
 small pilot cohort; that is not authorization to weaken the session protocol.
 
-**Session duration.** The service currently expires active sessions at the same
-deadline as their invitation. Native `runHost()` derives service Register TTL
-from invitation expiry (`reference_orchestrator.go:169`); service default/max TTL
-is 600 seconds (`reference_service/webjam_reference/config.py:30`), and
-`SessionRegistry.cleanup()`/`_is_expired()` remove even an enrolled, active session
-once that deadline passes (`state.py:386`, `state.py:503`). Keepalives do not extend
-the absolute expiry. A mountain-painting lesson or rehearsal cannot be certified
-on that ten-minute ceiling. Separate the short one-use enrollment deadline from
-a bounded authenticated active-session lifetime/renewal policy. Preserve idle
-cleanup, replay tombstones, revocation, and caps; test beyond invitation expiry,
-unjoined expiry, abandoned enrollment, stop/reset, and service restart. Do not
-silently make invitation capabilities long-lived as a workaround.
+**Session duration — implemented in #102 and composed into #112.** Enrollment
+still has a short one-use deadline. Established operation lifetime is separate,
+bounded by eight hours and the peer certificate lifetime; the service tracks
+active expiry separately. Idle cleanup, replay tombstones, revocation and caps
+remain. Preserve the existing beyond-admission-expiry and close/reset tests.
+Physical endurance remains unproved; the old ten-minute active-session defect
+must not be reintroduced or presented as current.
+
+**UDP return path.** Existing BIND authenticates a role's MAC and pins its
+observed source, but does not challenge that source before forwarding. An
+admitted host can create its own guest and know both role keys. Assess and
+prevent spoofed-source reflection before public exposure; exact-pair forwarding
+and lack of an arbitrary destination field alone do not prove return-path
+ownership. This is a traced abuse risk, not a live attack or measured failure.
+
+**Native Art completeness.** Authenticated profile/start/local-video state and
+temporary Conversation already exist. Human peer names and shared-lesson
+Pause/Ready/ACK currently only have ordinary-LAN implementations. Add bounded,
+authenticated, generation-fenced native messages through the existing control
+plane; do not simply remove the UI guards or label generic Help acknowledgments
+as read receipts. Keep Notes local, guests unable to seek, and browser playback
+under the host's explicit control.
 
 **MTU.** Native QUIC starts at 1200 bytes with path-MTU discovery disabled
 (`transport/internal/icequic/tls.go:208`). The reference relay adds 70 bytes.
@@ -178,8 +203,10 @@ actual MTU, certificate trust, and a tested path to the private service. Confirm
 network/account access with Jeff only after the implementation and test plan are
 reviewable. No remote-host credentials are requested or stored in this artifact.
 
-Current Host UI is macOS-only (`webjam_qt/windows/launch_dialog.py:410,917`). Four
-desktop builds are not four supported hosting platforms. Frozen Windows v3
+Ordinary LAN Art Host now works in the source runtime on Windows, Linux and Mac
+through #111/#112. Music hosting and explicit native lab opt-in retain their Mac
+gate. Four desktop builds do not prove equivalent native or audio support, and
+the ordinary Internet Host choice remains to be wired. Frozen Windows v3
 requires a valid Authenticode signature; frozen macOS verifies the bundled native
 signature, hash, architecture, and build. Source checkouts and ad-hoc macOS lab
 artifacts do not certify ordinary users' trust/install experience. Keep the
@@ -195,11 +222,32 @@ audibility and measured latency, loss/retry, and teardown. An Internet endpoint,
 VPN status, successful build, or green lab test alone proves none of those full
 user journeys.
 
-## Specific decision to ask Jeff
+## Decision recorded and next execution
 
-May WebJam proceed with **design and isolated implementation/testing only** of a
-self-operated, Internet-reachable v3 service whose sessions remain invitation-only,
-as a narrow exception to the public-rendezvous hold? No deployment or spending
-would be included. Alternatively, should the hold remain absolute and the first
-two-home pilot require pre-enrolled private networking, with that extra setup
-explicitly counted as a product limitation?
+Jeff selected the Internet direction on 2026-09-09. Do not ask for the same
+implementation permission again. Build/test the existing transport in coherent
+drafts while retaining the complete Art/Music outcome. The first slice supplies
+verified native TLS and binds initial/fresh cleanup connections to one immutable
+profile; the public registry remains disabled pending the following stages.
+
+For host admission, the smallest proposed pilot design uses a dedicated client
+CA and bounded admitted-certificate list, with a verified connection principal
+required only for registration. Invitation-only guests need no new certificate
+or service account. Keep existing role-token fresh Close independent of that
+admission credential. Check admission expiry on every new registration and
+release per-principal quotas through the existing removal path. Credential
+provisioning/revocation is operational work before exposure, not an invitation
+field or a shared key embedded in the app.
+
+Bound handshake, write and close time as well as established connections. The
+current application connection counter starts after the TLS handshake. Public
+deployment still needs an explicit resource/abuse-response plan alongside relay
+return-path proof and the end-to-end native Art/Music checks above.
+
+The TLS client uses standard certificate-chain and name validation; no insecure
+configuration is exposed to the desktop. See the official
+[Go TLS configuration](https://pkg.go.dev/crypto/tls#Config) and
+[handshake cancellation contract](https://pkg.go.dev/crypto/tls#Conn.HandshakeContext).
+Temporary test roots and loopback routing prove the isolated path without
+changing system trust or inventing a deployed endpoint. Installation, physical
+two-home operation and music latency remain separate evidence requirements.
