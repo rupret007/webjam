@@ -1,39 +1,62 @@
-# Worth building — one candidate carries the complete Music invitation
+# Internet invitations: bounded setup and owned shutdown
 
-Branch `codex/two-session-invitation-composition` is explicitly based on #108
-`0c334c02d0ed1373680e8407eac0e32b45ebf665`, with the independent #109 delta
-`54c4af3baac16cf56051a6d1780cfbc34c9cc895`. Common fetched master is
-`2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`.
-[BEFORE](https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5594991192)
-posted 2026-09-08 21:45 CT. Original drafts remain unchanged.
+Jeff approved private-invitation Internet implementation and isolated testing on
+2026-09-09. This slice addresses one remaining service prerequisite for both Art
+and Music; it adds no guest setup screen.
 
-The combined #108 candidate still had Music's misleading open-link instruction
-and omitted the actual LAN requirement. Independent #109 fixes that first-minute
-failure, but its master base does not include the current room Conversation,
-Art lesson requests or listening/recovery work. A person needs these behaviors
-in the same application. Separate passing component suites do not prove their
-interaction.
+## Observed failure and priority
 
-Apply only #109's message/confirmation and test deltas to #108. Keep the current
-room's effective meeting when copying an invitation, the wider any-artist Art
-wording, pause-request ownership and Music listening/recovery behavior. This
-composition introduces no new product mechanism or transport authority.
+The completed-connection cap began after TLS. A stalled peer could therefore use
+accepted sockets and handshake state outside that cap. A handshake deadline alone
+is not a concurrency bound. Separately, Close could finish while startup was
+creating a listener, leaving the late listener outside its cleanup snapshot.
+Deterministic lifecycle baselines reproduce that race and missing synchronous
+capacity reservations. These resource ownership gaps need fixing before an
+ordinary Internet invitation can safely depend on the service.
 
-Before: either the combined candidate's unclear Music invitation or the smaller
-independent correction without the other completed work. After: the combined
-candidate names **Open WebJam → Join → paste this full invitation**, carries the
-current optional meeting, and explains the actual same-network scope. The host
-sees whole-message/keep-room-open guidance.
+## Before and after
 
-Verify the continuous Music journey from actual host Copy through the real Join
-dialog and launch handoff to Music owner discovery. The invited meeting, including
-explicit absence, must survive without overwriting a guest's personal setting.
-Failed cleanup must retain the room's context until an intentional successful
-retry; a stale owner callback must not restore a departed room or launch media.
+Before: unfinished handshakes bypassed completed capacity, and successful Close
+did not prove retirement of concurrently created listeners. After: a synchronous
+acceptance gate bounds pending setup and its start rate before TLS work; verified
+connections reserve active capacity before handler scheduling. Owned startup and
+teardown retire late resources and remain responsible after caller cancellation.
 
-Retain all component regression coverage, run the full required local bar and
-both hosted workflows on the exact combined tip, including four desktops each.
-The OPEN DRAFT PRE_KAREN body and coord AFTER own final results. Physical
-joining, Art lesson/faces/audio/volume and Music audibility/timing remain NOT RUN;
-network decision and Karen are open. No merge, signing, release, deployment,
-spending or live provider action. Unsigned 0.27.2 remains Jeff-only.
+The first hosted checks exposed a same-size policy rewrite missed by unchanged
+filesystem timestamps. The correction requires two bounded reads to agree while
+preserving metadata checks. Review also found that a transient peer accept error
+could stop future joining; those documented errors now retain bounded polling,
+while invalid listener state and resource failures still fail closed. The original
+hosted failures are retained and the corrected source needs its own verification.
+
+This beats adding door copy while the authorized Internet path still lacks a
+bounded service lifecycle. It is infrastructure progress, not proof that a person
+joined, sees/hears the lesson, can pause or has acceptable musical latency.
+
+## Acceptance and dependency
+
+Branch `codex/service-connection-ownership` explicitly stacks on OPEN DRAFT #114,
+`89274f756567ed6422b93e193560800ef126667f`, which supplies approved-host allocation
+and invitation-only guests. Common fetched master remains
+`2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`. Prior drafts remain untouched.
+
+Real owned-loopback TLS cases hold unfinished peers at capacity, release one and
+register an approved host, enroll a certificate-free guest, use fresh role-token
+Close, and close a mixture of active TLS, incomplete TLS and HTTP peers. Gated
+lifecycle tests cover late creation, canceled callers and honest cleanup failure.
+Four desktop CI jobs run the complete service suite on actual Python 3.12 event
+loops, including Windows Proactor, before the existing desktop packaging steps.
+Results must be attached to this slice's exact frozen tip; a workflow edit alone
+is not platform evidence.
+
+Service bind settings intentionally accept only unscoped numeric addresses or
+`localhost`, avoiding executor DNS work that cannot be reliably canceled. This
+does not change certificate DNS identity or expose IPC endpoint overrides.
+A broader ordinary-loop burst probe exposed Python's delayed acceptance before
+transport attachment even though service counters looked clear. Control and HTTP
+therefore need owned raw acceptance; the original failing evidence is retained.
+
+Ordinary host credential provisioning, UDP return-path proof, a compiled Internet
+profile, deployment authorization and physical two-home journeys remain open.
+Native Art names and lesson requests remain open. Art's two-card door, squirrel,
+guest-never-seek, Notes/Conversation and Music routing protections are inherited.
