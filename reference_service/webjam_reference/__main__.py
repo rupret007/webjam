@@ -44,6 +44,13 @@ def _host_limit(raw: str) -> int:
         raise argparse.ArgumentTypeError("host session limit must be an integer") from None
 
 
+def _control_setup_limit(raw: str) -> int:
+    try:
+        return int(raw, 10)
+    except ValueError:
+        raise argparse.ArgumentTypeError("control setup limit must be an integer") from None
+
+
 def build_parser() -> argparse.ArgumentParser:
     defaults = ServiceConfig()
     parser = argparse.ArgumentParser(
@@ -83,6 +90,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-sessions-per-host", type=_host_limit,
                         default=_env_int("WEBJAM_MAX_SESSIONS_PER_HOST", defaults.max_sessions_per_host),
                         help="active room cap per approved host, from 1 to 256 (default 4)")
+    for name, help_text in (
+        ("max_pending_handshakes", "setup cap per control/health listener, including TLS; 1 to 512 (default 64)"),
+        ("control_accepts_per_second", "setup starts/second per control/health listener; 1 to 1024 (default 32)"),
+        ("control_accept_burst", "setup burst per control/health listener; 1 to 1024 (default 64)"),
+    ):
+        parser.add_argument(
+            "--" + name.replace("_", "-"),
+            type=_control_setup_limit,
+            default=_env_int("WEBJAM_" + name.upper(), getattr(defaults, name)),
+            help=help_text,
+        )
     parser.add_argument(
         "--allow-insecure-public-control",
         action="store_true",
@@ -140,6 +158,9 @@ def config_from_args(argv: Sequence[str] | None = None) -> ServiceConfig:
         host_client_ca_path=Path(args.host_client_ca) if args.host_client_ca else None,
         host_admission_path=Path(args.host_admission_file) if args.host_admission_file else None,
         max_sessions_per_host=args.max_sessions_per_host,
+        max_pending_handshakes=args.max_pending_handshakes,
+        control_accepts_per_second=args.control_accepts_per_second,
+        control_accept_burst=args.control_accept_burst,
         allow_insecure_public_control=args.allow_insecure_public_control,
         max_sessions=args.max_sessions,
         bandwidth_bytes_per_second=args.max_bandwidth_bytes_per_second,

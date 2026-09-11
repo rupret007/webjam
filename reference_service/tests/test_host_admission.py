@@ -5,6 +5,7 @@ import json
 import os
 import ssl
 from dataclasses import FrozenInstanceError, replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -182,6 +183,186 @@ def test_policy_mutation_during_read_is_refused_and_descriptor_closed(tmp_path, 
     assert changed and len(closed) == 1
 
 
+def _split_stat_policy_file(tmp_path, monkeypatch, *, platform='nt', mutation=None,
+                           mismatched_field=None, split_ctime=True, after_read=None,
+                           after_seek=None, payload=None):
+    """Real file I/O with synthetic stat receipts; not a Windows execution test.
+
+    CPython 3.12 Windows path stat reports creation time in ctime while fstat
+    reports change time. Only those receipts and this module's OS name change.
+    """
+    import webjam_reference.host_admission as module
+
+    target = tmp_path / 'host-policy.json'
+    target.write_bytes(json.dumps(manifest()).encode() if payload is None else payload)
+    initial = target.lstat()
+    observed = SimpleNamespace(reads=0, closed=[], seeks=0, bytes_read=0)
+
+    def receipt(api):
+        values = {name: getattr(initial, name) for name in
+                  ('st_mode', 'st_dev', 'st_ino', 'st_size', 'st_mtime_ns')}
+        values['st_ctime_ns'] = 100 if api == 'lstat' or not split_ctime else 200
+        if mutation == api and observed.reads:
+            values['st_ctime_ns'] += 1
+        if mismatched_field is not None and api == 'fstat':
+            values[mismatched_field] += 1
+        return SimpleNamespace(**values)
+
+    class PolicyPath:
+        def __init__(self, supplied):
+            assert supplied == target
+
+        def __fspath__(self):
+            return os.fspath(target)
+
+        def lstat(self):
+            return receipt('lstat')
+
+    class PolicyOS:
+        name = platform
+
+        def __getattr__(self, name):
+            return getattr(os, name)
+
+        def fstat(self, descriptor):
+            os.fstat(descriptor)  # The descriptor must really remain open.
+            return receipt('fstat')
+
+        def read(self, descriptor, size):
+            observed.reads += 1
+            value = os.read(descriptor, size)
+            observed.bytes_read += len(value)
+            if after_read is not None:
+                after_read(target, observed)
+            return value
+
+        def lseek(self, descriptor, offset, whence):
+            observed.seeks += 1
+            value = os.lseek(descriptor, offset, whence)
+            if after_seek is not None:
+                after_seek(target, observed)
+            return value
+
+        def close(self, descriptor):
+            observed.closed.append(descriptor)
+            os.close(descriptor)
+
+    monkeypatch.setattr(module, 'Path', PolicyPath)
+    monkeypatch.setattr(module, 'os', PolicyOS())
+    return target, observed
+
+
+def test_policy_accepts_distinct_windows_path_and_descriptor_ctime(tmp_path, monkeypatch):
+    target, observed = _split_stat_policy_file(tmp_path, monkeypatch)
+    assert HostAdmissionPolicy.load(target).principals == (PRINCIPAL,)
+    assert observed.reads > 0 and len(observed.closed) == 1
+    with pytest.raises(OSError):
+        os.fstat(observed.closed[0])
+
+
+@pytest.mark.parametrize('mutation', ['fstat', 'lstat'])
+def test_policy_refuses_same_api_metadata_mutation_despite_windows_ctime_split(
+        tmp_path, monkeypatch, mutation):
+    target, observed = _split_stat_policy_file(tmp_path, monkeypatch, mutation=mutation)
+    with pytest.raises(ValueError, match='^invalid host admission policy$'):
+        HostAdmissionPolicy.load(target)
+    assert observed.reads > 0  # Rejection is after reading, not the initial API difference.
+    assert len(observed.closed) == 1
+    with pytest.raises(OSError):
+        os.fstat(observed.closed[0])
+
+
+@pytest.mark.parametrize('field', ['st_dev', 'st_ino', 'st_size', 'st_mtime_ns'])
+def test_policy_refuses_windows_cross_api_file_identity_mismatch(tmp_path, monkeypatch, field):
+    target, observed = _split_stat_policy_file(tmp_path, monkeypatch, mismatched_field=field)
+    with pytest.raises(ValueError, match='^invalid host admission policy$'):
+        HostAdmissionPolicy.load(target)
+    assert observed.reads == 0 and len(observed.closed) == 1
+
+
+def test_policy_keeps_posix_cross_api_ctime_check(tmp_path, monkeypatch):
+    target, observed = _split_stat_policy_file(tmp_path, monkeypatch, platform='posix')
+    with pytest.raises(ValueError, match='^invalid host admission policy$'):
+        HostAdmissionPolicy.load(target)
+    assert observed.reads == 0 and len(observed.closed) == 1
+
+
+@pytest.mark.parametrize('platform', ['posix', 'nt'])
+def test_policy_rejects_real_same_size_content_change_with_stable_stat_receipts(
+        tmp_path, monkeypatch, platform):
+    replacement = json.dumps(manifest({
+        'principal': OTHER_PRINCIPAL, 'certificate_sha256': FINGERPRINT})).encode()
+
+    def rewrite(target, observed):
+        if observed.reads == 1:
+            assert target.stat().st_size == len(replacement)
+            target.write_bytes(replacement)
+
+    target, observed = _split_stat_policy_file(
+        tmp_path, monkeypatch, platform=platform, split_ctime=platform == 'nt',
+        after_read=rewrite)
+    with pytest.raises(ValueError, match='^invalid host admission policy$'):
+        HostAdmissionPolicy.load(target)
+    assert target.read_bytes() == replacement
+    assert len(observed.closed) == 1
+    with pytest.raises(OSError):
+        os.fstat(observed.closed[0])
+
+
+def test_policy_refuses_content_change_mid_verification_read(tmp_path, monkeypatch):
+    prefix = b' ' * 8192
+    original = prefix + json.dumps(manifest()).encode()
+    replacement = prefix + json.dumps(manifest({
+        'principal': OTHER_PRINCIPAL, 'certificate_sha256': FINGERPRINT})).encode()
+    changed = False
+
+    def rewrite(target, observed):
+        nonlocal changed
+        if observed.seeks and not changed:
+            changed = True
+            target.write_bytes(replacement)
+
+    target, observed = _split_stat_policy_file(
+        tmp_path, monkeypatch, payload=original, after_read=rewrite)
+    with pytest.raises(ValueError, match='^invalid host admission policy$'):
+        HostAdmissionPolicy.load(target)
+    assert changed and len(observed.closed) == 1
+    assert observed.bytes_read <= 2 * (MAX_POLICY_BYTES + 1)
+
+
+def test_policy_bounds_verification_read_when_file_grows(tmp_path, monkeypatch):
+    def grow(target, _observed):
+        target.write_bytes(b' ' * (MAX_POLICY_BYTES + 100))
+
+    target, observed = _split_stat_policy_file(tmp_path, monkeypatch, after_seek=grow)
+    initial_size = target.stat().st_size
+    with pytest.raises(ValueError, match='^invalid host admission policy$'):
+        HostAdmissionPolicy.load(target)
+    assert observed.seeks == 1 and len(observed.closed) == 1
+    assert observed.bytes_read == initial_size + MAX_POLICY_BYTES + 1
+
+
+@pytest.mark.parametrize('failure', ['seek', 'read'])
+def test_policy_verification_io_error_is_private_and_closes_descriptor(
+        tmp_path, monkeypatch, failure):
+    def fail_seek(_target, _observed):
+        if failure == 'seek':
+            raise OSError('PRIVATE-POLICY-SEEK')
+
+    def fail_read(_target, observed):
+        if failure == 'read' and observed.seeks:
+            raise OSError('PRIVATE-POLICY-READ')
+
+    target, observed = _split_stat_policy_file(
+        tmp_path, monkeypatch, after_seek=fail_seek, after_read=fail_read)
+    with pytest.raises(ValueError, match='^invalid host admission policy$') as caught:
+        HostAdmissionPolicy.load(target)
+    assert caught.value.__suppress_context__ is True
+    assert observed.seeks == 1 and len(observed.closed) == 1
+    with pytest.raises(OSError):
+        os.fstat(observed.closed[0])
+
+
 @pytest.mark.parametrize('when,allowed', [(START - 1, False), (START, True), (END - 0.1, True),
                                          (END, False), (END + 1, False)])
 def test_allocation_rechecks_current_wall_clock_at_exact_boundaries(tmp_path, when, allowed):
@@ -228,7 +409,9 @@ def test_invalid_or_unapproved_receipt_is_categorical(tmp_path, changes):
         policy.authorize(None, START)
 
 
-@pytest.mark.parametrize('der', [None, b'', 'not-DER', bytearray(LEAF), b'x' * 65537, b'unapproved leaf'])
+@pytest.mark.parametrize(
+    'der', [None, b'', 'not-DER', bytearray(LEAF), b'x' * 65537, b'unapproved leaf'],
+    ids=['missing', 'empty', 'wrong-type', 'mutable-bytes', 'oversized', 'unapproved'])
 def test_missing_unapproved_or_unbounded_peer_leaf_has_no_principal(tmp_path, der):
     assert load_policy(tmp_path).identify(VerifiedPeer(der=der)) is None
 

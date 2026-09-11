@@ -174,3 +174,133 @@ def test_cli_invalid_exposure_stops_before_service_start(monkeypatch, caplog):
     assert entry.main(['--relay-bind', '0.0.0.0']) == 1
     assert start.call_count == 0
     assert 'reference service configuration or startup failed' in caplog.text
+
+
+CONTROL_SETUP_LIMITS = (
+    ('max_pending_handshakes', 64, 512),
+    ('control_accepts_per_second', 32, 1024),
+    ('control_accept_burst', 64, 1024),
+)
+
+
+def test_control_setup_defaults_are_separate_from_completed_connection_capacity():
+    config = ServiceConfig()
+    assert config.max_pending_handshakes == 64
+    assert config.control_accepts_per_second == 32
+    assert config.control_accept_burst == 64
+    assert config.max_connections == 512
+    assert config.max_http_connections == 64
+    assert config.tls_handshake_timeout_seconds == 5
+    assert config.host_admission_enabled is False
+
+
+@pytest.mark.parametrize('name,default,upper', CONTROL_SETUP_LIMITS)
+def test_control_setup_capacity_accepts_only_bounded_positive_integers(name, default, upper):
+    for value in (True, False, None, '1', 1.0, float('nan'), float('inf'), 0, -1, upper + 1):
+        with pytest.raises(ValueError, match='control setup limits'):
+            ServiceConfig(**{name: value})
+    for value in (1, upper):
+        config = ServiceConfig(**{name: value}, max_connections=1)
+        assert getattr(config, name) == value
+        assert config.max_connections == 1  # Pending setup and completed limits remain independent.
+    assert getattr(ServiceConfig(), name) == default
+
+
+def test_control_setup_cli_and_environment_configure_each_limit_independently(monkeypatch):
+    for name, _, _ in CONTROL_SETUP_LIMITS:
+        monkeypatch.setenv('WEBJAM_' + name.upper(), '2')
+    from_environment = config_from_args([])
+    assert tuple(getattr(from_environment, name) for name, _, _ in CONTROL_SETUP_LIMITS) == (2, 2, 2)
+    from_cli = config_from_args(['--max-pending-handshakes', '3', '--control-accepts-per-second', '4',
+                                 '--control-accept-burst', '5'])
+    assert tuple(getattr(from_cli, name) for name, _, _ in CONTROL_SETUP_LIMITS) == (3, 4, 5)
+    assert from_cli.max_connections == 512 and from_cli.max_http_connections == 64
+    assert from_cli.control_bind == from_cli.relay_bind == from_cli.http_bind == '127.0.0.1'
+    assert from_cli.host_admission_enabled is False
+
+
+@pytest.mark.parametrize('name,default,upper', CONTROL_SETUP_LIMITS)
+def test_control_setup_bad_operator_values_are_categorical(monkeypatch, capsys, name, default, upper):
+    option = '--' + name.replace('_', '-')
+    environment = 'WEBJAM_' + name.upper()
+    sentinel = 'PRIVATE-CONTROL-CAPACITY-VALUE'
+    monkeypatch.delenv(environment, raising=False)
+    with pytest.raises(SystemExit) as caught:
+        config_from_args([option, sentinel])
+    assert caught.value.code == 2
+    output = capsys.readouterr()
+    assert sentinel not in output.err and 'control setup limit must be an integer' in output.err
+    monkeypatch.setenv(environment, sentinel)
+    with pytest.raises(SystemExit) as caught:
+        config_from_args([])
+    assert str(caught.value) == environment + ' must be an integer'
+    assert sentinel not in str(caught.value)
+    monkeypatch.setenv(environment, str(upper + 1))
+    with pytest.raises(ValueError, match='control setup limits'):
+        config_from_args([])
+    monkeypatch.setenv(environment, str(default))
+    with pytest.raises(ValueError, match='control setup limits'):
+        config_from_args([option, '0'])
+
+
+@pytest.mark.parametrize('name,default,upper', CONTROL_SETUP_LIMITS)
+def test_invalid_control_setup_limit_stops_before_service_start(monkeypatch, caplog, name, default, upper):
+    from unittest.mock import Mock
+    from webjam_reference import __main__ as entry
+
+    start = Mock(side_effect=AssertionError('service must not start'))
+    monkeypatch.setattr(entry, 'run', start)
+    assert entry.main(['--' + name.replace('_', '-'), str(upper + 1)]) == 1
+    assert start.call_count == 0
+    assert 'reference service configuration or startup failed' in caplog.text
+
+
+@pytest.mark.parametrize('listener', ['control_bind', 'relay_bind', 'http_bind'])
+def test_unknown_bind_name_is_rejected_even_with_valid_admission(listener):
+    with pytest.raises(ValueError, match='listener addresses must be unscoped IP addresses or localhost'):
+        ServiceConfig(**admission_values(), **{listener: 'private-bind.invalid'})
+
+
+@pytest.mark.parametrize('listener', ['control_bind', 'relay_bind', 'http_bind'])
+@pytest.mark.parametrize('value', [None, True, 123, b'127.0.0.1', '', ' localhost', 'localhost.',
+                                  'localhoſt', '127.0.0.1:47131', 'fe80::1%en0', '::1%1'])
+def test_listener_bind_validation_is_strict_and_never_resolves(listener, value, monkeypatch):
+    import socket
+    from unittest.mock import Mock
+
+    lookup = Mock(side_effect=AssertionError('configuration must not resolve names'))
+    monkeypatch.setattr(socket, 'getaddrinfo', lookup)
+    with pytest.raises(ValueError, match='listener addresses must be unscoped IP addresses or localhost'):
+        ServiceConfig(**admission_values(), **{listener: value})
+    assert lookup.call_count == 0
+
+
+@pytest.mark.parametrize('value,numeric', [('127.0.0.1', '127.0.0.1'), ('::1', '::1'),
+                                         ('LOCALHOST', '127.0.0.1'), ('localhost', '127.0.0.1'),
+                                         ('0.0.0.0', '0.0.0.0'), ('::', '::'),
+                                         ('2001:DB8::1', '2001:db8::1')])
+def test_numeric_bind_helper_preserves_explicit_localhost_and_ip_configuration(value, numeric, monkeypatch):
+    import socket
+    from unittest.mock import Mock
+    from webjam_reference.config import numeric_listener_host
+
+    lookup = Mock(side_effect=AssertionError('numeric binding must not resolve names'))
+    monkeypatch.setattr(socket, 'getaddrinfo', lookup)
+    config = ServiceConfig(**admission_values(), control_bind=value, relay_bind=value, http_bind=value)
+    assert config.control_bind == config.relay_bind == config.http_bind == value
+    assert numeric_listener_host(config.http_bind) == numeric
+    assert lookup.call_count == 0
+
+
+@pytest.mark.parametrize('listener', ['control', 'relay', 'http'])
+def test_unknown_cli_bind_is_refused_before_start_without_echo(monkeypatch, caplog, listener):
+    from unittest.mock import Mock
+    from webjam_reference import __main__ as entry
+
+    start = Mock(side_effect=AssertionError('service must not start'))
+    monkeypatch.setattr(entry, 'run', start)
+    sentinel = 'private-bind-do-not-log.invalid'
+    assert entry.main(['--' + listener + '-bind', sentinel]) == 1
+    assert start.call_count == 0
+    assert sentinel not in caplog.text
+    assert 'reference service configuration or startup failed' in caplog.text

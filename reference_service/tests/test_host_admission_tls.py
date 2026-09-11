@@ -271,13 +271,25 @@ def test_shutdown_retires_live_tls_and_unfinished_handshake(host_tls_material):
                 assert (await send(host, registration()))["ok"]
                 unfinished_reader, unfinished_writer = await asyncio.open_connection("127.0.0.1", service.control_port)
                 # The raw TCP client never starts its TLS handshake.
+                # Wait for actual service ownership; TCP connect alone can
+                # leave the peer in the kernel backlog before bounded polling.
+                async def wait_for_pending_handshake():
+                    while service._control_server.pending_count != 1:
+                        await asyncio.sleep(0.005)
+                await asyncio.wait_for(wait_for_pending_handshake(), 1)
                 port = service.control_port
                 started = time.monotonic()
                 await asyncio.wait_for(service.close(), 2)
                 assert time.monotonic() - started < 2
                 assert service.registry.session_count == 0
                 assert await asyncio.wait_for(host[0].read(), 1) == b""
-                assert await asyncio.wait_for(unfinished_reader.read(), 1) == b""
+                try:
+                    unfinished_reply = await asyncio.wait_for(unfinished_reader.read(), 1)
+                except ConnectionResetError:
+                    # Aborting an unfinished TLS peer may reset the connection.
+                    # Timeout or any protocol bytes must still fail this check.
+                    unfinished_reply = b""
+                assert unfinished_reply == b""
                 try:
                     _, probe_writer = await asyncio.wait_for(asyncio.open_connection("127.0.0.1", port), 1)
                 except OSError:

@@ -137,15 +137,18 @@ def test_close_retires_writers_before_waiting_for_server_and_wipes_registry():
         assert service._dispatch(registration())["ok"]
         writers = [HeldWriter(block_close=True) for _ in range(8)]
         service._writers.update(writers)
+        retirement_observations = []
 
         class HeldServer:
             def close(self):
                 pass
 
             async def wait_closed(self):
-                # Real Server.wait_closed can retain connected transports.
-                # This independent fake exposes that ordering explicitly.
-                await asyncio.gather(*(writer.released.wait() for writer in writers))
+                # Observe the ordering directly. Spawning eight already-ready
+                # Event tasks adds scheduler work to a 25ms ordering fixture.
+                retired = tuple(writer.aborted and writer.released.is_set() for writer in writers)
+                retirement_observations.append(retired)
+                assert all(retired), "Listener join began before owned peers were aborted"
 
         service._control_server = HeldServer()
         finished, result = await completed_within(asyncio.create_task(service.close()), writers)
@@ -154,6 +157,7 @@ def test_close_retires_writers_before_waiting_for_server_and_wipes_registry():
         assert finished, "Listener retirement waited for peers before closing them"
         assert result is None
         assert all(writer.aborted for writer in writers)
+        assert retirement_observations == [(True,) * len(writers)]
         assert remaining == 0 and not service._writers and not service._http_writers
         await service.close()
 
@@ -177,37 +181,103 @@ def test_closed_service_refuses_new_dispatch_and_late_connection():
     asyncio.run(scenario())
 
 
-def test_plain_open_control_and_partial_http_connections_do_not_hold_shutdown():
+def test_plain_open_control_and_partial_http_connections_do_not_hold_shutdown(monkeypatch):
     async def scenario():
-        service = await ReferenceService(bounded_config()).start()
-        control_reader, control_writer = await asyncio.open_connection("127.0.0.1", service.control_port)
-        http_reader, http_writer = await asyncio.open_connection("127.0.0.1", service.http_port)
+        # This successful real-I/O case uses the product's normal budgets.
+        # Deliberately short held-peer/timeout cases keep bounded_config().
+        service = ReferenceService(ServiceConfig(control_port=0, relay_port=0, http_port=0))
+        outer_timeout = service.config.connection_shutdown_timeout_seconds + 1.0
+        header_read_pending = asyncio.Event()
+        header_tasks = []
+        original_accept_http = service._accept_http
+
+        def observe_http(reader, writer):
+            original_readline = reader.readline
+            calls = 0
+
+            async def observed_readline():
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    # The first real request-line read completed. Continue the
+                    # real second read with no complete header/terminator sent.
+                    header_tasks.append(asyncio.current_task())
+                    header_read_pending.set()
+                return await original_readline()
+
+            monkeypatch.setattr(reader, "readline", observed_readline)
+            return original_accept_http(reader, writer)
+
+        monkeypatch.setattr(service, "_accept_http", observe_http)
+        client_writers = []
         try:
+            await service.start()
+            control_reader, control_writer = await asyncio.open_connection("127.0.0.1", service.control_port)
+            client_writers.append(control_writer)
+            http_reader, http_writer = await asyncio.open_connection("127.0.0.1", service.http_port)
+            client_writers.append(http_writer)
             control_writer.write(json.dumps(registration()).encode() + b"\n")
             await control_writer.drain()
-            assert json.loads(await asyncio.wait_for(control_reader.readline(), 1))["ok"]
+            assert json.loads(await asyncio.wait_for(control_reader.readline(), outer_timeout))["ok"]
             http_writer.write(b"GET /healthz HTTP/1.1\r\nX-Incomplete: ")
             await http_writer.drain()
-            await asyncio.sleep(0)
+            await asyncio.wait_for(header_read_pending.wait(), outer_timeout)
+            assert service._active_connections == service._active_http_connections == 1
+            assert len(header_tasks) == 1 and not header_tasks[0].done()
+            listeners = (service._control_server, service._http_server)
+            assert all(listener is not None for listener in listeners)
+            accepted = tuple(gate.socket for listener in listeners for gate in listener._connections)
+            handlers = tuple(service._connection_tasks)
+            assert len(accepted) == 2 and all(sock.fileno() >= 0 for sock in accepted)
+            assert len(handlers) == 2 and all(not task.done() for task in handlers)
+            close_started = asyncio.get_running_loop().time()
             closing = asyncio.create_task(service.close())
-            done, _ = await asyncio.wait({closing}, timeout=0.5)
+            done, _ = await asyncio.wait({closing}, timeout=outer_timeout)
             if not done:
-                control_writer.transport.abort()
-                http_writer.transport.abort()
+                for writer in client_writers:
+                    writer.transport.abort()
                 closing.cancel()
             result = (await asyncio.gather(closing, return_exceptions=True))[0]
             remaining = service.registry.session_count
             service.registry.close()
-            assert done, "Open local peers held service shutdown past its budget"
-            assert result is None
+            retirement = {
+                "budget_seconds": service.config.connection_shutdown_timeout_seconds,
+                "elapsed_seconds": asyncio.get_running_loop().time() - close_started,
+                "open_accepted_fds": sum(sock.fileno() >= 0 for sock in accepted),
+                "unfinished_handlers": sum(not task.done() for task in handlers),
+                "listeners": [
+                    {"kind": kind, "pending": listener.pending_count,
+                     "owned_tasks": listener.owned_task_count,
+                     "open_fds": sum(gate.socket.fileno() >= 0 for gate in listener._connections),
+                     "attaching": sum(gate.attaching for gate in listener._connections),
+                     "join_done": listener._join_task is not None and listener._join_task.done()}
+                    for kind, listener in zip(("control", "http"), listeners)
+                ],
+            }
+            assert done, retirement
+            assert result is None, retirement
             assert remaining == 0 and service._active_connections == service._active_http_connections == 0
             assert not service._writers and not service._http_writers
-            assert not service._connection_tasks
-            assert await asyncio.wait_for(control_reader.read(), 0.5) == b""
-            assert await asyncio.wait_for(http_reader.read(), 0.5) == b""
+            assert not service._connection_tasks and not service._adopted_connections
+            assert all(task.done() for task in (*handlers, *header_tasks))
+            assert all(sock.fileno() == -1 for sock in accepted)
+            for listener in listeners:
+                assert listener.pending_count == listener.owned_task_count == 0
+                assert not listener.poll_pending and not listener._connections and not listener._setups
+            for reader in (control_reader, http_reader):
+                try:
+                    remainder = await asyncio.wait_for(reader.read(), outer_timeout)
+                except ConnectionResetError:
+                    # Immediate owned abort may reset unread partial HTTP data.
+                    # Both reset and EOF prove refusal; neither may carry a reply.
+                    remainder = b""
+                assert remainder == b""
         finally:
-            control_writer.transport.abort()
-            http_writer.transport.abort()
-            await service.close()
+            for writer in client_writers:
+                writer.transport.abort()
+            if client_writers:
+                await asyncio.wait_for(asyncio.gather(
+                    *(writer.wait_closed() for writer in client_writers), return_exceptions=True), outer_timeout)
+            await asyncio.wait_for(service.close(), outer_timeout)
 
     asyncio.run(scenario())

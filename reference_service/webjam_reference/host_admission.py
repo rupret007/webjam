@@ -152,6 +152,13 @@ def _identity(value: os.stat_result) -> tuple[int, ...]:
     return value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns
 
 
+def _cross_api_identity(value: os.stat_result) -> tuple[int, ...]:
+    # CPython 3.12 Windows lstat uses creation time for ctime, while fstat
+    # reports metadata change time. Keep ctime for the same-API checks below.
+    identity = _identity(value)
+    return identity[:-1] if os.name == "nt" else identity
+
+
 def _read_policy(path: Path) -> bytes:
     original = path.lstat()
     if not stat.S_ISREG(original.st_mode) or not 0 < original.st_size <= MAX_POLICY_BYTES:
@@ -161,23 +168,43 @@ def _read_policy(path: Path) -> bytes:
     descriptor = os.open(path, flags)
     try:
         opened = os.fstat(descriptor)
-        if not stat.S_ISREG(opened.st_mode) or _identity(opened) != _identity(original):
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or _cross_api_identity(opened) != _cross_api_identity(original)
+        ):
             raise ValueError(_POLICY_ERROR)
-        data = bytearray()
-        while len(data) <= MAX_POLICY_BYTES:
-            chunk = os.read(descriptor, min(8192, MAX_POLICY_BYTES + 1 - len(data)))
-            if not chunk:
-                break
-            data.extend(chunk)
+        data = _read_bounded_policy(descriptor)
         if (
             len(data) != original.st_size
-            or _identity(os.fstat(descriptor)) != _identity(original)
+            or _identity(os.fstat(descriptor)) != _identity(opened)
             or _identity(path.lstat()) != _identity(original)
         ):
             raise ValueError(_POLICY_ERROR)
-        return bytes(data)
+        # Same-size rewrites can share filesystem timestamps. Verify the bytes
+        # again through the owned descriptor, then repeat the metadata checks.
+        # This is a finite stable-read check, not an atomic snapshot against a
+        # writer deliberately changing the file between both observations.
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        verified = _read_bounded_policy(descriptor)
+        if (
+            verified != data
+            or _identity(os.fstat(descriptor)) != _identity(opened)
+            or _identity(path.lstat()) != _identity(original)
+        ):
+            raise ValueError(_POLICY_ERROR)
+        return data
     finally:
         os.close(descriptor)
+
+
+def _read_bounded_policy(descriptor: int) -> bytes:
+    data = bytearray()
+    while len(data) <= MAX_POLICY_BYTES:
+        chunk = os.read(descriptor, min(8192, MAX_POLICY_BYTES + 1 - len(data)))
+        if not chunk:
+            break
+        data.extend(chunk)
+    return bytes(data)
 
 
 def _unique_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:

@@ -36,6 +36,16 @@ Listeners are control TCP `127.0.0.1:47131`, exact-peer relay UDP
 `127.0.0.1:47132`, and health HTTP `127.0.0.1:47133`. The control listener is
 plaintext only because it is loopback. Never expose it that way.
 
+Bind settings accept unscoped numeric IPv4/IPv6 addresses or the exact name
+`localhost` (case-insensitive). Other hostnames, zone identifiers and empty values
+are rejected before creating resources; startup never starts a DNS lookup.
+Control `localhost` binds IPv6 and IPv4 loopback to the same port, falling back
+to IPv4 only when IPv6 loopback is unavailable. An explicit IPv6 bind remains
+IPv6-only and fails if unavailable. HTTP and UDP `localhost` use `127.0.0.1`.
+This intentionally narrows service bind configuration; it does not restrict the
+DNS name used to verify the service's TLS certificate or add desktop endpoint
+settings.
+
 ```sh
 python3.12 -m pip install '.[test]'
 python3.12 -m pytest -q
@@ -108,9 +118,12 @@ a room. Its strict JSON shape is:
 Principals are opaque operator-assigned IDs, not participant display names.
 The fingerprint is SHA-256 of the leaf's DER encoding. The regular file must be
 nonempty, at most 65,536 bytes, and contain 1–128 unique principals and unique
-fingerprints with no additional fields. Symbolic links and files changed during
-loading are rejected. Treat the file and its containing directory as trusted
-operator configuration. No client keys belong in it.
+fingerprints with no additional fields. Symbolic links are rejected. Loading
+requires two bounded reads through the same descriptor to agree, with file
+identity and metadata checks before and after. Detected content or metadata
+changes are refused; this finite check is not an atomic filesystem snapshot.
+Treat the file and its containing directory as trusted operator configuration.
+No client keys belong in it.
 
 Registration rechecks certificate validity against wall-clock time on every
 request, including on a connection opened before expiry. Each approved host can
@@ -169,9 +182,6 @@ An actual Internet deployment needs all of the following outside this process:
 - session-affine routing. State is deliberately local and is not shared between
   replicas; failover ends the affected session instead of copying secrets;
 - upstream volumetric DDoS protection and connection-rate limiting;
-- a limit on simultaneous pending TLS handshakes; the five-second handshake
-  deadline is not a concurrency cap, and `max_connections` counts completed
-  control connections only;
 - capacity alerts based on `/healthz` and private `/diagnostics` aggregate data;
 - certificate rotation, image scanning/signing, OS patching, and secret delivery
   outside container arguments/environment;
@@ -185,9 +195,40 @@ The service does not provide DNS, certificates, a TURN-compatible listener, load
 balancing, durable sessions, cross-replica migration, or Internet availability by
 itself.
 
+## Connection setup and shutdown
+
+Control setup has its own listener capacity and monotonic rate bucket before
+TLS allocation. Defaults are 64 pending setups, 32 setup starts per second and a
+burst of 64. The corresponding flags are `--max-pending-handshakes` (1–512),
+`--control-accepts-per-second` (1–1024) and `--control-accept-burst` (1–1024);
+environment names are `WEBJAM_MAX_PENDING_HANDSHAKES`,
+`WEBJAM_CONTROL_ACCEPTS_PER_SECOND` and `WEBJAM_CONTROL_ACCEPT_BURST`.
+These limits also apply to plain loopback lab setup. The separate completed
+control cap remains 512; HTTP's active cap remains 64. Successful TLS still needs
+an available completed-connection slot before application dispatch.
+HTTP has its own setup capacity and bucket using these same settings; health
+traffic cannot consume the control bucket. Each listener uses one 10 ms polling
+timer with at most 16 nonblocking accept attempts per callback, rotating fairly
+across address families. Event-loop load can delay a callback. This polling is
+only for control/health connection setup; it is outside the media and UDP paths.
+Documented transient peer-accept errors retain that bounded polling and allow
+later guests to connect. Invalid listener state, resource exhaustion and unknown
+errors still fail closed; the pending-network error list is platform-specific.
+
+Transport-capacity refusal closes the connection without a TLS, control JSON or
+HTTP response. Requests already admitted to a handler retain their protocol error
+responses. Nonblocking acceptance uses an owned, bounded polling callback so each
+raw socket is tracked before any asynchronous setup. These are application
+resource bounds; an upstream flood can still
+saturate kernel queues or the network. They do not replace upstream protection.
+
 Owned response writes and connection retirement have three-second default
-deadlines. Shutdown stops listeners, wipes room state and aborts tracked writers
-before joining handlers. Pending TLS contributes its five-second handshake
-deadline to one overall eight-second default shutdown budget. A timed-out join
-reports failure. These bounds do not establish Internet availability or complete
-abuse resistance.
+deadlines. Startup and teardown belong to a single-use service instance. Close
+immediately refuses new work, cancels and joins startup, retires late-created
+listeners, wipes room state and aborts tracked peers before joining tasks. The
+five-second TLS handshake deadline contributes to one overall eight-second
+default shutdown budget; the budget does not reset per peer or cleanup stage.
+Cancelling a caller awaiting Close does not cancel teardown. A failed join reports
+failure and retains cleanup ownership; it never reports success by dropping task
+records. These bounds do not establish Internet availability or complete abuse
+resistance.
