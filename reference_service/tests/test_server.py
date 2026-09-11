@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import shutil
@@ -231,18 +232,35 @@ def test_connection_overload_is_bounded_without_disrupting_existing_client() -> 
             first_reader, first_writer = await asyncio.open_connection(
                 "127.0.0.1", service.control_port
             )
-            await asyncio.sleep(0)
-            second_reader, second_writer = await asyncio.open_connection(
-                "127.0.0.1", service.control_port
-            )
-            assert json.loads(await second_reader.readline())["error"] == "overloaded"
-            second_writer.close()
-            await second_writer.wait_closed()
-            first_writer.write(json.dumps(registration()).encode() + b"\n")
-            await first_writer.drain()
-            assert json.loads(await first_reader.readline())["ok"] is True
-            first_writer.close()
-            await first_writer.wait_closed()
+            writers = [first_writer]
+            try:
+                first_writer.write(json.dumps(registration()).encode() + b"\n")
+                await first_writer.drain()
+                assert json.loads(await asyncio.wait_for(first_reader.readline(), 1))["ok"] is True
+                second_reader, second_writer = await asyncio.open_connection(
+                    "127.0.0.1", service.control_port
+                )
+                writers.append(second_writer)
+                # Capacity is refused before a protocol handler exists. No
+                # extra error coroutine or plaintext TLS-port reply is created.
+                try:
+                    response = await asyncio.wait_for(second_reader.read(1), 1)
+                except ConnectionResetError:
+                    response = b""
+                assert response == b""
+                first_writer.write(json.dumps({
+                    "v": 3, "op": "poll", "session": encode_fixed(SESSION),
+                    "role": "host", "token": encode_fixed(HOST),
+                    "generation": 4, "sequence": 1,
+                }).encode() + b"\n")
+                await first_writer.drain()
+                assert json.loads(await asyncio.wait_for(first_reader.readline(), 1))["ok"] is True
+                assert service.registry.session_count == 1
+            finally:
+                for writer in writers:
+                    writer.transport.abort()
+                    with contextlib.suppress(ConnectionError):
+                        await writer.wait_closed()
 
     asyncio.run(scenario())
 
@@ -250,15 +268,33 @@ def test_connection_overload_is_bounded_without_disrupting_existing_client() -> 
 def test_health_connection_overload_is_bounded() -> None:
     async def scenario() -> None:
         async with ReferenceService(config(max_http_connections=1)) as service:
-            _, first_writer = await asyncio.open_connection(
+            first_reader, first_writer = await asyncio.open_connection(
                 "127.0.0.1", service.http_port
             )
-            await asyncio.sleep(0)
-            status, body = await http_get(service, "/healthz")
-            assert status == 503
-            assert body == {"status": "overloaded"}
-            first_writer.close()
-            await first_writer.wait_closed()
+            writers = [first_writer]
+            try:
+                first_writer.write(b"GET /healthz HTTP/1.1\r\nX-Held: ")
+                await first_writer.drain()
+                async def first_admitted():
+                    while service._active_http_connections != 1:
+                        await asyncio.sleep(0.001)
+                await asyncio.wait_for(first_admitted(), 1)
+                assert service._active_http_connections == 1
+                reader, writer = await asyncio.open_connection("127.0.0.1", service.http_port)
+                writers.append(writer)
+                try:
+                    response = await asyncio.wait_for(reader.read(1), 1)
+                except ConnectionResetError:
+                    response = b""
+                assert response == b""  # No task per over-capacity HTTP connection.
+                first_writer.write(b"done\r\n\r\n")
+                await first_writer.drain()
+                assert await asyncio.wait_for(first_reader.readline(), 1) == b"HTTP/1.1 200 OK\r\n"
+            finally:
+                for writer in writers:
+                    writer.transport.abort()
+                    with contextlib.suppress(ConnectionError):
+                        await writer.wait_closed()
 
     asyncio.run(scenario())
 

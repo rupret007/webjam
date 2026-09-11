@@ -10,7 +10,7 @@ requires-python = ">=3.12"
 dependencies = []
 
 [project.optional-dependencies]
-test = ["pytest>=8"]
+test = ["pytest>=8", "cryptography>=50.0.0"]
 
 [project.scripts]
 webjam-reference = "webjam_reference.__main__:main"

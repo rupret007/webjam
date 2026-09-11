@@ -14,7 +14,13 @@ services:
       WEBJAM_HTTP_BIND: "127.0.0.1"
       WEBJAM_TLS_CERT: "/run/secrets/tls.crt"
       WEBJAM_TLS_KEY: "/run/secrets/tls.key"
+      WEBJAM_HOST_CLIENT_CA: "/run/secrets/host-ca.crt"
+      WEBJAM_HOST_ADMISSION_FILE: "/run/secrets/hosts.json"
       WEBJAM_MAX_SESSIONS: "256"
+      WEBJAM_MAX_SESSIONS_PER_HOST: "4"
+      WEBJAM_MAX_PENDING_HANDSHAKES: "64"
+      WEBJAM_CONTROL_ACCEPTS_PER_SECOND: "32"
+      WEBJAM_CONTROL_ACCEPT_BURST: "64"
     volumes:
       - type: bind
         source: ./secrets/tls.crt
@@ -23,6 +29,14 @@ services:
       - type: bind
         source: ./secrets/tls.key
         target: /run/secrets/tls.key
+        read_only: true
+      - type: bind
+        source: ./secrets/host-ca.crt
+        target: /run/secrets/host-ca.crt
+        read_only: true
+      - type: bind
+        source: ./secrets/hosts.json
+        target: /run/secrets/hosts.json
         read_only: true
     ports:
       - "47131:47131/tcp"
