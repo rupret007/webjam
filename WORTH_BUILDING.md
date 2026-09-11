@@ -1,66 +1,62 @@
-# Worth building — ask for time during a shared Art lesson
+# Internet invitations: bounded setup and owned shutdown
 
-Branch: `codex/art-lesson-requests`, canonical WebJam checkout.
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5593972013
+Jeff approved private-invitation Internet implementation and isolated testing on
+2026-09-09. This slice addresses one remaining service prerequisite for both Art
+and Music; it adds no guest setup screen.
 
-## One observed gap
+## Observed failure and priority
 
-A guest following the shared Bob Ross browser lesson can ask aloud for a pause,
-but narration or a muted microphone can hide that request. The existing Art
-Conversation helper has no in-room request or host acknowledgement. This gap
-interrupts the actual paint-together journey after joining has already worked.
+The completed-connection cap began after TLS. A stalled peer could therefore use
+accepted sockets and handshake state outside that cap. A handshake deadline alone
+is not a concurrency bound. Separately, Close could finish while startup was
+creating a listener, leaving the late listener outside its cleanup snapshot.
+Deterministic lifecycle baselines reproduce that race and missing synchronous
+capacity reservations. These resource ownership gaps need fixing before an
+ordinary Internet invitation can safely depend on the service.
 
-Before: the guest must speak over the lesson and has no visible receipt.
-After: **Ask for a pause** and **Ready to continue** send fixed, temporary requests
-to the current host's WebJam. The host sees the guest's chosen name and can
-**Acknowledge request**, then operates the browser manually. Delivery, uncertain
-delivery, acknowledgement, refusal and expiry have distinct meanings.
+## Before and after
 
-This advances a supported existing Art path while the different-home networking
-decision remains unanswered. It introduces no player, video/canvas stack,
-public route or guest playback authority. Host attention while another app is
-foreground and actual picture/audio pause remain physical acceptance items.
+Before: unfinished handshakes bypassed completed capacity, and successful Close
+did not prove retirement of concurrently created listeners. After: a synchronous
+acceptance gate bounds pending setup and its start rate before TLS work; verified
+connections reserve active capacity before handler scheduling. Owned startup and
+teardown retire late resources and remain responsible after caller cancellation.
 
-## Declared dependency
+The first hosted checks exposed a same-size policy rewrite missed by unchanged
+filesystem timestamps. The correction requires two bounded reads to agree while
+preserving metadata checks. Review also found that a transient peer accept error
+could stop future joining; those documented errors now retain bounded polling,
+while invalid listener state and resource failures still fail closed. The original
+hosted failures are retained and the corrected source needs its own verification.
 
-This branch starts from exact #107 `392c959a74af135fe2a92c13ef09fbfe541fb476`,
-branch `codex/recovery-mix-composition`. That candidate already composes the
-invitation, room recovery, Art Conversation and Music listening changes.
-Fetched master was `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`. Original drafts
-remain unchanged. #107's completed verification does not verify this new delta.
+This beats adding door copy while the authorized Internet path still lacks a
+bounded service lifecycle. It is infrastructure progress, not proof that a person
+joined, sees/hears the lesson, can pause or has acceptable musical latency.
 
-## Acceptance and boundaries
+## Acceptance and dependency
 
-- The existing authenticated LAN state poll supplies only the guest's own
-  request capability/receipt. One bounded POST carries pause or ready; there
-  is no remote activation or host-acknowledgement endpoint.
-- Fixed schemas, 512-byte bodies, 32 retained admissions, monotonic revisions,
-  30-second notices, individual/global rate limits and five-second presence
-  checks bound the feature. Expiry never permits replay of older intent.
-- One existing guest worker handles at most one POST per poll cycle, then the
-  normal room GET. No automatic POST retry. Explicit uncertain-delivery retry
-  uses the same request; a later GET can reconcile a lost reply.
-- Each signal and reply stays bound to its current room, owner and request.
-  Navigation, WebJam meeting/source replacement, route loss, End/Leave and shutdown
-  retire authority before cleanup waits. Guest navigation never retires the host.
-  Meeting edits retain lesson instructions with inactive requests. Browser-only
-  lesson changes require explicit helper exit/reentry; WebJam cannot observe them.
-- Host notices retain exact request identity and PlainText chosen names.
-  Acknowledgement never means paused, resumed, heard or seen. Old/unsupported
-  rooms keep the spoken fallback and their ordinary connection semantics.
-- Real Qt/controller plus authenticated localhost journeys verify integration;
-  model/HTTP/worker/widget tests exercise limits, ordering and refusal.
-  Run the complete required bar and exact-tip hosted desktop matrix.
+Branch `codex/service-connection-ownership` explicitly stacks on OPEN DRAFT #114,
+`89274f756567ed6422b93e193560800ef126667f`, which supplies approved-host allocation
+and invitation-only guests. Common fetched master remains
+`2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`. Prior drafts remain untouched.
 
-Physical two-home joining, Art attention/faces/narration/independent listening,
-Music routing/audibility/latency/endurance and Karen review remain open.
-This change cannot certify those outcomes or resolve provider limitations.
+Real owned-loopback TLS cases hold unfinished peers at capacity, release one and
+register an approved host, enroll a certificate-free guest, use fresh role-token
+Close, and close a mixture of active TLS, incomplete TLS and HTTP peers. Gated
+lifecycle tests cover late creation, canceled callers and honest cleanup failure.
+Four desktop CI jobs run the complete service suite on actual Python 3.12 event
+loops, including Windows Proactor, before the existing desktop packaging steps.
+Results must be attached to this slice's exact frozen tip; a workflow edit alone
+is not platform evidence.
 
-## Holds
+Service bind settings intentionally accept only unscoped numeric addresses or
+`localhost`, avoiding executor DNS work that cannot be reliably canceled. This
+does not change certificate DNS identity or expose IPC endpoint overrides.
+A broader ordinary-loop burst probe exposed Python's delayed acceptance before
+transport attachment even though service counters looked clear. Control and HTTP
+therefore need owned raw acceptance; the original failing evidence is retained.
 
-OPEN DRAFT PRE_KAREN only. No merge/squash/tag/sign/release/Pages/Release Trust/
-Publish/deploy/spend/live Cisco, unsolicited send, automatic media/capture,
-short codes/public rendezvous, second engine, other repo or new goal.
-Unsigned 0.27.2 remains Jeff-only. Parked #37/#49, source drafts, Art's two-card
-door, squirrel mark and guest-never-seek remain. Maintain the four-hour lease,
-timestamped BEFORE/AFTER in America/Chicago and release at handoff.
+Ordinary host credential provisioning, UDP return-path proof, a compiled Internet
+profile, deployment authorization and physical two-home journeys remain open.
+Native Art names and lesson requests remain open. Art's two-card door, squirrel,
+guest-never-seek, Notes/Conversation and Music routing protections are inherited.
