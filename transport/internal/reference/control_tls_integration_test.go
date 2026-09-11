@@ -289,7 +289,11 @@ asyncio.run(main())
 			t.Fatal("isolated TLS service returned invalid readiness")
 		}
 		return tlsControlService{ports.Control, ports.HTTP, roots}
-	case <-time.After(5 * time.Second):
+	case <-time.After(20 * time.Second):
+		// Observed CI flake: two concurrent hosted runs on the same commit
+		// contend for the Windows runner, and Python interpreter start plus
+		// asyncio TLS bind can occasionally exceed a 5s budget under that
+		// load even though local and uncontended CI runs finish in <1s.
 		t.Fatalf("isolated TLS service did not become ready: %s", logs.String())
 	}
 	return tlsControlService{}
