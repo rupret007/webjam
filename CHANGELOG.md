@@ -10,6 +10,143 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Ask for time during a shared Art lesson
+
+- Guests in a supported Art LAN room can choose **Ask for a pause** or
+  **Ready to continue** from Conversation's shared-lesson helper.
+- The host sees a temporary named request and can acknowledge it. The host
+  still operates the browser; a delivered or acknowledged request never means
+  the lesson has actually paused or resumed.
+- Requests expire, preserve ordering and retire with their room/lesson context.
+  Unsupported rooms keep the spoken fallback; no new player or guest seek.
+- Physical pause usability and independent lesson/voice mixing remain unverified.
+
+### Keep the replacement Music connection on screen
+
+- A delayed participant message from a retired native process or monitor no
+  longer replaces the new room's cards or marks its healthy connection lost.
+- Queued readiness updates also stop after successful application shutdown.
+  Canceling shutdown keeps the room usable.
+- Current connection failures still reach recovery. This composes invitation
+  retry, saved listening choices and owned room cleanup in one draft candidate;
+  it does not certify real two-person audio or different-home joining.
+
+### Restore saved Music listening levels
+
+- Default, named and automatic mix restoration now apply the final matched
+  listening gains through the current native participant and connection owner.
+- Explicit Load updates existing cards immediately. Invalid or unrelated files
+  offer a useful next action instead of claiming a mix was loaded.
+- New saves during Solo retain both effective mute and the personal mute
+  choices restored when Solo ends. Older snapshots remain readable.
+- No source playback, recording, device selection or connection proof changes.
+  Physical two-person audibility and independent review remain open.
+
+### Keep Music listening controls consistent
+
+- Muted and Solo-suppressed channels keep zero effective listening gain when
+  their faders move. Unmute or leaving Solo restores the chosen level.
+- A soloed musician leaving restores the remaining channels' native gains and
+  prior mute choices; a late arrival remains suppressed during Solo.
+- Delayed gain writes are coalesced and stay bound to their participant and
+  native connection. Mute/Solo card state follows the current listening mix.
+- This changes the listener's monitor mix, not source trim, microphone send,
+  recording, or transport. Physical two-person audio acceptance remains open.
+
+### A rejected invitation leads to a fresh way in
+
+- A private-network guest whose invitation is rejected now gets **Paste New
+  Invite** promptly. WebJam stops that attempt instead of offering repeated
+  retries with the rejected invitation.
+- Temporary connection failures keep **Try Again**. Canceling Join keeps the
+  current draft; replacement still requires the previous connection to close.
+
+### Recover a private room without replaying old audio intent
+
+- After a failed Reset Invite, a successful explicit retry restores Art room
+  guidance instead of leaving the recovered room marked failed. Notes and the
+  temporary Conversation stay in place; retired lesson controls stay retired.
+- Music refuses fresh Record, Play and restart while native room cleanup is
+  unresolved. Stop and local level controls remain available for retained work.
+  Recovery never replays an old queued Play or cancels audio already playing.
+
+### Established sessions outlast their invitation window
+
+- Existing private native sessions keep admission expiry separate from the
+  connected room's lifetime. Invitations retain the default ten-minute admission
+  window; enrolled rooms keep the 90-second idle timeout and gain a hard maximum
+  of eight hours from registration, with native lifetime capped by the actual
+  ephemeral certificate expiry.
+- Setup must still complete mutual peer proof and the room handshake before its
+  deadline. Local teardown joins owned workers and retains an unfinished close
+  for retry. Host cleanup uses a fresh, bounded authenticated service-close
+  attempt; local close success does not imply a remote removal acknowledgment.
+- Reset Invite can retry a failed native close before creating a fresh invite.
+  The retired room stays unavailable, and stale or invalid close receipts cannot
+  release cleanup ownership.
+- No public profile or endpoint, media player, or guest transport authority is
+  added. Physical long-session and audio-latency validation remain separate work.
+
+### Keep the conversation with the invitation
+
+- Pasting the host's complete invitation now carries its optional meeting into
+  the joined room's **Conversation**. It previously discarded the meeting and
+  could open a guest's unrelated saved link.
+- Room links are temporary. **Add Link** / **Change Link** changes only the guest's
+  current room, and Leave restores their saved personal meeting. Empty invites
+  do not fall back to a previous meeting. No meeting opens automatically.
+- Opening and retrying use the same room link; a room change retires stale
+  launch results and retries. Malformed or ambiguous conversation blocks are
+  rejected with a private-input-safe explanation.
+- This completes invitation context, not Internet reachability. Different-home
+  Art joining and physical Art/Music proof remain open in the
+  [two-session proof plan](docs/plans/webjam-two-session-proof.md).
+
+### Make together starts from any artist's own space
+
+- The Art room's default Make together activity now says **Make from your own
+  space**, naming paper, clay, a model, a printer, or the artist's usual app
+  before any optional canvas or Paint along activity appears.
+- The same promise is carried in Art invitations and first-session guidance, so
+  a sculptor, potter, object maker, painter, or talk-only guest does not read
+  the room as a Music setup.
+- No launch-door shape, meeting launch, room protocol, canvas, Paint along,
+  recording, signing, release, or package behavior changes.
+
+### Reach a shared YouTube lesson from Paint along
+
+- **Watch a shared lesson** opens the existing Conversation controls from
+  Paint along, including when no local video is loaded. It focuses the
+  meeting's next action without opening a link or starting playback.
+- Host and guest guidance explains sharing lesson sound, keeping faces
+  visible, asking for a pause, and which listening controls are personal.
+  The browser and meeting app still own the shared lesson.
+- Local-file Paint along remains silent and host-controlled. A missing or
+  failed local copy does not block the Conversation route; stale room clicks
+  cannot replace Notes or reopen guidance after Leave.
+
+### Shared Track support tells hosts what they can do
+
+- Windows and Linux hosts now see that this build cannot send a Shared Track,
+  with **Back to rehearsal** instead of an impossible setup/recheck loop.
+  Local inspection and explicit removal remain available.
+- Recording now waits for queued/loading tracks and refuses a retained track
+  after a failed replacement, instead of silently omitting it. The explanation
+  distinguishes source recovery, unavailable sending support and Mac setup.
+  Existing recording Stop remains available.
+- Supported Mac route checks remain required. Timing guidance describes
+  device and network delay without promising equal delay for every musician.
+
+### Explicit offline audio timing evidence
+
+- New file-only tools create a synthetic calibration probe and analyze one
+  explicitly supplied capture's direct/return channels on a shared clock.
+  Reports keep round-trip delay, uncertain or missing events and unverified
+  capture provenance distinct from physical audibility and one-way latency.
+- No audio device, playback, recorder or network is opened. Existing output
+  files are refused; the physical pilot now links the measurement procedure.
+
+
 ### Prepare a Paint along copy before the host shares
 
 - A guest who opens **Paint along** early can now choose **Open my copy…**,

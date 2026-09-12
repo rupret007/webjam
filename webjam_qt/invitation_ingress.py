@@ -58,6 +58,74 @@ def _has_literal_version_marker(value: str, version: str) -> bool:
 _MAX_PASTE_CHARS = 8192
 
 
+def conversation_url_from_pasted_invitation(text: object) -> str:
+    """Retain one explicitly labeled conversation from a complete paste.
+
+    Callers must first accept the WebJam link through the normal ingress
+    policy. This companion is local, untrusted invitation context, not an
+    authenticated room fact or a protocol field. It is never opened here.
+    Unrelated signature links are ignored; malformed or conflicting labeled
+    blocks fail without echoing any private URL.
+    """
+    from core.meeting_companion import service_name_for_link
+    from core.meeting_link import is_allowed_meeting_link, meeting_link_hostname
+
+    raw = str(text or "")
+
+    def invalid() -> InvitationIngressError:
+        return InvitationIngressError(
+            InvitationIngressErrorCode.INVALID,
+            "The conversation link in this invitation is incomplete or unclear. "
+            "Ask the host to copy the full invitation again.",
+        )
+
+    if len(raw) > _MAX_PASTE_CHARS:
+        raise invalid()
+    if "webjam://" not in raw.lower():
+        return ""
+    # This only extracts the one link; the caller owns its strict parsing.
+    _link_from_pasted_text(raw)
+
+    def unquote(line: str) -> str:
+        line = line.strip()
+        while line.startswith(">"):
+            line = line[1:].lstrip()
+        return line
+
+    def unwrap_url(line: str) -> str:
+        for left, right in (("<", ">"), ('"', '"'), ("'", "'"), ("`", "`"), ("(", ")"), ("[", "]")):
+            if line.startswith(left):
+                if line[-1:] in {".", ",", ";", "!"}:
+                    line = line[:-1]
+                if line.endswith(right):
+                    return line[1:-1]
+        return line
+
+    lines = [unquote(line) for line in raw.splitlines()]
+    found: set[str] = set()
+    for index, label in enumerate(lines):
+        if not (label.startswith("Optional ") and (
+            "conversation and work sharing" in label or "video chat" in label
+        )):
+            continue
+        if index + 1 >= len(lines):
+            raise invalid()
+        candidate = unwrap_url(lines[index + 1])
+        if not is_allowed_meeting_link(candidate):
+            raise invalid()
+        site = meeting_link_hostname(candidate)
+        valid_labels = {
+            f"Optional video chat ({site}):",
+            f"Optional {service_name_for_link(candidate)} conversation and work sharing ({site}):",
+        }
+        if label not in valid_labels:
+            raise invalid()
+        found.add(candidate)
+    if len(found) > 1:
+        raise invalid()
+    return next(iter(found), "")
+
+
 def _link_from_pasted_text(value: str) -> str:
     """Return the single ``webjam://`` link inside pasted text.
 

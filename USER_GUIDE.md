@@ -53,7 +53,8 @@ choose Art at launch, you pick one of two ways to start, and nothing more:
 
 - **Make together** — talk, make, or draw together in one room. Everyone may
   work locally; the host can open one shared canvas from inside the room.
-- **Paint along** — follow one silent process video while you paint.
+- **Paint along** — reach a shared lesson in Conversation or follow a
+  matching silent local video while you make.
 
 The first screen deliberately does not name the programs behind the optional
 canvas or video. You find out which one to install at the moment you need it,
@@ -69,15 +70,25 @@ Invite**. The guest pastes that complete invitation once; WebJam follows the
 host's Art activity when the room responds. **You’re in** means the Art room
 connection is current, not that a meeting or drawing app has joined.
 
+If the full invitation includes an optional conversation link, **Conversation**
+uses that link for this room. You do not need to paste it again. Joining never
+opens it automatically: choose **Join / Open Meeting** when ready. An invitation
+without a conversation link does not select your previous personal meeting.
+**Add Link** / **Change Link** edits only this room's conversation while you are
+its guest. Your personal meeting stays saved for later; leaving the room restores
+it. Any meeting already open stays open until you leave it in that service.
+
 The room view shows whether you are waiting for artists or connected to the
 host. It does not show a full artist list yet. Without a shared activity,
-**Bring your own tools** is a complete place to start; when the host shares
-a canvas or Paint along video, the room offers that existing panel. When both
-are offered, each has its own status and Open action in the room. A canvas
-that needs a drawing app does not block **Open Paint along**, and video
-recovery does not hide **Open canvas**. If you hid the video, return through
-**Open Paint along**, then choose **Show video** when you want it visible
-again. Your existing local copy stays open.
+**Make from your own space** is a complete place to start: use paper, clay, a
+model, a printer, or your usual app while the room stays open beside you.
+Conversation is optional when you want to talk or share your screen. When the
+host shares a canvas or Paint along video, the room offers that existing
+panel. When both are offered, each has its own status and Open action in the
+room. A canvas that needs a drawing app does not block **Open Paint along**,
+and video recovery does not hide **Open canvas**. If you hid the video, return
+through **Open Paint along**, then choose **Show video** when you want it
+visible again. Your existing local copy stays open.
 
 In **Notes** or Paint along, choose **Back to room** to see the full room and
 its current activities or recovery action. Your notes, selection and undo
@@ -125,7 +136,8 @@ panel, where you add a public HTTPS link. Once saved it reads
 share a demonstration or process video in Webex or the selected meeting app.
 That app owns its video, microphone, and sharing.
 WebJam does not open a meeting merely because the room or panel appeared.
-**Paint along** below is the separate silent local-file option.
+In **Paint along**, **Watch a shared lesson** reaches these same controls.
+The local-file option below is separate and silent.
 
 ### Painting together
 
@@ -171,9 +183,27 @@ Things worth knowing:
 
 ### Painting along to a video
 
-Paint along is the process-video companion, not a painting program. Paint in
-Procreate, Clip Studio Paint, Krita, or on paper beside WebJam. Keep Webex or
-another meeting beside it for conversation. The host can choose one video file:
+Bring your own materials or app. Choose **Watch a shared lesson** in Paint
+along to reach Conversation without choosing a local file. It works even
+when a local copy is missing or cannot play. The focused action is **Add
+Link**, **Join / Open Meeting**, or the available meeting-app action. Merely
+showing these controls does not join a meeting or start a lesson.
+
+For a YouTube lesson, such as a Bob Ross mountain painting, the host opens
+the lesson in their browser and shares it through the meeting. In the Webex
+desktop app, share the browser window with computer sound enabled; the video
+optimization option helps motion. In the Webex web client, share the browser
+tab with tab audio enabled. Keep participant videos visible in the meeting.
+These are provider-supported paths; the complete two-person WebJam experience
+still needs physical verification. See the [shared-lesson test guide](docs/plans/webjam-shared-lesson-entry.md).
+
+The host pauses and resumes **the YouTube player** when either person asks.
+A guest asks in Conversation; WebJam cannot control the external browser.
+The YouTube player's volume changes the shared narration. Your meeting
+speaker volume changes what you hear; microphone mute controls your own voice.
+This does not provide separate WebJam faders for narration and each voice.
+
+For the existing **silent local-file option**, the host chooses one video file:
 
 1. When a host chose **Paint along**, WebJam opens the large Paint along
    workspace once the room exists. It replaces the conductor surface inside
@@ -398,6 +428,38 @@ After Jamulus connects, the session canvas includes Jamulus band chat. That
 chat is unavailable while the private connection itself is still being set
 up, so use the invitation recovery shown by WebJam for connection trouble.
 
+## Your Music listening mix
+
+The participant cards control what you hear through the Music connection.
+Each card's fader adjusts that channel in your own mix, including **WebJam
+Track** when a reference track is present. It does not change another
+musician's listening level or the host's source trim.
+
+**Mute** silences that channel in your mix. You can move its fader while muted
+to prepare a level; it stays silent until you unmute it. **Solo** lets you
+listen to one channel. Other channels stay suppressed even when you adjust
+their faders. Turning Solo off, or the soloed musician leaving, restores your
+chosen levels and mute choices. A new arrival stays suppressed during Solo.
+
+**Save Mix** (Ctrl+S) keeps your current listening balance; **Load Mix**
+(Ctrl+O) restores it. Use Ctrl+Shift+S / Ctrl+Shift+O for named mixes.
+Restoring applies matched participants' listening levels and updates their
+cards immediately. A successful new connection also tries your default saved
+mix. A participant whose channel number changed can match by a unique name;
+ambiguous or missing participants are left alone. If nothing matches, join
+the intended session or choose another mix.
+
+New saves made during Solo preserve both the current Solo sound and your mute
+choices for when Solo ends. Older saved files retain the mute values they
+contain; they cannot recover choices that were never saved. Loading a mix does
+not start a reference track, recording, microphone, or connection. These are
+saved control settings; confirm the intended sound through your headphones.
+
+Muting your own participant card affects your local monitor, not the microphone
+sent to other people. To stop your instrument or microphone reaching the room,
+use your audio interface's mute or stop WebJam audio. Conversation uses its own
+microphone and speaker controls.
+
 ## Main session actions and More
 
 The main session rail keeps the everyday destinations visible:
@@ -549,6 +611,23 @@ until recorded against exact builds.
 
 ## Shared Track — macOS private test release
 
+**Sending a Shared Track currently needs a supported Mac.** This build has no
+Windows or Linux sender backend; installing a driver or rechecking the route
+cannot enable one. Their panel shows **Track sharing unavailable** and offers
+**Back to rehearsal**. Closing it keeps the file loaded; **Remove** explicitly
+discards that local selection. Remove an unplayable track before starting a
+recording without it. WebJam never silently omits the loaded track and starts
+the recorder. A selected track that is queued or still loading also blocks a
+new recording. Wait for loading to finish, resolve a retained-source failure
+or remove that source, then choose Record again; recovery does not start a
+recorder automatically. Stop Recording remains available for an active take.
+
+This restriction concerns sending the track. A guest hears a supported host's
+track through the ordinary session audio, subject to their existing audio
+connection and device setup. Four successful desktop builds do not establish
+two-endpoint audibility on those platforms. Guests do not need the host's
+sender backend and do not gain transport control.
+
 The host can choose **Add Shared Track**, drop one supported local file on the
 live-session surface, or open **Shared Track** / **More → Shared Track…** for
 the same complete transport. Loading and route readiness are independent:
@@ -563,13 +642,14 @@ block, so a source that cannot produce usable audio fails during load. If
 playback ever starves and emits silence, the panel reports audible dropouts
 instead of silently claiming clean playback. The live deck and full transport
 show the path-free source name, duration, progressive waveform, playhead,
-count-in, and separate route/cleanup state. **Recheck Route** refreshes route
-evidence without starting playback. Play, pause, stop, restart, paused seeking,
+count-in, and separate route/cleanup state. Where the sender backend exists,
+**Recheck Route** refreshes route evidence without starting playback. Play,
+pause, stop, restart, paused seeking,
 loop in/out, source trim, and an audible count-in remain transport controls.
 **Replace…** and **Remove** require a safe stopped state; an attempted change
 during playback is refused. Guests do not get the transport.
 
-Shared Track is not Studio playback. Once the route is certified, its design
+Shared Track is not Studio playback. Once the runtime route checks pass, it
 streams the song at 48 kHz into BlackHole channels 1/2, launches a separately
 owned Jamulus client named `WebJam Track`, and isolates that client's returns
 on BlackHole channels 3/4. The host must then hear it only through the normal
@@ -625,8 +705,8 @@ Track**, not as another participant. WebJam shows only the source filename; the
 folder path is never saved to settings or written to logs.
 
 Machine-derived route eligibility is not a claim that anyone can hear clean
-audio. Windows/Linux routing and physical two-endpoint macOS audibility are
-not yet certified. Device-switch truth, BlackHole exclusivity, independent
+audio. Windows/Linux sending is unimplemented, and physical two-endpoint
+macOS audibility remains unverified. Device-switch truth, BlackHole exclusivity, independent
 mixes, no-direct-monitor proof, server-stem alignment, route removal, repeated
 teardown, and a long session remain **NOT RUN** until recorded against an
 exact controlled source build using the

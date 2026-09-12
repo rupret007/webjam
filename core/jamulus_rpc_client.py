@@ -585,14 +585,16 @@ class JamulusRpcClient:
     # ------------------------------------------------------------------
     # Public commands (fire-and-forget; no-op when not connected)
     # ------------------------------------------------------------------
-    def set_channel_gain(self, channel_id: int, gain_0_to_127: int) -> bool:
+    def set_channel_gain(
+        self, channel_id: int, gain_0_to_127: int, *, epoch: int | None = None,
+    ) -> bool:
         """Set the fader for ``channel_id``. Maps WebJam's 0..127 to 0..100."""
         gain = max(0, min(self.GAIN_RANGE_IN, int(gain_0_to_127)))
         level = round(gain / self.GAIN_RANGE_IN * self.FADER_MAX)
         return self._send("jamulusclient/setFaderLevel", {
             "channelIndex": channel_id,
             "level": level,
-        }) is not None
+        }, epoch=epoch) is not None
 
     def set_channel_mute(self, channel_id: int, muted: bool) -> bool:
         # The client API has no per-channel mute; muting a channel in your own

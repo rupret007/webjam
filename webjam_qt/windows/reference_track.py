@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 
 from core.reference_track import (
     reference_track_file_filter,
+    reference_track_host_backend_unavailable,
     reference_track_supported_extensions,
 )
 from webjam_qt.theme.tokens import Space
@@ -41,6 +42,11 @@ from webjam_qt.widgets.session_strip import shared_track_next_step_label
 from webjam_qt.widgets.shared_track_waveform import SharedTrackWaveform
 
 _BLACKHOLE_SETUP_URL = "https://existential.audio/blackhole/"
+_TRACK_INTRO = (
+    "Play a song through the jam as its own band channel. Each "
+    "musician can set its level in their own mix. Load a song below, "
+    "or drop an audio file anywhere on this window."
+)
 
 # Cumulative zero-filled frames (at 48 kHz) before the dialog warns about
 # audible dropouts. 4,800 frames is 100 ms of missing audio — clearly audible,
@@ -101,6 +107,9 @@ class ReferenceTrackDialog(QDialog):
         # primary Jamulus/session lifecycle. Fail closed until the application
         # controller proves one of the finite gate states below.
         self._primary_gate = ReferenceTrackPrimaryGate.NOT_CONNECTED
+        # Room cleanup can fail while the local audio process remains healthy.
+        # Retain its Stop/Pause and inspection controls; refuse only fresh starts.
+        self._room_recovery_pending = False
         # Controller snapshots arrive every 250 ms.  Keep a just-committed
         # keyboard edit on screen until the controller echoes it back instead
         # of briefly replacing it with the preceding snapshot.
@@ -158,11 +167,7 @@ class ReferenceTrackDialog(QDialog):
         title.setObjectName("SimpleSettingsTitle")
         root.addWidget(title)
 
-        intro = QLabel(
-            "Play a song through the jam as its own band channel. Each "
-            "musician can set its level in their own mix. Load a song below, "
-            "or drop an audio file anywhere on this window."
-        )
+        intro = self._intro = QLabel(_TRACK_INTRO)
         intro.setObjectName("SimpleSettingsSubtitle")
         intro.setWordWrap(True)
         intro.setTextFormat(Qt.TextFormat.PlainText)
@@ -216,7 +221,7 @@ class ReferenceTrackDialog(QDialog):
         self._recheck_route.setToolTip(
             "Inspect the isolated audio route again. This never starts playback."
         )
-        self._recheck_route.clicked.connect(self.recheck_route_requested.emit)
+        self._recheck_route.clicked.connect(self._emit_recheck_route)
         route_actions.addWidget(self._recheck_route)
         self._blackhole_setup = QPushButton("Set Up Shared Track…")
         self._blackhole_setup.setObjectName("GhostButton")
@@ -232,6 +237,16 @@ class ReferenceTrackDialog(QDialog):
         self._blackhole_setup.setVisible(False)
         route_actions.addWidget(self._blackhole_setup)
         root.addLayout(route_actions)
+
+        # Unsupported hosts need their way back beside the support explanation,
+        # before the longer inspection/transport surface can require scrolling.
+        # Move the existing close-only button here; never create a second action.
+        self._support_footer = QWidget()
+        self._support_footer_layout = QHBoxLayout(self._support_footer)
+        self._support_footer_layout.setContentsMargins(0, 0, 0, 0)
+        self._support_footer_layout.addStretch(1)
+        self._support_footer.hide()
+        root.addWidget(self._support_footer)
 
         source_row = QHBoxLayout()
         self._source = QLabel("No song loaded")
@@ -368,9 +383,9 @@ class ReferenceTrackDialog(QDialog):
         root.addLayout(controls)
 
         self._safety = QLabel(
-            "The song travels the same path as the band, so it carries the "
-            "same delay. It is not a click track. A recording captures it as "
-            "its own track."
+            "The track travels through the session audio. Each person's device "
+            "and network affect the delay they hear; it does not remove latency. "
+            "If you record the session, the track is recorded separately."
         )
         self._safety.setObjectName("DialogHint")
         self._safety.setWordWrap(True)
@@ -378,13 +393,14 @@ class ReferenceTrackDialog(QDialog):
         root.addWidget(self._safety)
         root.addStretch(1)
 
-        footer = QHBoxLayout()
+        footer = self._done_footer = QHBoxLayout()
         footer.addStretch(1)
         self._done = QPushButton("Done")
         self._done.setObjectName("GhostButton")
         self._done.setAccessibleName("Close Shared Track controls")
         self._done.clicked.connect(self.close)
         footer.addWidget(self._done)
+        self._done_in_support = False
         root.addLayout(footer)
 
         # Enter commits spin-box edits; it must never activate an unrelated
@@ -459,6 +475,8 @@ class ReferenceTrackDialog(QDialog):
     def _open_blackhole_setup(self) -> None:
         """Open only the reviewed official setup page after an explicit click."""
 
+        if reference_track_host_backend_unavailable(getattr(self._snapshot, "capability", None)):
+            return
         if QDesktopServices.openUrl(QUrl(_BLACKHOLE_SETUP_URL)):
             return
         self._set_dynamic_status(
@@ -467,9 +485,16 @@ class ReferenceTrackDialog(QDialog):
             "was downloaded or installed.",
         )
 
+    def _emit_recheck_route(self) -> None:
+        if self._recheck_route.isEnabled() and not reference_track_host_backend_unavailable(
+            getattr(self._snapshot, "capability", None)
+        ):
+            self.recheck_route_requested.emit()
+
     def _emit_play(self) -> None:
         if (
             self._primary_gate is ReferenceTrackPrimaryGate.READY
+            and not self._room_recovery_pending
             and self._rendered_state in {"ready", "paused"}
         ):
             self.play_requested.emit()
@@ -484,6 +509,7 @@ class ReferenceTrackDialog(QDialog):
     def _emit_restart(self) -> None:
         if (
             self._primary_gate is ReferenceTrackPrimaryGate.READY
+            and not self._room_recovery_pending
             and self._rendered_state in {"playing", "paused"}
         ):
             self.restart_requested.emit()
@@ -701,6 +727,7 @@ class ReferenceTrackDialog(QDialog):
         state = str(state_value or getattr(snapshot, "state", "unavailable")).lower()
         self._rendered_state = state
         capability = getattr(snapshot, "capability", None)
+        unsupported_host = reference_track_host_backend_unavailable(capability)
         capability_available = bool(getattr(capability, "available", False))
         capability_reason = str(
             getattr(capability, "reason_code", "") or ""
@@ -715,6 +742,11 @@ class ReferenceTrackDialog(QDialog):
         error = str(getattr(snapshot, "error", "") or "")
         cleanup_pending = bool(
             getattr(snapshot, "cleanup_pending", False)
+        )
+        self._intro.setText(
+            "Inspect a song or return to rehearsal. This computer cannot send "
+            "a Shared Track into the room."
+            if unsupported_host else _TRACK_INTRO
         )
         route_detail = str(getattr(snapshot, "route_detail", "") or "")
         capability_detail = str(getattr(capability, "detail", "") or "")
@@ -799,6 +831,13 @@ class ReferenceTrackDialog(QDialog):
                     f"{ready_prefix}; start a clean band audio session before "
                     "playback; controls are locked"
                 )
+            elif self._room_recovery_pending:
+                status = f"{ready_prefix}; room recovery is needed before Play or Restart"
+        if unsupported_host and state in {"unavailable", "idle", "ready", "failed"}:
+            status = (
+                "Song loaded for inspection; track sharing is unavailable on this computer"
+                if loaded else "Track sharing is unavailable on this computer"
+            )
         if cleanup_pending:
             status = (
                 "Private Shared Track cleanup is still pending"
@@ -856,6 +895,24 @@ class ReferenceTrackDialog(QDialog):
                 "Choose Stop again. Loading, playback, and route rechecks stay "
                 "locked until WebJam confirms its private process, profile, "
                 "control, and audio-route cleanup."
+            )
+        elif (
+            self._room_recovery_pending
+            and self._primary_gate is ReferenceTrackPrimaryGate.READY
+        ):
+            guidance = (
+                "Room cleanup did not finish. Choose Reset Invite in WebJam, "
+                "then choose Play again. Your loaded track stays here; "
+                "an active track can still be paused or stopped."
+            )
+        elif unsupported_host:
+            guidance = (
+                "Keep rehearsing without a track, or use a supported Mac as host "
+                "to send one. You can still inspect or remove this file. "
+                "Returning to rehearsal keeps the selected file."
+                if loaded else
+                "Keep rehearsing without a track, or use a supported Mac as host "
+                "to send one. You can still load a file for inspection here."
             )
         elif (
             capability_available
@@ -932,11 +989,21 @@ class ReferenceTrackDialog(QDialog):
             )
         else:
             guidance = (
-                "Load and inspect a song now if you want. Playback remains "
-                "disabled until the setup above is complete; then choose "
-                "Recheck Route."
+                "Load and inspect a song while playback is unavailable. Review "
+                "the route status above. Recheck Route only checks again; "
+                "it never starts playback."
             )
         self._set_dynamic_status(self._route_guidance, guidance)
+        back_to_rehearsal = unsupported_host and not cleanup_pending
+        self._position_return_action(back_to_rehearsal)
+        self._done.setText("Back to rehearsal" if back_to_rehearsal else "Done")
+        self._done.setAccessibleName(
+            "Back to rehearsal" if back_to_rehearsal else "Close Shared Track controls"
+        )
+        self._done.setToolTip(
+            "Close these controls. Your session and selected file stay as they are."
+            if back_to_rehearsal else "Close Shared Track controls."
+        )
         source_label = source_name or "No song loaded"
         self._source.setText(source_label)
         self._source.setToolTip(source_name)
@@ -1074,7 +1141,8 @@ class ReferenceTrackDialog(QDialog):
             cleanup_pending=cleanup_pending,
         )
         if (
-            previous_focus in transport_controls
+            (previous_focus in transport_controls
+             or unsupported_host and previous_focus in {self._recheck_route, self._blackhole_setup})
             and (
                 state != previous_state
                 or not previous_focus.isEnabled()
@@ -1103,6 +1171,17 @@ class ReferenceTrackDialog(QDialog):
                 )
             if target.isEnabled():
                 target.setFocus(Qt.FocusReason.TabFocusReason)
+
+    def _position_return_action(self, beside_support: bool) -> None:
+        if beside_support == self._done_in_support:
+            return
+        old_layout = self._support_footer_layout if self._done_in_support else self._done_footer
+        new_layout = self._support_footer_layout if beside_support else self._done_footer
+        old_layout.removeWidget(self._done)
+        new_layout.addWidget(self._done)
+        self._done_in_support = beside_support
+        self._support_footer.setVisible(beside_support)
+        self._done.show()
 
     def set_route_checking(self, checking: bool) -> None:
         """Render one coalesced route probe without enabling duplicate work."""
@@ -1154,6 +1233,9 @@ class ReferenceTrackDialog(QDialog):
         """
 
         super().showEvent(event)
+        if (reference_track_host_backend_unavailable(getattr(self._snapshot, "capability", None))
+                and not bool(getattr(self._snapshot, "cleanup_pending", False))):
+            self._done.setFocus(Qt.FocusReason.OtherFocusReason)
         if self._placed:
             return
         self._placed = True
@@ -1174,6 +1256,16 @@ class ReferenceTrackDialog(QDialog):
         if self._primary_gate is value:
             return
         self._primary_gate = value
+        if self._snapshot is not None:
+            self.set_snapshot(self._snapshot)
+
+    def set_room_recovery_pending(self, pending: bool) -> None:
+        """Block new room playback without taking ownership of existing audio."""
+
+        value = bool(pending)
+        if self._room_recovery_pending == value:
+            return
+        self._room_recovery_pending = value
         if self._snapshot is not None:
             self.set_snapshot(self._snapshot)
 
@@ -1236,6 +1328,9 @@ class ReferenceTrackDialog(QDialog):
         cleanup_pending: bool = False,
     ) -> None:
         busy = state in {"loading", "routing", "stopping", "closed"}
+        unsupported_host = reference_track_host_backend_unavailable(
+            getattr(self._snapshot, "capability", None)
+        )
         primary_ready = self._primary_gate is ReferenceTrackPrimaryGate.READY
         editable = loaded and primary_ready and state in {"ready", "paused"}
         source_change_allowed = state in {
@@ -1259,6 +1354,8 @@ class ReferenceTrackDialog(QDialog):
         source_change_tooltip = (
             "Choose another local audio file. The current source file is unchanged."
             if loaded and source_change_allowed
+            else "Choose a local audio file to inspect on this computer."
+            if unsupported_host and source_change_allowed
             else "Choose a local audio file to share with the band."
             if source_change_allowed
             else "Stop the Shared Track before replacing or removing it."
@@ -1272,25 +1369,32 @@ class ReferenceTrackDialog(QDialog):
         )
         self._remove.setToolTip(remove_tooltip)
         self._set_dynamic_description(self._remove, remove_tooltip)
+        self._recheck_route.setVisible(not unsupported_host)
         self._recheck_route.setEnabled(
             not busy
+            and not unsupported_host
             and not self._route_checking
             and not cleanup_pending
             and self._primary_gate
             is not ReferenceTrackPrimaryGate.SESSION_CHANGING
             and state not in {"playing", "paused"}
         )
-        self._blackhole_setup.setEnabled(not busy and not cleanup_pending)
+        self._blackhole_setup.setEnabled(
+            not busy and not cleanup_pending and not unsupported_host
+        )
         self._play.setEnabled(
             loaded
             and capability_available
             and self._primary_gate is ReferenceTrackPrimaryGate.READY
+            and not self._room_recovery_pending
             and state in {"ready", "paused"}
         )
         capability = getattr(self._snapshot, "capability", None)
         reason = str(getattr(capability, "reason_code", "") or "").casefold()
         if self._play.isEnabled():
             play_tooltip = "Play the loaded song through the isolated Jamulus route."
+        elif self._room_recovery_pending and primary_ready:
+            play_tooltip = "Choose Reset Invite in WebJam, then choose Play again."
         elif (
             loaded
             and capability_available
@@ -1334,6 +1438,8 @@ class ReferenceTrackDialog(QDialog):
                 "Press Start Session in WebJam to launch clean band audio "
                 "before playing."
             )
+        elif unsupported_host:
+            play_tooltip = "This computer cannot send a Shared Track. Return to rehearsal or use a supported Mac host."
         elif reason == "physical_certification_required":
             play_tooltip = (
                 "Play needs an isolated audio route on this Mac. Choose Set Up "
@@ -1363,9 +1469,12 @@ class ReferenceTrackDialog(QDialog):
         self._restart.setEnabled(
             capability_available
             and primary_ready
+            and not self._room_recovery_pending
             and state in {"playing", "paused"}
         )
-        if state not in {"playing", "paused"}:
+        if self._room_recovery_pending and primary_ready:
+            restart_tooltip = "Choose Reset Invite in WebJam, then choose Play again."
+        elif state not in {"playing", "paused"}:
             restart_tooltip = (
                 "Restart becomes available while the Shared Track is playing "
                 "or paused."

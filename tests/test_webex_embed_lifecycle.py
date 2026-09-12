@@ -481,7 +481,7 @@ def test_non_webex_card_names_provider_in_handoff_guidance_and_accessibility():
         assert embed.change_link_button().accessibleName() == (
             "Change Zoom meeting link"
         )
-        assert "saved Zoom meeting link" in (
+        assert "Zoom meeting link used by Conversation" in (
             embed.change_link_button().accessibleDescription()
         )
         assert "Zoom meeting link" in embed.change_link_button().toolTip()

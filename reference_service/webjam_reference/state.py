@@ -25,6 +25,15 @@ from .protocol import (
 )
 
 Endpoint = tuple[object, ...]
+_MAX_HOST_PRINCIPALS = 128
+
+
+def _valid_host_principal(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 32
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 class TokenBucket:
@@ -72,7 +81,10 @@ class Session:
     enrollment_hash: bytes | None
     host: Peer
     created_at: float
+    # Enrollment admission and enrolled-room retention have independent bounds.
+    # Service enrollment does not attest native mutual peer authentication.
     expires_at: float
+    active_expires_at: float
     last_activity: float
     datagram_bucket: TokenBucket
     bandwidth_bucket: TokenBucket
@@ -81,6 +93,7 @@ class Session:
         default_factory=lambda: {Role.HOST: deque(), Role.GUEST: deque()}
     )
     signal_bytes: int = 0
+    host_principal: str | None = field(default=None, repr=False)
 
     def peer(self, role: Role) -> Peer | None:
         return self.host if role is Role.HOST else self.guest
@@ -94,6 +107,7 @@ class Session:
         self.signals[Role.GUEST].clear()
         self.signal_bytes = 0
         self.enrollment_hash = None
+        self.host_principal = None
         return released
 
 
@@ -122,8 +136,20 @@ class SessionRegistry:
     )
 
     def __init__(
-        self, config: ServiceConfig, *, clock: Callable[[], float] = time.monotonic
+        self,
+        config: ServiceConfig,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+        host_principals: tuple[str, ...] = (),
     ) -> None:
+        if (
+            not isinstance(host_principals, tuple)
+            or len(host_principals) > _MAX_HOST_PRINCIPALS
+            or any(not _valid_host_principal(value) for value in host_principals)
+            or len(set(host_principals)) != len(host_principals)
+            or bool(host_principals) != config.host_admission_enabled
+        ):
+            raise ValueError("host principals must match the configured admission policy")
         self.config = config
         self._clock = clock
         self._started_at = clock()
@@ -131,6 +157,12 @@ class SessionRegistry:
         self._tombstones: OrderedDict[bytes, float] = OrderedDict()
         self._signal_bytes = 0
         self._counters: Counter[str] = Counter()
+        # Only the fixed, approved identities own resource accounting. The
+        # server supplies them from verified TLS policy, never request fields.
+        self._host_session_counts = dict.fromkeys(host_principals, 0)
+        self._host_registration_buckets = {
+            principal: TokenBucket(1, 4, clock) for principal in host_principals
+        }
         self._registration_bucket = TokenBucket(
             config.registrations_per_second, config.registration_burst, clock
         )
@@ -149,7 +181,17 @@ class SessionRegistry:
         enrollment_token: bytes,
         generation: int,
         ttl_seconds: int,
+        *,
+        host_principal: str | None = None,
     ) -> int:
+        if self.config.host_admission_enabled:
+            if (
+                not _valid_host_principal(host_principal)
+                or host_principal not in self._host_session_counts
+            ):
+                raise ProtocolError("unauthorized")
+        elif host_principal is not None:
+            raise ProtocolError("unauthorized")
         self.cleanup()
         if (
             len(session_id) != SESSION_BYTES
@@ -157,6 +199,11 @@ class SessionRegistry:
             or len(enrollment_token) != TOKEN_BYTES
         ):
             raise ProtocolError("malformed")
+        if host_principal is not None and not self._host_registration_buckets[
+            host_principal
+        ].allow():
+            self._counters["registrations_rejected_rate"] += 1
+            raise ProtocolError("overloaded")
         if not self._registration_bucket.allow():
             self._counters["registrations_rejected_rate"] += 1
             raise ProtocolError("overloaded")
@@ -165,7 +212,11 @@ class SessionRegistry:
         tombstone = self._session_digest(session_id)
         if tombstone in self._tombstones:
             raise ProtocolError("session_replayed")
-        if len(self._sessions) >= self.config.max_sessions:
+        if len(self._sessions) >= self.config.max_sessions or (
+            host_principal is not None
+            and self._host_session_counts[host_principal]
+            >= min(self.config.max_sessions, self.config.max_sessions_per_host)
+        ):
             self._counters["registrations_rejected_capacity"] += 1
             raise ProtocolError("overloaded")
         if not isinstance(generation, int) or isinstance(generation, bool):
@@ -197,6 +248,7 @@ class SessionRegistry:
             host=peer,
             created_at=now,
             expires_at=now + ttl_seconds,
+            active_expires_at=now + self.config.max_active_session_seconds,
             last_activity=now,
             datagram_bucket=TokenBucket(
                 self.config.datagrams_per_second,
@@ -208,7 +260,10 @@ class SessionRegistry:
                 self.config.bandwidth_burst_bytes,
                 self._clock,
             ),
+            host_principal=host_principal,
         )
+        if host_principal is not None:
+            self._host_session_counts[host_principal] += 1
         self._counters["sessions_registered"] += 1
         return ttl_seconds
 
@@ -386,8 +441,7 @@ class SessionRegistry:
         expired = [
             key
             for key, session in self._sessions.items()
-            if now >= session.expires_at
-            or now - session.last_activity >= self.config.idle_timeout_seconds
+            if self._is_expired(session, now=now)
         ]
         for key in expired:
             self._remove(key, "expired")
@@ -500,9 +554,13 @@ class SessionRegistry:
             raise ProtocolError(public_error)
         return session
 
-    def _is_expired(self, session: Session) -> bool:
-        now = self._clock()
-        return now >= session.expires_at or (
+    def _is_expired(self, session: Session, *, now: float | None = None) -> bool:
+        if now is None:
+            now = self._clock()
+        deadline = (
+            session.expires_at if session.guest is None else session.active_expires_at
+        )
+        return now >= deadline or (
             now - session.last_activity >= self.config.idle_timeout_seconds
         )
 
@@ -510,6 +568,8 @@ class SessionRegistry:
         session = self._sessions.pop(session_id, None)
         if session is None:
             return
+        if session.host_principal is not None:
+            self._host_session_counts[session.host_principal] -= 1
         self._signal_bytes -= session.wipe()
         if tombstone:
             digest = self._session_digest(session_id)

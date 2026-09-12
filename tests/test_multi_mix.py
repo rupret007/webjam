@@ -22,6 +22,7 @@ def _make_mix_manager(serialize_payload=None):
     ``(manager, jamulus_mock, flash_calls_list)``.
     """
     jamulus = mock.MagicMock()
+    jamulus.apply_mix_data.return_value = 1  # Production returns matched-row count.
     jamulus.serialize_mix.return_value = (
         serialize_payload if serialize_payload is not None else {"participants": []}
     )

@@ -77,8 +77,11 @@ def test_reference_track_dialog_fits_supported_compact_screen() -> None:
         # The safety note tells the musician what the delay means for them
         # rather than naming the transport that causes it.
         safety = dialog.findChildren(type(dialog._status))[-1].text()
-        assert "same delay" in safety
-        assert "not a click track" in safety
+        assert "device and network" in safety and "delay" in safety
+        assert "does not remove latency" in safety
+        assert "recorded separately" in safety
+        assert "same delay" not in safety
+        assert "not a click track" not in safety
         assert "Jamulus" not in safety
     finally:
         dialog.close()

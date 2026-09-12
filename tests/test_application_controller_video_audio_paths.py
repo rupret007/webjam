@@ -144,7 +144,7 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         c._on_join_video()
         c.window.webex_embed.setVisible.assert_called_once_with(True)
         self.assertEqual(c.webex.meeting_url, "https://example.webex.com/meet/band")
-        c.bridge.launch_webex.assert_called_once_with(manual=True)
+        c.bridge.launch_webex.assert_called_once_with(manual=True, meeting_url=c.settings.webex_url)
         c.window.session_strip.set_video_state.assert_called_with(
             "Opening…", enabled=False
         )
@@ -163,7 +163,7 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         c._on_join_video()
 
         self.assertEqual(c.webex.meeting_url, c.settings.webex_url)
-        c.bridge.launch_webex.assert_called_once_with(manual=True)
+        c.bridge.launch_webex.assert_called_once_with(manual=True, meeting_url=c.settings.webex_url)
         c.window.session_strip.set_video_state.assert_called_with(
             "Opening…", enabled=False
         )
@@ -181,7 +181,7 @@ class TestExternalWebexLaunch(_ControllerTestBase):
 
         c._on_join_video()
 
-        c.bridge.launch_webex.assert_called_once_with(manual=True)
+        c.bridge.launch_webex.assert_called_once_with(manual=True, meeting_url=c.settings.webex_url)
         c.window.set_status_video.assert_called_with("Not opened")
         c.window.session_strip.set_video_state.assert_called_with(
             "Open Zoom",
@@ -236,7 +236,7 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         c.bridge.webex_state = "Opened externally"
         c.bridge.launch_webex = MagicMock(return_value=True)
         c._on_join_video()
-        c.bridge.launch_webex.assert_called_once_with(manual=True)
+        c.bridge.launch_webex.assert_called_once_with(manual=True, meeting_url=c.settings.webex_url)
         c.window.webex_embed.leave_meeting.assert_not_called()
 
     def test_join_open_is_single_flight_while_handoff_is_in_progress(self):

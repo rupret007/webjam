@@ -69,8 +69,9 @@ def _work(pair, qapp, surface):
         app._show_webex_conversation()
         panel = app.window.webex_embed
         if surface == "opening_meeting":
-            def accept_handoff(*, manual):
+            def accept_handoff(*, manual, meeting_url):
                 assert manual
+                assert meeting_url == app._effective_meeting_url()
                 app.bridge.webex_state = "Opening…"
                 return True
             app.bridge.launch_webex.side_effect = accept_handoff

@@ -385,10 +385,17 @@ def _run_app() -> int:
             else None
         ),
         remote_invitation=remote_invitation,
+        session_meeting_url=(
+            getattr(launch, "invitation_meeting_url", "")
+            if launch is not None and launch.selected_role == "join"
+            else ""
+        ),
         operator_mode=operator_mode,
         offline_reference_studio=reference_studio_launch,
     )
     remote_invitation = None
+    if launch is not None:
+        launch.invitation_meeting_url = ""
     # Qt may terminate the native event loop without returning from exec() on
     # some platform shutdown paths.  Keep the finally block below as a second,
     # idempotent guard, but also tie cleanup to Qt's guaranteed quit signal so

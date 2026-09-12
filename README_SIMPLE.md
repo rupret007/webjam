@@ -64,7 +64,7 @@ helper that removes quarantine from WebJam only.
 1. Choose **Art** or **Music**. The launch **File** menu contains local Music
    projects, Podcast & Voice, and Review & Rehearsal.
 2. In Art, choose **Make together** or **Paint along**, then **Host** or
-   **Join**. Bring your own tools; a shared canvas is optional.
+   **Join**. Make from your own space; a shared canvas is optional.
 3. An Art host waits for **Your room is open**, then chooses **Copy Invite**.
    A guest pastes the complete invitation and waits for the room to respond.
    **You’re in** means the Art room is connected; no Music audio proof is

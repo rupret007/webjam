@@ -54,10 +54,12 @@ from core.settings import (
     hosted_server_secret_path,
     save_settings,
 )
+from services.native_remote_transport import reference_local_host_requested
 from webjam_qt.invitation_ingress import (
     Invitation,
     InvitationIngressError,
     InvitationSource,
+    conversation_url_from_pasted_invitation,
     invitation_from_arguments,
     parse_invitation_at_ingress,
 )
@@ -407,6 +409,7 @@ class LaunchDialog(QDialog):
         self._creator_choice_explicit = False
         self._allow_workspace_choices = allow_workspace_choices
         self._host_available = sys.platform == "darwin"
+        self._art_lan_host_platform = sys.platform in {"win32", "linux"}
         self._jamulus_installer = _windows_jamulus_installer(settings)
         if self._jamulus_installer:
             LOGGER.info("Verified bundled Jamulus installer is available")
@@ -418,6 +421,7 @@ class LaunchDialog(QDialog):
         self.session_name = "Band Rehearsal"
         self.band_invite: BandInvite | None = None
         self.remote_invitation: RemoteInvitation | None = None
+        self.invitation_meeting_url = ""
         self.setObjectName("LaunchDialog")
         self.setWindowTitle("WebJam")
         self.setModal(True)
@@ -756,6 +760,16 @@ class LaunchDialog(QDialog):
             self.selected_start_key
         )
 
+    def _can_host(self) -> bool:
+        # Ordinary Art uses the existing Python LAN listener, without the
+        # Music engine. An explicit native lab request must keep its existing
+        # platform gate; it must never silently become an ordinary LAN host.
+        return self._host_available or (
+            self._art_lan_host_platform
+            and self.selected_creator_profile_key == "art"
+            and not reference_local_host_requested()
+        )
+
     def _refresh_start_presentation(self) -> None:
         """Bind Host to the chosen card without repeating the card's words.
 
@@ -768,12 +782,13 @@ class LaunchDialog(QDialog):
         if start is None:
             return
         copy = _CREATOR_LAUNCH_COPY[self._selected_creator_profile.key]
-        self._set_choice_helper(
-            "" if self._host_available else "Hosting is available in the macOS app."
-        )
+        available = self._can_host()
+        restriction = "" if available else "Hosting is available in the macOS app."
+        self._set_choice_helper(restriction)
+        self._host_button.setEnabled(available and not self._submitting)
         self._host_button.setAccessibleDescription(
             f"Start {start.label} as the host. {start.detail} "
-            f"{copy.host_description}"
+            f"{copy.host_description}" + (f" {restriction}" if restriction else "")
         )
 
     def _install_jamulus(self) -> None:
@@ -908,11 +923,12 @@ class LaunchDialog(QDialog):
         copy = _CREATOR_LAUNCH_COPY[profile.key]
         self._host_button.setText(copy.host)
         self._host_button.setAccessibleName(copy.host)
+        host_available = self._can_host()
         host_description = copy.host_description
-        if not self._host_available:
+        if not host_available:
             host_description += " Hosting is available in the macOS app."
         self._host_button.setAccessibleDescription(host_description)
-        self._host_button.setEnabled(self._host_available and not self._submitting)
+        self._host_button.setEnabled(host_available and not self._submitting)
 
         self._join_button.setText(copy.join)
         self._join_button.setAccessibleName(copy.join)
@@ -958,12 +974,12 @@ class LaunchDialog(QDialog):
             self._music_profile_card.setVisible(True)
 
         helper = copy.helper
-        if not self._host_available:
+        if not host_available:
             helper += " Hosting is available in the macOS app."
         # The Music card already says "Play live together." Repeating it
         # under Host is chrome. Art cards already say what they do.
         if first_screen_door:
-            helper = "" if self._host_available else "Hosting is available in the macOS app."
+            helper = "" if host_available else "Hosting is available in the macOS app."
         self._set_choice_helper(helper)
         if hasattr(self, "_start_cards"):
             self._apply_start_card_visibility()
@@ -1067,6 +1083,7 @@ class LaunchDialog(QDialog):
             self.show_join()
             return
         self._restore_submission()
+        self.invitation_meeting_url = ""
         self._invite_input.clear()
         self._clear_join_error()
         self._join_status.setText("Paste your invitation")
@@ -1095,6 +1112,7 @@ class LaunchDialog(QDialog):
 
         if self._submitting:
             return
+        self.invitation_meeting_url = ""
         self._clear_join_error()
         self._join_status.setText(
             "Invitation pasted — choose Join"
@@ -1125,6 +1143,10 @@ class LaunchDialog(QDialog):
     def _host(self) -> None:
         if not self._allow_workspace_choices:
             return
+        if not self._can_host():
+            if not self._submitting:
+                self._apply_creator_profile_presentation()
+            return
         musician_name = self._validated_musician_name()
         if musician_name is None:
             return
@@ -1137,6 +1159,7 @@ class LaunchDialog(QDialog):
             self._restore_submission()
             return
         self.selected_role = "host"
+        self.invitation_meeting_url = ""
         self.session_name = "Band Rehearsal"
         self.band_invite = None
         self.remote_invitation = None
@@ -1152,6 +1175,7 @@ class LaunchDialog(QDialog):
             self._restore_submission()
             return
         self.selected_role = "studio"
+        self.invitation_meeting_url = ""
         preset = self._selected_creator_profile.default_studio_preset
         self.session_name = (
             "Reference Studio"
@@ -1171,6 +1195,7 @@ class LaunchDialog(QDialog):
         """Compatibility wrapper for an explicit paste into the one field."""
         if not self._begin_submission(self._join_button_primary, "Checking…"):
             return False
+        self.invitation_meeting_url = ""
         raw = str(value or "")
         self._invite_input.clear()
         self._join_status.setText("Checking invite")
@@ -1179,6 +1204,7 @@ class LaunchDialog(QDialog):
                 raw,
                 source=InvitationSource.PASTE,
             )
+            meeting_url = conversation_url_from_pasted_invitation(raw)
         except InvitationIngressError as exc:
             self._pages.setCurrentWidget(self._join_page)
             lowered = raw.casefold()
@@ -1200,13 +1226,16 @@ class LaunchDialog(QDialog):
             self._restore_submission()
             self._announce_error(self._join_error, focus=self._invite_input)
             return False
-        return self.accept_invitation(invitation, submission_started=True)
+        return self.accept_invitation(
+            invitation, submission_started=True, invitation_meeting_url=meeting_url,
+        )
 
     def accept_invitation(
         self,
         invitation: Invitation,
         *,
         submission_started: bool = False,
+        invitation_meeting_url: str = "",
     ) -> bool:
         """Accept one already-parsed invitation without retaining its URL."""
 
@@ -1259,6 +1288,9 @@ class LaunchDialog(QDialog):
         self.remote_invitation = (
             invitation if isinstance(invitation, RemoteInvitation) else None
         )
+        # The host's optional meeting belongs only to this accepted entry.
+        # Never copy it to AppSettings or launch it as part of joining.
+        self.invitation_meeting_url = invitation_meeting_url
         self._invite_input.clear()
         self.accept()
         return True
@@ -1267,6 +1299,7 @@ class LaunchDialog(QDialog):
         """Show only fixed-copy errors emitted by the application ingress."""
 
         self._pages.setCurrentWidget(self._join_page)
+        self.invitation_meeting_url = ""
         self._invite_input.clear()
         self._join_status.setText("Needs attention")
         self._join_error.setText(
@@ -1282,6 +1315,8 @@ class LaunchDialog(QDialog):
         return invitation
 
     def done(self, result: int) -> None:
+        if result != QDialog.DialogCode.Accepted:
+            self.invitation_meeting_url = ""
         self._submitting = True
         for action in self._workspace_actions.values():
             action.setEnabled(False)

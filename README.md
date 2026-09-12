@@ -76,15 +76,21 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
    **Join**. **Make together** keeps people working locally and lets the host
    open one shared canvas from inside the room. Music uses **Host** / **Join**; Podcast & Voice
    and Review & Rehearsal retain their profile-specific Host/Join labels.
-3. Configure interface, channels, headphones, and buffer in Jamulus. Confirm
+3. For Music, configure interface, channels, headphones, and buffer in Jamulus. Confirm
    the authenticated audio connection, then use the profile-specific
-   **Band Check**, **Sound Check**, or **Session Check** if needed.
+   **Band Check**, **Sound Check**, or **Session Check** if needed. In Art,
+   use your own tools and work space; no instrument or audio-engine setup is required.
 4. Open **Conversation** only when conversation or video is wanted; use
    **Join / Open Meeting** for an explicit meeting-link handoff.
 5. In an Art **Paint along** room, the video becomes the large WebJam
    workspace once the room exists. The host chooses **Choose process video…**;
    each guest chooses **Open my copy…** for the same local file. **Back to
    room** returns to the conductor without ending the room or the video.
+   For a YouTube lesson, choose **Watch a shared lesson** to reach Conversation
+   without a local file. In a supported LAN room, guests can **Ask for a pause**
+   or choose **Ready to continue**; the host acknowledges the request and
+   operates the browser manually. Acknowledgement does not mean the video paused.
+   Requests expire after 30 seconds; spoken requests remain available.
 6. In a profile that supports Shared Track, choose **Add Shared Track** or
    drop supported reference audio on the live surface; loading does not start
    playback, and Play remains fail-closed until the isolated Jamulus route is

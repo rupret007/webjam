@@ -216,12 +216,15 @@ type runnerState struct {
 	openCancel     context.CancelFunc
 	localIdentity  *icequic.Identity
 	openConsumed   bool
+	closePending   bool
 	factory        endpointFactory
 	orchestrator   fabricOrchestrator
 }
 
 func (s *runnerState) stateName() string {
 	switch {
+	case s.closePending:
+		return "failed"
 	case s.connected:
 		return "connected"
 	case s.hostRegistered:
@@ -266,7 +269,7 @@ func (s *runnerState) helpEvent(
 	return event
 }
 
-func (s *runnerState) closeActive(preserveHostIdentity bool) peerMetadata {
+func (s *runnerState) closeActive(preserveHostIdentity bool) (peerMetadata, error) {
 	var metadata peerMetadata
 	if s.active != nil {
 		metadata = *s.active
@@ -276,20 +279,28 @@ func (s *runnerState) closeActive(preserveHostIdentity bool) peerMetadata {
 		s.openCancel = nil
 	}
 	operation := s.operation
-	s.operation = nil
+	// Retire callbacks and application authority immediately, but retain the
+	// owned operation and identity until bounded local teardown is confirmed.
+	// A failed Close can then be retried without opening a second operation.
 	s.updates = nil
-	s.active = nil
 	s.hostRegistered = false
 	s.connected = false
 	if operation != nil {
+		s.closePending = true
 		closeCtx, cancel := context.WithTimeout(context.Background(), limits.ShutdownLimit)
-		_ = operation.Close(closeCtx)
+		err := operation.Close(closeCtx)
 		cancel()
+		if err != nil {
+			return metadata, ErrProtocol
+		}
 	}
+	s.operation = nil
+	s.active = nil
+	s.closePending = false
 	if !preserveHostIdentity || metadata.mode != "host" {
 		s.destroyIdentity()
 	}
-	return metadata
+	return metadata, nil
 }
 
 func (s *runnerState) destroyIdentity() {
@@ -299,10 +310,13 @@ func (s *runnerState) destroyIdentity() {
 	}
 }
 
-func (s *runnerState) destroy() {
-	s.closeActive(false)
+func (s *runnerState) destroy() error {
+	if _, err := s.closeActive(false); err != nil {
+		return err
+	}
 	s.recentlyClosed = nil
 	s.destroyIdentity()
+	return nil
 }
 
 func Run(ctx context.Context, input io.Reader, output io.Writer, build string) error {
@@ -353,7 +367,10 @@ func runWithFactoryAndClock(
 		}
 		select {
 		case <-ctx.Done():
-			state.destroy()
+			if err := state.destroy(); err != nil {
+				_ = events.emit(Event{ID: 0, Type: "error", Code: CodeProtocolViolation, State: "failed"})
+				return err
+			}
 			_ = events.emit(Event{ID: 0, Type: "stopped", Code: CodeOK, State: "stopped"})
 			return nil
 		case update, ok := <-state.updates:
@@ -495,11 +512,15 @@ func (s *runnerState) handle(
 			}
 			return false, events.emit(Event{ID: command.ID, Type: "error", Code: CodePeerNotOpen, State: s.stateName()})
 		}
-		metadata := s.closeActive(true)
+		metadata, err := s.closeActive(true)
+		if err != nil {
+			return false, events.emit(Event{ID: command.ID, Type: "error", Code: CodeProtocolViolation, State: "failed"})
+		}
 		if metadata.mode == "host" {
 			// close_peer is the explicit host invitation reset boundary. The
-			// current service session is revoked, while the prepared identity
-			// and public pin remain stable for the next invitation.
+			// local operation has stopped; service removal is a bounded
+			// authenticated attempt, not an implied remote-deletion receipt.
+			// Keep the prepared identity and pin for the next invitation.
 			s.openConsumed = false
 		}
 		return false, events.emit(Event{
@@ -507,7 +528,9 @@ func (s *runnerState) handle(
 			Mode: metadata.mode, ProfileID: metadata.profileID, Generation: metadata.generation,
 		})
 	case CommandShutdown:
-		s.destroy()
+		if err := s.destroy(); err != nil {
+			return false, events.emit(Event{ID: command.ID, Type: "error", Code: CodeProtocolViolation, State: "failed"})
+		}
 		return true, events.emit(Event{ID: command.ID, Type: "stopped", Code: CodeOK, State: "stopped"})
 	default:
 		return false, ErrProtocol
@@ -564,7 +587,16 @@ func (s *runnerState) openPeer(
 		}
 		return events.emit(Event{ID: command.ID, Type: "error", Code: CodeOpenFailed, State: s.stateName()})
 	}
-	operationCtx, cancel := context.WithDeadline(ctx, expiresAt)
+	operationDeadline, err := sessionOperationDeadline(startTime, s.localIdentity)
+	if err != nil {
+		_ = endpoint.Close()
+		configuration.clear()
+		if guestIdentity {
+			s.destroyIdentity()
+		}
+		return events.emit(Event{ID: command.ID, Type: "error", Code: CodeEnrollmentInvalid, State: s.stateName()})
+	}
+	operationCtx, cancel := context.WithDeadline(ctx, operationDeadline)
 	operation, err := s.orchestrator.Start(operationCtx, configuration, s.localIdentity, endpoint)
 	if err != nil || operation == nil || operation.Updates() == nil {
 		cancel()
@@ -593,7 +625,7 @@ func (s *runnerState) openPeer(
 }
 
 func (s *runnerState) handleFabricUpdate(update fabricUpdate, events *emitter) error {
-	if s.operation == nil || s.active == nil {
+	if s.operation == nil || s.active == nil || s.closePending {
 		return ErrProtocol
 	}
 	switch update.kind {
@@ -686,11 +718,13 @@ func (s *runnerState) failFabric(events *emitter, failure error) error {
 	if errors.Is(failure, ErrEnrollmentInvalid) {
 		code = CodeEnrollmentInvalid
 	}
-	metadata := s.closeActive(true)
+	metadata, closeErr := s.closeActive(true)
 	mode := metadata.mode
-	s.recentlyClosed = &metadata
-	if mode == "host" {
-		s.openConsumed = false
+	if closeErr == nil {
+		s.recentlyClosed = &metadata
+		if mode == "host" {
+			s.openConsumed = false
+		}
 	}
 	return events.emit(Event{ID: id, Type: "error", Code: code, State: "failed"})
 }

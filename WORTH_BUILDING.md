@@ -1,53 +1,62 @@
-# Worth building — prepare a guest copy before the host shares
+# Internet invitations: bounded setup and owned shutdown
 
-Base: `e35f7352b42280814be0ea02f77b412f68231706`, fetched `origin/master`
-after #94; the fresh branch started at that exact tip.
-Branch: `codex/art-guest-prepare-copy`; canonical WebJam checkout only.
-Marker: `OVERNIGHT_WEBJAM_ART_20260907_2307`.
-BEFORE: https://github.com/rupret007/Bob-the-Bot/issues/3#issuecomment-5579240270.
+Jeff approved private-invitation Internet implementation and isolated testing on
+2026-09-09. This slice addresses one remaining service prerequisite for both Art
+and Music; it adds no guest setup screen.
 
-#93 gives a waiting guest an **Open Paint along** room action and says they can
-load a copy before the host shares. The panel actually hid **Open my copy…**
-until an offer arrived. The existing follower already supports holding a local
-copy without showing or playing it. This is a missing functional step, with a
-short path through existing code.
+## Observed failure and priority
 
-The valid baseline reproduced **16 failed / 2 passed** in real Qt/controller
-journeys. The native fixture was corrected to carry an empty video snapshot
-before that baseline. All sixteen preparation journeys stopped at the missing
-file action; both Make together controls already passed.
+The completed-connection cap began after TLS. A stalled peer could therefore use
+accepted sockets and handshake state outside that cap. A handshake deadline alone
+is not a concurrency bound. Separately, Close could finish while startup was
+creating a listener, leaving the late listener outside its cleanup snapshot.
+Deterministic lifecycle baselines reproduce that race and missing synchronous
+capacity reservations. These resource ownership gaps need fixing before an
+ordinary Internet invitation can safely depend on the service.
 
-Before: a guest follows the waiting-room action into a panel with no file
-action. After: the guest can open a copy early and see **Your copy is open**,
-explicitly waiting for WebJam to check it against the host's eventual offer.
-Matching, host state and connection still own following. A changed or failed
-copy offers another try. More → Close my copy works before a share.
+## Before and after
 
-Make together already starts with each artist's own tools; #94 supplies its
-Conversation next-click label. Completing an action that currently dead-ends
-beats adding more wording or another door choice. This slice changes only the
-existing local follower projection and Paint along panel, plus tests/docs.
+Before: unfinished handshakes bypassed completed capacity, and successful Close
+did not prove retirement of concurrently created listeners. After: a synchronous
+acceptance gate bounds pending setup and its start rate before TLS work; verified
+connections reserve active capacity before handler scheduling. Owned startup and
+teardown retire late resources and remain responsible after caller cancellation.
 
-The early room cue uses the existing host-start fact available on native
-rooms. LAN guests can use the existing explicit Paint along entry; this slice
-does not add a host-start field or pretend LAN publishes one. Neither route
-adds a required video step to Make together.
+The first hosted checks exposed a same-size policy rewrite missed by unchanged
+filesystem timestamps. The correction requires two bounded reads to agree while
+preserving metadata checks. Review also found that a transient peer accept error
+could stop future joining; those documented errors now retain bounded polling,
+while invalid listener state and resource failures still fail closed. The original
+hosted failures are retained and the corrected source needs its own verification.
 
-Focused proof: **425 tests passed**, including **24 new preparation journeys**
-across LAN/native, 720/1100 widths, later match/mismatch, repeated empty room
-state, withdrawal, changed/deleted copies, cancellation, decoder failure,
-connection loss during the chooser, closing a prepared copy and Make together.
-Actual Qt captures at 720×560 were inspected using synthetic files and a
-controlled decoder. Full local and hosted results, exact tip/tree and four
-desktop build evidence belong in the OPEN DRAFT and coord AFTER.
+This beats adding door copy while the authorized Internet path still lacks a
+bounded service lifecycle. It is infrastructure progress, not proof that a person
+joined, sees/hears the lesson, can pause or has acceptable musical latency.
 
-No download, file transfer, protocol, player, timer, meeting action or guest
-transport input is added. Hashing and decoding remain synchronous. Physical
-playback, live meetings, OS focus/installed-app feel and signing are NOT RUN.
+## Acceptance and dependency
 
-One OPEN DRAFT PRE_KAREN, then stop for Karen leftover + security + ten-second
-UX. No rework of #89/#90; parked #37/#49 untouched. Art door retains exactly
-Make together + Paint along → Host/Join and the squirrel-with-fro artwork.
-Unsigned 0.27.2 is Jeff-only. No merge/squash/tag/sign/Pages/Release Trust/Publish/
-release/deploy/spend/live Cisco, short-code/public rendezvous, Music, Drawpile,
-shared-canvas work, second video stack, other-repo lane or parent injection.
+Branch `codex/service-connection-ownership` explicitly stacks on OPEN DRAFT #114,
+`89274f756567ed6422b93e193560800ef126667f`, which supplies approved-host allocation
+and invitation-only guests. Common fetched master remains
+`2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`. Prior drafts remain untouched.
+
+Real owned-loopback TLS cases hold unfinished peers at capacity, release one and
+register an approved host, enroll a certificate-free guest, use fresh role-token
+Close, and close a mixture of active TLS, incomplete TLS and HTTP peers. Gated
+lifecycle tests cover late creation, canceled callers and honest cleanup failure.
+Four desktop CI jobs run the complete service suite on actual Python 3.12 event
+loops, including Windows Proactor, before the existing desktop packaging steps.
+Results must be attached to this slice's exact frozen tip; a workflow edit alone
+is not platform evidence.
+
+Service bind settings intentionally accept only unscoped numeric addresses or
+`localhost`, avoiding executor DNS work that cannot be reliably canceled. This
+does not change certificate DNS identity or expose IPC endpoint overrides.
+A broader ordinary-loop burst probe exposed Python's delayed acceptance before
+transport attachment even though service counters looked clear. Control and HTTP
+therefore need owned raw acceptance; the original failing evidence is retained.
+
+Ordinary host credential provisioning, UDP return-path proof, a compiled Internet
+profile, deployment authorization and physical two-home journeys remain open.
+Native Art names and lesson requests remain open. Art's two-card door, squirrel,
+guest-never-seek, Notes/Conversation and Music routing protections are inherited.

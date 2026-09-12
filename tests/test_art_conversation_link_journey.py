@@ -9,7 +9,7 @@ from unittest.mock import Mock
 import pytest
 from PySide6.QtCore import QPoint, QRect, QTimer, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QPushButton
+from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QPushButton
 
 from core.settings import AppSettings, load_settings, save_settings
 from services.remote_session_runtime import RemoteSessionPhase
@@ -125,6 +125,43 @@ def _drive_settings(monkeypatch, check):
     return observed
 
 
+def _drive_room_meeting(monkeypatch, check):
+    """Exercise the real masked, room-only modal and its nested callbacks."""
+    observed = SimpleNamespace(dialogs=[], failures=[], results=[])
+    original_get_text = QInputDialog.getText
+
+    def get_text(*args, **kwargs):
+        def finish():
+            dialog = QApplication.activeModalWidget()
+            observed.dialogs.append(dialog)
+            try:
+                assert isinstance(dialog, QInputDialog)
+                check(dialog)
+            except BaseException as error:
+                observed.failures.append(error)
+            finally:
+                if isinstance(dialog, QInputDialog) and dialog.isVisible():
+                    dialog.reject()
+
+        QTimer.singleShot(0, lambda: QTimer.singleShot(0, finish))
+        result = original_get_text(*args, **kwargs)
+        observed.results.append(
+            QInputDialog.DialogCode.Accepted if result[1]
+            else QInputDialog.DialogCode.Rejected
+        )
+        return result
+
+    monkeypatch.setattr(QInputDialog, "getText", get_text)
+    return observed
+
+
+def _room_meeting_field(dialog):
+    editor = dialog.findChild(QLineEdit)
+    assert editor is not None
+    assert editor.echoMode() == QLineEdit.EchoMode.Password
+    return editor
+
+
 def _raise_dialog_failures(observed, *, accepted=False):
     assert len(observed.dialogs) == 1
     if observed.failures:
@@ -188,24 +225,25 @@ def test_art_notes_add_or_change_link_opens_the_visible_focused_meeting_field(
     assert panel._change_link_btn.text() == ("Change Link" if configured else "Add Link")
 
     def check(dialog):
-        assert dialog._conversation_toggle.isChecked()
-        assert dialog._conversation_body.isVisibleTo(dialog)
-        assert dialog._video.isVisibleTo(dialog)
-        assert dialog._video.hasFocus()
-        assert dialog._video.text() == app.settings.webex_url
+        editor = _room_meeting_field(dialog)
+        assert editor.isVisibleTo(dialog)
+        assert editor.hasFocus()
+        assert editor.text() == app._effective_meeting_url()
+        assert "this room" in dialog.labelText()
+        assert "saved meeting stays unchanged" in dialog.labelText()
         if configured:
-            assert dialog._video.selectedText() == app.settings.webex_url
+            assert editor.selectedText() == app._effective_meeting_url()
         # The dedicated conversation entry does not offer an unrelated sound
         # check. Ordinary Settings retains its existing sound-check action.
         assert not any(
             button.text() == "Verify Sound" and button.isVisibleTo(dialog)
             for button in dialog.findChildren(QPushButton)
         )
-        dialog._video.selectAll()
-        QTest.keyClicks(dialog._video, _CANCELED_LINK)
+        editor.selectAll()
+        QTest.keyClicks(editor, _CANCELED_LINK)
         QTest.mouseClick(_button(dialog, "Cancel"), Qt.MouseButton.LeftButton)
 
-    observed = _drive_settings(monkeypatch, check)
+    observed = _drive_room_meeting(monkeypatch, check)
     QTest.mouseClick(panel._change_link_btn, Qt.MouseButton.LeftButton)
     _raise_dialog_failures(observed)
     qapp.processEvents()
@@ -241,6 +279,7 @@ def test_save_updates_current_conversation_immediately_without_restarting_or_ope
     _click_talk_share(pair, qapp)
     panel = app.window.webex_embed
     settings = replace(app.settings)
+    settings_bytes = _settings_bytes(app)
     target = "" if operation == "remove" else _NEW_LINK
     if operation != "add":
         # An old OS handoff is evidence only about the previous link. Editing
@@ -251,22 +290,25 @@ def test_save_updates_current_conversation_immediately_without_restarting_or_ope
         panel.set_launch_status(WebexLaunchState.OPENED_EXTERNALLY.value)
 
     def check(dialog):
-        assert dialog._video.hasFocus()
-        dialog._video.selectAll()
+        editor = _room_meeting_field(dialog)
+        assert editor.hasFocus()
+        editor.selectAll()
         if target:
-            QTest.keyClicks(dialog._video, target)
+            QTest.keyClicks(editor, target)
         else:
-            QTest.keyClick(dialog._video, Qt.Key.Key_Backspace)
-        QTest.mouseClick(_button(dialog, "Save"), Qt.MouseButton.LeftButton)
-        assert dialog.result() == SimpleSettingsDialog.DialogCode.Accepted, dialog._error.text()
+            QTest.keyClick(editor, Qt.Key.Key_Backspace)
+        QTest.mouseClick(_button(dialog, "OK"), Qt.MouseButton.LeftButton)
+        assert dialog.result() == QInputDialog.DialogCode.Accepted
 
-    observed = _drive_settings(monkeypatch, check)
+    observed = _drive_room_meeting(monkeypatch, check)
     app.window.flash_message.reset_mock()
     QTest.mouseClick(panel._change_link_btn, Qt.MouseButton.LeftButton)
     _raise_dialog_failures(observed, accepted=True)
     qapp.processEvents()
-    assert app.settings == replace(settings, webex_url=target)
-    assert load_settings(app.settings.config_file).webex_url == target
+    assert app.settings == settings
+    assert _settings_bytes(app) == settings_bytes
+    assert load_settings(app.settings.config_file).webex_url == settings.webex_url
+    assert app._effective_meeting_url() == target
     assert app.webex.meeting_url == target
     assert app.bridge.webex_controller is app.webex
     assert app.window.webex_embed is panel and panel.isVisibleTo(app.window)
@@ -281,7 +323,7 @@ def test_save_updates_current_conversation_immediately_without_restarting_or_ope
         panel._fallback_btn if target else panel._change_link_btn
     )
     feedback = " ".join(str(call.args[0]) for call in app.window.flash_message.call_args_list)
-    assert "saved" in feedback.lower() or "removed" in feedback.lower()
+    assert "this room" in feedback.lower()
     assert "next time you start" not in feedback.lower()
     assert "restart" not in feedback.lower()
     if operation != "add":
@@ -314,22 +356,22 @@ def test_compact_conversation_link_entry_is_visible_and_keyboard_usable(
     settings = replace(app.settings)
 
     def check(dialog):
+        editor = _room_meeting_field(dialog)
         assert app.window.width() == 760 and app.window.height() == 600
         assert dialog.width() <= 760 and dialog.height() <= 600
-        assert dialog._video.hasFocus()
-        viewport = dialog._settings_scroll.viewport()
-        field_rect = QRect(dialog._video.mapTo(viewport, QPoint()), dialog._video.size())
-        assert viewport.rect().contains(field_rect.adjusted(1, 1, -1, -1))
-        save = _button(dialog, "Save")
+        assert editor.hasFocus()
+        field_rect = QRect(editor.mapTo(dialog, QPoint()), editor.size())
+        assert dialog.rect().contains(field_rect.adjusted(1, 1, -1, -1))
+        save = _button(dialog, "OK")
         assert dialog.rect().contains(QRect(save.mapTo(dialog, QPoint()), save.size()))
-        assert dialog._video.accessibleName() == "Optional meeting link"
+        assert "meeting link" in dialog.labelText().casefold()
         # Start typing without clicking or searching the settings form. Change
         # replaces the selected URL; Add starts from the empty focused field.
-        QTest.keyClicks(dialog._video, _CANCELED_LINK)
-        assert dialog._video.text() == _CANCELED_LINK
-        QTest.keyClick(dialog._video, Qt.Key.Key_Escape)
+        QTest.keyClicks(editor, _CANCELED_LINK)
+        assert editor.text() == _CANCELED_LINK
+        QTest.keyClick(editor, Qt.Key.Key_Escape)
 
-    observed = _drive_settings(monkeypatch, check)
+    observed = _drive_room_meeting(monkeypatch, check)
     panel._change_link_btn.setFocus()
     QTest.keyClick(panel._change_link_btn, Qt.Key.Key_Space)
     _raise_dialog_failures(observed)
@@ -354,6 +396,7 @@ def test_save_does_not_reopen_stale_conversation_after_context_changes_in_modal(
     _click_talk_share(pair, qapp)
     panel = app.window.webex_embed
     current = SimpleNamespace()
+    initial_meeting = app._effective_meeting_url()
 
     def check(dialog):
         # Native callbacks continue during exec(). A current workspace or room
@@ -369,15 +412,21 @@ def test_save_does_not_reopen_stale_conversation_after_context_changes_in_modal(
         current.composer = _composer_state(canvas)
         current.conversation_visible = panel.isVisibleTo(app.window)
         current.generation = app._room_participant.generation
-        dialog._video.setText(_NEW_LINK)
-        QTest.mouseClick(_button(dialog, "Save"), Qt.MouseButton.LeftButton)
-        assert dialog.result() == SimpleSettingsDialog.DialogCode.Accepted, dialog._error.text()
+        current.meeting = app._effective_meeting_url()
+        current.settings_bytes = _settings_bytes(app)
+        _room_meeting_field(dialog).setText(_NEW_LINK)
+        QTest.mouseClick(_button(dialog, "OK"), Qt.MouseButton.LeftButton)
+        assert dialog.result() == QInputDialog.DialogCode.Accepted
 
-    observed = _drive_settings(monkeypatch, check)
+    observed = _drive_room_meeting(monkeypatch, check)
     QTest.mouseClick(panel._change_link_btn, Qt.MouseButton.LeftButton)
     _raise_dialog_failures(observed, accepted=True)
     qapp.processEvents()
-    assert app.settings == replace(current.settings, webex_url=_NEW_LINK)
+    assert app.settings == current.settings
+    assert _settings_bytes(app) == current.settings_bytes
+    assert app._effective_meeting_url() == current.meeting
+    if transition == "notes":
+        assert app._effective_meeting_url() == initial_meeting
     assert app._last_content_key == "canvas"
     assert canvas.isVisibleTo(app.window)
     assert panel.isVisibleTo(app.window) is current.conversation_visible

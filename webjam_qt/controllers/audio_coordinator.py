@@ -352,7 +352,8 @@ class AudioCoordinator:
         # Ending the jam does not end the meeting. WebJam runs beside an
         # independent Webex window and cannot close it, so the confirmation
         # says so rather than leaving a musician to discover it afterwards.
-        meeting_url = str(getattr(self._c.settings, "webex_url", "") or "").strip()
+        meeting_url = (self._c._effective_meeting_url() if callable(getattr(self._c, "_effective_meeting_url", None))
+                       else str(getattr(self._c.settings, "webex_url", "") or "").strip())
         prompt = end_session_prompt(
             hosting=hosting,
             recording_active=recording_active,
@@ -415,6 +416,9 @@ class AudioCoordinator:
         )
         self.cleanup_retry_required = False
         self.stopping = True
+        retire_lesson = getattr(self._c, "_clear_shared_lesson_context", None)
+        if callable(retire_lesson):
+            retire_lesson()
         self.ended_by_user = True
         self.recovering = False
         self._c._clear_primary_local_roster_proof()
@@ -623,6 +627,9 @@ class AudioCoordinator:
             self._c._remote_invitation = None
             self._c._remote_invitation_requires_replacement = False
         self._stop_remote_invitation = None
+        restore_meeting = getattr(self._c, "_restore_personal_meeting", None)
+        if callable(restore_meeting):
+            restore_meeting()
         self.cleanup_retry_required = False
         self._c.window.session_strip.reset_session_clock()
         if callable(complete_pocket_stage):
@@ -806,6 +813,28 @@ class AudioCoordinator:
     def reset_to_demo(self) -> None:
         """Compatibility alias retained for older extensions."""
         self.reset_to_idle()
+
+    def refresh_listening_mix(self, *, redraw: bool = True) -> None:
+        """Project current local listening choices without changing room proof.
+
+        RPC roster deliveries can wait behind a newer local fader gesture.
+        Read the current owned model instead of their detached mixer fields.
+        Only existing cards are eligible; this never admits a participant.
+        """
+        if not self.connected or self.stopping or self.cleanup_retry_required:
+            return
+        changed = False
+        for current in self._c.jamulus.get_participants():
+            existing = self._c.participants.get(current.channel_id)
+            if existing is None:
+                continue
+            for field in ("fader_level", "muted", "solo"):
+                value = getattr(current, field)
+                if getattr(existing, field) != value:
+                    setattr(existing, field, value)
+                    changed = True
+        if redraw and changed:
+            self._c._push_participants_to_grid()
 
     def apply_participants(
         self,
@@ -1039,6 +1068,8 @@ class AudioCoordinator:
                 if new_role != existing.role:
                     existing.role = new_role
 
+        if local_session_proven:
+            self.refresh_listening_mix(redraw=False)
         self._c._push_participants_to_grid()
         return local_session_proven
 

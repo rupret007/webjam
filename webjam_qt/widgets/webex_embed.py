@@ -9,6 +9,8 @@ handoff separate from its explicitly labeled native Webex app controls.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
+from itertools import islice
 
 from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QAccessible, QAccessibleEvent
@@ -20,15 +22,87 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
 from core.meeting_link import is_allowed_meeting_link
+from core.lesson_request import LessonRequestIntent, LessonRequestNotice
 from webjam_qt.theme.tokens import Space
 
 LOGGER = logging.getLogger("webjam.qt.webex_embed")
+
+
+class _LessonRequestName(QLabel):
+    """A bounded, plain label must not make a narrow card grow."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._name = ""
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+
+    def set_name(self, name: str) -> None:
+        self._name = " ".join(str(name).split())[:80] or "Guest"
+        self.setAccessibleName(self._name)
+        self._fit_name()
+
+    def _fit_name(self) -> None:
+        self.setText(self.fontMetrics().elidedText(
+            self._name, Qt.TextElideMode.ElideRight, max(0, self.contentsRect().width()),
+        ))
+
+    def resizeEvent(self, event) -> None:
+        self._fit_name()
+        super().resizeEvent(event)
+
+
+class _LessonRequestRow(QFrame):
+    def __init__(self, acknowledge) -> None:
+        super().__init__()
+        self.name_label = _LessonRequestName()
+        self.status_label = QLabel()
+        self.status_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.status_label.setWordWrap(True)
+        self.ack_button = QPushButton("Acknowledge request")
+        self.ack_button.setObjectName("GhostButton")
+        self.ack_button.setAutoDefault(False)
+        self.ack_button.clicked.connect(acknowledge)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, Space.SM)
+        layout.setSpacing(Space.XS)
+        layout.addWidget(self.name_label)
+        layout.addWidget(self.status_label)
+        layout.addWidget(self.ack_button)
+
+    def present(self, name: str, notice: LessonRequestNotice) -> None:
+        self.name_label.set_name(name)
+        intent = ("Asked for a pause" if notice.intent is LessonRequestIntent.PAUSE
+                  else "Ready to continue")
+        remaining = max(0, (notice.expires_in_ms + 999) // 1000)
+        expired = notice.state == "expired" or remaining == 0
+        state = ("Request expired" if expired else f"{intent} · acknowledged"
+                 if notice.state == "acknowledged" else intent)
+        self.status_label.setText(
+            state if expired else f"{state} · {remaining}s left"
+        )
+        self.ack_button.setAccessibleName(
+            f"Acknowledge request from {self.name_label._name}"
+        )
+        self.ack_button.setAccessibleDescription(
+            f"{intent}. Acknowledging does not pause or resume the browser."
+        )
+        self.ack_button.setEnabled(notice.state == "accepted" and not expired)
+
+    def retire(self) -> None:
+        self.ack_button.setEnabled(False)
+        self.name_label.set_name("")
+        self.status_label.clear()
+        self.ack_button.setAccessibleName("Acknowledge request")
+        self.ack_button.setAccessibleDescription("")
+        self.hide()
 
 
 class WebexEmbed(QFrame):
@@ -42,6 +116,9 @@ class WebexEmbed(QFrame):
     mute_in_webex_requested = Signal()
     copy_link_requested = Signal()
     recheck_webex_requested = Signal()
+    lesson_request_intent = Signal(str)
+    lesson_request_retry = Signal()
+    lesson_request_acknowledge = Signal(str, str, int)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -51,6 +128,7 @@ class WebexEmbed(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._audio_mode = "talkback"
         self._creator_profile_key = "music"
+        self._shared_lesson_hosting: bool | None = None
         self._meeting_configured = False
         self._launch_busy = False
         self._native_app_available = False
@@ -147,7 +225,7 @@ class WebexEmbed(QFrame):
             "Copy the saved meeting link to the clipboard to share it."
         )
         self._copy_link_btn.setToolTip(
-            "Copy the saved meeting link so you can paste it anywhere."
+            "Copy the meeting link used by Conversation so you can paste it anywhere."
         )
         self._copy_link_btn.clicked.connect(self.copy_link_requested.emit)
         self._copy_link_btn.setEnabled(False)
@@ -156,11 +234,11 @@ class WebexEmbed(QFrame):
         self._change_link_btn.setObjectName("GhostButton")
         self._change_link_btn.setAccessibleName("Add a meeting link from any platform")
         self._change_link_btn.setAccessibleDescription(
-            "Open WebJam Settings to add a public HTTPS meeting link from "
+            "Add or change the public HTTPS link used by Conversation, from "
             "any meeting platform."
         )
         self._change_link_btn.setToolTip(
-            "Open Settings to add or change the meeting link."
+            "Add or change the meeting link used by Conversation."
         )
         self._change_link_btn.clicked.connect(self.change_link_requested.emit)
 
@@ -197,17 +275,23 @@ class WebexEmbed(QFrame):
         text_column.addLayout(header)
         text_column.addWidget(self._mode_label)
         text_column.addWidget(self._status_label)
+        self._build_lesson_request_panel(text_column)
 
         actions = self._actions_layout = QGridLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(Space.SM)
-        actions.addWidget(self._bring_forward_btn, 0, 0)
-        actions.addWidget(self._mute_btn, 0, 1)
-        actions.addWidget(self._fallback_btn, 1, 0)
-        actions.addWidget(self._change_link_btn, 1, 1)
-        actions.addWidget(self._copy_link_btn, 2, 0)
-        actions.addWidget(self._install_btn, 2, 1)
-        actions.addWidget(self._recheck_btn, 3, 0)
+        self._action_positions = (
+            (self._bring_forward_btn, 0, 0),
+            (self._mute_btn, 0, 1),
+            (self._fallback_btn, 1, 0),
+            (self._change_link_btn, 1, 1),
+            (self._copy_link_btn, 2, 0),
+            (self._install_btn, 2, 1),
+            (self._recheck_btn, 3, 0),
+        )
+        self._actions_single_column = False
+        for button, row, column in self._action_positions:
+            actions.addWidget(button, row, column)
 
         layout = self._content_layout = QHBoxLayout(self)
         layout.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.SM)
@@ -220,6 +304,151 @@ class WebexEmbed(QFrame):
         self._render_audio_guidance()
         self._render_launch_status()
         self._render_link_accessibility()
+
+    def _build_lesson_request_panel(self, layout: QVBoxLayout) -> None:
+        self._lesson_request_frame = QFrame()
+        request_layout = QVBoxLayout(self._lesson_request_frame)
+        request_layout.setContentsMargins(0, Space.SM, 0, 0)
+        request_layout.setSpacing(Space.XS)
+        self._lesson_request_guest_status = QLabel()
+        self._lesson_request_guest_status.setTextFormat(Qt.TextFormat.PlainText)
+        self._lesson_request_guest_status.setWordWrap(True)
+        self._lesson_request_guest_status.setAccessibleName("Your lesson request")
+        request_layout.addWidget(self._lesson_request_guest_status)
+        self._lesson_pause_button = QPushButton("Ask for a pause")
+        self._lesson_ready_button = QPushButton("Ready to continue")
+        self._lesson_retry_button = QPushButton("Retry this request")
+        for button in (self._lesson_pause_button, self._lesson_ready_button, self._lesson_retry_button):
+            button.setObjectName("GhostButton")
+            button.setAutoDefault(False)
+            button.setAccessibleName(button.text())
+            button.setAccessibleDescription(
+                "Send an explicit request. The host controls the browser."
+            )
+            request_layout.addWidget(button)
+        self._lesson_pause_button.clicked.connect(lambda: self._emit_lesson_intent("pause"))
+        self._lesson_ready_button.clicked.connect(lambda: self._emit_lesson_intent("ready"))
+        self._lesson_retry_button.clicked.connect(self._emit_lesson_retry)
+        self._lesson_request_host_hint = QLabel(
+            "Each request is separate. You control the browser."
+        )
+        self._lesson_request_host_hint.setTextFormat(Qt.TextFormat.PlainText)
+        self._lesson_request_host_hint.setWordWrap(True)
+        request_layout.addWidget(self._lesson_request_host_hint)
+        self._lesson_request_scroll = QScrollArea()
+        self._lesson_request_scroll.setWidgetResizable(True)
+        self._lesson_request_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._lesson_request_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._lesson_request_scroll.setFixedHeight(208)
+        self._lesson_request_scroll.setAccessibleName("Requests for this lesson")
+        content = QWidget()
+        self._lesson_request_host_layout = QVBoxLayout(content)
+        self._lesson_request_host_layout.setContentsMargins(0, 0, Space.XS, 0)
+        self._lesson_request_host_layout.setSpacing(Space.SM)
+        self._lesson_request_host_layout.addStretch(1)
+        self._lesson_request_scroll.setWidget(content)
+        request_layout.addWidget(self._lesson_request_scroll)
+        self._lesson_request_rows: dict[tuple[str, str, int], _LessonRequestRow] = {}
+        self._lesson_request_notices: dict[tuple[str, str, int], LessonRequestNotice] = {}
+        self._lesson_guest_status = ""
+        self._lesson_guest_permissions = (False, False, False)
+        layout.addWidget(self._lesson_request_frame)
+        self._sync_lesson_requests()
+
+    def _clear_lesson_requests(self) -> None:
+        self._lesson_guest_status = ""
+        self._lesson_guest_permissions = (False, False, False)
+        self._lesson_request_notices.clear()
+        for row in self._lesson_request_rows.values():
+            row.retire()
+            self._lesson_request_host_layout.removeWidget(row)
+            row.deleteLater()
+        self._lesson_request_rows.clear()
+        self._lesson_request_guest_status.setText("")
+        self._lesson_request_guest_status.setAccessibleDescription("")
+
+    def set_lesson_request_guest(
+        self, *, status: str, can_pause: bool = False,
+        can_ready: bool = False, can_retry: bool = False,
+    ) -> None:
+        """Project one guest's current receipt; never allocate or send an intent."""
+
+        if self._creator_profile_key != "art" or self._shared_lesson_hosting is not False:
+            return
+        self._lesson_guest_status = " ".join(str(status).split())[:512]
+        self._lesson_guest_permissions = (can_pause is True, can_ready is True, can_retry is True)
+        self._sync_lesson_requests()
+        self._sync_art_layout()
+
+    def set_lesson_request_host(self, notices: Sequence[tuple[str, LessonRequestNotice]]) -> None:
+        """Render bounded host-local notices. The caller owns time and authority."""
+
+        if self._creator_profile_key != "art" or self._shared_lesson_hosting is not True:
+            return
+        current = {}
+        for name, notice in islice(notices, 32):
+            if not isinstance(notice, LessonRequestNotice):
+                continue
+            key = (notice.context_id, notice.admission_id, notice.revision)
+            if key in current:
+                continue
+            current[key] = notice
+            row = self._lesson_request_rows.get(key)
+            if row is None:
+                row = _LessonRequestRow(lambda _checked=False, captured=key: self._emit_lesson_ack(captured))
+                self._lesson_request_rows[key] = row
+                self._lesson_request_host_layout.insertWidget(
+                    self._lesson_request_host_layout.count() - 1, row,
+                )
+            row.present(name, notice)
+        for key in self._lesson_request_rows.keys() - current.keys():
+            row = self._lesson_request_rows.pop(key)
+            row.retire()
+            self._lesson_request_host_layout.removeWidget(row)
+            row.deleteLater()
+        self._lesson_request_notices = current
+        self._sync_lesson_requests()
+        self._sync_art_layout()
+
+    def _sync_lesson_requests(self) -> None:
+        guest = self._creator_profile_key == "art" and self._shared_lesson_hosting is False
+        host = self._creator_profile_key == "art" and self._shared_lesson_hosting is True
+        self._lesson_request_guest_status.setVisible(guest)
+        self._lesson_request_guest_status.setText(self._lesson_guest_status if guest else "")
+        self._lesson_request_guest_status.setAccessibleDescription(self._lesson_guest_status if guest else "")
+        for button, allowed in zip(
+            (self._lesson_pause_button, self._lesson_ready_button, self._lesson_retry_button),
+            self._lesson_guest_permissions,
+        ):
+            button.setVisible(guest and (button is not self._lesson_retry_button or allowed))
+            button.setEnabled(guest and allowed)
+        has_notices = host and bool(self._lesson_request_notices)
+        self._lesson_request_host_hint.setVisible(has_notices)
+        self._lesson_request_scroll.setVisible(has_notices)
+        self._lesson_request_frame.setVisible(
+            (guest and bool(self._lesson_guest_status)) or has_notices
+        )
+
+    def _emit_lesson_intent(self, intent: str) -> None:
+        button = self._lesson_pause_button if intent == "pause" else self._lesson_ready_button
+        if (self._creator_profile_key == "art" and self._shared_lesson_hosting is False
+                and self.isVisible() and button.isVisibleTo(self) and button.isEnabled()):
+            self.lesson_request_intent.emit(intent)
+
+    def _emit_lesson_retry(self) -> None:
+        if (self._creator_profile_key == "art" and self._shared_lesson_hosting is False
+                and self.isVisible() and self._lesson_retry_button.isVisibleTo(self)
+                and self._lesson_retry_button.isEnabled()):
+            self.lesson_request_retry.emit()
+
+    def _emit_lesson_ack(self, key: tuple[str, str, int]) -> None:
+        row = self._lesson_request_rows.get(key)
+        notice = self._lesson_request_notices.get(key)
+        if (self._creator_profile_key == "art" and self._shared_lesson_hosting is True
+                and self.isVisible() and row is not None and notice is not None
+                and row.ack_button.isVisibleTo(self) and row.ack_button.isEnabled()
+                and notice.state == "accepted" and notice.expires_in_ms > 0):
+            self.lesson_request_acknowledge.emit(*key)
 
     def event(self, event) -> bool:
         if event.type() == QEvent.Type.LayoutRequest:
@@ -241,11 +470,38 @@ class WebexEmbed(QFrame):
                 default=0,
             )
             margins = layout.contentsMargins()
+            action_width = max(self._action_column_widths(), default=0)
+            if not self._lesson_request_frame.isHidden():
+                action_width = max(action_width, self._lesson_request_frame.minimumSizeHint().width())
             hint.setWidth(
-                max(text_width, self._actions_layout.minimumSize().width())
+                max(text_width, action_width)
                 + margins.left() + margins.right() + 2 * self.frameWidth()
             )
         return hint
+
+    def _action_column_widths(self) -> tuple[int, int]:
+        """Measure the original grid independently of its current arrangement."""
+
+        widths = [0, 0]
+        for button, _row, column in self._action_positions:
+            if not button.isHidden():
+                widths[column] = max(
+                    widths[column], button.minimumSizeHint().width(), button.minimumWidth()
+                )
+        return widths[0], widths[1]
+
+    def _set_actions_single_column(self, single_column: bool) -> None:
+        if self._actions_single_column == single_column:
+            return
+        self._actions_single_column = single_column
+        # Move the existing layout items only. The widgets retain their
+        # connections, native ownership, keyboard focus, and tab order.
+        for button, _row, _column in self._action_positions:
+            self._actions_layout.removeWidget(button)
+        for index, (button, row, column) in enumerate(self._action_positions):
+            self._actions_layout.addWidget(
+                button, index if single_column else row, 0 if single_column else column
+            )
 
     def resizeEvent(self, event) -> None:
         self._sync_art_layout()
@@ -262,6 +518,11 @@ class WebexEmbed(QFrame):
             art = self._creator_profile_key == "art"
             margins = layout.contentsMargins()
             available = self.width() - margins.left() - margins.right() - 2 * self.frameWidth()
+            column_widths = self._action_column_widths()
+            two_column_width = sum(column_widths) + (
+                self._actions_layout.horizontalSpacing() if all(column_widths) else 0
+            )
+            self._set_actions_single_column(art and available < two_column_width)
             header_width = self._title_label.sizeHint().width()
             if not self._app_status_label.isHidden():
                 # Measure unwrapped text so changing the header direction
@@ -272,7 +533,7 @@ class WebexEmbed(QFrame):
                     ) + 2 * self._app_status_label.margin() + Space.SM
                 )
             text_width = max(280, header_width)
-            narrow = art and available < text_width + self._actions_layout.minimumSize().width() + Space.LG
+            narrow = art and available < text_width + two_column_width + Space.LG
             direction = (
                 QBoxLayout.Direction.TopToBottom if narrow
                 else QBoxLayout.Direction.LeftToRight
@@ -588,27 +849,23 @@ class WebexEmbed(QFrame):
             )
         else:
             accessible_name = (
-                "Change the saved meeting link"
+                "Change the Conversation meeting link"
                 if self._meeting_configured
                 else "Add a meeting link from any platform"
             )
         self._change_link_btn.setAccessibleName(accessible_name)
         self._change_link_btn.setAccessibleDescription(
-            "Open WebJam Settings to "
-            + (
-                (
-                    f"change the saved {service} meeting link."
-                    if service
-                    else "change the saved meeting link."
-                )
-                if self._meeting_configured
-                else "add a public HTTPS link from any meeting platform."
+            (
+                f"Change the {service} meeting link used by Conversation."
+                if service else "Change the meeting link used by Conversation."
             )
+            if self._meeting_configured
+            else "Add a public HTTPS meeting link for Conversation."
         )
         self._change_link_btn.setToolTip(
-            f"Open Settings to add or change the {service} meeting link."
+            f"Add or change the {service} meeting link used by Conversation."
             if service
-            else "Open Settings to add or change the meeting link."
+            else "Add or change the meeting link used by Conversation."
         )
 
     def focus_primary_action(self) -> None:
@@ -777,14 +1034,52 @@ class WebexEmbed(QFrame):
 
     def set_creator_profile(self, profile) -> None:
         self._creator_profile_key = profile.key
+        if profile.key != "art":
+            self._shared_lesson_hosting = None
+            self._clear_lesson_requests()
+        self._sync_lesson_requests()
         self._render_audio_guidance()
         self._sync_native_actions()
+        self._sync_art_layout()
+
+    def set_shared_lesson_context(self, hosting: bool | None) -> None:
+        """Explain an explicitly selected meeting lesson; never open anything."""
+
+        if hosting is not None and not isinstance(hosting, bool):
+            raise ValueError("Shared lesson context must be a room role or None.")
+        current = hosting if self._creator_profile_key == "art" else None
+        if current is None or current is not self._shared_lesson_hosting:
+            self._clear_lesson_requests()
+        self._shared_lesson_hosting = current
+        self._sync_lesson_requests()
+        self._render_audio_guidance()
         self._sync_art_layout()
 
     def _render_audio_guidance(self) -> None:
         service = self._service_label
         if self._creator_profile_key == "art":
             self._title_label.setText("Conversation")
+            if self._shared_lesson_hosting is not None:
+                meeting = service or "your meeting"
+                if self._shared_lesson_hosting:
+                    share = (
+                        "Webex app: Share your YouTube window with Include computer sound. "
+                        "Browser meeting: share the YouTube tab with tab audio. "
+                        if service == "Webex" else
+                        f"Share a YouTube browser window or tab with computer sound in {meeting}. "
+                    )
+                    self._mode_label.setText(
+                        share
+                        + "Keep faces visible there. Pause and resume in your browser when asked. "
+                        "YouTube player volume changes the shared lesson; your meeting's speaker volume and microphone mute are yours."
+                    )
+                else:
+                    self._mode_label.setText(
+                        f"Watch the host's shared YouTube lesson and faces in {meeting}. "
+                        "Ask the host to pause or resume when you need time; the host controls the browser. "
+                        "Use your meeting's speaker volume for what you hear and microphone mute for your voice."
+                    )
+                return
             self._mode_label.setText(
                 f"Talk and share a demonstration in {service or 'Webex or your meeting app'} if you like. "
                 "Use your own tools. Paint along plays a separate silent local video."
