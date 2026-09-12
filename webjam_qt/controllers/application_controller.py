@@ -1044,6 +1044,7 @@ class ApplicationController(QObject):
         if not getattr(self, "_shutdown_cleanup_pending", False):
             self._shutdown_art_room_role = getattr(self, "_art_room_role", "")
         self._shutdown_cleanup_pending = True
+        ApplicationController._clear_shared_lesson_context(self)
         room_help = getattr(self, "_room_help", None)
         if room_help is not None:
             room_help.shutdown()
@@ -1891,7 +1892,29 @@ class ApplicationController(QObject):
 
     def _music_room_blocks_new_take(self) -> bool:
         room = getattr(self, "_room_participant", None)
-        return bool(room is not None and room._music_lan_host() and room._music_host_blocked())
+        return bool(
+            self._native_host_recovery_pending()
+            or (room is not None and room._music_lan_host() and room._music_host_blocked())
+        )
+
+    def _native_host_recovery_pending(self) -> bool:
+        """Read room ownership before accepting fresh Music intent."""
+
+        from services.remote_session_runtime import RemoteSessionPhase, RemoteSessionSnapshot
+
+        owner = getattr(self, "_remote_invite_owner", None)
+        if owner is None or owner is not getattr(self, "_remote_session", None):
+            return False
+        if getattr(self, "_remote_invite_reset_in_progress", False):
+            return True
+        snapshot = getattr(owner, "snapshot", None)
+        return bool(
+            isinstance(snapshot, RemoteSessionSnapshot)
+            and snapshot.role.value == "host"
+            and snapshot.phase in {
+                RemoteSessionPhase.FAILED, RemoteSessionPhase.STOPPING, RemoteSessionPhase.STOPPED,
+            }
+        )
 
     def _session_recording_control_available(self, *, hosting: bool | None = None) -> bool:
         """Host Record chrome only when this profile may start a take."""
@@ -6541,6 +6564,22 @@ class ApplicationController(QObject):
         roster_proof: JamulusOrderedRosterProof | None = None,
     ) -> None:
         """Update the participant grid on the UI thread from real Jamulus data."""
+        if source_identity is not None:
+            # A queued roster can outlive its native process or RPC monitor.
+            # Reject it before it changes cards, recovery or recorder presence.
+            # Current-owner negative evidence must still reach recovery even
+            # when that process has died or its RPC observation is stale.
+            recovery = self._primary_jamulus_recovery_snapshot()
+            if (
+                not isinstance(source_identity, JamulusRpcMonitorIdentity)
+                or not source_identity.is_process_bound
+                or source_identity.monitor_epoch <= 0
+                or recovery is None
+                or source_identity.process_generation != recovery.generation
+                or source_identity.process_id != recovery.process_id
+                or source_identity.monitor_epoch != recovery.rpc_monitor_epoch
+            ):
+                return
         local_session_proven = self.audio.apply_participants(
             jamulus_participants,
             source_identity=source_identity,
@@ -7218,6 +7257,7 @@ class ApplicationController(QObject):
             # A queued Record cannot create take obligations while its room
             # listener is being replaced or awaiting confirmed cleanup. The
             # existing recorder retains its Stop/Finish action.
+            self._shared_track_play_after_recording = ""
             self._update_session_hud()
             return
         if (
@@ -7305,35 +7345,106 @@ class ApplicationController(QObject):
                 None,
             )
             loaded_shared_track = bool(getattr(shared_snapshot, "loaded", False))
+            with self._reference_track_worker_state_lock:
+                source_load_pending = bool(
+                    self._reference_track_load_pending is not None
+                    or self._reference_track_operation_kind == "load"
+                )
+            source_loading = source_load_pending or shared_state == "loading"
             if (
-                loaded_shared_track
-                and shared_state in {"ready", "paused"}
-                and not bool(getattr(shared_snapshot, "can_play", False))
+                source_loading
+                or (
+                    loaded_shared_track
+                    and shared_state not in {"routing", "playing"}
+                    and not bool(getattr(shared_snapshot, "can_play", False))
+                )
             ):
+                # A failed replacement retains the old source; a queued
+                # replacement can still expose its old READY snapshot. Do
+                # not silently omit that intent or record the previous song.
+                # This gate only applies to a new take, never its Stop action.
                 if callable(planner):
                     planner(required=False)
                 self._shared_track_play_after_recording = ""
                 from webjam_qt.widgets.session_strip import (
                     shared_track_next_step_label,
                 )
+                from core.reference_track import reference_track_host_backend_unavailable
 
                 next_step = shared_track_next_step_label(shared_snapshot)
-                self._show_actionable_error(
-                    next_step,
-                    what_failed=(
-                        "The loaded Shared Track cannot play in this room yet. "
-                        "No recorder was started."
-                    ),
-                    likely_cause=(
+                capability = getattr(shared_snapshot, "capability", None)
+                what_failed = (
+                    "The loaded Shared Track cannot play in this room yet. "
+                    "No recorder was started."
+                )
+                if source_loading:
+                    next_step = "Open Shared Track"
+                    what_failed = (
+                        "The selected Shared Track is still loading or waiting "
+                        "to load. No recorder was started."
+                    )
+                    cause = "The selected song is not ready for this take."
+                    next_action = (
+                        "Wait for loading to finish, review Shared Track, "
+                        "then choose Record again. Loading will not start "
+                        "recording automatically."
+                    )
+                elif (
+                    shared_state in {"failed", "stopping", "closed"}
+                    or bool(getattr(shared_snapshot, "cleanup_pending", False))
+                ):
+                    next_step = "Open Shared Track"
+                    cause = (
+                        "The selected track needs recovery or its previous "
+                        "audio route has not finished stopping."
+                    )
+                    next_action = (
+                        "Open Shared Track and resolve the shown problem. "
+                        "If cleanup is pending, choose Stop to retry. Remove "
+                        "the track once it is safely stopped if this take "
+                        "should not include it, then choose Record again."
+                    )
+                elif reference_track_host_backend_unavailable(capability):
+                    cause = (
+                        "This build cannot send a Shared Track from this "
+                        "computer. A supported Mac is needed to host a track."
+                    )
+                    next_action = (
+                        f"Choose {next_step} to inspect or remove the track. "
+                        "Remove it before recording this take without a track, "
+                        "or use a supported host to include it."
+                    )
+                elif (
+                    str(getattr(capability, "platform", "")) == "macos"
+                    and getattr(capability, "reason_code", "") in {
+                        "blackhole_unavailable", "physical_certification_required",
+                    }
+                ):
+                    cause = (
                         "Play needs the official BlackHole 16ch or 64ch "
                         "device at 48 kHz on this Mac. A signed catalog is "
                         "not required."
-                    ),
-                    next_action=(
+                    )
+                    next_action = (
                         f"Choose {next_step}, then Recheck Route. Or remove "
                         "the track before recording if this take should not "
                         "include it."
-                    ),
+                    )
+                else:
+                    cause = (
+                        "The track's audio route or the current music "
+                        "connection is not ready."
+                    )
+                    next_action = (
+                        f"Choose {next_step} to review the current problem. "
+                        "Or remove the track before recording if this take "
+                        "should not include it."
+                    )
+                self._show_actionable_error(
+                    next_step,
+                    what_failed=what_failed,
+                    likely_cause=cause,
+                    next_action=next_action,
                 )
                 return
             if callable(planner):
@@ -7427,9 +7538,14 @@ class ApplicationController(QObject):
             self
         ).vocabulary.participant_singular
         link_noun = "room" if _creator_profile_for_controller(self).key == "art" else "jam"
-        if _creator_profile_for_controller(self).key == "art" and owner is None:
+        if owner is None:
+            recipient = (
+                "an artist"
+                if _creator_profile_for_controller(self).key == "art"
+                else f"another {participant}"
+            )
             copied_detail = (
-                "Invitation copied. Send the whole message to an artist on "
+                f"Invitation copied. Send the whole message to {recipient} on "
                 "your same Wi-Fi or local network. Keep this room open."
             )
         else:
@@ -8488,6 +8604,18 @@ class ApplicationController(QObject):
 
         if self._shutdown_cleanup_blocks_action():
             return
+        audio = getattr(self, "audio", None)
+        room = getattr(self, "_room_participant", None)
+        if (
+            getattr(self, "_shutdown", False)
+            or getattr(self, "_shutdown_in_progress", False)
+            or getattr(audio, "stopping", False)
+            or getattr(audio, "cleanup_retry_required", False)
+            or getattr(self, "_invite_switch_in_flight", False)
+            or getattr(self, "_remote_invite_reset_in_progress", False)
+            or getattr(room, "blocked", False)
+        ):
+            return
         owner = getattr(self, "_remote_invite_owner", None)
         if owner is None:
             self.window.flash_message(
@@ -8502,9 +8630,21 @@ class ApplicationController(QObject):
         self._release_reference_video()
         self._release_shared_canvas()
         self._release_room_clock()
-        room = getattr(self, "_room_participant", None)
         if room is not None:
             room.publisher = None
+        previous_snapshot = getattr(owner, "snapshot", None)
+        previous_generation = getattr(previous_snapshot, "generation", 0)
+        # Retire a queued/unpublished track start without stopping a running
+        # take or discarding the loaded source. A later successful reset cannot
+        # replay a Play gesture belonging to the old room.
+        self._reference_track_room_generation = (
+            int(getattr(self, "_reference_track_room_generation", 0)) + 1
+        )
+        track = getattr(self, "_reference_track", None)
+        if track is not None:
+            track.cancel_pending_start()
+        self._shared_track_play_after_recording = ""
+        self._remote_invite_reset_in_progress = True
         try:
             owner.reset()
         except Exception:
@@ -8514,6 +8654,48 @@ class ApplicationController(QObject):
                 ms=6000,
             )
             return
+        finally:
+            self._remote_invite_reset_in_progress = False
+            self._sync_reference_track_primary_gate()
+        if (
+            owner is not getattr(self, "_remote_invite_owner", None)
+            or getattr(self, "_shutdown", False)
+            or getattr(self, "_shutdown_in_progress", False)
+            or getattr(self, "_shutdown_cleanup_pending", False)
+            or getattr(audio, "stopping", False)
+            or getattr(audio, "cleanup_retry_required", False)
+        ):
+            return
+        from services.remote_session_runtime import RemoteSessionPhase, RemoteSessionSnapshot
+        from webjam_qt.windows.reference_track import ReferenceTrackPrimaryGate
+
+        snapshot = getattr(owner, "snapshot", None)
+        if (
+            owner is getattr(self, "_remote_session", None)
+            and isinstance(previous_snapshot, RemoteSessionSnapshot)
+            and previous_snapshot.phase is RemoteSessionPhase.FAILED
+            and isinstance(snapshot, RemoteSessionSnapshot)
+            and snapshot.role.value == "host"
+            and snapshot.phase in {RemoteSessionPhase.PREPARING, RemoteSessionPhase.CONNECTED}
+            and snapshot.generation > previous_generation
+            and getattr(owner, "room_identity", None) is not None
+            and getattr(self, "_startup_attempt", None) is None
+            and (
+                self.creator_profile.key == "art"
+                or self._reference_track_primary_gate() is ReferenceTrackPrimaryGate.READY
+            )
+        ):
+            # Only this explicit, successful replacement may leave a terminal
+            # room failure. Render callbacks cannot retry an attempt, and an
+            # independently owned Music startup or engine recovery keeps its
+            # own conductor token and failure facts.
+            if self.session_lifecycle.phase is SessionLifecyclePhase.FAILED_RECOVERABLE:
+                self._transition_lifecycle(
+                    SessionLifecyclePhase.STARTING_HOST, "A fresh private room is ready", role="host",
+                )
+            self._start_session_conductor_attempt(SessionRole.HOST)
+            if room is not None:
+                room.tick()
         room_help = getattr(self, "_room_help", None)
         if room_help is not None:
             room_help.arm(owner)
@@ -9439,7 +9621,11 @@ class ApplicationController(QObject):
             # The current observer can fail before it authenticates the host's
             # profile. Keep failure truth independent of a saved Music/Art
             # preference; neither means the invitation has connected.
-            failure = FailureDisposition.RETRYABLE
+            failure = (
+                FailureDisposition.BLOCKED
+                if self._room_participant.lan_invitation_rejected
+                else FailureDisposition.RETRYABLE
+            )
         elif lifecycle_phase is SessionLifecyclePhase.FAILED_FINAL:
             failure = FailureDisposition.FINAL
         elif lifecycle_phase is SessionLifecyclePhase.FAILED_RECOVERABLE:
@@ -9675,8 +9861,9 @@ class ApplicationController(QObject):
         if presentation.phase is SessionConductorPhase.IDLE and not facts.art_room_closed:
             if self.creator_profile.key == "art":
                 stage_hint = (
-                    "Bring your own tools: paint, clay, paper or a printer. "
-                    "Talk and show your work through Conversation."
+                    "Make from your own space: use paper, clay, a model, "
+                    "a printer, or your usual app. Conversation can carry "
+                    "talk or a screen share."
                 )
             else:
                 stage_hint = (
@@ -10906,8 +11093,12 @@ class ApplicationController(QObject):
         return scoped if scoped is not None else str(getattr(self.settings, "webex_url", "") or "").strip()
 
     def _set_session_meeting_url(self, value: str | None) -> None:
+        # Validate before retiring an otherwise usable context. Once accepted,
+        # even the same URL can represent a different room's meeting.
+        validated = self._validated_session_meeting_url(value) if value is not None else None
+        ApplicationController._retire_shared_lesson_requests(self)
         self._session_meeting_url = (
-            self._validated_session_meeting_url(value) if value is not None else None
+            validated
         )
         self._session_meeting_generation = getattr(self, "_session_meeting_generation", 0) + 1
         # Invalidate in-flight and queued handoffs even when two rooms use the
@@ -11115,6 +11306,7 @@ class ApplicationController(QObject):
         self._mix_dirty = True
         if self._jamulus_connected:
             self.jamulus.set_mute(channel_id, muted)
+            self.audio.refresh_listening_mix()
 
     def _on_solo_toggled(self, channel_id: int, solo: bool) -> None:
         p = self.participants.get(channel_id)
@@ -11123,6 +11315,7 @@ class ApplicationController(QObject):
         self._mix_dirty = True
         if self._jamulus_connected:
             self.jamulus.set_solo(channel_id, solo)
+            self.audio.refresh_listening_mix()
 
     # ------------------------------------------------------------------
     # BridgeService callbacks (already on UI thread via invoker)
@@ -11131,6 +11324,8 @@ class ApplicationController(QObject):
         self.window.flash_message(text, color=color)
 
     def _refresh_readiness(self) -> None:
+        if getattr(self, "_shutdown", False):
+            return
         room = getattr(self, "_room_participant", None)
         if room is not None and (self.creator_profile.key == "art" or self._art_room_active()):
             hosting = (getattr(self.audio, "_stop_hosting", False)
@@ -11965,7 +12160,8 @@ class ApplicationController(QObject):
 
     def _on_load_mix(self) -> None:
         """Load mixer state from ~/.webjam_mix.json and apply to Jamulus."""
-        self._mix_manager.load()
+        if self._mix_manager.load():
+            self.audio.refresh_listening_mix()
 
     def _on_save_mix_as(self) -> None:
         """Ctrl+Shift+S — open a Save dialog and write the mix to a chosen path.
@@ -12004,7 +12200,8 @@ class ApplicationController(QObject):
         )
         if not path:
             return
-        self._mix_manager.load_from(Path(path))
+        if self._mix_manager.load_from(Path(path)):
+            self.audio.refresh_listening_mix()
 
     def _restore_saved_mix(self) -> None:
         """Auto-apply ~/.webjam_mix.json when Jamulus first connects (best-effort)."""
@@ -12024,6 +12221,8 @@ class ApplicationController(QObject):
             str(getattr(old_settings, "webex_url", "") or "").strip()
             != str(getattr(self.settings, "webex_url", "") or "").strip()
         )
+        if webex_url_changed:
+            self._retire_shared_lesson_requests()
         reference_route_changed = any(
             (
                 getattr(old_settings, "host_server_enabled", False)
@@ -12528,6 +12727,7 @@ class ApplicationController(QObject):
             self.window.side_rail.set_active_key(prev)
             self._open_settings_wizard()
         elif key in _CONTENT_KEYS:
+            self._clear_shared_lesson_context()
             hide_paint_along = getattr(self.window, "hide_paint_along", None)
             if callable(hide_paint_along):
                 hide_paint_along(
@@ -12926,6 +13126,7 @@ class ApplicationController(QObject):
     def _release_reference_video(self) -> None:
         """Return this computer to the no-video path and free its player."""
 
+        ApplicationController._clear_shared_lesson_context(self)
         timer = getattr(self, "_reference_video_timer", None)
         if timer is not None:
             timer.stop()
@@ -12968,6 +13169,7 @@ class ApplicationController(QObject):
                 ms=6000,
             )
             return
+        self._clear_shared_lesson_context()
         dialog = getattr(self, "_reference_video_dialog", None)
         if dialog is None:
             from webjam_qt.windows.reference_video import ReferenceVideoDialog
@@ -13017,6 +13219,9 @@ class ApplicationController(QObject):
             dialog.return_requested.connect(
                 lambda: self._return_to_art_room(dialog)
             )
+            dialog.watch_lesson_requested.connect(
+                lambda: self._watch_shared_lesson(coordinator, dialog)
+            )
             self._reference_video_dialog = dialog
         self._sync_paint_along_room()
         if coordinator.hosting:
@@ -13062,18 +13267,31 @@ class ApplicationController(QObject):
         if dialog is None or coordinator is None:
             return False
         room = getattr(self, "_room_participant", None)
+        audio = getattr(self, "audio", None)
+        closing = bool(
+            getattr(self, "_shutdown_in_progress", False)
+            or getattr(self, "_shutdown_cleanup_pending", False)
+            or getattr(audio, "stopping", False)
+            or getattr(audio, "cleanup_retry_required", False)
+        )
         if coordinator.hosting:
             available = bool(
-                not self._shutdown and self.creator_profile.key == "art"
+                not self._shutdown and not closing and self.creator_profile.key == "art"
                 and (room is None or not room.blocked)
                 and self._reference_video_binding == self._reference_video_identity()
             )
             dialog.set_room_available(available)
+            dialog.set_watch_lesson_available(available)
+            if not available:
+                self._clear_shared_lesson_context()
             return available
         if not coordinator.following:
+            dialog.set_watch_lesson_available(False)
+            self._clear_shared_lesson_context()
             return False
         available = bool(
             not getattr(self, "_shutdown", False)
+            and not closing
             and self.creator_profile.key == "art"
             and room is not None and not room.blocked and not room.probing
             and room.state is ArtRoomState.CONNECTED
@@ -13096,12 +13314,90 @@ class ApplicationController(QObject):
                 available = bool(source is not None and source.connection_available)
             available = bool(
                 available and getattr(state, "creator_profile_key", "") == "art"
-                and coordinator.video_is_current(state)
             )
+        # Reaching a lesson in Conversation needs a current Art room, not a
+        # matching local file or a healthy local player. Keep those facts apart.
+        dialog.set_watch_lesson_available(available)
+        if not available:
+            self._clear_shared_lesson_context()
+        if available:
+            available = coordinator.video_is_current(state)
         dialog.set_room_available(available)
         if available:
             dialog.set_follow_snapshot(coordinator.follow_snapshot)
         return available
+
+    def _retire_shared_lesson_requests(self) -> None:
+        """Retire requests while preserving useful same-room lesson guidance."""
+        room = getattr(self, "_room_participant", None)
+        retire = getattr(room, "retire_lesson_requests", None)
+        if callable(retire):
+            retire()
+        project = getattr(room, "project_lesson_requests", None)
+        if callable(project):
+            project()
+
+    def _clear_shared_lesson_context(self) -> None:
+        ApplicationController._retire_shared_lesson_requests(self)
+        panel = getattr(getattr(self, "window", None), "webex_embed", None)
+        if getattr(panel, "_shared_lesson_hosting", None) is not None:
+            panel.set_shared_lesson_context(hosting=None)
+
+    def _watch_shared_lesson(self, coordinator, dialog) -> None:
+        """Navigate to meeting guidance; never open or control either video."""
+
+        from PySide6.QtWidgets import QApplication
+
+        if (
+            coordinator is not getattr(self, "_reference_video", None)
+            or dialog is not getattr(self, "_reference_video_dialog", None)
+            or getattr(self, "_shutdown", False)
+            or self.creator_profile.key != "art"
+            or QApplication.activeModalWidget() is not None
+            or QApplication.activePopupWidget() is not None
+        ):
+            return
+        stack = getattr(self.window, "workspace_stack", None)
+        if (stack is not None and stack.currentWidget() is not dialog) or not dialog.isVisible():
+            return
+        self._sync_paint_along_room()
+        if not dialog._watch_lesson_button.isEnabled():
+            return
+        room = self._room_participant
+        generation = room.generation
+        source = self._remote_session or room.lan_guest
+        # Reading availability may publish loss. Recheck the room and panel
+        # after that boundary before a queued intent can move anyone's focus.
+        # A native host can prepare the meeting before the first guest joins.
+        # PREPARING with this room's credentials is that waiting state, not
+        # evidence of a peer connection or a running lesson.
+        available = bool(
+            source is None
+            or (coordinator.hosting and source.snapshot.role.value == "host"
+                and source.snapshot.phase.value == "preparing")
+            or source.connection_available
+        )
+        if (
+            not available
+            or coordinator is not getattr(self, "_reference_video", None)
+            or dialog is not getattr(self, "_reference_video_dialog", None)
+            or room is not self._room_participant
+            or generation != room.generation
+            or source is not (self._remote_session or room.lan_guest)
+        ):
+            return
+        self._sync_paint_along_room()
+        if (
+            not dialog._watch_lesson_button.isEnabled()
+            or (stack is not None and stack.currentWidget() is not dialog)
+            or not dialog.isVisible()
+            or QApplication.activeModalWidget() is not None
+            or QApplication.activePopupWidget() is not None
+        ):
+            return
+        self._show_webex_conversation()
+        self.window.webex_embed.set_shared_lesson_context(hosting=coordinator.hosting)
+        room.activate_lesson_requests(hosting=coordinator.hosting)
 
     def _run_current_host_paint_along(self, coordinator, dialog, operation) -> None:
         """A completed file chooser or queued host action must still be current."""
@@ -13807,7 +14103,7 @@ class ApplicationController(QObject):
                 lambda: self._run_reference_track_fast(controller.pause)
             )
             dialog.restart_requested.connect(
-                lambda: self._run_reference_track_fast(controller.restart)
+                lambda: self._run_reference_track_fast(controller.restart, starts_playback=True)
             )
             dialog.stop_requested.connect(self._request_reference_track_teardown)
             dialog.seek_requested.connect(
@@ -13881,8 +14177,8 @@ class ApplicationController(QObject):
     def _offer_shared_track_next_step(self, snapshot) -> None:
         """Open Shared Track once after a local load that still cannot play.
 
-        A mute badge is not a next step. The host gets the panel that already
-        names Set Up Shared Track and Recheck Route — no signed catalog pin.
+        The host gets the existing panel's current support or setup guidance.
+        An unavailable platform cannot be repaired by another route check.
         """
 
         from webjam_qt.widgets.session_strip import shared_track_play_is_locked
@@ -14063,6 +14359,13 @@ class ApplicationController(QObject):
 
         if self._shutdown_cleanup_blocks_action():
             return
+        from core.reference_track import reference_track_host_backend_unavailable
+
+        snapshot = getattr(getattr(self, "_reference_track", None), "snapshot", None)
+        if reference_track_host_backend_unavailable(getattr(snapshot, "capability", None)):
+            # No sender backend exists on this platform in this build. An
+            # old queued Recheck intent must not restart a pointless probe.
+            return
         audience_active = (
             self._webex_audio_mode() == "audience_bridge"
             if audience_bridge_active is None
@@ -14171,10 +14474,13 @@ class ApplicationController(QObject):
                 thread_name=thread_name,
             )
 
-    def _run_reference_track_fast(self, operation) -> None:
+    def _run_reference_track_fast(self, operation, *, starts_playback: bool = False) -> None:
         """Apply a bounded in-memory control only when no launch is in flight."""
 
         if self._shutdown_cleanup_blocks_action():
+            return
+        if starts_playback and self._native_host_recovery_pending():
+            self._sync_reference_track_primary_gate()
             return
         from webjam_qt.windows.reference_track import ReferenceTrackPrimaryGate
 
@@ -14519,10 +14825,21 @@ class ApplicationController(QObject):
         )
         if target is not None:
             target.set_primary_gate(self._reference_track_primary_gate())
+            set_room_recovery = getattr(target, "set_room_recovery_pending", None)
+            if callable(set_room_recovery):
+                set_room_recovery(self._native_host_recovery_pending())
 
     def _play_reference_track(self) -> None:
         if self._shutdown_cleanup_blocks_action():
             self._sync_reference_track_primary_gate()
+            return
+        if self._native_host_recovery_pending():
+            self._sync_reference_track_primary_gate()
+            self.window.flash_message(
+                "Choose Reset Invite to recover the private room, then choose Play again. "
+                "Your loaded track is safe.",
+                ms=7000,
+            )
             return
         from webjam_qt.widgets.session_strip import shared_track_play_is_locked
         from webjam_qt.windows.reference_track import ReferenceTrackPrimaryGate
@@ -14628,11 +14945,14 @@ class ApplicationController(QObject):
             audience_bridge_active=(self._webex_audio_mode() == "audience_bridge"),
         )
         generation = self._reference_track_session_generation
+        room_generation = getattr(self, "_reference_track_room_generation", 0)
 
         def _play_for_current_session() -> None:
             current_primary = self._primary_jamulus_recovery_snapshot()
             if (
                 generation != self._reference_track_session_generation
+                or room_generation != getattr(self, "_reference_track_room_generation", 0)
+                or self._native_host_recovery_pending()
                 or self._shutdown
                 or not self._reference_track_primary_identity_ready(
                     current_primary,

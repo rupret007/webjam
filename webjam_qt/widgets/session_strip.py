@@ -36,6 +36,7 @@ from core.meeting_link import (
     MEETING_DIRECT_CAPTURE_BOUNDARY,
     RECORD_SESSION_MEETING_CAPTURE_NOTICE,
 )
+from core.reference_track import reference_track_host_backend_unavailable
 from webjam_qt.theme.brand import BrandMark
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.art_room_chip import ArtRoomChip
@@ -82,6 +83,8 @@ def shared_track_play_is_locked(snapshot: object) -> bool:
 def shared_track_next_step_label(snapshot: object) -> str:
     """Name the doable Shared Track step. Never returns 'Needs attention'."""
 
+    if reference_track_host_backend_unavailable(getattr(snapshot, "capability", None)):
+        return "Track sharing unavailable"
     error = str(getattr(snapshot, "error", "") or "").strip()
     reason = _shared_track_capability_reason(snapshot)
     loaded = bool(str(getattr(snapshot, "source_name", "") or ""))
@@ -1384,8 +1387,13 @@ class SessionStrip(QFrame):
         if play_locked:
             self._reference_track_button.setText(label)
             self._reference_track_button.setAccessibleName(label)
+            unsupported_host = reference_track_host_backend_unavailable(
+                getattr(snapshot, "capability", None)
+            )
             self._reference_track_button.setToolTip(
-                f"{label}. Opens Shared Track so you can set up the device "
+                "Open Shared Track to see supported hosting options or return to rehearsal."
+                if unsupported_host
+                else f"{label}. Opens Shared Track so you can set up the device "
                 "and Recheck Route."
             )
             self._reference_track_button.setMaximumWidth(260)

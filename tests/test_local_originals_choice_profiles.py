@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 from types import SimpleNamespace
 from unittest import mock
 
@@ -177,6 +178,9 @@ def test_local_originals_choice_rejects_unsupported_profile_values(
 
 def test_first_record_choice_receives_the_active_creator_profile(tmp_path) -> None:
     controller = ApplicationController.__new__(ApplicationController)
+    controller._reference_track_worker_state_lock = threading.Lock()
+    controller._reference_track_load_pending = None
+    controller._reference_track_operation_kind = ""
     controller.bridge = SimpleNamespace(
         jamulus_state="Not launched",
         hosted_server_alive=mock.Mock(return_value=False),

@@ -1,33 +1,62 @@
-# Worth building — one invitation carries Conversation
+# Internet invitations: bounded setup and owned shutdown
 
-Base: fetched `origin/master` at `2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`.
-Branch: `codex/invitation-conversation-context`.
-Canonical WebJam checkout only. Independent of pending #96; parked #37/#49 untouched.
+Jeff approved private-invitation Internet implementation and isolated testing on
+2026-09-09. This slice addresses one remaining service prerequisite for both Art
+and Music; it adds no guest setup screen.
 
-A host already copies one invitation containing the WebJam room and optional
-meeting. Join previously discarded the labeled meeting block. A clean guest had
-to paste it again; a guest with a saved meeting could open that unrelated meeting.
-This directly broke the one-invitation promise before either Art or Music could
-be useful together. It takes priority over more Paint along copy or Music controls.
+## Observed failure and priority
 
-After this change, an accepted complete paste retains one validated conversation
-link for the joined room only. Conversation display, Copy, Open, error Retry and
-Band Check use that same context. Joining does not launch a meeting. An invitation
-without a meeting does not select the guest's saved personal meeting.
+The completed-connection cap began after TLS. A stalled peer could therefore use
+accepted sockets and handshake state outside that cap. A handshake deadline alone
+is not a concurrency bound. Separately, Close could finish while startup was
+creating a listener, leaving the late listener outside its cleanup snapshot.
+Deterministic lifecycle baselines reproduce that race and missing synchronous
+capacity reservations. These resource ownership gaps need fixing before an
+ordinary Internet invitation can safely depend on the service.
 
-Add Link / Change Link in a joined room updates temporary room context; personal
-settings remain untouched. Successful Leave restores the personal meeting. Failed
-cleanup retains the current room's link until retry succeeds. Replacing a room
-invalidates old meeting handoffs and retries even when both use the same URL.
+## Before and after
 
-The transport invite models and wire formats are unchanged. Optional clipboard
-context is untrusted input, never authenticated host identity. Existing HTTPS
-validation, explicit external handoff, private-input limits and ambiguity checks
-remain the trust boundary. No new network service, automatic opening, recording,
-media capture, download or playback control is introduced.
+Before: unfinished handshakes bypassed completed capacity, and successful Close
+did not prove retirement of concurrently created listeners. After: a synchronous
+acceptance gate bounds pending setup and its start rate before TLS work; verified
+connections reserve active capacity before handler scheduling. Owned startup and
+teardown retire late resources and remain responsible after caller cancellation.
 
-The two-session goal remains incomplete. Different-home Art reachability still
-needs an approved private connectivity design and physical proof. YouTube lesson
-sharing/voices, independent listening levels and Music latency also need their
-own work and two-person evidence. Track these in
-[the two-session proof plan](docs/plans/webjam-two-session-proof.md).
+The first hosted checks exposed a same-size policy rewrite missed by unchanged
+filesystem timestamps. The correction requires two bounded reads to agree while
+preserving metadata checks. Review also found that a transient peer accept error
+could stop future joining; those documented errors now retain bounded polling,
+while invalid listener state and resource failures still fail closed. The original
+hosted failures are retained and the corrected source needs its own verification.
+
+This beats adding door copy while the authorized Internet path still lacks a
+bounded service lifecycle. It is infrastructure progress, not proof that a person
+joined, sees/hears the lesson, can pause or has acceptable musical latency.
+
+## Acceptance and dependency
+
+Branch `codex/service-connection-ownership` explicitly stacks on OPEN DRAFT #114,
+`89274f756567ed6422b93e193560800ef126667f`, which supplies approved-host allocation
+and invitation-only guests. Common fetched master remains
+`2aba2f2f72f94d56f5c7f810fbe7ca326c5502b2`. Prior drafts remain untouched.
+
+Real owned-loopback TLS cases hold unfinished peers at capacity, release one and
+register an approved host, enroll a certificate-free guest, use fresh role-token
+Close, and close a mixture of active TLS, incomplete TLS and HTTP peers. Gated
+lifecycle tests cover late creation, canceled callers and honest cleanup failure.
+Four desktop CI jobs run the complete service suite on actual Python 3.12 event
+loops, including Windows Proactor, before the existing desktop packaging steps.
+Results must be attached to this slice's exact frozen tip; a workflow edit alone
+is not platform evidence.
+
+Service bind settings intentionally accept only unscoped numeric addresses or
+`localhost`, avoiding executor DNS work that cannot be reliably canceled. This
+does not change certificate DNS identity or expose IPC endpoint overrides.
+A broader ordinary-loop burst probe exposed Python's delayed acceptance before
+transport attachment even though service counters looked clear. Control and HTTP
+therefore need owned raw acceptance; the original failing evidence is retained.
+
+Ordinary host credential provisioning, UDP return-path proof, a compiled Internet
+profile, deployment authorization and physical two-home journeys remain open.
+Native Art names and lesson requests remain open. Art's two-card door, squirrel,
+guest-never-seek, Notes/Conversation and Music routing protections are inherited.

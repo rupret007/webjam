@@ -22,10 +22,12 @@ automatically taps a meeting app, browser, or system output.
 
 WebJam welcomes artists in any medium who want to make things together. Art
 is a newer Preview; the aim is to build it out to the same depth as Music.
-Bring your own tools—paint, clay, paper, a printer, or your usual app.
-A shared canvas is optional. Inside the room, **Conversation** lets you open
-a meeting and share a demonstration in Webex or your chosen service. Everyone
-can follow there; **Paint along** is the separate silent local-video option.
+Make from your own space with paper, clay, a model, a printer, or your usual
+app. A shared canvas is optional. Inside the room, **Conversation** lets you
+open a meeting and share a demonstration in Webex or your chosen service.
+Everyone can follow there. In **Paint along**, choose **Watch a shared lesson**
+to reach Conversation for a YouTube lesson with sound. The local-file option
+stays available and silent.
 
 ## Start an Art room
 
@@ -37,9 +39,12 @@ can follow there; **Paint along** is the separate silent local-video option.
    Art does not launch Jamulus or ask you to prove Music audio. The invitation's
    optional meeting is ready in **Conversation**, without a second paste or an
    automatic meeting launch. Your saved personal meeting stays unchanged.
-4. Work with your own tools, open **Conversation** for an optional meeting or
-   shared demonstration, or follow the host's silent local video in **Paint
-   along**. A shared canvas opens only when you choose it.
+4. Work from your own space. For a YouTube lesson, choose **Paint along →
+   Watch a shared lesson**, then use Conversation's next action. Finish
+   joining the meeting there; WebJam cannot confirm who can see or hear it.
+   The host shares the lesson with sound and pauses the browser when asked.
+   You can also follow a matching silent local file in Paint along.
+   A shared canvas opens only when you choose it.
 5. If the room loses contact, follow its reconnecting or recovery guidance.
    Use **Paste New Invite** with a fresh invitation when the old one may have
    been used. Older peers must update WebJam before using a fresh invitation.
@@ -79,11 +84,15 @@ These steps apply to Music, Podcast & Voice, and Review & Rehearsal.
    want the same status plus output results, recent events, and your Creative
    Pulse in one session record.
 9. Hosts choose **Add Shared Track** or drop one supported file on the live
-   surface. Loading does not start playback. If Play is not ready, the strip
-   says **Set up the audio device** and opens Shared Track so you can choose
+   surface. Loading does not start playback. Windows and Linux cannot send a
+   Shared Track in this build: choose **Back to rehearsal** to keep playing,
+   or **Remove** the file before recording without it. Sending currently
+   needs a supported Mac. If that Mac needs its isolated audio device, the
+   strip says **Set up the audio device** and opens Shared Track for
    **Set Up Shared Track…** and **Recheck Route**. That step does not need a
    signed catalog. When the isolated route is already on this Mac, Play sends
-   the song to the room. Guests never receive transport authority.
+   the song through the existing session audio. Confirm that both people can
+   actually hear it. Guests never receive transport authority.
 10. Choose **Record Session** when the session is ready. Review every exact
     planned server track, Local Original, and Shared Track in the readiness
     sheet. Confirm its mono/stereo format, required/optional status, storage,

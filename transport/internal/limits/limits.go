@@ -34,15 +34,16 @@ const (
 )
 
 const (
-	SocketPollInterval    = 100 * time.Millisecond
-	StreamOperationLimit  = 15 * time.Second
-	HandshakeLimit        = 15 * time.Second
-	ShutdownLimit         = 3 * time.Second
-	MaxIdentityLifetime   = 24 * time.Hour
-	MinIdentityLifetime   = time.Minute
-	HostIdentityLifetime  = 8 * time.Hour
-	MaxSignalLifetime     = 10 * time.Minute
-	MaxEnrollmentLifetime = 10 * time.Minute
-	EnrollmentClockSkew   = 30 * time.Second
-	HelpOperationLimit    = 3 * time.Second
+	SocketPollInterval       = 100 * time.Millisecond
+	StreamOperationLimit     = 15 * time.Second
+	HandshakeLimit           = 15 * time.Second
+	ShutdownLimit            = 3 * time.Second
+	MaxIdentityLifetime      = 24 * time.Hour
+	MinIdentityLifetime      = time.Minute
+	HostIdentityLifetime     = 8 * time.Hour
+	MaxSignalLifetime        = 10 * time.Minute
+	MaxEnrollmentLifetime    = 10 * time.Minute
+	MaxActiveSessionLifetime = 8 * time.Hour
+	EnrollmentClockSkew      = 30 * time.Second
+	HelpOperationLimit       = 3 * time.Second
 )

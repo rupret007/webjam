@@ -94,11 +94,16 @@ class FakeProcess:
 
     def close_peer(self):
         self.closed += 1
+        mode = "host" if self.host_generations else "guest"
+        generations = self.host_generations if mode == "host" else self.guest_generations
         return TransportEvent(
             event_id=self.closed,
             event_type="peer_closed",
             code="ok",
             state="closed",
+            mode=mode,
+            profile_id="reference-local",
+            generation=generations[-1],
         )
 
     def send_help(self, text, *, generation):
@@ -527,6 +532,262 @@ def test_lab_hosting_requires_explicit_process_local_opt_in(monkeypatch) -> None
     assert native.reference_local_host_requested()
     monkeypatch.setenv(native.REFERENCE_LOCAL_OPT_IN, "true")
     assert not native.reference_local_host_requested()
+
+
+@pytest.mark.parametrize("connected", [False, True])
+@pytest.mark.parametrize("failed_closes", [1, 2])
+def test_host_reset_retries_pending_close_before_opening_fresh_invitation(
+    monkeypatch, caplog, connected, failed_closes,
+) -> None:
+    from core.room_state import RoomState
+    from services.transport_runtime import TransportProcessError
+
+    class PendingCloseProcess(FakeProcess):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.close_attempts = 0
+            self.close_pending = False
+            self.calls = []
+
+        def open_host(self, invitation, *, target_port, generation):
+            self.calls.append(("open", generation))
+            if self.close_pending:
+                raise TransportProcessError("PRIVATE pending cleanup detail")
+            return super().open_host(
+                invitation, target_port=target_port, generation=generation,
+            )
+
+        def close_peer(self):
+            self.close_attempts += 1
+            self.calls.append(("close", self.close_attempts))
+            self.close_pending = True
+            assert owner.invitation is None
+            assert not owner.invitation_available
+            assert owner.room_identity is None
+            assert not owner.connection_available
+            self.emit_host_connected(1)
+            assert not owner.connection_available
+            if self.close_attempts <= failed_closes:
+                raise TransportProcessError("PRIVATE close receipt detail")
+            self.close_pending = False
+            return super().close_peer()
+
+    monkeypatch.setattr(native, "TransportProcess", PendingCloseProcess)
+    snapshots = []
+    owner = native.NativeHostTransportOwner(
+        target_port=22124, binary="/private/webjam-fabric",
+        expected_build="abc1234", on_snapshot=snapshots.append,
+    )
+    process = FakeProcess.instances[-1]
+    original_invitation = owner.copy_for_clipboard()
+    if connected:
+        process.emit_host_connected(1)
+        assert owner.connection_available
+    try:
+        for attempt in range(1, failed_closes + 1):
+            with pytest.raises(RuntimeError) as failure:
+                owner.reset()
+            assert "PRIVATE" not in str(failure.value)
+            assert original_invitation not in str(failure.value)
+            assert process.calls == [("open", 1)] + [
+                ("close", number) for number in range(1, attempt + 1)
+            ]
+            assert process.host_generations == [1]
+            assert process.running
+            assert owner.invitation is None
+            assert not owner.invitation_available
+            assert owner.room_identity is None
+            assert not owner.connection_available
+            assert owner.snapshot.phase is RemoteSessionPhase.FAILED
+            assert owner.snapshot.error_code is RemoteSessionErrorCode.STOP_FAILED
+            with pytest.raises(RuntimeError):
+                owner.copy_for_clipboard()
+            with pytest.raises(RemoteBackendError):
+                owner.send_help("This room has ended")
+            assert not owner.publish_room_state(RoomState(1, "art", "talk_and_make"))
+            process.emit_host_connected(1)
+            assert owner.snapshot.phase is RemoteSessionPhase.FAILED
+            assert not owner.connection_available
+
+        owner.reset()
+        assert process.calls == [("open", 1)] + [
+            ("close", number) for number in range(1, failed_closes + 2)
+        ] + [("open", 2)]
+        assert process.closed == 1
+        assert process.host_generations == [1, 2]
+        assert owner.invitation_available
+        assert owner.copy_for_clipboard() != original_invitation
+        assert owner.snapshot.phase is RemoteSessionPhase.PREPARING
+        assert owner.room_identity is not None
+        process.emit_host_connected(1)
+        assert owner.snapshot.phase is RemoteSessionPhase.PREPARING
+        assert owner.invitation_available
+        process.emit_host_connected(2)
+        assert owner.connection_available
+        assert not owner.invitation_available
+        assert "PRIVATE" not in caplog.text + repr(owner) + repr(snapshots)
+        assert original_invitation not in caplog.text + repr(owner) + repr(snapshots)
+    finally:
+        owner.stop()
+
+
+def test_host_reset_can_retry_replacement_that_failed_before_open(monkeypatch) -> None:
+    from services.transport_runtime import TransportProcessError
+
+    class FailedOpenProcess(FakeProcess):
+        def open_host(self, invitation, *, target_port, generation):
+            if generation == 2:
+                # The old close callback can arrive after registration has
+                # advanced its generation; it cannot supply the new failure.
+                self.on_event(TransportEvent(
+                    event_id=0, event_type="peer_closed", code="ok", state="closed",
+                    mode="host", profile_id="reference-local", generation=1,
+                ))
+                raise TransportProcessError("The peer never opened.")
+            return super().open_host(
+                invitation, target_port=target_port, generation=generation,
+            )
+
+        def close_peer(self):
+            if self.closed:
+                raise TransportProcessError("No peer is open.")
+            return super().close_peer()
+
+    monkeypatch.setattr(native, "TransportProcess", FailedOpenProcess)
+    owner = native.NativeHostTransportOwner(
+        target_port=22124, binary="/private/webjam-fabric", expected_build="abc1234",
+    )
+    process = FakeProcess.instances[-1]
+    original_invitation = owner.copy_for_clipboard()
+    try:
+        with pytest.raises(RemoteInvitationOwnerError, match="fresh invitation"):
+            owner.reset()
+        assert not owner.invitation_available
+        assert owner.invitation is None
+        assert owner.room_identity is None
+        assert process.closed == 1
+        assert owner.snapshot.phase is RemoteSessionPhase.FAILED
+        assert owner.snapshot.error_code is RemoteSessionErrorCode.TRANSPORT_FAILED
+        assert owner.snapshot.generation == 2
+
+        owner.reset()
+        assert process.closed == 1
+        assert process.host_generations == [1, 3]
+        assert owner.invitation_available
+        assert owner.copy_for_clipboard() != original_invitation
+        assert owner.snapshot.generation == 3
+    finally:
+        owner.stop()
+
+
+def test_host_reset_cannot_forget_pending_close_when_ipc_becomes_unavailable(
+    monkeypatch, caplog,
+) -> None:
+    from services.transport_runtime import TransportProcessError
+
+    class PoisonedCloseProcess(FakeProcess):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.close_attempts = 0
+            self.reaped = False
+
+        def close_peer(self):
+            self.close_attempts += 1
+            # A failed IPC client reports running=False even if the subprocess
+            # is still owned. Only stop() supplies the reap result here.
+            self.running = False
+            raise TransportProcessError("PRIVATE poisoned client detail")
+
+        def stop(self):
+            super().stop()
+            self.reaped = True
+
+    monkeypatch.setattr(native, "TransportProcess", PoisonedCloseProcess)
+    owner = native.NativeHostTransportOwner(
+        target_port=22124, binary="/private/webjam-fabric", expected_build="abc1234",
+    )
+    process = FakeProcess.instances[-1]
+    process.emit_host_connected(1)
+    try:
+        for attempt in (1, 2):
+            with pytest.raises(RuntimeError) as failure:
+                owner.reset()
+            assert "PRIVATE" not in str(failure.value)
+            assert process.close_attempts == attempt
+            assert not process.running
+            assert not process.reaped
+            assert process.host_generations == [1]
+            assert owner.invitation is None
+            assert not owner.invitation_available
+            assert not owner.connection_available
+            assert owner.room_identity is None
+            assert owner.snapshot.error_code is RemoteSessionErrorCode.STOP_FAILED
+
+        owner.stop()
+        assert process.reaped
+        assert process.stopped == 1
+        assert process.close_attempts == 2
+        assert owner.snapshot.phase is RemoteSessionPhase.STOPPED
+        owner.stop()
+        assert process.stopped == 1
+        assert "PRIVATE" not in caplog.text + repr(owner)
+    finally:
+        owner.stop()
+
+
+@pytest.mark.parametrize("receipt_change", [
+    {"event_type": "stopped"},
+    {"generation": 1},
+    {"mode": "guest"},
+    {"profile_id": "another-profile"},
+    {"event_id": 0},
+    {"code": "failed"},
+    {"state": "connected"},
+    None,
+])
+def test_host_reset_keeps_cleanup_owned_until_current_host_close_receipt(
+    monkeypatch, receipt_change,
+) -> None:
+    from dataclasses import replace
+
+    class WrongReceiptProcess(FakeProcess):
+        bad_receipt = False
+
+        def close_peer(self):
+            receipt = super().close_peer()
+            if self.bad_receipt:
+                self.bad_receipt = False
+                return None if receipt_change is None else replace(receipt, **receipt_change)
+            return receipt
+
+    monkeypatch.setattr(native, "TransportProcess", WrongReceiptProcess)
+    owner = native.NativeHostTransportOwner(
+        target_port=22124, binary="/private/webjam-fabric", expected_build="abc1234",
+    )
+    process = FakeProcess.instances[-1]
+    try:
+        owner.reset()
+        assert owner.snapshot.generation == 2
+        invitation = owner.copy_for_clipboard()
+        process.bad_receipt = True
+        with pytest.raises(RemoteInvitationOwnerError, match="fresh invitation"):
+            owner.reset()
+        assert process.host_generations == [1, 2]
+        assert process.closed == 2
+        assert owner.invitation is None
+        assert not owner.invitation_available
+        assert owner.room_identity is None
+        assert not owner.connection_available
+        assert owner.snapshot.error_code is RemoteSessionErrorCode.STOP_FAILED
+
+        owner.reset()
+        assert process.closed == 3
+        assert process.host_generations == [1, 2, 3]
+        assert owner.invitation_available
+        assert owner.copy_for_clipboard() != invitation
+        assert owner.snapshot.generation == 3
+    finally:
+        owner.stop()
 
 
 def test_frozen_sidecar_is_resolved_beside_main_executable(monkeypatch) -> None:
