@@ -14,21 +14,25 @@ to actually run a session.
 ## Run it
 
 ```bash
-QT_QPA_PLATFORM=offscreen .venv/bin/python webjam_qt_main.py   # smoke-test, no window
-.venv/bin/python webjam_qt_main.py                             # real window
+# Headless door check; exits when the tests finish.
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/test_art_start_ux.py
+
+# Interactive source demo; close the window when finished.
+.venv/bin/python webjam_qt_main.py
 ```
 
 (`DEVELOPMENT.md` covers setting up `.venv` if you don't have one yet.)
 
 ## The script
 
-1. **Launch WebJam.** The first screen shows exactly two choices, side by
-   side, with no badge, caveat, or tool name on either one:
+1. **Launch WebJam.** The first screen shows two workspace cards, side by
+   side, with no badge, caveat, or tool name on either card:
    - **Art** — "Make art together."
    - **Music** — "Play live together."
 
-   That's the whole first click. Say nothing; let the two cards speak for
-   themselves — that's the point of the ten-second gate in
+   Host and Join are also visible. The saved workspace may already be
+   selected; Art also shows its two activity cards. Let the workspace cards
+   speak for themselves — that's the point of the ten-second gate in
    [docs/MERGE_AND_RELEASE.md](docs/MERGE_AND_RELEASE.md#1-ten-second-ux-gate).
 
 2. **Choose Art.** Two more cards appear:
@@ -41,19 +45,21 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python webjam_qt_main.py   # smoke-test, no 
    other tool — that's enforced by `tests/test_art_start_ux.py`, not a styling
    choice.
 
-3. **Choose Host.** "Your room is open" appears with **Copy Invite**. You can
-   stop the demo here — showing the invite is usually enough, and actually
-   joining needs a second machine or a second person.
+3. **Select Make together, then Paint along.** Each selection stays on the
+   door, with **Host** and **Join** below. Stop before pressing either role
+   button; selecting an activity has not opened a room or created an invite.
 
-4. **Go back and choose Music instead.** Only **Host** and **Join** appear —
-   no Art cards, no extra choice. That contrast (two cards before Host/Join
-   for Art, none for Music) is the whole design.
+4. **Choose the Music card.** The Art activity cards disappear, leaving
+   **Host** and **Join** as the role choices. Close the window to finish.
+   To actually host or join, continue with [First Session](FIRST_JAM.md).
 
 ## What this does and doesn't prove
 
-- **Proves, automatically, on every CI run:** card order, labels, exactly two
-  cards, no vendor/tool name, no Preview/Ready/API chrome on the door —
-  `tests/test_art_start_ux.py`, 43 tests, all passing at this tip.
+- **Automated door checks cover:** workspace and Art-card order, labels,
+  exactly two Art activities, and no vendor/tool name or Preview/Ready/API
+  chrome on the door —
+  `tests/test_art_start_ux.py`. Run the headless check above for this checkout;
+  use its exact-commit CI result for hosted evidence.
 - **Doesn't prove:** that the *packaged, signed* build feels obvious to a
   first-time user. That's the
   [owner click gate](UX_ACCEPTANCE_CHECKLIST.md#owner-click-gate-current-two-card-door)
@@ -65,4 +71,4 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python webjam_qt_main.py   # smoke-test, no 
 
 The door is guarded by `tests/test_art_start_ux.py` — if the app disagrees
 with this file, trust the app and the test, and open an issue noting the
-mismatch. This file describes source at one exact tip and can drift.
+mismatch. This file describes the source walkthrough and can drift.
