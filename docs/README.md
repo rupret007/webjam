@@ -26,6 +26,7 @@ keeps the product story and five-minute demo intentionally short.
 | Audience | Read | Outcome |
 | --- | --- | --- |
 | Evaluator or stakeholder | [Project brief](PROJECT_BRIEF.md) | Understand the product thesis, architecture, evidence, and roadmap |
+| Showing someone the door | [Two-minute demo script](../DEMO.md) | Show the Art/Music first screen without running a live session |
 | New creator | [Simple-language guide](../README_SIMPLE.md) | Understand WebJam in plain words before anything technical |
 | Creator | [Creator guide](../USER_GUIDE.md) | Choose a profile, host/join, record, and follow that profile's Studio boundary |
 | First-time demo | [First Session](../FIRST_JAM.md) | Follow the shortest profile-first live-session path |
