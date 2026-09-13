@@ -318,6 +318,29 @@ OpenSSL 3.5.7 LTS input, and proves architecture, linkage, runtime paths,
 license evidence, and frozen-package inventory. That exception is not a
 general permission to resolve or build source dependencies during packaging.
 
+## Native Art guest companion boundary
+
+`ios/ArtCompanion` is a separate iPhone/iPad guest app using the existing
+private-LAN v2 room protocol. `ArtCompanionCore` validates an explicit pasted
+invitation, enrolls with `/v1/enroll`, and polls `/v1/state`. It does not expose
+recording, presence/capture, upload, lesson commands or host routes. Connected
+requires an authenticated room read. Generation checks retire callbacks after
+Leave/replacement; backgrounding stops requests and clears current room facts.
+
+The LAN state includes optional `art_start_key` from the actual desktop host
+(`talk_and_make` or `paint_along`). It is memory-only, absent on legacy hosts,
+and cannot give guests control or change the host's choice. The native guest
+retains only finite presentation facts and drops workspace addresses, file
+identifiers, messages and capture/lesson authority from the bounded response.
+Ambiguous JSON, foreign sessions and unsafe endpoint/meeting URLs fail closed.
+
+This is authenticated plaintext on literal RFC1918 IPv4, with no redirects,
+credential cache, cookies or proxy forwarding. It has the existing LAN guest
+enrollment scope, not a new server role. A separately validated labeled
+Conversation from the invitation opens only on a tap; Webex or the other
+meeting owns video, voice, chat and sharing. There is no second video player,
+clock, toy canvas, Jamulus stream or Music Host. See [mobile scope and evidence](docs/MOBILE.md).
+
 ## Pocket Stage developer-preview boundary
 
 Pocket Stage is an owner-device iPhone companion vertical slice. It is activated

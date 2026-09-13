@@ -783,7 +783,7 @@ def test_a_canvas_start_shows_the_host_a_persistent_way_in(fake_launchers):
     controller.host_peer.publish_shared_canvas_state.assert_called()
     controller.window.session_strip.set_art_room_presence.reset_mock()
     presence = _presence(controller)
-    assert presence.label == "Shared canvas"
+    assert presence.label == "Shared workspace"
     assert presence.target is ArtPresenceTarget.CANVAS
     assert presence.tone is ArtPresenceTone.PRESENT
     # Nothing is opened at the host, so nothing takes focus from the meeting.
@@ -805,7 +805,7 @@ def test_the_way_in_does_not_disappear_after_being_shown_once(fake_launchers):
     labels = {
         call.args[0].label for call in strip.set_art_room_presence.call_args_list
     }
-    assert labels == {"Shared canvas"}
+    assert labels == {"Shared workspace"}
 
 
 def test_a_video_start_points_at_paint_along_instead(fake_launchers):
@@ -835,7 +835,7 @@ def test_old_paint_together_setting_keeps_the_canvas_way_in(fake_launchers):
     controller._shared_canvas_coordinator().share(WEB_INVITE)
     controller.window.session_strip.set_art_room_presence.reset_mock()
     presence = _presence(controller)
-    assert presence.label == "Shared canvas"
+    assert presence.label == "Shared workspace"
     assert presence.target is ArtPresenceTarget.CANVAS
     assert presence.tone is ArtPresenceTone.PRESENT
 

@@ -92,7 +92,7 @@ def test_the_image_action_is_never_a_room_fact():
 def test_a_host_who_chose_the_canvas_is_offered_the_way_in():
     presence = art_room_presence(_room(), hosting=True, intended_canvas=True)
 
-    assert presence.label == "Set up shared workspace"
+    assert presence.label == "Set up workspace"
     assert "when you're ready" in presence.description
     assert presence.target is ArtPresenceTarget.CANVAS
     assert presence.tone is ArtPresenceTone.PRESENT
@@ -179,7 +179,7 @@ def test_a_missing_painting_program_is_the_line_even_beside_a_live_video():
         )
     )
 
-    assert presence.label == "Set up shared workspace"
+    assert presence.label == "Set up workspace"
     assert presence.tone is ArtPresenceTone.ATTENTION
     assert presence.target is ArtPresenceTarget.CANVAS
 
@@ -482,7 +482,7 @@ def test_a_changed_line_is_announced_once():
         )
 
     assert announce.call_count == 1
-    assert chip.chip.text() == "Set up shared workspace"
+    assert chip.chip.text() == "Set up workspace"
 
 
 def test_announcing_survives_a_headless_accessibility_backend():

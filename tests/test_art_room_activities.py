@@ -76,7 +76,7 @@ def test_video_recovery_keeps_the_ready_canvas_reachable(video):
     assert [activity.target for activity in activities] == [
         ArtPresenceTarget.VIDEO, ArtPresenceTarget.CANVAS,
     ]
-    assert activities[1].label == "Shared canvas"
+    assert activities[1].label == "Shared workspace"
 
 
 def test_a_guest_paint_along_room_offers_exactly_one_waiting_activity():

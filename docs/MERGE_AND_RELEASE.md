@@ -166,7 +166,7 @@ marked module passes once, in a fresh process, with local-socket permission.
 
 ### Complete hosted suite second
 
-The exact candidate head must then pass all 12 required hosted jobs in one
+The exact candidate head must then pass all 13 required hosted jobs in one
 automatic workflow run:
 
 - `test`
@@ -177,12 +177,16 @@ automatic workflow run:
 - `Build Desktop (windows-x64)`, `Build Desktop (macos-arm64)`,
   `Build Desktop (macos-x64)`, and `Build Desktop (linux-x64)`
 - `Pocket Stage (iOS app)`
+- `Art companion (iPhone and iPad)` — real LAN interoperability plus unsigned
+  simulator UI checks; fixture screenshots require human inspection and do
+  not certify physical touch, installation, or meeting media.
 - `Transport (Go security and cross-build)`
 - `Reference service (protocol and container)`
 
 `Build Desktop` requires the integrations, update-input checks, Transport,
 Reference, Pocket Stage, and hosted `test` through `needs:`, so all of them gate
-the same round.
+the same round. Art companion runs independently in that workflow and must
+also pass on the same candidate head before review.
 
 Red means stop. Do not re-run a job to change its result, do not tag, and do not
 create or publish a release to hide a failure. Fix the cause and repeat the

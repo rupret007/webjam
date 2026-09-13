@@ -6,3 +6,7 @@ xcuserdata/
 *.xcscmblueprint
 WebJamPocketStage.xcodeproj/
 PocketStage/Info.plist
+WebJamArtCompanion.xcodeproj/
+ArtCompanion/Info.plist
+*.xcresult/
+ArtCompanionRuntimeTests/GeneratedHost.swift

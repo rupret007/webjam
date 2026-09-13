@@ -347,6 +347,7 @@ class ArtLanHostPortableTest(unittest.TestCase):
         self.assertIs(host._last_session_conductor.phase, SessionConductorPhase.INVITE_READY)
         self.assertEqual(len(host.host_peer.server.room_participants()), 0)
         self.assertFalse(host._jamulus_connected)
+        self.assertEqual(host.host_peer.control.snapshot().art_start_key, host.creator_start.key)
 
     def _join_and_leave(self, host, start):
         from core.session_conductor import ArtRoomState
@@ -395,6 +396,7 @@ class ArtLanHostPortableTest(unittest.TestCase):
         names = host._room_participant.host_connection_names()
         self.assertTrue(names is not None and names.names == ("Guest Artist",), "Only the authenticated reader should appear")
         self.assertTrue(owner.connection_available)
+        self.assertEqual(owner.last_state.art_start_key, host.creator_start.key)
         self.assertIsNone(guest.guest_peer, "Art must not construct a Music capture owner")
         self.assertFalse(guest._jamulus_connected)
 

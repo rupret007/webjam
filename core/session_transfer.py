@@ -2824,6 +2824,10 @@ class SessionStateSnapshot:
     # guests use this bit to avoid treating session-wide RECORDING as
     # participant capture authority.
     capture_arm_supported: bool = False
+    # Optional, host-owned Art start for LAN guests. Empty means the host did
+    # not publish a start; guests must not substitute their saved preference.
+    # Like the optional room layers, this live fact stays out of the journal.
+    art_start_key: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -2913,6 +2917,12 @@ class SessionStateSnapshot:
         if creator_profile_key is None:
             raise ValueError("creator_profile_key is unsupported.")
         object.__setattr__(self, "creator_profile_key", creator_profile_key)
+        if (
+            type(self.art_start_key) is not str
+            or self.art_start_key not in {"", "talk_and_make", "paint_along"}
+            or (self.art_start_key and creator_profile_key != "art")
+        ):
+            raise ValueError("art_start_key is unsupported for this room.")
 
 
 def _session_state_mapping(
@@ -2940,6 +2950,8 @@ def _session_state_mapping(
         payload["reference_video"] = snapshot.reference_video.to_mapping()
         payload["shared_canvas"] = snapshot.shared_canvas.to_mapping()
         payload["room_clock"] = snapshot.room_clock.to_mapping()
+        if snapshot.art_start_key:
+            payload["art_start_key"] = snapshot.art_start_key
     if include_capture_arm and (
         snapshot.capture_arm is not None
         or snapshot.arm_handshake_required
@@ -2966,6 +2978,7 @@ class SessionControlState:
         session_id: str,
         *,
         creator_profile_key: str = "music",
+        art_start_key: str = "",
     ) -> None:
         self.root = Path(root).expanduser().resolve()
         self.path = self.root / "webjam-session-state.json"
@@ -2984,6 +2997,7 @@ class SessionControlState:
             generation=0,
             signal=RecordingSignal.IDLE,
             creator_profile_key=creator_profile_key,
+            art_start_key=art_start_key,
         )
         self._load()
 
@@ -3006,6 +3020,9 @@ class SessionControlState:
                 stopped_utc=str(payload.get("stopped_utc", "")),
                 message=str(payload.get("message", ""))[:240],
                 creator_profile_key=payload.get("creator_profile_key", "music"),
+                # The current host supplies this live fact. Never restore a
+                # prior room's start from a recording-state file.
+                art_start_key=self._snapshot.art_start_key,
                 arm_handshake_required=bool(
                     payload.get("arm_handshake_required", False)
                 ),
@@ -5071,6 +5088,7 @@ class SessionPeerClient:
                 payload.get("room_clock")
             ),
             creator_profile_key=payload.get("creator_profile_key", "music"),
+            art_start_key=payload.get("art_start_key", ""),
             capture_arm=(
                 CaptureArmSnapshot.from_mapping(payload["capture_arm"])
                 if payload.get("capture_arm") is not None

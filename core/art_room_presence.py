@@ -146,11 +146,8 @@ def art_room_presence(
         )
     if projection.canvas is CanvasCompanionState.MISSING_APP:
         return ArtRoomPresence(
-            label="Set up shared workspace",
-            description=(
-                "There is a shared workspace in this room, and this computer "
-                "needs one quick setup step to open it."
-            ),
+            label="Set up workspace",
+            description="Set up a compatible app to open this workspace.",
             tone=ArtPresenceTone.ATTENTION,
             target=ArtPresenceTarget.CANVAS,
         )
@@ -206,10 +203,9 @@ def art_room_presence(
     # 3. Then the door a host asked for at launch but has not walked through.
     if hosting and intended_canvas:
         return ArtRoomPresence(
-            label="Set up shared workspace",
+            label="Set up workspace",
             description=(
-                "Open the panel to host a shared workspace that everyone can "
-                "join when you're ready."
+                "Open the panel to share a workspace when you're ready."
             ),
             target=ArtPresenceTarget.CANVAS,
         )
