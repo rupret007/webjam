@@ -1,6 +1,6 @@
-# Recording and Studio — v0.27.2 source
+# Recording and Studio — v0.28.0 source
 
-> This document describes current unsigned v0.27.2 source. GitHub **Latest** is
+> This document describes current unsigned v0.28.0 source. GitHub **Latest** is
 > immutable unsigned/ad-hoc private test release `379360694`, published from
 > lightweight tag `v0.27.2` at exact commit
 > `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Its seven packages are covered by
@@ -9,7 +9,7 @@
 > and 3.12.3 compatibility records. Standalone local Studio is a separate audio
 > path. Exact v0.27.2 release assets are package evidence, not physical evidence.
 > Historical v0.27.1 results remain bound to exact v0.27.1 packages. Every
-> v0.27.2 physical recording, Shared Track audibility/isolation, playback,
+> v0.28.0 physical recording, Shared Track audibility/isolation, playback,
 > recovery, long-session, and external-editor gate is **NOT RUN** and cannot
 > inherit v0.27.1 evidence.
 
@@ -65,7 +65,7 @@ source count. Finalization rechecks those exact facts. A reconnect, changed
 topology, missing/extra source, or substituted Shared Track cannot be accepted
 as the planned take.
 
-Current v0.27.2 source shows this frozen plan in one accessible,
+Current v0.28.0 source shows this frozen plan in one accessible,
 path-free **Record Session Readiness** sheet before any recorder, local input
 stream, or Shared Track playback is armed. Each exact server, Local Original,
 and Shared Track row identifies the participant/source, mono or stereo format,
@@ -252,7 +252,7 @@ select a comp range. A newer range cleanly splits prior overlapping selections
 and uses short equal-power boundaries. Removing a lane removes only its Studio
 inventory and comp choices; the repeated take remains unchanged in Takes.
 
-For a newly completed editable Music or Podcast & Voice take, current v0.27.2 source also
+For a newly completed editable Music or Podcast & Voice take, current v0.28.0 source also
 stacks every provably safe earlier counterpart automatically. The gate requires
 the same session and project sample rate, a different complete or explicitly
 recovered take, one unique stable logical-source ID on each side, matching
@@ -393,7 +393,7 @@ privacy, and headless UI behavior. They cannot establish acoustic audibility,
 latency, direct-monitor isolation, interface recovery, or how a packaged build
 feels to creators.
 
-For current v0.27.2 source, two-machine audio, Shared Track audibility and independent mix,
+For current v0.28.0 source, two-machine audio, Shared Track audibility and independent mix,
 count-in/record alignment, authoritative server stems, Local Original transfer,
 hardware interruption, long recording, Studio playback, external-editor
 import, packaged accessibility, SmartScreen, Gatekeeper, signing, and

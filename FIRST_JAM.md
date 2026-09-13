@@ -1,6 +1,6 @@
-# First Session — WebJam v0.27.2 source
+# First Session — WebJam v0.28.0 source
 
-> This guide describes current unsigned v0.27.2 source. GitHub **Latest** is
+> This guide describes current unsigned v0.28.0 source. GitHub **Latest** is
 > immutable unsigned/ad-hoc private test release `379360694`, published from
 > lightweight tag `v0.27.2` at exact commit
 > `9c6ca3de96aa7eb261c65b7dee768ab48144169c`, with seven packages plus

@@ -1,4 +1,4 @@
-# WebJam quick help — v0.27.2 source
+# WebJam quick help — v0.28.0 source
 
 > The exact released source commit for immutable GitHub **Latest** release
 > `379360694` is `9c6ca3de96aa7eb261c65b7dee768ab48144169c`; lightweight tag
@@ -6,7 +6,7 @@
 > `WebJam-v0.27.2-SHA256SUMS.txt`. This later documentation source is not a
 > package substitute. No physical PASS is claimed;
 > every v0.27 physical and release-decision row remains **NOT RUN**.
-> This map describes implemented UI. Unsigned v0.27.2 reuses the existing
+> This map describes implemented UI. Unsigned v0.28.0 reuses the existing
 > exact Jamulus 3.12.2 and 3.12.3 compatibility records for Host/Join.
 
 | Need | Use |

@@ -205,7 +205,7 @@ class TestPackagedDataFiles(unittest.TestCase):
         self.assertTrue(installer.stat().st_mode & 0o111)
         readme_words = " ".join(readme.read_text().split())
         self.assertIn(
-            "The v0.27.2 Linux and Windows packages are built for joining a jam "
+            "The released v0.27.2 Linux and Windows packages can join a jam "
             "hosted from the macOS build",
             readme_words,
         )

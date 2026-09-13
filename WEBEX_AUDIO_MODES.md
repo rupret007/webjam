@@ -1,12 +1,12 @@
-# Meeting-platform companion guidance — v0.27.2 source
+# Meeting-platform companion guidance — v0.28.0 source
 
-> This document describes current unsigned v0.27.2 source. GitHub **Latest** is
+> This document describes current unsigned v0.28.0 source. GitHub **Latest** is
 > immutable unsigned/ad-hoc private test release `379360694`, published from
 > lightweight tag `v0.27.2` at exact commit
 > `9c6ca3de96aa7eb261c65b7dee768ab48144169c`, with seven packages plus
 > `WebJam-v0.27.2-SHA256SUMS.txt`. Every external meeting-app behavior remains
 > a separate physical gate.
-> Unsigned v0.27.2 authorizes the existing exact Jamulus 3.12.2 and 3.12.3
+> Unsigned v0.28.0 authorizes the existing exact Jamulus 3.12.2 and 3.12.3
 > records for live audio, but the checkout itself is not a package or physical
 > session result.
 

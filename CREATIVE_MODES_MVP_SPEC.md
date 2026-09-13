@@ -1,6 +1,6 @@
-# Creator profiles — v0.27.2 implemented contract
+# Creator profiles — v0.28.0 implemented contract
 
-> Status: current unsigned v0.27.2 source. GitHub **Latest** is immutable
+> Status: current unsigned v0.28.0 source. GitHub **Latest** is immutable
 > unsigned/ad-hoc private test release `379360694`, published from lightweight
 > tag `v0.27.2` at exact commit
 > `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Its seven packages are covered by
@@ -12,7 +12,7 @@
 > These are implemented source contracts, not a claim about a later checkout
 > or branch artifact. Use only an exact checksum-verified release asset.
 > Live Host/Join is source-eligible through the existing exact Jamulus 3.12.2
-> and 3.12.3 records. No v0.27.2 physical PASS exists.
+> and 3.12.3 records. No v0.28.0 physical PASS exists.
 
 ## Product decision
 
@@ -35,7 +35,7 @@ Scratchpads are profile-scoped on one computer, stored through fixed
 private mode-0600 files with regular-file/no-follow reads bounded to 1 MiB.
 They are never shared, session-synchronized, or media-timecoded.
 
-## Art (included in v0.27.2; physical evidence NOT RUN)
+## Art (included in v0.28.0 source; physical evidence NOT RUN)
 
 Art is a room where artists in any medium — painting, drawing, sculpture,
 anything on a table — talk while they work. Conversation uses the same WebJam

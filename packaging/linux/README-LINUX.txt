@@ -1,23 +1,23 @@
-WEBJAM v0.27.2 UNSIGNED PRIVATE TEST PACKAGE
-============================================
+WEBJAM v0.28.0 UNSIGNED SOURCE CANDIDATE — NO PACKAGE PUBLISHED
+================================================================
 
-PACKAGE BOUNDARY: GitHub Latest is immutable release 379360694, published
-2026-08-30T18:06:14Z from lightweight tag v0.27.2 at exact commit
-9c6ca3de96aa7eb261c65b7dee768ab48144169c. It has seven packages plus
-WebJam-v0.27.2-SHA256SUMS.txt. Use this private test package only when its exact
-filename and SHA-256 appear in that manifest. A checkout or branch build is not
-a substitute. The existing exact Jamulus 3.12.2 and 3.12.3 records are approved
-through v0.27.2 for live Host/Join.
+NO PACKAGE IS AUTHORIZED: v0.28.0 source is not GitHub Latest. GitHub Latest
+remains immutable release 379360694, published 2026-08-30T18:06:14Z from
+lightweight tag v0.27.2 at exact commit 9c6ca3de96aa7eb261c65b7dee768ab48144169c,
+with seven packages plus WebJam-v0.27.2-SHA256SUMS.txt. The existing exact
+Jamulus 3.12.2 and 3.12.3 records are approved through v0.28.0, so required
+package CI and live Host/Join are source-eligible. Do not use a build as a
+package until an exact v0.28.0 release manifest exists. Do not use the published
+v0.27.2 checksum manifest for this post-tag source build.
 Physical audio, hardware, signed-install, and distribution-policy gates
 remain NOT RUN unless the release evidence names this exact file and SHA-256.
 
-Everything below describes the published unsigned private test package. The
-intended target is 64-bit Ubuntu 22.04; no v0.27.2 Linux build is currently
-physically certified. An extracted
-package must keep the entire WebJam folder together because the files under
-_internal are required at runtime.
+Everything below describes a future package only after exact release evidence
+exists. The intended target is 64-bit Ubuntu 22.04; no v0.28.0 Linux build is
+currently physically certified. A future extracted package must keep the entire
+WebJam folder together because the files under _internal are required at runtime.
 
-This release upgrades cryptography to 50.0.0 for CVE-2026-69247,
+This source candidate upgrades cryptography to 50.0.0 for CVE-2026-69247,
 CVE-2026-69248, and CVE-2026-69249 using an exact hash-locked upstream Linux
 wheel.
 
@@ -26,7 +26,7 @@ application-menu entry, .desktop launcher, or system icon. Start the included
 WebJam executable from this folder; the running application uses WebJam's
 continuous trefoil identity in its own windows.
 
-The v0.27.2 Linux and Windows packages are built for joining a jam hosted from
+The released v0.27.2 Linux and Windows packages can join a jam hosted from
 the macOS build; physical cross-platform joining remains NOT RUN.
 The profile-specific Host action remains disabled on this platform; this
 package does not claim to provide the macOS-only managed server.
@@ -54,13 +54,13 @@ always requires your explicit approval. WebJam never invokes hidden sudo and
 never installs while a jam, recording, Shared Track, reconnect, or Jamulus
 launch is active.
 
-The sealed v0.22.5 catalog does not authorize v0.27.2 and is rejected. The baked
+The sealed v0.22.5 catalog does not authorize v0.28.0 and is rejected. The baked
 registry separately authorizes the existing exact Jamulus 3.12.2 and 3.12.3
-records through v0.27.2. Presence of embedded 3.12.2 bytes does not authorize
+records through v0.28.0. Presence of embedded 3.12.2 bytes does not authorize
 an identity mismatch. Shared Track uses its separate approved headless path;
 unlisted client/server versions still fail closed.
 
-1. Only from an exact package verified against the v0.27.2 release manifest,
+1. Only after exact v0.28.0 release evidence, from a package verified against the v0.28.0 release manifest,
    install the included Jamulus 3.12.2 package:
 
      ./install-jamulus.sh

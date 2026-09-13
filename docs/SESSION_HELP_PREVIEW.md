@@ -3,7 +3,7 @@
 This is source-only, default-off work after transport #66, based on exact
 `master` `a004bbbce20a8ced3b67f7ec89798e0a9416f208`, branch
 `codex/webjam-room-help-ui-20260904`. It does not update the installed app,
-immutable unsigned v0.27.2 release, tag, component catalog or signing policy.
+immutable published unsigned v0.27.2 release/tag; this v0.28.0 candidate does not invent a component catalog or signing policy.
 
 ## What a person can do
 

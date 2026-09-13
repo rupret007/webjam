@@ -111,7 +111,7 @@ These stay held. A mobile plan is not permission to move them.
 - **Parked [#49](https://github.com/rupret007/webjam/pull/49)** — Pocket
   Stage Mac CI kit. Different surface; leave it parked.
 - **No GitHub Pages.** Do not publish a Pages site as a mobile stand-in.
-- **No v0.27.2 mutation.** Latest release `379360694` and tag `v0.27.2`
+- **No v0.27.2 mutation.** Published Latest release `379360694` and tag `v0.27.2`
   stay immutable. A checkout is not a package.
 - **No second video stack.** Paint along remains the one video workspace.
   Do not add a phone player, a second clock, or a browser video surface.
@@ -139,7 +139,7 @@ anyone lands it.
 - A Music-mobile jam claim
 - A toy in-WebJam canvas
 - A second video stack
-- Pages, a tag, a release, or a 0.27.2 rewrite
+- Pages, a tag, a release, or a published 0.27.2 rewrite
 - Physical device feel / Split View / real Webex media / signing / TestFlight (Jeff NOT RUN)
 - Android, Internet mobile Join, and PWA (later phases)
 - Any broader delivery or public rollout beyond Phase 1

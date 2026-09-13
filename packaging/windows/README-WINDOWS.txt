@@ -1,23 +1,24 @@
-WebJam v0.27.2 unsigned private test package
-============================================
+WebJam v0.28.0 unsigned source candidate — no package published
+================================================================
 
-PACKAGE BOUNDARY: GitHub Latest is immutable release 379360694, published
-2026-08-30T18:06:14Z from lightweight tag v0.27.2 at exact commit
-9c6ca3de96aa7eb261c65b7dee768ab48144169c. It has seven packages plus
-WebJam-v0.27.2-SHA256SUMS.txt. Use this private test package only when its exact
-filename and SHA-256 appear in that manifest. A checkout or branch build is not
-a substitute. The existing exact Jamulus 3.12.2 and 3.12.3 records are approved
-through v0.27.2 for live Host/Join.
+NO PACKAGE IS AUTHORIZED: v0.28.0 source is not GitHub Latest. GitHub Latest
+remains immutable release 379360694, published 2026-08-30T18:06:14Z from
+lightweight tag v0.27.2 at exact commit 9c6ca3de96aa7eb261c65b7dee768ab48144169c,
+with seven packages plus WebJam-v0.27.2-SHA256SUMS.txt. The existing exact
+Jamulus 3.12.2 and 3.12.3 records are approved through v0.28.0, so required
+package CI and live Host/Join are source-eligible. Do not use a build as a
+package until an exact v0.28.0 release manifest exists. Do not use the published
+v0.27.2 checksum manifest for this post-tag source build.
 Physical audio, hardware, SmartScreen, publisher-signing, and managed-device
 gates remain NOT RUN unless the release evidence names this exact file and
 SHA-256.
 
-Everything below describes the published unsigned private test package. Its
-exact filename and published SHA-256 still require verification.
-Windows SmartScreen or organizational policy may block it; WebJam does not
-bypass those controls.
+Everything below describes a future package only after exact release evidence
+exists. Its exact filename and published SHA-256 would still require
+verification. Windows SmartScreen or organizational policy may block it; WebJam
+does not bypass those controls.
 
-This release upgrades cryptography to 50.0.0 for CVE-2026-69247,
+This source candidate upgrades cryptography to 50.0.0 for CVE-2026-69247,
 CVE-2026-69248, and CVE-2026-69249 using an exact hash-locked upstream
 Windows wheel.
 
@@ -28,7 +29,7 @@ After installation, open WebJam from the Start menu. You may also choose the
 optional desktop shortcut during setup. WebJam does not start automatically
 when setup finishes.
 
-The v0.27.2 Windows private test package is built for joining a jam hosted by
+The released v0.27.2 Windows package can join a jam hosted by
 the macOS build; physical cross-platform joining remains NOT RUN. Hosting a jam
 is not supported by the Windows line. Music and Podcast & Voice retain
 standalone Reference Studio for local songwriting, recording, arranging,
@@ -52,9 +53,9 @@ explicit approval and may display UAC or SmartScreen. WebJam verifies the
 installed version after setup. It never hides elevation or installs while a
 jam, recording, Shared Track, reconnect, or Jamulus launch is active.
 
-The sealed v0.22.5 catalog does not authorize v0.27.2 and is rejected. The baked
+The sealed v0.22.5 catalog does not authorize v0.28.0 and is rejected. The baked
 registry separately authorizes the existing exact Jamulus 3.12.2 and 3.12.3
-records through v0.27.2. Presence of embedded 3.12.2 bytes does not authorize
+records through v0.28.0. Presence of embedded 3.12.2 bytes does not authorize
 an identity mismatch. Shared Track uses its separate approved headless path;
 unlisted client/server versions still fail closed.
 

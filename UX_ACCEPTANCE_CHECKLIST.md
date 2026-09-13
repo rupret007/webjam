@@ -1,12 +1,12 @@
-# WebJam v0.27.2 source UX acceptance checklist
+# WebJam v0.28.0 source UX acceptance checklist
 
-> This checklist describes current unsigned v0.27.2 source. Immutable
+> This checklist describes current unsigned v0.28.0 source. Immutable
 > unsigned/ad-hoc release `379360694` is GitHub **Latest** for private testing.
 > Its lightweight `v0.27.2` tag points to exact commit
 > `9c6ca3de96aa7eb261c65b7dee768ab48144169c`; seven packages are covered by
 > `WebJam-v0.27.2-SHA256SUMS.txt`.
 > Historical v0.27.1 results remain bound to exact v0.27.1 assets. Every
-> v0.27.2 physical and platform-trust gate is **NOT RUN** and cannot inherit
+> v0.28.0 physical and platform-trust gate is **NOT RUN** and cannot inherit
 > that evidence.
 > Exact v0.27.2 assets are package evidence, but not physical evidence.
 > Host/Join is compatible with the existing exact Jamulus 3.12.2 and 3.12.3

@@ -1,4 +1,4 @@
-"""Published v0.27.2 and immutable release-history truth contracts."""
+"""Published v0.27.2 Latest and unsigned v0.28.0 candidate-prep truth contracts."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def _heading_anchors(text: str) -> set[str]:
     return anchors
 
 
-def test_current_guides_name_v0272_latest_and_source_truthfully() -> None:
+def test_current_guides_separate_v0272_latest_from_v0280_source_truthfully() -> None:
     for relative_path in (
         "README.md",
         "README_SIMPLE.md",
@@ -116,11 +116,14 @@ def test_current_guides_name_v0272_latest_and_source_truthfully() -> None:
         "No v0.27.2 tag",
         "No v0.27.2 release",
         "No v0.27.2 package",
-        "no package published",
+        "GitHub **Latest** is unsigned/ad-hoc v0.28.0",
+        "GitHub **Latest** remains v0.28.0",
+        "release ID for v0.28.0",
     ):
         assert stale_claim.casefold() not in combined.casefold(), stale_claim
 
-    assert "v0.27.2 source" in combined.casefold()
+    assert "v0.28.0 source" in combined.casefold()
+    assert "candidate prep" in combined.casefold() or "candidate source boundary" in combined.casefold()
     assert "not publish-green" in combined.casefold()
     assert "sealed at exact webjam v0.22.5" in combined.casefold()
     merge_record = " ".join(
@@ -148,8 +151,8 @@ def test_current_guides_name_v0272_latest_and_source_truthfully() -> None:
         assert historical_marker.casefold() in combined.casefold()
 
 
-def test_required_honesty_docs_lock_v0272_release_and_source() -> None:
-    """Jeff-facing pass: v0.27.2 is Latest and later source is not a package."""
+def test_required_honesty_docs_lock_v0272_latest_and_v0280_candidate() -> None:
+    """Jeff-facing pass: v0.27.2 is Latest; source is unpublished v0.28.0 prep."""
 
     required = (
         "README.md",
@@ -184,13 +187,15 @@ def test_required_honesty_docs_lock_v0272_release_and_source() -> None:
         "No v0.27.2 tag",
         "No v0.27.2 release",
         "No v0.27.2 package",
-        "no package published",
+        "GitHub **Latest** is unsigned/ad-hoc v0.28.0",
+        "GitHub **Latest** remains v0.28.0",
     )
     for relative_path in required:
         text = (ROOT / relative_path).read_text(encoding="utf-8")
         normalized = " ".join(text.split())
         folded = normalized.casefold()
         assert "v0.27.2" in text, relative_path
+        assert "v0.28.0" in text, relative_path
         assert "latest" in folded and "379360694" in text, relative_path
         assert "9c6ca3de96aa7eb261c65b7dee768ab48144169c" in text, relative_path
         assert "33327104322" in text, relative_path

@@ -14,7 +14,7 @@ own systems that remain independent.
 [![Latest release](https://img.shields.io/github/v/release/rupret007/webjam?label=Latest%20test%20candidate)](https://github.com/rupret007/webjam/releases/latest)
 
 > **Testing download:** GitHub [**Latest**](https://github.com/rupret007/webjam/releases/latest)
-> resolves to the published unsigned/ad-hoc
+> still resolves to the published unsigned/ad-hoc
 > [v0.27.2 private test release](https://github.com/rupret007/webjam/releases/tag/v0.27.2),
 > release ID `379360694`, from exact tag commit
 > `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. It has seven packages plus
@@ -23,21 +23,27 @@ own systems that remain independent.
 > all four desktop builds, but the workflow is **not publish-green**: its
 > publisher failed closed because the tag is lightweight rather than
 > annotated. Preserve that red result; do not rerun it, move the tag, or mutate
-> the release. The prior v0.27.1 release also remains immutable.
+> the release. The prior v0.27.1 release also remains immutable. This checkout
+> is candidate prep for unsigned **v0.28.0** and is not that download.
 
-> **Source boundary:** this checkout reports unsigned v0.27.2 and may contain
-> documentation commits after the exact released tag. A checkout or branch
-> artifact is source evidence, not one of the immutable published packages.
-> Only the filenames and SHA-256 values attached to release `379360694` prove
-> the downloadable v0.27.2 bytes. Jeff explicitly approved
-> the existing Jamulus 3.12.2 and 3.12.3 records through v0.27.2, so live
-> Host/Join and the required
-> component-input build gate are source-eligible. Shared Track play uses this
-> Mac's official BlackHole
-> 16ch/64ch route at 48 kHz and the bundled headless client; it does not wait
-> for a signed catalog pin. The catalog remains sealed at exact WebJam v0.22.5.
 
-> **Download boundary:** use a v0.27.2 package only when its exact filename and
+> **Candidate source boundary:** this checkout reports unsigned v0.28.0 and is
+> post-v0.27.2-tag source. No annotated `v0.28.0` tag, GitHub release draft,
+> published package, checksum manifest, or physical PASS exists yet. Jeff
+> authorized cutting unsigned v0.28.0 as the next Latest candidate; after this
+> source lands, Jeff/Bob will create an annotated `v0.28.0` tag and publish the
+> softprops draft. Physical/signing remain **NOT RUN**. Jeff explicitly approved
+> the existing Jamulus 3.12.2 and 3.12.3 records through v0.28.0, so live
+> Host/Join and the required component-input build gate are source-eligible.
+> This is still not a usable package without exact release evidence. Changes
+> after the v0.27.2 tag are not in the v0.27.2 download. This checkout and
+> branch artifacts are source evidence, not release packages. Shared Track play
+> uses this Mac's official BlackHole 16ch/64ch route at 48 kHz and the bundled
+> headless client; it does not wait for a signed catalog pin. The catalog
+> remains sealed at exact WebJam v0.22.5.
+
+
+> **Download boundary:** until a published v0.28.0 exists, use a v0.27.2 package only when its exact filename and
 > SHA-256 appear on the immutable
 > [v0.27.2 GitHub release](https://github.com/rupret007/webjam/releases/tag/v0.27.2).
 > Every physical v0.27.2 gate remains **NOT RUN**. Do not substitute a later
@@ -52,8 +58,8 @@ showing someone the door? See the [two-minute demo script](DEMO.md).
 | Area | Current state |
 | --- | --- |
 | Product | Creator-facing desktop conductor around Jamulus, optional external meeting conversation, Studio, Pocket Stage, and Phase 1 native Art companion (source / unsigned simulator) |
-| Published line | Unsigned/ad-hoc v0.27.2 GitHub Latest private test release; verify its checksum manifest |
-| Current source line | Post-release v0.27.2 source; Host/Join reuses the exact baked Jamulus 3.12.2/3.12.3 compatibility records |
+| Published line | Unsigned/ad-hoc v0.27.2 GitHub Latest private test release (until v0.28.0 is tagged and published); verify its checksum manifest |
+| Current source line | Candidate prep for unsigned v0.28.0 (unpublished); Host/Join reuses the exact baked Jamulus 3.12.2/3.12.3 compatibility records through v0.28.0 |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -108,7 +114,7 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
 
 ## Creator profiles
 
-Current v0.27.2 source applies one saved creator profile across launch,
+Current v0.28.0 source applies one saved creator profile across launch,
 Host/Join, readiness, the live surface, recording, Studio, session records, and
 new standalone projects:
 
@@ -232,7 +238,7 @@ remain available for rollback. Windows and Linux keep installation OS-owned
 and retain the embedded 3.12.2 fallback; they do not claim an app-managed
 previous-version rollback.
 
-The unsigned v0.27.2 source reuses the existing exact Jamulus 3.12.2 and 3.12.3
+The unsigned v0.28.0 source reuses the existing exact Jamulus 3.12.2 and 3.12.3
 compatibility records. The bundled 3.12.2 fallback is eligible for Host/Join;
 unlisted versions still fail closed. Managed updates remain independently
 bound to the signed catalog, which is sealed at exact WebJam v0.22.5.
@@ -513,7 +519,7 @@ preserves the compatible two-mono-input default. Disabling or opting out of
 every configured row records no host Local Original. The input-map editor never
 changes Jamulus music settings.
 
-After that choice, current v0.27.2 source opens one path-free **Record
+After that choice, current v0.28.0 source opens one path-free **Record
 Session Readiness** sheet before it arms anything. The sheet lists every exact
 planned server track, Local Original, and Shared Track with its source label,
 mono/stereo format, required/optional status, current readiness, and a bounded
@@ -596,7 +602,7 @@ inventing guest evidence. Studio adds an undoable **Reset Mix** that preserves
 export inclusion, keeps overload indicators latched for the playback epoch,
 and automatically selects and opens a durably finalized take.
 
-The current v0.27.2 Studio source view distinguishes plan-bound Jamulus server,
+The current v0.28.0 Studio source view distinguishes plan-bound Jamulus server,
 Local Original, and Shared Track lanes and can show their current state, level,
 reported dropouts, and overload warning. A malformed, legacy, or duplicate
 projection is cleared rather than presented as authoritative source truth.
@@ -694,8 +700,8 @@ exists; later documentation commits are post-release source and are not the
 checksum-bound v0.27.2 packages.
 Shared Track play uses this Mac's BlackHole route and the
 bundled headless client; the signed catalog remains sealed at exact WebJam
-v0.22.5 and does not authorize a managed v0.27.2 component. The baked Jamulus
-3.12.2 and 3.12.3 records now extend through v0.27.2, so Host/Join and the
+v0.22.5 and does not authorize a managed v0.28.0 component. The baked Jamulus
+3.12.2 and 3.12.3 records now extend through v0.28.0, so Host/Join and the
 required package-build gate are source-eligible. Every physical result remains
 **NOT RUN**.
 

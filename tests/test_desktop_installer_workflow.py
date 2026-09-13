@@ -71,7 +71,7 @@ def test_current_candidate_identity_cannot_be_confused_with_old_release() -> Non
     match = re.search(r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$', VERSION_SOURCE, re.M)
     assert match is not None
     version = match.group(1)
-    assert version == "0.27.2"
+    assert version == "0.28.0"
     assert version != "0.22.5"  # Immutable historical release.
     assert PROJECT_README.startswith(
         "# WebJam\n\n## Native creator collaboration and multitrack recording"
@@ -714,7 +714,7 @@ def test_linux_release_names_only_the_intended_ubuntu_target() -> None:
     normalized_linux_readme = " ".join(LINUX_README.split())
     assert "intended target is 64-bit Ubuntu" in normalized_linux_readme
     assert (
-        "22.04; no v0.27.2 Linux build is currently physically certified"
+        "22.04; no v0.28.0 Linux build is currently physically certified"
         in normalized_linux_readme
     )
     assert "Ubuntu 22.04 x64 ZIP" in PROJECT_README

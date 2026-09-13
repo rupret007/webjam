@@ -15,7 +15,7 @@ Branch: `codex/webjam-finish-ultra-product-paths` → `master` only. The final d
 
 1. After exact-tip hosted green, send the draft to Karen for leftover + UX, including focused trust-boundary review of invitation redaction, file-write recovery and Pocket snapshot/command separation.
 2. Bob may leftover-squash only after Karen PASS with an exact tip MATCH. Any changed tip requires fresh review and green checks. Codex does not merge.
-3. Jeff still owns unsigned v0.27.2 click/feel, physical audio/editor/device checks, platform trust, signing and notarization. All current NOT RUN rows remain NOT RUN.
+3. Jeff still owns unsigned v0.28.0 click/feel (Latest download remains v0.27.2 until publish), physical audio/editor/device checks, platform trust, signing and notarization. All current NOT RUN rows remain NOT RUN.
 4. Keep parked #37/#49 held and #67's branch untouched. No tag, release, live provider or other-repository work is included.
 
 When the draft is ready, the AFTER comment on Bob-the-Bot #3 must name the final SHA/PR/check URLs and release the lease with agent=none. The PR body and AFTER are the external exact-tip ledger; no ancestor result may be substituted for the final checks.

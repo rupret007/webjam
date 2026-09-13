@@ -1,7 +1,7 @@
 # WebJam project brief
 
 **Review date:** 2026-08-30
-**Status:** immutable unsigned/ad-hoc v0.27.2 is GitHub Latest release
+**Status:** candidate prep for unsigned v0.28.0; immutable unsigned/ad-hoc v0.27.2 remains GitHub Latest release
 `379360694`, published `2026-08-30T18:06:14Z`. Lightweight tag `v0.27.2`
 points directly to exact commit
 `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Its seven packages are covered by
@@ -120,7 +120,7 @@ the full contract.
 
 ## Current product line
 
-Current v0.27.2 source builds on the published v0.27.1 line with an accessible,
+Current v0.28.0 source builds on the published v0.27.1 line with an accessible,
 path-free Record Session Readiness sheet and stable logical-source identity
 from the frozen plan through capture, transfer, manifest, recovery, Studio, and
 exact repeated-take lanes. Every server, host, guest, and Shared Track source is
@@ -139,7 +139,7 @@ services receive friendly labels; generic providers remain neutral and receive
 no native-verification claim. Exact Jamulus correlation, bounded guest
 observation, and fail-closed take/export evidence remain the authority.
 
-This is the v0.27.2 source identity used by the current private test release,
+This is the v0.28.0 source identity for the unpublished candidate; GitHub Latest remains the published v0.27.2 private test release,
 not a rebuild, retag, or mutation of the v0.27.1 release or any earlier
 release. A checkout or branch artifact is not package evidence. Familiar DAW interactions are
 used for clarity and musical flow without copying Apple
