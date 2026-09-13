@@ -10,6 +10,19 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Join an Art room from a native iPhone/iPad companion
+
+- Phase-1 source spike adds same-network guest Join, the host's Make together
+  or Paint along context, and an explicit Webex/Conversation handoff. Drawing
+  stays in Procreate, paper or CSP; there is no phone player or toy canvas.
+- Music follows room status with external meeting listening/chat, without
+  Music Host, Jamulus streaming, recording or a mobile-jam claim.
+- Local room state now includes the host's finite Art start when known.
+  Private credentials remain in memory; lost/backgrounded guests stop claiming
+  a current room. Art presence/overview copy uses shared-workspace language.
+- This draft is source and unsigned simulator work. Physical phone/tablet
+  feel, real meeting media, signing and distribution remain owner gates.
+
 ### Ask for time during a shared Art lesson
 
 - Guests in a supported Art LAN room can choose **Ask for a pause** or

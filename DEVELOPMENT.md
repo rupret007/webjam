@@ -38,6 +38,32 @@ Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
 jitter settings.
 
+## Art companion source spike
+
+The separate native iPhone/iPad Art guest uses the current desktop LAN room.
+See [docs/MOBILE.md](docs/MOBILE.md) for scope, privacy, and physical gates.
+It needs iOS/iPadOS 17+. Generate `ios/art-companion.yml` with the same
+checksum-pinned XcodeGen 2.45.4 used in CI, then open
+`ios/WebJamArtCompanion.xcodeproj`, scheme **ArtCompanion**. Simulator builds
+use `CODE_SIGNING_ALLOWED=NO`; this task does not select an Apple team or
+produce a signed app. The Pocket Stage project and setup kit are separate.
+
+```bash
+swift test --package-path ios
+WEBJAM_RUN_SWIFT_ART_COMPANION_INTEGRATION=1 \
+  .venv/bin/python -m pytest -q tests/test_art_companion_swift_integration.py \
+    tests/test_art_companion_http_policy.py
+# With Xcode 16.2 / iOS 18.2 and pinned XcodeGen on PATH (or ART_XCODEGEN):
+python3 tools/art_companion_simulator_check.py /tmp/webjam-art-layout
+```
+
+The live test routes ephemeral credentials to a loopback Python server via a
+test-only internal initializer. Production invitation parsing still rejects
+loopback. UI fixtures are finite Debug-only render data, with no connection
+or command authority; screenshots label that distinction. CI retains real
+XCTest attachments for manual inspection. Physical installation, iPad Split
+View, touch feel and Webex media remain owner evidence, not simulator claims.
+
 ## Pocket Stage developer preview
 
 Pocket Stage is owner-device development work, not a distributed or pre-signed

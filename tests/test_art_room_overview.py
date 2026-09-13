@@ -172,7 +172,7 @@ def test_both_offered_panels_keep_their_status_and_action(primary, secondary):
     assert overview.secondary_activity_label == secondary.label
     assert overview.secondary_activity_detail == secondary.description
     assert overview.secondary_activity_action_label == (
-        "Open canvas" if secondary.target is ArtPresenceTarget.CANVAS else "Open Paint along"
+        "Open workspace" if secondary.target is ArtPresenceTarget.CANVAS else "Open Paint along"
     )
     assert overview.activity_actions == (primary.target.value, secondary.target.value)
     assert overview.conversation_enabled

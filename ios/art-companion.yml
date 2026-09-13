@@ -1,0 +1,82 @@
+name: WebJamArtCompanion
+options:
+  minimumXcodeGenVersion: 2.45.4
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  WebJamCore:
+    path: .
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+targets:
+  ArtCompanion:
+    type: application
+    platform: iOS
+    sources:
+      - path: ArtCompanion
+    dependencies:
+      - package: WebJamCore
+        product: ArtCompanionCore
+    info:
+      path: ArtCompanion/Info.plist
+      properties:
+        CFBundleDisplayName: WebJam Art
+        NSLocalNetworkUsageDescription: WebJam joins your desktop host’s room on the same Wi-Fi.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSExceptionDomains:
+            10.0.0.0/8:
+              NSExceptionAllowsInsecureHTTPLoads: true
+            172.16.0.0/12:
+              NSExceptionAllowsInsecureHTTPLoads: true
+            192.168.0.0/16:
+              NSExceptionAllowsInsecureHTTPLoads: true
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.webjam.ArtCompanion
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+  ArtCompanionRuntimeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ArtCompanionRuntimeTests
+    dependencies:
+      - target: ArtCompanion
+      - package: WebJamCore
+        product: ArtCompanionCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.webjam.ArtCompanionRuntimeTests
+        GENERATE_INFOPLIST_FILE: YES
+  ArtCompanionUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ArtCompanionUITests
+    dependencies:
+      - target: ArtCompanion
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.webjam.ArtCompanionUITests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  ArtCompanion:
+    build:
+      targets:
+        ArtCompanion: all
+    test:
+      targets:
+        - ArtCompanionRuntimeTests
+        - ArtCompanionUITests
+      gatherCoverageData: false
+    run:
+      config: Debug

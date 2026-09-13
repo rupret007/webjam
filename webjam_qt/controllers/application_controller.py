@@ -2378,6 +2378,7 @@ class ApplicationController(QObject):
             )
             return True
         try:
+            art_start = self.creator_start if self.creator_profile.key == "art" else None
             self.host_peer.start(
                 address,
                 takes_root=(
@@ -2393,6 +2394,7 @@ class ApplicationController(QObject):
                     "last_creator_profile_key",
                     "music",
                 ),
+                art_start_key=art_start.key if art_start is not None else "",
             )
             self._host_peer_warning = ""
             self._apply_creator_profile_key(

@@ -9,10 +9,13 @@ let package = Package(
     ],
     products: [
         .library(name: "PocketStageProtocol", targets: ["PocketStageProtocol"]),
-        .library(name: "PocketStageTransport", targets: ["PocketStageTransport"])
+        .library(name: "PocketStageTransport", targets: ["PocketStageTransport"]),
+        .library(name: "ArtCompanionCore", targets: ["ArtCompanionCore"])
     ],
     targets: [
         .target(name: "PocketStageProtocol"),
+        .target(name: "ArtCompanionCore"),
+        .testTarget(name: "ArtCompanionCoreTests", dependencies: ["ArtCompanionCore"]),
         .target(
             name: "PocketStageTransport",
             dependencies: ["PocketStageProtocol"],

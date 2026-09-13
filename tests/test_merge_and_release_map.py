@@ -20,6 +20,7 @@ HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$", re.MULTILINE)
 REQUIRED_CI_JOBS = (
     ("Build Desktop (windows-x64)", "name: Build Desktop ("),
     ("Pocket Stage (iOS app)", "name: Pocket Stage (iOS app)"),
+    ("Art companion (iPhone and iPad)", "name: Art companion (iPhone and iPad)"),
     (
         "Transport (Go security and cross-build)",
         "name: Transport (Go security and cross-build)",
@@ -235,7 +236,7 @@ def test_map_names_real_required_ci_jobs_and_fails_closed() -> None:
         assert f"Jamulus 3.12.3 update input ({target})" in required_section, target
         assert f"target: {target}" in WORKFLOW_TEXT, target
     assert "\n  test:\n" in WORKFLOW_TEXT and "- `test`" in required_section
-    assert "all 12 required hosted jobs" in required_section
+    assert "all 13 required hosted jobs" in required_section
     assert "Red means stop" in required_section
     assert "Do not re-run a job to change its result" in required_section
 

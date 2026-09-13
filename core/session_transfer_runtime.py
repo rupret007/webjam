@@ -645,6 +645,7 @@ class HostPeerSession:
         installation_path: str | Path,
         display_name: str,
         creator_profile_key: str = "music",
+        art_start_key: str = "",
     ) -> None:
         with self._lock:
             if (
@@ -670,6 +671,7 @@ class HostPeerSession:
             root,
             credentials.session_id,
             creator_profile_key=creator_profile_key,
+            art_start_key=art_start_key,
         )
         transfers = TransferStore(root, credentials.session_id)
         server = SessionPeerServer(

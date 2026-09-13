@@ -547,6 +547,25 @@ units. The name fields show the same 8+8 preview. A short stage name stays on
 one line; a longer accepted name may use two complete lines. WebJam rejects a
 value Jamulus would silently shorten.
 
+## Join Art from an iPhone or iPad — source spike
+
+The separate **WebJam Art** companion is being developed for iOS/iPadOS 17+.
+It is source with unsigned simulator evidence, not an installable release;
+see the [mobile scope and setup](docs/MOBILE.md).
+
+With a developer build, use the same Wi-Fi as the desktop host, enter your
+name, paste their complete **local room** invitation and choose **Join room**.
+The room follows the host's Make together or Paint along choice. For Paint
+along, open the invitation's **Webex** Conversation to watch the host share
+the process video. Draw in Procreate, on paper or in CSP. Your phone does not
+open the desktop shared workspace or run another video player.
+
+Music invitations offer room-following status and the Conversation handoff;
+ask the host to share sound there. Live Music hosting, Jamulus listening,
+recording and low-latency jamming stay on desktop. Room updates pause in the
+background and reconnect when you return. **Leave room** stops this guest's
+updates; leave the meeting separately in its own app.
+
 ## Use iPhone as Pocket Stage — developer preview
 
 Pocket Stage is currently an owner-device Xcode developer preview, not a
