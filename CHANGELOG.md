@@ -20,8 +20,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Local room state now includes the host's finite Art start when known.
   Private credentials remain in memory; lost/backgrounded guests stop claiming
   a current room. Art presence/overview copy uses shared-workspace language.
-- This draft is source and unsigned simulator work. Physical phone/tablet
-  feel, real meeting media, signing and distribution remain owner gates.
+- Phase 1 landed on master as source and unsigned simulator work.
+  Physical phone/tablet feel, real meeting media, signing and
+  distribution remain owner gates.
 
 ### Ask for time during a shared Art lesson
 

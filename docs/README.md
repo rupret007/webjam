@@ -47,6 +47,9 @@ keeps the product story and five-minute demo intentionally short.
   — project and migration invariants.
 - [Reference Track decision record](adr/0005-reference-track-jamulus-participant.md)
   — host-controlled Jamulus-routed backing audio.
+- [Mobile Art companion](MOBILE.md) — Phase 1 native iPhone/iPad same-LAN guest
+  Join. Source and unsigned simulator evidence; physical/signing **NOT RUN**.
+  Separate from Pocket Stage.
 - [Pocket Stage plan](plans/webjam-pocket-stage-v1.md) and [threat model](security/pocket-stage-mobile-threat-model.md)
   — iPhone owner-device preview and its trust model.
 - [Webex decision record](adr/0004-webex-external-launch-and-future-oauth.md)

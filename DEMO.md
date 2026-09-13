@@ -60,6 +60,10 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/test_art_start_ux.
   chrome on the door —
   `tests/test_art_start_ux.py`. Run the headless check above for this checkout;
   use its exact-commit CI result for hosted evidence.
+- **Doesn't show:** the native iPhone/iPad Art companion. That is a separate
+  same-LAN guest app — [docs/MOBILE.md](docs/MOBILE.md) — and is not part of
+  this two-minute desktop-door script. Physical device feel and signing
+  remain **NOT RUN**.
 - **Doesn't prove:** that the *packaged, signed* build feels obvious to a
   first-time user. That's the
   [owner click gate](UX_ACCEPTANCE_CHECKLIST.md#owner-click-gate-current-two-card-door)

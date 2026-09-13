@@ -6,10 +6,42 @@
 > installable iPhone kit. Physical iPhone installation and pairing remain
 > **NOT RUN**.
 
+This folder also holds the **Art companion** guest app that landed with Phase 1
+on master. It is a different product from Pocket Stage: same-LAN Art Join, not
+a mix second-screen. See [Art companion](#art-companion-phase-1-landed) below.
+
 This folder contains a reproducible XcodeGen app specification, the complete
 iPhone SwiftUI source, and a strict cross-platform protocol package. Generated
 Xcode project and user-state files stay untracked, so each musician can choose
 their own Apple team and bundle identifier without changing shared source.
+
+## Art companion (Phase 1 landed)
+
+Phase 1 native iPhone/iPad guest Join is on master ([#118](https://github.com/rupret007/webjam/pull/118)).
+A guest pastes the complete local invitation, Joins, follows the host's Make
+together or Paint along start, can open Conversation, and can Leave. Drawing
+stays in Procreate, paper, or CSP. Music follows room status only.
+
+Source lives in `ArtCompanion/`, `art-companion.yml`, `ArtCompanionRuntimeTests/`,
+and `ArtCompanionUITests/`. Generate and check it from
+[DEVELOPMENT.md](../DEVELOPMENT.md#art-companion-source-spike). Locked scope,
+privacy, and remaining holds are in [docs/MOBILE.md](../docs/MOBILE.md).
+
+This is source and unsigned simulator evidence only. It is not Pocket Stage, not
+a signed app, not TestFlight, and not a 0.27.2 package change. Physical touch,
+iPad Split View, real Webex media, device handoff, and signing remain **NOT RUN**.
+
+From the repository root (same commands as DEVELOPMENT.md):
+
+```sh
+swift test --package-path ios
+WEBJAM_RUN_SWIFT_ART_COMPANION_INTEGRATION=1 \
+  .venv/bin/python -m pytest -q tests/test_art_companion_swift_integration.py \
+    tests/test_art_companion_http_policy.py
+```
+
+Parked WebJam [#37](https://github.com/rupret007/webjam/pull/37) and
+[#49](https://github.com/rupret007/webjam/pull/49) stay untouched.
 
 ## What is here
 
