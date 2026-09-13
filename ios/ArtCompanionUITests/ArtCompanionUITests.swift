@@ -14,7 +14,9 @@ final class ArtCompanionUITests: XCTestCase {
     @MainActor private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
         for _ in 0..<12 {
             if element.isHittable { return }
-            app.swipeUp()
+            // Swiping the application can hit the keyboard. Exercise the form's
+            // actual scroll view, whose visible bounds follow keyboard avoidance.
+            app.scrollViews["companion-scroll"].swipeUp()
         }
         XCTAssertTrue(element.isHittable)
     }
@@ -33,7 +35,7 @@ final class ArtCompanionUITests: XCTestCase {
         capture("join-phone-or-tablet", app: app)
         let name = app.textFields["guest-name"]
         name.tap()
-        name.typeText("Mobile Artist")
+        name.typeText("Mobile Artist\n")
         let invite = app.textViews["invitation"]
         reveal(invite, in: app)
         invite.tap()

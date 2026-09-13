@@ -50,6 +50,7 @@ struct CompanionView: View {
                 .padding(20)
                 .frame(maxWidth: .infinity)
             }
+            .accessibilityIdentifier("companion-scroll")
             .scrollDismissesKeyboard(.interactively)
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("WebJam")
@@ -81,6 +82,8 @@ struct CompanionView: View {
                     Text("Join an Art room").font(.title2.bold())
                     TextField("Your name", text: $name)
                         .textContentType(.nickname)
+                        .submitLabel(.next)
+                        .onSubmit { focusedInput = .invitation }
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedInput, equals: .name)
                         .accessibilityIdentifier("guest-name")
