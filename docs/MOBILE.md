@@ -1,8 +1,8 @@
 # Mobile Art companion (north star locked 2026-09-12)
 
-**Status:** Phase 1 landed on `master` tip MATCH. [#118](https://github.com/rupret007/webjam/pull/118) merged 2026-09-13; tip `828aef0d399ec6bc56413c60cf2884c730d6909c` ("Advance Join focus and scroll the visible form above the keyboard"). Marker `WEBJAM_MOBILE_ART_SPIKE_CODEX_20260912` is closed. North star and later phases below remain locked. This doc update is honesty polish only — no new native feature pile-on.
+**Status:** Phase 1 landed on `master` (#118). Current `master` tip MATCH after published-Latest honesty [#123](https://github.com/rupret007/webjam/pull/123) is `f98de91a77b3d4cdd400d9cba2f142bfb4cbdad2` ("docs: record published unsigned v0.28.0 as GitHub Latest"). Phase 1 Join tip remains `828aef0d399ec6bc56413c60cf2884c730d6909c`. Marker `WEBJAM_MOBILE_ART_SPIKE_CODEX_20260912` is closed. North star and later phases below remain locked. This doc update is honesty polish only — no new native feature pile-on.
 **Recorded:** 2026-09-13
-**Base / tip MATCH:** `origin/master` `828aef0d` (#118 Phase-1 native iPhone/iPad Art companion Join)
+**Base / tip MATCH:** `origin/master` `f98de91a` (post-#123 published unsigned v0.28.0 Latest honesty; Phase 1 Join landed at `828aef0d` via #118)
 **Owner:** Jeff owns public Art copy/feel, physical touch, Split View, real Webex media, device handoff, and signing/distribution (still NOT RUN).
 
 This native iPhone/iPad guest app is separate from Pocket Stage
@@ -111,8 +111,9 @@ These stay held. A mobile plan is not permission to move them.
 - **Parked [#49](https://github.com/rupret007/webjam/pull/49)** — Pocket
   Stage Mac CI kit. Different surface; leave it parked.
 - **No GitHub Pages.** Do not publish a Pages site as a mobile stand-in.
-- **No v0.27.2 mutation.** Published Latest release `379360694` and tag `v0.27.2`
-  stay immutable. A checkout is not a package.
+- **No release mutation.** Published GitHub **Latest** is unsigned/ad-hoc
+  v0.28.0 release `388045385` (tag `v0.28.0`). Immutable historical v0.27.2
+  release `379360694` stays kept and is not Latest. A checkout is not a package.
 - **No second video stack.** Paint along remains the one video workspace.
   Do not add a phone player, a second clock, or a browser video surface.
 - **Webex stays first-class for talk/share.** Conversation is still the
@@ -139,7 +140,7 @@ anyone lands it.
 - A Music-mobile jam claim
 - A toy in-WebJam canvas
 - A second video stack
-- Pages, a tag, a release, or a published 0.27.2 rewrite
+- Pages, a tag, a release rewrite, or mutating published Latest v0.28.0 / kept v0.27.2
 - Physical device feel / Split View / real Webex media / signing / TestFlight (Jeff NOT RUN)
 - Android, Internet mobile Join, and PWA (later phases)
 - Any broader delivery or public rollout beyond Phase 1
