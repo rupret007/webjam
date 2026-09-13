@@ -4,9 +4,10 @@
 
 WebJam is a creator-first desktop conductor for low-latency collaboration,
 authoritative multitrack recording, arrangement, and review. It brings the
-session lifecycle, Jamulus, provider-neutral meeting handoff, Studio, and an
-owner-controlled iPhone companion into one understandable workflow—without
-pretending to own systems that remain independent.
+session lifecycle, Jamulus, provider-neutral meeting handoff, Studio, an
+owner-controlled Pocket Stage iPhone preview, and a separate native Art
+companion guest Join into one understandable workflow—without pretending to
+own systems that remain independent.
 
 [![WebJam CI](https://github.com/rupret007/webjam/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/rupret007/webjam/actions/workflows/ci.yml)
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -50,7 +51,7 @@ showing someone the door? See the [two-minute demo script](DEMO.md).
 
 | Area | Current state |
 | --- | --- |
-| Product | Creator-facing desktop conductor around Jamulus, optional external meeting conversation, Studio, and Pocket Stage |
+| Product | Creator-facing desktop conductor around Jamulus, optional external meeting conversation, Studio, Pocket Stage, and Phase 1 native Art companion (source / unsigned simulator) |
 | Published line | Unsigned/ad-hoc v0.27.2 GitHub Latest private test release; verify its checksum manifest |
 | Current source line | Post-release v0.27.2 source; Host/Join reuses the exact baked Jamulus 3.12.2/3.12.3 compatibility records |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
@@ -368,6 +369,24 @@ The scratchpad is profile-scoped on this computer only. Switching profiles
 atomically saves the current profile's private mode-0600 file and loads the
 other profile's fixed file. Reads are regular-file-only, no-follow, and bounded
 to 1 MiB. Notes are never shared, session-synchronized, or media-timecoded.
+
+## Art companion — Phase 1 native guest Join
+
+Phase 1 landed on master as source and unsigned simulator work
+([#118](https://github.com/rupret007/webjam/pull/118)). A guest on an iPhone or
+iPad pastes the complete local invitation, Joins the host's Art room on the
+same private LAN, follows **Make together** or **Paint along**, can open
+Conversation, and can Leave. Drawing stays in Procreate, paper, or CSP; music
+follows room status only. There is no phone player, toy canvas, Jamulus stream,
+or mobile Music Host.
+
+This is a different product from Pocket Stage (owner mix second-screen). It is
+not a signed app, not TestFlight, and not part of the immutable v0.27.2
+packages. Physical touch, iPad Split View, real meeting media, device handoff,
+and signing remain **NOT RUN**. Scope, privacy, and holds:
+[docs/MOBILE.md](docs/MOBILE.md). Generate and check from
+[DEVELOPMENT.md](DEVELOPMENT.md#art-companion-source-spike) or
+[ios/README.md](ios/README.md#art-companion-phase-1-landed).
 
 ## Pocket Stage iPhone owner-device preview
 
@@ -857,6 +876,7 @@ promote a package or claim audibility.
 - [Reference Studio architecture and migration](docs/adr/0006-standalone-reference-studio-projects.md)
 - [Recording and Studio](RECORDING_AND_STUDIO.md)
 - [Presence v2 recorder-correlation architecture](docs/adr/0009-presence-v2-recorder-correlation.md)
+- [Mobile Art companion (Phase 1)](docs/MOBILE.md)
 - [Pocket Stage developer-preview plan](docs/plans/webjam-pocket-stage-v1.md)
 - [Pocket Stage threat model](docs/security/pocket-stage-mobile-threat-model.md)
 - [Reference Track architecture](docs/adr/0005-reference-track-jamulus-participant.md)
