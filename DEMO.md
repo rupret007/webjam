@@ -6,7 +6,7 @@ Use this when you just want to show what WebJam looks like; use those guides
 to actually run a session.
 
 > **Boundary:** this script runs a source checkout, not a signed package.
-> Every v0.27 physical and platform-trust gate remains **NOT RUN** — see
+> Every v0.28.0 physical and platform-trust gate remains **NOT RUN** — see
 > [README](README.md) for the exact published release and its checksums. This
 > script stops before Host or Join, so it starts no Jamulus process and opens
 > no meeting.

@@ -45,9 +45,9 @@ mutation, track export, shared notes, visual sync, and media timecode. No
 profile directly or automatically taps a meeting app, browser, or system
 output.
 
-Current published private test release (GitHub Latest): **v0.27.2**; source candidate is unpublished **v0.28.0**. Use only the exact assets attached to
-immutable GitHub release `379360694` and verify them with
-`WebJam-v0.27.2-SHA256SUMS.txt`.
+Current published private test release (GitHub Latest): **v0.28.0**. Use only the exact assets attached to
+immutable GitHub release `388045385` and verify them with
+`WebJam-v0.28.0-SHA256SUMS.txt`. Immutable historical v0.27.2 release `379360694` remains kept and is not Latest.
 The four-platform release covers
 Windows, Ubuntu 22.04, Intel Mac, and
 Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc
@@ -125,7 +125,7 @@ owns installation and WebJam retains its embedded 3.12.2 fallback instead of
 claiming it can roll back the system package.
 
 The exact baked Jamulus 3.12.2 and 3.12.3 records are approved through unsigned
-v0.27.2 source, so live Host/Join is source-eligible. This checkout is still not
+v0.28.0, so live Host/Join is source-eligible. This checkout is still not
 package evidence or a physical-test result.
 
 Jamulus displays a name on a second line after eight characters and accepts no
@@ -236,8 +236,8 @@ Waveforms load in the background and recorded gaps remain silence. Studio
 autosaves choices to a separate file; a failed save keeps the edit pending and
 the recorded take safe. Real two-Mac output, hardware interruption/recovery,
 external-editor import, physical Reference Studio audio, and signed-install
-gates remain **NOT RUN** throughout v0.27, including the v0.27.1 and v0.27.2
-private test releases. Publishing a private candidate does not
+gates remain **NOT RUN** throughout v0.28.0, and for earlier v0.27,
+v0.27.1, and v0.27.2 private test releases. Publishing a private candidate does not
 convert them to PASS. The
 [v0.26 physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
 is the all-NOT-RUN physical ledger for that earlier published package; do not
