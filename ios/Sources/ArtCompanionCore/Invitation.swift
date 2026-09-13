@@ -137,13 +137,18 @@ public struct Conversation: Sendable, Equatable, CustomStringConvertible, Custom
     }
 
     static func validate(_ raw: String) throws -> (Conversation, String) {
-        guard raw.utf8.count <= 4096, !raw.contains(".."), !raw.contains("\\"),
+        // Foundation versions differ in whether percentEncodedHost preserves
+        // the original escapes. Validate the original authority before parsing.
+        let authority = raw.dropFirst(8).prefix(while: { !"/?#".contains($0) })
+        guard raw.hasPrefix("https://"), raw.utf8.count <= 4096,
+              !authority.isEmpty, authority.allSatisfy({
+                  $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-")
+              }), !raw.contains(".."), !raw.contains("\\"),
               !raw.unicodeScalars.contains(where: { $0.value < 33 || $0.value == 127 || CharacterSet.whitespacesAndNewlines.contains($0) }),
               let parts = URLComponents(string: raw), parts.scheme == "https",
               parts.user == nil, parts.password == nil, parts.port == nil,
               let encodedHost = parts.percentEncodedHost, !encodedHost.contains("%"),
-              let originalHost = parts.host,
-              !raw.dropFirst(8).prefix(while: { !"/?#".contains($0) }).hasSuffix(":") else {
+              let originalHost = parts.host else {
             throw CompanionError.invalidConversation
         }
         let host = originalHost.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
