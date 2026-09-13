@@ -92,8 +92,8 @@ def test_the_image_action_is_never_a_room_fact():
 def test_a_host_who_chose_the_canvas_is_offered_the_way_in():
     presence = art_room_presence(_room(), hosting=True, intended_canvas=True)
 
-    assert presence.label == "Set up shared canvas"
-    assert "when the group wants" in presence.description
+    assert presence.label == "Set up shared workspace"
+    assert "when you're ready" in presence.description
     assert presence.target is ArtPresenceTarget.CANVAS
     assert presence.tone is ArtPresenceTone.PRESENT
 
@@ -152,7 +152,7 @@ def test_a_host_is_never_shown_the_guest_waiting_line():
 
 
 def test_the_way_in_gives_way_to_what_the_room_actually_has():
-    """Once a canvas exists, the line is about the canvas rather than about
+    """Once a shared workspace exists, the line is about it rather than about
     setting one up."""
 
     presence = art_room_presence(
@@ -161,7 +161,7 @@ def test_the_way_in_gives_way_to_what_the_room_actually_has():
         intended_canvas=True,
     )
 
-    assert presence.label == "Shared canvas"
+    assert presence.label == "Shared workspace"
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +179,7 @@ def test_a_missing_painting_program_is_the_line_even_beside_a_live_video():
         )
     )
 
-    assert presence.label == "Install Drawpile"
+    assert presence.label == "Set up shared workspace"
     assert presence.tone is ArtPresenceTone.ATTENTION
     assert presence.target is ArtPresenceTarget.CANVAS
 
@@ -247,7 +247,7 @@ def test_a_canvas_request_comes_before_a_video_request():
 def test_a_live_canvas_is_described_without_alarm(state):
     presence = art_room_presence(_room(canvas=state))
 
-    assert presence.label == "Shared canvas"
+    assert presence.label == "Shared workspace"
     assert presence.tone is ArtPresenceTone.PRESENT
 
 
@@ -360,8 +360,8 @@ def test_the_chip_shows_one_control_whose_label_is_the_status():
         art_room_presence(_room(canvas=CanvasCompanionState.READY))
     )
 
-    assert chip.chip.text() == "Shared canvas"
-    assert chip.chip.accessibleName() == "Shared canvas"
+    assert chip.chip.text() == "Shared workspace"
+    assert chip.chip.accessibleName() == "Shared workspace"
     assert chip.chip.accessibleDescription()
     assert chip.chip.property("tone") == StatusChip.PRIMARY
 
@@ -462,7 +462,7 @@ def test_repeating_the_same_line_does_not_repaint_or_re_announce():
             chip.set_presence(presence)
 
     assert announce.call_count == 0
-    assert chip.chip.text() == "Shared canvas"
+    assert chip.chip.text() == "Shared workspace"
 
 
 def test_a_changed_line_is_announced_once():
@@ -482,7 +482,7 @@ def test_a_changed_line_is_announced_once():
         )
 
     assert announce.call_count == 1
-    assert chip.chip.text() == "Install Drawpile"
+    assert chip.chip.text() == "Set up shared workspace"
 
 
 def test_announcing_survives_a_headless_accessibility_backend():
@@ -493,7 +493,7 @@ def test_announcing_survives_a_headless_accessibility_backend():
     chip = ArtRoomChip()
     chip.set_presence(art_room_presence(_room(canvas=CanvasCompanionState.READY)))
 
-    assert chip.chip.accessibleName() == "Shared canvas"
+    assert chip.chip.accessibleName() == "Shared workspace"
 
 
 def test_the_chip_leaves_rather_than_sitting_there_disabled():
@@ -609,8 +609,8 @@ def test_art_shows_the_line_in_the_room_chrome():
         art_room_presence(_room(canvas=CanvasCompanionState.READY))
     )
 
-    assert strip.art_room_chip.presence.label == "Shared canvas"
-    assert strip.art_room_chip.chip.text() == "Shared canvas"
+    assert strip.art_room_chip.presence.label == "Shared workspace"
+    assert strip.art_room_chip.chip.text() == "Shared workspace"
 
 
 def test_pressing_the_room_line_asks_the_room_for_the_right_tool():
@@ -667,7 +667,7 @@ def test_make_together_with_own_tools_is_a_complete_room(saved_start):
     assert not presence.offered
     assert presence.target is ArtPresenceTarget.NONE
     assert profile.capabilities.shared_canvas
-    # Choosing a canvas later still gives guests the real shared canvas.
+    # Choosing a workspace later still gives guests the real shared workspace.
     shared = art_room_presence(_room(canvas=CanvasCompanionState.READY))
-    assert shared.label == "Shared canvas"
+    assert shared.label == "Shared workspace"
     assert shared.target is ArtPresenceTarget.CANVAS

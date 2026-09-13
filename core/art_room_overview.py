@@ -219,5 +219,5 @@ def _activity_action(target: ArtPresenceTarget) -> tuple[str, str]:
     if target is ArtPresenceTarget.VIDEO:
         return "video", "Open Paint along"
     if target is ArtPresenceTarget.CANVAS:
-        return "canvas", "Open canvas"
+        return "canvas", "Open workspace"
     return "", ""

@@ -146,10 +146,10 @@ def art_room_presence(
         )
     if projection.canvas is CanvasCompanionState.MISSING_APP:
         return ArtRoomPresence(
-            label="Install Drawpile",
+            label="Set up shared workspace",
             description=(
-                "There is a canvas in this room, and no Drawpile on this "
-                "computer to open it with."
+                "There is a shared workspace in this room, and this computer "
+                "needs one quick setup step to open it."
             ),
             tone=ArtPresenceTone.ATTENTION,
             target=ArtPresenceTarget.CANVAS,
@@ -177,8 +177,8 @@ def art_room_presence(
         CanvasCompanionState.OPENING,
     }:
         return ArtRoomPresence(
-            label="Shared canvas",
-            description="This room has a canvas. Open the panel to work on it.",
+            label="Shared workspace",
+            description="This room has a workspace. Open the panel to work on it.",
             target=ArtPresenceTarget.CANVAS,
         )
     if projection.video is VideoCompanionState.HIDDEN:
@@ -206,10 +206,10 @@ def art_room_presence(
     # 3. Then the door a host asked for at launch but has not walked through.
     if hosting and intended_canvas:
         return ArtRoomPresence(
-            label="Set up shared canvas",
+            label="Set up shared workspace",
             description=(
-                "Open the panel to host a canvas in Drawpile and share it "
-                "when the group wants to draw on one canvas."
+                "Open the panel to host a shared workspace that everyone can "
+                "join when you're ready."
             ),
             target=ArtPresenceTarget.CANVAS,
         )
