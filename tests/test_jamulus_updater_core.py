@@ -311,36 +311,37 @@ def test_official_registry_centralizes_exact_3122_and_3123_artifacts():
     assert [item.version for item in candidates] == ["3.12.3", "3.12.2"]
 
 
-def test_official_registry_authorizes_v0272_but_no_future_patch():
+def test_official_registry_authorizes_v0280_but_no_future_patch():
     registry = official_jamulus_compatibility_registry()
 
     assert all(entry.supports_webjam("0.27.1") for entry in registry.entries)
     assert all(entry.supports_webjam("0.27.2") for entry in registry.entries)
-    assert not any(entry.supports_webjam("0.27.3") for entry in registry.entries)
+    assert all(entry.supports_webjam("0.28.0") for entry in registry.entries)
+    assert not any(entry.supports_webjam("0.28.1") for entry in registry.entries)
 
     for target in ComponentTarget:
         for role in (JamulusRole.CLIENT, JamulusRole.SERVER):
             candidates = registry.compatible(
                 role=role,
                 target=target,
-                webjam_version="0.27.2",
+                webjam_version="0.28.0",
             )
             assert [item.version for item in candidates] == ["3.12.3", "3.12.2"]
             assert registry.compatible(
                 role=role,
                 target=target,
-                webjam_version="0.27.3",
+                webjam_version="0.28.1",
             ) == ()
 
 
-def test_v0272_payload_reuses_approved_records_and_verifies(tmp_path: Path):
+def test_v0280_payload_reuses_approved_records_and_verifies(tmp_path: Path):
     issued_at = datetime(2026, 7, 28, tzinfo=timezone.utc)
     payload = build_payload(
         sequence=7,
         issued_at=issued_at,
         validity_days=30,
     )
-    private_path, keyring = _test_signer(tmp_path / "v0272-test-only")
+    private_path, keyring = _test_signer(tmp_path / "v0280-test-only")
     envelope = sign_component_catalog(
         payload,
         private_key_path=private_path,
@@ -352,10 +353,10 @@ def test_v0272_payload_reuses_approved_records_and_verifies(tmp_path: Path):
         now=lambda: issued_at,
     )
 
-    verified = verifier.verify(envelope, webjam_version="0.27.2")
+    verified = verifier.verify(envelope, webjam_version="0.28.0")
 
     assert verified.sequence == 7
-    assert verified.webjam_version == "0.27.2"
+    assert verified.webjam_version == "0.28.0"
     assert tuple(component.to_dict() for component in verified.components) == tuple(
         payload["components"]
     )

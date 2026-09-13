@@ -1,6 +1,6 @@
 # Pocket Stage iPhone app
 
-> **v0.27.2 source:** GitHub **Latest** is immutable unsigned/ad-hoc desktop
+> **v0.28.0 source candidate:** GitHub **Latest** is immutable unsigned/ad-hoc desktop
 > private test release `379360694`, published from lightweight tag `v0.27.2` at
 > exact commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. It contains no
 > installable iPhone kit. Physical iPhone installation and pairing remain
@@ -28,7 +28,7 @@ and `ArtCompanionUITests/`. Generate and check it from
 privacy, and remaining holds are in [docs/MOBILE.md](../docs/MOBILE.md).
 
 This is source and unsigned simulator evidence only. It is not Pocket Stage, not
-a signed app, not TestFlight, and not a 0.27.2 package change. Physical touch,
+a signed app, not TestFlight, and not a 0.28.0 package change. Physical touch,
 iPad Split View, real Webex media, device handoff, and signing remain **NOT RUN**.
 
 From the repository root (same commands as DEVELOPMENT.md):
@@ -79,7 +79,7 @@ transport.
 1. Install the full **Xcode** app from Apple and open it once. In **Xcode →
    Settings → Accounts**, add the Apple ID that will own the free Personal
    Team.
-2. From an exact v0.27.2 Mac package whose filename and SHA-256 match release
+2. From an exact published v0.27.2 Mac package (until a published v0.28.0 package exists) whose filename and SHA-256 match release
    `379360694` and `WebJam-v0.27.2-SHA256SUMS.txt`, open **Pocket Stage iPhone
    Setup**, then open **WebJamPocketStage.xcodeproj** directly. If Finder does
    not associate it with Xcode, use **Xcode → File → Open** and select the

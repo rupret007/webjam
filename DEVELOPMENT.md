@@ -1,12 +1,12 @@
-# Developing WebJam v0.27.2
+# Developing WebJam v0.28.0
 
-> **Current source line:** this guide describes v0.27.2 source. GitHub
+> **Current source line:** this guide describes v0.28.0 source. GitHub
 > **Latest** is immutable unsigned/ad-hoc private test release `379360694`,
 > published `2026-08-30T18:06:14Z` from lightweight tag `v0.27.2` at exact
 > commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. A checkout or branch artifact
 > remains source evidence, not a substitute for an exact release asset.
 > The existing Jamulus 3.12.2 and 3.12.3 compatibility records are explicitly
-> approved through v0.27.2. Live client/server selection and the component-input
+> approved through v0.28.0. Live client/server selection and the component-input
 > build gate reuse those exact baked identities; the signed public catalog stays
 > sealed at exact WebJam v0.22.5.
 
@@ -32,7 +32,7 @@ Use the repository virtual environment:
 For Studio arrangement changes, run the focused model, persistence, history,
 controller, renderer, comping, waveform, export, and Qt integration modules in
 addition to the full suite. The physical-output and external-editor gates in
-`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.27.2.
+`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.28.0.
 
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
@@ -231,7 +231,7 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-This checkout's package identity is unsigned `0.27.2`. The exact released
+This checkout's package identity is unsigned `0.28.0`. The exact released
 source is commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c`, but a checkout is
 not a release package. GitHub Latest is immutable release `379360694` with
 seven packages plus `WebJam-v0.27.2-SHA256SUMS.txt`. Its `v0.27.2` tag is

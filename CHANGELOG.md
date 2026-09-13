@@ -6,9 +6,26 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-> Future work after the published unsigned v0.27.2 test candidate belongs here.
+> Future work after the named unsigned v0.28.0 source candidate belongs here.
 > Every published tag, release, and asset remains immutable historical
 > evidence.
+
+## [0.28.0] — Unsigned private test candidate (unpublished)
+
+> Candidate prep for unsigned v0.28.0. The current source identity is
+> `webjam_qt.__version__ = "0.28.0"`. No annotated `v0.28.0` tag, GitHub release
+> draft, published package, checksum manifest, or physical PASS exists yet.
+> GitHub **Latest** remains immutable unsigned/ad-hoc v0.27.2 release
+> `379360694` until Jeff/Bob create an annotated `v0.28.0` tag and publish the
+> softprops draft. Existing tag CI may create a reviewable unsigned draft only
+> after that annotated tag matches packaged `0.28.0` and exact `origin/master`;
+> this source change does not create or push that tag. Physical/signing remain
+> **NOT RUN**. The signed public catalog remains sealed at exact WebJam
+> v0.22.5 — do not invent a signed catalog. Honest product scope since
+> published v0.27.2: Art companion Phase 1 and door/polish work recorded below
+> (no movie claim; no signed-catalog claim).
+> The existing exact Jamulus 3.12.2 and 3.12.3 records are approved through
+> v0.28.0, so Host/Join and required component-input CI are source-eligible.
 
 ### Join an Art room from a native iPhone/iPad companion
 
@@ -351,6 +368,7 @@ All notable improvements and features for the WebJam creator collaboration platf
   within the same bounds and displayed only after exact current proof.
   [Preview evidence and handoff](docs/SESSION_HELP_PREVIEW.md) keep packaged
   two-Mac, public-service, physical and release readiness **NOT RUN**.
+
 
 ## [0.27.2] — Unsigned/ad-hoc private test release (2026-08-30)
 

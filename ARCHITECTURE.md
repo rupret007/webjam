@@ -1,6 +1,6 @@
-# WebJam architecture — v0.27.2 source
+# WebJam architecture — v0.28.0 source
 
-> This document describes v0.27.2 source. GitHub **Latest** is immutable
+> This document describes v0.28.0 source. GitHub **Latest** is immutable
 > unsigned/ad-hoc private test release `379360694`, published
 > `2026-08-30T18:06:14Z` from lightweight tag `v0.27.2` at exact commit
 > `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. It has seven packages plus
@@ -9,7 +9,7 @@
 > Tag run `33327104322` passed its tests, integrations, and four desktop builds,
 > then failed its annotated-tag publisher gate. It is red, not publish-green;
 > do not rerun it, replace the lightweight tag, or mutate the immutable release.
-> The existing Jamulus 3.12.2 and 3.12.3 records are approved through v0.27.2,
+> The existing Jamulus 3.12.2 and 3.12.3 records are approved through v0.28.0,
 > so baked Host/Join selection and the package build gate are source-eligible.
 > The signed public catalog remains sealed at exact WebJam v0.22.5.
 > All v0.27 physical, credentialed, signing, and platform-trust gates stay
@@ -77,9 +77,9 @@ The desktop package always contains its reviewed Jamulus 3.12.2 fallback.
 Independently updated Jamulus client/server packages are executable supply-chain
 inputs, so availability alone is never approval:
 
-For unsigned v0.27.2 source, the baked registry authorizes only the existing
+For unsigned v0.28.0 source, the baked registry authorizes only the existing
 exact Jamulus 3.12.2 and 3.12.3 records. Presence of any other version is not
-approval. The sealed v0.22.5 catalog does not authorize a managed v0.27.2
+approval. The sealed v0.22.5 catalog does not authorize a managed v0.28.0
 component.
 
 ```text
@@ -191,7 +191,7 @@ needed. An unknown provider's URL and hostname are fully redacted from logs,
 mappings, diagnostics, and Support Bundles; generic acceptance never promotes
 it to natively verified status.
 
-Current v0.27.2 source carries forward one canonical **Shared Track** workflow; existing
+Current v0.28.0 source carries forward one canonical **Shared Track** workflow; existing
 `ReferenceTrack*` types, paths, tests, and the ADR remain compatibility names
 for the established route engine, not a second live feature. Shared Track
 separates source and route authority. A host can load, decode the first bounded
@@ -301,7 +301,7 @@ participants into session-local slots. Neither surface receives notes, titles,
 participant names, channel IDs, invitations, addresses, device names, paths,
 tokens, credentials, or raw exceptions.
 
-No model SDK or cloud assistant is part of current v0.27.2 source. A future model-assisted
+No model SDK or cloud assistant is part of current v0.28.0 source. A future model-assisted
 creative feature may be considered only as explicit opt-in, off the real-time
 path, read-only, privacy-gated, unable to issue session commands or create
 operational facts, and visibly labeled as a suggestion. The deterministic
@@ -537,7 +537,7 @@ of the same immutable take/project boundary. A finalized take is eligible for
 Studio only after its required manifest/media checks settle. Studio track
 headers distinguish participant, Shared Track, and Local Original sources while
 retaining the existing arrangement, comping, mixer, autosave, recovery, and
-export systems; current v0.27.2 source does not introduce another editor or duplicate audio
+export systems; current v0.28.0 source does not introduce another editor or duplicate audio
 engine.
 
 The guest projection is host-state continuity, not distributed local playback,

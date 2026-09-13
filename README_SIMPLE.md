@@ -7,17 +7,17 @@
 > `WebJam-v0.27.2-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
 > and unnotarized.
 
-> **Source note:** lightweight tag `v0.27.2` points directly to exact commit
+> **Published Latest note:** lightweight tag `v0.27.2` points directly to exact commit
 > `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Use the exact release asset and
 > attached checksum manifest as download evidence; a checkout or branch
 > artifact is not a substitute.
 
-> **What this checkout is:** unsigned v0.27.2 source. The exact published
+> **What this checkout is:** unsigned v0.28.0 source candidate (unpublished). The exact published
 > v0.27.2 release assets—not this checkout or a branch artifact—are package
 > evidence. Tag run `33327104322` passed tests, integrations, and all four
 > desktop builds, but its annotated-tag publisher gate failed; the run is red,
 > not publish-green, and must not be rerun or rewritten. Live Host/Join and
-> package builds reuse the exact baked Jamulus 3.12.2 and 3.12.3 records through v0.27.2; the
+> package builds reuse the exact baked Jamulus 3.12.2 and 3.12.3 records through v0.28.0; the
 > signed public catalog is unchanged. No physical PASS result is claimed.
 
 WebJam brings artists together to make, learn, and collaborate across mediums.
@@ -33,7 +33,7 @@ the meeting app, browser, or system output. Local Originals record only the
 input devices you explicitly select, so do not route meeting or system audio
 into those inputs.
 
-The current v0.27.2 source keeps Music and Podcast & Voice as GA
+The current v0.28.0 source keeps Music and Podcast & Voice as GA
 creator profiles. Art and Review & Rehearsal are visibly Preview. Art offers
 **Make together**—a live room where people work locally and the host may open
 one shared canvas—or host-clocked **Paint along**, but no recording or
@@ -45,7 +45,7 @@ mutation, track export, shared notes, visual sync, and media timecode. No
 profile directly or automatically taps a meeting app, browser, or system
 output.
 
-Current private test release: **v0.27.2**. Use only the exact assets attached to
+Current published private test release (GitHub Latest): **v0.27.2**; source candidate is unpublished **v0.28.0**. Use only the exact assets attached to
 immutable GitHub release `379360694` and verify them with
 `WebJam-v0.27.2-SHA256SUMS.txt`.
 The four-platform release covers

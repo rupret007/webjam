@@ -112,7 +112,8 @@ def test_map_records_the_published_round_and_the_parked_leftovers() -> None:
     assert "do not retag, replace, or mutate" in FLAT_MAP_TEXT
 
     # The release and the later source-truth draft are distinct boundaries.
-    assert "Published testing boundary:" in FLAT_MAP_TEXT
+    assert "Candidate prep boundary:" in FLAT_MAP_TEXT
+    assert "Published testing boundary (still GitHub Latest until publish):" in FLAT_MAP_TEXT
     assert "9c6ca3de96aa7eb261c65b7dee768ab48144169c" in FLAT_MAP_TEXT
     assert "379360694" in FLAT_MAP_TEXT
     assert "33317581250" in FLAT_MAP_TEXT
@@ -338,10 +339,12 @@ def test_owner_click_gate_is_exact_asset_bound_and_stays_not_run() -> None:
 
 def test_changelog_moves_final_art_door_work_into_v0272() -> None:
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    unreleased = changelog.partition("## [Unreleased]")[2].partition("## [0.27.2]")[0]
+    unreleased = changelog.partition("## [Unreleased]")[2].partition("## [0.28.0]")[0]
+    v0280 = changelog.partition("## [0.28.0]")[2].partition("## [0.27.2]")[0]
     v0272 = changelog.partition("## [0.27.2]")[2].partition("## [0.27.1]")[0]
     heading = "### Art starts with fewer choices"
     assert heading not in unreleased
+    assert heading not in v0280
     assert heading in v0272
     assert "exactly two start cards" in v0272
     assert "Music remains\n  **Host** / **Join** only" in v0272

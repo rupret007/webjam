@@ -1,4 +1,4 @@
-# WebJam help routing — v0.27.2 source
+# WebJam help routing — v0.28.0 source
 
 > The exact released source commit for immutable GitHub **Latest** release
 > `379360694` is `9c6ca3de96aa7eb261c65b7dee768ab48144169c`; lightweight tag
@@ -6,7 +6,7 @@
 > `WebJam-v0.27.2-SHA256SUMS.txt`. This later documentation source is not a
 > package substitute. No physical PASS is claimed;
 > every v0.27 physical and release-decision row remains **NOT RUN**.
-> Unsigned v0.27.2 source reuses the existing exact Jamulus 3.12.2 and 3.12.3
+> Unsigned v0.28.0 source reuses the existing exact Jamulus 3.12.2 and 3.12.3
 > records for Host/Join. A checkout remains source evidence, not a package.
 
 | Creator says | Answer / action |

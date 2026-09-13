@@ -1,11 +1,11 @@
-# WebJam creator guide — v0.27.2 source
+# WebJam creator guide — v0.28.0 source
 
-> This guide describes current unsigned v0.27.2 source. GitHub **Latest** is the
+> This guide describes current unsigned v0.28.0 source. GitHub **Latest** is the
 > immutable unsigned/ad-hoc v0.27.2 private test release `379360694` from exact
 > tag commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c`, with seven packages plus
 > `WebJam-v0.27.2-SHA256SUMS.txt`. A later checkout or branch artifact is source
 > evidence, not one of those checksum-bound packages. The
-> existing exact Jamulus 3.12.2 and 3.12.3 records are approved through v0.27.2
+> existing exact Jamulus 3.12.2 and 3.12.3 records are approved through v0.28.0
 > for Host/Join. Windows remains unsigned; macOS remains ad-hoc signed and
 > unnotarized. No physical, credentialed, signing, or notarization PASS is claimed.
 
@@ -858,7 +858,7 @@ source count. Finalization rechecks those facts and refuses source
 substitution, a changed map, or missing/extra delivery instead of calling the
 take Ready.
 
-Current v0.27.2 source presents that frozen plan in one accessible,
+Current v0.28.0 source presents that frozen plan in one accessible,
 path-free **Record Session Readiness** sheet. Every server track, Local
 Original, and Shared Track row shows its source label, exact mono/stereo format,
 required/optional status, readiness, and a bounded meter when available.
@@ -951,7 +951,7 @@ and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
 manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
-current v0.27.2 source.
+current v0.28.0 source.
 
 For a standalone Podcast & Voice episode, use the 48 kHz Host-mono +
 Guest-stereo preset, record the first pass, add a chapter marker, set a cycle

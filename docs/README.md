@@ -15,7 +15,7 @@ keeps the product story and five-minute demo intentionally short.
 > unsigned; macOS is ad-hoc signed and unnotarized; every physical test remains
 > **NOT RUN** until recorded against those packages.
 
-> **Source boundary:** this checkout reports unsigned v0.27.2. A checkout or
+> **Source boundary:** this checkout reports unsigned v0.28.0. A checkout or
 > branch artifact is not a package; use the exact release assets above. Its
 > baked Jamulus 3.12.2 and 3.12.3 records are approved through
 > v0.27.2, so live Host/Join and required package-build CI are source-eligible.
