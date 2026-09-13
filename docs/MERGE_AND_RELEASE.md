@@ -1,36 +1,33 @@
 # Merge and release map
 
-> **Candidate prep boundary:** source identity is unsigned v0.28.0
-> (`webjam_qt.__version__`). This checkout is post-v0.27.2-tag source and is
-> not a package. No annotated `v0.28.0` tag, softprops draft, published
-> package, checksum manifest, or physical PASS exists yet. Jeff authorized
-> cutting unsigned v0.28.0 as the sole new Latest candidate; after this source
-> lands, Jeff/Bob will create an annotated `v0.28.0` tag and publish the
-> softprops draft. Physical/signing remain **NOT RUN**.
->
-> **Published testing boundary (still GitHub Latest until publish):** GitHub
-> **Latest** remains immutable unsigned/ad-hoc v0.27.2 release `379360694`,
-> published at `2026-08-30T18:06:14Z` from exact commit
-> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Lightweight tag `v0.27.2`
-> resolves directly to that commit. The release has seven packages plus
-> `WebJam-v0.27.2-SHA256SUMS.txt`. Merged source-only review
-> [#60](https://github.com/rupret007/webjam/pull/60) is on `master` at
-> `a3079a0040ce52b5834e3a3959819c09fc3f0e6f`; that review and later source
-> changes (including #121 and this v0.28.0 prep) are not among those
-> checksum-bound packages.
-> The existing exact Jamulus 3.12.2 and 3.12.3 records are explicitly approved
-> through v0.28.0, so Host/Join and the required component-input CI are
+> **Published testing boundary:** GitHub **Latest** is immutable unsigned/ad-hoc
+> v0.28.0 release `388045385`, published at `2026-09-13T21:48:49Z` from annotated
+> tag object `526bba0728439d48d38a5170af083ff8736d051d` peeling to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`. The release has
+> seven packages plus `WebJam-v0.28.0-SHA256SUMS.txt`. Post-publish source honesty on this branch is not a substitute for those
+> checksum-bound packages. The existing exact Jamulus 3.12.2 and 3.12.3 records are explicitly
+> approved through v0.28.0, so Host/Join and the required component-input CI are
 > source-eligible. The signed public catalog remains sealed at exact WebJam
-> v0.22.5.
+> v0.22.5. Physical/signing remain **NOT RUN**.
 >
-> **Red tag-run boundary:** workflow `33327104322` passed tests, integrations,
-> update-input checks, and all four desktop builds. Its publisher then failed
-> closed because the tag is lightweight rather than annotated. The overall run
-> is red and is not publish-green. Preserve it; do not rerun the job, move or
-> replace `v0.27.2`, or mutate release `379360694`. v0.27.1 remains immutable
-> historical evidence. Do not restack #37 or #49. Do not invent a signed catalog.
-> Do not add a version-specific publisher with invented pins. For v0.28.0, use an
-> annotated tag so softprops can create the reviewable draft.
+> **Annotated tag-run boundary:** workflow `34782892215` succeeded on annotated
+> `v0.28.0`, including softprops draft creation. Jeff published that draft as
+> **Latest**. Do not dispatch `publish-latest-release.yml` for this unsigned
+> round (sealed catalog still targets exact WebJam 0.22.5). Do not retag or
+> mutate release `388045385`.
+>
+> **Historical v0.27.2 boundary:** immutable unsigned/ad-hoc release
+> `379360694` remains kept and is **not** Latest. Lightweight tag `v0.27.2`
+> still points to `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Historical
+> workflow `33327104322` passed tests, integrations, update-input checks,
+> and all four desktop builds. Its publisher then failed closed because the
+> tag is lightweight rather than annotated. The overall run is red and is
+> not publish-green; the tag run `33327104322` is red only at the
+> annotated-tag publisher boundary. Preserve it; do not rerun, move, or
+> mutate that release. Merged source-only review
+> [#60](https://github.com/rupret007/webjam/pull/60) remains historical
+> honesty for that round. v0.27.1 remains immutable historical evidence.
+> Do not restack #37 or #49. Do not invent a signed catalog.
+> Do not add a version-specific publisher with invented pins.
 
 The record of the finished product land and the honest boundaries that remain.
 #14 (audio core), #15, #16, #19 (Art), and #17 (Music song tools) are all
@@ -66,8 +63,8 @@ Where a test can hold a door it does —
 the first screen makes sense, so the human read happens before the merge.
 The current checksum-bound human read is the **NOT RUN**
 [owner click gate](../UX_ACCEPTANCE_CHECKLIST.md#owner-click-gate-current-two-card-door).
-Until a published v0.28.0 package exists, it uses an exact v0.27.2 release asset
-and stops before Host or Join, so it does not create a room or claim live audio.
+It uses an exact v0.28.0 release asset and stops before Host or Join, so it
+does not create a room or claim live audio. Every physical gate remains **NOT RUN**.
 
 #19 originally established three Art start cards. Current source combines the
 room-only and shared-canvas choices into **Make together**; artists work
@@ -94,7 +91,7 @@ Standing procedure after the completed product land:
 | Step | Action | Who | Gate before it happens |
 | --- | --- | --- | --- |
 | 1 | #37 and #49 stay parked | nobody | they are parked outlines, not scheduled work — do not restack, rebase, or "fix" them |
-| 2 | Leave v0.27.1, tag `v0.27.2`, and release `379360694` alone until Jeff publishes v0.28.0 | nobody | do not retag, replace, or mutate immutable evidence; this prep PR does not tag or publish |
+| 2 | Leave v0.27.1, tag `v0.27.2` / release `379360694`, and v0.28.0 release `388045385` alone | nobody | do not retag, replace, or mutate immutable evidence; this honesty PR does not tag or publish |
 | 3 | For any later source-only correction, start from current `master` | Codex | no product code and no release mutation |
 | 4 | Run the complete local suite once on the exact correction head | Codex | red stops; no retry to change a result |
 | 5 | Open one draft PR for Karen | Codex | exact base, files, and verification are recorded |
@@ -129,18 +126,36 @@ authorizes this exact WebJam version; sealed v3 still targets 0.22.5 only
 (observed v0.27.0 failure `33036413984`). Do not invent that catalog, mutate
 the v0.27.1 release, or write a parallel runbook.
 
-Jeff named and published the full unsigned v0.27.2 test round from exact
-`9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Release `379360694` is immutable
-GitHub Latest with seven packages plus its checksum manifest. The lightweight
-tag is a real immutable ref, but it does not satisfy the workflow's annotated
-tag policy. Tag run `33327104322` therefore remains red at its publisher even
-though all ordinary test, integration, and package-build jobs passed.
+Jeff named and published the full unsigned v0.28.0 test round from exact
+`8ac08b69865af598e5ff69a84066964b1d90c940`. Release `388045385` is immutable GitHub **Latest** with seven
+packages plus its checksum manifest. Annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peels to
+that commit. Tag run `34782892215` succeeded, including softprops draft creation;
+Jeff published that draft as Latest. Physical/signing remain **NOT RUN**.
 
-A post-release source-truth draft does not repair the historical tag run,
-replace the lightweight tag, mutate a release, or turn later source into
-released package evidence.
+Immutable historical v0.27.2 release `379360694` remains kept and is not Latest.
+Its lightweight tag still points to `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Historical tag run
+`33327104322` remains red at its annotated-tag publisher gate and must not be
+rerun or rewritten.
 
-### Observed v0.27.2 inventory
+A post-publish source-truth draft does not retag, mutate a release, invent a
+signed catalog, or turn later source into released package evidence.
+
+### Observed v0.28.0 inventory
+
+The immutable Latest release contains exactly these seven packages:
+
+- `WebJam-linux-x64.zip` — `e8ed9d35f5c8b906596ee0a80df8aa22cbf649e9ab491f788c157a2e2535d123`
+- `WebJam-macos-arm64-ADHOC-TEST-ONLY.zip` — `6ca6b37a914dc6ea60f3fb3d2f8a5c9fa6e57c3ea21ddcbbc10ea875ff9dec62`
+- `WebJam-macos-x64-ADHOC-TEST-ONLY.zip` — `b83a95bbf70f9290fc255c909d9d2534071906049c06b318e472941a77bcdcc9`
+- `WebJam-v0.28.0-macos-arm64-ADHOC-TEST-ONLY.dmg` — `90650efd998370cc9497145c17a5535c8c662c565839a54e8170584e286ea7ae`
+- `WebJam-v0.28.0-macos-x64-ADHOC-TEST-ONLY.dmg` — `54b4c5f80c4d9aa3078390ef33922ceb91ef83b925fa024c99310566208d2062`
+- `WebJam-v0.28.0-windows-x64-UNSIGNED-TEST-ONLY-setup.exe` — `247bea50b6bb4ff62cd9b6f42ed77d7658db1ac9e08a7f83ca5593873bb52b7f`
+- `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip` — `7582964e54652f7a736da0119c9babda34a0d5842dfb272a8534d50640e849bf`
+
+`WebJam-v0.28.0-SHA256SUMS.txt` contains exactly those seven lines and has
+SHA-256 `90a25a0820b191c171e777aa15f52b8d46e133f1326df464ee78e52d2a4ea32b`.
+
+### Observed v0.27.2 inventory (historical, kept, not Latest)
 
 The immutable release contains exactly these seven packages:
 

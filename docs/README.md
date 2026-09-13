@@ -5,21 +5,19 @@ audience that matches what you are trying to do; the root [README](../README.md)
 keeps the product story and five-minute demo intentionally short.
 
 > **Current testing release:** GitHub **Latest** is immutable unsigned/ad-hoc
-> v0.27.2 private test release `379360694`, published
-> `2026-08-30T18:06:14Z`. Use only one of its seven packages verified by
-> `WebJam-v0.27.2-SHA256SUMS.txt`. Lightweight tag `v0.27.2` points directly to
-> exact commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Tag run
-> `33327104322` passed tests, integrations, and all four desktop builds, then
-> failed its annotated-tag publisher gate; it is red and not publish-green.
-> Do not rerun it, replace the tag, or mutate the release. Windows is
-> unsigned; macOS is ad-hoc signed and unnotarized; every physical test remains
-> **NOT RUN** until recorded against those packages.
+> v0.28.0 private test release `388045385`, published `2026-09-13T21:48:49Z`. Use
+> only one of its seven packages verified by `WebJam-v0.28.0-SHA256SUMS.txt`.
+> Annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peels to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`. Tag run
+> `34782892215` succeeded on the annotated tag; Jeff published the softprops draft
+> as Latest. Immutable historical v0.27.2 release `379360694` remains kept and
+> is not Latest. Windows is unsigned; macOS is ad-hoc signed and unnotarized;
+> every physical test remains **NOT RUN** until recorded against those packages.
 
-> **Source boundary:** this checkout reports unsigned v0.28.0. A checkout or
-> branch artifact is not a package; use the exact release assets above. Its
-> baked Jamulus 3.12.2 and 3.12.3 records are approved through
-> v0.27.2, so live Host/Join and required package-build CI are source-eligible.
-> All v0.27 physical/hardware rows remain **NOT RUN**.
+> **Source boundary:** this checkout reports unsigned v0.28.0 matching the
+> published tag. A checkout or branch artifact is not a package; use the exact
+> release assets above. Its baked Jamulus 3.12.2 and 3.12.3 records are approved
+> through v0.28.0, so live Host/Join and required package-build CI are
+> source-eligible. All v0.28 physical/hardware rows remain **NOT RUN**.
 
 ## Start here
 

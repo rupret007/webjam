@@ -1,10 +1,11 @@
 # WebJam creator guide — v0.28.0 source
 
 > This guide describes current unsigned v0.28.0 source. GitHub **Latest** is the
-> immutable unsigned/ad-hoc v0.27.2 private test release `379360694` from exact
-> tag commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c`, with seven packages plus
-> `WebJam-v0.27.2-SHA256SUMS.txt`. A later checkout or branch artifact is source
-> evidence, not one of those checksum-bound packages. The
+> immutable unsigned/ad-hoc v0.28.0 private test release `388045385` from exact
+> tag commit `8ac08b69865af598e5ff69a84066964b1d90c940`, with seven packages plus
+> `WebJam-v0.28.0-SHA256SUMS.txt`. A later checkout or branch artifact is source
+> evidence, not one of those checksum-bound packages. Immutable historical
+> v0.27.2 release `379360694` remains kept and is not Latest. The
 > existing exact Jamulus 3.12.2 and 3.12.3 records are approved through v0.28.0
 > for Host/Join. Windows remains unsigned; macOS remains ad-hoc signed and
 > unnotarized. No physical, credentialed, signing, or notarization PASS is claimed.

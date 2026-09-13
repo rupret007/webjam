@@ -66,17 +66,17 @@
 > jamulus-components-v1/v2/v3 stay. A future managed update requires a new
 > fixed channel and the complete procedure below.
 
-> **v0.28.0 candidate fallback-only desktop state:** sealed v3 still authorizes
+> **v0.28.0 published fallback-only desktop state:** sealed v3 still authorizes
 > exact WebJam 0.22.5 only and cannot authorize a managed 0.28.0 component.
 > The source registry extends the unchanged audited 3.12.2/3.12.3 identities
 > through exact WebJam 0.28.0 and rejects 0.28.1, so the embedded fallback
-> remains known. Immutable desktop release `379360694` is GitHub **Latest** at
-> lightweight tag `v0.27.2` and exact commit
-> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`; this desktop release did not move
-> the component channel. No v0.28.0 component tag, release, sequence, asset,
-> signature, or PASS evidence exists. `jamulus-components-v1/v2/v3` stay
-> fixed. A future managed update requires a new fixed channel and the complete
-> procedure below.
+> remains known. Immutable desktop release `388045385` is GitHub **Latest**
+> at annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peeling to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`; this
+> desktop release did not move the component channel. Immutable historical
+> desktop release `379360694` remains kept and is not Latest. No v0.28.0
+> component tag, release, sequence, asset, signature, or PASS evidence exists.
+> `jamulus-components-v1/v2/v3` stay fixed. A future managed update requires a
+> new fixed channel and the complete procedure below.
 
 This runbook records the sealed v1/v2 history and current v3 catalog channel. The
 catalog tells WebJam which exact

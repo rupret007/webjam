@@ -26,7 +26,7 @@
       },
       {
         "name": "webjam:build-eligibility",
-        "value": "source-eligible-no-package-published"
+        "value": "source-and-package-published-unsigned-test-only"
       }
     ]
   },
@@ -44,7 +44,11 @@
           "content": "4e7cef6a70fe4525f0e7ea1f1c3301d7298047d9456283b7e12035f3ab5ba7b9"
         }
       ],
-      "licenses": [{"expression": "GPL-2.0-or-later"}],
+      "licenses": [
+        {
+          "expression": "GPL-2.0-or-later"
+        }
+      ],
       "externalReferences": [
         {
           "type": "distribution",
@@ -52,9 +56,18 @@
         }
       ],
       "properties": [
-        {"name": "webjam:target", "value": "windows-x64"},
-        {"name": "webjam:artifact-size", "value": "84381073"},
-        {"name": "webjam:status", "value": "embedded-offline-fallback"}
+        {
+          "name": "webjam:target",
+          "value": "windows-x64"
+        },
+        {
+          "name": "webjam:artifact-size",
+          "value": "84381073"
+        },
+        {
+          "name": "webjam:status",
+          "value": "embedded-offline-fallback"
+        }
       ]
     },
     {
@@ -70,7 +83,11 @@
           "content": "029f8858f21a5fb36da5144046473575caa2a26f2c7d8db162953b89d8c8ccc9"
         }
       ],
-      "licenses": [{"expression": "GPL-2.0-or-later"}],
+      "licenses": [
+        {
+          "expression": "GPL-2.0-or-later"
+        }
+      ],
       "externalReferences": [
         {
           "type": "distribution",
@@ -78,9 +95,18 @@
         }
       ],
       "properties": [
-        {"name": "webjam:target", "value": "linux-x64"},
-        {"name": "webjam:artifact-size", "value": "1505188"},
-        {"name": "webjam:status", "value": "embedded-offline-fallback"}
+        {
+          "name": "webjam:target",
+          "value": "linux-x64"
+        },
+        {
+          "name": "webjam:artifact-size",
+          "value": "1505188"
+        },
+        {
+          "name": "webjam:status",
+          "value": "embedded-offline-fallback"
+        }
       ]
     },
     {
@@ -96,7 +122,11 @@
           "content": "adf185aaf78e27d9f603daa6895e7698b4bdffee18fe29ad789cd7c1021d6bd0"
         }
       ],
-      "licenses": [{"expression": "GPL-2.0-or-later"}],
+      "licenses": [
+        {
+          "expression": "GPL-2.0-or-later"
+        }
+      ],
       "externalReferences": [
         {
           "type": "distribution",
@@ -104,9 +134,18 @@
         }
       ],
       "properties": [
-        {"name": "webjam:target", "value": "macos-arm64,macos-x64"},
-        {"name": "webjam:artifact-size", "value": "88808313"},
-        {"name": "webjam:status", "value": "embedded-offline-fallback"}
+        {
+          "name": "webjam:target",
+          "value": "macos-arm64,macos-x64"
+        },
+        {
+          "name": "webjam:artifact-size",
+          "value": "88808313"
+        },
+        {
+          "name": "webjam:status",
+          "value": "embedded-offline-fallback"
+        }
       ]
     },
     {
@@ -117,14 +156,30 @@
       "type": "application",
       "scope": "required",
       "licenses": [
-        {"expression": "GPL-2.0-or-later"},
-        {"expression": "LGPL-3.0-only"}
+        {
+          "expression": "GPL-2.0-or-later"
+        },
+        {
+          "expression": "LGPL-3.0-only"
+        }
       ],
       "properties": [
-        {"name": "webjam:target", "value": "macos-arm64,macos-x64"},
-        {"name": "webjam:source-commit", "value": "ffca974ed4e47b8f4621f3b583c00db2f87974fa"},
-        {"name": "webjam:status", "value": "embedded-offline-fallback"},
-        {"name": "webjam:artifact-hash", "value": "recorded-per-build-in-provenance"}
+        {
+          "name": "webjam:target",
+          "value": "macos-arm64,macos-x64"
+        },
+        {
+          "name": "webjam:source-commit",
+          "value": "ffca974ed4e47b8f4621f3b583c00db2f87974fa"
+        },
+        {
+          "name": "webjam:status",
+          "value": "embedded-offline-fallback"
+        },
+        {
+          "name": "webjam:artifact-hash",
+          "value": "recorded-per-build-in-provenance"
+        }
       ]
     },
     {
@@ -141,7 +196,9 @@
         }
       ],
       "licenses": [
-        {"expression": "AGPL-3.0-or-later AND GPL-3.0-or-later"}
+        {
+          "expression": "AGPL-3.0-or-later AND GPL-3.0-or-later"
+        }
       ],
       "externalReferences": [
         {
@@ -150,14 +207,38 @@
         }
       ],
       "properties": [
-        {"name": "webjam:target", "value": "windows-x64"},
-        {"name": "webjam:artifact-size", "value": "84406464"},
-        {"name": "webjam:installed-runtime-path", "value": "Jamulus.exe"},
-        {"name": "webjam:installed-runtime-size", "value": "3111424"},
-        {"name": "webjam:installed-runtime-sha256", "value": "25c3dacaece705a233d9d2a1b7ddb00bb5dfcd10fb3af7ed98f024c56b473295"},
-        {"name": "webjam:installed-runtime-architecture", "value": "pe32+-x86-64"},
-        {"name": "webjam:publisher-trust", "value": "upstream-unsigned-exact-hash-user-approval-required"},
-        {"name": "webjam:status", "value": "approved-platform-update"}
+        {
+          "name": "webjam:target",
+          "value": "windows-x64"
+        },
+        {
+          "name": "webjam:artifact-size",
+          "value": "84406464"
+        },
+        {
+          "name": "webjam:installed-runtime-path",
+          "value": "Jamulus.exe"
+        },
+        {
+          "name": "webjam:installed-runtime-size",
+          "value": "3111424"
+        },
+        {
+          "name": "webjam:installed-runtime-sha256",
+          "value": "25c3dacaece705a233d9d2a1b7ddb00bb5dfcd10fb3af7ed98f024c56b473295"
+        },
+        {
+          "name": "webjam:installed-runtime-architecture",
+          "value": "pe32+-x86-64"
+        },
+        {
+          "name": "webjam:publisher-trust",
+          "value": "upstream-unsigned-exact-hash-user-approval-required"
+        },
+        {
+          "name": "webjam:status",
+          "value": "approved-platform-update"
+        }
       ]
     },
     {
@@ -174,7 +255,9 @@
         }
       ],
       "licenses": [
-        {"expression": "AGPL-3.0-or-later AND GPL-3.0-or-later"}
+        {
+          "expression": "AGPL-3.0-or-later AND GPL-3.0-or-later"
+        }
       ],
       "externalReferences": [
         {
@@ -183,13 +266,34 @@
         }
       ],
       "properties": [
-        {"name": "webjam:target", "value": "linux-x64"},
-        {"name": "webjam:artifact-size", "value": "1505696"},
-        {"name": "webjam:installed-runtime-path", "value": "usr/bin/jamulus"},
-        {"name": "webjam:installed-runtime-size", "value": "3430688"},
-        {"name": "webjam:installed-runtime-sha256", "value": "f576bb7139b4f48ae8331cff46641dc5a0350e6afbd11cd93411fbf36834c983"},
-        {"name": "webjam:installed-runtime-architecture", "value": "elf64-x86-64"},
-        {"name": "webjam:status", "value": "approved-platform-update"}
+        {
+          "name": "webjam:target",
+          "value": "linux-x64"
+        },
+        {
+          "name": "webjam:artifact-size",
+          "value": "1505696"
+        },
+        {
+          "name": "webjam:installed-runtime-path",
+          "value": "usr/bin/jamulus"
+        },
+        {
+          "name": "webjam:installed-runtime-size",
+          "value": "3430688"
+        },
+        {
+          "name": "webjam:installed-runtime-sha256",
+          "value": "f576bb7139b4f48ae8331cff46641dc5a0350e6afbd11cd93411fbf36834c983"
+        },
+        {
+          "name": "webjam:installed-runtime-architecture",
+          "value": "elf64-x86-64"
+        },
+        {
+          "name": "webjam:status",
+          "value": "approved-platform-update"
+        }
       ]
     },
     {
@@ -206,7 +310,9 @@
         }
       ],
       "licenses": [
-        {"expression": "AGPL-3.0-or-later AND GPL-3.0-or-later"}
+        {
+          "expression": "AGPL-3.0-or-later AND GPL-3.0-or-later"
+        }
       ],
       "externalReferences": [
         {
@@ -215,9 +321,18 @@
         }
       ],
       "properties": [
-        {"name": "webjam:target", "value": "linux-x64"},
-        {"name": "webjam:artifact-size", "value": "1249168"},
-        {"name": "webjam:status", "value": "integration-and-server-compatibility"}
+        {
+          "name": "webjam:target",
+          "value": "linux-x64"
+        },
+        {
+          "name": "webjam:artifact-size",
+          "value": "1249168"
+        },
+        {
+          "name": "webjam:status",
+          "value": "integration-and-server-compatibility"
+        }
       ]
     },
     {
@@ -234,7 +349,9 @@
         }
       ],
       "licenses": [
-        {"expression": "AGPL-3.0-or-later AND GPL-3.0-or-later"}
+        {
+          "expression": "AGPL-3.0-or-later AND GPL-3.0-or-later"
+        }
       ],
       "externalReferences": [
         {
@@ -243,12 +360,30 @@
         }
       ],
       "properties": [
-        {"name": "webjam:target", "value": "macos-arm64,macos-x64"},
-        {"name": "webjam:artifact-size", "value": "88923220"},
-        {"name": "webjam:publisher-team-id", "value": "V9ZZ6B9WH8"},
-        {"name": "webjam:license-acceptance", "value": "explicit-before-mount-or-staging"},
-        {"name": "webjam:bundle-symlinks", "value": "allowed-only-under-verified-upstream-signature"},
-        {"name": "webjam:status", "value": "approved-managed-update-input"}
+        {
+          "name": "webjam:target",
+          "value": "macos-arm64,macos-x64"
+        },
+        {
+          "name": "webjam:artifact-size",
+          "value": "88923220"
+        },
+        {
+          "name": "webjam:publisher-team-id",
+          "value": "V9ZZ6B9WH8"
+        },
+        {
+          "name": "webjam:license-acceptance",
+          "value": "explicit-before-mount-or-staging"
+        },
+        {
+          "name": "webjam:bundle-symlinks",
+          "value": "allowed-only-under-verified-upstream-signature"
+        },
+        {
+          "name": "webjam:status",
+          "value": "approved-managed-update-input"
+        }
       ]
     },
     {
@@ -259,16 +394,38 @@
       "type": "application",
       "scope": "excluded",
       "licenses": [
-        {"expression": "AGPL-3.0-or-later AND GPL-3.0-or-later"},
-        {"expression": "LGPL-3.0-only"}
+        {
+          "expression": "AGPL-3.0-or-later AND GPL-3.0-or-later"
+        },
+        {
+          "expression": "LGPL-3.0-only"
+        }
       ],
       "properties": [
-        {"name": "webjam:target", "value": "macos-arm64,macos-x64"},
-        {"name": "webjam:source-commit", "value": "74dc422116983a2173eb917cb4d6a403886b31e5"},
-        {"name": "webjam:status", "value": "not-approved"},
-        {"name": "webjam:artifact-hash", "value": "injected-only-from-ci-build-evidence"},
-        {"name": "webjam:catalog-signing", "value": "forbidden-while-legal-gate-is-open"},
-        {"name": "webjam:legal-gate", "value": "pending-qualified-agpl-13-review-or-protocol-visible-source-offer"}
+        {
+          "name": "webjam:target",
+          "value": "macos-arm64,macos-x64"
+        },
+        {
+          "name": "webjam:source-commit",
+          "value": "74dc422116983a2173eb917cb4d6a403886b31e5"
+        },
+        {
+          "name": "webjam:status",
+          "value": "not-approved"
+        },
+        {
+          "name": "webjam:artifact-hash",
+          "value": "injected-only-from-ci-build-evidence"
+        },
+        {
+          "name": "webjam:catalog-signing",
+          "value": "forbidden-while-legal-gate-is-open"
+        },
+        {
+          "name": "webjam:legal-gate",
+          "value": "pending-qualified-agpl-13-review-or-protocol-visible-source-offer"
+        }
       ]
     }
   ]

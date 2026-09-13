@@ -1,18 +1,17 @@
 # WebJam architecture — v0.28.0 source
 
 > This document describes v0.28.0 source. GitHub **Latest** is immutable
-> unsigned/ad-hoc private test release `379360694`, published
-> `2026-08-30T18:06:14Z` from lightweight tag `v0.27.2` at exact commit
-> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. It has seven packages plus
-> `WebJam-v0.27.2-SHA256SUMS.txt`. Source text, a later checkout, and branch CI
-> are not substitutes for those exact checksum-verified release assets.
-> Tag run `33327104322` passed its tests, integrations, and four desktop builds,
-> then failed its annotated-tag publisher gate. It is red, not publish-green;
-> do not rerun it, replace the lightweight tag, or mutate the immutable release.
-> The existing Jamulus 3.12.2 and 3.12.3 records are approved through v0.28.0,
-> so baked Host/Join selection and the package build gate are source-eligible.
+> unsigned/ad-hoc private test release `388045385`, published
+> `2026-09-13T21:48:49Z` from annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peeling to exact commit
+> `8ac08b69865af598e5ff69a84066964b1d90c940`. It has seven packages plus `WebJam-v0.28.0-SHA256SUMS.txt`. Source
+> text, a later checkout, and branch CI are not substitutes for those exact
+> checksum-verified release assets. Tag run `34782892215` succeeded on the
+> annotated tag; Jeff published the softprops draft as Latest. Immutable
+> historical v0.27.2 release `379360694` remains kept and is not Latest. The
+> existing Jamulus 3.12.2 and 3.12.3 records are approved through v0.28.0, so
+> baked Host/Join selection and the package build gate are source-eligible.
 > The signed public catalog remains sealed at exact WebJam v0.22.5.
-> All v0.27 physical, credentialed, signing, and platform-trust gates stay
+> All v0.28 physical, credentialed, signing, and platform-trust gates stay
 > **NOT RUN**.
 
 ## Product boundary

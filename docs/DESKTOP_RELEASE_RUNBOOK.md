@@ -55,29 +55,29 @@
 > + bundled headless. Every physical gate remains **NOT RUN**. Do not retag or
 > mutate v0.27.1, add a version-specific publisher, or restack #37.
 
-> **v0.27.2 published testing boundary (still GitHub Latest until v0.28.0 publish):** GitHub **Latest** remains immutable
-> unsigned/ad-hoc release `379360694`, published `2026-08-30T18:06:14Z` from
-> lightweight tag `v0.27.2` pointing directly to exact commit
-> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. It has seven packages plus
+> **v0.27.2 historical testing boundary:** immutable unsigned/ad-hoc release
+> `379360694` preceded v0.28.0 as GitHub **Latest**. It was published
+> `2026-08-30T18:06:14Z` from lightweight tag `v0.27.2` pointing directly to
+> exact commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. It has seven packages plus
 > `WebJam-v0.27.2-SHA256SUMS.txt`. Tag run `33327104322` passed its tests,
 > integrations, and all four desktop builds, then failed **Publish GitHub
 > Release** at the annotated-tag verification gate. The run is red, not
 > publish-green. Do not rerun it, replace the lightweight tag with an annotated
 > tag, or mutate the immutable release or assets. Windows remains unsigned;
-> macOS remains ad-hoc signed and unnotarized. The signed catalog remains sealed
-> at exact WebJam v0.22.5, and every physical, credentialed, signing,
-> notarization, and platform-trust gate remains **NOT RUN**.
+> macOS remains ad-hoc signed and unnotarized. The release is kept and is
+> **not** Latest. Every physical, credentialed, signing, notarization, and
+> platform-trust gate remains **NOT RUN**.
 
-> **v0.28.0 candidate prep boundary:** source identity is unsigned `0.28.0`.
-> No annotated `v0.28.0` tag, softprops draft, published package, checksum
-> manifest, or physical PASS exists yet. Jeff authorized cutting unsigned
-> v0.28.0 as the sole new Latest candidate from this prep. After merge,
-> Jeff/Bob will create an annotated `v0.28.0` tag matching packaged
-> `webjam_qt.__version__` and exact `origin/master`, let tag CI create the
-> softprops **draft**, then publish that draft as Latest. Do **not** use a
-> lightweight tag. Do **not** dispatch `publish-latest-release.yml` (sealed
-> catalog still targets exact WebJam 0.22.5). Do not invent a signed catalog,
-> restack #37/#49, or mutate release `379360694`. Physical/signing remain
+> **v0.28.0 published testing boundary (GitHub Latest):** GitHub **Latest** is
+> immutable unsigned/ad-hoc release `388045385`, published `2026-09-13T21:48:49Z`
+> from annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peeling to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`. It
+> has seven packages plus `WebJam-v0.28.0-SHA256SUMS.txt`. Tag run `34782892215`
+> succeeded on the annotated tag, including softprops draft creation; Jeff
+> published that draft as **Latest**. Do **not** dispatch
+> `publish-latest-release.yml` (sealed catalog still targets exact WebJam
+> 0.22.5). Do not invent a signed catalog, restack #37/#49, retag `v0.28.0`, or
+> mutate release `388045385` or historical `379360694`. Windows remains
+> unsigned; macOS remains ad-hoc signed and unnotarized. Physical/signing remain
 > **NOT RUN**. The baked Jamulus 3.12.2/3.12.3 records are approved through
 > v0.28.0 for Host/Join and component-input CI.
 

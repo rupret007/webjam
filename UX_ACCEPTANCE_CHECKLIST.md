@@ -1,32 +1,32 @@
 # WebJam v0.28.0 source UX acceptance checklist
 
 > This checklist describes current unsigned v0.28.0 source. Immutable
-> unsigned/ad-hoc release `379360694` is GitHub **Latest** for private testing.
-> Its lightweight `v0.27.2` tag points to exact commit
-> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`; seven packages are covered by
-> `WebJam-v0.27.2-SHA256SUMS.txt`.
+> unsigned/ad-hoc release `388045385` is GitHub **Latest** for private testing.
+> Annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peels to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`; seven
+> packages are covered by `WebJam-v0.28.0-SHA256SUMS.txt`. Immutable historical
+> v0.27.2 release `379360694` remains kept and is not Latest.
 > Historical v0.27.1 results remain bound to exact v0.27.1 assets. Every
 > v0.28.0 physical and platform-trust gate is **NOT RUN** and cannot inherit
 > that evidence.
-> Exact v0.27.2 assets are package evidence, but not physical evidence.
+> Exact v0.28.0 assets are package evidence, but not physical evidence.
 > Host/Join is compatible with the existing exact Jamulus 3.12.2 and 3.12.3
 > records. Use only a checksum-verified release asset for packaged checks.
 
 ## Owner click gate — current two-card door
 
 **Status: NOT RUN.** This is the one attended first-screen feel check for the
-published unsigned/ad-hoc v0.27.2 package. Source tests prove labels, order,
+published unsigned/ad-hoc v0.28.0 package. Source tests prove labels, order,
 layout, and accessibility; they do not prove that the packaged door feels
 obvious to Jeff. Do not record a result from this checkout or a branch build.
 
 - [ ] Open the immutable
-      [v0.27.2 release](https://github.com/rupret007/webjam/releases/tag/v0.27.2)
-      with release ID `379360694`.
+      [v0.28.0 release](https://github.com/rupret007/webjam/releases/tag/v0.28.0)
+      with release ID `388045385`.
 - [ ] Download the package for this computer plus
-      `WebJam-v0.27.2-SHA256SUMS.txt`, and verify the exact filename and
+      `WebJam-v0.28.0-SHA256SUMS.txt`, and verify the exact filename and
       SHA-256 before opening it.
 - [ ] Launch that checksum-verified package from tag commit
-      `9c6ca3de96aa7eb261c65b7dee768ab48144169c`, not a checkout or CI artifact.
+      `8ac08b69865af598e5ff69a84066964b1d90c940`, not a checkout or CI artifact.
 - [ ] Confirm the first screen shows exactly **Art** and **Music** as equal
       creator choices. Podcast & Voice and Review & Rehearsal stay behind the
       smaller **Podcast or review** route rather than competing on this screen.
@@ -272,7 +272,7 @@ change the package's NOT RUN status.
       extraction.
 - [ ] Physical two-Mac and hardware evidence is listed separately as PASS,
       FAIL, or NOT RUN.
-- [ ] No v0.27.2 physical or production-trust claim is made until the dedicated
+- [ ] No v0.28.0 physical or production-trust claim is made until the dedicated
       [physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
       records exact-asset results. Two-machine music, Shared Track, recording,
       Studio, external-editor, accessibility, signing, installation, and

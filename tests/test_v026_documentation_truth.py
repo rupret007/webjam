@@ -1,4 +1,4 @@
-"""Published v0.27.2 Latest and unsigned v0.28.0 candidate-prep truth contracts."""
+"""Published unsigned v0.28.0 Latest and immutable historical v0.27.2 truth contracts."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def _heading_anchors(text: str) -> set[str]:
     return anchors
 
 
-def test_current_guides_separate_v0272_latest_from_v0280_source_truthfully() -> None:
+def test_current_guides_separate_v0280_latest_from_historical_v0272_truthfully() -> None:
     for relative_path in (
         "README.md",
         "README_SIMPLE.md",
@@ -73,6 +73,13 @@ def test_current_guides_separate_v0272_latest_from_v0280_source_truthfully() -> 
 
     combined = " ".join(_normalized(path) for path in CURRENT_GUIDES)
     for marker in (
+        "https://github.com/rupret007/webjam/releases/tag/v0.28.0",
+        "388045385",
+        "2026-09-13T21:48:49Z",
+        "WebJam-v0.28.0-SHA256SUMS.txt",
+        "8ac08b69865af598e5ff69a84066964b1d90c940",
+        "526bba0728439d48d38a5170af083ff8736d051d",
+        "34782892215",
         "https://github.com/rupret007/webjam/releases/tag/v0.27.2",
         "379360694",
         "2026-08-30T18:06:14Z",
@@ -116,14 +123,24 @@ def test_current_guides_separate_v0272_latest_from_v0280_source_truthfully() -> 
         "No v0.27.2 tag",
         "No v0.27.2 release",
         "No v0.27.2 package",
-        "GitHub **Latest** is unsigned/ad-hoc v0.28.0",
-        "GitHub **Latest** remains v0.28.0",
-        "release ID for v0.28.0",
+        "No annotated `v0.28.0` tag",
+        "candidate prep for unsigned",
+        "Unsigned private test candidate (unpublished)",
+        "still GitHub Latest until publish",
+        "still GitHub Latest until v0.28.0 publish",
+        "source-eligible-no-package-published",
+        "GitHub **Latest** remains immutable unsigned/ad-hoc v0.27.2",
+        "GitHub **Latest** remains v0.27.2",
+        "immutable unsigned/ad-hoc v0.27.2 remains GitHub Latest",
     ):
         assert stale_claim.casefold() not in combined.casefold(), stale_claim
 
     assert "v0.28.0 source" in combined.casefold()
-    assert "candidate prep" in combined.casefold() or "candidate source boundary" in combined.casefold()
+    assert "388045385" in combined
+    assert (
+        "kept and is not Latest".casefold() in combined.casefold()
+        or "kept and is no longer Latest".casefold() in combined.casefold()
+    )
     assert "not publish-green" in combined.casefold()
     assert "sealed at exact webjam v0.22.5" in combined.casefold()
     merge_record = " ".join(
@@ -151,8 +168,8 @@ def test_current_guides_separate_v0272_latest_from_v0280_source_truthfully() -> 
         assert historical_marker.casefold() in combined.casefold()
 
 
-def test_required_honesty_docs_lock_v0272_latest_and_v0280_candidate() -> None:
-    """Jeff-facing pass: v0.27.2 is Latest; source is unpublished v0.28.0 prep."""
+def test_required_honesty_docs_lock_v0280_latest_and_historical_v0272() -> None:
+    """Jeff-facing pass: v0.28.0 is Latest; v0.27.2 remains immutable historical."""
 
     required = (
         "README.md",
@@ -187,8 +204,12 @@ def test_required_honesty_docs_lock_v0272_latest_and_v0280_candidate() -> None:
         "No v0.27.2 tag",
         "No v0.27.2 release",
         "No v0.27.2 package",
-        "GitHub **Latest** is unsigned/ad-hoc v0.28.0",
-        "GitHub **Latest** remains v0.28.0",
+        "No annotated `v0.28.0` tag",
+        "candidate prep for unsigned",
+        "still GitHub Latest until publish",
+        "still GitHub Latest until v0.28.0 publish",
+        "GitHub **Latest** remains immutable unsigned/ad-hoc v0.27.2",
+        "Unsigned private test candidate (unpublished)",
     )
     for relative_path in required:
         text = (ROOT / relative_path).read_text(encoding="utf-8")
@@ -196,12 +217,14 @@ def test_required_honesty_docs_lock_v0272_latest_and_v0280_candidate() -> None:
         folded = normalized.casefold()
         assert "v0.27.2" in text, relative_path
         assert "v0.28.0" in text, relative_path
-        assert "latest" in folded and "379360694" in text, relative_path
+        assert "latest" in folded and "388045385" in text, relative_path
+        assert "8ac08b69865af598e5ff69a84066964b1d90c940" in text, relative_path
+        assert "34782892215" in text, relative_path
+        assert "379360694" in text, relative_path
         assert "9c6ca3de96aa7eb261c65b7dee768ab48144169c" in text, relative_path
         assert "33327104322" in text, relative_path
-        assert "lightweight tag" in folded, relative_path
         assert "seven packages" in folded, relative_path
-        assert "publish-green" in folded, relative_path
+        assert "WebJam-v0.28.0-SHA256SUMS.txt" in text, relative_path
         assert "WebJam-v0.27.2-SHA256SUMS.txt" in text, relative_path
         assert "NOT RUN" in text, relative_path
         for claim in forbidden:

@@ -1,24 +1,24 @@
-WebJam v0.28.0 unsigned source candidate — no package published
-================================================================
+WebJam v0.28.0 unsigned private test package
+============================================
 
-NO PACKAGE IS AUTHORIZED: v0.28.0 source is not GitHub Latest. GitHub Latest
-remains immutable release 379360694, published 2026-08-30T18:06:14Z from
-lightweight tag v0.27.2 at exact commit 9c6ca3de96aa7eb261c65b7dee768ab48144169c,
-with seven packages plus WebJam-v0.27.2-SHA256SUMS.txt. The existing exact
-Jamulus 3.12.2 and 3.12.3 records are approved through v0.28.0, so required
-package CI and live Host/Join are source-eligible. Do not use a build as a
-package until an exact v0.28.0 release manifest exists. Do not use the published
-v0.27.2 checksum manifest for this post-tag source build.
+PACKAGE BOUNDARY: GitHub Latest is immutable release 388045385, published
+2026-09-13T21:48:49Z from annotated tag object 526bba0728439d48d38a5170af083ff8736d051d peeling to exact commit
+8ac08b69865af598e5ff69a84066964b1d90c940. It has seven packages plus WebJam-v0.28.0-SHA256SUMS.txt. Use this
+private test package only when its exact filename and SHA-256 appear in that
+manifest. A checkout or branch build is not a substitute. Immutable historical
+v0.27.2 release 379360694 remains kept and is not Latest. The existing exact
+Jamulus 3.12.2 and 3.12.3 records are approved through v0.28.0 for live
+Host/Join.
 Physical audio, hardware, SmartScreen, publisher-signing, and managed-device
 gates remain NOT RUN unless the release evidence names this exact file and
 SHA-256.
 
-Everything below describes a future package only after exact release evidence
-exists. Its exact filename and published SHA-256 would still require
-verification. Windows SmartScreen or organizational policy may block it; WebJam
-does not bypass those controls.
+Everything below describes the published unsigned private test package. Its
+exact filename and published SHA-256 still require verification.
+Windows SmartScreen or organizational policy may block it; WebJam does not
+bypass those controls.
 
-This source candidate upgrades cryptography to 50.0.0 for CVE-2026-69247,
+This release upgrades cryptography to 50.0.0 for CVE-2026-69247,
 CVE-2026-69248, and CVE-2026-69249 using an exact hash-locked upstream
 Windows wheel.
 

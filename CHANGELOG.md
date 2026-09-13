@@ -6,26 +6,31 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-> Future work after the named unsigned v0.28.0 source candidate belongs here.
+> Future work after the published unsigned v0.28.0 test candidate belongs here.
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
-## [0.28.0] — Unsigned private test candidate (unpublished)
+## [0.28.0] — Unsigned/ad-hoc private test release (2026-09-13)
 
-> Candidate prep for unsigned v0.28.0. The current source identity is
-> `webjam_qt.__version__ = "0.28.0"`. No annotated `v0.28.0` tag, GitHub release
-> draft, published package, checksum manifest, or physical PASS exists yet.
-> GitHub **Latest** remains immutable unsigned/ad-hoc v0.27.2 release
-> `379360694` until Jeff/Bob create an annotated `v0.28.0` tag and publish the
-> softprops draft. Existing tag CI may create a reviewable unsigned draft only
-> after that annotated tag matches packaged `0.28.0` and exact `origin/master`;
-> this source change does not create or push that tag. Physical/signing remain
-> **NOT RUN**. The signed public catalog remains sealed at exact WebJam
-> v0.22.5 — do not invent a signed catalog. Honest product scope since
-> published v0.27.2: Art companion Phase 1 and door/polish work recorded below
-> (no movie claim; no signed-catalog claim).
-> The existing exact Jamulus 3.12.2 and 3.12.3 records are approved through
-> v0.28.0, so Host/Join and required component-input CI are source-eligible.
+> Published as immutable GitHub **Latest** release `388045385` at
+> https://github.com/rupret007/webjam/releases/tag/v0.28.0 at
+> `2026-09-13T21:48:49Z`. Annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peels to exact commit
+> `8ac08b69865af598e5ff69a84066964b1d90c940`. The release has seven packages plus
+> `WebJam-v0.28.0-SHA256SUMS.txt`. Windows remains unsigned; macOS remains
+> ad-hoc signed and unnotarized. Tag workflow `34782892215` succeeded, including
+> softprops draft creation on the annotated tag; Jeff published that draft as
+> **Latest**. Do not dispatch `publish-latest-release.yml` for this unsigned
+> round (sealed catalog still targets exact WebJam v0.22.5). Do not retag or
+> mutate this release. Immutable historical v0.27.2 release `379360694` remains
+> kept and is not Latest.
+> Jeff explicitly approved extending the existing immutable Jamulus 3.12.2 and
+> 3.12.3 records through WebJam v0.28.0. Host/Join and the required
+> component-input CI therefore reuse those exact baked identities. The signed
+> public catalog remains sealed at exact WebJam v0.22.5; no catalog, signer,
+> or pin was created or changed. Every v0.28.0 physical, credentialed,
+> signing, notarization, Gatekeeper, and SmartScreen result remains **NOT RUN**.
+> Honest product scope since published v0.27.2: Art companion Phase 1 and
+> door/polish work recorded below (no movie claim; no signed-catalog claim).
 
 ### Join an Art room from a native iPhone/iPad companion
 

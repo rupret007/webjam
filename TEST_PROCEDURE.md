@@ -1,16 +1,15 @@
 # WebJam v0.28.0 source test procedure
 
-> GitHub **Latest** is immutable unsigned/ad-hoc v0.27.2 private test release
-> `379360694`, published from lightweight tag `v0.27.2` at exact commit
-> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Its seven packages plus
-> `WebJam-v0.27.2-SHA256SUMS.txt` are release evidence. No v0.28.0 physical result
-> exists; every v0.27 physical, credentialed, signing, and platform-trust gate
-> is **NOT RUN**. Tag run `33327104322` passed tests, integrations, and all four
-> desktop builds, then failed its annotated-tag publisher gate. It is red, not
-> publish-green; do not rerun it or replace the lightweight tag.
-> Publication did not create
-> physical PASS.
-> Published v0.27.1 history remains immutable.
+> GitHub **Latest** is immutable unsigned/ad-hoc v0.28.0 private test release
+> `388045385`, published from annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peeling to
+> exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`. Its seven packages plus
+> `WebJam-v0.28.0-SHA256SUMS.txt` are release evidence. No v0.28.0 physical
+> result exists; every v0.28 physical, credentialed, signing, and platform-trust
+> gate is **NOT RUN**. Tag run `34782892215` succeeded on the annotated tag; Jeff
+> published the softprops draft as Latest. Immutable historical v0.27.2 release
+> `379360694` remains kept and is not Latest.
+> Publication did not create physical PASS.
+> Published v0.27.2 and v0.27.1 history remain immutable.
 > Required component-input CI exercises the existing exact Jamulus 3.12.2 and
 > 3.12.3 records now approved through v0.28.0. Physical steps still require an
 > exact package handoff and remain **NOT RUN**.

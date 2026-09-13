@@ -6,10 +6,11 @@ local playback and recording choices do not change the device, buffer, mix, or
 connection owned by Jamulus.
 
 > **v0.28.0 source guide:** GitHub **Latest** is immutable unsigned/ad-hoc
-> private test release `379360694`, published from lightweight tag `v0.27.2` at
-> exact commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Always verify one
-> of its seven package assets against `WebJam-v0.27.2-SHA256SUMS.txt`; a
-> checkout or branch artifact is not a package substitute.
+> private test release `388045385`, published from annotated tag object
+> `526bba0728439d48d38a5170af083ff8736d051d` peeling to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`. Always verify one of its
+> seven package assets against `WebJam-v0.28.0-SHA256SUMS.txt`; a checkout or
+> branch artifact is not a package substitute. Immutable historical v0.27.2
+> release `379360694` remains kept and is not Latest.
 
 Windows packages are unsigned. Mac packages are ad-hoc signed and unnotarized.
 Automated checks do not prove that a particular interface, driver, speaker, or
