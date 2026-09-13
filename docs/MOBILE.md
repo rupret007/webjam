@@ -1,11 +1,9 @@
 # Mobile Art companion (north star locked 2026-09-12)
 
-**Status:** Phase-1 source spike in OPEN DRAFT #118. Jeff opened the spike
-with `WEBJAM_MOBILE_ART_SPIKE_CODEX_20260912`; the previous plan-only hold is
-satisfied. The north star and later phases below remain locked.
-**Recorded:** 2026-09-12
-**Base:** `origin/master` `ce0ce6dd` (DEMO.md #117 landed)
-**Owner:** Jeff owns public Art copy/feel and physical acceptance.
+**Status:** Phase 1 landed on `master` tip MATCH. [#118](https://github.com/rupret007/webjam/pull/118) merged 2026-09-13; tip `828aef0d399ec6bc56413c60cf2884c730d6909c` ("Advance Join focus and scroll the visible form above the keyboard"). Marker `WEBJAM_MOBILE_ART_SPIKE_CODEX_20260912` is closed. North star and later phases below remain locked. This doc update is honesty polish only — no new native feature pile-on.
+**Recorded:** 2026-09-13
+**Base / tip MATCH:** `origin/master` `828aef0d` (#118 Phase-1 native iPhone/iPad Art companion Join)
+**Owner:** Jeff owns public Art copy/feel, physical touch, Split View, real Webex media, device handoff, and signing/distribution (still NOT RUN).
 
 This native iPhone/iPad guest app is separate from Pocket Stage
 ([ADR 0003](adr/0003-pocket-stage-mobile-companion.md), owner iPhone as a
@@ -127,7 +125,7 @@ These stay held. A mobile plan is not permission to move them.
 Signing, notarization, physical two-device feel, and any App Store /
 TestFlight path remain owner-only and **NOT RUN**.
 
-## Leftover copy on this branch
+## Copy note (landed with #118)
 
 The same leftover also softens already-local Art room copy: user-facing
 "canvas" / "Install Drawpile" lines move toward "workspace" /
@@ -137,10 +135,11 @@ anyone lands it.
 
 ## Remaining holds
 
-- Merging this branch
 - Touching parked #37 or #49
 - A Music-mobile jam claim
 - A toy in-WebJam canvas
 - A second video stack
 - Pages, a tag, a release, or a 0.27.2 rewrite
-- Any broader delivery or public rollout beyond this source spike
+- Physical device feel / Split View / real Webex media / signing / TestFlight (Jeff NOT RUN)
+- Android, Internet mobile Join, and PWA (later phases)
+- Any broader delivery or public rollout beyond Phase 1
