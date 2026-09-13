@@ -1,10 +1,11 @@
 # Pocket Stage iPhone app
 
-> **v0.28.0 source candidate:** GitHub **Latest** is immutable unsigned/ad-hoc desktop
-> private test release `379360694`, published from lightweight tag `v0.27.2` at
-> exact commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. It contains no
-> installable iPhone kit. Physical iPhone installation and pairing remain
-> **NOT RUN**.
+> **v0.28.0 published desktop Latest:** GitHub **Latest** is immutable
+> unsigned/ad-hoc desktop private test release `388045385`, published from
+> annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peeling to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`. It
+> contains no installable iPhone kit. Immutable historical v0.27.2 release
+> `379360694` remains kept and is not Latest. Physical iPhone installation and
+> pairing remain **NOT RUN**.
 
 This folder also holds the **Art companion** guest app that landed with Phase 1
 on master. It is a different product from Pocket Stage: same-LAN Art Join, not

@@ -2,23 +2,23 @@
 
 > **Private test release:** GitHub
 > [Latest](https://github.com/rupret007/webjam/releases/latest) is immutable
-> unsigned/ad-hoc v0.27.2 release `379360694`, published
-> `2026-08-30T18:06:14Z`. Verify one of its seven packages against
-> `WebJam-v0.27.2-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
-> and unnotarized.
+> unsigned/ad-hoc v0.28.0 release `388045385`, published
+> `2026-09-13T21:48:49Z`. Verify one of its seven packages against
+> `WebJam-v0.28.0-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
+> and unnotarized. Historical v0.27.2 release `379360694` remains kept and is
+> not Latest.
 
-> **Published Latest note:** lightweight tag `v0.27.2` points directly to exact commit
-> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Use the exact release asset and
-> attached checksum manifest as download evidence; a checkout or branch
-> artifact is not a substitute.
+> **Published Latest note:** annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peels to exact
+> commit `8ac08b69865af598e5ff69a84066964b1d90c940`. Use the exact release asset and attached checksum manifest
+> as download evidence; a checkout or branch artifact is not a substitute.
 
-> **What this checkout is:** unsigned v0.28.0 source candidate (unpublished). The exact published
-> v0.27.2 release assets—not this checkout or a branch artifact—are package
-> evidence. Tag run `33327104322` passed tests, integrations, and all four
-> desktop builds, but its annotated-tag publisher gate failed; the run is red,
-> not publish-green, and must not be rerun or rewritten. Live Host/Join and
-> package builds reuse the exact baked Jamulus 3.12.2 and 3.12.3 records through v0.28.0; the
-> signed public catalog is unchanged. No physical PASS result is claimed.
+> **What this checkout is:** unsigned v0.28.0 source matching the published
+> tag. The exact published v0.28.0 release assets—not this checkout or a branch
+> artifact—are package evidence. Tag run `34782892215` succeeded on the annotated
+> tag; Jeff published the softprops draft as Latest. Live Host/Join and package
+> builds reuse the exact baked Jamulus 3.12.2 and 3.12.3 records through
+> v0.28.0; the signed public catalog is unchanged. No physical PASS result is
+> claimed.
 
 WebJam brings artists together to make, learn, and collaborate across mediums.
 Music supports live audio and separate recorded tracks; Art welcomes people

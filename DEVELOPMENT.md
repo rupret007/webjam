@@ -1,21 +1,21 @@
 # Developing WebJam v0.28.0
 
 > **Current source line:** this guide describes v0.28.0 source. GitHub
-> **Latest** is immutable unsigned/ad-hoc private test release `379360694`,
-> published `2026-08-30T18:06:14Z` from lightweight tag `v0.27.2` at exact
-> commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. A checkout or branch artifact
-> remains source evidence, not a substitute for an exact release asset.
+> **Latest** is immutable unsigned/ad-hoc private test release `388045385`,
+> published `2026-09-13T21:48:49Z` from annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peeling to
+> exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`. A checkout or branch artifact remains source
+> evidence, not a substitute for an exact release asset. Immutable historical
+> v0.27.2 release `379360694` remains kept and is not Latest.
 > The existing Jamulus 3.12.2 and 3.12.3 compatibility records are explicitly
 > approved through v0.28.0. Live client/server selection and the component-input
 > build gate reuse those exact baked identities; the signed public catalog stays
 > sealed at exact WebJam v0.22.5.
 
-> **Release boundary:** only the seven exact v0.27.2 package assets and attached
-> `WebJam-v0.27.2-SHA256SUMS.txt` are authoritative for the current download.
-> Tag run `33327104322` passed tests, integrations, and all four desktop builds,
-> but failed its annotated-tag publisher gate and is not publish-green. Do not
-> rerun it or rewrite the lightweight tag as annotated. Every v0.27 physical
-> result remains **NOT RUN**; immutable v0.27.1 history stays unchanged.
+> **Release boundary:** only the seven exact v0.28.0 package assets and attached
+> `WebJam-v0.28.0-SHA256SUMS.txt` are authoritative for the current download.
+> Tag run `34782892215` succeeded on the annotated tag; Jeff published the
+> softprops draft as Latest. Every v0.28 physical result remains **NOT RUN**;
+> immutable v0.27.2 and v0.27.1 history stays unchanged.
 
 ## Local setup
 

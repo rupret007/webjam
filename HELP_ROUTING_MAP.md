@@ -1,12 +1,12 @@
 # WebJam help routing — v0.28.0 source
 
 > The exact released source commit for immutable GitHub **Latest** release
-> `379360694` is `9c6ca3de96aa7eb261c65b7dee768ab48144169c`; lightweight tag
-> `v0.27.2` points directly to it, and its seven packages are covered by
-> `WebJam-v0.27.2-SHA256SUMS.txt`. This later documentation source is not a
-> package substitute. No physical PASS is claimed;
-> every v0.27 physical and release-decision row remains **NOT RUN**.
-> Unsigned v0.28.0 source reuses the existing exact Jamulus 3.12.2 and 3.12.3
+> `388045385` is `8ac08b69865af598e5ff69a84066964b1d90c940`; annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peels to it,
+> and its seven packages are covered by `WebJam-v0.28.0-SHA256SUMS.txt`. This
+> later documentation source is not a package substitute. No physical PASS is
+> claimed; every v0.28 physical and release-decision row remains **NOT RUN**.
+> Immutable historical v0.27.2 release `379360694` remains kept and is not
+> Latest. Unsigned v0.28.0 reuses the existing exact Jamulus 3.12.2 and 3.12.3
 > records for Host/Join. A checkout remains source evidence, not a package.
 
 | Creator says | Answer / action |

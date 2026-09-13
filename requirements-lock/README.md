@@ -5,16 +5,15 @@ matching its native package. These locks preserve the Python dependency graph
 that is reviewed and tested before signing; `requirements.txt` remains the
 human-maintained application dependency declaration.
 
-Immutable GitHub **Latest** release `379360694` published these dependency locks
-from lightweight tag `v0.27.2` at exact commit
-`9c6ca3de96aa7eb261c65b7dee768ab48144169c`. Its seven packages are bound by
-`WebJam-v0.27.2-SHA256SUMS.txt`; a later `master` checkout or branch build must
-not reuse that manifest as evidence for different bytes. Tag run `33327104322`
-passed tests, integrations, and all four desktop builds, then failed its
-annotated-tag publisher gate. The run is red and not publish-green; do not
-rerun it, replace the lightweight tag, or mutate the release. v0.27.1 remains
-immutable history. Every physical, signing, notarization, and platform-trust
-gate remains **NOT RUN** unless separately recorded against an exact package.
+Immutable GitHub **Latest** release `388045385` published these dependency
+locks from annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peeling to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`.
+Its seven packages are bound by `WebJam-v0.28.0-SHA256SUMS.txt`; a later
+`master` checkout or branch build must not reuse that manifest as evidence for
+different bytes. Tag run `34782892215` succeeded on the annotated tag; Jeff
+published the softprops draft as Latest. Immutable historical v0.27.2 release
+`379360694` and v0.27.1 remain immutable history. Every physical, signing,
+notarization, and platform-trust gate remains **NOT RUN** unless separately
+recorded against an exact package.
 The locks target CPython
 3.11.9 on Windows and both macOS targets, CPython
 3.11.15 on Linux, pip 26.1.2, setuptools 81.0.0 on macOS, and setuptools 83.0.0

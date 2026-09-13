@@ -1,4 +1,4 @@
-"""Published v0.27.2 Latest plus unsigned v0.28.0 candidate-prep contracts."""
+"""Published unsigned v0.28.0 Latest plus immutable historical v0.27.2 contracts."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ COMPONENT_UPDATE_SOURCE = (ROOT / "services" / "jamulus_component_update.py").re
 )
 
 
-def test_v0272_remains_latest_while_candidate_reports_unsigned_v0280_source() -> None:
+def test_v0280_is_latest_while_v0272_remains_immutable_historical() -> None:
     match = re.search(
         r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$',
         VERSION_SOURCE,
@@ -64,27 +64,26 @@ def test_v0272_remains_latest_while_candidate_reports_unsigned_v0280_source() ->
         "v0.25.0 is a new creator-multitrack source and package identity" in normalized
     )
     assert "v0.24.0 bytes" in normalized
-    assert "v0.27.2 private test release" in normalized
-    assert "release ID `379360694`" in normalized
-    assert "Candidate source boundary:" in normalized
+    assert "v0.28.0 private test release" in normalized
+    assert "release ID `388045385`" in normalized
+    assert "Source boundary:" in normalized
     assert "reports unsigned v0.28.0" in normalized
-    assert "No annotated `v0.28.0` tag" in normalized
-    assert "candidate prep for unsigned **v0.28.0**" in normalized
+    assert "No annotated `v0.28.0` tag" not in normalized
+    assert "candidate prep for unsigned **v0.28.0**" not in normalized
     assert "commits ahead" not in normalized
-    assert "release ID `379360694`" in normalized
-    assert "WebJam-v0.27.2-SHA256SUMS.txt" in normalized
-    assert "9c6ca3de96aa7eb261c65b7dee768ab48144169c" in normalized
-    assert "Lightweight tag `v0.27.2`" in normalized
+    assert "WebJam-v0.28.0-SHA256SUMS.txt" in normalized
+    assert "8ac08b69865af598e5ff69a84066964b1d90c940" in normalized
+    assert "526bba0728439d48d38a5170af083ff8736d051d" in normalized
+    assert "34782892215" in normalized
     assert "seven packages plus" in normalized
+    assert "release ID `379360694`" in normalized
+    assert "kept and is no longer Latest" in normalized or "kept and is not Latest" in normalized
     assert "33327104322" in normalized
-    assert "all four desktop builds" in normalized
-    assert "tag is lightweight rather than annotated" in normalized
-    assert "not publish-green" in normalized
     assert "v0.27.1 remains immutable historical evidence" in normalized
     assert "No v0.27.2 tag" not in normalized
     assert "No v0.27.2 release" not in normalized
     assert "No v0.27.2 package" not in normalized
-    assert "No annotated `v0.28.0` tag" in normalized
+    assert "No annotated `v0.28.0` tag" not in normalized
     assert "unpublished v0.27.1" not in normalized.casefold()
     assert "this checkout identifies itself as v0.27.0" not in README
     assert "27530d8216db04d706b6e5a1a5906ba6030fa7be" in normalized
@@ -133,7 +132,7 @@ def test_component_sbom_names_the_exact_desktop_version() -> None:
         "baked-jamulus-records-approved-through-webjam-0.28.0"
     )
     assert properties["webjam:build-eligibility"] == (
-        "source-eligible-no-package-published"
+        "source-and-package-published-unsigned-test-only"
     )
 
 
@@ -177,7 +176,7 @@ def test_payload_reuses_the_approved_v0280_records() -> None:
     assert "assert all(entry.supports_webjam(__version__)" in CI_WORKFLOW
 
 
-def test_current_guides_separate_v0280_source_from_v0272_latest() -> None:
+def test_current_guides_separate_v0280_latest_from_historical_v0272() -> None:
     expected = {
         "ARCHITECTURE.md": "# WebJam architecture — v0.28.0 source",
         "CHANGELOG.md": (
@@ -192,10 +191,10 @@ def test_current_guides_separate_v0280_source_from_v0272_latest() -> None:
         "FIRST_JAM.md": "# First Session — WebJam v0.28.0 source",
         "HELP_ROUTING_MAP.md": "# WebJam help routing — v0.28.0 source",
         "QUICK_HELP_MAP.md": "# WebJam quick help — v0.28.0 source",
-        "README.md": "release ID `379360694`",
-        "README_SIMPLE.md": "379360694",
+        "README.md": "release ID `388045385`",
+        "README_SIMPLE.md": "388045385",
         "RECORDING_AND_STUDIO.md": "# Recording and Studio — v0.28.0 source",
-        "SECURITY.md": "379360694",
+        "SECURITY.md": "388045385",
         "TEST_PROCEDURE.md": "# WebJam v0.28.0 source test procedure",
         "USER_GUIDE.md": "# WebJam creator guide — v0.28.0 source",
         "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.28.0 source UX acceptance checklist",
@@ -205,18 +204,18 @@ def test_current_guides_separate_v0280_source_from_v0272_latest() -> None:
         "WEBEX_AUDIO_MODES.md": (
             "# Meeting-platform companion guidance — v0.28.0 source"
         ),
-        "docs/DESKTOP_RELEASE_RUNBOOK.md": "v0.28.0 candidate prep boundary",
+        "docs/DESKTOP_RELEASE_RUNBOOK.md": "v0.28.0 published testing boundary",
         "docs/JAMULUS_COMPONENT_RELEASE_RUNBOOK.md": (
-            "v0.28.0 candidate fallback-only desktop state"
+            "v0.28.0 published fallback-only desktop state"
         ),
-        "docs/MERGE_AND_RELEASE.md": "Candidate prep boundary:",
-        "docs/PROJECT_BRIEF.md": "379360694",
-        "docs/README.md": "379360694",
-        "ios/README.md": "379360694",
-        "requirements-lock/README.md": "379360694",
-        "packaging/windows/README-WINDOWS.txt": "no package published",
-        "packaging/linux/README-LINUX.txt": "NO PACKAGE PUBLISHED",
-        "packaging/macos/READ ME FIRST.txt": "NO PACKAGE PUBLISHED",
+        "docs/MERGE_AND_RELEASE.md": "Published testing boundary:",
+        "docs/PROJECT_BRIEF.md": "388045385",
+        "docs/README.md": "388045385",
+        "ios/README.md": "388045385",
+        "requirements-lock/README.md": "388045385",
+        "packaging/windows/README-WINDOWS.txt": "PACKAGE BOUNDARY",
+        "packaging/linux/README-LINUX.txt": "PACKAGE BOUNDARY",
+        "packaging/macos/READ ME FIRST.txt": "PACKAGE BOUNDARY",
         "WEBJAM_V0225_DEMO_READINESS.md": "# WebJam v0.22.5 two-musician demo readiness",
         "V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md": (
             "Immutable historical release `367773776`, tag `v0.23.0`"
@@ -281,15 +280,20 @@ def test_v0271_release_history_stays_immutable_without_invented_catalog() -> Non
     assert "historical evidence" in normalized_merge_map
 
 
-def test_changelog_marks_v0272_published_and_keeps_prior_history() -> None:
+def test_changelog_marks_v0280_published_and_keeps_prior_history() -> None:
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     normalized = " ".join(
         line.removeprefix("> ").strip() for line in changelog.splitlines()
     )
     assert "## [Unreleased]" in changelog
-    assert "## [0.28.0] — Unsigned private test candidate (unpublished)" in changelog
-    assert "No annotated `v0.28.0` tag" in changelog
-    assert "this source change does not create or push that tag" in changelog
+    assert "## [0.28.0] — Unsigned/ad-hoc private test release (2026-09-13)" in changelog
+    assert "No annotated `v0.28.0` tag" not in changelog
+    assert "release `388045385`" in changelog
+    assert "2026-09-13T21:48:49Z" in changelog
+    assert "8ac08b69865af598e5ff69a84066964b1d90c940" in changelog
+    assert "526bba0728439d48d38a5170af083ff8736d051d" in changelog
+    assert "WebJam-v0.28.0-SHA256SUMS.txt" in changelog
+    assert "Tag workflow `34782892215`" in changelog
     assert "## [0.27.2] — Unsigned/ad-hoc private test release (2026-08-30)" in changelog
     assert "release `379360694`" in changelog
     assert "2026-08-30T18:06:14Z" in changelog
@@ -305,6 +309,7 @@ def test_changelog_marks_v0272_published_and_keeps_prior_history() -> None:
     assert "No v0.27.2 tag" not in changelog
     assert "No v0.27.2 release" not in changelog
     assert "source candidate (unreleased)" not in changelog
+    assert "kept and is not Latest" in normalized
     assert "## [0.27.1] — Unsigned/ad-hoc private test release (2026-08-27)" in changelog
     assert "release `377614785`" in changelog
     assert "WebJam-v0.27.1-SHA256SUMS.txt" in changelog
@@ -916,13 +921,12 @@ def test_source_eligible_copy_is_explicit_about_platform_trust() -> None:
     assert "Ubuntu 22.04" in linux_readme
     for package_copy in (windows_readme, macos_readme, linux_readme):
         normalized = " ".join(package_copy.split())
+        assert "388045385" in normalized
+        assert "WebJam-v0.28.0-SHA256SUMS.txt" in normalized
         assert "379360694" in normalized
-        assert "WebJam-v0.27.2-SHA256SUMS.txt" in normalized
-        assert "no package published" in normalized.casefold()
-        assert "no package is authorized" in normalized.casefold()
-        assert "future package" in normalized.casefold()
+        assert "package boundary" in normalized.casefold()
+        assert "no package published" not in normalized.casefold()
         assert "through v0.28.0" in normalized
-        assert "source-eligible" in normalized.casefold()
         assert "SHA-256" in normalized
         assert "sealed v0.22.5" in normalized or "v0.22.5" in normalized
         assert "Presence of embedded 3.12.2 bytes does not authorize" in normalized
