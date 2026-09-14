@@ -1,6 +1,7 @@
 # First Session — WebJam v0.28.0 source
 
-> This guide describes current unsigned v0.28.0 source. GitHub **Latest** is
+> This guide describes current source, including changes after the published
+> v0.28.0 tag that are not in its immutable packages. GitHub **Latest** is
 > immutable unsigned/ad-hoc private test release `388045385`, published from
 > annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peeling to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`, with
 > seven packages plus `WebJam-v0.28.0-SHA256SUMS.txt`. A checkout or branch
@@ -39,7 +40,11 @@ stays available and silent.
    Art does not launch Jamulus or ask you to prove Music audio. The invitation's
    optional meeting is ready in **Conversation**, without a second paste or an
    automatic meeting launch. Your saved personal meeting stays unchanged.
-4. Work from your own space. For a YouTube lesson, choose **Paint along →
+4. Work from your own space. To talk or show your work in Make together,
+   choose **Set Up Conversation**, then **Add Link**. With a saved link, the
+   room button says **Conversation** and the panel offers **Join / Open
+   Meeting**. Opening the panel alone opens no meeting.
+   For a YouTube lesson, choose **Paint along →
    Watch a shared lesson**, then use Conversation's next action. Finish
    joining the meeting there; WebJam cannot confirm who can see or hear it.
    The host shares the lesson with sound and pauses the browser when asked.

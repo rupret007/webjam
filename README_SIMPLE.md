@@ -12,8 +12,9 @@
 > commit `8ac08b69865af598e5ff69a84066964b1d90c940`. Use the exact release asset and attached checksum manifest
 > as download evidence; a checkout or branch artifact is not a substitute.
 
-> **What this checkout is:** unsigned v0.28.0 source matching the published
-> tag. The exact published v0.28.0 release assets—not this checkout or a branch
+> **What this checkout is:** source with changes after the published
+> v0.28.0 tag. Those later changes are not in the immutable release packages.
+> The exact published v0.28.0 release assets—not this checkout or a branch
 > artifact—are package evidence. Tag run `34782892215` succeeded on the annotated
 > tag; Jeff published the softprops draft as Latest. Live Host/Join and package
 > builds reuse the exact baked Jamulus 3.12.2 and 3.12.3 records through
@@ -68,12 +69,19 @@ helper that removes quarantine from WebJam only.
 3. An Art host waits for **Your room is open**, then chooses **Copy Invite**.
    A guest pastes the complete invitation and waits for the room to respond.
    **You’re in** means the Art room is connected; no Music audio proof is
-   needed. Choose **End Room** as host or **Leave Room** as guest when finished.
+   needed. In Make together, choose **Set Up Conversation** to reach **Add
+   Link** when you want to talk or show your work. With a saved meeting link,
+   choose **Conversation**, then **Join / Open Meeting**. Opening the panel
+   alone opens no meeting. Choose **End Room** as host or **Leave Room** as
+   guest when finished.
 4. Music uses Host/Join; Podcast & Voice uses Host Remote Recording/Join
    Recording; Review & Rehearsal uses Host Review/Join Review. Set your
    interface, channels, headphones, and buffer when Jamulus opens. WebJam enters the
    session after an authenticated Jamulus connection. The host then copies the
    invitation. Make sound and check that participants can hear each other.
+
+For a short teammate walkthrough of the door and first room action, use
+[Show WebJam](DEMO.md).
 
 Join has one private invitation field and one button. Paste the full invitation
 copied by the host. WebJam checks the host's profile before choosing Art or the
