@@ -18,6 +18,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 - First Session and the simple guide use the same existing next-action names
   and distinguish later source changes from the immutable unsigned/ad-hoc
   v0.28.0 packages. Owner click, signing, and physical checks remain **NOT RUN**.
+- macOS CI retries a busy disk-image detach at most three times before
+  checking the copied app. Persistent busy and other errors still fail the
+  job; copied-package identity, signatures, transport, and launch checks
+  remain required.
 
 ### Name the button a used-invitation recovery message points to
 

@@ -1881,7 +1881,7 @@ jobs:
             "$mount_dir/WebJam Candidate Info.txt"
           test "$(stat -f '%Lp' "$mount_dir")" = 755
           ditto "$mount_dir/WebJam.app" "$copy_dir/WebJam.app"
-          hdiutil detach "$mount_dir"
+          .github/scripts/detach-dmg.sh "$mount_dir"
           trap - EXIT
 
           copied_app="$copy_dir/WebJam.app"
