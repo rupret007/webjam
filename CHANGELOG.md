@@ -10,6 +10,18 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Name the button a host's room-recovery message points to
+
+- When an Art room connection ends, the host's HUD showed **"Create a fresh
+  invitation to reopen this room."** beside a button labeled **Reset Invite**,
+  with no word in the sentence naming that button. Every sibling recovery
+  one-liner in WebJam ("Ask the host for a fresh invitation, then choose
+  Paste New Invite.", "Choose Reset Invite in WebJam, then choose Play
+  again.") already names its own button; this one had drifted from that
+  pattern. The message now reads **"Choose Reset Invite to create a fresh
+  invitation and reopen this room."**
+- Copy-only. No behavior, action, or state change.
+
 ## [0.28.0] — Unsigned/ad-hoc private test release (2026-09-13)
 
 > Published as immutable GitHub **Latest** release `388045385` at

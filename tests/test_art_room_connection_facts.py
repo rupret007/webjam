@@ -92,6 +92,28 @@ def test_art_participant_has_truthful_next_action(state, phase, action):
     assert "mute" not in view.message.lower()
 
 
+def test_art_host_room_ended_message_names_its_own_button():
+    """A host whose room connection ended must be told which button to press.
+
+    Every other room-recovery one-liner in WebJam names its own button
+    ("choose Paste New Invite", "choose Try Again", "choose Reset Invite").
+    A host landing on this exact state previously read "Create a fresh
+    invitation to reopen this room." beside a button labeled "Reset Invite"
+    with no textual link between the two.
+    """
+    facts = SessionFacts(
+        role=SessionRole.HOST,
+        creator_profile_key="art",
+        setup_requested=True,
+        art_room=ArtRoomState.FAILED,
+    )
+    view = derive_session_presentation(facts)
+    assert view.phase is SessionConductorPhase.FAILED
+    assert view.primary_action is SessionPrimaryAction.RESET_INVITE
+    assert view.action_label == "Reset Invite"
+    assert "Reset Invite" in view.message
+
+
 def test_art_cleanup_outranks_late_connection():
     facts = SessionFacts(
         creator_profile_key="art", setup_requested=True, art_room=ArtRoomState.CONNECTED

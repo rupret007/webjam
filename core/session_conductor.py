@@ -758,7 +758,7 @@ def _presentation(
         return present(
             SessionPrimaryAction.RESET_INVITE if host else SessionPrimaryAction.PASTE_NEW_INVITE,
             "The room connection ended",
-            "Create a fresh invitation to reopen this room." if host else
+            "Choose Reset Invite to create a fresh invitation and reopen this room." if host else
             "Ask the host for a fresh invitation, then choose Paste New Invite.",
             "The previous connection is no longer active.",
         )
