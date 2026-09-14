@@ -144,7 +144,7 @@ class SessionUiState:
         return cls(
             SessionPhase.ERROR,
             "Needs attention",
-            "This invitation may already be used. Ask the host for a new one, then paste it here.",
+            "This invitation may already be used. Ask the host for a new one, then choose Paste New Invite.",
             "Paste New Invite",
             show_primary=False,
             show_ready_check=False,

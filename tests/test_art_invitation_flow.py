@@ -292,7 +292,7 @@ def test_cancelling_native_replacement_preserves_fresh_invite_requirement(
     app = controllers(profile=profile)
     app._remote_invitation_requires_replacement = True
     app._remote_fresh_invitation_detail = Mock(
-        return_value="Ask the host for a fresh invitation, then paste it here."
+        return_value="Ask the host for a fresh invitation, then choose Paste New Invite."
     )
     _replace_join_dialog(monkeypatch, result=QDialog.DialogCode.Rejected)
     app._paste_new_invitation()

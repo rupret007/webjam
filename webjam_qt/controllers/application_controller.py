@@ -8548,18 +8548,21 @@ class ApplicationController(QObject):
         if error_value == "timed_out":
             return (
                 "The secure connection timed out. Ask the host for a new "
-                "invitation, then paste it here."
+                "invitation, then choose Paste New Invite."
             )
         if error_value == "peer_protocol_unsupported":
-            return "Update WebJam on both computers, then ask the host for a fresh invitation."
+            return (
+                "Update WebJam on both computers. Ask the host for a fresh "
+                "invitation, then choose Paste New Invite."
+            )
         if error_value == "expired":
             return (
                 "That invitation expired. Ask the host for a new one, then "
-                "paste it here."
+                "choose Paste New Invite."
             )
         return (
             "This invitation may already be used. Ask the host for a new "
-            "one, then paste it here."
+            "one, then choose Paste New Invite."
         )
 
     def _render_remote_fresh_invitation_hud(self) -> None:
