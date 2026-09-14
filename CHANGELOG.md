@@ -10,6 +10,16 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Name the button a used-invitation recovery message points to
+
+- When a one-use remote invitation was consumed, expired, or timed out, the
+  guest HUD showed **"…then paste it here."** beside a button labeled
+  **Paste New Invite**, with no word in the sentence naming that button.
+  Sibling Art/Music recovery one-liners already say **"…then choose Paste New
+  Invite."**; this path had drifted. The used / expired / timed-out / protocol
+  messages now name **Paste New Invite** the same way.
+- Copy-only. No behavior, action, or state change.
+
 ### Name the button a host's room-recovery message points to
 
 - When an Art room connection ends, the host's HUD showed **"Create a fresh

@@ -647,6 +647,46 @@ def test_remote_join_progress_uses_plain_bounded_states(qapp, tmp_path) -> None:
     controller.shutdown()
 
 
+def test_remote_fresh_invitation_detail_names_paste_new_invite_button(
+    qapp, tmp_path,
+) -> None:
+    """Used-invite recovery copy must name the Paste New Invite button.
+
+    Sibling room-recovery one-liners already say "choose Paste New Invite".
+    The remote used / expired / timed-out / protocol path previously said
+    "paste it here" beside that same button.
+    """
+    from webjam_qt.session_state import SessionUiState
+
+    controller = _controller(tmp_path)
+    cases = (
+        (RemoteSessionErrorCode.TIMED_OUT, "timed out"),
+        (RemoteSessionErrorCode.EXPIRED, "expired"),
+        (None, "already be used"),
+        (RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED, "update webjam"),
+    )
+    for error_code, needle in cases:
+        failed = RemoteSessionSnapshot(
+            phase=RemoteSessionPhase.FAILED,
+            role=SessionRole.GUEST,
+            generation=1,
+            error_code=error_code,
+            stage=RemoteSessionStage.NEEDS_ATTENTION,
+        )
+        runtime = mock.MagicMock(snapshot=failed)
+        controller._remote_session = runtime
+        detail = controller._remote_fresh_invitation_detail()
+        assert "Paste New Invite" in detail, (error_code, detail)
+        assert "paste it here" not in detail.casefold(), (error_code, detail)
+        assert needle in detail.casefold(), (error_code, detail)
+    state = SessionUiState.remote_session_fresh_invitation_required()
+    assert "Paste New Invite" in state.message
+    assert "paste it here" not in state.message.casefold()
+    assert state.primary_text == "Paste New Invite"
+    controller._remote_session = None
+    controller.shutdown()
+
+
 def test_timed_out_enrollment_offers_only_paste_new_invite(qapp, tmp_path) -> None:
     controller = _controller(tmp_path)
     failed = RemoteSessionSnapshot(
@@ -668,6 +708,8 @@ def test_timed_out_enrollment_offers_only_paste_new_invite(qapp, tmp_path) -> No
     assert controller.window.session_hud._action.text() == "Paste New Invite"
     assert controller.window.session_hud._action_kind == "paste_invite"
     assert "timed out" in controller.window.session_hud._detail.text().casefold()
+    assert "Paste New Invite" in controller.window.session_hud._detail.text()
+    assert "paste it here" not in controller.window.session_hud._detail.text().casefold()
     assert "CAPABILITY" not in controller.window.session_hud.accessibleDescription()
     controller._remote_session = None
     controller.shutdown()
