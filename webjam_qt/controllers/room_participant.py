@@ -1140,7 +1140,7 @@ class RoomParticipantController:
         if (self.role == "host" and self.state is ArtRoomState.FAILED
                 and self.app._remote_invite_owner is None):
             return GuidanceDisplayOverride(
-                "The room could not open", "Check that you are on the same Wi-Fi, then choose Try Again.",
+                "The room could not open", "Check your Wi-Fi or local network, then choose Try Again.",
                 SessionPrimaryAction.RETRY_SETUP, "Try Again",
             )
         return None
