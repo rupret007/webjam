@@ -10,6 +10,19 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Keep Mobile Art companion tip MATCH honest after #128
+
+- `docs/MOBILE.md` still named master tip `f98de91a` (post-#123 Latest honesty).
+  Master has since landed recovery button naming (#126–#127) and the Art source
+  demo + macOS CI detach-retry (#128) at `7b9b1cc11d3325d1eb95b7459879a6823d9673a2`.
+  The status block now points at that tip, keeps Phase 1 Join tip `828aef0d`,
+  and still says published Latest is unsigned **v0.28.0**. Docs-only; no native
+  feature change.
+
+- `DEMO.md` still said the walkthrough was checked against master tip
+  `d69796b` (#127). Point that line at `7b9b1cc` (#128) while leaving the
+  immutable v0.28.0 package tip unchanged.
+
 ### Walk through the first Art room action
 
 - The source demo now continues from the two-card Art door into Make together,
