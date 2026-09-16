@@ -1,8 +1,8 @@
 # Mobile Art companion (north star locked 2026-09-12)
 
-**Status:** Phase 1 landed on `master` (#118). Current `master` tip MATCH after published-Latest honesty [#123](https://github.com/rupret007/webjam/pull/123) is `f98de91a77b3d4cdd400d9cba2f142bfb4cbdad2` ("docs: record published unsigned v0.28.0 as GitHub Latest"). Phase 1 Join tip remains `828aef0d399ec6bc56413c60cf2884c730d6909c`. Marker `WEBJAM_MOBILE_ART_SPIKE_CODEX_20260912` is closed. North star and later phases below remain locked. This doc update is honesty polish only — no new native feature pile-on.
-**Recorded:** 2026-09-13
-**Base / tip MATCH:** `origin/master` `f98de91a` (post-#123 published unsigned v0.28.0 Latest honesty; Phase 1 Join landed at `828aef0d` via #118)
+**Status:** Phase 1 landed on `master` (#118). Current `master` tip MATCH after Art source demo + macOS CI detach-retry [#128](https://github.com/rupret007/webjam/pull/128) is `7b9b1cc11d3325d1eb95b7459879a6823d9673a2` ("Complete the Art source demo and macOS CI verification"). Published unsigned Latest remains **v0.28.0** (honesty [#123](https://github.com/rupret007/webjam/pull/123) at `f98de91a77b3d4cdd400d9cba2f142bfb4cbdad2`). Phase 1 Join tip remains `828aef0d399ec6bc56413c60cf2884c730d6909c`. Marker `WEBJAM_MOBILE_ART_SPIKE_CODEX_20260912` is closed. North star and later phases below remain locked. This doc update is honesty polish only — no new native feature pile-on.
+**Recorded:** 2026-09-16
+**Base / tip MATCH:** `origin/master` `7b9b1cc11d3325d1eb95b7459879a6823d9673a2` (post-#128 Art demo + CI; Latest still unsigned v0.28.0; Phase 1 Join landed at `828aef0d` via #118)
 **Owner:** Jeff owns public Art copy/feel, physical touch, Split View, real Webex media, device handoff, and signing/distribution (still NOT RUN).
 
 This native iPhone/iPad guest app is separate from Pocket Stage
