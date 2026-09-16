@@ -118,7 +118,7 @@ Showing those choices does not prove video playback or shared meeting media.
 
 Record `git rev-parse HEAD` with your walkthrough notes. This script was
 checked against source based on master
-`d69796b1e5e18ad37a5308f006afdd422a820fa5` (#127); published v0.28.0 packages
+`7b9b1cc11d3325d1eb95b7459879a6823d9673a2` (#128); published v0.28.0 packages
 come from `8ac08b69865af598e5ff69a84066964b1d90c940`.
 If the app disagrees with this file, record its exact wording and the source
 commit. The door and room checks above help locate the mismatch; this source

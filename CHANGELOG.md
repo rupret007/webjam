@@ -19,6 +19,10 @@ All notable improvements and features for the WebJam creator collaboration platf
   and still says published Latest is unsigned **v0.28.0**. Docs-only; no native
   feature change.
 
+- `DEMO.md` still said the walkthrough was checked against master tip
+  `d69796b` (#127). Point that line at `7b9b1cc` (#128) while leaving the
+  immutable v0.28.0 package tip unchanged.
+
 ### Walk through the first Art room action
 
 - The source demo now continues from the two-card Art door into Make together,
