@@ -715,6 +715,45 @@ def test_timed_out_enrollment_offers_only_paste_new_invite(qapp, tmp_path) -> No
     controller.shutdown()
 
 
+def test_guest_enrollment_failure_flash_names_paste_new_invite_button(
+    qapp, tmp_path,
+) -> None:
+    """Guest used/expired/timed-out flashes must name Paste New Invite.
+
+    The HUD already says choose Paste New Invite (#127). The brief failure
+    flash still said "Paste a fresh invitation" / "Ask the host for a fresh
+    private invitation", so flash and HUD disagreed for about seven seconds.
+    """
+    controller = _controller(tmp_path)
+    controller.window.flash_message = mock.MagicMock()
+    cases = (
+        (RemoteSessionErrorCode.TIMED_OUT, "timed out"),
+        (RemoteSessionErrorCode.EXPIRED, "expired"),
+        (None, None),
+        (RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED, None),
+    )
+    for error_code, needle in cases:
+        controller._remote_invitation = _invitation()
+        controller._remote_invitation_requires_replacement = False
+        controller.window.flash_message.reset_mock()
+        controller._show_remote_session_failure(
+            guest_enrollment=True,
+            retry_safe=False,
+            error_code=error_code,
+        )
+        flash = controller.window.flash_message.call_args.args[0]
+        assert "Paste New Invite" in flash, (error_code, flash)
+        assert "Paste a fresh invitation" not in flash, (error_code, flash)
+        assert "fresh private invitation" not in flash, (error_code, flash)
+        if needle is not None:
+            assert needle in flash.casefold(), (error_code, flash)
+        assert controller.window.session_hud._action.text() == "Paste New Invite"
+        assert controller.window.session_hud._action_kind == "paste_invite"
+        assert controller._remote_invitation is None
+        assert controller._remote_invitation_requires_replacement
+    controller.shutdown()
+
+
 def test_paste_new_invite_reopens_the_same_masked_join_door(
     qapp, tmp_path, monkeypatch
 ) -> None:

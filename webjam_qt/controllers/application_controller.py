@@ -8485,11 +8485,18 @@ class ApplicationController(QObject):
             )
             self._render_remote_fresh_invitation_hud()
             if getattr(error_code, "value", "") == "timed_out":
-                flash_message = "The connection timed out. Paste a fresh invitation."
+                flash_message = (
+                    "The connection timed out. Choose Paste New Invite."
+                )
             elif getattr(error_code, "value", "") == "expired":
-                flash_message = "That invitation expired. Paste a fresh invitation."
+                flash_message = (
+                    "That invitation expired. Choose Paste New Invite."
+                )
             else:
-                flash_message = "Ask the host for a fresh private invitation."
+                flash_message = (
+                    "Ask the host for a fresh invitation, then choose "
+                    "Paste New Invite."
+                )
         else:
             self._reference_track_remote_route_pre_retired = False
             self.window.participant_grid.set_session_state(

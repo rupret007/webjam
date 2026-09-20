@@ -10,6 +10,18 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Name Paste New Invite in guest used-invitation failure flashes
+
+- When a one-use private invitation failed for a guest (used, expired, or
+  timed out), the brief flash said **"Paste a fresh invitation"** / **"Ask
+  the host for a fresh private invitation"** while the HUD already named
+  **Paste New Invite**. Flash and HUD disagreed for about seven seconds.
+  The guest failure flashes now say **"Choose Paste New Invite"** the same
+  way the HUD does.
+- Copy-only. No behavior, action, or state change. Parked #37/#49 and
+  published v0.28.0 assets stay untouched. Art owner-click / signing /
+  physical remain **NOT RUN**.
+
 ### Name Reset Invite when a private host invitation is used up
 
 - When a one-use private invitation was no longer available, the host HUD
