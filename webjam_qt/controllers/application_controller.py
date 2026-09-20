@@ -9184,17 +9184,25 @@ class ApplicationController(QObject):
                 )
             if not invite_available:
                 if remote_owner is not None:
+                    # Same one-liner on HUD and guidance: name the visible
+                    # Reset Invite button. Do not send hosts into More when
+                    # that button is already the primary recovery action.
+                    detail = (
+                        "Choose Reset Invite to create a fresh invitation, "
+                        "then copy the new link."
+                    )
                     self.window.session_hud.set_state(
                         "Create a fresh invitation",
-                        "Open More and choose Reset Invite, then copy the new link.",
+                        detail,
                         action_text="Reset Invite",
                         action_visible=True,
                         action_kind="reset_invite",
                     )
                     return GuidanceDisplayOverride(
                         "Create a fresh invitation",
-                        "Reset the old invitation, then copy the new private link.",
+                        detail,
                         SessionPrimaryAction.RESET_INVITE,
+                        "Reset Invite",
                     )
                 if share_readiness is not None:
                     self._transition_lifecycle(

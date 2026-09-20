@@ -545,7 +545,7 @@ def _recovery(
     if primary_action is SessionPrimaryAction.RESET_INVITE:
         return (
             GuidanceRecovery.REPLACE_INVITE,
-            "Replace the old invitation before sharing another private link.",
+            "Choose Reset Invite to replace the old invitation before sharing another private link.",
         )
     if primary_action is SessionPrimaryAction.CLOSE_SETUP:
         return (

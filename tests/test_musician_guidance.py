@@ -421,3 +421,25 @@ def test_fresh_invitation_is_an_enabled_shared_recovery_action(profile_key):
     assert "Paste New Invite" in guidance.recovery_text
     assert guidance.to_public_dict()["recovery"] == "replace_invite"
     assert "invitation expired" not in str(guidance.to_public_dict())
+
+
+@pytest.mark.parametrize("profile_key", ["music", "art"])
+def test_reset_invite_recovery_text_names_its_button(profile_key):
+    """Host replace-invite recovery must name the Reset Invite button."""
+    from core.musician_guidance import GuidanceDisplayOverride
+
+    snapshot = _snapshot(replace(
+        _base(SessionRole.HOST), creator_profile_key=profile_key,
+        failure=FailureDisposition.BLOCKED,
+    ))
+    guidance = build_musician_guidance(snapshot, display_override=GuidanceDisplayOverride(
+        "Create a fresh invitation",
+        "Choose Reset Invite to create a fresh invitation, then copy the new link.",
+        SessionPrimaryAction.RESET_INVITE,
+        "Reset Invite",
+    ))
+    assert guidance.next_step == "Reset Invite"
+    assert guidance.primary_enabled
+    assert guidance.recovery is GuidanceRecovery.REPLACE_INVITE
+    assert "Reset Invite" in guidance.recovery_text
+    assert "Open More" not in guidance.recovery_text
