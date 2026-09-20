@@ -504,11 +504,18 @@ def art_make_together_activity_detail(
     *,
     meeting_service: str = DEFAULT_MEETING_SERVICE,
 ) -> str:
-    """Default Make-together activity detail for the room overview."""
+    """Brief Make-together activity detail for the room overview.
 
+    Keep this to one short next-step so production room copy fits with
+    Conversation closed (scrollbar maximum 0). Full Talk·Make·share /
+    Webex / movie honesty lives on Conversation surfaces
+    (art_conversation_guidance / Conversation panel), not here.
+    """
+
+    del meeting_service  # overview stays brief and service-agnostic
     return (
         "Use paper, clay, a model, printer, or your usual app. "
-        f"{art_watch_share_sentence(meeting_service=meeting_service)}"
+        "Open Conversation for Talk · make · share or watch-together."
     )
 
 

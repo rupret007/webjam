@@ -464,6 +464,7 @@ def test_one_next_click_language_shared_by_art_and_music_surfaces():
         WEBJAM_DOES_NOT_PLAY_MOVIE,
         art_conversation_guidance,
         art_make_together_activity_detail,
+        art_watch_share_sentence,
         conversation_watch_next_click,
         meeting_share_how,
         music_conversation_watch_note,
@@ -482,17 +483,27 @@ def test_one_next_click_language_shared_by_art_and_music_surfaces():
     assert "Share" in next_click
     assert "WebJam window" in next_click
 
+    # Overview Make-together detail stays brief (fits with Conversation closed).
     detail = art_make_together_activity_detail()
+    assert "paper, clay, a model, printer, or your usual app" in detail
+    assert "Open Conversation" in detail
+    assert WATCH_TOGETHER_ACTIONS not in detail
+    assert WEBJAM_DOES_NOT_PLAY_MOVIE not in detail
+    assert paint_along_local_note() not in detail
+
+    # Full Talk·Make·share / Webex / movie honesty on Conversation surfaces
+    # and the idle watch-share sentence (not the cramped room overview).
+    watch = art_watch_share_sentence()
     card = art_conversation_guidance(meeting_service="Webex")
     music = music_conversation_watch_note()
-    for surface in (detail, card, watch_together_guidance(), music):
+    for surface in (watch, card, watch_together_guidance(), music):
         assert WATCH_TOGETHER_ACTIONS in surface
         assert WEBJAM_DOES_NOT_PLAY_MOVIE in surface
         assert "Share" in surface
-    assert two_window_guidance(make_verb="make") in detail
+    assert two_window_guidance(make_verb="make") in watch
     assert two_window_guidance(make_verb="make") in card
     assert two_window_guidance(make_verb="play") in music
-    assert paint_along_local_note() in detail
+    assert paint_along_local_note() in watch
     assert paint_along_local_note() in card
     assert SHOW_WEBEX_APP_DISTINCT in card
     assert "open Conversation" not in card
@@ -517,7 +528,7 @@ def test_one_next_click_language_shared_by_art_and_music_surfaces():
     # Honesty: guidance never invents Webex opaque schemes (meeting-reminder).
     assert "https meeting link" in WEBEX_HANDOFF_IS_HTTPS
     blob = " ".join(
-        (detail, card, lesson, music, WEBEX_HANDOFF_IS_HTTPS, meeting_share_how())
+        (detail, watch, card, lesson, music, WEBEX_HANDOFF_IS_HTTPS, meeting_share_how())
     )
     for forbidden in (
         "Plex", "watch party", "Embedded App", "joined the meeting",

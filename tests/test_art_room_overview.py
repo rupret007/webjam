@@ -10,10 +10,7 @@ from core.art_companion import (
     VideoCompanionState,
 )
 from core.art_room_overview import ArtRoomOverview, art_room_overview
-from core.meeting_companion import (
-    art_make_together_activity_detail,
-    paint_along_local_note,
-)
+from core.meeting_companion import art_make_together_activity_detail
 from core.art_room_presence import ABSENT, ArtPresenceTarget, ArtRoomPresence, art_room_presence
 from core.session_conductor import ArtRoomState
 
@@ -87,9 +84,11 @@ def test_make_together_is_complete_without_optional_tools_or_a_roster():
         assert overview.title == "Make from your own space"
         assert overview.activity_label == "Make from your own space"
         assert overview.activity_detail == art_make_together_activity_detail()
-        assert "Join / Open Meeting or Show Webex App" in overview.activity_detail
-        assert "WebJam does not play the movie." in overview.activity_detail
-        assert paint_along_local_note() in overview.activity_detail
+        assert "paper, clay, a model, printer, or your usual app" in overview.activity_detail
+        assert "Open Conversation" in overview.activity_detail
+        # Full Webex / movie essay stays on Conversation — not overview.
+        assert "Join / Open Meeting or Show Webex App" not in overview.activity_detail
+        assert "WebJam does not play the movie." not in overview.activity_detail
         assert "screen share" not in overview.activity_detail
         assert overview.conversation_enabled
         assert not overview.activity_action
