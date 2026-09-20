@@ -26,6 +26,10 @@ from PySide6.QtWidgets import (
 )
 from shiboken6 import isValid
 
+from core.meeting_companion import (
+    paint_along_watch_lesson_guidance,
+    paint_along_watch_lesson_hint,
+)
 from core.reference_video import (
     ReferenceVideoFollowSnapshot,
     ReferenceVideoFollowState,
@@ -231,15 +235,14 @@ class ReferenceVideoDialog(QDialog):
         self._watch_lesson_button.setMinimumHeight(36)
         self._watch_lesson_button.setAccessibleName("Watch a shared lesson")
         self._watch_lesson_button.setAccessibleDescription(
-            "Show Conversation to follow a YouTube lesson in your meeting. "
-            "You choose when to open the meeting."
+            paint_along_watch_lesson_guidance()
         )
         self._watch_lesson_button.setToolTip(
             self._watch_lesson_button.accessibleDescription()
         )
         self._watch_lesson_button.clicked.connect(self._watch_shared_lesson)
         lesson_row.addWidget(self._watch_lesson_button)
-        self._lesson_hint = QLabel("YouTube, faces and voices in your meeting.")
+        self._lesson_hint = QLabel(paint_along_watch_lesson_hint())
         self._lesson_hint.setWordWrap(True)
         self._lesson_hint.setObjectName("PaintAlongHint")
         lesson_row.addWidget(self._lesson_hint, stretch=1)

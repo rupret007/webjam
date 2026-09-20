@@ -529,10 +529,14 @@ def test_art_conversation_invites_demonstration_without_opening_or_muting():
         panel.set_creator_profile(get_creator_profile_by_key("art"))
         assert panel._title_label.text() == "Conversation"
         text = panel._mode_label.text()
-        assert "share a demonstration" in text
+        assert "Join / Open Meeting or Show Webex App" in text
         assert "Webex" in text
-        assert "own tools" in text
-        assert "separate silent local video" in text
+        assert "Share" in text
+        assert "WebJam window" in text
+        assert "Talk in" in text
+        assert "does not join or mute" in text
+        assert "WebJam does not play the movie." in text
+        assert "not the movie-watch path" in text
         assert "end the WebJam session" not in text
         assert calls == []
         panel.set_creator_profile(get_creator_profile_by_key("music"))

@@ -451,3 +451,73 @@ def test_v3_message_names_manual_paste_and_preserves_the_complete_invitation(pro
     assert parsed.capability_for_enrollment() == issued.invitation.capability_for_enrollment()
     if profile == "art":
         assert "carries the music" not in message.text
+
+
+# ----------------------------------------------------------------------
+# Watch-together via Conversation / Webex share (Jeff lock 2026-09-20)
+# ----------------------------------------------------------------------
+def test_one_next_click_language_shared_by_art_and_music_surfaces():
+    from core.meeting_companion import (
+        SHOW_WEBEX_APP_DISTINCT,
+        WATCH_TOGETHER_ACTIONS,
+        WEBEX_HANDOFF_IS_HTTPS,
+        WEBJAM_DOES_NOT_PLAY_MOVIE,
+        art_conversation_guidance,
+        art_make_together_activity_detail,
+        conversation_watch_next_click,
+        meeting_share_how,
+        music_conversation_watch_note,
+        paint_along_local_note,
+        paint_along_watch_lesson_guidance,
+        paint_along_watch_lesson_hint,
+        two_window_guidance,
+        watch_together_guidance,
+    )
+
+    next_click = conversation_watch_next_click()
+    assert WATCH_TOGETHER_ACTIONS in next_click
+    assert "open Conversation" in next_click
+    assert "Share" in next_click
+    assert "WebJam window" in next_click
+
+    detail = art_make_together_activity_detail()
+    card = art_conversation_guidance(meeting_service="Webex")
+    music = music_conversation_watch_note()
+    for surface in (detail, card, watch_together_guidance(), music):
+        assert WATCH_TOGETHER_ACTIONS in surface
+        assert WEBJAM_DOES_NOT_PLAY_MOVIE in surface
+        assert "Share" in surface
+    assert two_window_guidance(make_verb="make") in detail
+    assert two_window_guidance(make_verb="make") in card
+    assert two_window_guidance(make_verb="play") in music
+    assert paint_along_local_note() in detail
+    assert paint_along_local_note() in card
+    assert SHOW_WEBEX_APP_DISTINCT in card
+    assert "open Conversation" not in card
+    assert paint_along_local_note() not in music
+
+    lesson = paint_along_watch_lesson_guidance()
+    assert WATCH_TOGETHER_ACTIONS in lesson
+    assert WEBJAM_DOES_NOT_PLAY_MOVIE in lesson
+    assert "Paint along" in lesson
+    assert "silent local Paint along" in paint_along_watch_lesson_hint()
+    assert "Meeting Share" in paint_along_watch_lesson_hint()
+
+    # Honesty: guidance never invents Webex opaque schemes (meeting-reminder).
+    assert "https meeting link" in WEBEX_HANDOFF_IS_HTTPS
+    blob = " ".join(
+        (detail, card, lesson, music, WEBEX_HANDOFF_IS_HTTPS, meeting_share_how())
+    )
+    for forbidden in (
+        "Plex", "watch party", "Embedded App", "joined the meeting",
+        "webexstart://", "webexauth://", "webexteams://",
+    ):
+        assert forbidden.casefold() not in blob.casefold()
+
+
+
+def test_music_invite_names_meeting_share_for_watching_a_demo():
+    message = build_invite_message(join_link=JOIN_LINK, meeting_url=MEETING_URL)
+    assert "own share" in message.text
+    assert "play the movie" in message.text
+    assert "you do not need it to play" in message.text

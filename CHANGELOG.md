@@ -10,6 +10,24 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Clarify Conversation watch-together vs Paint along
+
+- Art and Music Conversation now share one next-click sentence: choose
+  **Join / Open Meeting or Show Webex App**, then in the meeting app choose
+  **Share** and pick the WebJam window or your demo. Copy leads with
+  **Talk in Webex · make/play in WebJam**. WebJam does not play the movie.
+  **Paint along** stays the silent local process video (each person opens their
+  own copy); it is not the movie-watch path. Paint along's **Watch a shared
+  lesson** tip points at that Conversation handoff, not the local file player.
+- **Show Webex App** stays distinct from **Join / Open Meeting** (bring Webex
+  forward only; WebJam does not join or mute). Join / Open keeps the saved
+  **https** meeting link — no invented `webexstart://`. Jeff lock: no built-in
+  movie watch-party door; prefer WebJam↔Webex handoff over a second video stack
+  (ADR 0004).
+- Copy + focused tests only. No new video player, OAuth, Embedded App, or
+  WebEngine embed. Parked #37/#49 and published v0.28.0 assets stay untouched.
+  Art owner-click / signing / physical remain **NOT RUN**.
+
 ### Name Paste New Invite in guest used-invitation failure flashes
 
 - When a one-use private invitation failed for a guest (used, expired, or

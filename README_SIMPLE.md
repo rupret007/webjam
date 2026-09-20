@@ -94,8 +94,10 @@ or **Try Leave Room** available until it finishes.
 
 In **Paint along**, WebJam turns its existing window into a silent process-video
 companion once the room exists. Paint in Procreate, Clip Studio Paint, Krita,
-or on paper beside it. **Conversation** also offers a first-class way to talk
-and follow a demonstration shared in Webex or your chosen meeting app. Make
+or on paper beside it. Paint along stays the silent local process video—each person opens
+their own copy. It is not the movie-watch path. To watch a movie or demo together, open
+**Conversation**, choose **Join / Open Meeting** or **Show Webex App**, then
+use the meeting app's own share—WebJam does not play the movie. Make
 together works with everyone's own tools, including clay and printers;
 opening a shared canvas is optional. There is no third preview window. The host chooses **Choose
 process video…** and controls play/pause; a guest chooses **Open my copy…** for
@@ -162,7 +164,8 @@ action unavailable in Preview.
   it launches the verified app itself with no URL or browser; Webex chooses its
   own screen. Only **Join / Open Meeting** performs the one explicit
   meeting-link handoff. Use the meeting app's own microphone and sharing
-  controls. Art has no Music mute control. Ending
+  controls. To watch a movie or demo together, that share is the path—WebJam
+  does not play the movie. Art has no Music mute control. Ending
   or leaving WebJam leaves that meeting open, and leaving or closing the
   meeting does not end the WebJam session; each app ends only itself.
   FaceTime links are Mac-only. Windows and Linux use **Join / Open Meeting**

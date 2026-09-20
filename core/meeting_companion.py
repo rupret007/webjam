@@ -356,8 +356,9 @@ def build_invite_message(
                     candidate,
                     "",
                     "The WebJam link carries the music. The meeting link is a "
-                    "separate app for talking between takes — WebJam does not run "
-                    "it, and you do not need it to play.",
+                    "separate app for talking between takes or watching a demo "
+                    "with that app's own share — WebJam does not run it or play "
+                    "the movie, and you do not need it to play.",
                 ]
             )
     elif art:
@@ -379,6 +380,188 @@ def build_invite_message(
     return InviteMessage(text="\n".join(lines), includes_meeting=includes_meeting)
 
 
+
+
+# One next-click language for watch-together (Jeff lock 2026-09-20).
+# Watching a movie/demo together = Conversation handoff + the meeting app's
+# own Share. WebJam never plays the movie. Paint along is a different path.
+#
+# Reuse (structure/copy ideas only; no vendored SDK):
+# - nilBora/meeting-reminder VideoLinkDetector (MIT): detect/label providers;
+#   Webex stays on https — do not invent webexstart://.
+# - zhensherlock/protocol-launcher (MIT): documented webexteams:// shapes as
+#   reference only; skip webexauth/OAuth; no npm dep.
+# - UX pattern: Talk in Webex · Make in WebJam; screen-share guidance copy only.
+WATCH_TOGETHER_OPEN = "open Conversation"
+WATCH_TOGETHER_ACTIONS = "Join / Open Meeting or Show Webex App"
+WEBJAM_DOES_NOT_PLAY_MOVIE = "WebJam does not play the movie."
+SHOW_WEBEX_APP_DISTINCT = (
+    "Show Webex App only brings Webex forward; it does not join or mute."
+)
+# Join / Open Meeting hands the saved https join URL to the OS — never a
+# synthesized webexstart:// or webexauth:// payload (ADR 0004; meeting-reminder
+# honesty: Webex stays on https).
+WEBEX_HANDOFF_IS_HTTPS = (
+    "Join / Open Meeting opens your saved https meeting link; WebJam does not "
+    "invent a Webex deep link."
+)
+
+
+def _meeting_share_owner(meeting_service: str = DEFAULT_MEETING_SERVICE) -> str:
+    """Name whose Share control the person should use."""
+
+    service = str(meeting_service or "").strip()
+    if not service:
+        return "the meeting app"
+    return service
+
+
+def two_window_guidance(
+    *,
+    meeting_service: str = DEFAULT_MEETING_SERVICE,
+    make_verb: str = "make",
+) -> str:
+    """Talk in the meeting app · work in WebJam — two windows, side by side."""
+
+    service = _meeting_share_owner(meeting_service)
+    if service == "the meeting app":
+        service = DEFAULT_MEETING_SERVICE
+    verb = str(make_verb or "make").strip() or "make"
+    return f"Talk in {service} · {verb} in WebJam—keep both windows side by side."
+
+
+def meeting_share_how(
+    *,
+    meeting_service: str = DEFAULT_MEETING_SERVICE,
+) -> str:
+    """Screen-share guidance copy only — WebJam does not implement share."""
+
+    owner = _meeting_share_owner(meeting_service)
+    return (
+        f"In {owner}, choose Share and pick the WebJam window or your demo."
+    )
+
+
+def conversation_watch_next_click(
+    *,
+    meeting_service: str = DEFAULT_MEETING_SERVICE,
+    include_open_conversation: bool = True,
+) -> str:
+    """The single next-click sentence Art and Music Conversation share.
+
+    ADR 0004: WebJam stores a link and hands off. Join / Open Meeting is the
+    explicit https-link handoff; Show Webex App only activates the verified app.
+    Neither joins, mutes, or plays media inside WebJam.
+    """
+
+    share = meeting_share_how(meeting_service=meeting_service)
+    if include_open_conversation:
+        return (
+            f"To watch a movie or demo together, {WATCH_TOGETHER_OPEN}, choose "
+            f"{WATCH_TOGETHER_ACTIONS}, then {share[0].lower() + share[1:]}"
+        )
+    return (
+        f"To watch a movie or demo together, choose {WATCH_TOGETHER_ACTIONS}, "
+        f"then {share[0].lower() + share[1:]}"
+    )
+
+
+def watch_together_guidance(
+    *,
+    meeting_service: str = DEFAULT_MEETING_SERVICE,
+) -> str:
+    """How to watch a movie or demo together without a WebJam player."""
+
+    return (
+        f"{conversation_watch_next_click(meeting_service=meeting_service)} "
+        f"{WEBJAM_DOES_NOT_PLAY_MOVIE}"
+    )
+
+
+def paint_along_local_note() -> str:
+    """Paint along is the silent local process-video path, not movie watch."""
+
+    return (
+        "Paint along stays the silent local process video—each person opens "
+        "their own copy. It is not the movie-watch path."
+    )
+
+
+def art_watch_share_sentence(
+    *,
+    meeting_service: str = DEFAULT_MEETING_SERVICE,
+) -> str:
+    """Make-together / idle hint: two windows + same next click + Paint along."""
+
+    return (
+        f"{two_window_guidance(meeting_service=meeting_service, make_verb='make')} "
+        f"{conversation_watch_next_click(meeting_service=meeting_service)} "
+        f"{WEBJAM_DOES_NOT_PLAY_MOVIE} {paint_along_local_note()}"
+    )
+
+
+def art_make_together_activity_detail(
+    *,
+    meeting_service: str = DEFAULT_MEETING_SERVICE,
+) -> str:
+    """Default Make-together activity detail for the room overview."""
+
+    return (
+        "Use paper, clay, a model, printer, or your usual app. "
+        f"{art_watch_share_sentence(meeting_service=meeting_service)}"
+    )
+
+
+def art_conversation_guidance(*, meeting_service: str = "") -> str:
+    """Art Conversation card: two windows, same next click, Share how-to.
+
+    Never claims WebJam joined the meeting, muted Webex, or played the movie.
+    """
+
+    service = str(meeting_service or "").strip()
+    return (
+        f"{two_window_guidance(meeting_service=service, make_verb='make')} "
+        f"{conversation_watch_next_click(meeting_service=service, include_open_conversation=False)} "
+        f"{SHOW_WEBEX_APP_DISTINCT} {WEBJAM_DOES_NOT_PLAY_MOVIE} "
+        f"{paint_along_local_note()}"
+    )
+
+
+def music_conversation_watch_note(
+    *,
+    meeting_service: str = DEFAULT_MEETING_SERVICE,
+) -> str:
+    """Music Conversation: two windows + identical next-click; no Paint along."""
+
+    return (
+        f"{two_window_guidance(meeting_service=meeting_service, make_verb='play')} "
+        f"{conversation_watch_next_click(meeting_service=meeting_service, include_open_conversation=False)} "
+        f"{WEBJAM_DOES_NOT_PLAY_MOVIE}"
+    )
+
+
+def paint_along_watch_lesson_guidance() -> str:
+    """Paint along's Conversation door: meeting share, not the local file below."""
+
+    return (
+        "Opens Conversation so you can choose "
+        f"{WATCH_TOGETHER_ACTIONS}, then "
+        f"{meeting_share_how()[0].lower() + meeting_share_how()[1:]} "
+        f"{WEBJAM_DOES_NOT_PLAY_MOVIE} The silent "
+        "local process video below is Paint along—each person opens their own copy."
+    )
+
+
+def paint_along_watch_lesson_hint() -> str:
+    """Short hint beside Paint along's Watch a shared lesson action."""
+
+    return (
+        "Meeting Share for movies/demos—not the silent local Paint along file."
+    )
+
+
+
+
 __all__ = [
     "DEFAULT_MEETING_SERVICE",
     "EndSessionPrompt",
@@ -387,11 +570,27 @@ __all__ = [
     "MuteControl",
     "MuteSurface",
     "WEBJAM_MUTE_SCOPE",
+    "SHOW_WEBEX_APP_DISTINCT",
+    "WATCH_TOGETHER_ACTIONS",
+    "WATCH_TOGETHER_OPEN",
+    "WEBEX_HANDOFF_IS_HTTPS",
+    "WEBJAM_DOES_NOT_PLAY_MOVIE",
+    "art_conversation_guidance",
+    "art_make_together_activity_detail",
+    "art_watch_share_sentence",
     "build_invite_message",
+    "conversation_watch_next_click",
     "service_name_for_link",
     "describe_mutes",
     "end_session_prompt",
     "meeting_departure_note",
     "meeting_recording_note",
+    "meeting_share_how",
+    "music_conversation_watch_note",
     "music_features_require_meeting",
+    "paint_along_local_note",
+    "paint_along_watch_lesson_guidance",
+    "paint_along_watch_lesson_hint",
+    "two_window_guidance",
+    "watch_together_guidance",
 ]

@@ -141,9 +141,13 @@ def test_art_conversation_fits_full_text_and_current_controls(card, qapp, width,
     assert owner.width() == width
     assert panel.width() == width
     _assert_readable(panel)
-    assert "if you like" in panel._mode_label.text()
-    assert "Use your own tools" in panel._mode_label.text()
-    assert "separate silent local video" in panel._mode_label.text()
+    assert "Join / Open Meeting or Show Webex App" in panel._mode_label.text()
+    assert "Talk in" in panel._mode_label.text()
+    assert "Share" in panel._mode_label.text()
+    assert "WebJam window" in panel._mode_label.text()
+    assert "does not join or mute" in panel._mode_label.text()
+    assert "WebJam does not play the movie." in panel._mode_label.text()
+    assert "not the movie-watch path" in panel._mode_label.text()
     assert panel._status_label.accessibleDescription() == panel._status_label.text()
     assert events == []
     assert panel.mute_button().isHidden() and not panel.mute_button().isEnabled()

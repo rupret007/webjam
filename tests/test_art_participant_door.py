@@ -307,10 +307,13 @@ def test_art_conversation_stays_optional_without_music_mute_controls(
         panel.show()
         qapp.processEvents()
         visible = harvest_spoken_page(panel)
-        assert "share a demonstration" in visible
-        assert "if you like" in visible
-        assert "own tools" in visible
-        assert "separate silent local video" in visible
+        assert "join / open meeting or show webex app" in visible
+        assert "share" in visible
+        assert "webjam window" in visible
+        assert "talk in" in visible
+        assert "does not join or mute" in visible
+        assert "webjam does not play the movie." in visible
+        assert "not the movie-watch path" in visible
         for phrase in ("muted while", "audio interface", "jamulus", "to mute"):
             assert phrase not in visible
         assert panel.mute_button().isHidden()
