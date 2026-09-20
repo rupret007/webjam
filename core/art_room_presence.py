@@ -66,6 +66,9 @@ class ArtRoomPresence:
     description: str = ""
     tone: ArtPresenceTone = ArtPresenceTone.PRESENT
     target: ArtPresenceTarget = ArtPresenceTarget.NONE
+    #: Exact Room overview button words when they must match a panel control.
+    #: Empty keeps the generic "Open Paint along" / "Open workspace" labels.
+    next_click: str = ""
 
     @property
     def offered(self) -> bool:
@@ -77,30 +80,39 @@ ABSENT = ArtRoomPresence()
 #: Video states where this computer cannot follow what the host is showing.
 #: Each has its own recovery inside the panel; the room only needs to say
 #: that the panel is where to go.
+#: Guest copy recovery next click matches Paint along's "Open my copy…" button.
+_OPEN_MY_COPY = "Open my copy…"
+
 _VIDEO_ATTENTION = {
     VideoCompanionState.NEEDS_FILE: (
-        "Open your Paint along copy",
+        _OPEN_MY_COPY,
         "Open your own copy of the same video to follow along.",
+        _OPEN_MY_COPY,
     ),
     VideoCompanionState.MISMATCHED_FILE: (
         "Paint along needs a look",
         "The copy open here is a different file than the host's.",
+        _OPEN_MY_COPY,
     ),
     VideoCompanionState.FILE_UNAVAILABLE: (
         "Paint along needs a look",
         "The copy open here moved or changed, so it stopped following.",
+        _OPEN_MY_COPY,
     ),
     VideoCompanionState.LOCAL_ATTENTION: (
         "Your video needs attention",
         "Open your copy again to continue following on this computer.",
+        _OPEN_MY_COPY,
     ),
     VideoCompanionState.STALLED: (
         "Paint along is out of step",
         "The host's position is too old to follow honestly.",
+        "",
     ),
     VideoCompanionState.HOST_ATTENTION: (
         "Paint along needs a look",
         "The host's own player needs attention.",
+        "",
     ),
 }
 
@@ -160,12 +172,13 @@ def art_room_presence(
         )
     video_attention = _VIDEO_ATTENTION.get(projection.video)
     if video_attention is not None:
-        label, description = video_attention
+        label, description, next_click = video_attention
         return ArtRoomPresence(
             label=label,
             description=description,
             tone=ArtPresenceTone.ATTENTION,
             target=ArtPresenceTarget.VIDEO,
+            next_click=next_click,
         )
 
     # 2. Then what the room actually has.

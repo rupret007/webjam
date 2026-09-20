@@ -172,7 +172,7 @@ def art_room_overview(
     action = ""
     action_label = ""
     if active and presence.offered:
-        action, action_label = _activity_action(presence.target)
+        action, action_label = _activity_action(presence)
         if action:
             activity, activity_detail = presence.label, presence.description
     secondary_activity = ""
@@ -180,7 +180,7 @@ def art_room_overview(
     secondary_action = ""
     secondary_action_label = ""
     if active and secondary_presence.offered:
-        candidate, candidate_label = _activity_action(secondary_presence.target)
+        candidate, candidate_label = _activity_action(secondary_presence)
         if candidate and candidate != action:
             secondary_activity = secondary_presence.label
             secondary_detail = secondary_presence.description
@@ -213,9 +213,19 @@ def art_room_overview(
     )
 
 
-def _activity_action(target: ArtPresenceTarget) -> tuple[str, str]:
+def _activity_action(presence: ArtRoomPresence) -> tuple[str, str]:
+    """Return panel target and button words.
+
+    Guest Paint along copy recovery names **Open my copy…** so Room matches
+    the exact control inside the Paint along panel. Other video states keep
+    the generic Open Paint along door label.
+    """
+
+    target = presence.target
     if target is ArtPresenceTarget.VIDEO:
-        return "video", "Open Paint along"
+        label = str(presence.next_click or "").strip() or "Open Paint along"
+        return "video", label
     if target is ArtPresenceTarget.CANVAS:
-        return "canvas", "Open workspace"
+        label = str(presence.next_click or "").strip() or "Open workspace"
+        return "canvas", label
     return "", ""
