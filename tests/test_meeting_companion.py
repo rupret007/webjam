@@ -497,11 +497,20 @@ def test_one_next_click_language_shared_by_art_and_music_surfaces():
     assert paint_along_local_note() not in music
 
     lesson = paint_along_watch_lesson_guidance()
-    assert WATCH_TOGETHER_ACTIONS in lesson
-    assert WEBJAM_DOES_NOT_PLAY_MOVIE in lesson
+    hint = paint_along_watch_lesson_hint()
+    # Paint along / reference video must stay silent local process-video only:
+    # webex, Show Webex App, and movie-watch language live on Conversation.
+    assert "Conversation" in lesson
     assert "Paint along" in lesson
-    assert "silent local Paint along" in paint_along_watch_lesson_hint()
-    assert "Meeting Share" in paint_along_watch_lesson_hint()
+    assert WATCH_TOGETHER_ACTIONS not in lesson
+    assert WEBJAM_DOES_NOT_PLAY_MOVIE not in lesson
+    assert "webex" not in lesson.lower()
+    assert "movie" not in lesson.lower()
+    assert "silent local Paint along" in hint
+    assert "Conversation" in hint
+    assert "webex" not in hint.lower()
+    assert "movie" not in hint.lower()
+    assert "Meeting Share" not in hint
 
     # Honesty: guidance never invents Webex opaque schemes (meeting-reminder).
     assert "https meeting link" in WEBEX_HANDOFF_IS_HTTPS
