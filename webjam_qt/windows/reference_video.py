@@ -26,15 +26,13 @@ from PySide6.QtWidgets import (
 )
 from shiboken6 import isValid
 
-from core.meeting_companion import (
-    paint_along_watch_lesson_guidance,
-    paint_along_watch_lesson_hint,
-)
 from core.reference_video import (
     ReferenceVideoFollowSnapshot,
     ReferenceVideoFollowState,
     ReferenceVideoSnapshot,
     ReferenceVideoState,
+    paint_along_watch_lesson_guidance,
+    paint_along_watch_lesson_hint,
 )
 from webjam_qt.theme.tokens import Space
 

@@ -540,30 +540,6 @@ def music_conversation_watch_note(
     )
 
 
-def paint_along_watch_lesson_guidance() -> str:
-    """Paint along's Conversation door only — no Webex/movie/share copy here.
-
-    Art left-out rules ban webex / Show Webex App / movie-watch language on the
-    reference-video panel. Conversation keeps the full watch-together handoff.
-    """
-
-    return (
-        "Opens Conversation for watch-together handoff. The silent local "
-        "process video below is Paint along—each person opens their own copy."
-    )
-
-
-def paint_along_watch_lesson_hint() -> str:
-    """Short hint beside Paint along's Watch a shared lesson action."""
-
-    return (
-        "Use Conversation for shared-lesson handoff—not the silent local "
-        "Paint along file."
-    )
-
-
-
-
 __all__ = [
     "DEFAULT_MEETING_SERVICE",
     "EndSessionPrompt",
@@ -591,8 +567,6 @@ __all__ = [
     "music_conversation_watch_note",
     "music_features_require_meeting",
     "paint_along_local_note",
-    "paint_along_watch_lesson_guidance",
-    "paint_along_watch_lesson_hint",
     "two_window_guidance",
     "watch_together_guidance",
 ]

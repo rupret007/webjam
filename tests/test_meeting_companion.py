@@ -468,10 +468,12 @@ def test_one_next_click_language_shared_by_art_and_music_surfaces():
         meeting_share_how,
         music_conversation_watch_note,
         paint_along_local_note,
-        paint_along_watch_lesson_guidance,
-        paint_along_watch_lesson_hint,
         two_window_guidance,
         watch_together_guidance,
+    )
+    from core.reference_video import (
+        paint_along_watch_lesson_guidance,
+        paint_along_watch_lesson_hint,
     )
 
     next_click = conversation_watch_next_click()
