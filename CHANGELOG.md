@@ -10,6 +10,19 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Name Reset Invite when a private host invitation is used up
+
+- When a one-use private invitation was no longer available, the host HUD
+  showed **"Open More and choose Reset Invite…"** beside a primary button
+  already labeled **Reset Invite**, and Notes/guidance used a different
+  sentence that never named that button. The HUD and guidance now share one
+  line: **"Choose Reset Invite to create a fresh invitation, then copy the
+  new link."** Musician-guidance recovery text for Reset Invite names the
+  same button.
+- Copy-only. No behavior, action, or state change. Parked #37/#49 and
+  published v0.28.0 assets stay untouched. Art owner-click / signing /
+  physical remain **NOT RUN**.
+
 ### Keep Mobile Art companion tip MATCH honest after #128
 
 - `docs/MOBILE.md` still named master tip `f98de91a` (post-#123 Latest honesty).

@@ -1061,6 +1061,45 @@ def test_host_hud_hides_consumed_copy_but_keeps_reset_available(
     controller.shutdown()
 
 
+def test_host_consumed_invite_recovery_names_reset_invite_button(
+    qapp, tmp_path,
+) -> None:
+    """When a private invite is used up, name the visible Reset Invite button.
+
+    The host HUD previously said "Open More and choose Reset Invite" beside a
+    primary button already labeled Reset Invite, and Notes/guidance used a
+    different sentence that never named that button. Sibling recovery
+    one-liners already say "Choose Reset Invite…".
+    """
+    class Owner:
+        invitation_available = False
+
+    controller = _controller(tmp_path, hosting=True)
+    controller._remote_invite_owner = Owner()
+    controller._jamulus_connected = True
+    controller.bridge.hosted_server_alive = mock.MagicMock(return_value=True)
+
+    override = controller._update_session_hud_legacy()
+    detail = controller.window.session_hud._detail.text()
+    assert controller.window.session_hud._action.text() == "Reset Invite"
+    assert controller.window.session_hud._action_kind == "reset_invite"
+    assert "Reset Invite" in detail
+    assert "Open More" not in detail
+    from core.session_conductor import SessionPrimaryAction
+
+    assert override is not None
+    assert override.primary_action is SessionPrimaryAction.RESET_INVITE
+    assert override.action_label == "Reset Invite"
+    assert override.message == detail
+    assert "Reset Invite" in override.message
+    assert "Open More" not in override.message
+    # Drop live-host probes so shutdown does not wait on a fake server.
+    controller._jamulus_connected = False
+    controller.bridge.hosted_server_alive = mock.MagicMock(return_value=False)
+    controller._remote_invite_owner = None
+    controller.shutdown()
+
+
 def test_visible_reset_invite_requires_explicit_confirmation(tmp_path) -> None:
     controller = _controller(tmp_path, hosting=True)
     controller._remote_invite_owner = mock.MagicMock()
