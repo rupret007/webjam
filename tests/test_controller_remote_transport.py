@@ -754,6 +754,46 @@ def test_guest_enrollment_failure_flash_names_paste_new_invite_button(
     controller.shutdown()
 
 
+def test_guest_retry_safe_failure_flash_names_try_again_button(
+    qapp, tmp_path,
+) -> None:
+    """Retry-safe guest flash must name the Try Again HUD button.
+
+    When enrollment failed before the invitation was consumed, the HUD
+    already offered **Try Again**, but the brief flash said "Try Again to
+    start…" without the same Choose cue siblings use for Paste New Invite
+    and Reset Invite (#126–#131). Flash and HUD now agree on the next click.
+    """
+    controller = _controller(tmp_path)
+    controller.window.flash_message = mock.MagicMock()
+    controller._remote_invitation = _invitation()
+    controller._remote_invitation_requires_replacement = False
+    # Keep invitation_retry_safe true so the post-flash HUD refresh preserves
+    # the same Try Again action the flash names (see #486 pre-enrollment path).
+    runtime = mock.MagicMock()
+    runtime.snapshot = RemoteSessionSnapshot(
+        phase=RemoteSessionPhase.FAILED,
+        role=SessionRole.GUEST,
+        generation=1,
+        error_code=RemoteSessionErrorCode.UNAVAILABLE,
+    )
+    controller._remote_session = runtime
+    controller._show_remote_session_failure(
+        guest_enrollment=True,
+        retry_safe=True,
+        error_code=RemoteSessionErrorCode.UNAVAILABLE,
+    )
+    flash = controller.window.flash_message.call_args.args[0]
+    assert flash == "Choose Try Again to start the private connection."
+    assert "Paste New Invite" not in flash
+    assert controller.window.session_hud._action.text() == "Try Again"
+    assert controller.window.session_hud._action_kind == "retry"
+    assert controller._remote_invitation is not None
+    assert not controller._remote_invitation_requires_replacement
+    controller._remote_session = None
+    controller.shutdown()
+
+
 def test_paste_new_invite_reopens_the_same_masked_join_door(
     qapp, tmp_path, monkeypatch
 ) -> None:
