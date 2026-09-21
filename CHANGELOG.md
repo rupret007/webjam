@@ -10,6 +10,19 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Name Try Again in guest retry-safe HUD recovery copy
+
+- When a guest private connection failed before the invitation was used, the
+  brief flash already said **"Choose Try Again to start the private
+  connection."** (#134), and the HUD already offered **"Try Again"**, but the
+  recovery one-liner still said **"WebJam could not contact the host before
+  using this invitation."** without the same **Choose** cue used for Paste New
+  Invite, Reset Invite, Start New Room, and Copy New Invite. HUD detail,
+  session-state message, and conductor override now match the flash.
+- Copy-only. No behavior, action, or state change. Parked #37/#49 and
+  published v0.28.0 assets stay untouched. Art owner-click / signing /
+  physical remain **NOT RUN**.
+
 ### Name Copy New Invite after a Wi-Fi address change
 
 - When a Music host's private Wi-Fi address changed after a link was already

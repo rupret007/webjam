@@ -757,12 +757,14 @@ def test_guest_enrollment_failure_flash_names_paste_new_invite_button(
 def test_guest_retry_safe_failure_flash_names_try_again_button(
     qapp, tmp_path,
 ) -> None:
-    """Retry-safe guest flash must name the Try Again HUD button.
+    """Retry-safe guest flash and HUD detail must name the Try Again button.
 
     When enrollment failed before the invitation was consumed, the HUD
-    already offered **Try Again**, but the brief flash said "Try Again to
-    start…" without the same Choose cue siblings use for Paste New Invite
-    and Reset Invite (#126–#131). Flash and HUD now agree on the next click.
+    already offered **Try Again** and #134 aligned the brief flash to
+    "Choose Try Again…", but the recovery one-liner still said "WebJam could
+    not contact the host…" without the same Choose cue siblings use for
+    Paste New Invite / Reset Invite / Copy New Invite. Flash, HUD detail,
+    and session-state message now agree on the next click.
     """
     controller = _controller(tmp_path)
     controller.window.flash_message = mock.MagicMock()
@@ -783,11 +785,14 @@ def test_guest_retry_safe_failure_flash_names_try_again_button(
         retry_safe=True,
         error_code=RemoteSessionErrorCode.UNAVAILABLE,
     )
+    expected = "Choose Try Again to start the private connection."
     flash = controller.window.flash_message.call_args.args[0]
-    assert flash == "Choose Try Again to start the private connection."
+    assert flash == expected
     assert "Paste New Invite" not in flash
     assert controller.window.session_hud._action.text() == "Try Again"
     assert controller.window.session_hud._action_kind == "retry"
+    assert controller.window.session_hud._detail.text() == expected
+    assert controller.window.participant_grid._last_session_state.message == expected
     assert controller._remote_invitation is not None
     assert not controller._remote_invitation_requires_replacement
     controller._remote_session = None

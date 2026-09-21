@@ -133,7 +133,7 @@ class SessionUiState:
         return cls(
             SessionPhase.ERROR,
             "Needs attention",
-            "WebJam could not contact the host before using this invitation.",
+            "Choose Try Again to start the private connection.",
             "Try Again",
             show_primary=False,
             show_ready_check=False,
