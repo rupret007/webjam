@@ -56,7 +56,10 @@ class HostShareReadiness:
         if self.status is HostShareReadinessStatus.AUDIO_PORT_UNAVAILABLE:
             return "The band server is not listening yet. WebJam will keep checking."
         if self.status is HostShareReadinessStatus.PORT_INSPECTION_FAILED:
-            return "WebJam could not verify the local music port. Try starting the jam again."
+            return (
+                "WebJam could not verify the local music port. "
+                "Choose Try Again to check it again."
+            )
         return "WebJam is starting the local band server."
 
     @property

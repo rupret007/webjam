@@ -10,6 +10,18 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Name Try Again when Music port inspection fails
+
+- When a Music host's local music-port probe failed, the HUD already offered
+  **"Try Again"**, but the recovery one-liner said **"Try starting the jam
+  again."** without the same **Choose** cue used for room-connection retry,
+  Reset Invite, Paste New Invite, Copy New Invite, and guest Try Again. The
+  line now says **"Choose Try Again to check it again."** so HUD primary and
+  recovery agree.
+- Copy-only. No behavior, action, or state change. Parked #37/#49 and
+  published v0.28.0 assets stay untouched. Art owner-click / signing /
+  physical remain **NOT RUN**.
+
 ### Name Try Again in guest retry-safe HUD recovery copy
 
 - When a guest private connection failed before the invitation was used, the
