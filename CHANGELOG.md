@@ -10,6 +10,20 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Name Start New Room after a confirmed Art room exit
+
+- When a confirmed Art room exit left the session idle, the HUD already
+  offered **"Start New Room"** (host) or **"Paste New Invite"** (guest), but
+  the recovery one-liner said **"Start a new room, then share its new
+  invitation…"** / **"Ask the host for a new invitation to join again…"**
+  without the same **Choose** cue used for Reset Invite, Paste New Invite,
+  and Try Again. Host and guest copy now name those buttons: **"Choose
+  Start New Room, then share its new invitation…"** and **"Ask the host for
+  a new invitation, then choose Paste New Invite…"**.
+- Copy-only. No behavior, action, or state change. Parked #37/#49 and
+  published v0.28.0 assets stay untouched. Art owner-click / signing /
+  physical remain **NOT RUN**.
+
 ### Name Try Again in guest retry-safe failure flashes
 
 - When a guest private connection failed before the invitation was used, the

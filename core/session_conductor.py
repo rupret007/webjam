@@ -789,9 +789,11 @@ def _presentation(
                 SessionPrimaryAction.START_SESSION if host else SessionPrimaryAction.PASTE_NEW_INVITE,
                 "Room ended" if host else "Room left",
                 (
-                    "Start a new room, then share its new invitation. Your own tools can stay open."
+                    "Choose Start New Room, then share its new invitation. "
+                    "Your own tools can stay open."
                     if host else
-                    "Ask the host for a new invitation to join again. Your own tools can stay open."
+                    "Ask the host for a new invitation, then choose Paste New Invite. "
+                    "Your own tools can stay open."
                 ),
                 "This computer has left the room. Meetings and other tools have their own leave controls.",
                 preservation,
