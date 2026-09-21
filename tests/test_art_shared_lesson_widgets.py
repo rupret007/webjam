@@ -251,9 +251,11 @@ def test_lesson_context_does_not_leak_through_music_profile_or_native_status(car
     panel.set_shared_lesson_context(True)
     panel.set_creator_profile(get_creator_profile_by_key("art"))
     assert "YouTube" not in panel._mode_label.text()
-    assert "Join / Open Meeting or Show Webex App" in panel._mode_label.text()
-    assert "Talk in" in panel._mode_label.text()
-    assert "not the movie-watch path" in panel._mode_label.text()
+    # Google Meet label still set — stay provider-neutral (no Webex essay).
+    assert "Google Meet" in panel._mode_label.text()
+    assert "Webex" not in panel._mode_label.text()
+    assert "own tools" in panel._mode_label.text()
+    assert "Paint along" in panel._mode_label.text()
     assert events == []
 
 

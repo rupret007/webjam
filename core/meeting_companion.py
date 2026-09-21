@@ -416,6 +416,12 @@ def _meeting_share_owner(meeting_service: str = DEFAULT_MEETING_SERVICE) -> str:
     return service
 
 
+def is_webex_meeting_service(meeting_service: str | None = None) -> bool:
+    """True only when Conversation is labeled for Webex (not empty/generic/Zoom)."""
+
+    return str(meeting_service or "").strip().casefold() == "webex"
+
+
 def two_window_guidance(
     *,
     meeting_service: str = DEFAULT_MEETING_SERVICE,
@@ -425,11 +431,15 @@ def two_window_guidance(
 
     Art (make) keeps the human cue that artists stay on Procreate/CSP/Krita/
     paper—WebJam is the making room; the meeting app is talk/share.
+
+    Callers that omit ``meeting_service`` get Webex (product default). An
+    explicit empty string stays provider-neutral ("your meeting") so
+    unconfigured / generic Conversation cards never inherit Webex branding.
     """
 
     service = _meeting_share_owner(meeting_service)
     if service == "the meeting app":
-        service = DEFAULT_MEETING_SERVICE
+        service = "your meeting"
     verb = str(make_verb or "make").strip() or "make"
     base = f"Talk in {service} · {verb} in WebJam—keep both windows side by side"
     if verb == "make":
@@ -531,15 +541,25 @@ def art_make_together_activity_detail(
 def art_conversation_guidance(*, meeting_service: str = "") -> str:
     """Art Conversation card: two windows, same next click, Share how-to.
 
+    Webex-labeled meetings get Talk·make·share / Show Webex App / movie honesty.
+    Unconfigured, generic, or non-Webex providers stay provider-neutral — no
+    "Webex" substring — while still cueing own tools and Paint along.
+
     Never claims WebJam joined the meeting, muted Webex, or played the movie.
     """
 
     service = str(meeting_service or "").strip()
+    if is_webex_meeting_service(service):
+        return (
+            f"{two_window_guidance(meeting_service='Webex', make_verb='make')} "
+            f"{conversation_watch_next_click(meeting_service='Webex', include_open_conversation=False)} "
+            f"{SHOW_WEBEX_APP_DISTINCT} {WEBJAM_DOES_NOT_PLAY_MOVIE} "
+            f"{paint_along_local_note()}"
+        )
+    meeting = service or "your meeting app"
     return (
-        f"{two_window_guidance(meeting_service=service, make_verb='make')} "
-        f"{conversation_watch_next_click(meeting_service=service, include_open_conversation=False)} "
-        f"{SHOW_WEBEX_APP_DISTINCT} {WEBJAM_DOES_NOT_PLAY_MOVIE} "
-        f"{paint_along_local_note()}"
+        f"Talk and share a demonstration in {meeting} if you like. "
+        "Use your own tools. Paint along plays a separate silent local video."
     )
 
 
@@ -547,11 +567,18 @@ def music_conversation_watch_note(
     *,
     meeting_service: str = DEFAULT_MEETING_SERVICE,
 ) -> str:
-    """Music Conversation: two windows + identical next-click; no Paint along."""
+    """Music Conversation watch tip: Webex-branded essay, else empty.
 
+    Mute-while-play language lives in the embed. Append this only when the
+    card is labeled Webex; unconfigured / generic / Zoom / Meet stay free of
+    "Webex" and omit the watch-share essay.
+    """
+
+    if not is_webex_meeting_service(meeting_service):
+        return ""
     return (
-        f"{two_window_guidance(meeting_service=meeting_service, make_verb='play')} "
-        f"{conversation_watch_next_click(meeting_service=meeting_service, include_open_conversation=False)} "
+        f"{two_window_guidance(meeting_service='Webex', make_verb='play')} "
+        f"{conversation_watch_next_click(meeting_service='Webex', include_open_conversation=False)} "
         f"{WEBJAM_DOES_NOT_PLAY_MOVIE}"
     )
 
@@ -573,6 +600,7 @@ __all__ = [
     "art_make_together_activity_detail",
     "art_watch_share_sentence",
     "build_invite_message",
+    "is_webex_meeting_service",
     "conversation_watch_next_click",
     "service_name_for_link",
     "describe_mutes",

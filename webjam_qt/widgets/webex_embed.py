@@ -1101,12 +1101,14 @@ class WebexEmbed(QFrame):
                 "audience_bridge": "Conversation audience feed",
             }
         )
+        watch_note = music_conversation_watch_note(meeting_service=service)
+        watch_suffix = f" {watch_note}" if watch_note else ""
         guidance = (
             {
                 "talkback": (
                     f"Keep {service} muted while playing. To speak, mute your "
-                    "audio interface or end the WebJam session first. "
-                    f"{music_conversation_watch_note(meeting_service=service)}"
+                    "audio interface or end the WebJam session first."
+                    f"{watch_suffix}"
                 ),
                 "video_only": (
                     f"Join {service} without computer audio; music stays in Jamulus."
@@ -1122,15 +1124,15 @@ class WebexEmbed(QFrame):
                     (
                         "Keep your meeting service muted while you play. To "
                         "speak, mute your audio interface or end the WebJam "
-                        "session first. "
-                        f"{music_conversation_watch_note()}"
+                        "session first."
+                        f"{watch_suffix}"
                     )
                     if self._meeting_configured
                     else (
                         "After adding a meeting link, keep that service muted "
                         "while playing. To speak, mute your audio interface or "
-                        "end the WebJam session first. "
-                        f"{music_conversation_watch_note()}"
+                        "end the WebJam session first."
+                        f"{watch_suffix}"
                     )
                 ),
                 "video_only": (
