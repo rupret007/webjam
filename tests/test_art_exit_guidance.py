@@ -33,6 +33,13 @@ def test_confirmed_art_exit_offers_role_specific_room_entry(profile, role):
     assert result.action_label == ("Start New Room" if role == "host" else "Paste New Invite")
     assert "invitation" in result.message
     assert "own tools" in result.message
+    # HUD primary and recovery one-liner must name the same button (#126 family).
+    if role == "host":
+        assert "Choose Start New Room" in result.message
+        assert "Paste New Invite" not in result.message
+    else:
+        assert "choose Paste New Invite" in result.message
+        assert "Start New Room" not in result.message
 
 
 @pytest.mark.parametrize("cleanup", [CleanupState.ENDING, CleanupState.FAILED, CleanupState.UNKNOWN])
@@ -76,3 +83,26 @@ def test_restored_music_studio_work_outranks_historical_art_exit(field, value, p
     ))
     assert result.phase is phase
     assert result.primary_action is not SessionPrimaryAction.PASTE_NEW_INVITE
+
+
+def test_confirmed_art_exit_message_names_its_own_button():
+    """After a confirmed Art exit, HUD recovery must name Start New Room / Paste New Invite.
+
+    Sibling room-recovery one-liners already say "Choose Reset Invite" /
+    "choose Paste New Invite" / "Choose Try Again". The confirmed-exit IDLE
+    path previously said "Start a new room…" / "Ask the host for a new
+    invitation to join again" beside buttons labeled Start New Room and
+    Paste New Invite, with no textual link for the host and no button name
+    for the guest.
+    """
+    host = derive_session_conductor(SessionConductorFacts(
+        role="host", creator_profile_key="art", art_room_closed=True,
+    ))
+    assert host.action_label == "Start New Room"
+    assert "Choose Start New Room" in host.message
+
+    guest = derive_session_conductor(SessionConductorFacts(
+        role="guest", creator_profile_key="art", art_room_closed=True,
+    ))
+    assert guest.action_label == "Paste New Invite"
+    assert "choose Paste New Invite" in guest.message
