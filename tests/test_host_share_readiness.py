@@ -64,3 +64,23 @@ def test_port_inspection_failure_detail_names_try_again_button():
     assert result.action == "Try Again"
     assert "Choose Try Again" in result.detail
     assert "Try starting the jam again" not in result.detail
+
+def test_network_unavailable_detail_names_connect_to_wifi_button():
+    """HUD already offers Connect to Wi-Fi; recovery copy must name that button.
+
+    PORT_INSPECTION_FAILED and ROOM_CONNECTION_UNAVAILABLE already say Choose
+    Try Again. Missing private address used to say "then try again" without
+    naming Connect to Wi-Fi.
+    """
+
+    result = evaluate_host_share_readiness(
+        server_alive=True,
+        audio_port_bound=True,
+        private_lan_address="",
+    )
+
+    assert result.status is HostShareReadinessStatus.NETWORK_UNAVAILABLE
+    assert result.action == "Connect to Wi-Fi"
+    assert "Choose Connect to Wi-Fi" in result.detail
+    assert "then try again" not in result.detail
+
