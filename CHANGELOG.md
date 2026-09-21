@@ -10,6 +10,20 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Keep tip MATCH honest after #130–#135 recovery naming
+
+- `DEMO.md` still cited master tip `c0d6552` (#132). Point the checked-against
+  line at `3886c76` (#135) while leaving the immutable v0.28.0 package tip
+  unchanged. Conversation guidance quotes still match
+  `art_conversation_guidance` / `art_make_together_activity_detail`.
+- `docs/MOBILE.md` still named tip `7b9b1cc` (#128). Status now points at
+  `3886c760549dd806d4dbc8930f2271dda204e228` after #135, keeps Phase 1 Join tip `828aef0d`, and still says
+  published Latest is unsigned **v0.28.0**.
+- `README.md` Source boundary / Current source line no longer claim this
+  checkout matches the exact released tag commit; they match
+  `README_SIMPLE.md` post-tag honesty. Docs-only; no native feature change.
+  Parked #37/#49 and published v0.28.0 assets stay untouched.
+
 ### Name Start New Room after a confirmed Art room exit
 
 - When a confirmed Art room exit left the session idle, the HUD already

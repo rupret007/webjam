@@ -30,9 +30,11 @@ own systems that remain independent.
 > covered by `WebJam-v0.27.2-SHA256SUMS.txt`.
 
 
-> **Source boundary:** this checkout reports unsigned v0.28.0 and matches the
-> exact released tag commit `8ac08b69865af598e5ff69a84066964b1d90c940`. A checkout or branch artifact is still
-> source evidence, not a substitute for one of the checksum-bound packages.
+> **Source boundary:** this checkout reports unsigned v0.28.0 and includes
+> source after the published tag commit `8ac08b69865af598e5ff69a84066964b1d90c940`.
+> Those later changes are not in the immutable release packages. A checkout or
+> branch artifact is still source evidence, not a substitute for one of the
+> checksum-bound packages.
 > Jeff explicitly approved the existing Jamulus 3.12.2 and 3.12.3 records through
 > v0.28.0, so live Host/Join and the required component-input build gate are
 > source-eligible. Shared Track play uses this Mac's official BlackHole 16ch/64ch
@@ -57,7 +59,7 @@ showing someone the door? See the [two-minute demo script](DEMO.md).
 | --- | --- |
 | Product | Creator-facing desktop conductor around Jamulus, optional external meeting conversation, Studio, Pocket Stage, and Phase 1 native Art companion (source / unsigned simulator) |
 | Published line | Unsigned/ad-hoc v0.28.0 GitHub Latest private test release; verify `WebJam-v0.28.0-SHA256SUMS.txt` |
-| Current source line | Matches published unsigned v0.28.0; Host/Join reuses the exact baked Jamulus 3.12.2/3.12.3 compatibility records through v0.28.0 |
+| Current source line | Reports unsigned v0.28.0 with post-tag source after `8ac08b69865af598e5ff69a84066964b1d90c940`; Host/Join reuses the exact baked Jamulus 3.12.2/3.12.3 compatibility records through v0.28.0 |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -697,9 +699,9 @@ this unsigned round. Physical, signing, notarization, Gatekeeper, and
 SmartScreen results remain **NOT RUN**. Do not retag or mutate release
 `388045385`.
 
-This checkout reports unsigned **v0.28.0** and matches the exact released tag
-commit. Later documentation commits are post-release source and are not the
-checksum-bound v0.28.0 packages. Shared Track play uses this Mac's BlackHole
+This checkout reports unsigned **v0.28.0** and includes post-tag source after
+exact released commit `8ac08b69865af598e5ff69a84066964b1d90c940`. Those later
+commits are not the checksum-bound v0.28.0 packages. Shared Track play uses this Mac's BlackHole
 route and the bundled headless client; the signed catalog remains sealed at
 exact WebJam v0.22.5 and does not authorize a managed v0.28.0 component. The
 baked Jamulus 3.12.2 and 3.12.3 records extend through v0.28.0, so Host/Join
