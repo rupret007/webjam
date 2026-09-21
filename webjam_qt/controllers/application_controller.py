@@ -8472,7 +8472,7 @@ class ApplicationController(QObject):
                 SessionUiState.remote_session_retry_available()
             )
             self._render_remote_retry_hud()
-            flash_message = "Try Again to start the private connection."
+            flash_message = "Choose Try Again to start the private connection."
         elif guest_enrollment:
             # The sidecar entered open_guest(), so the reference service may
             # have atomically consumed this one-use capability. Remove the

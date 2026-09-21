@@ -10,6 +10,17 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Name Try Again in guest retry-safe failure flashes
+
+- When a guest private connection failed before the invitation was used, the
+  HUD already offered **"Try Again"**, but the brief flash said **"Try Again
+  to start the private connection."** without the same **Choose** cue used
+  for Paste New Invite and Reset Invite. The flash now says **"Choose Try
+  Again to start the private connection."** so flash and HUD agree.
+- Copy-only. No behavior, action, or state change. Parked #37/#49 and
+  published v0.28.0 assets stay untouched. Art owner-click / signing /
+  physical remain **NOT RUN**.
+
 ### Align DEMO.md with Conversation own-tools guidance
 
 - After #132, `DEMO.md` still attributed the full Webex watch-share essay to
