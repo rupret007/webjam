@@ -12,13 +12,14 @@
 > commit `8ac08b69865af598e5ff69a84066964b1d90c940`. Use the exact release asset and attached checksum manifest
 > as download evidence; a checkout or branch artifact is not a substitute.
 
-> **What this checkout is:** source with changes after the published
-> v0.28.0 tag. Those later changes are not in the immutable release packages.
+> **What this checkout is:** source preparing unsigned v0.28.1 candidate.
+> GitHub **Latest** is still immutable v0.28.0 release `388045385`—this checkout
+> does not tag, publish, or mutate that release.
 > The exact published v0.28.0 release assets—not this checkout or a branch
 > artifact—are package evidence. Tag run `34782892215` succeeded on the annotated
 > tag; Jeff published the softprops draft as Latest. Live Host/Join and package
 > builds reuse the exact baked Jamulus 3.12.2 and 3.12.3 records through
-> v0.28.0; the signed public catalog is unchanged. No physical PASS result is
+> v0.28.1; the signed public catalog is unchanged. No physical PASS result is
 > claimed.
 
 WebJam brings artists together to make, learn, and collaborate across mediums.
@@ -34,7 +35,7 @@ the meeting app, browser, or system output. Local Originals record only the
 input devices you explicitly select, so do not route meeting or system audio
 into those inputs.
 
-The current v0.28.0 source keeps Music and Podcast & Voice as GA
+The current v0.28.1 source keeps Music and Podcast & Voice as GA
 creator profiles. Art and Review & Rehearsal are visibly Preview. Art offers
 **Make together**—a live room where people work locally and the host may open
 one shared canvas—or host-clocked **Paint along**, but no recording or
@@ -135,7 +136,7 @@ owns installation and WebJam retains its embedded 3.12.2 fallback instead of
 claiming it can roll back the system package.
 
 The exact baked Jamulus 3.12.2 and 3.12.3 records are approved through unsigned
-v0.28.0, so live Host/Join is source-eligible. This checkout is still not
+v0.28.1, so live Host/Join is source-eligible. This checkout is still not
 package evidence or a physical-test result.
 
 Jamulus displays a name on a second line after eight characters and accepts no

@@ -6,13 +6,13 @@ Allow two minutes for the door, then another minute to open a Make together
 room and find its Conversation controls. One computer is enough to show that
 next action; a second artist is needed to demonstrate joining and making together.
 
-> **Boundary:** this script runs a source checkout, not a signed package.
-> Every v0.28.0 physical and platform-trust gate remains **NOT RUN** — see
-> [README](README.md) for the exact published release and its checksums.
-> The door-only part stops before Host or Join. The room continuation starts
-> a real local-network Art room, then ends it; it requires no Jamulus, meeting
-> launch, shared canvas, or video file. Later source changes are not included
-> in the immutable v0.28.0 packages.
+> **Boundary:** this script runs v0.28.1 source preparing an unsigned candidate,
+> not a signed package. GitHub **Latest** is still immutable v0.28.0 release
+> `388045385`. Every v0.28.1 physical and platform-trust gate remains
+> **NOT RUN** — see [README](README.md) for the exact published release and its
+> checksums. The door-only part stops before Host or Join. The room
+> continuation starts a real local-network Art room, then ends it; it requires
+> no Jamulus, meeting launch, shared canvas, or video file.
 
 ## Run it
 

@@ -1,16 +1,15 @@
-# First Session — WebJam v0.28.0 source
+# First Session — WebJam v0.28.1 source candidate
 
-> This guide describes current source, including changes after the published
-> v0.28.0 tag that are not in its immutable packages. GitHub **Latest** is
-> immutable unsigned/ad-hoc private test release `388045385`, published from
-> annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peeling to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`, with
-> seven packages plus `WebJam-v0.28.0-SHA256SUMS.txt`. A checkout or branch
-> artifact is not a substitute for one of those exact checksum-verified
-> packages. Record every v0.28 physical gate as **NOT RUN** until it is observed
-> against exact release bytes. Immutable historical v0.27.2 release `379360694`
-> remains kept and is not Latest.
+> This guide describes current source preparing unsigned v0.28.1 candidate.
+> GitHub **Latest** is still immutable v0.28.0 release `388045385`—this source
+> does not tag, publish, or mutate that release. A checkout or branch artifact
+> is not a substitute for one of the exact checksum-verified packages. Record
+> every v0.28 physical gate as **NOT RUN** until it is observed against exact
+> release bytes. Immutable historical v0.27.2 release `379360694` remains kept
+> and is not Latest.
 > Host/Join is source-eligible through the exact baked Jamulus 3.12.2 and 3.12.3
-> records, but do not treat this checkout as a package or physical-test result.
+> records through v0.28.1, but do not treat this checkout as a package or
+> physical-test result.
 
 Before Host or Join, choose **Art** or **Music**. Those are the equal first
 clicks. Art then offers **Make together** or **Paint along**, then **Host** or

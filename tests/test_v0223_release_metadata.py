@@ -36,15 +36,15 @@ COMPONENT_UPDATE_SOURCE = (ROOT / "services" / "jamulus_component_update.py").re
 )
 
 
-def test_v0280_is_latest_while_v0272_remains_immutable_historical() -> None:
+def test_v0281_candidate_while_v0280_remains_github_latest() -> None:
     match = re.search(
         r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$',
         VERSION_SOURCE,
         re.MULTILINE,
     )
     assert match is not None
-    assert match.group(1) == "0.28.0"
-    assert application_version() == "0.28.0"
+    assert match.group(1) == "0.28.1"
+    assert application_version() == "0.28.1"
     assert README.startswith(
         "# WebJam\n\n## Native creator collaboration and multitrack recording"
     )
@@ -67,7 +67,7 @@ def test_v0280_is_latest_while_v0272_remains_immutable_historical() -> None:
     assert "v0.28.0 private test release" in normalized
     assert "release ID `388045385`" in normalized
     assert "Source boundary:" in normalized
-    assert "reports unsigned v0.28.0" in normalized
+    assert "reports unsigned v0.28.1" in normalized
     assert "No annotated `v0.28.0` tag" not in normalized
     assert "candidate prep for unsigned **v0.28.0**" not in normalized
     assert "commits ahead" not in normalized
@@ -106,30 +106,30 @@ def test_v0280_is_latest_while_v0272_remains_immutable_historical() -> None:
 def test_runtime_sbom_names_the_exact_desktop_version() -> None:
     component = SBOM["metadata"]["component"]
     assert component == {
-        "bom-ref": "pkg:generic/webjam@0.28.0",
+        "bom-ref": "pkg:generic/webjam@0.28.1",
         "name": "WebJam",
-        "purl": "pkg:generic/webjam@0.28.0",
+        "purl": "pkg:generic/webjam@0.28.1",
         "type": "application",
-        "version": "0.28.0",
+        "version": "0.28.1",
     }
 
 
 def test_component_sbom_names_the_exact_desktop_version() -> None:
     component = COMPONENT_SBOM["metadata"]["component"]
     assert component == {
-        "bom-ref": "pkg:generic/webjam@0.28.0",
+        "bom-ref": "pkg:generic/webjam@0.28.1",
         "group": "rupret007",
         "name": "WebJam",
-        "purl": "pkg:generic/webjam@0.28.0",
+        "purl": "pkg:generic/webjam@0.28.1",
         "type": "application",
-        "version": "0.28.0",
+        "version": "0.28.1",
     }
     properties = {
         item["name"]: item["value"]
         for item in COMPONENT_SBOM["metadata"]["properties"]
     }
     assert properties["webjam:current-source-authorization"] == (
-        "baked-jamulus-records-approved-through-webjam-0.28.0"
+        "baked-jamulus-records-approved-through-webjam-0.28.1"
     )
     assert properties["webjam:build-eligibility"] == (
         "source-and-package-published-unsigned-test-only"
@@ -147,7 +147,7 @@ def test_payload_reuses_the_approved_v0280_records() -> None:
         validity_days=30,
     )
     components = payload["components"]
-    assert payload["webjam_version"] == "0.28.0"
+    assert payload["webjam_version"] == "0.28.1"
     assert payload["sequence"] == synthetic_sequence
     assert isinstance(components, list)
     expected = {
@@ -163,20 +163,20 @@ def test_payload_reuses_the_approved_v0280_records() -> None:
     assert all(component["version"] == "3.12.3" for component in components)
     assert all(component["variant"] == "official" for component in components)
     assert all(
-        component["webjam_range"]["maximum"] == "0.28.0" for component in components
+        component["webjam_range"]["maximum"] == "0.28.1" for component in components
     )
     assert all(
         entry.supports_webjam(payload["webjam_version"])
         for entry in official_jamulus_compatibility_registry().entries
     )
     assert not any(
-        entry.supports_webjam("0.28.1")
+        entry.supports_webjam("0.28.2")
         for entry in official_jamulus_compatibility_registry().entries
     )
     assert "assert all(entry.supports_webjam(__version__)" in CI_WORKFLOW
 
 
-def test_current_guides_separate_v0280_latest_from_historical_v0272() -> None:
+def test_current_guides_separate_v0281_candidate_from_published_v0280_latest() -> None:
     expected = {
         "ARCHITECTURE.md": "# WebJam architecture — v0.28.0 source",
         "CHANGELOG.md": (
@@ -188,7 +188,7 @@ def test_current_guides_separate_v0280_latest_from_historical_v0272() -> None:
             "# Creator profiles — v0.28.0 implemented contract"
         ),
         "DEVELOPMENT.md": "# Developing WebJam v0.28.0",
-        "FIRST_JAM.md": "# First Session — WebJam v0.28.0 source",
+        "FIRST_JAM.md": "# First Session — WebJam v0.28.1 source candidate",
         "HELP_ROUTING_MAP.md": "# WebJam help routing — v0.28.0 source",
         "QUICK_HELP_MAP.md": "# WebJam quick help — v0.28.0 source",
         "README.md": "release ID `388045385`",
@@ -208,7 +208,7 @@ def test_current_guides_separate_v0280_latest_from_historical_v0272() -> None:
         "docs/JAMULUS_COMPONENT_RELEASE_RUNBOOK.md": (
             "v0.28.0 published fallback-only desktop state"
         ),
-        "docs/MERGE_AND_RELEASE.md": "Published testing boundary:",
+        "docs/MERGE_AND_RELEASE.md": "v0.28.1 candidate preparation:",
         "docs/PROJECT_BRIEF.md": "388045385",
         "docs/README.md": "388045385",
         "ios/README.md": "388045385",

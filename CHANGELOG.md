@@ -6,9 +6,50 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-> Future work after the published unsigned v0.28.0 test candidate belongs here.
-> Every published tag, release, and asset remains immutable historical
-> evidence.
+> Future work after the unsigned v0.28.1 candidate belongs here once that round
+> is tagged and published as Latest. Until then GitHub Latest remains immutable
+> v0.28.0 release `388045385`. Every published tag, release, and asset remains
+> immutable historical evidence.
+
+## [0.28.1] — Unsigned/ad-hoc private test release candidate
+
+> Prepared for Jeff Story testing. Extends Jamulus webjam_range ceiling from
+> 0.28.0 → 0.28.1 so Host/Join and component-input CI continue to reuse the
+> exact baked 3.12.2 and 3.12.3 identities. No tag, release, or Latest
+> mutation yet. Every physical, credentialed, signing, notarization,
+> Gatekeeper, and SmartScreen result remains **NOT RUN**. Immutable v0.28.0
+> release `388045385` stays GitHub **Latest**. Parked #37/#49 untouched.
+
+### Choose-cue recovery button naming (#130–#140)
+
+- Recovery one-liners now name the same button the HUD primary offers so copy
+  and control agree. Affected paths: Reset Invite (#130), Paste New Invite
+  (#131, #138), Open my copy… (#133), Try Again (#134, #138, #139), Start New
+  Room / Paste New Invite after Art room exit (#135), Copy New Invite after
+  Wi-Fi address change (#137), and Connect to Wi-Fi when Music host network
+  lacks a private address (#140).
+- Copy-only. No behavior, action, or state change. Published v0.28.0 assets
+  stay untouched. Art owner-click / signing / physical remain **NOT RUN**.
+
+### Webex Conversation guidance (#132)
+
+- Art and Music Conversation share one next-click sentence: choose **Join /
+  Open Meeting or Show Webex App**, then in the meeting app choose **Share**
+  and pick the WebJam window or your demo. **Paint along** stays the silent
+  local process video—each person opens their own copy. It is not the
+  movie-watch path. No new video player, OAuth, Embedded App, or WebEngine
+  embed.
+- Copy + focused tests only. Parked #37/#49 and published v0.28.0 assets stay
+  untouched. Art owner-click / signing / physical remain **NOT RUN**.
+
+### Docs honesty (#123, #124, #128, #129, #136)
+
+- Tip MATCH claims refreshed after each recovery-naming PR so documentation
+  cites the actual current master commit. `DEMO.md`, `docs/MOBILE.md`, and
+  `README.md` separate later source changes from the immutable v0.28.0
+  packages.
+- Docs-only honesty. Parked #37/#49 and published v0.28.0 assets stay
+  untouched.
 
 ### Name Connect to Wi-Fi when Music host network is unavailable
 
