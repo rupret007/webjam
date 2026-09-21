@@ -8540,7 +8540,7 @@ class ApplicationController(QObject):
 
         self.window.session_hud.set_state(
             "Needs attention",
-            "WebJam could not contact the host before using this invitation.",
+            "Choose Try Again to start the private connection.",
             action_text="Try Again",
             action_visible=True,
             action_kind="retry",
@@ -9062,7 +9062,7 @@ class ApplicationController(QObject):
             self._render_remote_retry_hud()
             return GuidanceDisplayOverride(
                 "Needs attention",
-                "WebJam could not contact the host before using this invitation.",
+                "Choose Try Again to start the private connection.",
                 SessionPrimaryAction.TRY_RECONNECT,
                 "Try Again",
             )
