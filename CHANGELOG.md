@@ -10,6 +10,18 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Align DEMO.md with Conversation own-tools guidance
+
+- After #132, `DEMO.md` still attributed the full Webex watch-share essay to
+  the Make-together room overview and quoted two-window copy without the
+  **keep using your own tools** cue. The overview step now matches
+  `art_make_together_activity_detail`; the Conversation step quotes
+  `two_window_guidance(make)` / Webex `art_conversation_guidance`, including
+  own tools, Show Webex App distinctness, and Paint along as the silent local
+  path (not a movie door). Tip MATCH points at master `c0d6552` (#132).
+- Docs-only honesty. Parked #37/#49 and published v0.28.0 assets stay
+  untouched. Art owner-click / signing / physical remain **NOT RUN**.
+
 ### Name Open my copy… when Paint along needs a guest file
 
 - When a host shared a process video and this computer still needed a local
