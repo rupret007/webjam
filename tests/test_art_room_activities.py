@@ -112,6 +112,6 @@ def test_activity_projection_contains_only_bounded_room_status():
         video=VideoCompanionState.LOCAL_ATTENTION,
     ))
     for activity in activities:
-        assert set(asdict(activity)) == {"label", "description", "tone", "target"}
+        assert set(asdict(activity)) == {"label", "description", "tone", "target", "next_click"}
         assert len(activity.label) <= 40
         assert len(activity.description) <= 180

@@ -64,7 +64,10 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/test_art_start_ux.
    open until WebJam confirms it.
 
 2. **Point out Copy Invite and Waiting for artists to connect.** The room
-   says **Make from your own space** and explains: "Use paper, clay, a model, printer, or your usual app. Talk in Webex · make in WebJam—keep both windows side by side. To watch a movie or demo together, open Conversation, choose Join / Open Meeting or Show Webex App, then in Webex, choose Share and pick the WebJam window or your demo. WebJam does not play the movie. Paint along stays the silent local process video—each person opens their own copy. It is not the movie-watch path."
+   says **Make from your own space** and explains: "Use paper, clay, a model,
+   printer, or your usual app. Open Conversation for Talk · make · share or
+   watch-together." Full Talk · make · share / Webex honesty lives on the
+   Conversation surface, not this short overview line.
    No one else has joined merely because the room is open or the invite was
    copied. For an actual collaborator, follow the invitation steps in
    [First Session](FIRST_JAM.md#start-an-art-room).
@@ -73,11 +76,16 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/test_art_start_ux.
    saved, the same button says **Conversation**. With no link, the panel's
    next action is **Add Link**; with a saved link that has not been opened,
    it is **Join / Open Meeting**. Opening this panel alone opens no meeting.
-   Stop at that next action for this demo. To talk or watch a movie or demo
-   together, add your real public HTTPS meeting link, choose Join / Open
-   Meeting or Show Webex App, then use the meeting app's own share. WebJam does
-   not play the movie. Paint along stays the silent local process video—each
-   person opens their own copy. It is not the movie-watch path.
+   Stop at that next action for this demo. With a Webex-labeled meeting, the
+   Conversation card matches current guidance: "Talk in Webex · make in
+   WebJam—keep both windows side by side and keep using your own tools. To
+   watch a movie or demo together, choose Join / Open Meeting or Show Webex
+   App, then in Webex, choose Share and pick the WebJam window or your demo.
+   Show Webex App only brings Webex forward; it does not join or mute. WebJam
+   does not play the movie. Paint along stays the silent local process
+   video—each person opens their own copy. It is not the movie-watch path."
+   Add a real public HTTPS meeting link before Join / Open Meeting; WebJam does
+   not invent a movie door.
 
 4. **Choose End Room and confirm.** If cleanup needs another attempt,
    choose **Try End Room** until it finishes. Close the window when the room
@@ -119,7 +127,7 @@ Showing those choices does not prove video playback or shared meeting media.
 
 Record `git rev-parse HEAD` with your walkthrough notes. This script was
 checked against source based on master
-`7b9b1cc11d3325d1eb95b7459879a6823d9673a2` (#128); published v0.28.0 packages
+`c0d6552ead34a6f465c6903d6ecf0aa3cac6646e` (#132); published v0.28.0 packages
 come from `8ac08b69865af598e5ff69a84066964b1d90c940`.
 If the app disagrees with this file, record its exact wording and the source
 commit. The door and room checks above help locate the mismatch; this source

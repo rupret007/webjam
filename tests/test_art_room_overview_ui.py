@@ -228,7 +228,7 @@ def test_themed_room_context_and_actions_fit_compact_and_normal_windows(
         changes = dict(
             activity_label="Paint along",
             activity_detail="The host shared a video. Open your own copy of the same file to follow along.",
-            activity_action="video", activity_action_label="Open your Paint along copy",
+            activity_action="video", activity_action_label="Open my copy…",
             activity_enabled=True,
         )
     elif activity == "canvas":
@@ -327,7 +327,7 @@ def test_production_room_copy_fits_and_coexists_with_conversation(
         state=room_state, hosting=hosting,
         cleanup_required=phase == "cleanup_required",
         presence=ArtRoomPresence(
-            label="Open your Paint along copy",
+            label="Open my copy…",
             description="Open your own copy of the same video to follow along.",
             target=ArtPresenceTarget.VIDEO,
         ),

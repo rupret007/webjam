@@ -10,6 +10,31 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Align DEMO.md with Conversation own-tools guidance
+
+- After #132, `DEMO.md` still attributed the full Webex watch-share essay to
+  the Make-together room overview and quoted two-window copy without the
+  **keep using your own tools** cue. The overview step now matches
+  `art_make_together_activity_detail`; the Conversation step quotes
+  `two_window_guidance(make)` / Webex `art_conversation_guidance`, including
+  own tools, Show Webex App distinctness, and Paint along as the silent local
+  path (not a movie door). Tip MATCH points at master `c0d6552` (#132).
+- Docs-only honesty. Parked #37/#49 and published v0.28.0 assets stay
+  untouched. Art owner-click / signing / physical remain **NOT RUN**.
+
+### Name Open my copy… when Paint along needs a guest file
+
+- When a host shared a process video and this computer still needed a local
+  copy, Room chrome said **"Open your Paint along copy"**, the Room overview
+  button said **"Open Paint along"**, and the Paint along panel's real next
+  click was **"Open my copy…"**. Guests now see **Open my copy…** on the Room
+  chip/presence and overview button for copy-needed states, matching the
+  panel control. Stalled/host-attention Paint along still opens with
+  **Open Paint along**.
+- Copy/label alignment only for the Room next click. No transport, file, or
+  playback behavior change. Parked #37/#49 and published v0.28.0 assets stay
+  untouched. Art owner-click / signing / physical remain **NOT RUN**.
+
 ### Clarify Conversation watch-together vs Paint along
 
 - Art and Music Conversation now share one next-click sentence: choose
@@ -27,6 +52,7 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Copy + focused tests only. No new video player, OAuth, Embedded App, or
   WebEngine embed. Parked #37/#49 and published v0.28.0 assets stay untouched.
   Art owner-click / signing / physical remain **NOT RUN**.
+
 
 ### Name Paste New Invite in guest used-invitation failure flashes
 
