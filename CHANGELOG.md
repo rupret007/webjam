@@ -10,6 +10,18 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Name Connect to Wi-Fi when Music host network is unavailable
+
+- When a Music host had no private Wi-Fi address, the HUD already offered
+  **"Connect to Wi-Fi"**, but the recovery one-liner said **"Connect this Mac
+  to the band's Wi-Fi, then try again."** without the same **Choose** cue used
+  for Try Again, Reset Invite, Paste New Invite, and Copy New Invite. The line
+  now says **"Choose Connect to Wi-Fi once this Mac is on the band's
+  network."** so HUD primary and recovery agree.
+- Copy-only. No behavior, action, or state change. Parked #37/#49 and
+  published v0.28.0 assets stay untouched. Art owner-click / signing /
+  physical remain **NOT RUN**.
+
 ### Name Try Again when Music port inspection fails
 
 - When a Music host's local music-port probe failed, the HUD already offered

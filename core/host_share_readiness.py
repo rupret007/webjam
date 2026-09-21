@@ -50,7 +50,9 @@ class HostShareReadiness:
                 "Share the link with musicians on this same network."
             )
         if self.status is HostShareReadinessStatus.NETWORK_UNAVAILABLE:
-            return "Connect this Mac to the band's Wi-Fi, then try again."
+            return (
+                "Choose Connect to Wi-Fi once this Mac is on the band's network."
+            )
         if self.status is HostShareReadinessStatus.ROOM_CONNECTION_UNAVAILABLE:
             return "Choose Try Again to reconnect this room, then copy a new invite."
         if self.status is HostShareReadinessStatus.AUDIO_PORT_UNAVAILABLE:

@@ -938,6 +938,9 @@ def test_host_handoff_keeps_the_connect_to_wifi_recovery_action(qapp, tmp_path):
     assert controller.window.session_hud._status.text() == "Connect to Wi-Fi"
     assert controller.window.session_hud._action.text() == "Connect to Wi-Fi"
     assert not controller.window.session_hud._action.isHidden()
+    detail = controller.window.session_hud._detail.text()
+    assert "Choose Connect to Wi-Fi" in detail
+    assert "then try again" not in detail
     controller.bridge.hosted_server_alive.return_value = False
     controller.shutdown()
 
