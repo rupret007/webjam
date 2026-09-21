@@ -1,10 +1,10 @@
-# WebJam quick help — v0.28.0 source
+# WebJam quick help — v0.28.1 source
 
 > The exact released source commit for immutable GitHub **Latest** release
-> `388045385` is `8ac08b69865af598e5ff69a84066964b1d90c940`; annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peels to it,
-> and its seven packages are covered by `WebJam-v0.28.0-SHA256SUMS.txt`. This
+> `393030220` is `200cac9eb04d01611696cdc147957b36daef257f`; annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peels to it,
+> and its seven packages are covered by `WebJam-v0.28.1-SHA256SUMS.txt`. This
 > later documentation source is not a package substitute. No physical PASS is
-> claimed; every v0.28 physical and release-decision row remains **NOT RUN**.
+> claimed; every v0.28.1 physical and release-decision row remains **NOT RUN**.
 > Immutable historical v0.27.2 release `379360694` remains kept and is not
 > Latest. This map describes implemented UI. Unsigned v0.28.0 reuses the existing
 > exact Jamulus 3.12.2 and 3.12.3 compatibility records for Host/Join.

@@ -5,19 +5,19 @@ audience that matches what you are trying to do; the root [README](../README.md)
 keeps the product story and five-minute demo intentionally short.
 
 > **Current testing release:** GitHub **Latest** is immutable unsigned/ad-hoc
-> v0.28.0 private test release `388045385`, published `2026-09-13T21:48:49Z`. Use
-> only one of its seven packages verified by `WebJam-v0.28.0-SHA256SUMS.txt`.
-> Annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peels to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`. Tag run
-> `34782892215` succeeded on the annotated tag; Jeff published the softprops draft
-> as Latest. Immutable historical v0.27.2 release `379360694` remains kept and
-> is not Latest. Windows is unsigned; macOS is ad-hoc signed and unnotarized;
-> every physical test remains **NOT RUN** until recorded against those packages.
+> v0.28.1 private test release `393030220`, published `2026-09-21T14:30:22Z`. Use
+> only one of its seven packages verified by `WebJam-v0.28.1-SHA256SUMS.txt`.
+> Annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peels to exact commit `200cac9eb04d01611696cdc147957b36daef257f`.
+> Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by
+> owner; git tags remain. Windows is unsigned; macOS is ad-hoc signed and
+> unnotarized; every physical test remains **NOT RUN** until recorded against
+> those packages.
 
-> **Source boundary:** this checkout reports unsigned v0.28.0 matching the
+> **Source boundary:** this checkout reports unsigned v0.28.1 matching the
 > published tag. A checkout or branch artifact is not a package; use the exact
 > release assets above. Its baked Jamulus 3.12.2 and 3.12.3 records are approved
-> through v0.28.0, so live Host/Join and required package-build CI are
-> source-eligible. All v0.28 physical/hardware rows remain **NOT RUN**.
+> through v0.28.1, so live Host/Join and required package-build CI are
+> source-eligible. All v0.28.1 physical/hardware rows remain **NOT RUN**.
 
 ## Start here
 

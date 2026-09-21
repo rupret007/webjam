@@ -64,22 +64,18 @@ def test_v0281_candidate_while_v0280_remains_github_latest() -> None:
         "v0.25.0 is a new creator-multitrack source and package identity" in normalized
     )
     assert "v0.24.0 bytes" in normalized
-    assert "v0.28.0 private test release" in normalized
-    assert "release ID `388045385`" in normalized
+    assert "v0.28.1 private test release" in normalized
+    assert "release ID `393030220`" in normalized
     assert "Source boundary:" in normalized
     assert "reports unsigned v0.28.1" in normalized
     assert "No annotated `v0.28.0` tag" not in normalized
     assert "candidate prep for unsigned **v0.28.0**" not in normalized
     assert "commits ahead" not in normalized
-    assert "WebJam-v0.28.0-SHA256SUMS.txt" in normalized
-    assert "8ac08b69865af598e5ff69a84066964b1d90c940" in normalized
-    assert "526bba0728439d48d38a5170af083ff8736d051d" in normalized
-    assert "34782892215" in normalized
+    assert "WebJam-v0.28.1-SHA256SUMS.txt" in normalized
+    assert "200cac9eb04d01611696cdc147957b36daef257f" in normalized
+    assert "db44247a3ceefb97f4cac6e623deef1bd32648a8" in normalized
     assert "seven packages plus" in normalized
-    assert "release ID `379360694`" in normalized
-    assert "kept and is no longer Latest" in normalized or "kept and is not Latest" in normalized
-    assert "33327104322" in normalized
-    assert "v0.27.1 remains immutable historical evidence" in normalized
+    assert "deleted by owner" in normalized.casefold()
     assert "No v0.27.2 tag" not in normalized
     assert "No v0.27.2 release" not in normalized
     assert "No v0.27.2 package" not in normalized
@@ -176,43 +172,43 @@ def test_payload_reuses_the_approved_v0280_records() -> None:
     assert "assert all(entry.supports_webjam(__version__)" in CI_WORKFLOW
 
 
-def test_current_guides_separate_v0281_candidate_from_published_v0280_latest() -> None:
+def test_current_guides_separate_v0281_latest_from_historical() -> None:
     expected = {
-        "ARCHITECTURE.md": "# WebJam architecture — v0.28.0 source",
+        "ARCHITECTURE.md": "# WebJam architecture — v0.28.1 source",
         "CHANGELOG.md": (
             "## [0.25.0] — Creator profiles and authoritative multitrack "
             "private test candidate"
         ),
         "CLOSED_PILOT_PLAYBOOK.md": "v0.22.5 private test candidate",
         "CREATIVE_MODES_MVP_SPEC.md": (
-            "# Creator profiles — v0.28.0 implemented contract"
+            "# Creator profiles — v0.28.1 implemented contract"
         ),
-        "DEVELOPMENT.md": "# Developing WebJam v0.28.0",
-        "FIRST_JAM.md": "# First Session — WebJam v0.28.1 source candidate",
-        "HELP_ROUTING_MAP.md": "# WebJam help routing — v0.28.0 source",
-        "QUICK_HELP_MAP.md": "# WebJam quick help — v0.28.0 source",
-        "README.md": "release ID `388045385`",
-        "README_SIMPLE.md": "388045385",
-        "RECORDING_AND_STUDIO.md": "# Recording and Studio — v0.28.0 source",
-        "SECURITY.md": "388045385",
-        "TEST_PROCEDURE.md": "# WebJam v0.28.0 source test procedure",
-        "USER_GUIDE.md": "# WebJam creator guide — v0.28.0 source",
-        "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.28.0 source UX acceptance checklist",
+        "DEVELOPMENT.md": "# Developing WebJam v0.28.1",
+        "FIRST_JAM.md": "release `393030220`",
+        "HELP_ROUTING_MAP.md": "# WebJam help routing — v0.28.1 source",
+        "QUICK_HELP_MAP.md": "# WebJam quick help — v0.28.1 source",
+        "README.md": "release ID `393030220`",
+        "README_SIMPLE.md": "393030220",
+        "RECORDING_AND_STUDIO.md": "# Recording and Studio — v0.28.1 source",
+        "SECURITY.md": "393030220",
+        "TEST_PROCEDURE.md": "# WebJam v0.28.1 source test procedure",
+        "USER_GUIDE.md": "# WebJam creator guide — v0.28.1 source",
+        "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.28.1 source UX acceptance checklist",
         "V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md": (
             "v0.25.0 was GitHub **Latest**"
         ),
         "WEBEX_AUDIO_MODES.md": (
-            "# Meeting-platform companion guidance — v0.28.0 source"
+            "# Meeting-platform companion guidance — v0.28.1 source"
         ),
-        "docs/DESKTOP_RELEASE_RUNBOOK.md": "v0.28.0 published testing boundary",
+        "docs/DESKTOP_RELEASE_RUNBOOK.md": "v0.28.1 published testing boundary",
         "docs/JAMULUS_COMPONENT_RELEASE_RUNBOOK.md": (
-            "v0.28.0 published fallback-only desktop state"
+            "v0.28.1 published fallback-only desktop state"
         ),
-        "docs/MERGE_AND_RELEASE.md": "v0.28.1 candidate preparation:",
-        "docs/PROJECT_BRIEF.md": "388045385",
-        "docs/README.md": "388045385",
-        "ios/README.md": "388045385",
-        "requirements-lock/README.md": "388045385",
+        "docs/MERGE_AND_RELEASE.md": "Published testing boundary:",
+        "docs/PROJECT_BRIEF.md": "393030220",
+        "docs/README.md": "393030220",
+        "ios/README.md": "393030220",
+        "requirements-lock/README.md": "393030220",
         "packaging/windows/README-WINDOWS.txt": "PACKAGE BOUNDARY",
         "packaging/linux/README-LINUX.txt": "PACKAGE BOUNDARY",
         "packaging/macos/READ ME FIRST.txt": "PACKAGE BOUNDARY",
@@ -220,7 +216,7 @@ def test_current_guides_separate_v0281_candidate_from_published_v0280_latest() -
         "V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md": (
             "Immutable historical release `367773776`, tag `v0.23.0`"
         ),
-        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": "v0.28.0 source guide",
+        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": "v0.28.1 source guide",
     }
     for relative_path, marker in expected.items():
         assert marker in (ROOT / relative_path).read_text(encoding="utf-8")
@@ -276,8 +272,8 @@ def test_v0271_release_history_stays_immutable_without_invented_catalog() -> Non
     normalized_merge_map = " ".join(merge_map.split())
     assert "Do not invent a signed catalog" in normalized_merge_map
     assert "Do not restack #37" in normalized_merge_map
-    assert "v0.27.1 remains immutable" in normalized_merge_map
-    assert "historical evidence" in normalized_merge_map
+    assert "git tags" in normalized_merge_map.casefold()
+    assert "remain" in normalized_merge_map.casefold()
 
 
 def test_changelog_marks_v0280_published_and_keeps_prior_history() -> None:
@@ -921,12 +917,12 @@ def test_source_eligible_copy_is_explicit_about_platform_trust() -> None:
     assert "Ubuntu 22.04" in linux_readme
     for package_copy in (windows_readme, macos_readme, linux_readme):
         normalized = " ".join(package_copy.split())
-        assert "388045385" in normalized
-        assert "WebJam-v0.28.0-SHA256SUMS.txt" in normalized
-        assert "379360694" in normalized
+        assert "393030220" in normalized
+        assert "WebJam-v0.28.1-SHA256SUMS.txt" in normalized
+        assert "deleted by owner" in normalized.casefold()
         assert "package boundary" in normalized.casefold()
         assert "no package published" not in normalized.casefold()
-        assert "through v0.28.0" in normalized
+        assert "through v0.28.1" in normalized
         assert "SHA-256" in normalized
         assert "sealed v0.22.5" in normalized or "v0.22.5" in normalized
         assert "Presence of embedded 3.12.2 bytes does not authorize" in normalized

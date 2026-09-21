@@ -1,11 +1,11 @@
 # Pocket Stage iPhone app
 
-> **v0.28.0 published desktop Latest:** GitHub **Latest** is immutable
-> unsigned/ad-hoc desktop private test release `388045385`, published from
-> annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peeling to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`. It
-> contains no installable iPhone kit. Immutable historical v0.27.2 release
-> `379360694` remains kept and is not Latest. Physical iPhone installation and
-> pairing remain **NOT RUN**.
+> **v0.28.1 published desktop Latest:** GitHub **Latest** is immutable
+> unsigned/ad-hoc desktop private test release `393030220`, published from
+> annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to exact commit `200cac9eb04d01611696cdc147957b36daef257f`. It
+> contains no installable iPhone kit. Older release entries (v0.28.0, v0.27.2,
+> Jamulus catalog v1–v3) were deleted by owner; git tags remain. Physical iPhone
+> installation and pairing remain **NOT RUN**.
 
 This folder also holds the **Art companion** guest app that landed with Phase 1
 on master. It is a different product from Pocket Stage: same-LAN Art Join, not

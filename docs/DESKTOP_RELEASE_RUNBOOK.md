@@ -68,18 +68,17 @@
 > **not** Latest. Every physical, credentialed, signing, notarization, and
 > platform-trust gate remains **NOT RUN**.
 
-> **v0.28.0 published testing boundary (GitHub Latest):** GitHub **Latest** is
-> immutable unsigned/ad-hoc release `388045385`, published `2026-09-13T21:48:49Z`
-> from annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peeling to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`. It
-> has seven packages plus `WebJam-v0.28.0-SHA256SUMS.txt`. Tag run `34782892215`
-> succeeded on the annotated tag, including softprops draft creation; Jeff
-> published that draft as **Latest**. Do **not** dispatch
+> **v0.28.1 published testing boundary (GitHub Latest):** GitHub **Latest** is
+> immutable unsigned/ad-hoc release `393030220`, published `2026-09-21T14:30:22Z`
+> from annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to exact commit `200cac9eb04d01611696cdc147957b36daef257f`. It
+> has seven packages plus `WebJam-v0.28.1-SHA256SUMS.txt`. Do **not** dispatch
 > `publish-latest-release.yml` (sealed catalog still targets exact WebJam
-> 0.22.5). Do not invent a signed catalog, restack #37/#49, retag `v0.28.0`, or
-> mutate release `388045385` or historical `379360694`. Windows remains
+> 0.22.5). Do not invent a signed catalog, restack #37/#49, retag `v0.28.1`, or
+> mutate release `393030220`. Older release entries (v0.28.0, v0.27.2, Jamulus
+> catalog v1–v3) were deleted by owner; git tags remain. Windows remains
 > unsigned; macOS remains ad-hoc signed and unnotarized. Physical/signing remain
 > **NOT RUN**. The baked Jamulus 3.12.2/3.12.3 records are approved through
-> v0.28.0 for Host/Join and component-input CI.
+> v0.28.1 for Host/Join and component-input CI.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version

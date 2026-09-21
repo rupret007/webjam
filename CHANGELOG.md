@@ -6,19 +6,22 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-> Future work after the unsigned v0.28.1 candidate belongs here once that round
-> is tagged and published as Latest. Until then GitHub Latest remains immutable
-> v0.28.0 release `388045385`. Every published tag, release, and asset remains
-> immutable historical evidence.
+> Future work after published v0.28.1 belongs here. GitHub Latest is now
+> immutable v0.28.1 release `393030220`. Every published tag, release, and
+> asset remains immutable historical evidence. Older release entries
+> (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags
+> remain.
 
-## [0.28.1] — Unsigned/ad-hoc private test release candidate
+## [0.28.1] — Unsigned/ad-hoc private test release (GitHub Latest)
 
-> Prepared for Jeff Story testing. Extends Jamulus webjam_range ceiling from
-> 0.28.0 → 0.28.1 so Host/Join and component-input CI continue to reuse the
-> exact baked 3.12.2 and 3.12.3 identities. No tag, release, or Latest
-> mutation yet. Every physical, credentialed, signing, notarization,
-> Gatekeeper, and SmartScreen result remains **NOT RUN**. Immutable v0.28.0
-> release `388045385` stays GitHub **Latest**. Parked #37/#49 untouched.
+> Published 2026-09-21 as GitHub **Latest**. Release ID `393030220` from
+> annotated tag `v0.28.1` (object `db44247a3ceefb97f4cac6e623deef1bd32648a8`)
+> peeling to exact commit `200cac9eb04d01611696cdc147957b36daef257f`. Seven
+> packages plus `WebJam-v0.28.1-SHA256SUMS.txt`. Extends Jamulus webjam_range
+> ceiling through v0.28.1 so Host/Join and component-input CI reuse the exact
+> baked 3.12.2 and 3.12.3 identities. Every physical, credentialed, signing,
+> notarization, Gatekeeper, and SmartScreen result remains **NOT RUN**. Parked
+> #37/#49 untouched. Older release entries deleted by owner; git tags remain.
 
 ### Choose-cue recovery button naming (#130–#140)
 

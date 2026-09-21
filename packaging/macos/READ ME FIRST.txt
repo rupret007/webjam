@@ -1,19 +1,19 @@
-WEBJAM v0.28.0 UNSIGNED PRIVATE TEST PACKAGE
+WEBJAM v0.28.1 UNSIGNED PRIVATE TEST PACKAGE
 ============================================
 
-PACKAGE BOUNDARY: GitHub Latest is immutable release 388045385, published
-2026-09-13T21:48:49Z from annotated tag object 526bba0728439d48d38a5170af083ff8736d051d peeling to exact commit
-8ac08b69865af598e5ff69a84066964b1d90c940. It has seven packages plus WebJam-v0.28.0-SHA256SUMS.txt. Use this
+PACKAGE BOUNDARY: GitHub Latest is immutable release 393030220, published
+2026-09-21T14:30:22Z from annotated tag object db44247a3ceefb97f4cac6e623deef1bd32648a8 peeling to exact commit
+200cac9eb04d01611696cdc147957b36daef257f. It has seven packages plus WebJam-v0.28.1-SHA256SUMS.txt. Use this
 private test package only when its exact filename and SHA-256 appear in that
-manifest. A checkout or branch build is not a substitute. Immutable historical
-v0.27.2 release 379360694 remains kept and is not Latest. The existing exact
-Jamulus 3.12.2 and 3.12.3 records are approved through v0.28.0 for live
-Host/Join.
+manifest. A checkout or branch build is not a substitute. Older release entries
+(v0.28.0, v0.27.2, Jamulus catalog v1-v3) were deleted by owner; git tags remain.
+The existing exact Jamulus 3.12.2 and 3.12.3 records are approved through v0.28.1
+for live Host/Join.
 Physical audio, hardware, Gatekeeper, signing, and notarization gates remain
 NOT RUN unless the release evidence names this exact file and SHA-256.
 
 Everything below describes the published unsigned private test package. It is
-ad-hoc signed and NOT notarized or reviewed by Apple. No v0.28.0 physical-test
+ad-hoc signed and NOT notarized or reviewed by Apple. No v0.28.1 physical-test
 result exists.
 
 This release upgrades cryptography to 50.0.0 for CVE-2026-69247,
@@ -72,9 +72,9 @@ timecode are blocked. No profile directly or automatically taps a meeting app,
 browser, or system output. Local scratchpad notes remain profile-scoped on this
 Mac only; they are never shared or media-timecoded.
 
-The sealed v0.22.5 Jamulus catalog does not authorize v0.28.0 and is rejected.
+The sealed v0.22.5 Jamulus catalog does not authorize v0.28.1 and is rejected.
 The baked registry separately authorizes the existing exact Jamulus 3.12.2 and
-3.12.3 records through v0.28.0. Presence of embedded 3.12.2 bytes does not
+3.12.3 records through v0.28.1. Presence of embedded 3.12.2 bytes does not
 authorize an identity mismatch. Shared Track uses its separate approved
 headless path; unlisted client/server versions still fail closed.
 

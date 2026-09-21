@@ -1,13 +1,13 @@
 # WebJam project brief
 
-**Review date:** 2026-09-13
-**Status:** published unsigned/ad-hoc v0.28.0 is GitHub Latest release
-`388045385`, published `2026-09-13T21:48:49Z`. Annotated tag object `526bba0728439d48d38a5170af083ff8736d051d`
-peels to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`. Its seven packages are covered by
-`WebJam-v0.28.0-SHA256SUMS.txt`; a checkout or branch artifact is not a package.
-Immutable historical v0.27.2 release `379360694` remains kept and is not Latest.
-Live Jamulus Host/Join reuses the existing exact 3.12.2 and 3.12.3 records;
-every v0.28 physical/hardware gate is **NOT RUN**.
+**Review date:** 2026-09-21
+**Status:** published unsigned/ad-hoc v0.28.1 is GitHub Latest release
+`393030220`, published `2026-09-21T14:30:22Z`. Annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8`
+peels to exact commit `200cac9eb04d01611696cdc147957b36daef257f`. Its seven packages are covered by
+`WebJam-v0.28.1-SHA256SUMS.txt`; a checkout or branch artifact is not a package.
+Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by
+owner; git tags remain. Live Jamulus Host/Join reuses the existing exact 3.12.2
+and 3.12.3 records; every v0.28.1 physical/hardware gate is **NOT RUN**.
 
 ## Executive summary
 

@@ -73,20 +73,13 @@ def test_current_guides_separate_v0280_latest_from_historical_v0272_truthfully()
 
     combined = " ".join(_normalized(path) for path in CURRENT_GUIDES)
     for marker in (
-        "https://github.com/rupret007/webjam/releases/tag/v0.28.0",
-        "388045385",
-        "2026-09-13T21:48:49Z",
-        "WebJam-v0.28.0-SHA256SUMS.txt",
-        "8ac08b69865af598e5ff69a84066964b1d90c940",
-        "526bba0728439d48d38a5170af083ff8736d051d",
-        "34782892215",
-        "https://github.com/rupret007/webjam/releases/tag/v0.27.2",
-        "379360694",
-        "2026-08-30T18:06:14Z",
-        "WebJam-v0.27.2-SHA256SUMS.txt",
-        "9c6ca3de96aa7eb261c65b7dee768ab48144169c",
-        "33327104322",
-        "lightweight tag",
+        "https://github.com/rupret007/webjam/releases/tag/v0.28.1",
+        "393030220",
+        "2026-09-21T14:30:22Z",
+        "WebJam-v0.28.1-SHA256SUMS.txt",
+        "200cac9eb04d01611696cdc147957b36daef257f",
+        "db44247a3ceefb97f4cac6e623deef1bd32648a8",
+        "deleted by owner",
     ):
         assert marker.casefold() in combined.casefold()
 
@@ -135,34 +128,15 @@ def test_current_guides_separate_v0280_latest_from_historical_v0272_truthfully()
         "Current published private test release (GitHub Latest): **v0.27.2**",
         "source candidate is unpublished **v0.28.0**",
         "GitHub Latest): **v0.27.2**; source candidate is unpublished",
+        "GitHub **Latest** is still immutable v0.28.0",
+        "still GitHub **Latest**",
     ):
         assert stale_claim.casefold() not in combined.casefold(), stale_claim
 
-    assert "v0.28.1 source" in combined.casefold()
-    assert "388045385" in combined
-    assert (
-        "kept and is not Latest".casefold() in combined.casefold()
-        or "kept and is no longer Latest".casefold() in combined.casefold()
-    )
-    assert "not publish-green" in combined.casefold()
+    assert "v0.28.1" in combined.casefold()
+    assert "393030220" in combined
+    assert "deleted by owner" in combined.casefold()
     assert "sealed at exact webjam v0.22.5" in combined.casefold()
-    merge_record = " ".join(
-        line.removeprefix("> ").strip()
-        for line in (ROOT / "docs" / "MERGE_AND_RELEASE.md")
-        .read_text(encoding="utf-8")
-        .splitlines()
-    )
-    assert (
-        "workflow `33327104322` passed tests, integrations, update-input checks, "
-        "and all four desktop builds"
-    ) in merge_record
-    assert "failed closed because the tag is lightweight rather than annotated" in (
-        merge_record
-    )
-    assert (
-        "tag run `33327104322` is red only at the annotated-tag publisher boundary"
-        in merge_record
-    )
     for historical_marker in (
         "377614785",
         "WebJam-v0.27.1-SHA256SUMS.txt",
@@ -171,14 +145,13 @@ def test_current_guides_separate_v0280_latest_from_historical_v0272_truthfully()
         assert historical_marker.casefold() in combined.casefold()
 
 
-def test_required_honesty_docs_lock_v0280_latest_and_historical_v0272() -> None:
-    """Jeff-facing pass: v0.28.0 is Latest; v0.27.2 remains immutable historical."""
+def test_required_honesty_docs_lock_v0281_latest_and_deleted_historical() -> None:
+    """Jeff-facing pass: v0.28.1 is Latest; older releases deleted by owner."""
 
     required = (
         "README.md",
         "CHANGELOG.md",
         "docs/MERGE_AND_RELEASE.md",
-        "docs/DESKTOP_RELEASE_RUNBOOK.md",
     )
     forbidden = (
         "this checkout identifies itself as v0.26.0",
@@ -215,42 +188,39 @@ def test_required_honesty_docs_lock_v0280_latest_and_historical_v0272() -> None:
         "Unsigned private test candidate (unpublished)",
         "Current published private test release (GitHub Latest): **v0.27.2**",
         "source candidate is unpublished **v0.28.0**",
+        "GitHub **Latest** is still immutable v0.28.0",
+        "immutable v0.28.0 release `388045385` stays GitHub **Latest**",
     )
     for relative_path in required:
         text = (ROOT / relative_path).read_text(encoding="utf-8")
         normalized = " ".join(text.split())
         folded = normalized.casefold()
-        assert "v0.27.2" in text, relative_path
-        assert "v0.28.0" in text, relative_path
-        assert "latest" in folded and "388045385" in text, relative_path
-        assert "8ac08b69865af598e5ff69a84066964b1d90c940" in text, relative_path
-        assert "34782892215" in text, relative_path
-        assert "379360694" in text, relative_path
-        assert "9c6ca3de96aa7eb261c65b7dee768ab48144169c" in text, relative_path
-        assert "33327104322" in text, relative_path
+        assert "v0.28.1" in text, relative_path
+        assert "latest" in folded and "393030220" in text, relative_path
+        assert "200cac9eb04d01611696cdc147957b36daef257f" in text, relative_path
         assert "seven packages" in folded, relative_path
-        assert "WebJam-v0.28.0-SHA256SUMS.txt" in text, relative_path
-        assert "WebJam-v0.27.2-SHA256SUMS.txt" in text, relative_path
+        assert "WebJam-v0.28.1-SHA256SUMS.txt" in text, relative_path
         assert "NOT RUN" in text, relative_path
+        assert "deleted" in folded, relative_path
         for claim in forbidden:
             assert claim.casefold() not in folded, (relative_path, claim)
 
 
-def test_demo_and_mobile_docs_match_published_v0280_latest_honesty() -> None:
-    """DEMO/MOBILE keep Latest tip claims honest for v0.28.1 candidate."""
+def test_demo_and_mobile_docs_match_published_v0281_latest_honesty() -> None:
+    """DEMO/MOBILE keep Latest tip claims honest for v0.28.1 published release."""
 
     demo = _normalized("DEMO.md")
-    assert "v0.28.1 physical and platform-trust gate remains" in demo.casefold()
+    assert "every v0.28.1" in demo.casefold()
+    assert "physical and platform-trust gate remains" in demo.casefold()
     assert "**not run**" in demo.casefold()
     assert "Every v0.27 physical".casefold() not in demo.casefold()
 
     mobile = (ROOT / "docs" / "MOBILE.md").read_text(encoding="utf-8")
     folded = " ".join(mobile.split()).casefold()
-    assert "6151659d207ec5b7b3e7483d77e90a2d544b16bd" in mobile
-    assert "388045385" in mobile
-    assert "v0.28.0" in mobile
+    assert "200cac9eb04d01611696cdc147957b36daef257f" in mobile
+    assert "393030220" in mobile
     assert "v0.28.1" in mobile
-    assert "Latest still unsigned v0.28.0 release `388045385`".casefold() in folded
+    assert "v0.28.1 published as latest" in folded
     assert "tip MATCH:** `origin/master` `828aef0d`".casefold() not in folded
     assert "NOT RUN" in mobile
 

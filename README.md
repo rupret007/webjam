@@ -15,26 +15,19 @@ own systems that remain independent.
 
 > **Testing download:** GitHub [**Latest**](https://github.com/rupret007/webjam/releases/latest)
 > resolves to the published unsigned/ad-hoc
-> [v0.28.0 private test release](https://github.com/rupret007/webjam/releases/tag/v0.28.0),
-> release ID `388045385`, published `2026-09-13T21:48:49Z` from annotated tag
-> object `526bba0728439d48d38a5170af083ff8736d051d` peeling to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`. It has seven packages
-> plus `WebJam-v0.28.0-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc
-> signed and unnotarized. Tag workflow `34782892215` succeeded, including softprops
-> draft creation on the annotated tag. Jeff then published that draft as
-> **Latest**. Physical audio, hardware, signing, notarization, Gatekeeper, and
-> SmartScreen gates remain **NOT RUN**. Do not mutate release `388045385` or
-> retag `v0.28.0`. Immutable historical
-> [v0.27.2](https://github.com/rupret007/webjam/releases/tag/v0.27.2) release
-> ID `379360694` is kept and is no longer Latest. Its lightweight tag still
-> points to exact commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c` and remains
-> covered by `WebJam-v0.27.2-SHA256SUMS.txt`.
+> [v0.28.1 private test release](https://github.com/rupret007/webjam/releases/tag/v0.28.1),
+> release ID `393030220`, published `2026-09-21T14:30:22Z` from annotated tag
+> object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to exact commit `200cac9eb04d01611696cdc147957b36daef257f`. It has seven packages
+> plus `WebJam-v0.28.1-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc
+> signed and unnotarized. Physical audio, hardware, signing, notarization,
+> Gatekeeper, and SmartScreen gates remain **NOT RUN**. Do not mutate release
+> `393030220` or retag `v0.28.1`. Older release entries (v0.28.0, v0.27.2,
+> Jamulus catalog v1–v3) were deleted by owner; git tags remain.
 
 
-> **Source boundary:** this checkout reports unsigned v0.28.1 and prepares a
-> candidate for Jeff's testing. GitHub **Latest** is still immutable v0.28.0
-> release `388045385`—this checkout does not tag, publish, or mutate that release.
-> A checkout or branch artifact is still source evidence, not a substitute for
-> one of the checksum-bound packages.
+> **Source boundary:** this checkout reports unsigned v0.28.1, which is now
+> GitHub **Latest** as release `393030220`. A checkout or branch artifact is
+> still source evidence, not a substitute for one of the checksum-bound packages.
 > Jeff explicitly approved the existing Jamulus 3.12.2 and 3.12.3 records through
 > v0.28.1, so live Host/Join and the required component-input build gate are
 > source-eligible. Shared Track play uses this Mac's official BlackHole 16ch/64ch
@@ -42,12 +35,11 @@ own systems that remain independent.
 > catalog pin. The catalog remains sealed at exact WebJam v0.22.5.
 
 
-> **Download boundary:** use a v0.28.0 package only when its exact filename and
+> **Download boundary:** use a v0.28.1 package only when its exact filename and
 > SHA-256 appear on the immutable
-> [v0.28.0 GitHub release](https://github.com/rupret007/webjam/releases/tag/v0.28.0).
-> Every physical v0.28.0 gate remains **NOT RUN**. Do not substitute a later
-> checkout or branch artifact for those checksum-bound bytes. Do not mutate
-> kept historical v0.27.2 release `379360694`.
+> [v0.28.1 GitHub release](https://github.com/rupret007/webjam/releases/tag/v0.28.1).
+> Every physical v0.28.1 gate remains **NOT RUN**. Do not substitute a later
+> checkout or branch artifact for those checksum-bound bytes.
 
 New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 [First Jam](FIRST_JAM.md); this README is the complete technical story. Just
@@ -58,8 +50,8 @@ showing someone the door? See the [two-minute demo script](DEMO.md).
 | Area | Current state |
 | --- | --- |
 | Product | Creator-facing desktop conductor around Jamulus, optional external meeting conversation, Studio, Pocket Stage, and Phase 1 native Art companion (source / unsigned simulator) |
-| Published line | Unsigned/ad-hoc v0.28.0 GitHub Latest private test release; verify `WebJam-v0.28.0-SHA256SUMS.txt` |
-| Current source line | Reports unsigned v0.28.1 candidate; Host/Join reuses the exact baked Jamulus 3.12.2/3.12.3 compatibility records through v0.28.1; GitHub Latest is still immutable v0.28.0 release `388045385` |
+| Published line | Unsigned/ad-hoc v0.28.1 GitHub Latest private test release `393030220`; verify `WebJam-v0.28.1-SHA256SUMS.txt` |
+| Current source line | Reports unsigned v0.28.1; Host/Join reuses the exact baked Jamulus 3.12.2/3.12.3 compatibility records through v0.28.1; GitHub Latest is immutable v0.28.1 release `393030220` |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -682,33 +674,25 @@ checkout or ordinary branch build as a release.
 
 GitHub [Latest](https://github.com/rupret007/webjam/releases/latest) is the
 published unsigned/ad-hoc
-[v0.28.0 release](https://github.com/rupret007/webjam/releases/tag/v0.28.0).
-Release ID `388045385` was published at `2026-09-13T21:48:49Z`. Annotated tag
-object `526bba0728439d48d38a5170af083ff8736d051d` peels to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`. The release has seven
-packages plus `WebJam-v0.28.0-SHA256SUMS.txt`; Windows is unsigned and macOS is
-ad-hoc signed and unnotarized. Immutable historical
-[v0.27.2](https://github.com/rupret007/webjam/releases/tag/v0.27.2) release
-ID `379360694` remains kept and is not Latest at exact commit
-`9c6ca3de96aa7eb261c65b7dee768ab48144169c`. v0.27.1 remains immutable historical evidence.
+[v0.28.1 release](https://github.com/rupret007/webjam/releases/tag/v0.28.1).
+Release ID `393030220` was published at `2026-09-21T14:30:22Z`. Annotated tag
+object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peels to exact commit `200cac9eb04d01611696cdc147957b36daef257f`. The release has seven
+packages plus `WebJam-v0.28.1-SHA256SUMS.txt`; Windows is unsigned and macOS is
+ad-hoc signed and unnotarized. Older release entries (v0.28.0, v0.27.2, Jamulus
+catalog v1–v3) were deleted by owner; git tags remain.
 
-Tag workflow `34782892215` succeeded on the annotated `v0.28.0` tag, including
-softprops draft creation. Jeff published that draft as **Latest**. The sealed
-catalog still targets exact WebJam v0.22.5, so
+The sealed catalog still targets exact WebJam v0.22.5, so
 `publish-latest-release.yml` was not dispatched and must not be invented for
 this unsigned round. Physical, signing, notarization, Gatekeeper, and
 SmartScreen results remain **NOT RUN**. Do not retag or mutate release
-`388045385`.
+`393030220`.
 
-This checkout reports unsigned **v0.28.1** and prepares a candidate for Jeff's
-testing. GitHub Latest is still immutable v0.28.0 release `388045385`—this
-source does not tag, publish, or mutate that release. Shared Track play uses
-this Mac's BlackHole route and the bundled headless client; the signed catalog
-remains sealed at exact WebJam v0.22.5. The baked Jamulus 3.12.2 and 3.12.3
-records extend through v0.28.1, so Host/Join and the required package-build
-gate are source-eligible. Every physical result remains **NOT RUN**.
-
-Historical lightweight-tag workflow `33327104322` for v0.27.2 remains red at
-its annotated-tag publisher gate and must not be rerun or rewritten.
+This checkout reports unsigned **v0.28.1**, which is now GitHub Latest as
+release `393030220`. Shared Track play uses this Mac's BlackHole route and the
+bundled headless client; the signed catalog remains sealed at exact WebJam
+v0.22.5. The baked Jamulus 3.12.2 and 3.12.3 records extend through v0.28.1,
+so Host/Join and the required package-build gate are source-eligible. Every
+physical result remains **NOT RUN**.
 
 The prior
 [v0.27.0 release](https://github.com/rupret007/webjam/releases/tag/v0.27.0)

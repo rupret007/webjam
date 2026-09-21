@@ -111,19 +111,14 @@ def test_map_records_the_published_round_and_the_parked_leftovers() -> None:
     assert "#37 and #49 stay parked" in FLAT_MAP_TEXT
     assert "do not retag, replace, or mutate" in FLAT_MAP_TEXT
 
-    # The published Latest and historical releases are distinct boundaries.
+    # The published Latest boundary reflects v0.28.1; older releases deleted.
     assert "Candidate prep boundary:" not in FLAT_MAP_TEXT
     assert "Published testing boundary:" in FLAT_MAP_TEXT
     assert "still GitHub Latest until publish" not in FLAT_MAP_TEXT
-    assert "8ac08b69865af598e5ff69a84066964b1d90c940" in FLAT_MAP_TEXT
-    assert "388045385" in FLAT_MAP_TEXT
-    assert "34782892215" in FLAT_MAP_TEXT
-    assert "9c6ca3de96aa7eb261c65b7dee768ab48144169c" in FLAT_MAP_TEXT
-    assert "379360694" in FLAT_MAP_TEXT
-    assert "33317581250" in FLAT_MAP_TEXT
-    assert "33327104322" in FLAT_MAP_TEXT
-    assert "lightweight tag" in FLAT_MAP_TEXT
-    assert "not publish-green" in FLAT_MAP_TEXT
+    assert "200cac9eb04d01611696cdc147957b36daef257f" in FLAT_MAP_TEXT
+    assert "393030220" in FLAT_MAP_TEXT
+    assert "db44247a3ceefb97f4cac6e623deef1bd32648a8" in FLAT_MAP_TEXT
+    assert "deleted by owner" in FLAT_MAP_TEXT.casefold()
     assert "annotated tag" in FLAT_MAP_TEXT.casefold()
     assert "Standing procedure after the completed product land:" in FLAT_MAP_TEXT
     assert "For any later source-only correction, start from current `master`" in (
@@ -315,9 +310,9 @@ def test_owner_click_gate_is_exact_asset_bound_and_stays_not_run() -> None:
 
     required_identity = (
         "**Status: NOT RUN.**",
-        "release ID `388045385`",
-        "WebJam-v0.28.0-SHA256SUMS.txt",
-        "8ac08b69865af598e5ff69a84066964b1d90c940",
+        "release ID `393030220`",
+        "WebJam-v0.28.1-SHA256SUMS.txt",
+        "200cac9eb04d01611696cdc147957b36daef257f",
         "not a checkout or CI artifact",
     )
     for marker in required_identity:

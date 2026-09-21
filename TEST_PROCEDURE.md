@@ -1,17 +1,16 @@
-# WebJam v0.28.0 source test procedure
+# WebJam v0.28.1 source test procedure
 
-> GitHub **Latest** is immutable unsigned/ad-hoc v0.28.0 private test release
-> `388045385`, published from annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peeling to
-> exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`. Its seven packages plus
-> `WebJam-v0.28.0-SHA256SUMS.txt` are release evidence. No v0.28.0 physical
-> result exists; every v0.28 physical, credentialed, signing, and platform-trust
-> gate is **NOT RUN**. Tag run `34782892215` succeeded on the annotated tag; Jeff
-> published the softprops draft as Latest. Immutable historical v0.27.2 release
-> `379360694` remains kept and is not Latest.
+> GitHub **Latest** is immutable unsigned/ad-hoc v0.28.1 private test release
+> `393030220`, published from annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to
+> exact commit `200cac9eb04d01611696cdc147957b36daef257f`. Its seven packages plus
+> `WebJam-v0.28.1-SHA256SUMS.txt` are release evidence. No v0.28.1 physical
+> result exists; every v0.28.1 physical, credentialed, signing, and platform-trust
+> gate is **NOT RUN**. Older release entries (v0.28.0, v0.27.2, Jamulus catalog
+> v1–v3) were deleted by owner; git tags remain.
 > Publication did not create physical PASS.
-> Published v0.27.2 and v0.27.1 history remain immutable.
+> Published v0.27.1 history remain immutable.
 > Required component-input CI exercises the existing exact Jamulus 3.12.2 and
-> 3.12.3 records now approved through v0.28.0. Physical steps still require an
+> 3.12.3 records now approved through v0.28.1. Physical steps still require an
 > exact package handoff and remain **NOT RUN**.
 
 ## Scope
