@@ -1122,6 +1122,29 @@ class ReferenceVideoFollower:
         )
 
 
+def paint_along_watch_lesson_guidance() -> str:
+    """Paint along's Conversation door only — no provider or movie-watch copy.
+
+    Art left-out and coexistence rules keep this panel free of conversation-
+    owner imports and of provider / Show App / movie-watch language.
+    Conversation keeps the full watch-together handoff.
+    """
+
+    return (
+        "Opens Conversation for watch-together handoff. The silent local "
+        "process video below is Paint along—each person opens their own copy."
+    )
+
+
+def paint_along_watch_lesson_hint() -> str:
+    """Short hint beside Paint along's Watch a shared lesson action."""
+
+    return (
+        "Use Conversation for shared-lesson handoff—not the silent local "
+        "Paint along file."
+    )
+
+
 __all__ = [
     "DEFAULT_STALE_AFTER_S",
     "DEFAULT_SYNC_TOLERANCE_S",
@@ -1154,5 +1177,7 @@ __all__ = [
     "file_identity_token",
     "identities_match",
     "load_reference_video_source",
+    "paint_along_watch_lesson_guidance",
+    "paint_along_watch_lesson_hint",
     "session_identity_signer",
 ]

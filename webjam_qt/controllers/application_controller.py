@@ -42,7 +42,7 @@ from core.jamulus_rpc_client import (
     JamulusRpcMonitorIdentity,
 )
 from core.local_capture import LocalCaptureTrack, check_local_capture_preflight
-from core.meeting_companion import build_invite_message
+from core.meeting_companion import art_watch_share_sentence, build_invite_message
 from core.musician_guidance import (
     GuidanceDisplayOverride,
     StudioGuidanceFacts,
@@ -9882,8 +9882,8 @@ class ApplicationController(QObject):
             if self.creator_profile.key == "art":
                 stage_hint = (
                     "Make from your own space: use paper, clay, a model, "
-                    "a printer, or your usual app. Conversation can carry "
-                    "talk or a screen share."
+                    "printer, or your usual app. "
+                    f"{art_watch_share_sentence()}"
                 )
             else:
                 stage_hint = (

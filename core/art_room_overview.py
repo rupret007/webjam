@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from core.art_room_presence import ABSENT, ArtPresenceTarget, ArtRoomPresence
+from core.meeting_companion import art_make_together_activity_detail
 from core.session_conductor import ArtRoomState
 
 
@@ -167,10 +168,7 @@ def art_room_overview(
 
     active = phase in {"waiting", "connected"}
     activity = "Make from your own space"
-    activity_detail = (
-        "Use paper, clay, a model, printer, or your usual app. "
-        "Conversation can carry talk or a screen share."
-    )
+    activity_detail = art_make_together_activity_detail()
     action = ""
     action_label = ""
     if active and presence.offered:

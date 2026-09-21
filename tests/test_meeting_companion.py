@@ -451,3 +451,96 @@ def test_v3_message_names_manual_paste_and_preserves_the_complete_invitation(pro
     assert parsed.capability_for_enrollment() == issued.invitation.capability_for_enrollment()
     if profile == "art":
         assert "carries the music" not in message.text
+
+
+# ----------------------------------------------------------------------
+# Watch-together via Conversation / Webex share (Jeff lock 2026-09-20)
+# ----------------------------------------------------------------------
+def test_one_next_click_language_shared_by_art_and_music_surfaces():
+    from core.meeting_companion import (
+        SHOW_WEBEX_APP_DISTINCT,
+        WATCH_TOGETHER_ACTIONS,
+        WEBEX_HANDOFF_IS_HTTPS,
+        WEBJAM_DOES_NOT_PLAY_MOVIE,
+        art_conversation_guidance,
+        art_make_together_activity_detail,
+        art_watch_share_sentence,
+        conversation_watch_next_click,
+        meeting_share_how,
+        music_conversation_watch_note,
+        paint_along_local_note,
+        two_window_guidance,
+        watch_together_guidance,
+    )
+    from core.reference_video import (
+        paint_along_watch_lesson_guidance,
+        paint_along_watch_lesson_hint,
+    )
+
+    next_click = conversation_watch_next_click()
+    assert WATCH_TOGETHER_ACTIONS in next_click
+    assert "open Conversation" in next_click
+    assert "Share" in next_click
+    assert "WebJam window" in next_click
+
+    # Overview Make-together detail stays brief (fits with Conversation closed).
+    detail = art_make_together_activity_detail()
+    assert "paper, clay, a model, printer, or your usual app" in detail
+    assert "Open Conversation" in detail
+    assert WATCH_TOGETHER_ACTIONS not in detail
+    assert WEBJAM_DOES_NOT_PLAY_MOVIE not in detail
+    assert paint_along_local_note() not in detail
+
+    # Full Talk·Make·share / Webex / movie honesty on Conversation surfaces
+    # and the idle watch-share sentence (not the cramped room overview).
+    watch = art_watch_share_sentence()
+    card = art_conversation_guidance(meeting_service="Webex")
+    music = music_conversation_watch_note()
+    for surface in (watch, card, watch_together_guidance(), music):
+        assert WATCH_TOGETHER_ACTIONS in surface
+        assert WEBJAM_DOES_NOT_PLAY_MOVIE in surface
+        assert "Share" in surface
+    assert two_window_guidance(make_verb="make") in watch
+    assert two_window_guidance(make_verb="make") in card
+    assert two_window_guidance(make_verb="play") in music
+    assert paint_along_local_note() in watch
+    assert paint_along_local_note() in card
+    assert SHOW_WEBEX_APP_DISTINCT in card
+    assert "own tools" in card
+    assert "open Conversation" not in card
+    assert paint_along_local_note() not in music
+
+    lesson = paint_along_watch_lesson_guidance()
+    hint = paint_along_watch_lesson_hint()
+    # Paint along / reference video must stay silent local process-video only:
+    # webex, Show Webex App, and movie-watch language live on Conversation.
+    assert "Conversation" in lesson
+    assert "Paint along" in lesson
+    assert WATCH_TOGETHER_ACTIONS not in lesson
+    assert WEBJAM_DOES_NOT_PLAY_MOVIE not in lesson
+    assert "webex" not in lesson.lower()
+    assert "movie" not in lesson.lower()
+    assert "silent local Paint along" in hint
+    assert "Conversation" in hint
+    assert "webex" not in hint.lower()
+    assert "movie" not in hint.lower()
+    assert "Meeting Share" not in hint
+
+    # Honesty: guidance never invents Webex opaque schemes (meeting-reminder).
+    assert "https meeting link" in WEBEX_HANDOFF_IS_HTTPS
+    blob = " ".join(
+        (detail, watch, card, lesson, music, WEBEX_HANDOFF_IS_HTTPS, meeting_share_how())
+    )
+    for forbidden in (
+        "Plex", "watch party", "Embedded App", "joined the meeting",
+        "webexstart://", "webexauth://", "webexteams://",
+    ):
+        assert forbidden.casefold() not in blob.casefold()
+
+
+
+def test_music_invite_names_meeting_share_for_watching_a_demo():
+    message = build_invite_message(join_link=JOIN_LINK, meeting_url=MEETING_URL)
+    assert "own share" in message.text
+    assert "play the movie" in message.text
+    assert "you do not need it to play" in message.text

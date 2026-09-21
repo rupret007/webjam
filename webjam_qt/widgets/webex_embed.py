@@ -28,6 +28,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.meeting_companion import (
+    art_conversation_guidance,
+    music_conversation_watch_note,
+)
 from core.meeting_link import is_allowed_meeting_link
 from core.lesson_request import LessonRequestIntent, LessonRequestNotice
 from webjam_qt.theme.tokens import Space
@@ -1081,8 +1085,7 @@ class WebexEmbed(QFrame):
                     )
                 return
             self._mode_label.setText(
-                f"Talk and share a demonstration in {service or 'Webex or your meeting app'} if you like. "
-                "Use your own tools. Paint along plays a separate silent local video."
+                art_conversation_guidance(meeting_service=service)
             )
             return
         titles = (
@@ -1098,11 +1101,14 @@ class WebexEmbed(QFrame):
                 "audience_bridge": "Conversation audience feed",
             }
         )
+        watch_note = music_conversation_watch_note(meeting_service=service)
+        watch_suffix = f" {watch_note}" if watch_note else ""
         guidance = (
             {
                 "talkback": (
                     f"Keep {service} muted while playing. To speak, mute your "
                     "audio interface or end the WebJam session first."
+                    f"{watch_suffix}"
                 ),
                 "video_only": (
                     f"Join {service} without computer audio; music stays in Jamulus."
@@ -1119,12 +1125,14 @@ class WebexEmbed(QFrame):
                         "Keep your meeting service muted while you play. To "
                         "speak, mute your audio interface or end the WebJam "
                         "session first."
+                        f"{watch_suffix}"
                     )
                     if self._meeting_configured
                     else (
                         "After adding a meeting link, keep that service muted "
                         "while playing. To speak, mute your audio interface or "
                         "end the WebJam session first."
+                        f"{watch_suffix}"
                     )
                 ),
                 "video_only": (

@@ -441,7 +441,10 @@ CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
         default_goal="Lock timing and balance for one complete song run.",
         quick_help=(
             "Use WebJam's live audio path for the music; an external meeting "
-            "link remains optional for conversation or video."
+            "link remains optional for conversation. Talk in Webex · play in "
+            "WebJam. To watch a movie or demo together, choose Join / Open "
+            "Meeting or Show Webex App, then in Webex choose Share and pick the "
+            "WebJam window or your demo. WebJam does not play the movie."
         ),
         review_prompts=(
             "What section needs a tighter groove?",
