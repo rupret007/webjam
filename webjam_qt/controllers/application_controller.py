@@ -9177,7 +9177,7 @@ class ApplicationController(QObject):
                 )
                 self.window.session_hud.set_state(
                     "Your Wi-Fi changed",
-                    "Copy a new invite before asking your bandmate to join.",
+                    "Choose Copy New Invite before asking your bandmate to join.",
                     invite_available=True,
                     action_text="Copy New Invite",
                     action_visible=True,
@@ -9185,7 +9185,7 @@ class ApplicationController(QObject):
                 )
                 return GuidanceDisplayOverride(
                     "Your Wi-Fi changed",
-                    "Copy a new invite before asking your bandmate to join.",
+                    "Choose Copy New Invite before asking your bandmate to join.",
                     SessionPrimaryAction.COPY_INVITE,
                     "Copy New Invite",
                 )

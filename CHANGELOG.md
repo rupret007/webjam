@@ -10,6 +10,18 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Every published tag, release, and asset remains immutable historical
 > evidence.
 
+### Name Copy New Invite after a Wi-Fi address change
+
+- When a Music host's private Wi-Fi address changed after a link was already
+  shared, the HUD already offered **"Copy New Invite"**, but the recovery
+  one-liner said **"Copy a new invite before asking your bandmate to join."**
+  without the same **Choose** cue used for Reset Invite, Paste New Invite,
+  Try Again, and Start New Room. The line now says **"Choose Copy New Invite
+  before asking your bandmate to join."**
+- Copy-only. No behavior, action, or state change. Parked #37/#49 and
+  published v0.28.0 assets stay untouched. Art owner-click / signing /
+  physical remain **NOT RUN**.
+
 ### Keep tip MATCH honest after #130–#135 recovery naming
 
 - `DEMO.md` still cited master tip `c0d6552` (#132). Point the checked-against

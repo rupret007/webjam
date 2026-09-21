@@ -1070,6 +1070,8 @@ def test_host_calls_out_a_copied_lan_invite_after_wifi_address_changes(qapp, tmp
 
     assert controller.window.session_hud._status.text() == "Your Wi-Fi changed"
     assert controller.window.session_hud._action.text() == "Copy New Invite"
+    # HUD primary and recovery one-liner must name the same button (#126 family).
+    assert "Choose Copy New Invite" in controller.window.session_hud._detail.text()
     assert controller.window.session_hud._invite_available is True
     assert controller.window.session_strip._invite_button.isHidden()
     assert controller._last_musician_guidance.next_step == "Copy New Invite"
