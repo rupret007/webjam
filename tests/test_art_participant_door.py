@@ -307,13 +307,25 @@ def test_art_conversation_stays_optional_without_music_mute_controls(
         panel.show()
         qapp.processEvents()
         visible = harvest_spoken_page(panel)
-        assert "join / open meeting or show webex app" in visible
-        assert "share" in visible
-        assert "webjam window" in visible
-        assert "talk in" in visible
-        assert "does not join or mute" in visible
-        assert "webjam does not play the movie." in visible
-        assert "not the movie-watch path" in visible
+        essay = panel._mode_label.text().casefold()
+        if str(service).strip().casefold() == "webex":
+            assert "join / open meeting or show webex app" in visible
+            assert "share" in visible
+            assert "webjam window" in visible
+            assert "talk in" in visible
+            assert "does not join or mute" in visible
+            assert "webjam does not play the movie." in visible
+            assert "not the movie-watch path" in visible
+        else:
+            # Neutral Art Conversation: Join / Open Meeting affordance without
+            # the Webex-branded combined essay. Full visible dump may still
+            # include the native Show Webex App button accessible name.
+            assert "join / open meeting" in visible
+            assert "join / open meeting or show webex app" not in essay
+            assert "webex" not in essay
+            assert "own tools" in essay
+            assert "paint along" in essay
+            assert "share" in essay
         for phrase in ("muted while", "audio interface", "jamulus", "to mute"):
             assert phrase not in visible
         assert panel.mute_button().isHidden()
