@@ -6,9 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-> Future work after the published unsigned v0.28.1 test candidate belongs here.
-> Every published tag, release, and asset remains immutable historical
-> evidence.
+> Future work after the unsigned v0.28.1 candidate belongs here once that round
+> is tagged and published as Latest. Until then GitHub Latest remains immutable
+> v0.28.0 release `388045385`. Every published tag, release, and asset remains
+> immutable historical evidence.
 
 ## [0.28.1] — Unsigned/ad-hoc private test release candidate
 
