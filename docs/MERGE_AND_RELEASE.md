@@ -50,7 +50,7 @@ Where a test can hold a door it does —
 the first screen makes sense, so the human read happens before the merge.
 The current checksum-bound human read is the **NOT RUN**
 [owner click gate](../UX_ACCEPTANCE_CHECKLIST.md#owner-click-gate-current-two-card-door).
-It uses an exact v0.28.0 release asset and stops before Host or Join, so it
+It uses an exact v0.28.1 release asset and stops before Host or Join, so it
 does not create a room or claim live audio. Every physical gate remains **NOT RUN**.
 
 #19 originally established three Art start cards. Current source combines the

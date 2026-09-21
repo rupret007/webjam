@@ -1,4 +1,4 @@
-"""Published unsigned v0.28.0 Latest plus immutable historical v0.27.2 contracts."""
+"""Published unsigned v0.28.1 Latest; older release entries deleted by owner."""
 
 from __future__ import annotations
 
@@ -276,7 +276,7 @@ def test_v0271_release_history_stays_immutable_without_invented_catalog() -> Non
     assert "remain" in normalized_merge_map.casefold()
 
 
-def test_changelog_marks_v0280_published_and_keeps_prior_history() -> None:
+def test_changelog_marks_v0280_and_v0272_as_deleted_and_keeps_prior_history() -> None:
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     normalized = " ".join(
         line.removeprefix("> ").strip() for line in changelog.splitlines()
@@ -284,14 +284,16 @@ def test_changelog_marks_v0280_published_and_keeps_prior_history() -> None:
     assert "## [Unreleased]" in changelog
     assert "## [0.28.0] — Unsigned/ad-hoc private test release (2026-09-13)" in changelog
     assert "No annotated `v0.28.0` tag" not in changelog
-    assert "release `388045385`" in changelog
+    assert "release entry `388045385`" in changelog.casefold()
     assert "2026-09-13T21:48:49Z" in changelog
     assert "8ac08b69865af598e5ff69a84066964b1d90c940" in changelog
     assert "526bba0728439d48d38a5170af083ff8736d051d" in changelog
     assert "WebJam-v0.28.0-SHA256SUMS.txt" in changelog
     assert "Tag workflow `34782892215`" in changelog
+    assert "Release entry deleted by owner" in changelog
+    assert "git tag `v0.28.0` remains" in changelog
     assert "## [0.27.2] — Unsigned/ad-hoc private test release (2026-08-30)" in changelog
-    assert "release `379360694`" in changelog
+    assert "379360694" in changelog
     assert "2026-08-30T18:06:14Z" in changelog
     assert "9c6ca3de96aa7eb261c65b7dee768ab48144169c" in changelog
     assert "WebJam-v0.27.2-SHA256SUMS.txt" in changelog
@@ -301,11 +303,10 @@ def test_changelog_marks_v0280_published_and_keeps_prior_history() -> None:
     assert "overall run is red and must not be called publish-green" in normalized
     assert "move the lightweight tag" in normalized
     assert "v0.27.1 remains immutable historical evidence" in normalized
-    assert "signing, notarization, Gatekeeper, and SmartScreen result remains **NOT RUN**" in normalized
     assert "No v0.27.2 tag" not in changelog
     assert "No v0.27.2 release" not in changelog
     assert "source candidate (unreleased)" not in changelog
-    assert "kept and is not Latest" in normalized
+    assert "deleted by owner" in normalized.casefold()
     assert "## [0.27.1] — Unsigned/ad-hoc private test release (2026-08-27)" in changelog
     assert "release `377614785`" in changelog
     assert "WebJam-v0.27.1-SHA256SUMS.txt" in changelog

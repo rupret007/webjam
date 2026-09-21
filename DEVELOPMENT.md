@@ -230,16 +230,15 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-This checkout's package identity is unsigned `0.28.0`. The exact released
-source is commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c`, but a checkout is
-not a release package. GitHub Latest is immutable release `379360694` with
-seven packages plus `WebJam-v0.27.2-SHA256SUMS.txt`. Its `v0.27.2` tag is
-lightweight, and tag run `33327104322` failed the publisher's annotated-tag
-gate after tests, integrations, and all four builds passed. Preserve that red,
-not-publish-green result. Do not rerun the tag workflow, replace the tag, mutate
-the release or assets, or create a publisher from guessed identities.
-Do not invent a signed catalog; sealed v3 still authorizes 0.22.5 only.
-Windows remains unsigned and macOS remains ad-hoc signed and unnotarized.
+This checkout's package identity is unsigned `0.28.1`. The exact released
+source is commit `200cac9eb04d01611696cdc147957b36daef257f`, but a checkout is
+not a release package. GitHub Latest is immutable release `393030220` with
+seven packages plus `WebJam-v0.28.1-SHA256SUMS.txt`. Older release entries
+(v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags
+remain. Do not rerun deleted tag workflows, recreate release entries, or create
+a publisher from guessed identities. Do not invent a signed catalog; sealed v3
+still authorizes 0.22.5 only. Windows remains unsigned and macOS remains ad-hoc
+signed and unnotarized.
 
 The v0.24.0 tag, asset inventory, checksums, tag CI, and protected promotion
 remain immutable historical release evidence and must not be reused.

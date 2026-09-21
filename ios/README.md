@@ -80,13 +80,14 @@ transport.
 1. Install the full **Xcode** app from Apple and open it once. In **Xcode →
    Settings → Accounts**, add the Apple ID that will own the free Personal
    Team.
-2. From an exact published v0.27.2 Mac package (until a published v0.28.0 package exists) whose filename and SHA-256 match release
-   `379360694` and `WebJam-v0.27.2-SHA256SUMS.txt`, open **Pocket Stage iPhone
-   Setup**, then open **WebJamPocketStage.xcodeproj** directly. If Finder does
-   not associate it with Xcode, use **Xcode → File → Open** and select the
-   project. **Open Pocket Stage in Xcode.command** is an optional convenience
-   and may itself be quarantined. The folder already contains the exact
-   generated project compiled by CI, so release users do not need XcodeGen.
+2. From an exact published v0.28.1 Mac package whose filename and SHA-256
+   match release `393030220` and `WebJam-v0.28.1-SHA256SUMS.txt`, open
+   **Pocket Stage iPhone Setup**, then open **WebJamPocketStage.xcodeproj**
+   directly. If Finder does not associate it with Xcode, use **Xcode → File →
+   Open** and select the project. **Open Pocket Stage in Xcode.command** is an
+   optional convenience and may itself be quarantined. The folder already
+   contains the exact generated project compiled by CI, so release users do not
+   need XcodeGen.
    Source developers instead install XcodeGen 2.45.4 or newer (`brew install
    xcodegen`) and run **Generate Pocket Stage Project.command** to regenerate
    the project from `project.yml`.

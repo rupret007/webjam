@@ -1,4 +1,4 @@
-"""Published unsigned v0.28.0 Latest and v0.28.1 candidate truth contracts."""
+"""Published unsigned v0.28.1 Latest; older release entries deleted by owner."""
 
 from __future__ import annotations
 

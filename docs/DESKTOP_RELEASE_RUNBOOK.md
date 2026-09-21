@@ -55,17 +55,15 @@
 > + bundled headless. Every physical gate remains **NOT RUN**. Do not retag or
 > mutate v0.27.1, add a version-specific publisher, or restack #37.
 
-> **v0.27.2 historical testing boundary:** immutable unsigned/ad-hoc release
-> `379360694` preceded v0.28.0 as GitHub **Latest**. It was published
-> `2026-08-30T18:06:14Z` from lightweight tag `v0.27.2` pointing directly to
-> exact commit `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. It has seven packages plus
+> **v0.27.2 historical testing boundary:** release entry `379360694` preceded
+> v0.28.0 and v0.28.1. It was published `2026-08-30T18:06:14Z` from lightweight
+> tag `v0.27.2` pointing directly to exact commit
+> `9c6ca3de96aa7eb261c65b7dee768ab48144169c`. It had seven packages plus
 > `WebJam-v0.27.2-SHA256SUMS.txt`. Tag run `33327104322` passed its tests,
 > integrations, and all four desktop builds, then failed **Publish GitHub
 > Release** at the annotated-tag verification gate. The run is red, not
-> publish-green. Do not rerun it, replace the lightweight tag with an annotated
-> tag, or mutate the immutable release or assets. Windows remains unsigned;
-> macOS remains ad-hoc signed and unnotarized. The release is kept and is
-> **not** Latest. Every physical, credentialed, signing, notarization, and
+> publish-green. **Release entry deleted by owner 2026-09-21; git tag `v0.27.2`
+> remains.** Every physical, credentialed, signing, notarization, and
 > platform-trust gate remains **NOT RUN**.
 
 > **v0.28.1 published testing boundary (GitHub Latest):** GitHub **Latest** is

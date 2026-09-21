@@ -5,9 +5,10 @@
 > and its seven packages are covered by `WebJam-v0.28.1-SHA256SUMS.txt`. This
 > later documentation source is not a package substitute. No physical PASS is
 > claimed; every v0.28.1 physical and release-decision row remains **NOT RUN**.
-> Immutable historical v0.27.2 release `379360694` remains kept and is not
-> Latest. This map describes implemented UI. Unsigned v0.28.0 reuses the existing
-> exact Jamulus 3.12.2 and 3.12.3 compatibility records for Host/Join.
+> Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted
+> by owner; git tags remain. This map describes implemented UI. Unsigned v0.28.1
+> reuses the existing exact Jamulus 3.12.2 and 3.12.3 compatibility records for
+> Host/Join.
 
 | Need | Use |
 | --- | --- |

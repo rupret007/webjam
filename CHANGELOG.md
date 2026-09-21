@@ -261,17 +261,15 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [0.28.0] — Unsigned/ad-hoc private test release (2026-09-13)
 
-> Published as immutable GitHub **Latest** release `388045385` at
+> Historical release entry `388045385` was published at
 > https://github.com/rupret007/webjam/releases/tag/v0.28.0 at
 > `2026-09-13T21:48:49Z`. Annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peels to exact commit
-> `8ac08b69865af598e5ff69a84066964b1d90c940`. The release has seven packages plus
-> `WebJam-v0.28.0-SHA256SUMS.txt`. Windows remains unsigned; macOS remains
-> ad-hoc signed and unnotarized. Tag workflow `34782892215` succeeded, including
-> softprops draft creation on the annotated tag; Jeff published that draft as
-> **Latest**. Do not dispatch `publish-latest-release.yml` for this unsigned
-> round (sealed catalog still targets exact WebJam v0.22.5). Do not retag or
-> mutate this release. Immutable historical v0.27.2 release `379360694` remains
-> kept and is not Latest.
+> `8ac08b69865af598e5ff69a84066964b1d90c940`. The release had seven packages plus
+> `WebJam-v0.28.0-SHA256SUMS.txt`. Windows was unsigned; macOS was ad-hoc signed
+> and unnotarized. Tag workflow `34782892215` succeeded, including softprops
+> draft creation on the annotated tag.
+> **Release entry deleted by owner 2026-09-21; git tag `v0.28.0` remains.**
+> GitHub Latest is now v0.28.1 release `393030220`.
 > Jeff explicitly approved extending the existing immutable Jamulus 3.12.2 and
 > 3.12.3 records through WebJam v0.28.0. Host/Join and the required
 > component-input CI therefore reuse those exact baked identities. The signed
