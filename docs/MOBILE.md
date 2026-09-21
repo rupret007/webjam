@@ -1,8 +1,8 @@
 # Mobile Art companion (north star locked 2026-09-12)
 
-**Status:** Phase 1 landed on `master` (#118). Current `master` tip MATCH after Start New Room / Paste New Invite exit recovery [#135](https://github.com/rupret007/webjam/pull/135) is `3886c760549dd806d4dbc8930f2271dda204e228` ("Name Start New Room and Paste New Invite in Art room-exit recovery"). Published unsigned Latest remains **v0.28.0** (honesty [#123](https://github.com/rupret007/webjam/pull/123) at `f98de91a77b3d4cdd400d9cba2f142bfb4cbdad2`). Phase 1 Join tip remains `828aef0d399ec6bc56413c60cf2884c730d6909c`. Marker `WEBJAM_MOBILE_ART_SPIKE_CODEX_20260912` is closed. North star and later phases below remain locked. This doc update is honesty polish only — no new native feature pile-on.
+**Status:** Phase 1 landed on `master` (#118). Preparing unsigned v0.28.1 candidate. Current `master` tip MATCH after Choose Connect to Wi-Fi recovery naming [#140](https://github.com/rupret007/webjam/pull/140) is `6151659d207ec5b7b3e7483d77e90a2d544b16bd` ("Name Choose Connect to Wi-Fi when Music host share lacks private address"). Published unsigned Latest remains **v0.28.0** release `388045385`. Phase 1 Join tip remains `828aef0d399ec6bc56413c60cf2884c730d6909c`. Marker `WEBJAM_MOBILE_ART_SPIKE_CODEX_20260912` is closed. North star and later phases below remain locked. This doc update is honesty polish only — no new native feature pile-on.
 **Recorded:** 2026-09-21
-**Base / tip MATCH:** `origin/master` `3886c760549dd806d4dbc8930f2271dda204e228` (post-#135 Art exit recovery naming; Latest still unsigned v0.28.0; Phase 1 Join landed at `828aef0d` via #118)
+**Base / tip MATCH:** `origin/master` `6151659d207ec5b7b3e7483d77e90a2d544b16bd` (post-#140 recovery naming; preparing v0.28.1 candidate; Latest still unsigned v0.28.0 release `388045385`; Phase 1 Join landed at `828aef0d` via #118)
 **Owner:** Jeff owns public Art copy/feel, physical touch, Split View, real Webex media, device handoff, and signing/distribution (still NOT RUN).
 
 This native iPhone/iPad guest app is separate from Pocket Stage

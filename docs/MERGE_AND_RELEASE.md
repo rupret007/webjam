@@ -1,11 +1,16 @@
 # Merge and release map
 
-> **Published testing boundary:** GitHub **Latest** is immutable unsigned/ad-hoc
+> **v0.28.1 candidate preparation:** this source extends the Jamulus webjam_range
+> ceiling from 0.28.0 → 0.28.1. Jeff explicitly authorized: Jamulus webjam_range
+> bump through 0.28.1 + unsigned Latest so he can test. No tag, release, or
+> Latest mutation in this PR. Physical/signing remain **NOT RUN**.
+>
+> **Published testing boundary:** GitHub **Latest** is still immutable unsigned/ad-hoc
 > v0.28.0 release `388045385`, published at `2026-09-13T21:48:49Z` from annotated
 > tag object `526bba0728439d48d38a5170af083ff8736d051d` peeling to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`. The release has
 > seven packages plus `WebJam-v0.28.0-SHA256SUMS.txt`. Post-publish source honesty on this branch is not a substitute for those
 > checksum-bound packages. The existing exact Jamulus 3.12.2 and 3.12.3 records are explicitly
-> approved through v0.28.0, so Host/Join and the required component-input CI are
+> approved through v0.28.1, so Host/Join and the required component-input CI are
 > source-eligible. The signed public catalog remains sealed at exact WebJam
 > v0.22.5. Physical/signing remain **NOT RUN**.
 >

@@ -342,11 +342,13 @@ def test_owner_click_gate_is_exact_asset_bound_and_stays_not_run() -> None:
 
 def test_changelog_moves_final_art_door_work_into_v0272() -> None:
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    unreleased = changelog.partition("## [Unreleased]")[2].partition("## [0.28.0]")[0]
+    unreleased = changelog.partition("## [Unreleased]")[2].partition("## [0.28.1]")[0]
+    v0281 = changelog.partition("## [0.28.1]")[2].partition("## [0.28.0]")[0]
     v0280 = changelog.partition("## [0.28.0]")[2].partition("## [0.27.2]")[0]
     v0272 = changelog.partition("## [0.27.2]")[2].partition("## [0.27.1]")[0]
     heading = "### Art starts with fewer choices"
     assert heading not in unreleased
+    assert heading not in v0281
     assert heading not in v0280
     assert heading in v0272
     assert "exactly two start cards" in v0272

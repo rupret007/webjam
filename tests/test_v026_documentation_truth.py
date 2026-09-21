@@ -1,4 +1,4 @@
-"""Published unsigned v0.28.0 Latest and immutable historical v0.27.2 truth contracts."""
+"""Published unsigned v0.28.0 Latest and v0.28.1 candidate truth contracts."""
 
 from __future__ import annotations
 
@@ -138,7 +138,7 @@ def test_current_guides_separate_v0280_latest_from_historical_v0272_truthfully()
     ):
         assert stale_claim.casefold() not in combined.casefold(), stale_claim
 
-    assert "v0.28.0 source" in combined.casefold()
+    assert "v0.28.1 source" in combined.casefold()
     assert "388045385" in combined
     assert (
         "kept and is not Latest".casefold() in combined.casefold()
@@ -237,20 +237,20 @@ def test_required_honesty_docs_lock_v0280_latest_and_historical_v0272() -> None:
 
 
 def test_demo_and_mobile_docs_match_published_v0280_latest_honesty() -> None:
-    """DEMO/MOBILE were outside #123's oracle set; keep Latest tip claims honest."""
+    """DEMO/MOBILE keep Latest tip claims honest for v0.28.1 candidate."""
 
     demo = _normalized("DEMO.md")
-    assert "v0.28.0 physical and platform-trust gate remains **NOT RUN**".casefold() in demo.casefold()
+    assert "v0.28.1 physical and platform-trust gate remains" in demo.casefold()
+    assert "**not run**" in demo.casefold()
     assert "Every v0.27 physical".casefold() not in demo.casefold()
 
     mobile = (ROOT / "docs" / "MOBILE.md").read_text(encoding="utf-8")
     folded = " ".join(mobile.split()).casefold()
-    assert "f98de91a" in mobile
+    assert "6151659d207ec5b7b3e7483d77e90a2d544b16bd" in mobile
     assert "388045385" in mobile
     assert "v0.28.0" in mobile
-    assert "379360694" in mobile
-    assert "not Latest".casefold() in folded
-    assert "Published Latest release `379360694`".casefold() not in folded
+    assert "v0.28.1" in mobile
+    assert "Latest still unsigned v0.28.0 release `388045385`".casefold() in folded
     assert "tip MATCH:** `origin/master` `828aef0d`".casefold() not in folded
     assert "NOT RUN" in mobile
 
