@@ -106,30 +106,30 @@ def test_v0281_candidate_while_v0280_remains_github_latest() -> None:
 def test_runtime_sbom_names_the_exact_desktop_version() -> None:
     component = SBOM["metadata"]["component"]
     assert component == {
-        "bom-ref": "pkg:generic/webjam@0.28.0",
+        "bom-ref": "pkg:generic/webjam@0.28.1",
         "name": "WebJam",
-        "purl": "pkg:generic/webjam@0.28.0",
+        "purl": "pkg:generic/webjam@0.28.1",
         "type": "application",
-        "version": "0.28.0",
+        "version": "0.28.1",
     }
 
 
 def test_component_sbom_names_the_exact_desktop_version() -> None:
     component = COMPONENT_SBOM["metadata"]["component"]
     assert component == {
-        "bom-ref": "pkg:generic/webjam@0.28.0",
+        "bom-ref": "pkg:generic/webjam@0.28.1",
         "group": "rupret007",
         "name": "WebJam",
-        "purl": "pkg:generic/webjam@0.28.0",
+        "purl": "pkg:generic/webjam@0.28.1",
         "type": "application",
-        "version": "0.28.0",
+        "version": "0.28.1",
     }
     properties = {
         item["name"]: item["value"]
         for item in COMPONENT_SBOM["metadata"]["properties"]
     }
     assert properties["webjam:current-source-authorization"] == (
-        "baked-jamulus-records-approved-through-webjam-0.28.0"
+        "baked-jamulus-records-approved-through-webjam-0.28.1"
     )
     assert properties["webjam:build-eligibility"] == (
         "source-and-package-published-unsigned-test-only"
