@@ -224,6 +224,7 @@ def test_explicit_changed_network_retry_repairs_only_music_room_invitation(music
     assert app.session_conductor.token == token and app.audio.connected
     assert rig.invite_fingerprint() and rig.invite_fingerprint() != fingerprint
     assert app.window.session_hud._action.text() == "Copy New Invite"
+    assert "Choose Copy New Invite" in app.window.session_hud._detail.text()
     assert app._last_musician_guidance.next_step == "Copy New Invite"
     invitation = parse_invite_link(app._current_invite_url())
     assert invitation.peer_enabled and invitation.host == owner.server.address[0]
