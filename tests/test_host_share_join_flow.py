@@ -968,6 +968,9 @@ def test_host_handoff_keeps_the_port_inspection_retry_action(qapp, tmp_path):
     assert controller.window.session_hud._status.text() == "Getting your jam ready"
     assert controller.window.session_hud._action.text() == "Try Again"
     assert not controller.window.session_hud._action.isHidden()
+    detail = controller.window.session_hud._detail.text()
+    assert "Choose Try Again" in detail
+    assert "Try starting the jam again" not in detail
     controller.bridge.hosted_server_alive.return_value = False
     controller.shutdown()
 

@@ -45,3 +45,22 @@ def test_host_share_readiness_is_explicitly_private_lan_only():
     assert result.status is HostShareReadinessStatus.READY_PRIVATE_LAN
     assert result.address == "192.168.1.8"
     assert "same network" in result.detail
+
+
+def test_port_inspection_failure_detail_names_try_again_button():
+    """HUD already offers Try Again; recovery copy must name that button.
+
+    ROOM_CONNECTION_UNAVAILABLE already says Choose Try Again. Port probe
+    failure used to say "Try starting the jam again" without the same cue.
+    """
+
+    result = evaluate_host_share_readiness(
+        server_alive=True,
+        audio_port_bound=None,
+        private_lan_address="192.168.1.8",
+    )
+
+    assert result.status is HostShareReadinessStatus.PORT_INSPECTION_FAILED
+    assert result.action == "Try Again"
+    assert "Choose Try Again" in result.detail
+    assert "Try starting the jam again" not in result.detail
