@@ -2,25 +2,22 @@
 
 > **Private test release:** GitHub
 > [Latest](https://github.com/rupret007/webjam/releases/latest) is immutable
-> unsigned/ad-hoc v0.28.0 release `388045385`, published
-> `2026-09-13T21:48:49Z`. Verify one of its seven packages against
-> `WebJam-v0.28.0-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
-> and unnotarized. Historical v0.27.2 release `379360694` remains kept and is
-> not Latest.
+> unsigned/ad-hoc v0.28.1 release `393030220`, published
+> `2026-09-21T14:30:22Z`. Verify one of its seven packages against
+> `WebJam-v0.28.1-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
+> and unnotarized. Older release entries (v0.28.0, v0.27.2, Jamulus catalog
+> v1–v3) were deleted by owner; git tags remain.
 
-> **Published Latest note:** annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peels to exact
-> commit `8ac08b69865af598e5ff69a84066964b1d90c940`. Use the exact release asset and attached checksum manifest
+> **Published Latest note:** annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peels to exact
+> commit `200cac9eb04d01611696cdc147957b36daef257f`. Use the exact release asset and attached checksum manifest
 > as download evidence; a checkout or branch artifact is not a substitute.
 
-> **What this checkout is:** source preparing unsigned v0.28.1 candidate.
-> GitHub **Latest** is still immutable v0.28.0 release `388045385`—this checkout
-> does not tag, publish, or mutate that release.
-> The exact published v0.28.0 release assets—not this checkout or a branch
-> artifact—are package evidence. Tag run `34782892215` succeeded on the annotated
-> tag; Jeff published the softprops draft as Latest. Live Host/Join and package
-> builds reuse the exact baked Jamulus 3.12.2 and 3.12.3 records through
-> v0.28.1; the signed public catalog is unchanged. No physical PASS result is
-> claimed.
+> **What this checkout is:** source matching unsigned v0.28.1, which is now
+> GitHub **Latest** as release `393030220`. The exact published v0.28.1 release
+> assets—not this checkout or a branch artifact—are package evidence. Live
+> Host/Join and package builds reuse the exact baked Jamulus 3.12.2 and 3.12.3
+> records through v0.28.1; the signed public catalog is unchanged. No physical
+> PASS result is claimed.
 
 WebJam brings artists together to make, learn, and collaborate across mediums.
 Music supports live audio and separate recorded tracks; Art welcomes people
@@ -47,9 +44,9 @@ mutation, track export, shared notes, visual sync, and media timecode. No
 profile directly or automatically taps a meeting app, browser, or system
 output.
 
-Current published private test release (GitHub Latest): **v0.28.0**. Use only the exact assets attached to
-immutable GitHub release `388045385` and verify them with
-`WebJam-v0.28.0-SHA256SUMS.txt`. Immutable historical v0.27.2 release `379360694` remains kept and is not Latest.
+Current published private test release (GitHub Latest): **v0.28.1**. Use only the exact assets attached to
+immutable GitHub release `393030220` and verify them with
+`WebJam-v0.28.1-SHA256SUMS.txt`. Older release entries (v0.28.0, v0.27.2) were deleted by owner; git tags remain.
 The four-platform release covers
 Windows, Ubuntu 22.04, Intel Mac, and
 Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc

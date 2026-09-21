@@ -1,8 +1,8 @@
 # Mobile Art companion (north star locked 2026-09-12)
 
-**Status:** Phase 1 landed on `master` (#118). Preparing unsigned v0.28.1 candidate. Current `master` tip MATCH after Choose Connect to Wi-Fi recovery naming [#140](https://github.com/rupret007/webjam/pull/140) is `6151659d207ec5b7b3e7483d77e90a2d544b16bd` ("Name Choose Connect to Wi-Fi when Music host share lacks private address"). Published unsigned Latest remains **v0.28.0** release `388045385`. Phase 1 Join tip remains `828aef0d399ec6bc56413c60cf2884c730d6909c`. Marker `WEBJAM_MOBILE_ART_SPIKE_CODEX_20260912` is closed. North star and later phases below remain locked. This doc update is honesty polish only — no new native feature pile-on.
+**Status:** Phase 1 landed on `master` (#118). Published unsigned v0.28.1 is now GitHub **Latest** as release `393030220`. Current `master` tip MATCH after v0.28.1 publish is `200cac9eb04d01611696cdc147957b36daef257f`. Phase 1 Join tip remains `828aef0d399ec6bc56413c60cf2884c730d6909c`. Marker `WEBJAM_MOBILE_ART_SPIKE_CODEX_20260912` is closed. North star and later phases below remain locked. This doc update is honesty polish only — no new native feature pile-on.
 **Recorded:** 2026-09-21
-**Base / tip MATCH:** `origin/master` `6151659d207ec5b7b3e7483d77e90a2d544b16bd` (post-#140 recovery naming; preparing v0.28.1 candidate; Latest still unsigned v0.28.0 release `388045385`; Phase 1 Join landed at `828aef0d` via #118)
+**Base / tip MATCH:** `origin/master` `200cac9eb04d01611696cdc147957b36daef257f` (v0.28.1 published as Latest; release `393030220`; Phase 1 Join landed at `828aef0d` via #118)
 **Owner:** Jeff owns public Art copy/feel, physical touch, Split View, real Webex media, device handoff, and signing/distribution (still NOT RUN).
 
 This native iPhone/iPad guest app is separate from Pocket Stage
@@ -112,8 +112,9 @@ These stay held. A mobile plan is not permission to move them.
   Stage Mac CI kit. Different surface; leave it parked.
 - **No GitHub Pages.** Do not publish a Pages site as a mobile stand-in.
 - **No release mutation.** Published GitHub **Latest** is unsigned/ad-hoc
-  v0.28.0 release `388045385` (tag `v0.28.0`). Immutable historical v0.27.2
-  release `379360694` stays kept and is not Latest. A checkout is not a package.
+  v0.28.1 release `393030220` (tag `v0.28.1`). Older release entries (v0.28.0,
+  v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags remain. A
+  checkout is not a package.
 - **No second video stack.** Paint along remains the one video workspace.
   Do not add a phone player, a second clock, or a browser video surface.
 - **Webex stays first-class for talk/share.** Conversation is still the
@@ -140,7 +141,7 @@ anyone lands it.
 - A Music-mobile jam claim
 - A toy in-WebJam canvas
 - A second video stack
-- Pages, a tag, a release rewrite, or mutating published Latest v0.28.0 / kept v0.27.2
+- Pages, a tag, a release rewrite, or mutating published Latest v0.28.1
 - Physical device feel / Split View / real Webex media / signing / TestFlight (Jeff NOT RUN)
 - Android, Internet mobile Join, and PWA (later phases)
 - Any broader delivery or public rollout beyond Phase 1

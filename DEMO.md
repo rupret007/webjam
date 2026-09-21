@@ -6,13 +6,13 @@ Allow two minutes for the door, then another minute to open a Make together
 room and find its Conversation controls. One computer is enough to show that
 next action; a second artist is needed to demonstrate joining and making together.
 
-> **Boundary:** this script runs v0.28.1 source preparing an unsigned candidate,
-> not a signed package. GitHub **Latest** is still immutable v0.28.0 release
-> `388045385`. Every v0.28.1 physical and platform-trust gate remains
-> **NOT RUN** — see [README](README.md) for the exact published release and its
-> checksums. The door-only part stops before Host or Join. The room
-> continuation starts a real local-network Art room, then ends it; it requires
-> no Jamulus, meeting launch, shared canvas, or video file.
+> **Boundary:** this script runs v0.28.1 source matching the published
+> unsigned Latest release `393030220`, not a signed package. Every v0.28.1
+> physical and platform-trust gate remains **NOT RUN** — see [README](README.md)
+> for the exact published release and its checksums. The door-only part stops
+> before Host or Join. The room continuation starts a real local-network Art
+> room, then ends it; it requires no Jamulus, meeting launch, shared canvas,
+> or video file.
 
 ## Run it
 
@@ -127,8 +127,8 @@ Showing those choices does not prove video playback or shared meeting media.
 
 Record `git rev-parse HEAD` with your walkthrough notes. This script was
 checked against source based on master
-`3886c760549dd806d4dbc8930f2271dda204e228` (#135); published v0.28.0 packages
-come from `8ac08b69865af598e5ff69a84066964b1d90c940`.
+`200cac9eb04d01611696cdc147957b36daef257f` (v0.28.1); published v0.28.1 packages
+come from `200cac9eb04d01611696cdc147957b36daef257f`.
 If the app disagrees with this file, record its exact wording and the source
 commit. The door and room checks above help locate the mismatch; this source
 guide can drift.

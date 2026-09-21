@@ -30,21 +30,20 @@ support bundles, or unredacted local paths.
 Jamulus, meeting services, Python dependencies, Qt, and operating-system trust systems
 have their own upstream security channels. WebJam-specific orchestration,
 privacy projection, package verification, updater, transport, and lifecycle
-issues belong here. GitHub **Latest** is immutable unsigned/ad-hoc v0.28.0
-private test release `388045385`, published `2026-09-13T21:48:49Z` from
-annotated tag object `526bba0728439d48d38a5170af083ff8736d051d` peeling to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`. A later
-`master` checkout or branch artifact is not that download. Immutable historical
-v0.27.2 release `379360694` remains kept and is not Latest.
+issues belong here. GitHub **Latest** is immutable unsigned/ad-hoc v0.28.1
+private test release `393030220`, published `2026-09-21T14:30:22Z` from
+annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to exact commit `200cac9eb04d01611696cdc147957b36daef257f`. A later
+`master` checkout or branch artifact is not that download. Older release entries
+(v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags remain.
 Use only an exact checksum-verified release asset. The published release and
 its immutable predecessors share this test-only trust boundary: Windows is unsigned and
 macOS is ad-hoc signed and unnotarized.
 
-The seven exact v0.28.0 package assets and `WebJam-v0.28.0-SHA256SUMS.txt` are
-the downloadable evidence. Tag run `34782892215` succeeded on the annotated tag;
-Jeff published the softprops draft as Latest. Publication did not create
-physical certification: every physical, hardware, provider, accessibility,
-signing, notarization, and release-decision row remains **NOT RUN**. Immutable
-v0.27.2, v0.27.1, and earlier releases remain historical evidence and must
+The seven exact v0.28.1 package assets and `WebJam-v0.28.1-SHA256SUMS.txt` are
+the downloadable evidence. Publication did not create physical certification:
+every physical, hardware, provider, accessibility, signing, notarization, and
+release-decision row remains **NOT RUN**. Historical v0.27.1 and earlier git
+tags remain in the repository as historical evidence and must
 not be rebuilt or replaced.
 
 The Conversation boundary accepts any meeting provider only through a

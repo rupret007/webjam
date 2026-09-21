@@ -1,13 +1,13 @@
 # WebJam project brief
 
-**Review date:** 2026-09-13
-**Status:** published unsigned/ad-hoc v0.28.0 is GitHub Latest release
-`388045385`, published `2026-09-13T21:48:49Z`. Annotated tag object `526bba0728439d48d38a5170af083ff8736d051d`
-peels to exact commit `8ac08b69865af598e5ff69a84066964b1d90c940`. Its seven packages are covered by
-`WebJam-v0.28.0-SHA256SUMS.txt`; a checkout or branch artifact is not a package.
-Immutable historical v0.27.2 release `379360694` remains kept and is not Latest.
-Live Jamulus Host/Join reuses the existing exact 3.12.2 and 3.12.3 records;
-every v0.28 physical/hardware gate is **NOT RUN**.
+**Review date:** 2026-09-21
+**Status:** published unsigned/ad-hoc v0.28.1 is GitHub Latest release
+`393030220`, published `2026-09-21T14:30:22Z`. Annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8`
+peels to exact commit `200cac9eb04d01611696cdc147957b36daef257f`. Its seven packages are covered by
+`WebJam-v0.28.1-SHA256SUMS.txt`; a checkout or branch artifact is not a package.
+Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by
+owner; git tags remain. Live Jamulus Host/Join reuses the existing exact 3.12.2
+and 3.12.3 records; every v0.28.1 physical/hardware gate is **NOT RUN**.
 
 ## Executive summary
 
@@ -86,14 +86,13 @@ the full contract.
 
 ## Verified status
 
-- GitHub Latest is immutable unsigned/ad-hoc v0.27.2 release `379360694` from
-  lightweight tag `v0.27.2` and exact commit
-  `9c6ca3de96aa7eb261c65b7dee768ab48144169c`, with seven packages plus its
-  checksum manifest.
-- Tag run `33327104322` passed tests, integrations, and all four desktop builds,
-  then failed its annotated-tag publisher gate. It is red, not publish-green;
-  do not rerun it, replace the lightweight tag, or mutate the release. Immutable
-  v0.27.1 release `377614785` remains historical evidence.
+- GitHub Latest is immutable unsigned/ad-hoc v0.28.1 release `393030220` from
+  annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to
+  exact commit `200cac9eb04d01611696cdc147957b36daef257f`, with seven packages
+  plus `WebJam-v0.28.1-SHA256SUMS.txt`.
+- Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted
+  by owner; git tags remain. Historical v0.27.1 release `377614785` remains
+  historical evidence.
 - The published v0.26.0 release contains Windows x64, Ubuntu 22.04 x64, Intel
   Mac, and Apple-silicon Mac packages plus an exact checksum manifest.
 - `cryptography` 50.0.0 remediates the three audited runtime CVEs; the Intel
@@ -138,12 +137,11 @@ services receive friendly labels; generic providers remain neutral and receive
 no native-verification claim. Exact Jamulus correlation, bounded guest
 observation, and fail-closed take/export evidence remain the authority.
 
-This is the v0.28.0 source identity for the unpublished candidate; GitHub Latest remains the published v0.27.2 private test release,
-not a rebuild, retag, or mutation of the v0.27.1 release or any earlier
-release. A checkout or branch artifact is not package evidence. Familiar DAW interactions are
-used for clarity and musical flow without copying Apple
-artwork, exact layouts, assets, or trade dress. Physical audibility, isolation,
-alignment, recovery, output, and packaged UX remain **NOT RUN**.
+This is the v0.28.1 source identity matching the published GitHub Latest
+release `393030220`. A checkout or branch artifact is not package evidence.
+Familiar DAW interactions are used for clarity and musical flow without copying
+Apple artwork, exact layouts, assets, or trade dress. Physical audibility,
+isolation, alignment, recovery, output, and packaged UX remain **NOT RUN**.
 
 ## Why this may matter to Cisco
 
@@ -159,12 +157,12 @@ claimed as implemented in this repository.
 
 1. Read the [root README](../README.md) and [creator guide](../USER_GUIDE.md).
 2. Use the immutable
-   [v0.27.2 GitHub Latest release](https://github.com/rupret007/webjam/releases/tag/v0.27.2)
+   [v0.28.1 GitHub Latest release](https://github.com/rupret007/webjam/releases/tag/v0.28.1)
    for the current downloadable candidate and verify its checksum manifest. Use
    immutable [v0.23.0](https://github.com/rupret007/webjam/releases/tag/v0.23.0)
    only when evaluating that historical baseline.
 3. Confirm Latest resolves to the unsigned/ad-hoc
-   [v0.27.2 release](https://github.com/rupret007/webjam/releases/tag/v0.27.2)
+   [v0.28.1 release](https://github.com/rupret007/webjam/releases/tag/v0.28.1)
    and use only its exact checksum-verified assets; a branch artifact is not a
    release substitute.
 4. Choose a profile first, then exercise Shared Track, the exact-source

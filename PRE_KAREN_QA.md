@@ -183,6 +183,7 @@ Art names/lesson requests. Deployment and physical media checks need their own
 existing authorization boundaries; Internet implementation is already authorized.
 
 No merge/squash/tag/sign/release/Pages/Publish/deploy/spend/live Cisco, automatic
-capture or unsolicited send. Unsigned 0.28.0 remains Jeff-only (Latest still v0.27.2 until publish). No short codes,
-public discovery, second media engine, other repository or second goal. Parked
-#37/#49 and all prior drafts remain untouched. Karen remains pending.
+capture or unsolicited send. Unsigned 0.28.1 is now Latest release `393030220`.
+No short codes, public discovery, second media engine, other repository or
+second goal. Parked #37/#49 and all prior drafts remain untouched. Karen
+remains pending.

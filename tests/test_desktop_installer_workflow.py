@@ -714,7 +714,7 @@ def test_linux_release_names_only_the_intended_ubuntu_target() -> None:
     normalized_linux_readme = " ".join(LINUX_README.split())
     assert "intended target is 64-bit Ubuntu" in normalized_linux_readme
     assert (
-        "22.04; no v0.28.0 Linux build is currently physically certified"
+        "22.04; no v0.28.1 Linux build is currently physically certified"
         in normalized_linux_readme
     )
     assert "Ubuntu 22.04 x64 ZIP" in PROJECT_README
