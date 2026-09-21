@@ -421,13 +421,22 @@ def two_window_guidance(
     meeting_service: str = DEFAULT_MEETING_SERVICE,
     make_verb: str = "make",
 ) -> str:
-    """Talk in the meeting app · work in WebJam — two windows, side by side."""
+    """Talk in the meeting app · work in WebJam — two windows, side by side.
+
+    Art (make) keeps the human cue that artists stay on Procreate/CSP/Krita/
+    paper—WebJam is the making room; the meeting app is talk/share.
+    """
 
     service = _meeting_share_owner(meeting_service)
     if service == "the meeting app":
         service = DEFAULT_MEETING_SERVICE
     verb = str(make_verb or "make").strip() or "make"
-    return f"Talk in {service} · {verb} in WebJam—keep both windows side by side."
+    base = f"Talk in {service} · {verb} in WebJam—keep both windows side by side"
+    if verb == "make":
+        # Signal for shared-lesson clear tests and default Conversation copy:
+        # artists keep using their own tools beside WebJam.
+        return f"{base} and keep using your own tools."
+    return f"{base}."
 
 
 def meeting_share_how(

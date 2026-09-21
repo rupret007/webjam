@@ -506,6 +506,7 @@ def test_one_next_click_language_shared_by_art_and_music_surfaces():
     assert paint_along_local_note() in watch
     assert paint_along_local_note() in card
     assert SHOW_WEBEX_APP_DISTINCT in card
+    assert "own tools" in card
     assert "open Conversation" not in card
     assert paint_along_local_note() not in music
 
