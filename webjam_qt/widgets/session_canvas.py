@@ -7,6 +7,7 @@ not media timecode. Chat is the separate live shared-text path.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 import sys
 
@@ -26,10 +27,38 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.creative_modes import CreatorProfile
+from core.creative_modes import CREATOR_PROFILES, CreatorProfile
 from core.musician_guidance import GuidanceState, MusicianGuidanceSnapshot
 from core.session_intelligence import SessionPulse
 from webjam_qt.theme.tokens import Space
+
+
+_NOTES_WORKSPACE_LABELS = {profile.key: profile.label for profile in CREATOR_PROFILES}
+_NOTES_RECOVERY_COPY = {
+    "pending": "Saving notes…",
+    "failed": "Notes could not be confirmed saved. Choose Save Notes.",
+    "too_large": "Long draft: choose Save Notes to shorten or export it.",
+    "protected_original": (
+        "Original notes could not be opened. Choose Save Notes to export your draft."
+    ),
+    "disk_full": "Storage is full. Choose Save Notes to retry or export elsewhere.",
+    "permission_denied": "Permission denied. Choose Save Notes to retry or export elsewhere.",
+    "read_only": "Storage is read-only. Choose Save Notes to export elsewhere.",
+    "recovered": "Recovered draft: choose Save Notes to review it before saving.",
+    "recovery_conflict": (
+        "Recovered draft needs a separate copy. Choose Save Notes to review and export it."
+    ),
+}
+_NOTES_SAVE_MESSAGES = {
+    "saved": "Saved on this computer",
+    **_NOTES_RECOVERY_COPY,
+    "unreadable": "Saved notes could not be opened. The original is unchanged.",
+    "exported": "Draft exported to your chosen file.",
+    "recovery_unavailable": (
+        "A recovery copy could not be used safely. "
+        "You can still save or export your current notes."
+    ),
+}
 
 
 class SessionCanvas(QFrame):
@@ -64,6 +93,10 @@ class SessionCanvas(QFrame):
         self._suggestion_inline = False
         self._art_profile = False
         self._talk_share_available = True
+        self._notes_active_profile_key = "music"
+        self._notes_recovery_summary: tuple[tuple[str, str], ...] = ()
+        self._notes_need_attention = False
+        self._notes_export_handler: Callable[[str, str], None] | None = None
 
         self._header = QLabel("Session Canvas")
         self._header.setObjectName("CanvasHeader")
@@ -463,30 +496,80 @@ class SessionCanvas(QFrame):
         return self._notes.toPlainText()
 
     def set_notes_save_state(self, state: str) -> None:
-        messages = {
-            "saved": "Saved on this computer",
-            "pending": "Saving notes…",
-            "failed": "Notes need saving. Choose Save Notes.",
-            "too_large": "Long draft: choose Save Notes to shorten or export it.",
-            "unreadable": "Saved notes could not be opened. The original is unchanged.",
-            "exported": "Draft exported to your chosen file.",
-        }
-        if state not in messages:
+        if state not in _NOTES_SAVE_MESSAGES:
             raise ValueError("Unknown local notes save state.")
         if state == self._notes_save_state:
             return
         self._notes_save_state = state
-        self._notes_save_status.setText(messages[state])
-        self._notes_save_status.setAccessibleDescription(messages[state])
-        needs_attention = state in {"failed", "too_large"}
-        self._notes_save_status.setVisible(needs_attention or state in {"unreadable", "exported"})
+        self._render_notes_save_state()
+
+    def set_notes_recovery_context(
+        self, active_profile_key: str, summary: tuple[tuple[str, str], ...],
+    ) -> None:
+        """Render the persistence owner's retained workspaces, never their notes."""
+        active = active_profile_key if active_profile_key in _NOTES_WORKSPACE_LABELS else "music"
+        known = {
+            key: reason if reason in _NOTES_RECOVERY_COPY else "failed"
+            for key, reason in summary if key in _NOTES_WORKSPACE_LABELS
+        }
+        bounded = tuple((key, known[key]) for key in _NOTES_WORKSPACE_LABELS if key in known)
+        if (active, bounded) == (self._notes_active_profile_key, self._notes_recovery_summary):
+            return
+        self._notes_active_profile_key = active
+        self._notes_recovery_summary = bounded
+        self._render_notes_save_state()
+
+    def _render_notes_save_state(self) -> None:
+        state = self._notes_save_state
+        summary = self._notes_recovery_summary
+        failures = tuple((key, reason) for key, reason in summary if reason != "pending")
+        needs_attention = bool(failures) or state in set(_NOTES_RECOVERY_COPY) - {"pending"}
+        self._notes_need_attention = needs_attention or state == "recovery_unavailable"
+        message = _NOTES_SAVE_MESSAGES[state]
+        description = message
+        selected_reason = state
+        workspace_names = ", ".join(_NOTES_WORKSPACE_LABELS[key] for key, _ in summary)
+        if failures:
+            key, selected_reason = next(
+                (item for item in failures if item[0] == self._notes_active_profile_key),
+                failures[0],
+            )
+            if len(summary) == 1:
+                heading = f"{workspace_names} notes need saving."
+                detail = _NOTES_RECOVERY_COPY[selected_reason]
+            else:
+                heading = f"{len(summary)} workspaces need saving"
+                heading += f": {workspace_names}." if len(summary) == 2 else "."
+                detail = f"{_NOTES_WORKSPACE_LABELS[key]}: {_NOTES_RECOVERY_COPY[selected_reason]}"
+            message = f"{heading}\n{detail}"
+            # Larger sets keep the visible message compact; every workspace
+            # and its own bounded reason remains available to assistive tech.
+            description = message + "\n" + "\n".join(
+                f"{_NOTES_WORKSPACE_LABELS[key]}: {_NOTES_RECOVERY_COPY[reason]}"
+                for key, reason in summary
+            )
+        self._notes_save_status.setText(message)
+        self._notes_save_status.setAccessibleDescription(description)
+        self._notes_save_status.setToolTip(description)
+        recovery_description = (
+            "Open notes recovery to export your draft without replacing the original."
+            if selected_reason == "protected_original"
+            else "Retry saving retained local notes, or export a separate copy."
+        )
+        if failures:
+            recovery_description = f"Recover local drafts for {workspace_names}. {recovery_description}"
+        self._save_notes_button.setToolTip(recovery_description)
+        self._save_notes_button.setAccessibleDescription(recovery_description)
+        self._notes_save_status.setVisible(
+            needs_attention or state in {"unreadable", "exported", "recovery_unavailable"}
+        )
         for button in getattr(self, "_normal_notes_buttons", ()):
             button.setVisible(not needs_attention)
         self._save_notes_button.setVisible(needs_attention)
         # A save failure belongs beside the draft, above optional suggestions.
         # Keep the editor and recovery reachable at the compact window floor.
         if hasattr(self, "_pulse"):
-            self._pulse.setVisible(not needs_attention)
+            self._pulse.setVisible(not self._notes_need_attention)
         self._sync_suggestion_layout()
 
     def set_session_pulse(self, pulse: SessionPulse) -> None:
@@ -541,7 +624,7 @@ class SessionCanvas(QFrame):
             + margins.left() + margins.right()
         )
         inline = self._art_profile and self.width() >= max(400, required)
-        available = self._art_profile and self._notes_save_state not in {"failed", "too_large"}
+        available = self._art_profile and not self._notes_need_attention
         focused = self._suggestion_button.hasFocus()
         if inline != self._suggestion_inline:
             self._suggestion_inline = inline
@@ -676,6 +759,17 @@ class SessionCanvas(QFrame):
         self._notes.setTextCursor(cursor)
         self._notes.setFocus()
 
+    def set_notes_export_handler(self, handler: Callable[[str, str], None]) -> None:
+        """Use the persistence owner's protected destination policy for copies."""
+        self._notes_export_handler = handler
+
+    def _write_notes_export(self, text: str, path: str) -> None:
+        if self._notes_export_handler is not None:
+            self._notes_export_handler(text, path)
+        else:
+            from core.file_io import atomic_write_text
+            atomic_write_text(path, text, mode=0o600)
+
     def export_notes(self) -> None:
         """Prompt the user to save current notes to a file."""
         text = self.current_notes()
@@ -689,8 +783,12 @@ class SessionCanvas(QFrame):
         )
         if path:
             try:
-                from core.file_io import atomic_write_text
-                atomic_write_text(path, text)
+                self._write_notes_export(text, path)
+            except ValueError:
+                QMessageBox.warning(
+                    self, "Choose a Separate File",
+                    "Choose a separate file for this copy so saved notes and recovery copies stay intact.",
+                )
             except OSError:
                 QMessageBox.warning(
                     self, "Export Failed",
@@ -714,9 +812,12 @@ class SessionCanvas(QFrame):
         )
         if path:
             try:
-                from core.file_io import atomic_write_text
-
-                atomic_write_text(path, text)
+                self._write_notes_export(text, path)
+            except ValueError:
+                QMessageBox.warning(
+                    self, "Choose a Separate File",
+                    "Choose a separate file for this copy so saved notes and recovery copies stay intact.",
+                )
             except OSError:
                 QMessageBox.warning(
                     self,

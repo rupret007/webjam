@@ -91,6 +91,7 @@ class SessionHud(QFrame):
         input_value: str = "",
         input_accessible_name: str = "",
     ) -> None:
+        retry_was_available = self._action_kind == "retry" and not self._action.isHidden()
         self._status.setText(str(status))
         self._detail.setText(str(detail))
         self._invite_available = bool(invite_available)
@@ -149,7 +150,10 @@ class SessionHud(QFrame):
                     )
             except (RuntimeError, TypeError):
                 pass
-        if visible and self._action_kind == "retry" and self.isVisible():
+        # Bring a newly offered recovery to the keyboard once. Recurring
+        # session updates must not pull focus away from notes or setup input.
+        if (visible and self._action_kind == "retry"
+                and not retry_was_available and self.isVisible()):
             self._action.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _action_description(self, label: str, detail: str) -> str:

@@ -1989,6 +1989,7 @@ def test_export_blocks_navigation_until_worker_result_is_drained(tmp_path):
             assert not studio._new_take_btn.isEnabled()
             assert not studio._setup_btn.isEnabled()
             assert not studio._record_btn.isEnabled()
+            assert "current export to finish" in studio._record_btn.accessibleDescription()
 
             studio._take_list.setCurrentRow(alternate_row)
             assert studio._current is current
@@ -2011,6 +2012,7 @@ def test_export_blocks_navigation_until_worker_result_is_drained(tmp_path):
             assert studio._new_take_btn.isEnabled()
             assert studio._setup_btn.isEnabled()
             assert studio._record_btn.isEnabled()
+            assert "current export to finish" not in studio._record_btn.accessibleDescription()
             assert studio._export_btn.text() == "Export Tracks"
             assert studio._export_btn.accessibleName() == "Export aligned tracks"
         finally:
@@ -3122,6 +3124,67 @@ def test_joiner_studio_explains_that_host_owns_recording():
         studio.set_can_record(False, "The host controls recording.")
         assert not studio._record_btn.isEnabled()
         assert "host controls recording" in studio._hint.text()
+    finally:
+        studio.shutdown()
+
+
+def test_idle_studio_explains_next_step_without_claiming_recording_ready():
+    studio = RecordingStudio(player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
+    try:
+        assert not studio._record_btn.isEnabled()
+        assert "Start Session" in studio._phase.text()
+        assert "READY" not in studio._phase.text()
+        assert "Start Session" in studio._record_btn.accessibleDescription()
+        assert "Start Session" in studio._hint.text()
+
+        studio.set_live_participants(
+            [SimpleNamespace(channel_id=2, name="Sam", is_local=False)]
+        )
+        studio.set_recording_phase("idle")
+        assert studio._record_btn.isEnabled()
+        assert "check sources and storage" in studio._phase.text()
+        assert "READY" not in studio._phase.text()
+
+        studio.set_live_participants([])
+        assert not studio._record_btn.isEnabled()
+        assert "Start Session" in studio._phase.text()
+    finally:
+        studio.shutdown()
+
+
+def test_idle_studio_keeps_specific_disabled_reason_across_roster_refresh():
+    studio = RecordingStudio(player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
+    reason = "The host controls recording. Ask the host to choose Record Session."
+    try:
+        studio.set_can_record(False, reason)
+        studio.set_live_participants(
+            [SimpleNamespace(channel_id=2, name="Sam", is_local=False)]
+        )
+        studio.set_recording_phase("idle")
+        assert not studio._record_btn.isEnabled()
+        assert reason in studio._phase.text()
+        assert reason in studio._phase.accessibleDescription()
+        assert reason in studio._record_btn.toolTip()
+        assert reason in studio._record_btn.accessibleDescription()
+        studio.resize(760, 600)
+        studio.show()
+        APP.processEvents()
+        assert studio._hint.isVisibleTo(studio)
+        assert reason in studio._hint.text()
+
+        studio.set_can_record(True)
+        assert studio._record_btn.isEnabled()
+        assert reason not in studio._phase.text()
+        assert reason not in studio._record_btn.accessibleDescription()
+        assert reason not in studio._hint.text()
+        assert "check sources and storage" in studio._phase.text()
+
+        studio.set_recording_phase("recording")
+        studio.set_can_record(False, reason)
+        assert studio._record_btn.isEnabled()
+        assert studio._record_btn.text() == "■ Stop Recording"
+        assert "NOT RECORDING" not in studio._phase.text()
+        assert reason not in studio._phase.text()
     finally:
         studio.shutdown()
 
@@ -4440,6 +4503,44 @@ def test_recording_setup_preserves_explicit_joiner_local_original_preference(tmp
     assert dialog._capture.isChecked()
     assert not dialog._input.isHidden()
     assert "host confirms a take" in dialog._capture_help.text()
+
+
+@pytest.mark.parametrize(("audio_running", "host_active"), [(True, False), (False, True), (False, False)])
+def test_recording_setup_folder_change_requires_session_to_end(audio_running, host_active):
+    from webjam_qt.controllers.application_controller import ApplicationController
+
+    settings = AppSettings(takes_directory="/temporary/existing-takes")
+    window = QWidget()
+    controller = SimpleNamespace(
+        window=window, settings=settings,
+        creator_profile=get_creator_profile_by_key_or_default("music"),
+        host_peer=SimpleNamespace(active=host_active),
+        _shutdown_cleanup_blocks_action=lambda: False,
+        _local_originals_available=lambda: True,
+        _is_jamulus_running=lambda: audio_running,
+    )
+    locked = audio_running or host_active
+
+    def inspect_setup(dialog):
+        choose = next(button for button in dialog.findChildren(QPushButton)
+                      if button.text() == "Choose Folder")
+        assert choose.isEnabled() is not locked
+        if locked:
+            assert "End or restart" in choose.toolTip()
+        choose.click()
+        return dialog.DialogCode.Rejected
+
+    try:
+        with (
+            patch("webjam_qt.windows.recording_setup.list_input_devices", return_value=[]),
+            patch.object(RecordingSetupDialog, "exec", inspect_setup),
+            patch("webjam_qt.windows.recording_setup.QFileDialog.getExistingDirectory", return_value="") as picker,
+        ):
+            ApplicationController._open_recording_setup(controller)
+        assert picker.call_count == int(not locked)
+        assert settings.takes_directory == "/temporary/existing-takes"
+    finally:
+        window.deleteLater()
 
 
 def test_recording_setup_keeps_compact_content_scrollable_and_footer_visible(

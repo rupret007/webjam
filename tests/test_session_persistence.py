@@ -12,6 +12,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
@@ -540,6 +542,54 @@ def test_failed_profile_saves_keep_each_local_draft_until_retry(tmp_path, monkey
         assert canvas._save_notes_button.isHidden()
         persistence.switch_profile_key("art")
         assert canvas.current_notes() == "A printed relief experiment"
+    finally:
+        window.close()
+        window.deleteLater()
+
+
+@pytest.mark.parametrize("original", ["Original local notes", ""])
+@pytest.mark.parametrize("switch_profile", [False, True])
+def test_undo_after_unconfirmed_notes_save_stays_dirty_until_durable_retry(
+    tmp_path, monkeypatch, original, switch_profile,
+):
+    monkeypatch.setattr(persistence_module, "_persistence_home", lambda: tmp_path)
+    path = tmp_path / ".webjam_notes.md"
+    path.write_text(original, encoding="utf-8")
+    window, persistence = _make_window_and_persistence(tmp_path)
+    canvas = window.session_canvas
+    canvas.notes_changed.connect(persistence.notes_changed)
+    try:
+        persistence.load()
+        canvas._notes.selectAll()
+        canvas._notes.insertPlainText("Revised local notes")
+        with mock.patch(
+            "core.file_io._fsync_parent_directory",
+            side_effect=OSError("directory sync unavailable"),
+        ):
+            assert persistence._save_notes_only() is False
+            # Publication succeeded; only its durability confirmation failed.
+            assert path.read_text(encoding="utf-8") == "Revised local notes"
+            canvas._notes.undo()
+            assert canvas.current_notes() == original
+            assert persistence.has_unsaved_notes
+            assert persistence._save_notes_only() is False
+            assert persistence.notes_save_state == "failed"
+            assert persistence.unsaved_notes == (("music", original),)
+            if switch_profile:
+                persistence.switch_profile_key("art")
+                assert canvas.current_notes() == ""
+                assert persistence.unsaved_notes == (("music", original),)
+
+        assert persistence._save_notes_only()
+        assert not persistence.has_unsaved_notes
+        assert path.read_text(encoding="utf-8") == original
+        if switch_profile:
+            persistence.switch_profile_key("music")
+        assert canvas.current_notes() == original
+        assert persistence.notes_save_state == "saved"
+        canvas.restore_notes("Unrelated editor state")
+        persistence._load_notes_only()
+        assert canvas.current_notes() == original
     finally:
         window.close()
         window.deleteLater()

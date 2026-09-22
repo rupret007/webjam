@@ -41,7 +41,11 @@ from core.jamulus_rpc_client import (
     JamulusOrderedRosterProof,
     JamulusRpcMonitorIdentity,
 )
-from core.local_capture import LocalCaptureTrack, check_local_capture_preflight
+from core.local_capture import (
+    LocalCapturePreflight, LocalCapturePreflightError, LocalCaptureTrack,
+    check_local_capture_preflight,
+)
+from core.recording_readiness_presentation import local_capture_readiness_detail
 from core.meeting_companion import art_watch_share_sentence, build_invite_message
 from core.musician_guidance import (
     GuidanceDisplayOverride,
@@ -1429,10 +1433,16 @@ class ApplicationController(QObject):
                         # unknown-topology proof. The host then blocks Ready;
                         # it must never reinterpret an unavailable device as an
                         # intentional zero-track opt-out.
-                        raise RuntimeError("guest Local Original preflight failed")
+                        raise LocalCapturePreflightError(preflight)
                 return tracks
 
-            self.guest_peer = GuestPeerSession(
+            guest_peer = None
+
+            def guest_guidance_changed() -> None:
+                if guest_peer is not None:
+                    self._on_guest_media_guidance_changed(expected_guest=guest_peer)
+
+            guest_peer = GuestPeerSession(
                 invite,
                 display_name=self.settings.musician_name,
                 takes_root=(
@@ -1450,8 +1460,9 @@ class ApplicationController(QObject):
                 ),
                 capture_tracks=guest_capture_tracks,
                 on_originals_changed=self._on_guest_originals_changed,
-                on_guidance_changed=self._on_guest_media_guidance_changed,
+                on_guidance_changed=guest_guidance_changed,
             )
+            self.guest_peer = guest_peer
             self._on_guest_originals_changed(self.guest_peer.originals_root)
             if self.guest_peer.recovered_captures:
                 self.window.flash_message(
@@ -1770,13 +1781,36 @@ class ApplicationController(QObject):
 
         self._ui_invoker.invoke(refresh)
 
-    def _on_guest_media_guidance_changed(self) -> None:
+    def _on_guest_media_guidance_changed(self, *, expected_guest=None) -> None:
         """Refresh transfer guidance without treating it as a file change."""
 
+        guest = (
+            expected_guest if expected_guest is not None
+            else getattr(self, "guest_peer", None)
+        )
+        if guest is None or guest is not getattr(self, "guest_peer", None):
+            return
+
         def refresh() -> None:
-            if not self._shutdown:
-                self._render_guest_peer_state()
-                self._update_session_hud()
+            if self._shutdown or guest is not getattr(self, "guest_peer", None):
+                return
+            self._render_guest_peer_state()
+            studio = self.window.recording_studio
+            signal = getattr(
+                getattr(getattr(guest, "last_state", None), "signal", None),
+                "value", "idle",
+            )
+            if (
+                not bool(getattr(self.settings, "host_server_enabled", False))
+                and not bool(getattr(guest, "active_take_id", ""))
+                and not bool(getattr(guest, "capture_finalization_needs_attention", False))
+                and signal not in {"recording", "finalizing", "needs_attention"}
+                and not studio.guidance_facts().take_selected
+            ):
+                # A pre-take remedy must not replace current capture,
+                # preservation, or selected-take review guidance.
+                studio.set_can_record(False, self._guest_recording_reason())
+            self._update_session_hud()
 
         self._ui_invoker.invoke(refresh)
 
@@ -2351,6 +2385,23 @@ class ApplicationController(QObject):
 
     def _guest_recording_reason(self) -> str:
         if self._local_originals_available():
+            guest = getattr(self, "guest_peer", None)
+            preflight = getattr(guest, "local_capture_preflight", None)
+            signal = getattr(
+                getattr(getattr(guest, "last_state", None), "signal", None),
+                "value", "idle",
+            )
+            if (
+                isinstance(preflight, LocalCapturePreflight)
+                and not preflight.ready
+                and not bool(getattr(guest, "active_take_id", ""))
+                and not bool(getattr(guest, "capture_finalization_needs_attention", False))
+                and signal not in {"recording", "finalizing", "needs_attention"}
+            ):
+                return local_capture_readiness_detail(
+                    preflight.errors,
+                    required_input_channels=preflight.required_input_channels,
+                )
             return (
                 "The host controls take start and stop. Local Originals are "
                 "optional in Recording Setup."
@@ -12550,9 +12601,66 @@ class ApplicationController(QObject):
         self.window.side_rail.set_active_key("takes")
         self._on_rail_view_changed("takes")
 
+    def _recording_format_change_blocker(self) -> str:
+        """Permit a format preference change only after owned audio is idle."""
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        try:
+            if (self._shutdown or self._reference_track_lifecycle_blocks_play()
+                    or self.audio.recovering):
+                return (
+                    "Finish the current session change or cleanup first. "
+                    "Then reopen Recording Setup to change the format."
+                )
+            recording = self.recording
+            guest = self.guest_peer
+            if (
+                recording.take_in_progress
+                or recording.phase is RecorderPhase.PREFLIGHT
+                or recording._local_capture is not None
+                or any(getattr(recording, name, "") for name in (
+                    "_validation_take_id", "_shutdown_validation_pending_take_id",
+                    "_shutdown_validation_dispatch_take_id", "_guest_capture_arm_take_id",
+                ))
+                or (guest is not None and (
+                    guest.active_take_id or guest.capture_finalization_needs_attention
+                    or getattr(guest, "_capture", None) is not None
+                ))
+            ):
+                return (
+                    "Finish or cancel the recording check, then finish saving any take. "
+                    "Close Recording Setup, end or leave the session, and reopen Setup."
+                )
+            if getattr(self, "_startup_attempt", None) is not None:
+                return (
+                    "Cancel the current Start Session attempt and wait for cleanup. "
+                    "Then reopen Recording Setup to change the format."
+                )
+            engine = self.jamulus.audio_engine
+            native_active = self.bridge._runtime_component_lifecycle_is_active()
+            guest_thread = getattr(guest, "_thread", None)
+            if (
+                self._is_jamulus_running() or self.audio.connected
+                or self.jamulus.running or engine.running or native_active
+                or self.host_peer.active or self._room_is_busy_for_invitation()
+                or getattr(self, "_remote_session", None) is not None
+                or (guest_thread is not None and guest_thread.is_alive())
+            ):
+                return (
+                    "Close Recording Setup, end or leave the session, then reopen "
+                    "Setup to change the format. Your Notes stay available."
+                )
+        except Exception:  # noqa: BLE001 - unavailable ownership cannot permit a format change
+            return (
+                "WebJam could not confirm audio is idle. Finish session cleanup "
+                "and reopen Recording Setup before changing the format."
+            )
+        return ""
+
     def _open_recording_setup(self) -> None:
         """Open the focused Studio preferences without exposing RPC plumbing."""
         from core.settings import load_settings
+        from copy import deepcopy
         from webjam_qt.windows.recording_setup import RecordingSetupDialog
 
         if self._shutdown_cleanup_blocks_action():
@@ -12565,18 +12673,44 @@ class ApplicationController(QObject):
         old_settings = self.settings
         settings_path = self.settings.config_file
         retained_invite = getattr(self, "_guest_invite", None)
+        opening_settings = deepcopy(self.settings)
+        opening_generation = getattr(self, "_settings_generation", 0)
+        opening_guest = getattr(self, "guest_peer", None)
+
+        def format_change_guard() -> str:
+            if (
+                self.settings != opening_settings
+                or getattr(self, "_settings_generation", 0) != opening_generation
+                or getattr(self, "guest_peer", None) is not opening_guest
+            ):
+                return "The session setup changed. Close and reopen Recording Setup to review it."
+            return ApplicationController._recording_format_change_blocker(self)
+
         dialog = RecordingSetupDialog(
             self.settings,
             parent=self.window,
             local_originals_available=local_originals_available,
             takes_folder_editable=takes_folder_editable,
             creator_profile=self.creator_profile,
+            format_change_guard=format_change_guard,
         )
         if dialog.exec() != RecordingSetupDialog.DialogCode.Accepted:
             return
-        reopen_band_check, reopen_start_when_ready = self._replace_settings_object(
-            load_settings(settings_path)
-        )
+        format_repaired = getattr(dialog, "format_repair_requested", False) is True
+        committed = load_settings(settings_path)
+        if format_repaired:
+            blocker = format_change_guard()
+            if blocker or (committed.audio_samplerate, committed.audio_blocksize) != (48000, 0):
+                self.window.flash_message(
+                    "Format preferences were saved but not applied to the current session. "
+                    + (blocker or "A launch override still controls the format. Reopen Recording Setup to review it."),
+                    ms=8000,
+                )
+                return
+            # Only unused/terminal plans can reach this idle boundary. A prior
+            # device check must never authorize a take after a format repair.
+            self.recording._retire_active_take(self.recording._take_id)
+        reopen_band_check, reopen_start_when_ready = self._replace_settings_object(committed)
         self._reconfigure_services_after_settings(old_settings)
         if (
             not session_running
@@ -12616,6 +12750,12 @@ class ApplicationController(QObject):
             message = (
                 "Recording setup saved · this session keeps the host's "
                 "server track, but local originals are unavailable."
+            )
+        if format_repaired:
+            message = (
+                "Recording format saved: 48 kHz, automatic buffer. "
+                "Start Session rechecks the setup; Record Session checks "
+                "the current inputs before recording."
             )
         self.window.flash_message(message, ms=7000)
         self._refresh_local_recording_presence_after_settings(capture)

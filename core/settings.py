@@ -313,6 +313,25 @@ class AppSettings:
         return self.webex_audio_mode == "audience_bridge"
 
 
+def audio_format_environment_overrides() -> dict[str, int]:
+    """Return only valid format overrides, using the settings loader's rules."""
+    result = {}
+    for name, key, minimum in (
+        ("WEBJAM_AUDIO_SAMPLERATE", "audio_samplerate", 1),
+        ("WEBJAM_AUDIO_BLOCKSIZE", "audio_blocksize", 0),
+    ):
+        raw = os.getenv(name)
+        if raw is None:
+            continue
+        try:
+            value = int(raw)
+        except ValueError:
+            continue
+        if value >= minimum:
+            result[key] = value
+    return result
+
+
 def load_settings(settings_path: str | None = None) -> AppSettings:
     base = AppSettings()
     file_path = Path(settings_path or base.config_file)
@@ -364,8 +383,6 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         "WEBJAM_KRITA_CANDIDATES": "krita_candidates",
         "WEBJAM_KRITA_RESOURCE_DIRS": "krita_resource_dirs",
         "WEBJAM_COMFYUI_URL": "comfyui_url",
-        "WEBJAM_AUDIO_BLOCKSIZE": "audio_blocksize",
-        "WEBJAM_AUDIO_SAMPLERATE": "audio_samplerate",
         "WEBJAM_AUDIO_LATENCY": "audio_latency",
         "WEBJAM_AUDIO_INPUT_DEVICE_INDEX": "audio_input_device_index",
         "WEBJAM_ENABLE_SENTRY": "enable_sentry",
@@ -392,15 +409,11 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
             if 1 <= parsed <= 65535:
                 data[key] = parsed
             continue
-        if key in {"audio_blocksize", "audio_samplerate", "audio_input_device_index",
+        if key in {"audio_input_device_index",
                    "companion_api_port", "server_rpc_port"}:
             try:
                 parsed = int(raw)
             except ValueError:
-                continue
-            if key == "audio_blocksize" and parsed < 0:
-                continue
-            if key == "audio_samplerate" and parsed <= 0:
                 continue
             if key in {"companion_api_port", "server_rpc_port"} and not (1 <= parsed <= 65535):
                 continue
@@ -422,6 +435,8 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
             data[key] = [item.strip() for item in raw.split(";") if item.strip()]
         else:
             data[key] = raw
+
+    data.update(audio_format_environment_overrides())
 
     # The new mode environment variable has precedence over the legacy bridge
     # variable. An invalid new value is coerced to the safe talkback default;

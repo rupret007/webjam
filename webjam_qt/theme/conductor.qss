@@ -876,7 +876,7 @@ QPushButton#LaunchSecondary:focus {
    choice is white, so moving focus never looks like changing the room. */
 QCommandLinkButton#LaunchProfileCard {
     background-color: ${COLOR_BG_INPUT};
-    color: ${COLOR_TEXT_MUTED};
+    color: ${COLOR_TEXT_PRIMARY};
     border: 1px solid ${COLOR_BORDER_SUBTLE};
     border-radius: ${RADIUS_LG}px;
     text-align: left;
@@ -907,7 +907,7 @@ QCommandLinkButton#LaunchProfileCard:disabled {
 
 QCommandLinkButton#LaunchStartCard {
     background-color: ${COLOR_BG_INPUT};
-    color: ${COLOR_TEXT_MUTED};
+    color: ${COLOR_TEXT_PRIMARY};
     border: 1px solid ${COLOR_BORDER_SUBTLE};
     border-radius: ${RADIUS_LG}px;
     text-align: left;

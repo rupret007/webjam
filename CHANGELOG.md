@@ -12,6 +12,47 @@ All notable improvements and features for the WebJam creator collaboration platf
 > (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags
 > remain.
 
+### Room readiness and local recovery
+
+- Enabled Art/Music choices use readable primary text while disabled choices
+  stay muted. Music's empty room names its disconnected state without claiming
+  recording readiness; recovery buttons announce their current action.
+- Notes stay unsaved after an unconfirmed disk write, including when Undo
+  restores earlier text. Recovery distinguishes a protected original, a long
+  draft, and an unconfirmed save, with a working retry or export route.
+- Notes identifies storage-full, permission, and read-only failures without
+  exposing file paths. Retained drafts from other workspaces remain visible
+  while you edit; only a confirmed save or export of that exact draft clears it.
+- Private Notes recovery checkpoints retain the last confirmed draft across
+  unexpected exit. Recovered drafts require explicit review; changed or
+  unreadable originals stay protected. Editing updates recovery-copy status,
+  and ordinary Notes/brief exports cannot overwrite originals or checkpoints.
+- Recheck Saved Notes previews a repaired or changed original without writing
+  it. Export the retained draft before reopening that saved version; failed
+  exports and changed revisions preserve recovery. Unusable recovery copies
+  show a notice while ordinary notes saving and export remain available.
+- Record Session identifies input-channel, track-map, device/format, and audio
+  setting blockers. Recording Setup offers the available recovery controls and
+  an explicit Local Originals opt-out, then checks a fresh plan before Start.
+- Guests see their own specific Local Original input failure in Studio and can
+  open Recording Setup. Host recording stays blocked until fresh presence
+  verifies the choice; repeated unchanged checks preserve keyboard focus.
+- Recording Setup can explicitly repair WebJam local audio to 48 kHz with an
+  automatic buffer after owned audio and cleanup are idle. It shows effective
+  launch overrides, preserves capture consent, and rechecks ownership before
+  saving. A repair retires unused plans and invalidates prior Band Check
+  evidence; audio starts only on the next explicit request.
+- Hosts receive bounded, participant-specific Local Original failure reports
+  from compatible guests. Reports follow fresh authenticated presence and
+  cannot grant readiness; older clients and hosts keep generic guidance.
+- Recording storage recovery explains when the session must end before
+  changing Takes folders. Retry checks a new take plan with current inputs
+  and participants before any recording starts.
+- Studio disables Record until session participants are available and keeps
+  the reason visible on compact windows. Idle Studio does not claim readiness;
+  Record Session still performs the source and storage checks.
+- Recurring recovery updates preserve keyboard focus in Notes and setup input.
+
 ## [0.28.1] — Unsigned/ad-hoc private test release (GitHub Latest)
 
 > Published 2026-09-21 as GitHub **Latest**. Release ID `393030220` from

@@ -826,6 +826,61 @@ class TestRecordButtonWiring(unittest.TestCase):
             c.recording.phase = prior_phase
             c.recording.plan_shared_track_for_next_take(required=False)
 
+    def test_readiness_retains_specific_local_capture_preflight_failures(self):
+        from core.local_capture import check_local_capture_preflight
+        from core.recording_readiness_presentation import RecordingReadinessRecovery
+        from core.session_recording_plan import InputMapBinding
+
+        c = self.controller
+        plan = self._install_bound_capture_plan((InputMapBinding("Stereo Mic", 2, True, True),))
+        tracks = plan.resolved_capture_tracks()
+        settings_before = (c.settings.audio_samplerate, c.settings.audio_blocksize)
+        cases = (
+            ("short interface", {"maximum": 1}, "needs 2 input channels", "choose an input"),
+            ("native failure", {"native_error": True}, "unavailable or cannot use", "Reconnect"),
+            ("sample rate", {"samplerate": 44100}, "require 48 kHz", "automatic buffer option"),
+            ("buffer", {"blocksize": -1}, "buffer size is invalid", "automatic buffer option"),
+            ("settings", {"samplerate": "invalid"}, "audio settings are invalid", "automatic buffer option"),
+            ("track map", {"tracks": (object(),)}, "track map is invalid", "rebuild"),
+        )
+        try:
+            for label, values, failure, recovery in cases:
+                with self.subTest(label=label):
+                    options = dict(values)
+                    maximum = options.pop("maximum", 2)
+                    native_error = options.pop("native_error", False)
+                    fake_sd = SimpleNamespace(
+                        query_devices=MagicMock(return_value={"max_input_channels": maximum}),
+                        check_input_settings=MagicMock(
+                            side_effect=RuntimeError("/private/device secret-token") if native_error else None,
+                        ),
+                        InputStream=MagicMock(),
+                    )
+                    selected_tracks = options.pop("tracks", tracks)
+                    preflight = check_local_capture_preflight(
+                        tracks=selected_tracks, sounddevice_module=fake_sd, **options,
+                    )
+                    self.assertFalse(preflight.ready)
+                    snapshot = c.recording._build_recording_readiness_presentation(
+                        plan, local_preflight=preflight,
+                    )
+                    local = snapshot.sources[-1]
+                    self.assertIn(failure, local.detail)
+                    self.assertIn(recovery, local.detail)
+                    self.assertIn(local.detail, local.accessible_description)
+                    self.assertTrue(any(local.detail in item for item in snapshot.effective_blockers))
+                    self.assertNotIn("/private/device", local.detail)
+                    self.assertNotIn("secret-token", local.detail)
+                    self.assertFalse(snapshot.can_start)
+                    self.assertIs(snapshot.recovery, RecordingReadinessRecovery.OPEN_RECORDING_SETUP)
+                    fake_sd.InputStream.assert_not_called()
+            self.assertEqual(settings_before, (c.settings.audio_samplerate, c.settings.audio_blocksize))
+            self.assertFalse(c._recorder_armed)
+            self.assertFalse(c._server_recording)
+            self.assertIsNone(c.recording._local_capture)
+        finally:
+            c.recording._retire_active_take(plan.take_id)
+
     def test_readiness_setup_retires_old_plan_before_opening_and_rebuilds_fresh(self):
         from core.recording_readiness_presentation import RecordingReadinessRecovery
         from core.session_recording_plan import InputMapBinding
@@ -3825,6 +3880,119 @@ class TestRecordButtonWiring(unittest.TestCase):
 
             c.recording._remove_evidence_journal_after_manifest()
             self.assertIsNone(journal.load(c.recording._take_id))
+
+    def test_active_session_storage_recovery_rechecks_and_replaces_failed_take(self):
+        from contextlib import ExitStack
+        from PySide6.QtWidgets import QMessageBox
+        from core.jamulus_roster_identity import JamulusCommonProfile
+        from core.recording_readiness import RecordingStorageCheck, RecordingStorageStatus
+        from webjam_qt.controllers.application_controller import ApplicationController
+
+        c = self.controller
+        ready = RecordingStorageCheck(RecordingStorageStatus.READY, "Storage checked.")
+        blocked = RecordingStorageCheck(
+            RecordingStorageStatus.ACTION_NEEDED, "The exact take needs more free space.",
+        )
+        for failure in ("exact_storage", "evidence_journal"):
+            with self.subTest(failure=failure):
+                fixture = _hosted_readiness_fixture((JamulusCommonProfile("Host", 3, "Chicago", 2),))
+                rpc = MagicMock()
+                rpc.__enter__.return_value = rpc
+                rpc.get_clients.return_value = fixture.payload
+                seen_plans = []
+
+                def confirm(_snapshot):
+                    seen_plans.append(c.recording._recording_plan)
+                    # Reach the journal failure once; the repaired attempt
+                    # must return to a fresh readiness sheet before recording.
+                    return failure == "evidence_journal" and len(seen_plans) == 1
+
+                storage_calls = []
+
+                def storage(*args, **kwargs):
+                    storage_calls.append(kwargs)
+                    return blocked if failure == "exact_storage" and len(storage_calls) == 2 else ready
+
+                try:
+                    patches = (
+                        patch.object(c, "host_peer", fixture.host_peer),
+                        patch.object(c, "_primary_ordered_roster_proof", fixture.proof),
+                        patch.object(c, "participants", fixture.participants),
+                        patch.object(c.audio, "connected", True),
+                        patch.object(c, "_reference_track", None),
+                        patch.object(c.settings, "server_rpc_secret_file", "/temporary/test.secret"),
+                        patch.object(c.settings, "input_maps", []),
+                        patch.object(c.settings, "local_capture_choice_made", True),
+                        patch.object(c, "_confirm_recording_readiness", side_effect=confirm),
+                        patch.object(c.jamulus, "ordered_roster_proof_for", return_value=fixture.proof),
+                        patch.object(c.recording, "request_authenticated_roster_observation"),
+                        patch("core.jamulus_server_rpc.JamulusServerRpc", return_value=rpc),
+                        patch("core.jamulus_server_rpc.read_secret_file", return_value="test-only"),
+                        patch("webjam_qt.controllers.recording_coordinator._private_secret_file_identity", return_value=(1, 2, 3, 4)),
+                        patch("webjam_qt.controllers.recording_coordinator.check_recording_storage", side_effect=storage),
+                        patch("webjam_qt.controllers.recording_coordinator.snapshot_take_directories", return_value={}),
+                        patch.object(c._ui_invoker, "invoke", side_effect=lambda callback: callback()),
+                        patch("webjam_qt.controllers.recording_coordinator.threading.Thread", side_effect=lambda *a, **kw: _Immediate(*a, **kw)),
+                    )
+                    with ExitStack() as stack:
+                        for applied in patches:
+                            stack.enter_context(applied)
+                        journal = stack.enter_context(patch.object(c.recording, "_create_evidence_journal", return_value=False))
+                        retire = stack.enter_context(patch.object(c.recording, "_retire_active_take", wraps=c.recording._retire_active_take))
+                        worker = stack.enter_context(patch.object(c, "_record_toggle_worker"))
+                        c._show_actionable_error.reset_mock()
+                        c._on_record_requested()
+                        self.assertEqual(c.recording.phase.value, "error")
+                        self.assertEqual(c.recording._take_id, "")
+                        self.assertIsNone(c.recording._recording_plan)
+                        self.assertIsNone(c.recording._local_capture)
+                        self.assertFalse(c._server_recording)
+                        self.assertFalse(c._recorder_armed)
+                        self.assertEqual(len(fixture.capture_arm_calls), 0)
+                        worker.assert_not_called()
+                        failed_take = retire.call_args.args[0]
+                        self.assertTrue(failed_take)
+                        error = c._show_actionable_error.call_args.kwargs
+                        self.assertIn("end this session", error["next_action"])
+                        self.assertIn("Recording Setup", error["next_action"])
+                        self.assertNotIn("without changing the participant", error["next_action"])
+                        self.assertEqual(error["retry_callback"], c._on_record_requested)
+
+                        checks_before_retry = len(storage_calls)
+                        fixture.payload["clients"][0]["channels"] = 2
+
+                        def choose_retry(box):
+                            buttons = {button.text(): button for button in box.buttons()}
+                            self.assertIn("Try Again", buttons)
+                            self.assertIn("Close", buttons)
+                            self.assertIn("end this session", box.informativeText())
+                            buttons["Try Again"].click()
+                            self.assertEqual(len(storage_calls), checks_before_retry)
+                            return box.result()
+
+                        with patch.object(QMessageBox, "exec", choose_retry):
+                            ApplicationController._show_actionable_error(
+                                c, c._show_actionable_error.call_args.args[0], **error,
+                            )
+                        # The actual dialog queues retry after its failing
+                        # caller can retire take ownership and return.
+                        self.assertEqual(len(storage_calls), checks_before_retry)
+                        QApplication.processEvents()
+
+                        self.assertGreater(len(storage_calls), checks_before_retry)
+                        self.assertTrue(seen_plans)
+                        self.assertNotEqual(seen_plans[-1].take_id, failed_take)
+                        self.assertEqual(seen_plans[-1].expected_server_stems, fixture.participant_ids)
+                        self.assertEqual(seen_plans[-1].server_channel_counts, (2,))
+                        self.assertEqual(c.recording.phase.value, "idle")
+                        self.assertEqual(c.recording._take_id, "")
+                        self.assertIsNone(c.recording._recording_plan)
+                        self.assertIsNone(c.recording._local_capture)
+                        self.assertEqual(journal.call_count, int(failure == "evidence_journal"))
+                        worker.assert_not_called()
+                finally:
+                    c.recording._retire_active_take(c.recording._take_id)
+                    c.recording.phase = c.recording.phase.__class__.IDLE
 
     def test_evidence_journal_setup_failure_blocks_server_recording(self):
         from core.jamulus_roster_identity import JamulusCommonProfile

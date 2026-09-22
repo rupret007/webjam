@@ -315,7 +315,8 @@ class RecordingReadinessDialog(QDialog):
         self._setup_button.setObjectName("GhostButton")
         self._setup_button.setAccessibleName("Recording Setup")
         self._setup_button.setAccessibleDescription(
-            "Recording has not started. Fix the selected inputs, then choose Record Session again."
+            "Recording has not started. Review the selected inputs or turn off "
+            "Local Originals, then choose Record Session again."
         )
         self._setup_button.clicked.connect(self._request_setup)
         footer.addWidget(self._cancel_button)

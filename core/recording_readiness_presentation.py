@@ -13,6 +13,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
+from itertools import islice
 
 from core.redaction import REDACTED_PATH, redact_log_text
 
@@ -23,6 +24,70 @@ _MAX_LABEL_CHARS = 120
 _MAX_SUMMARY_CHARS = 180
 _MAX_DETAIL_CHARS = 320
 _SOURCE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+
+
+def local_capture_readiness_detail(
+    errors: Iterable[str],
+    *,
+    required_input_channels: int | None = None,
+) -> str:
+    """Explain an owner-reported capture failure without guessing its cause.
+
+    Only fixed preflight codes are rendered. Settings failures take priority
+    over device remedies: Recording Setup can repair the local format after
+    the session ends, or explicitly turn off optional Local Originals now.
+    """
+
+    codes = {
+        code for code in islice(errors, 8)
+        if isinstance(code, str) and len(code) <= 64
+    }
+    if "invalid_capture_settings" in codes:
+        # Failed settings conversion also emits rate/buffer sentinel errors;
+        # those do not prove that all three saved settings are wrong.
+        return (
+            "Local Original audio settings are invalid. End or leave the session, "
+            "then check the input and use Recording Setup's 48 kHz / automatic "
+            "buffer option. Turn off Local Originals to record only the shared take."
+        )
+    setting_failures = []
+    if "unsupported_sample_rate" in codes:
+        setting_failures.append("Local Originals require 48 kHz.")
+    if "invalid_block_size" in codes:
+        setting_failures.append("The Local Original audio buffer size is invalid.")
+    if setting_failures:
+        return " ".join(setting_failures) + (
+            " End or leave the session, then use Recording Setup's 48 kHz / "
+            "automatic buffer option. Turn off Local Originals to record only the shared take."
+        )
+    if "invalid_track_map" in codes:
+        return (
+            "The Local Original track map is invalid. Open Recording Setup to "
+            "rebuild the track map or turn off Local Originals."
+        )
+    if "insufficient_input_channels" in codes:
+        needed = (
+            f"needs {required_input_channels} input channels"
+            if isinstance(required_input_channels, int)
+            and not isinstance(required_input_channels, bool)
+            and 1 <= required_input_channels <= 32
+            else "needs more input channels"
+        )
+        return (
+            f"The Local Original map {needed}. The selected device has too few. "
+            "Open Recording Setup to reduce enabled tracks or choose an input "
+            "with enough channels."
+        )
+    if "input_device_or_format_unavailable" in codes:
+        return (
+            "The selected Local Original input is unavailable or cannot use "
+            "the required 48 kHz format. Reconnect the input, then reopen "
+            "Recording Setup to select it, or turn off Local Originals."
+        )
+    return (
+        "Local Original readiness could not be verified. Open Recording Setup "
+        "to check the input and tracks, or turn off Local Originals."
+    )
 
 
 class RecordingReadinessModelError(ValueError):
@@ -456,4 +521,5 @@ __all__ = [
     "RecordingStorageReadiness",
     "SharedTrackPresentation",
     "SharedTrackReadiness",
+    "local_capture_readiness_detail",
 ]

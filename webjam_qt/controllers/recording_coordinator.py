@@ -25,6 +25,7 @@ from core.creative_modes import (
     canonical_creator_profile_key,
     get_creator_profile_by_key_or_default,
 )
+from core.guest_recording_guidance import guest_recording_failure_summary
 from core.jamulus_roster_identity import (
     JamulusRosterIdentityError,
     ordered_common_roster_digest,
@@ -56,6 +57,7 @@ from core.recording_readiness_presentation import (
     RecordingStorageReadiness,
     SharedTrackPresentation,
     SharedTrackReadiness,
+    local_capture_readiness_detail,
 )
 from core.recording_sources import (
     RecordingSourceKind as LiveRecordingSourceKind,
@@ -4240,9 +4242,11 @@ class RecordingCoordinator:
         local_error_detail = (
             "Selected input device and exact 48 kHz mono/stereo map are ready."
             if local_ready
-            else (
-                "Check the selected input device, mapped channels, and 48 kHz "
-                "format before recording."
+            else local_capture_readiness_detail(
+                getattr(local_preflight, "errors", ()),
+                required_input_channels=getattr(
+                    local_preflight, "required_input_channels", None,
+                ),
             )
         )
         for binding, logical_source_id in zip(
@@ -4365,7 +4369,8 @@ class RecordingCoordinator:
         self._set_phase(RecorderPhase.IDLE)
         if setup:
             self._c.window.flash_message(
-                "Recording has not started. Fix the selected inputs, then choose Record Session again.",
+                "Recording has not started. Review the selected inputs or turn off "
+                "Local Originals, then choose Record Session again.",
                 ms=5000,
             )
             self._c._open_recording_setup()
@@ -4877,8 +4882,10 @@ class RecordingCoordinator:
                     "not safely store recording recovery evidence."
                 ),
                 next_action=(
-                    "Choose a writable Takes folder in Recording Setup, then "
-                    "try Record Session again. No server recording was started."
+                    "Check free space and write access on the recording drive, "
+                    "then try again. To change folders, end this session and "
+                    "choose a writable Takes folder in Recording Setup before "
+                    "starting again. No server recording was started."
                 ),
                 retry_callback=self._c._on_record_requested,
             )
@@ -5203,19 +5210,32 @@ class RecordingCoordinator:
         if guest_plan_issues:
             failed_take_id = self._take_id
             self._set_phase(RecorderPhase.ERROR)
+            guest_diagnostics = getattr(
+                self._c.host_peer, "recording_local_original_diagnostics", None,
+            )
+            summary = ""
+            if callable(guest_diagnostics):
+                try:
+                    summary = guest_recording_failure_summary(guest_diagnostics())
+                except Exception:  # noqa: BLE001 - optional diagnosis cannot bypass the gate
+                    LOGGER.debug("Guest recording guidance was unavailable")
             self._c._show_actionable_error(
                 "Guest Recording Plan Needs Attention",
                 what_failed=(
+                    f"No recorder was started. {summary}"
+                    if summary else
                     "WebJam couldn't prove every connected guest's exact "
                     "Local Original choice before recording. No recorder was started."
                 ),
                 likely_cause=(
-                    "A guest may still be joining, may use an older WebJam build, "
-                    "or may have changed their input map during preflight."
+                    "A guest's current Local Original input and track choice "
+                    "could not be verified, or their recording presence is not current."
                 ),
                 next_action=(
-                    "Ask every guest to finish joining with the latest WebJam, "
-                    "wait for the participant list to settle, then retry."
+                    "Ask guests to open Recording Setup to fix their Local Original "
+                    "audio settings, inputs or tracks, or turn Local Originals off. "
+                    "After everyone has finished joining and the participant "
+                    "list settles, retry Record Session."
                 ),
                 retry_callback=self._c._on_record_requested,
             )
@@ -5240,13 +5260,16 @@ class RecordingCoordinator:
             self._c._show_actionable_error(
                 "Recording Storage Needs Attention",
                 what_failed=(
-                    "WebJam can't reserve storage for the exact server and "
+                    "WebJam can't verify enough free storage for the exact server and "
                     "Local Original plan. No recorder was started."
                 ),
                 likely_cause=exact_storage.detail,
                 next_action=(
-                    "Free up space or choose another Takes folder, then retry "
-                    "without changing the participant or input plan."
+                    "Free up space and try again. To change the Takes folder, "
+                    "end this session first, choose a writable folder in "
+                    "Recording Setup, then start the session and choose "
+                    "Record Session again. WebJam will recheck the current "
+                    "participants and inputs."
                 ),
                 retry_callback=self._c._on_record_requested,
             )

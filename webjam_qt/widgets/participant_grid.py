@@ -320,9 +320,7 @@ class ParticipantGrid(QScrollArea):
 
     def _sync_creator_controls(self) -> None:
         profile = self._creator_profile
-        vocabulary = profile.vocabulary
         self.setAccessibleName(f"{profile.label} participant mixer grid")
-        self._empty_primary.setAccessibleName(f"Start the {vocabulary.session_noun}")
         if profile.key == "music":
             practice_text = "Practice Solo"
             practice_accessible = "Start a private practice session"
@@ -639,7 +637,7 @@ class ParticipantGrid(QScrollArea):
             )
         self._empty_state.setProperty("sessionState", state)
         phase_labels = {
-            "not_connected": "READY",
+            "not_connected": "NOT CONNECTED",
             "connecting": "STARTING",
             "practice": "PRIVATE PRACTICE",
             "reconnecting": "RECONNECTING",
@@ -659,6 +657,9 @@ class ParticipantGrid(QScrollArea):
         self._empty_message.setText(message)
         # Escape "&": QPushButton treats it as a mnemonic marker.
         self._empty_primary.setText(primary_text.replace("&", "&&"))
+        self._empty_primary.setAccessibleName(primary_text)
+        self._empty_primary.setAccessibleDescription(message)
+        self._empty_primary.setToolTip(message)
         self._empty_primary.setEnabled(primary_enabled)
         self._empty_primary.setVisible(show_primary)
         self._empty_primary_action = str(primary_action or "start")
@@ -715,6 +716,12 @@ class ParticipantGrid(QScrollArea):
         return list(self._cards.values())
 
     def _on_empty_primary(self) -> None:
+        # A queued click must not outlive the empty-room action that offered it.
+        if (
+            self._cards or not self._empty_primary.isVisibleTo(self.window())
+            or not self._empty_primary.isEnabled()
+        ):
+            return
         if self._empty_primary_action == "microphone_settings":
             self.microphone_settings_requested.emit()
         else:

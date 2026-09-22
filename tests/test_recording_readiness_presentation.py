@@ -17,6 +17,7 @@ from core.recording_readiness_presentation import (
     RecordingStorageReadiness,
     SharedTrackPresentation,
     SharedTrackReadiness,
+    local_capture_readiness_detail,
 )
 
 
@@ -198,3 +199,40 @@ def test_free_text_is_path_redacted_and_repr_never_discloses_labels() -> None:
     assert r"C:\\Users" not in rendered
     assert "creator" not in repr(source)
     assert "creator" not in repr(snapshot)
+
+
+@pytest.mark.parametrize("channels", [None, True, 0, 33, "/private/device"])
+def test_local_input_guidance_does_not_invent_channel_counts(channels) -> None:
+    detail = local_capture_readiness_detail(
+        ("insufficient_input_channels",), required_input_channels=channels,
+    )
+    assert "needs more input channels" in detail
+    assert "/private/device" not in detail
+    assert "Recording Setup" in detail
+
+
+def test_unknown_capture_codes_stay_private_and_keep_a_recovery_route() -> None:
+    private = "/Users/private/input?secret-token=hidden"
+    unknown = local_capture_readiness_detail((private,))
+    mixed = local_capture_readiness_detail((private, "unsupported_sample_rate"))
+    for detail in (unknown, mixed):
+        assert private not in detail
+        assert "secret-token" not in detail
+        assert "Recording Setup" in detail
+        assert "Local Originals" in detail
+        assert len(detail) <= 320
+    assert "could not be verified" in unknown
+    assert "require 48 kHz" in mixed
+    assert "automatic buffer option" in mixed
+    assert "End or leave the session" in mixed
+
+
+def test_combined_capture_format_failures_preserve_both_facts_and_full_route() -> None:
+    detail = local_capture_readiness_detail(
+        ("unsupported_sample_rate", "invalid_block_size"),
+    )
+    assert "require 48 kHz" in detail
+    assert "buffer size is invalid" in detail
+    assert "Turn off Local Originals" in detail
+    assert detail.endswith("record only the shared take.")
+    assert len(detail) <= 320

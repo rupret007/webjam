@@ -56,6 +56,18 @@ explicit local-capture setting when Record Session is requested. It does not
 perform those checks during Host or Join. A failed record preflight preserves
 the live session and explains the next safe action.
 
+Idle Studio says **NOT RECORDING** and explains the next step. With no session
+participants, connect audio using **Start Session** first; guests see that the
+host owns recording. The explanation stays visible in compact windows. An
+available **Record Session** button opens the checks; it is not a readiness
+verdict, and checking free storage does not reserve disk space.
+
+When storage fails during a session, repair free space or write access and
+choose **Try Again**. Changing the Takes folder requires ending the session
+first, choosing the folder in **Recording Setup**, and starting again. A retry
+builds a new take plan from the current participants and inputs before asking
+to record; it does not reuse the failed plan.
+
 Before capture begins, one durable take-scoped recording plan binds the exact
 roster/server stems, Shared Track source fingerprint and playback generation,
 host logical mono/stereo topology, guest Local Original count/map obligations
@@ -75,6 +87,32 @@ of the take/plan generation, roster, input maps, guest obligations, local device
 preflight, storage, and Shared Track identity. A changed fact fails closed;
 Cancel retires the provisional take without starting capture or creating
 media.
+
+Local Original blockers retain the input check's specific reason: insufficient
+channels, an invalid track map, an unavailable input or format, or invalid audio
+settings. **Recording Setup** remains available to review inputs and tracks or
+turn off optional Local Originals for a shared take. Setup shows the effective
+WebJam local audio format. To repair it, close Setup, end or leave the session,
+then reopen Setup and choose **Use 48 kHz and automatic buffer** before saving.
+This changes WebJam's Local Original and metering preferences; Jamulus manages
+live-session audio separately. Recording and cleanup must finish first. Notes
+stay available, and the repair does not turn Local Originals on or start audio.
+
+Valid launch overrides are named in Setup. A conflicting override must be
+removed or updated before restarting WebJam; saving cannot override it. Failed
+saves keep the running format unchanged and allow retry. Start Session and
+Band Check use the committed setup; **Record Session** still builds a new plan
+and performs fresh device and participant checks before capture.
+
+Guests see their own input check's specific reason in Studio, with **Recording
+Setup** available to repair the input or track choice. The host's recording
+check remains blocked until fresh guest presence verifies the current choice;
+an unavailable input is never treated as an intentional opt-out. Repeated
+unchanged checks keep keyboard focus in the current editor or setup control.
+With supported peers, the host's blocked-recording message names the guests
+and their current input problems. Older peers retain the generic guidance.
+These reports explain the blocker; they never authorize recording or turn an
+unavailable input into an opt-out. Repaired inputs require fresh presence.
 
 An opted-in guest is not treated as armed merely because its recent presence
 proof was Ready. After acceptance, the host sends that required participant a

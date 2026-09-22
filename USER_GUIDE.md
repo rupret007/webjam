@@ -40,11 +40,38 @@ medium; see [Art](#art) below. No profile directly or automatically taps a
 meeting app, browser, or system output.
 
 Local notes save shortly after an edit. If a save fails, choose **Save Notes**.
+The Notes notice names retained workspaces, including a draft outside the one
+you are editing, and keeps that recovery action available while you type.
+Storage-full, permission, and read-only failures explain when to free space,
+retry, or export to a writable location without displaying private file paths.
 The recovery window can show drafts from another workspace without changing
-the current session. Shorten a long draft or choose **Export Copy…**. A failed
-load leaves the original saved file unchanged. Keep the app open until new
-notes have been saved or exported; Quit preserves that recovery opportunity.
+the current session. It explains whether to retry saving, shorten a long draft,
+or choose **Export Copy…**. If the original could not be opened, it is protected
+and Export Copy saves your new draft separately. An unconfirmed write stays
+unsaved even after Undo; retry or export before quitting. Keep the app open until
+new notes have been saved or exported; Quit preserves that recovery opportunity.
 Accepting a Song suggestion also saves the resulting notes.
+
+WebJam also attempts a private recovery copy before saving notes. After an
+unexpected exit, recovered drafts from any workspace appear in Notes for
+review. Choose **Save Notes** to review and explicitly save a recovered draft,
+or **Export Copy…** to keep it separately. If the saved original changed or
+cannot be read safely, recovery preserves it and offers export instead.
+
+After fixing access to a protected original, choose **Recheck Saved Notes**.
+Review the saved version without changing it, then choose **Export Draft & Use
+Saved Notes…** to keep your draft in a separate file before reopening the saved
+version. Cancellation, a failed export, or either version changing keeps the
+draft available. Recheck also lets you compare a recovered draft with a changed
+original. If an older recovery copy cannot be used safely, Notes shows a notice;
+ordinary saving and exporting remain available.
+
+Restart recovery covers the last confirmed copy, not every keystroke. The
+recovery window tells you whether its current text has a confirmed copy;
+editing that text updates the message. Full or read-only storage can prevent
+both saving and recovery copies, and very large drafts may require export.
+Keep WebJam open until Save Notes or Export Copy succeeds. Ordinary Notes and
+brief exports also protect WebJam's original notes and recovery files.
 
 ## Art
 
@@ -870,6 +897,21 @@ bypass: WebJam rechecks the take/plan generation, roster, input maps, guest
 obligations, device preflight, storage, and Shared Track identity before it
 arms anything. Cancelling retires the provisional take without starting
 capture.
+
+When a Local Original blocks recording, the sheet distinguishes too few input
+channels, an invalid track map, an unavailable input or format, and invalid
+audio settings. **Recording Setup** lets you review inputs and tracks or turn
+off optional Local Originals to record the shared take. After ending or leaving
+the session, choose **Use 48 kHz and automatic buffer** in Setup to repair
+WebJam's local recording format. Save keeps capture consent separate and does
+not start audio. Setup explains when a launch override must be changed before
+restarting WebJam. Start Session and Band Check use the saved setup; choose
+**Record Session** again for a fresh plan and input checks. Jamulus manages its
+live audio settings separately.
+
+When supported guests report input failures, the host sees their names and
+the specific problems. Older guests retain generic Setup guidance. Fresh guest
+checks must confirm the repaired choice before recording can start.
 
 For each opted-in guest Local Original, WebJam next sends a private,
 take-scoped arm only to that required guest. The guest opens the exact planned

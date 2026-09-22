@@ -20,6 +20,7 @@ import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
 from core.network_invite import BandInvite, create_invite_link
@@ -54,12 +55,16 @@ from core.session_transfer import (
     _presence_digest_text,
     _presence_fingerprint_text,
     _presence_int,
+    _presence_local_original_diagnostic,
     _presence_ordinal_tuple,
     _sha256_file,
     _write_json_secure,
     derive_participant_id,
     load_or_create_installation_id,
 )
+
+if TYPE_CHECKING:
+    from core.local_capture import LocalCapturePreflight
 
 LOGGER = logging.getLogger("webjam.session_transfer")
 _POLL_SECONDS = 0.75
@@ -467,6 +472,24 @@ class PendingLocalSegment:
 
 
 @dataclass(frozen=True, repr=False)
+class _LocalOriginalEvaluation:
+    contract: tuple[
+        bool, int | None, str, tuple[object, ...] | None,
+        tuple[int, ...], tuple[str, ...],
+    ]
+    preflight: LocalCapturePreflight | None
+    generation: int
+
+    @property
+    def failure_codes(self) -> tuple[str, ...]:
+        return self.preflight.errors if self.preflight is not None else ()
+
+    @property
+    def required_input_channels(self) -> int:
+        return self.preflight.required_input_channels if self.preflight is not None else 0
+
+
+@dataclass(frozen=True, repr=False)
 class _DesiredPresenceV2:
     display_name: str
     ordered_roster_digest: str
@@ -480,6 +503,9 @@ class _DesiredPresenceV2:
     local_original_map_fingerprint: str = ""
     local_original_channel_counts: tuple[int, ...] = ()
     local_original_source_ids: tuple[str, ...] = ()
+    local_original_diagnostic_version: int = 0
+    local_original_failure_codes: tuple[str, ...] = ()
+    local_original_required_input_channels: int = 0
 
     def __post_init__(self) -> None:
         digest = _presence_digest_text(self.ordered_roster_digest)
@@ -542,6 +568,16 @@ class _DesiredPresenceV2:
         object.__setattr__(
             self, "local_original_source_ids", contract.logical_source_ids
         )
+        version, codes, channels = _presence_local_original_diagnostic(
+            self.local_original_diagnostic_version,
+            self.local_original_failure_codes,
+            self.local_original_required_input_channels,
+            capture_enabled=self.capture_enabled,
+            track_count=self.local_original_track_count,
+        )
+        object.__setattr__(self, "local_original_diagnostic_version", version)
+        object.__setattr__(self, "local_original_failure_codes", codes)
+        object.__setattr__(self, "local_original_required_input_channels", channels)
 
     def __repr__(self) -> str:
         return "_DesiredPresenceV2(private=[redacted])"
@@ -1214,6 +1250,20 @@ class HostPeerSession:
             obligation
             for obligation in registry.current_local_original_obligations()
             if obligation.participant_id != host_id
+        )
+
+    def recording_local_original_diagnostics(self) -> tuple[PresenceV2Proof, ...]:
+        """Return only fresh guest reports, never cached or inferred failures."""
+
+        registry = self.registry
+        if registry is None:
+            return ()
+        host_id = self.host_enrollment.participant_id if self.host_enrollment else ""
+        return tuple(
+            proof for proof in registry.current_local_original_diagnostic_proofs()
+            if proof.participant_id != host_id
+            and proof.capture_enabled
+            and proof.local_original_track_count is None
         )
 
     def recording_local_original_obligation_issues(self) -> tuple[str, ...]:
@@ -2764,6 +2814,8 @@ class GuestPeerSession:
         ) = None
         self._capture_finalization_needs_attention = False
         self._guidance_notification_generation = 0
+        self._local_capture_preflight: LocalCapturePreflight | None = None
+        self._local_capture_preflight_generation = 0
         self._pending: list[PendingLocalSegment] = []
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -2804,6 +2856,32 @@ class GuestPeerSession:
         """Whether capture finalization has an indeterminate durable outcome."""
 
         return bool(getattr(self, "_capture_finalization_needs_attention", False))
+
+    @property
+    def local_capture_preflight(self) -> LocalCapturePreflight | None:
+        """Latest local-only failure; never changes the authenticated contract."""
+
+        with self._lock:
+            return self._local_capture_preflight
+
+    def _set_local_capture_preflight(
+        self, preflight: LocalCapturePreflight | None, generation: int,
+    ) -> None:
+        with self._lock:
+            if generation != self._local_capture_preflight_generation:
+                return
+            previous = self._local_capture_preflight
+            self._local_capture_preflight = preflight
+            previous_key = (
+                (previous.errors, previous.required_input_channels)
+                if previous is not None else None
+            )
+            current_key = (
+                (preflight.errors, preflight.required_input_channels)
+                if preflight is not None else None
+            )
+        if previous_key != current_key:
+            self._notify_guidance_changed()
 
     @property
     def pending_segments(self) -> tuple[PendingLocalSegment, ...]:
@@ -2886,27 +2964,56 @@ class GuestPeerSession:
     def _current_local_original_contract(
         self, *, capture_enabled: bool | None = None
     ) -> tuple[
-        bool,
-        int | None,
-        str,
-        tuple[object, ...] | None,
-        tuple[int, ...],
-        tuple[str, ...],
+        bool, int | None, str, tuple[object, ...] | None,
+        tuple[int, ...], tuple[str, ...],
     ]:
-        """Resolve a name-free logical-track contract without exposing config.
+        """Resolve the exact contract while retaining local capability guidance."""
 
-        A malformed map deliberately returns the legacy/unknown shape. The
-        host can still authenticate the peer, but exact-take readiness then
-        fails closed instead of silently treating a bad map as zero tracks.
+        return self._evaluate_local_original_contract(
+            capture_enabled=capture_enabled,
+        ).contract
+
+    def _evaluate_local_original_contract(
+        self, *, capture_enabled: bool | None = None
+    ) -> _LocalOriginalEvaluation:
+        """Keep topology and failure facts bound to one capability evaluation.
+
+        Unknown inventory remains blocking. The diagnostic never supplies a
+        track map or turns failed capture into an intentional opt-out.
         """
 
-        requested = (
-            bool(self.capture_enabled()) if capture_enabled is None else capture_enabled
-        )
+        from core.local_capture import LocalCapturePreflightError
+
+        with self._lock:
+            self._local_capture_preflight_generation += 1
+            generation = self._local_capture_preflight_generation
+        try:
+            requested = (
+                bool(self.capture_enabled()) if capture_enabled is None else capture_enabled
+            )
+        except Exception:
+            self._set_local_capture_preflight(
+                LocalCapturePreflightError(None).preflight, generation,
+            )
+            raise
         if type(requested) is not bool:
             raise ValueError("capture_enabled must be a boolean.")
         if not requested:
-            return False, 0, _ZERO_LOCAL_ORIGINAL_MAP_FINGERPRINT, (), (), ()
+            # A cached roster override is not evidence that the current
+            # effective preference opted out (an environment override may win).
+            try:
+                effective_opt_out = capture_enabled is None or not bool(self.capture_enabled())
+            except Exception:
+                effective_opt_out = False
+                self._set_local_capture_preflight(
+                    LocalCapturePreflightError(None).preflight, generation,
+                )
+            if effective_opt_out:
+                self._set_local_capture_preflight(None, generation)
+            return _LocalOriginalEvaluation(
+                (False, 0, _ZERO_LOCAL_ORIGINAL_MAP_FINGERPRINT, (), (), ()),
+                None, generation,
+            )
         try:
             tracks = (
                 tuple(self.capture_tracks())
@@ -2914,7 +3021,11 @@ class GuestPeerSession:
                 else None
             )
             if tracks == ():
-                return False, 0, _ZERO_LOCAL_ORIGINAL_MAP_FINGERPRINT, tracks, (), ()
+                self._set_local_capture_preflight(None, generation)
+                return _LocalOriginalEvaluation(
+                    (False, 0, _ZERO_LOCAL_ORIGINAL_MAP_FINGERPRINT, tracks, (), ()),
+                    None, generation,
+                )
             from core.local_capture import (
                 bind_local_capture_logical_sources,
                 local_capture_track_map_fingerprint,
@@ -2931,16 +3042,22 @@ class GuestPeerSession:
             fingerprint = local_capture_track_map_fingerprint(tracks)
             channel_counts = tuple(int(track.channel_count) for track in tracks)
             source_ids = tuple(str(track.logical_source_id) for track in tracks)
-            return (
-                True,
-                len(tracks),
-                fingerprint,
-                tracks,
-                channel_counts,
-                source_ids,
+            self._set_local_capture_preflight(None, generation)
+            return _LocalOriginalEvaluation(
+                (True, len(tracks), fingerprint, tracks, channel_counts, source_ids),
+                None, generation,
+            )
+        except LocalCapturePreflightError as exc:
+            self._set_local_capture_preflight(exc.preflight, generation)
+            return _LocalOriginalEvaluation(
+                (True, None, "", None, (), ()), exc.preflight, generation,
             )
         except Exception:  # noqa: BLE001 - local names/paths stay private
-            return True, None, "", None, (), ()
+            preflight = LocalCapturePreflightError(None).preflight
+            self._set_local_capture_preflight(preflight, generation)
+            return _LocalOriginalEvaluation(
+                (True, None, "", None, (), ()), preflight, generation,
+            )
 
     def observe_presence_v2(
         self,
@@ -2962,6 +3079,7 @@ class GuestPeerSession:
         cooperative claim and invitations are intended for trusted bandmates.
         """
 
+        evaluation = self._evaluate_local_original_contract(capture_enabled=capture_enabled)
         (
             enabled,
             track_count,
@@ -2969,7 +3087,7 @@ class GuestPeerSession:
             _tracks,
             channel_counts,
             logical_source_ids,
-        ) = self._current_local_original_contract(capture_enabled=capture_enabled)
+        ) = evaluation.contract
         desired = _DesiredPresenceV2(
             display_name=display_name,
             ordered_roster_digest=ordered_roster_digest,
@@ -2983,8 +3101,13 @@ class GuestPeerSession:
             local_original_map_fingerprint=map_fingerprint,
             local_original_channel_counts=channel_counts,
             local_original_source_ids=logical_source_ids,
+            local_original_diagnostic_version=1,
+            local_original_failure_codes=evaluation.failure_codes,
+            local_original_required_input_channels=evaluation.required_input_channels,
         )
         with self._lock:
+            if evaluation.generation != self._local_capture_preflight_generation:
+                return
             if (
                 self._desired_presence_v2 == desired
                 and self._desired_presence_v2_topology_epoch
@@ -3012,6 +3135,7 @@ class GuestPeerSession:
             self._bound_presence_v2 = None
             self._presence_v2_observation_epoch += 1
             self.last_presence_v2_error = ""
+            self._local_capture_preflight_generation += 1
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
@@ -3276,6 +3400,9 @@ class GuestPeerSession:
             observed = self._desired_presence_v2
             capture_override = self._desired_presence_v2_capture_override
         if observed is not None:
+            evaluation = self._evaluate_local_original_contract(
+                capture_enabled=capture_override,
+            )
             (
                 enabled,
                 track_count,
@@ -3283,7 +3410,7 @@ class GuestPeerSession:
                 _tracks,
                 channel_counts,
                 logical_source_ids,
-            ) = self._current_local_original_contract(capture_enabled=capture_override)
+            ) = evaluation.contract
             refreshed = replace(
                 observed,
                 capture_enabled=enabled,
@@ -3291,9 +3418,14 @@ class GuestPeerSession:
                 local_original_map_fingerprint=map_fingerprint,
                 local_original_channel_counts=channel_counts,
                 local_original_source_ids=logical_source_ids,
+                local_original_diagnostic_version=1,
+                local_original_failure_codes=evaluation.failure_codes,
+                local_original_required_input_channels=evaluation.required_input_channels,
             )
-            if refreshed != observed:
-                with self._lock:
+            with self._lock:
+                if evaluation.generation != self._local_capture_preflight_generation:
+                    return
+                if refreshed != observed:
                     if self._desired_presence_v2 == observed:
                         self._desired_presence_v2 = refreshed
                         self._presence_v2_observation_epoch += 1
@@ -3365,6 +3497,9 @@ class GuestPeerSession:
             local_original_map_fingerprint=(desired.local_original_map_fingerprint),
             local_original_channel_counts=desired.local_original_channel_counts,
             local_original_source_ids=desired.local_original_source_ids,
+            local_original_diagnostic_version=desired.local_original_diagnostic_version,
+            local_original_failure_codes=desired.local_original_failure_codes,
+            local_original_required_input_channels=desired.local_original_required_input_channels,
         )
         with self._lock:
             if (

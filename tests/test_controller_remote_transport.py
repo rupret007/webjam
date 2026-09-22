@@ -10,6 +10,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import QTimer  # noqa: E402
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
 
 from core.network_invite import create_invite_link
@@ -522,10 +523,24 @@ def test_v3_guest_pre_enrollment_failure_stage_and_hud_retry_same_invitation(
     assert controller.window.session_hud._action.text() == "Try Again"
     assert controller.window.session_hud._action_kind == "retry"
 
-    # Exercise the real connected controls after the proven pre-enrollment
-    # failure. Both route back to v3 enrollment, never Band Check or legacy
-    # localhost Jamulus.
-    controller.window.participant_grid._empty_primary.click()
+    # Neither a programmatic click nor a queued signal from the retired stage
+    # action may start another enrollment or launch localhost Jamulus.
+    grid = controller.window.participant_grid
+    stage_requests = mock.MagicMock()
+    grid.start_audio_requested.connect(stage_requests)
+    grid._empty_primary.click()
+    QTimer.singleShot(0, grid._empty_primary.clicked.emit)
+    qapp.processEvents()
+    stage_requests.assert_not_called()
+    assert attempts == [invitation]
+    assert controller._remote_session.snapshot.phase is RemoteSessionPhase.FAILED
+    assert controller._remote_invitation is invitation
+    controller.bridge.launch_jamulus.assert_not_called()
+
+    # Exercise the visible HUD control twice after the proven pre-enrollment
+    # failure. Each retry returns to v3 enrollment with the same invitation,
+    # never Band Check or legacy localhost Jamulus.
+    controller.window.session_hud._action.click()
     _drain_until(
         qapp,
         lambda: (
