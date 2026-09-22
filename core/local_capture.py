@@ -26,7 +26,7 @@ import stat
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -414,6 +414,28 @@ class LocalCapturePreflight:
     required_input_channels: int
     channel_counts: tuple[int, ...]
     samplerate: int
+
+
+class LocalCapturePreflightError(LocalCaptureError):
+    """Carry bounded local capability facts without native error text."""
+
+    def __init__(self, preflight: object) -> None:
+        super().__init__("guest Local Original preflight failed")
+        reported = getattr(preflight, "errors", ())
+        reported = reported[:8] if isinstance(reported, (tuple, list)) else ()
+        errors = tuple(code for code in (
+            "invalid_capture_settings", "unsupported_sample_rate",
+            "invalid_block_size", "invalid_track_map",
+            "insufficient_input_channels", "input_device_or_format_unavailable",
+        ) if code in reported)
+        channels = getattr(preflight, "required_input_channels", 0)
+        if type(channels) is not int or not 0 <= channels <= 32:
+            channels = 0
+        self.preflight = (
+            replace(preflight, ready=False, errors=errors, required_input_channels=channels)
+            if isinstance(preflight, LocalCapturePreflight)
+            else LocalCapturePreflight(False, errors, 0, channels, (), 0)
+        )
 
 
 def check_local_capture_preflight(

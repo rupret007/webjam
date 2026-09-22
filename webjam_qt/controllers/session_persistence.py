@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import stat
+from dataclasses import dataclass
 from pathlib import Path
 
 from core.creative_modes import (
@@ -67,6 +68,16 @@ def notes_save_failure_state(error: Exception) -> str:
     if code == errno.EROFS:
         return "read_only"
     return "failed"
+
+
+@dataclass(frozen=True)
+class NotesOriginalSnapshot:
+    """One readable original, bound to the workspace and reviewed draft."""
+
+    profile_key: str
+    text: str
+    fingerprint: str
+    draft_fingerprint: str
 
 
 def _persistence_home() -> Path:
@@ -500,6 +511,8 @@ class SessionPersistence:
             state = "exported"
         elif self._creator_profile_key in self._unreadable_notes:
             state = "unreadable"
+        elif self._checkpoint_blocked:
+            state = "recovery_unavailable"
         else:
             state = "saved"
         self._notify_notes_state(state)
@@ -606,6 +619,68 @@ class SessionPersistence:
         self._retain_notes(profile, text)
         if profile == self._creator_profile_key:
             self._canvas.restore_notes(text)
+        self._checkpoint_notes()
+        self._refresh_notes_state()
+        return True
+
+    def recheck_notes_original(self, profile: str, expected: str) -> NotesOriginalSnapshot | None:
+        """Read a protected original for review without changing either copy."""
+        if (profile not in _PROFILE_NOTES_FILES
+                or self._pending_notes.get(profile) != expected
+                or profile not in self._unreadable_notes | self._recovery_conflicts):
+            return None
+        try:
+            text = _read_bounded_notes(_persistence_home() / _PROFILE_NOTES_FILES[profile])
+        except (OSError, ValueError):
+            return None
+        if text is None or self._pending_notes.get(profile) != expected:
+            return None
+        return NotesOriginalSnapshot(
+            profile, text, notes_fingerprint(text), notes_fingerprint(expected),
+        )
+
+    def export_draft_and_use_original(
+        self, profile: str, expected: str, original: NotesOriginalSnapshot, path: str,
+    ) -> bool:
+        """Keep a durable draft copy before adopting an unchanged saved original."""
+        if (not path or not isinstance(original, NotesOriginalSnapshot)
+                or profile not in _PROFILE_NOTES_FILES
+                or original.profile_key != profile
+                or original.draft_fingerprint != notes_fingerprint(expected)
+                or original.fingerprint != notes_fingerprint(original.text)
+                or self._pending_notes.get(profile) != expected):
+            return False
+        saved_path = _persistence_home() / _PROFILE_NOTES_FILES[profile]
+
+        def still_matches() -> bool:
+            try:
+                saved = _read_bounded_notes(saved_path)
+            except (OSError, ValueError):
+                return False
+            return (
+                self._pending_notes.get(profile) == expected
+                and saved is not None and notes_fingerprint(saved) == original.fingerprint
+            )
+
+        if not still_matches():
+            return False
+        # Export without acknowledging the pending draft yet. A file picker
+        # or writer may have allowed a newer draft or external original to
+        # arrive; neither can be acknowledged with these older bytes.
+        self.export_notes_copy(expected, path)
+        if not still_matches():
+            return False
+        self._settled_notes[profile] = original.text
+        self._notes_baselines[profile] = original.fingerprint
+        self._pending_notes.pop(profile)
+        self._unconfirmed_notes.discard(profile)
+        self._recovered_notes.discard(profile)
+        self._recovery_conflicts.discard(profile)
+        self._unreadable_notes.discard(profile)
+        self._notes_save_failures.pop(profile, None)
+        self._exported_profiles.discard(profile)
+        if profile == self._creator_profile_key:
+            self._canvas.restore_notes(original.text)
         self._checkpoint_notes()
         self._refresh_notes_state()
         return True

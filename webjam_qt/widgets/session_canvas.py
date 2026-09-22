@@ -49,6 +49,16 @@ _NOTES_RECOVERY_COPY = {
         "Recovered draft needs a separate copy. Choose Save Notes to review and export it."
     ),
 }
+_NOTES_SAVE_MESSAGES = {
+    "saved": "Saved on this computer",
+    **_NOTES_RECOVERY_COPY,
+    "unreadable": "Saved notes could not be opened. The original is unchanged.",
+    "exported": "Draft exported to your chosen file.",
+    "recovery_unavailable": (
+        "A recovery copy could not be used safely. "
+        "You can still save or export your current notes."
+    ),
+}
 
 
 class SessionCanvas(QFrame):
@@ -486,13 +496,7 @@ class SessionCanvas(QFrame):
         return self._notes.toPlainText()
 
     def set_notes_save_state(self, state: str) -> None:
-        messages = {
-            "saved": "Saved on this computer",
-            **_NOTES_RECOVERY_COPY,
-            "unreadable": "Saved notes could not be opened. The original is unchanged.",
-            "exported": "Draft exported to your chosen file.",
-        }
-        if state not in messages:
+        if state not in _NOTES_SAVE_MESSAGES:
             raise ValueError("Unknown local notes save state.")
         if state == self._notes_save_state:
             return
@@ -517,17 +521,11 @@ class SessionCanvas(QFrame):
 
     def _render_notes_save_state(self) -> None:
         state = self._notes_save_state
-        messages = {
-            "saved": "Saved on this computer",
-            **_NOTES_RECOVERY_COPY,
-            "unreadable": "Saved notes could not be opened. The original is unchanged.",
-            "exported": "Draft exported to your chosen file.",
-        }
         summary = self._notes_recovery_summary
         failures = tuple((key, reason) for key, reason in summary if reason != "pending")
         needs_attention = bool(failures) or state in set(_NOTES_RECOVERY_COPY) - {"pending"}
-        self._notes_need_attention = needs_attention
-        message = messages[state]
+        self._notes_need_attention = needs_attention or state == "recovery_unavailable"
+        message = _NOTES_SAVE_MESSAGES[state]
         description = message
         selected_reason = state
         workspace_names = ", ".join(_NOTES_WORKSPACE_LABELS[key] for key, _ in summary)
@@ -562,14 +560,16 @@ class SessionCanvas(QFrame):
             recovery_description = f"Recover local drafts for {workspace_names}. {recovery_description}"
         self._save_notes_button.setToolTip(recovery_description)
         self._save_notes_button.setAccessibleDescription(recovery_description)
-        self._notes_save_status.setVisible(needs_attention or state in {"unreadable", "exported"})
+        self._notes_save_status.setVisible(
+            needs_attention or state in {"unreadable", "exported", "recovery_unavailable"}
+        )
         for button in getattr(self, "_normal_notes_buttons", ()):
             button.setVisible(not needs_attention)
         self._save_notes_button.setVisible(needs_attention)
         # A save failure belongs beside the draft, above optional suggestions.
         # Keep the editor and recovery reachable at the compact window floor.
         if hasattr(self, "_pulse"):
-            self._pulse.setVisible(not needs_attention)
+            self._pulse.setVisible(not self._notes_need_attention)
         self._sync_suggestion_layout()
 
     def set_session_pulse(self, pulse: SessionPulse) -> None:

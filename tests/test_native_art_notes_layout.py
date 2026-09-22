@@ -68,7 +68,9 @@ def _assert_real_notes_fit(window):
 
 
 @pytest.mark.parametrize("size", [(720, 560), (760, 600), (1040, 720)])
-@pytest.mark.parametrize("save_state", ["saved", "failed", "protected_original"])
+@pytest.mark.parametrize("save_state", [
+    "saved", "failed", "protected_original", "recovery_unavailable",
+])
 @pytest.mark.parametrize("retained_workspaces", [
     (),
     (("music", "disk_full"),),

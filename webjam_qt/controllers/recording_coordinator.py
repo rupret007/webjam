@@ -5216,12 +5216,14 @@ class RecordingCoordinator:
                     "Local Original choice before recording. No recorder was started."
                 ),
                 likely_cause=(
-                    "A guest may still be joining, may use an older WebJam build, "
-                    "or may have changed their input map during preflight."
+                    "A guest's current Local Original input and track choice "
+                    "could not be verified, or their recording presence is not current."
                 ),
                 next_action=(
-                    "Ask every guest to finish joining with the latest WebJam, "
-                    "wait for the participant list to settle, then retry."
+                    "Ask guests to check Recording Setup for their Local Original "
+                    "inputs and tracks, or turn optional Local Originals off. "
+                    "After everyone has finished joining and the participant "
+                    "list settles, retry Record Session."
                 ),
                 retry_callback=self._c._on_record_requested,
             )

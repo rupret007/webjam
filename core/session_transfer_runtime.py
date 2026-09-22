@@ -20,6 +20,7 @@ import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
 from core.network_invite import BandInvite, create_invite_link
@@ -60,6 +61,9 @@ from core.session_transfer import (
     derive_participant_id,
     load_or_create_installation_id,
 )
+
+if TYPE_CHECKING:
+    from core.local_capture import LocalCapturePreflight
 
 LOGGER = logging.getLogger("webjam.session_transfer")
 _POLL_SECONDS = 0.75
@@ -2764,6 +2768,8 @@ class GuestPeerSession:
         ) = None
         self._capture_finalization_needs_attention = False
         self._guidance_notification_generation = 0
+        self._local_capture_preflight: LocalCapturePreflight | None = None
+        self._local_capture_preflight_generation = 0
         self._pending: list[PendingLocalSegment] = []
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -2804,6 +2810,32 @@ class GuestPeerSession:
         """Whether capture finalization has an indeterminate durable outcome."""
 
         return bool(getattr(self, "_capture_finalization_needs_attention", False))
+
+    @property
+    def local_capture_preflight(self) -> LocalCapturePreflight | None:
+        """Latest local-only failure; never changes the authenticated contract."""
+
+        with self._lock:
+            return self._local_capture_preflight
+
+    def _set_local_capture_preflight(
+        self, preflight: LocalCapturePreflight | None, generation: int,
+    ) -> None:
+        with self._lock:
+            if generation != self._local_capture_preflight_generation:
+                return
+            previous = self._local_capture_preflight
+            self._local_capture_preflight = preflight
+            previous_key = (
+                (previous.errors, previous.required_input_channels)
+                if previous is not None else None
+            )
+            current_key = (
+                (preflight.errors, preflight.required_input_channels)
+                if preflight is not None else None
+            )
+        if previous_key != current_key:
+            self._notify_guidance_changed()
 
     @property
     def pending_segments(self) -> tuple[PendingLocalSegment, ...]:
@@ -2900,12 +2932,34 @@ class GuestPeerSession:
         fails closed instead of silently treating a bad map as zero tracks.
         """
 
-        requested = (
-            bool(self.capture_enabled()) if capture_enabled is None else capture_enabled
-        )
+        from core.local_capture import LocalCapturePreflightError
+
+        with self._lock:
+            self._local_capture_preflight_generation += 1
+            generation = self._local_capture_preflight_generation
+        try:
+            requested = (
+                bool(self.capture_enabled()) if capture_enabled is None else capture_enabled
+            )
+        except Exception:
+            self._set_local_capture_preflight(
+                LocalCapturePreflightError(None).preflight, generation,
+            )
+            raise
         if type(requested) is not bool:
             raise ValueError("capture_enabled must be a boolean.")
         if not requested:
+            # A cached roster override is not evidence that the current
+            # effective preference opted out (an environment override may win).
+            try:
+                effective_opt_out = capture_enabled is None or not bool(self.capture_enabled())
+            except Exception:
+                effective_opt_out = False
+                self._set_local_capture_preflight(
+                    LocalCapturePreflightError(None).preflight, generation,
+                )
+            if effective_opt_out:
+                self._set_local_capture_preflight(None, generation)
             return False, 0, _ZERO_LOCAL_ORIGINAL_MAP_FINGERPRINT, (), (), ()
         try:
             tracks = (
@@ -2914,6 +2968,7 @@ class GuestPeerSession:
                 else None
             )
             if tracks == ():
+                self._set_local_capture_preflight(None, generation)
                 return False, 0, _ZERO_LOCAL_ORIGINAL_MAP_FINGERPRINT, tracks, (), ()
             from core.local_capture import (
                 bind_local_capture_logical_sources,
@@ -2931,6 +2986,7 @@ class GuestPeerSession:
             fingerprint = local_capture_track_map_fingerprint(tracks)
             channel_counts = tuple(int(track.channel_count) for track in tracks)
             source_ids = tuple(str(track.logical_source_id) for track in tracks)
+            self._set_local_capture_preflight(None, generation)
             return (
                 True,
                 len(tracks),
@@ -2939,7 +2995,13 @@ class GuestPeerSession:
                 channel_counts,
                 source_ids,
             )
+        except LocalCapturePreflightError as exc:
+            self._set_local_capture_preflight(exc.preflight, generation)
+            return True, None, "", None, (), ()
         except Exception:  # noqa: BLE001 - local names/paths stay private
+            self._set_local_capture_preflight(
+                LocalCapturePreflightError(None).preflight, generation,
+            )
             return True, None, "", None, (), ()
 
     def observe_presence_v2(

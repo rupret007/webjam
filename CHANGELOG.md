@@ -27,9 +27,16 @@ All notable improvements and features for the WebJam creator collaboration platf
   unexpected exit. Recovered drafts require explicit review; changed or
   unreadable originals stay protected. Editing updates recovery-copy status,
   and ordinary Notes/brief exports cannot overwrite originals or checkpoints.
+- Recheck Saved Notes previews a repaired or changed original without writing
+  it. Export the retained draft before reopening that saved version; failed
+  exports and changed revisions preserve recovery. Unusable recovery copies
+  show a notice while ordinary notes saving and export remain available.
 - Record Session identifies input-channel, track-map, device/format, and audio
   setting blockers. Recording Setup offers the available recovery controls and
   an explicit Local Originals opt-out, then checks a fresh plan before Start.
+- Guests see their own specific Local Original input failure in Studio and can
+  open Recording Setup. Host recording stays blocked until fresh presence
+  verifies the choice; repeated unchanged checks preserve keyboard focus.
 - Recording storage recovery explains when the session must end before
   changing Takes folders. Retry checks a new take plan with current inputs
   and participants before any recording starts.

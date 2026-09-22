@@ -97,6 +97,12 @@ of promising an unavailable setting. After setup, choose **Record Session**
 again for a new plan and checks; an old readiness result cannot enable
 recording after the source selection changes.
 
+Guests see their own input check's specific reason in Studio, with **Recording
+Setup** available to repair the input or track choice. The host's recording
+check remains blocked until fresh guest presence verifies the current choice;
+an unavailable input is never treated as an intentional opt-out. Repeated
+unchanged checks keep keyboard focus in the current editor or setup control.
+
 An opted-in guest is not treated as armed merely because its recent presence
 proof was Ready. After acceptance, the host sends that required participant a
 private, take-scoped arm bound to the immutable plan fingerprint and exact

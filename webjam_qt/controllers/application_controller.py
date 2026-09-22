@@ -41,7 +41,11 @@ from core.jamulus_rpc_client import (
     JamulusOrderedRosterProof,
     JamulusRpcMonitorIdentity,
 )
-from core.local_capture import LocalCaptureTrack, check_local_capture_preflight
+from core.local_capture import (
+    LocalCapturePreflight, LocalCapturePreflightError, LocalCaptureTrack,
+    check_local_capture_preflight,
+)
+from core.recording_readiness_presentation import local_capture_readiness_detail
 from core.meeting_companion import art_watch_share_sentence, build_invite_message
 from core.musician_guidance import (
     GuidanceDisplayOverride,
@@ -1429,10 +1433,16 @@ class ApplicationController(QObject):
                         # unknown-topology proof. The host then blocks Ready;
                         # it must never reinterpret an unavailable device as an
                         # intentional zero-track opt-out.
-                        raise RuntimeError("guest Local Original preflight failed")
+                        raise LocalCapturePreflightError(preflight)
                 return tracks
 
-            self.guest_peer = GuestPeerSession(
+            guest_peer = None
+
+            def guest_guidance_changed() -> None:
+                if guest_peer is not None:
+                    self._on_guest_media_guidance_changed(expected_guest=guest_peer)
+
+            guest_peer = GuestPeerSession(
                 invite,
                 display_name=self.settings.musician_name,
                 takes_root=(
@@ -1450,8 +1460,9 @@ class ApplicationController(QObject):
                 ),
                 capture_tracks=guest_capture_tracks,
                 on_originals_changed=self._on_guest_originals_changed,
-                on_guidance_changed=self._on_guest_media_guidance_changed,
+                on_guidance_changed=guest_guidance_changed,
             )
+            self.guest_peer = guest_peer
             self._on_guest_originals_changed(self.guest_peer.originals_root)
             if self.guest_peer.recovered_captures:
                 self.window.flash_message(
@@ -1770,13 +1781,36 @@ class ApplicationController(QObject):
 
         self._ui_invoker.invoke(refresh)
 
-    def _on_guest_media_guidance_changed(self) -> None:
+    def _on_guest_media_guidance_changed(self, *, expected_guest=None) -> None:
         """Refresh transfer guidance without treating it as a file change."""
 
+        guest = (
+            expected_guest if expected_guest is not None
+            else getattr(self, "guest_peer", None)
+        )
+        if guest is None or guest is not getattr(self, "guest_peer", None):
+            return
+
         def refresh() -> None:
-            if not self._shutdown:
-                self._render_guest_peer_state()
-                self._update_session_hud()
+            if self._shutdown or guest is not getattr(self, "guest_peer", None):
+                return
+            self._render_guest_peer_state()
+            studio = self.window.recording_studio
+            signal = getattr(
+                getattr(getattr(guest, "last_state", None), "signal", None),
+                "value", "idle",
+            )
+            if (
+                not bool(getattr(self.settings, "host_server_enabled", False))
+                and not bool(getattr(guest, "active_take_id", ""))
+                and not bool(getattr(guest, "capture_finalization_needs_attention", False))
+                and signal not in {"recording", "finalizing", "needs_attention"}
+                and not studio.guidance_facts().take_selected
+            ):
+                # A pre-take remedy must not replace current capture,
+                # preservation, or selected-take review guidance.
+                studio.set_can_record(False, self._guest_recording_reason())
+            self._update_session_hud()
 
         self._ui_invoker.invoke(refresh)
 
@@ -2351,6 +2385,23 @@ class ApplicationController(QObject):
 
     def _guest_recording_reason(self) -> str:
         if self._local_originals_available():
+            guest = getattr(self, "guest_peer", None)
+            preflight = getattr(guest, "local_capture_preflight", None)
+            signal = getattr(
+                getattr(getattr(guest, "last_state", None), "signal", None),
+                "value", "idle",
+            )
+            if (
+                isinstance(preflight, LocalCapturePreflight)
+                and not preflight.ready
+                and not bool(getattr(guest, "active_take_id", ""))
+                and not bool(getattr(guest, "capture_finalization_needs_attention", False))
+                and signal not in {"recording", "finalizing", "needs_attention"}
+            ):
+                return local_capture_readiness_detail(
+                    preflight.errors,
+                    required_input_channels=preflight.required_input_channels,
+                )
             return (
                 "The host controls take start and stop. Local Originals are "
                 "optional in Recording Setup."

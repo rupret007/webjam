@@ -3,11 +3,73 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFileDialog, QLabel, QTextEdit, QVBoxLayout,
+    QComboBox, QDialog, QDialogButtonBox, QFileDialog, QLabel, QPushButton, QTextEdit, QVBoxLayout,
 )
 
 from core.creative_modes import get_creator_profile_by_key_or_default
-from webjam_qt.controllers.session_persistence import notes_save_failure_state
+from webjam_qt.controllers.session_persistence import NotesOriginalSnapshot, notes_save_failure_state
+
+
+def _export_failure_message(error: Exception) -> str:
+    return {
+        "disk_full": (
+            "There is not enough storage to confirm the copy is saved. "
+            "Free up space or choose a file on another drive and try again."
+        ),
+        "permission_denied": (
+            "WebJam does not have permission to save the copy here. "
+            "Choose another file in a writable folder and try again."
+        ),
+        "read_only": (
+            "The copy destination is read-only. "
+            "Choose another file on a writable drive and try again."
+        ),
+        "failed": (
+            "The copy could not be confirmed saved. "
+            "Choose another file and try again."
+        ),
+    }[notes_save_failure_state(error)]
+
+
+class NotesOriginalPreviewDialog(QDialog):
+    """Review a saved original before exporting the retained draft and using it."""
+
+    def __init__(self, original: NotesOriginalSnapshot, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Review saved notes")
+        self.resize(560, 420)
+        title = QLabel(f"Saved {get_creator_profile_by_key_or_default(original.profile_key).label} notes")
+        title.setTextFormat(Qt.TextFormat.PlainText)
+        self._message = QLabel()
+        self._message.setTextFormat(Qt.TextFormat.PlainText)
+        self._message.setWordWrap(True)
+        self.set_message(
+            "Keep both versions: export your draft to a separate file, then reopen "
+            "these saved notes. The saved file will not be changed."
+        )
+        self._preview = QTextEdit()
+        self._preview.setAcceptRichText(False)
+        self._preview.setReadOnly(True)
+        self._preview.setPlainText(original.text)
+        self._preview.setAccessibleName("Current saved notes")
+        self._preview.setAccessibleDescription("Read-only preview of the saved notes. Your draft is kept separately.")
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        self._adopt = buttons.addButton(
+            "Export Draft && Use Saved Notes…", QDialogButtonBox.ButtonRole.ActionRole,
+        )
+        self._adopt.setObjectName("PrimaryButton")
+        self._adopt.setAccessibleName("Export Draft & Use Saved Notes")
+        self._adopt.setAccessibleDescription(
+            "Save your retained draft to another file, then reopen these saved notes without replacing them."
+        )
+        buttons.rejected.connect(self.reject)
+        layout = QVBoxLayout(self)
+        for widget in (title, self._message, self._preview, buttons):
+            layout.addWidget(widget)
+
+    def set_message(self, message: str) -> None:
+        self._message.setText(message)
+        self._message.setAccessibleDescription(message)
 
 
 class NotesRecoveryDialog(QDialog):
@@ -28,6 +90,14 @@ class NotesRecoveryDialog(QDialog):
         self._editor = QTextEdit()
         self._editor.setAcceptRichText(False)
         self._editor.setAccessibleName("Retained local notes")
+        self._recheck = QPushButton("Recheck Saved Notes", self)
+        self._recheck.setObjectName("GhostButton")
+        self._recheck.setAccessibleDescription(
+            "Read the currently saved notes without changing your draft or the saved file."
+        )
+        self._recheck.clicked.connect(self._recheck_current)
+        self._recheck.ensurePolished()
+        self._recheck.adjustSize()
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         self._save = buttons.addButton("Save Notes", QDialogButtonBox.ButtonRole.ActionRole)
         self._export = buttons.addButton("Export Copy…", QDialogButtonBox.ButtonRole.ActionRole)
@@ -35,7 +105,7 @@ class NotesRecoveryDialog(QDialog):
         self._export.clicked.connect(self._export_current)
         buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
-        for widget in (self._message, self._profile, self._editor, buttons):
+        for widget in (self._message, self._profile, self._recheck, self._editor, buttons):
             layout.addWidget(widget)
         self._selected = None
         self._profile.currentIndexChanged.connect(self._select)
@@ -58,12 +128,13 @@ class NotesRecoveryDialog(QDialog):
             message = (
                 "The original notes could not be opened and will not be overwritten. "
                 "Choose Export Copy to save this draft to another file. "
-                "Your collaboration session stays open."
+                "After fixing access, choose Recheck Saved Notes to review the original."
             )
         elif state == "recovery_conflict":
             message = (
                 "The recovered draft could not be safely matched to the current saved notes. "
-                "Choose Export Copy to keep both versions. The saved notes will not be replaced."
+                "Choose Export Copy to keep both versions, or Recheck Saved Notes to review "
+                "the current original. The saved notes will not be replaced."
             )
         elif state == "recovered":
             message = (
@@ -114,6 +185,7 @@ class NotesRecoveryDialog(QDialog):
             )
         self._set_message(message)
         protected = state in {"protected_original", "recovery_conflict"}
+        self._recheck.setVisible(protected)
         self._save.setEnabled(not protected)
         self._save.setToolTip(
             "The original cannot be overwritten. Choose Export Copy."
@@ -176,6 +248,49 @@ class NotesRecoveryDialog(QDialog):
         else:
             self._show_recovery_guidance()
 
+    def _recheck_current(self) -> None:
+        draft = self._retain_current()
+        if draft is None:
+            return
+        original = self._persistence.recheck_notes_original(*draft)
+        if original is None:
+            self._set_message(
+                "Saved notes still cannot be opened safely. Check file access and try "
+                "Recheck Saved Notes again, or choose Export Copy to keep your draft."
+            )
+            return
+        preview = NotesOriginalPreviewDialog(original, self)
+        preview._adopt.clicked.connect(
+            lambda: self._export_and_use_original(draft, original, preview)
+        )
+        preview.exec()
+
+    def _export_and_use_original(
+        self, draft: tuple[str, str], original: NotesOriginalSnapshot,
+        preview: NotesOriginalPreviewDialog,
+    ) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            preview, "Export retained draft before using saved notes", "webjam_notes_draft.md",
+            "Markdown (*.md);;Text (*.txt)",
+        )
+        if not path:
+            return
+        try:
+            adopted = self._persistence.export_draft_and_use_original(*draft, original, path)
+        except (OSError, ValueError) as exc:
+            preview.set_message(_export_failure_message(exc))
+            return
+        if not adopted:
+            preview.set_message(
+                "The draft or saved notes changed. Cancel this preview, then Close "
+                "and choose Save Notes again to review the current versions. "
+                "No saved notes were replaced."
+            )
+            preview._adopt.setEnabled(False)
+            return
+        preview.accept()
+        self._remove_current()
+
     def _export_current(self) -> None:
         profile, text = self._selected, self._editor.toPlainText()
         expected = self._originals.get(profile)
@@ -198,25 +313,7 @@ class NotesRecoveryDialog(QDialog):
             if not acknowledged:
                 self._persistence.export_notes_copy(text, path)
         except (OSError, ValueError) as exc:
-            messages = {
-                "disk_full": (
-                    "There is not enough storage to confirm the copy is saved. "
-                    "Free up space or choose a file on another drive and try again."
-                ),
-                "permission_denied": (
-                    "WebJam does not have permission to save the copy here. "
-                    "Choose another file in a writable folder and try again."
-                ),
-                "read_only": (
-                    "The copy destination is read-only. "
-                    "Choose another file on a writable drive and try again."
-                ),
-                "failed": (
-                    "The copy could not be confirmed saved. "
-                    "Choose another file and try again."
-                ),
-            }
-            self._set_message(messages[notes_save_failure_state(exc)])
+            self._set_message(_export_failure_message(exc))
             return
         self._remove_current()
 

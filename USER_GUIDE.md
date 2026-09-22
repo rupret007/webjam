@@ -58,6 +58,14 @@ review. Choose **Save Notes** to review and explicitly save a recovered draft,
 or **Export Copy…** to keep it separately. If the saved original changed or
 cannot be read safely, recovery preserves it and offers export instead.
 
+After fixing access to a protected original, choose **Recheck Saved Notes**.
+Review the saved version without changing it, then choose **Export Draft & Use
+Saved Notes…** to keep your draft in a separate file before reopening the saved
+version. Cancellation, a failed export, or either version changing keeps the
+draft available. Recheck also lets you compare a recovered draft with a changed
+original. If an older recovery copy cannot be used safely, Notes shows a notice;
+ordinary saving and exporting remain available.
+
 Restart recovery covers the last confirmed copy, not every keystroke. The
 recovery window tells you whether its current text has a confirmed copy;
 editing that text updates the message. Full or read-only storage can prevent

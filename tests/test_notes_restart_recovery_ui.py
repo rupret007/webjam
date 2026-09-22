@@ -6,6 +6,7 @@ import errno
 import os
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from core import file_io
 from core.creative_modes import get_creator_profile_by_key_or_default
+from tests.test_native_art_activities import native_room as _native_room_fixture
 from webjam_qt.controllers import session_persistence as persistence_module
 from webjam_qt.controllers.application_controller import ApplicationController
 from webjam_qt.controllers.session_persistence import SessionPersistence
@@ -29,6 +31,7 @@ JOURNAL_FILE = ".webjam_notes.recovery.json"
 SAVED = "Earlier saved music notes"
 DRAFT = "A recovered verse\n\nKeep the quieter ending for tomorrow."
 ART = "Art notes already saved"
+native_room = _native_room_fixture
 
 
 @pytest.fixture(scope="module")
@@ -210,6 +213,67 @@ def test_newer_edit_during_picker_survives_export_of_recovered_snapshot(
     assert not pair.owner._save_notes_only()
     _, restarted = pair.fresh()
     assert restarted.unsaved_notes == (("music", newer),)
+
+
+def test_confirmed_restart_checkpoint_vetoes_real_quit_until_reviewed_save(
+    native_room, qapp, tmp_path, monkeypatch,
+):
+    from core.notes_recovery import NotesRecoveryDraft, notes_fingerprint, write_notes_recovery
+
+    monkeypatch.setattr(persistence_module, "_persistence_home", lambda: tmp_path)
+    (tmp_path / MUSIC_FILE).write_text(SAVED)
+    (tmp_path / ".webjam_notes.art.md").write_text(ART)
+    write_notes_recovery(
+        tmp_path / JOURNAL_FILE,
+        {"music": NotesRecoveryDraft(DRAFT, notes_fingerprint(SAVED))},
+        expected={},
+    )
+    pair = native_room(profile="art")
+    app = pair.app
+    owner = app._persistence
+    room = app._room_participant
+    before_room = (room.state, room.generation, room.native_source)
+    app.bridge.stop_jamulus = mock.Mock(return_value=True)
+    app._record_toggle_worker = mock.Mock()
+    assert owner.notes_restart_recovery_state("music") == "confirmed"
+    assert owner.notes_recovery_requires_review("music")
+    assert owner.profile_key == app._active_creator_profile_key == "art"
+    assert app.window.session_canvas.current_notes() == ART
+
+    with (
+        mock.patch.object(app._room_help, "shutdown") as stop_room_help,
+        mock.patch.object(app, "_stop_remote_transport") as stop_transport,
+        mock.patch.object(app, "_quiesce_startup_for_shutdown") as quiesce,
+    ):
+        assert app.shutdown() is False
+        stop_room_help.assert_not_called()
+        stop_transport.assert_not_called()
+        quiesce.assert_not_called()
+    assert app._shutdown is False
+    assert app._shutdown_in_progress is False
+    assert app._shutdown_cleanup_pending is False
+    assert app._room_participant is room
+    assert (room.state, room.generation, room.native_source) == before_room
+    assert owner.profile_key == app._active_creator_profile_key == "art"
+    assert app.window.session_canvas.current_notes() == ART
+    assert owner.unsaved_notes == (("music", DRAFT),)
+    assert (tmp_path / MUSIC_FILE).read_text() == SAVED
+    app.bridge.stop_jamulus.assert_not_called()
+    app._record_toggle_worker.assert_not_called()
+    assert not app._recorder_armed and not app._server_recording
+
+    dialog = _dialog(owner, app.window, qapp)
+    assert dialog._profile.currentData() == "music"
+    assert dialog._save.isEnabled()
+    dialog._save.click()
+    assert dialog.result() == dialog.DialogCode.Accepted
+    assert (tmp_path / MUSIC_FILE).read_text() == DRAFT
+    assert not owner.has_unsaved_notes
+    assert owner.profile_key == "art"
+    assert app.window.session_canvas.current_notes() == ART
+    assert app.shutdown()
+    assert app._shutdown
+    app._record_toggle_worker.assert_not_called()
 
 
 @pytest.mark.parametrize("state", ["recovered", "conflict", "unconfirmed"])
