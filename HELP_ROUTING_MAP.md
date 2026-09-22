@@ -1,4 +1,4 @@
-# WebJam help routing — v0.28.1 source
+# WebJam help routing — v0.28.2 source
 
 > The exact released source commit for immutable GitHub **Latest** release
 > `393030220` is `200cac9eb04d01611696cdc147957b36daef257f`; annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peels to it,

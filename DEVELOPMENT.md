@@ -1,6 +1,6 @@
-# Developing WebJam v0.28.1
+# Developing WebJam v0.28.2
 
-> **Current source line:** this guide describes v0.28.1 source. GitHub
+> **Current source line:** this guide describes v0.28.2 source. GitHub
 > **Latest** is immutable unsigned/ad-hoc private test release `393030220`,
 > published `2026-09-21T14:30:22Z` from annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to
 > exact commit `200cac9eb04d01611696cdc147957b36daef257f`. A checkout or branch artifact remains source

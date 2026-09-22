@@ -1,4 +1,4 @@
-"""Published unsigned v0.28.1 Latest; older release entries deleted by owner."""
+"""Unsigned v0.28.2 candidate; GitHub Latest remains published v0.28.1."""
 
 from __future__ import annotations
 
@@ -36,15 +36,15 @@ COMPONENT_UPDATE_SOURCE = (ROOT / "services" / "jamulus_component_update.py").re
 )
 
 
-def test_v0281_candidate_while_v0280_remains_github_latest() -> None:
+def test_v0282_candidate_while_v0281_remains_github_latest() -> None:
     match = re.search(
         r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$',
         VERSION_SOURCE,
         re.MULTILINE,
     )
     assert match is not None
-    assert match.group(1) == "0.28.1"
-    assert application_version() == "0.28.1"
+    assert match.group(1) == "0.28.2"
+    assert application_version() == "0.28.2"
     assert README.startswith(
         "# WebJam\n\n## Native creator collaboration and multitrack recording"
     )
@@ -67,7 +67,7 @@ def test_v0281_candidate_while_v0280_remains_github_latest() -> None:
     assert "v0.28.1 private test release" in normalized
     assert "release ID `393030220`" in normalized
     assert "Source boundary:" in normalized
-    assert "reports unsigned v0.28.1" in normalized
+    assert "reports unsigned v0.28.2" in normalized
     assert "No annotated `v0.28.0` tag" not in normalized
     assert "candidate prep for unsigned **v0.28.0**" not in normalized
     assert "commits ahead" not in normalized
@@ -102,30 +102,30 @@ def test_v0281_candidate_while_v0280_remains_github_latest() -> None:
 def test_runtime_sbom_names_the_exact_desktop_version() -> None:
     component = SBOM["metadata"]["component"]
     assert component == {
-        "bom-ref": "pkg:generic/webjam@0.28.1",
+        "bom-ref": "pkg:generic/webjam@0.28.2",
         "name": "WebJam",
-        "purl": "pkg:generic/webjam@0.28.1",
+        "purl": "pkg:generic/webjam@0.28.2",
         "type": "application",
-        "version": "0.28.1",
+        "version": "0.28.2",
     }
 
 
 def test_component_sbom_names_the_exact_desktop_version() -> None:
     component = COMPONENT_SBOM["metadata"]["component"]
     assert component == {
-        "bom-ref": "pkg:generic/webjam@0.28.1",
+        "bom-ref": "pkg:generic/webjam@0.28.2",
         "group": "rupret007",
         "name": "WebJam",
-        "purl": "pkg:generic/webjam@0.28.1",
+        "purl": "pkg:generic/webjam@0.28.2",
         "type": "application",
-        "version": "0.28.1",
+        "version": "0.28.2",
     }
     properties = {
         item["name"]: item["value"]
         for item in COMPONENT_SBOM["metadata"]["properties"]
     }
     assert properties["webjam:current-source-authorization"] == (
-        "baked-jamulus-records-approved-through-webjam-0.28.1"
+        "baked-jamulus-records-approved-through-webjam-0.28.2"
     )
     assert properties["webjam:build-eligibility"] == (
         "source-and-package-published-unsigned-test-only"
@@ -143,7 +143,7 @@ def test_payload_reuses_the_approved_v0280_records() -> None:
         validity_days=30,
     )
     components = payload["components"]
-    assert payload["webjam_version"] == "0.28.1"
+    assert payload["webjam_version"] == "0.28.2"
     assert payload["sequence"] == synthetic_sequence
     assert isinstance(components, list)
     expected = {
@@ -159,14 +159,18 @@ def test_payload_reuses_the_approved_v0280_records() -> None:
     assert all(component["version"] == "3.12.3" for component in components)
     assert all(component["variant"] == "official" for component in components)
     assert all(
-        component["webjam_range"]["maximum"] == "0.28.1" for component in components
+        component["webjam_range"]["maximum"] == "0.28.2" for component in components
     )
     assert all(
         entry.supports_webjam(payload["webjam_version"])
         for entry in official_jamulus_compatibility_registry().entries
     )
-    assert not any(
+    assert all(
         entry.supports_webjam("0.28.2")
+        for entry in official_jamulus_compatibility_registry().entries
+    )
+    assert not any(
+        entry.supports_webjam("0.28.3")
         for entry in official_jamulus_compatibility_registry().entries
     )
     assert "assert all(entry.supports_webjam(__version__)" in CI_WORKFLOW
@@ -174,35 +178,35 @@ def test_payload_reuses_the_approved_v0280_records() -> None:
 
 def test_current_guides_separate_v0281_latest_from_historical() -> None:
     expected = {
-        "ARCHITECTURE.md": "# WebJam architecture — v0.28.1 source",
+        "ARCHITECTURE.md": "# WebJam architecture — v0.28.2 source",
         "CHANGELOG.md": (
             "## [0.25.0] — Creator profiles and authoritative multitrack "
             "private test candidate"
         ),
         "CLOSED_PILOT_PLAYBOOK.md": "v0.22.5 private test candidate",
         "CREATIVE_MODES_MVP_SPEC.md": (
-            "# Creator profiles — v0.28.1 implemented contract"
+            "# Creator profiles — v0.28.2 implemented contract"
         ),
-        "DEVELOPMENT.md": "# Developing WebJam v0.28.1",
+        "DEVELOPMENT.md": "# Developing WebJam v0.28.2",
         "FIRST_JAM.md": "release `393030220`",
-        "HELP_ROUTING_MAP.md": "# WebJam help routing — v0.28.1 source",
-        "QUICK_HELP_MAP.md": "# WebJam quick help — v0.28.1 source",
+        "HELP_ROUTING_MAP.md": "# WebJam help routing — v0.28.2 source",
+        "QUICK_HELP_MAP.md": "# WebJam quick help — v0.28.2 source",
         "README.md": "release ID `393030220`",
         "README_SIMPLE.md": "393030220",
-        "RECORDING_AND_STUDIO.md": "# Recording and Studio — v0.28.1 source",
+        "RECORDING_AND_STUDIO.md": "# Recording and Studio — v0.28.2 source",
         "SECURITY.md": "393030220",
-        "TEST_PROCEDURE.md": "# WebJam v0.28.1 source test procedure",
-        "USER_GUIDE.md": "# WebJam creator guide — v0.28.1 source",
-        "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.28.1 source UX acceptance checklist",
+        "TEST_PROCEDURE.md": "# WebJam v0.28.2 source test procedure",
+        "USER_GUIDE.md": "# WebJam creator guide — v0.28.2 source",
+        "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.28.2 source UX acceptance checklist",
         "V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md": (
             "v0.25.0 was GitHub **Latest**"
         ),
         "WEBEX_AUDIO_MODES.md": (
-            "# Meeting-platform companion guidance — v0.28.1 source"
+            "# Meeting-platform companion guidance — v0.28.2 source"
         ),
         "docs/DESKTOP_RELEASE_RUNBOOK.md": "v0.28.1 published testing boundary",
         "docs/JAMULUS_COMPONENT_RELEASE_RUNBOOK.md": (
-            "v0.28.1 published fallback-only desktop state"
+            "v0.28.2 candidate fallback-only desktop state"
         ),
         "docs/MERGE_AND_RELEASE.md": "Published testing boundary:",
         "docs/PROJECT_BRIEF.md": "393030220",
@@ -216,7 +220,7 @@ def test_current_guides_separate_v0281_latest_from_historical() -> None:
         "V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md": (
             "Immutable historical release `367773776`, tag `v0.23.0`"
         ),
-        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": "v0.28.1 source guide",
+        "docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md": "v0.28.2 source guide",
     }
     for relative_path, marker in expected.items():
         assert marker in (ROOT / relative_path).read_text(encoding="utf-8")

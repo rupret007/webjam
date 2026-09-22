@@ -66,7 +66,7 @@
 > jamulus-components-v1/v2/v3 stay. A future managed update requires a new
 > fixed channel and the complete procedure below.
 
-> **v0.28.1 published fallback-only desktop state:** sealed v3 still authorizes
+> **v0.28.2 candidate fallback-only desktop state:** sealed v3 still authorizes
 > exact WebJam 0.22.5 only and cannot authorize a managed 0.28.1 component.
 > The source registry extends the unchanged audited 3.12.2/3.12.3 identities
 > through exact WebJam 0.28.1, so the embedded fallback remains known.
