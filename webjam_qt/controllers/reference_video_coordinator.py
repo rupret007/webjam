@@ -60,6 +60,7 @@ class ReferenceVideoCoordinator:
         self,
         *,
         player_factory: Callable[[], ReferenceVideoPlayer],
+        youtube_player_factory: Callable[[], ReferenceVideoPlayer] | None = None,
         host_peer_provider: Callable[[], Any] = lambda: None,
         clock: Callable[[], float] = time.monotonic,
         on_host_snapshot: Callable[[ReferenceVideoSnapshot], None] | None = None,
@@ -68,6 +69,8 @@ class ReferenceVideoCoordinator:
         ) = None,
     ) -> None:
         self._player_factory = player_factory
+        self._youtube_player_factory = youtube_player_factory
+        self._player_kind = ""
         self._host_peer_provider = host_peer_provider
         self._clock = clock
         self._on_host_snapshot = on_host_snapshot
@@ -149,6 +152,7 @@ class ReferenceVideoCoordinator:
         self._host = None
         self._follower = None
         self._player = None
+        self._player_kind = ""
         self._signer = None
         self._role = ""
         self._publish_failed = False
@@ -160,10 +164,26 @@ class ReferenceVideoCoordinator:
 
         return getattr(self._player, "surface", None)
 
+    @property
+    def opening_youtube(self) -> bool:
+        return bool(self._player_kind == "youtube" and self._opening_follower is self._follower
+                    and self._follower is not None)
+
     # -- host transport ------------------------------------------------
 
     def share(self, path: str) -> ReferenceVideoSnapshot:
-        return self._host_operation(lambda host: host.share(path))
+        return self._host_operation(lambda host: host.share(path), source_kind="local")
+
+    def share_youtube(self, url: str) -> ReferenceVideoSnapshot:
+        from core.youtube_lesson import parse_youtube_lesson_url
+
+        if not self.hosting:
+            raise ReferenceVideoError(NOT_HOSTING_MESSAGE)
+        try:
+            parse_youtube_lesson_url(url)
+        except ValueError as exc:
+            raise ReferenceVideoError(str(exc)) from exc
+        return self._host_operation(lambda host: host.share_youtube(url), source_kind="youtube")
 
     def play(self) -> ReferenceVideoSnapshot:
         return self._host_operation(lambda host: host.play())
@@ -186,13 +206,14 @@ class ReferenceVideoCoordinator:
         return host.snapshot if host is not None else ReferenceVideoSnapshot()
 
     def _host_operation(
-        self, operation: Callable[[ReferenceVideoHostController], ReferenceVideoSnapshot]
+        self, operation: Callable[[ReferenceVideoHostController], ReferenceVideoSnapshot],
+        *, source_kind: str | None = None,
     ) -> ReferenceVideoSnapshot:
         if not self.hosting:
             raise ReferenceVideoError(NOT_HOSTING_MESSAGE)
         generation = self._generation
         try:
-            operation(self._host_controller())
+            operation(self._host_controller(source_kind))
         except ReferenceVideoError:
             if generation != self._generation:
                 return self.host_snapshot
@@ -216,15 +237,26 @@ class ReferenceVideoCoordinator:
                 and self._on_host_snapshot is not None):
             self._on_host_snapshot(snapshot)
 
-    def _host_controller(self) -> ReferenceVideoHostController:
-        if self._host is not None:
+    def _host_controller(self, source_kind: str | None = None) -> ReferenceVideoHostController:
+        if self._host is not None and (source_kind is None or source_kind == self._player_kind):
             return self._host
+        generation = self._generation
+        if self._host is not None:
+            previous, self._host = self._host, None
+            self._player = None
+            self._player_kind = ""
+            previous.close()
+            if generation != self._generation or not self.hosting or self._host is not None:
+                raise ReferenceVideoError(NOT_HOSTING_MESSAGE)
+            self._publish_unshared()
+            if generation != self._generation or not self.hosting or self._host is not None:
+                raise ReferenceVideoError(NOT_HOSTING_MESSAGE)
         signer = self._signer
         if signer is None:  # pragma: no cover - guarded by ``hosting``
             raise ReferenceVideoError(NOT_HOSTING_MESSAGE)
         generation = self._generation
         host = ReferenceVideoHostController(
-            self._build_player(),
+            self._build_player(source_kind or "local"),
             identity_signer=signer,
             is_host=lambda: self._current_host(host, generation),
             on_change=lambda snapshot: self._notify_host(
@@ -237,6 +269,12 @@ class ReferenceVideoCoordinator:
     # -- follower ------------------------------------------------------
 
     def open_local_copy(self, path: str) -> ReferenceVideoFollowSnapshot:
+        return self._open_follower_source(path, source_kind="local")
+
+    def open_youtube_lesson(self) -> ReferenceVideoFollowSnapshot:
+        return self._open_follower_source(None, source_kind="youtube")
+
+    def _open_follower_source(self, path: str | None, *, source_kind: str) -> ReferenceVideoFollowSnapshot:
         follower = self._require_follower()
         if follower is self._opening_follower:
             raise ReferenceVideoError("A Paint along video is still opening.")
@@ -245,8 +283,23 @@ class ReferenceVideoCoordinator:
         self._follow_operation += 1
         operation = self._follow_operation
         try:
-            follower.set_player(self._build_player())
-            snapshot = follower.open_local_copy(path)
+            if self._player is not None and self._player_kind != source_kind:
+                previous = self._player
+                follower.close_local_copy()
+                if follower is not self._follower or generation != self._generation:
+                    return self.follow_snapshot
+                self._player = None
+                self._player_kind = ""
+                previous.close()
+                if follower is not self._follower or generation != self._generation:
+                    return self.follow_snapshot
+            player = self._build_player(source_kind)
+            if (follower is not self._follower or generation != self._generation
+                    or operation != self._follow_operation):
+                return self.follow_snapshot
+            follower.set_player(player)
+            snapshot = (follower.open_youtube_lesson() if source_kind == "youtube"
+                        else follower.open_local_copy(path))
         except ReferenceVideoError:
             self._notify_follow(
                 follower.resolve(self._clock()), follower=follower,
@@ -282,6 +335,23 @@ class ReferenceVideoCoordinator:
 
     def set_hidden(self, hidden: bool) -> ReferenceVideoFollowSnapshot:
         return self._notify_follow(self._require_follower().set_hidden(bool(hidden)))
+
+    def set_surface_visible(self, visible: bool) -> None:
+        if self._player_kind != "youtube":
+            return
+        if self.hosting and not visible and self._host is not None:
+            state = self._host.snapshot.state
+            if state is ReferenceVideoState.LOADING:
+                self.withdraw()
+            elif state is ReferenceVideoState.PLAYING:
+                self.pause()
+        elif self._follower is not None:
+            follower, generation = self._follower, self._generation
+            try:
+                snapshot = follower.set_surface_visible(visible)
+            except ReferenceVideoError:
+                snapshot = follower.resolve(self._clock())
+            self._notify_follow(snapshot, follower=follower, generation=generation)
 
     @property
     def hidden(self) -> bool:
@@ -380,6 +450,8 @@ class ReferenceVideoCoordinator:
         if state in {"idle", "failed"}:
             shared = False
         try:
+            source = ({"source_kind": "youtube", "video_id": snapshot.video_id}
+                      if shared and snapshot.source_kind == "youtube" else {})
             publish(
                 state=state,
                 shared=shared,
@@ -388,6 +460,7 @@ class ReferenceVideoCoordinator:
                 position_s=snapshot.position_s if shared else 0.0,
                 duration_s=snapshot.duration_s if shared else 0.0,
                 needs_attention=bool(snapshot.needs_attention),
+                **source,
             )
         except Exception:  # noqa: BLE001 - peer boundary stays UI-optional
             if not self._publish_failed:
@@ -414,12 +487,15 @@ class ReferenceVideoCoordinator:
 
     # -- players -------------------------------------------------------
 
-    def _build_player(self) -> ReferenceVideoPlayer:
+    def _build_player(self, source_kind: str = "local") -> ReferenceVideoPlayer:
         if self._player is not None:
             return self._player
         generation = self._generation
         try:
-            player = self._player_factory()
+            factory = self._youtube_player_factory if source_kind == "youtube" else self._player_factory
+            if factory is None:
+                raise ReferenceVideoError("This build cannot open YouTube lessons. Choose a local video file instead.")
+            player = factory()
         except ReferenceVideoError:
             raise
         except Exception as exc:
@@ -450,6 +526,7 @@ class ReferenceVideoCoordinator:
                 LOGGER.debug("Retired reference video player cleanup failed")
             raise ReferenceVideoError("This Paint along request belongs to a room that has ended.")
         self._player = player
+        self._player_kind = source_kind
         return player
 
 

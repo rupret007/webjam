@@ -116,7 +116,7 @@ def test_a_guest_in_a_paint_along_room_is_told_the_video_is_coming():
     assert presence.label == "Paint along is starting"
     assert presence.target is ArtPresenceTarget.VIDEO
     assert presence.tone is ArtPresenceTone.PRESENT
-    assert "own copy" in presence.description
+    assert "see their video choice" in presence.description
     assert len(presence.label) <= 28
     assert len(presence.description) <= 140
 

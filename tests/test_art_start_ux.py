@@ -204,7 +204,7 @@ def test_choosing_a_card_binds_host_to_that_card(qapp, tmp_path: Path):
         cards["paint_along"].setChecked(True)
         host_described = dialog._host_button.accessibleDescription().casefold()
         assert "start paint along as the host" in host_described
-        assert "own copy of the same file" in host_described
+        assert "local video file or a lesson link" in host_described
     finally:
         dialog.deleteLater()
 
@@ -263,6 +263,8 @@ def test_the_page_names_what_host_and_join_do_with_the_card_choice(qapp, tmp_pat
             card.click()
             assert dialog._choice_helper.isVisibleTo(dialog._choice_page)
             assert dialog._choice_helper.text() == (
+                "Host starts Paint along, then chooses a file or lesson link. Join uses the host's invite."
+                if card.accessibleName() == "Paint along" else
                 f"Host starts {card.accessibleName()}. Join uses the host's invite."
             )
         # The two cards carry the instruction, so the headline and the
@@ -568,7 +570,7 @@ def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
             ),
             (
                 "Paint along",
-                "Paint beside a silent video. Everyone opens their own copy.",
+                "Paint beside a silent video, from a file or lesson link.",
             ),
         ]
         others = [

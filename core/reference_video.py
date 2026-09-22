@@ -1,32 +1,14 @@
 """Host-clocked reference video for the Art creator profile.
 
-Art is a shared room where artists talk and work at their own tables.
-An optional reference video is the visual analog of Shared Track: the host owns
-the transport, everyone else follows.  The two features deliberately differ in
-one respect, and that difference drives this whole module.
+A host cues either a local file or a YouTube lesson. Each computer plays its
+own silent picture; this module carries only source identity and transport.
+Local bytes are never transferred. YouTube embeds stream from the provider.
+Session-scoped digests prove the selected file or canonical lesson identity.
+A guest explicitly opens their source before following the host clock.
 
-Shared Track sends decoded audio through Jamulus, so a guest never needs the
-host's file and the host's content fingerprint stays a private
-controller-to-recorder seam.  A reference video is **not** routed anywhere.
-Each participant plays their own local copy, clocked by the host.  Same-file
-identity therefore has to be comparable across machines, so this module
-publishes a *session-scoped* digest instead of the raw content hash: enrolled
-peers can prove they opened the same bytes, while the projection stays
-meaningless to anyone outside the session.
-
-What this module does not claim:
-
-* It is not frame-accurate review and carries no media timecode.  The host
-  publishes play/pause/stop/seek plus a position; a follower corrects local
-  drift on a tolerance.  Sync is bounded by the peer poll interval, not by a
-  media clock.
-* It never taps a meeting app, a browser, or system output, and it never
-  downloads, bundles, or ships media.  The only source is a local file the
-  user already has the right to play.
-* A follower that cannot prove it holds the same file does not play anything.
-
-Every failure path is closed: a missing, changed, unreadable, or mismatched
-file stops playback and says so instead of showing the wrong picture.
+This is not frame-accurate review. Drift correction depends on room receipts,
+player readiness and network buffering. Missing, changed or mismatched sources
+pause locally and expose a recovery action instead of playing another picture.
 """
 
 from __future__ import annotations
@@ -41,6 +23,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+
+from core.youtube_lesson import YouTubeLesson, parse_youtube_lesson_url
 from typing import Protocol, runtime_checkable
 
 # Identity context string.  It is versioned so a future identity scheme cannot
@@ -315,7 +299,7 @@ class ReferenceVideoPlayer(Protocol):
     def set_muted(self, muted: bool) -> None:
         """Set the local audio mute state."""
 
-    def load(self, path: Path) -> float:
+    def load(self, path: Path | YouTubeLesson) -> float:
         """Open ``path`` and return its duration in seconds."""
 
     def play(self) -> None: ...
@@ -397,6 +381,8 @@ class ReferenceVideoSnapshot:
     duration_s: float = 0.0
     playback_generation: int = 0
     error: str = ""
+    source_kind: str = "local"
+    video_id: str = ""
 
     @property
     def active(self) -> bool:
@@ -408,7 +394,7 @@ class ReferenceVideoSnapshot:
 
 
 class ReferenceVideoHostController:
-    """Host-only transport over one local video file.
+    """Host-only transport over one local file or online lesson.
 
     The controller owns no network and no Jamulus route.  It drives a local
     player, keeps a monotonic playback generation so followers can tell one
@@ -430,7 +416,8 @@ class ReferenceVideoHostController:
         self._on_change = on_change
         self._lock = threading.RLock()
         self._state = ReferenceVideoState.IDLE
-        self._source: ReferenceVideoSource | None = None
+        self._source: ReferenceVideoSource | YouTubeLesson | None = None
+        self._source_kind = "local"
         self._identity_digest = ""
         self._position_s = 0.0
         self._duration_s = 0.0
@@ -467,6 +454,8 @@ class ReferenceVideoHostController:
             duration_s=self._duration_s if loaded else 0.0,
             playback_generation=self._playback_generation,
             error=self._error,
+            source_kind=self._source_kind,
+            video_id=self._source.video_id if loaded and isinstance(self._source, YouTubeLesson) else "",
         )
 
     def _notify(self, snapshot: ReferenceVideoSnapshot) -> ReferenceVideoSnapshot:
@@ -498,6 +487,19 @@ class ReferenceVideoHostController:
     def share(self, path: str | os.PathLike[str]) -> ReferenceVideoSnapshot:
         """Load, fingerprint, and cue a local file for the room."""
 
+        return self._share_source(path)
+
+    def share_youtube(self, url: str) -> ReferenceVideoSnapshot:
+        """Cue one validated lesson; only its canonical identity is shared."""
+
+        self._require_host()
+        try:
+            lesson = parse_youtube_lesson_url(url)
+        except ValueError as exc:
+            raise ReferenceVideoError(str(exc)) from exc
+        return self._share_source(lesson)
+
+    def _share_source(self, choice: str | os.PathLike[str] | YouTubeLesson) -> ReferenceVideoSnapshot:
         self._require_host()
         with self._lock:
             if self._state is ReferenceVideoState.CLOSED:
@@ -507,6 +509,7 @@ class ReferenceVideoHostController:
             self._opening = True
             self._load_generation += 1
             generation = self._load_generation
+            self._source_kind = "youtube" if isinstance(choice, YouTubeLesson) else "local"
             self._state = ReferenceVideoState.LOADING
             self._source = None
             self._identity_digest = ""
@@ -526,15 +529,19 @@ class ReferenceVideoHostController:
                 if not current():
                     return self._snapshot_locked()
                 try:
-                    source = load_reference_video_source(path)
+                    source = choice if isinstance(choice, YouTubeLesson) else load_reference_video_source(choice)
                     digest = self._identity_signer(source.content_sha256)
                     if not current():
                         return self._snapshot_locked()
                     duration = _seconds(
-                        self._player.load(source.path),
+                        self._player.load(source if isinstance(source, YouTubeLesson) else source.path),
                         "duration",
                         maximum=MAX_REFERENCE_VIDEO_DURATION_S,
                     )
+                    if not current():
+                        return self._snapshot_locked()
+                    if isinstance(source, YouTubeLesson) and source.start_s and duration > 0:
+                        self._player.seek(min(source.start_s, duration))
                 except ReferenceVideoError as exc:
                     return (self._fail_locked(str(exc)) if current()
                             else self._snapshot_locked())
@@ -553,7 +560,7 @@ class ReferenceVideoHostController:
             self._source = source
             self._identity_digest = digest
             self._duration_s = duration
-            self._position_s = 0.0
+            self._position_s = min(source.start_s, duration) if isinstance(source, YouTubeLesson) else 0.0
             self._error = ""
             self._state = ReferenceVideoState.READY
             return self._notify(self._snapshot_locked())
@@ -566,9 +573,14 @@ class ReferenceVideoHostController:
             if self._state is ReferenceVideoState.CLOSED:
                 return self._snapshot_locked()
             self._load_generation += 1
+            operation = self._load_generation
             try:
                 self._player.stop()
+                if operation != self._load_generation:
+                    return self._snapshot_locked()
             except Exception:
+                if operation != self._load_generation:
+                    return self._snapshot_locked()
                 # Reporting "not shared" while this computer keeps playing
                 # would be the one lie this feature must not tell.
                 return self._fail_locked(
@@ -587,9 +599,15 @@ class ReferenceVideoHostController:
         self._require_host()
         with self._lock:
             self._require_loaded()
+            self._load_generation += 1
+            operation = self._load_generation
             try:
                 self._player.play()
+                if operation != self._load_generation:
+                    return self._snapshot_locked()
             except Exception:
+                if operation != self._load_generation:
+                    return self._snapshot_locked()
                 return self._fail_locked(
                     "WebJam couldn't start that video on this computer."
                 )
@@ -603,10 +621,16 @@ class ReferenceVideoHostController:
         self._require_host()
         with self._lock:
             self._require_loaded()
+            self._load_generation += 1
+            operation = self._load_generation
             try:
                 self._player.pause()
+                if operation != self._load_generation:
+                    return self._snapshot_locked()
                 self._position_s = self._clamp(self._player.position_s())
             except Exception:
+                if operation != self._load_generation:
+                    return self._snapshot_locked()
                 return self._fail_locked(
                     "WebJam couldn't pause that video on this computer."
                 )
@@ -619,9 +643,15 @@ class ReferenceVideoHostController:
         self._require_host()
         with self._lock:
             self._require_loaded()
+            self._load_generation += 1
+            operation = self._load_generation
             try:
                 self._player.stop()
+                if operation != self._load_generation:
+                    return self._snapshot_locked()
             except Exception:
+                if operation != self._load_generation:
+                    return self._snapshot_locked()
                 return self._fail_locked(
                     "WebJam couldn't stop that video on this computer."
                 )
@@ -633,6 +663,8 @@ class ReferenceVideoHostController:
         self._require_host()
         with self._lock:
             self._require_loaded()
+            self._load_generation += 1
+            operation = self._load_generation
             try:
                 target = self._clamp(
                     _seconds(
@@ -642,9 +674,13 @@ class ReferenceVideoHostController:
                     )
                 )
                 self._player.seek(target)
+                if operation != self._load_generation:
+                    return self._snapshot_locked()
             except ReferenceVideoError:
                 raise
             except Exception:
+                if operation != self._load_generation:
+                    return self._snapshot_locked()
                 return self._fail_locked(
                     "WebJam couldn't move that video on this computer."
                 )
@@ -672,6 +708,7 @@ class ReferenceVideoHostController:
             if self._state is ReferenceVideoState.CLOSED:
                 return self._snapshot_locked()
             self._load_generation += 1
+            self._state = ReferenceVideoState.CLOSED
             self._safe_player_call("stop")
             self._safe_player_call("close")
             self._source = None
@@ -755,6 +792,8 @@ class ReferenceVideoFollowSnapshot:
     # A current local copy held before an offer. This proves neither a match
     # with the host nor permission to show/play the video.
     local_copy_prepared: bool = False
+    source_kind: str = "local"
+    video_id: str = ""
 
     @property
     def blocked(self) -> bool:
@@ -793,8 +832,10 @@ class ReferenceVideoFollower:
         self._lock = threading.RLock()
         self._local_identity = ""
         self._local_path: Path | None = None
+        self._local_lesson: YouTubeLesson | None = None
         self._local_token: tuple[int, int, int, int, int] | None = None
         self._hidden = False
+        self._surface_visible = True
         self._projection: HostVideoProjection | None = None
         self._received_monotonic_s = 0.0
         self._applied_generation = -1
@@ -803,6 +844,8 @@ class ReferenceVideoFollower:
         self._local_attention = False
         self._operation = 0
         self._loading: int | None = None
+        self._applying = False
+        self._pausing = False
 
     # -- guest inputs --------------------------------------------------
 
@@ -885,6 +928,51 @@ class ReferenceVideoFollower:
                     self._loading = None
             return self._resolve_locked(self._received_monotonic_s)
 
+    def open_youtube_lesson(self) -> ReferenceVideoFollowSnapshot:
+        """Open only the room's current, proven lesson after an explicit click."""
+
+        with self._lock:
+            if self._loading is not None:
+                raise ReferenceVideoError("A Paint along video is still opening.")
+            projection = self._projection
+            if (not bool(getattr(projection, "shared", False))
+                    or getattr(projection, "source_kind", "local") != "youtube"):
+                raise ReferenceVideoError("The host is not sharing a YouTube lesson. Return to the room.")
+            try:
+                lesson = YouTubeLesson(getattr(projection, "video_id", ""))
+            except ValueError as exc:
+                raise ReferenceVideoError("That lesson could not be verified. Return to the room.") from exc
+            identity = self._identity_signer(lesson.content_sha256)
+            if not identities_match(identity, getattr(projection, "identity_digest", "")):
+                raise ReferenceVideoError("That lesson does not match this room. Return to the room.")
+            self._clear_local_locked()
+            self._operation += 1
+            operation = self._operation
+            self._loading = operation
+            try:
+                try:
+                    if self._player is None:
+                        raise ReferenceVideoPlayerError("The lesson player is unavailable.")
+                    duration = _seconds(self._player.load(lesson), "Video duration",
+                                        maximum=MAX_REFERENCE_VIDEO_DURATION_S)
+                    if duration <= 0:
+                        raise ReferenceVideoPlayerError("This lesson has no playable duration.")
+                except Exception as exc:
+                    if operation == self._operation:
+                        self._mark_player_failure_locked()
+                        raise ReferenceVideoPlayerError(
+                            "This lesson could not play here. Choose Open lesson to try again, or keep working."
+                        ) from exc
+                if operation == self._operation:
+                    self._local_identity = identity
+                    self._local_lesson = lesson
+                    self._local_attention = False
+                    self._applied_generation = -1
+            finally:
+                if self._loading == operation:
+                    self._loading = None
+            return self._resolve_locked(self._received_monotonic_s)
+
     def close_local_copy(self) -> ReferenceVideoFollowSnapshot:
         with self._lock:
             # Invalidate a load even when it is currently pumping events.
@@ -897,7 +985,19 @@ class ReferenceVideoFollower:
         """Ignore the video without leaving the room."""
 
         with self._lock:
+            if self._hidden != bool(hidden):
+                self._operation += 1
             self._hidden = bool(hidden)
+            return self._resolve_locked(self._received_monotonic_s)
+
+    def set_surface_visible(self, visible: bool) -> ReferenceVideoFollowSnapshot:
+        """Hold an online lesson while its panel is away, retaining its proof."""
+        with self._lock:
+            if self._surface_visible != bool(visible):
+                self._operation += 1
+            self._surface_visible = bool(visible)
+            if not visible:
+                self._pause_local_locked()
             return self._resolve_locked(self._received_monotonic_s)
 
     @property
@@ -934,46 +1034,67 @@ class ReferenceVideoFollower:
             return self._resolve_locked(now_monotonic_s)
 
     def apply(self, now_monotonic_s: float) -> ReferenceVideoFollowSnapshot:
-        """Resolve, then drive the local player to the host's position."""
+        """Drive the host clock, fencing commands that dispatch UI events."""
 
         with self._lock:
             snapshot = self._resolve_locked(now_monotonic_s)
             player = self._player
-            if player is None or self._loading is not None:
+            if player is None or self._loading is not None or self._applying:
                 return snapshot
-            if not snapshot.can_follow:
-                try:
-                    self._pause_local_locked()
-                except ReferenceVideoPlayerError:
-                    # Keep the obligation: the next tick must try again.
-                    pass
-                return self._resolve_locked(now_monotonic_s)
+            self._applying = True
+            operation = self._operation
+
+            def transport_key():
+                p = self._projection
+                return (getattr(p, "identity_digest", ""), getattr(p, "state", ""),
+                        getattr(p, "playback_generation", 0), getattr(p, "shared", False))
+
+            key = transport_key()
+
+            def current():
+                return (operation == self._operation and player is self._player
+                        and key == transport_key())
+
             try:
-                if snapshot.playback_generation != self._applied_generation:
+                if not snapshot.can_follow:
+                    self._pause_local_locked()
+                    return self._resolve_locked(now_monotonic_s)
+                if (snapshot.playback_generation != self._applied_generation
+                        or abs(float(player.position_s()) - snapshot.target_position_s) > self._tolerance_s):
                     player.seek(snapshot.target_position_s)
+                    if not current():
+                        self._pause_local_locked()
+                        return self._resolve_locked(now_monotonic_s)
                     self._applied_generation = snapshot.playback_generation
-                elif (
-                    abs(float(player.position_s()) - snapshot.target_position_s)
-                    > self._tolerance_s
-                ):
-                    player.seek(snapshot.target_position_s)
                 if snapshot.should_play and not self._playing_locally:
-                    # An adapter may start playback before reporting a fault.
                     self._pause_pending = True
                     player.play()
+                    if not current():
+                        self._pause_local_locked()
+                        return self._resolve_locked(now_monotonic_s)
                     self._playing_locally = True
                     self._pause_pending = False
                 elif not snapshot.should_play:
                     self._pause_local_locked()
+                return self._resolve_locked(now_monotonic_s)
             except Exception as exc:
+                if not current():
+                    return self._resolve_locked(now_monotonic_s)
                 self._mark_player_failure_locked()
-                raise ReferenceVideoPlayerError(LOCAL_ATTENTION_MESSAGE) from exc
-            return snapshot
+                if not snapshot.can_follow:
+                    return self._resolve_locked(now_monotonic_s)
+                message = self._resolve_locked(now_monotonic_s).message
+                raise ReferenceVideoPlayerError(message) from exc
+            finally:
+                self._applying = False
 
     # -- derivation ----------------------------------------------------
 
     def _pause_local_locked(self) -> None:
+        if self._pausing:
+            return
         if (self._playing_locally or self._pause_pending) and self._player is not None:
+            self._pausing = True
             try:
                 self._player.pause()
             except Exception as exc:
@@ -982,6 +1103,8 @@ class ReferenceVideoFollower:
                 raise ReferenceVideoPlayerError(
                     "WebJam couldn't stop that video on this computer."
                 ) from exc
+            finally:
+                self._pausing = False
         self._playing_locally = False
         self._pause_pending = False
 
@@ -999,10 +1122,13 @@ class ReferenceVideoFollower:
         self._pause_local_locked()
         self._local_identity = ""
         self._local_path = None
+        self._local_lesson = None
         self._local_token = None
         self._applied_generation = -1
 
     def _local_copy_is_current(self) -> bool:
+        if self._local_lesson is not None:
+            return True
         if self._local_path is None or self._local_token is None:
             return False
         try:
@@ -1022,6 +1148,17 @@ class ReferenceVideoFollower:
         playback_generation: int = 0,
         local_copy_prepared: bool = False,
     ) -> ReferenceVideoFollowSnapshot:
+        projection = self._projection
+        source_kind = getattr(projection, "source_kind", "local")
+        video_id = getattr(projection, "video_id", "")
+        if state is ReferenceVideoFollowState.NO_VIDEO and self._local_lesson is not None:
+            source_kind, video_id = "youtube", self._local_lesson.video_id
+        message = _FOLLOW_MESSAGES[state]
+        if source_kind == "youtube":
+            if state in {ReferenceVideoFollowState.NEEDS_FILE, ReferenceVideoFollowState.MISMATCHED_FILE}:
+                message = "The host shared a YouTube lesson. Choose Open lesson to follow silently."
+            elif state in {ReferenceVideoFollowState.FILE_UNAVAILABLE, ReferenceVideoFollowState.LOCAL_ATTENTION}:
+                message = "This lesson could not play here. Choose Open lesson to try again, or keep working."
         return ReferenceVideoFollowSnapshot(
             state=state,
             can_follow=can_follow,
@@ -1030,7 +1167,9 @@ class ReferenceVideoFollower:
             duration_s=duration_s,
             source_display_name=source_display_name,
             playback_generation=playback_generation,
-            message=_FOLLOW_MESSAGES[state],
+            message=message,
+            source_kind=source_kind,
+            video_id=video_id,
             local_copy_prepared=local_copy_prepared,
             can_close_local_copy=bool(
                 self._local_identity or self._local_attention
@@ -1051,6 +1190,7 @@ class ReferenceVideoFollower:
                 ReferenceVideoFollowState.NO_VIDEO,
                 local_copy_prepared=bool(
                     self._local_identity and not self._local_attention
+                    and self._local_lesson is None
                     and self._loading is None and not self._pause_pending
                     and self._local_copy_is_current()
                 ),
@@ -1077,7 +1217,9 @@ class ReferenceVideoFollower:
                 playback_generation=generation,
             )
 
-        if self._hidden:
+        if self._local_lesson is not None and self._local_attention:
+            return decide(ReferenceVideoFollowState.LOCAL_ATTENTION)
+        if self._hidden or (self._local_lesson is not None and not self._surface_visible):
             return decide(ReferenceVideoFollowState.HIDDEN)
         if bool(getattr(projection, "needs_attention", False)):
             return decide(ReferenceVideoFollowState.HOST_ATTENTION)

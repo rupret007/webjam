@@ -25,6 +25,7 @@ def art_room_activities(
     intended_canvas: bool = False,
     intended_video: bool = False,
     paint_along_room: bool = False,
+    video_source_kind: str = "local",
 ) -> tuple[ArtRoomPresence, ...]:
     """Return the existing priority presence and at most one other activity."""
 
@@ -32,6 +33,7 @@ def art_room_activities(
         projection, hosting=hosting,
         intended_canvas=intended_canvas, intended_video=intended_video,
         paint_along_room=paint_along_room,
+        video_source_kind=video_source_kind,
     )
     if not primary.offered:
         return ()
@@ -44,7 +46,7 @@ def art_room_activities(
 
     # Reuse the same wording and ranking. No setup intent is allowed to
     # become an extra offer after the primary activity has been removed.
-    secondary = art_room_presence(remaining, hosting=hosting)
+    secondary = art_room_presence(remaining, hosting=hosting, video_source_kind=video_source_kind)
     if (secondary.offered and secondary.target is not primary.target
             and secondary.target in {ArtPresenceTarget.CANVAS, ArtPresenceTarget.VIDEO}):
         return primary, secondary

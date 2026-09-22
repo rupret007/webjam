@@ -421,12 +421,11 @@ _ART_STARTS = (
     CreatorStart(
         key="paint_along",
         label="Paint along",
-        summary="Paint beside a silent video. Everyone opens their own copy.",
+        summary="Paint beside a silent video, from a file or lesson link.",
         detail=(
-            "Open the room with one silent process video the host already "
-            "owns or may use. Paint in your usual app or on paper beside "
-            "WebJam. Each artist opens their own copy of the same file; the "
-            "host keeps it in step. WebJam supplies no videos."
+            "Start a room, then choose a local video file or a lesson link. "
+            "Paint in your usual app or on paper beside WebJam. "
+            "The video stays silent and follows the host. Talk in your meeting."
         ),
         reference_video=True,
     ),

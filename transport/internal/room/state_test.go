@@ -83,6 +83,32 @@ func TestStateRejectsWrongTypesUnknownFieldsAndNonCanonicalValues(t *testing.T) 
 		}
 	}
 }
+func TestYouTubeSourceIsBoundedAndLocalMappingStaysUnchanged(t *testing.T) {
+	base, _ := json.Marshal(testState())
+	extended := strings.Replace(string(base), `"reference_video":{`, `"reference_video":{"source_kind":"youtube","video_id":"M7lc1UVf-VE",`, 1)
+	state, err := Decode([]byte(extended))
+	if err != nil {
+		t.Fatalf("valid YouTube lesson rejected: %v", err)
+	}
+	encoded, _ := json.Marshal(state)
+	if !strings.Contains(string(encoded), `"video_id":"M7lc1UVf-VE"`) {
+		t.Fatal("lesson identity was not preserved")
+	}
+	if strings.Contains(string(base), "source_kind") || strings.Contains(string(base), "video_id") {
+		t.Fatal("local-file wire mapping changed")
+	}
+	for _, invalid := range []string{
+		strings.Replace(extended, `"youtube"`, `"website"`, 1),
+		strings.Replace(extended, `"M7lc1UVf-VE"`, `"https://example.com"`, 1),
+		strings.Replace(extended, `"video_id":"M7lc1UVf-VE",`, ``, 1),
+		strings.Replace(extended, `"source_kind":"youtube",`, ``, 1),
+	} {
+		if _, err := Decode([]byte(invalid)); err == nil {
+			t.Fatal("invalid lesson source accepted")
+		}
+	}
+}
+
 func TestUnsharedStateCannotExposeMediaFacts(t *testing.T) {
 	for _, edit := range []func(*State){
 		func(s *State) { s.ReferenceVideo.Shared = false }, func(s *State) { s.SharedCanvas.Shared = false },

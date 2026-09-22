@@ -2435,6 +2435,8 @@ class ReferenceVideoSessionSnapshot:
     position_s: float = 0.0
     duration_s: float = 0.0
     needs_attention: bool = False
+    source_kind: str = "local"
+    video_id: str = ""
 
     def __post_init__(self) -> None:
         generation = _reference_video_generation(self.generation, "generation")
@@ -2448,9 +2450,18 @@ class ReferenceVideoSessionSnapshot:
         position = _reference_video_seconds(self.position_s, "position_s")
         duration = _reference_video_seconds(self.duration_s, "duration_s")
         attention = _reference_video_bool(self.needs_attention, "needs_attention")
+        if type(self.source_kind) is not str or self.source_kind not in {"local", "youtube"}:
+            raise ValueError("reference video source is not supported.")
+        if self.source_kind == "youtube":
+            from core.youtube_lesson import YouTubeLesson
+
+            YouTubeLesson(self.video_id)
+        elif self.video_id != "" or type(self.video_id) is not str:
+            raise ValueError("A local reference video cannot carry an online video ID.")
 
         if not shared:
-            if source_name or identity_digest or position != 0.0 or duration != 0.0:
+            if (source_name or identity_digest or position != 0.0 or duration != 0.0
+                    or self.source_kind != "local" or self.video_id):
                 raise ValueError(
                     "An unshared reference video cannot expose media facts."
                 )
@@ -2506,10 +2517,13 @@ class ReferenceVideoSessionSnapshot:
         }
         if not required.issubset(value):
             raise ValueError("reference_video is incomplete.")
-        return cls(**{key: value[key] for key in required})
+        optional = {"source_kind", "video_id"} & value.keys()
+        if optional and optional != {"source_kind", "video_id"}:
+            raise ValueError("reference_video source is incomplete.")
+        return cls(**{key: value[key] for key in required | optional})
 
     def to_mapping(self) -> dict[str, object]:
-        return {
+        result = {
             "schema": _REFERENCE_VIDEO_SCHEMA,
             "generation": self.generation,
             "playback_generation": self.playback_generation,
@@ -2521,6 +2535,9 @@ class ReferenceVideoSessionSnapshot:
             "duration_s": self.duration_s,
             "needs_attention": self.needs_attention,
         }
+        if self.source_kind == "youtube":
+            result.update(source_kind="youtube", video_id=self.video_id)
+        return result
 
 
 _SHARED_CANVAS_SCHEMA = 1
@@ -3699,6 +3716,8 @@ class SessionControlState:
         duration_s: float = 0.0,
         needs_attention: bool = False,
         playback_generation: int | None = None,
+        source_kind: str = "local",
+        video_id: str = "",
     ) -> ReferenceVideoSessionSnapshot:
         """Publish one idempotent, memory-only follower projection.
 
@@ -3735,6 +3754,8 @@ class SessionControlState:
                 position_s=position_s,
                 duration_s=duration_s,
                 needs_attention=needs_attention,
+                source_kind=source_kind,
+                video_id=video_id,
             )
             if candidate == current:
                 return current

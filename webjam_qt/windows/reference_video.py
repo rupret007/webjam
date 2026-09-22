@@ -13,6 +13,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
+    QInputDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -37,10 +38,10 @@ from core.reference_video import (
 )
 from webjam_qt.theme.tokens import Space
 
-_HOST_EMPTY_HEADLINE = "Choose a process video"
+_HOST_EMPTY_HEADLINE = "Choose a video to paint along"
 _GUEST_EMPTY_HEADLINE = "Waiting for a process video"
 _HOST_EMPTY_STATUS = (
-    "Paint in Procreate, Clip Studio Paint, Krita, or on paper beside WebJam."
+    "Choose a local video file or a YouTube lesson link. You control playback for the room."
 )
 _EMPTY_SURFACE = "Your silent process video appears here"
 _SYNC_HONESTY = (
@@ -49,10 +50,11 @@ _SYNC_HONESTY = (
 _SYNC_DETAIL = (
     "Paint along is the process-video companion. Paint in Procreate, Clip "
     "Studio Paint, Krita, or on paper beside WebJam, and keep your meeting "
-    "beside it for conversation. Each artist uses their own copy. "
+    "beside it for conversation. For local files, each artist opens their own copy. "
+    "YouTube lessons stream inside WebJam after each artist chooses Open lesson. "
     "Playback follows the host to within about a second; it is not "
-    "frame-accurate and carries no timecode. WebJam does not ship or download "
-    "the video, and cannot confirm who has opened or watched it."
+    "frame-accurate and carries no timecode. WebJam does not transfer local "
+    "video files and cannot confirm who has opened or watched it."
 )
 
 _FOLLOW_STATUS = {
@@ -153,6 +155,7 @@ class ReferenceVideoDialog(QDialog):
     """The large, quiet making surface behind Art's Paint along door."""
 
     share_requested = Signal(str)
+    share_youtube_requested = Signal(str)
     withdraw_requested = Signal()
     play_requested = Signal()
     pause_requested = Signal()
@@ -160,10 +163,12 @@ class ReferenceVideoDialog(QDialog):
     seek_requested = Signal(float)
 
     open_local_copy_requested = Signal(str)
+    open_youtube_requested = Signal()
     close_local_copy_requested = Signal()
     hide_requested = Signal(bool)
     return_requested = Signal()
     watch_lesson_requested = Signal()
+    visibility_changed = Signal(bool)
 
     def __init__(self, *, hosting: bool, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -177,6 +182,7 @@ class ReferenceVideoDialog(QDialog):
         self._last_host_snapshot: ReferenceVideoSnapshot | None = None
         self._room_available = True
         self._copy_opening = False
+        self._youtube_url = ""
         self.setObjectName("PaintAlongWindow")
         self.setWindowTitle("Paint along")
         self.setModal(False)
@@ -245,9 +251,6 @@ class ReferenceVideoDialog(QDialog):
         self._lesson_hint.setWordWrap(True)
         self._lesson_hint.setObjectName("PaintAlongHint")
         lesson_row.addWidget(self._lesson_hint, stretch=1)
-        # Keep the meeting route ahead of the local-file heading so "Choose a
-        # process video" describes only the existing local player beneath it.
-        layout.insertLayout(1, lesson_row)
 
         self._surface_holder = QFrame()
         self._surface_holder.setObjectName("PaintAlongSurface")
@@ -291,6 +294,10 @@ class ReferenceVideoDialog(QDialog):
                 "Choose one local process video to share with the room.",
                 self._choose_shared_video,
             )
+            self._youtube_button = self._add_button(
+                controls, "YouTube link…", "Use a YouTube video link for a silent lesson.",
+                self._choose_youtube_lesson,
+            )
             self._play_button = self._add_button(
                 controls,
                 "Play",
@@ -320,8 +327,7 @@ class ReferenceVideoDialog(QDialog):
         self._return_button = self._add_button(
             controls,
             "Return to room",
-            "Return to the current room to check the connection. "
-            "Your local Paint along copy can stay.",
+            "Return to the current room to check the connection.",
             self.return_requested.emit,
         )
         self._return_button.setMinimumHeight(48)
@@ -339,6 +345,9 @@ class ReferenceVideoDialog(QDialog):
         if self._hosting:
             self._change_action = self._add_action(
                 "Choose another process video…", self._choose_shared_video
+            )
+            self._change_youtube_action = self._add_action(
+                "Use a YouTube link…", self._choose_youtube_lesson,
             )
             self._stop_action = self._add_action(
                 "Restart from the beginning",
@@ -365,6 +374,9 @@ class ReferenceVideoDialog(QDialog):
         self._hint.setAccessibleDescription(_SYNC_DETAIL)
         self._hint.setToolTip(_SYNC_DETAIL)
         layout.addWidget(self._hint)
+        # Choose the Paint along source first. Meeting handoff stays a quiet
+        # secondary route below that choice, with no extra Art door.
+        layout.addLayout(lesson_row)
 
         self._hidden = False
         if self._hosting:
@@ -457,20 +469,39 @@ class ReferenceVideoDialog(QDialog):
         if path and isValid(self):
             self.share_requested.emit(path)
 
+    def _choose_youtube_lesson(self) -> None:
+        if not self._hosting or not self._room_available:
+            return
+        if self._last_host_snapshot and self._last_host_snapshot.state is ReferenceVideoState.LOADING:
+            return
+        url, accepted = QInputDialog.getText(
+            self, "YouTube lesson", "Paste a YouTube video link.\nIt plays silently; talk in your meeting.",
+            text=self._youtube_url,
+        )
+        if accepted and url.strip() and isValid(self) and self._room_available:
+            self._youtube_url = url.strip()
+            self.share_youtube_requested.emit(self._youtube_url)
+
     def _choose_local_copy(self) -> None:
         if self._hosting or self._copy_opening or not self._room_available:
             return
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Open your copy for Paint along", "", self._video_filter()
-        )
-        if not path or not isValid(self):
-            return
+        youtube = bool(self._last_follow_snapshot and self._last_follow_snapshot.source_kind == "youtube")
+        path = ""
+        if not youtube:
+            path, _ = QFileDialog.getOpenFileName(
+                self, "Open your copy for Paint along", "", self._video_filter()
+            )
+            if not path or not isValid(self):
+                return
         self._copy_opening = True
         self.attach_surface(None)
         if self._last_follow_snapshot is not None:
             self.set_follow_snapshot(self._last_follow_snapshot)
         try:
-            self.open_local_copy_requested.emit(path)
+            if youtube:
+                self.open_youtube_requested.emit()
+            else:
+                self.open_local_copy_requested.emit(path)
         finally:
             # File/decoder callbacks can retire this panel or update room
             # truth. Restore only this live panel's latest snapshot.
@@ -522,6 +553,11 @@ class ReferenceVideoDialog(QDialog):
     def hideEvent(self, event) -> None:
         self._cancel_scrub()
         super().hideEvent(event)
+        self.visibility_changed.emit(False)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self.visibility_changed.emit(True)
 
     # -- rendering -----------------------------------------------------
 
@@ -531,6 +567,9 @@ class ReferenceVideoDialog(QDialog):
         if not self._hosting:
             return
         self._last_host_snapshot = snapshot
+        youtube = snapshot.source_kind == "youtube"
+        self._watch_lesson_button.setVisible(not youtube)
+        self._lesson_hint.setVisible(not youtube)
         if not self._room_available:
             self._cancel_scrub()
             self._seek_source = None
@@ -539,7 +578,7 @@ class ReferenceVideoDialog(QDialog):
             self._surface_placeholder.setText("Return to the room to continue")
             self._role.setText("CHECK ROOM")
             self._role.setAccessibleName("Check your current room")
-            for button in (self._share_button, self._play_button, self._pause_button,
+            for button in (self._share_button, self._youtube_button, self._play_button, self._pause_button,
                            self._cancel_open_button):
                 button.setVisible(False)
                 button.setEnabled(False)
@@ -571,7 +610,7 @@ class ReferenceVideoDialog(QDialog):
             # Hidden/disabled sliders may never receive the held release.
             self._cancel_scrub()
         self._headline.setText(
-            "Opening process video…" if loading else
+            ("Opening YouTube lesson…" if youtube else "Opening process video…") if loading else
             snapshot.source_display_name if shared else _HOST_EMPTY_HEADLINE
         )
         self._surface_placeholder.setText(
@@ -579,12 +618,13 @@ class ReferenceVideoDialog(QDialog):
             "Video unavailable" if snapshot.error else _EMPTY_SURFACE
         )
         if loading:
-            self._status.setText("Checking the video. You can go back to the room while it opens.")
-        elif snapshot.error:
-            recovery = (
-                f" Use {self._share_button.text()} to open a local video again."
-                if not shared else ""
+            self._status.setText(
+                "Loading the silent lesson. Stay here while it opens, or go back to cancel."
+                if youtube else "Checking the video. You can go back to the room while it opens."
             )
+        elif snapshot.error:
+            recovery = (f" Use {self._youtube_button.text()} to try a lesson link again." if youtube else
+                        f" Use {self._share_button.text()} to open a local video again.") if not shared else ""
             self._status.setText(f"{snapshot.error}{recovery}")
         elif not shared:
             self._status.setText(_HOST_EMPTY_STATUS)
@@ -606,6 +646,8 @@ class ReferenceVideoDialog(QDialog):
         playing = state is ReferenceVideoState.PLAYING
         self._share_button.setVisible(not shared and not loading)
         self._share_button.setEnabled(not loading)
+        self._youtube_button.setVisible(not shared and not loading)
+        self._youtube_button.setEnabled(not loading)
         self._cancel_open_button.setVisible(loading)
         self._cancel_open_button.setEnabled(loading)
         self._play_button.setVisible(shared and not playing)
@@ -613,6 +655,7 @@ class ReferenceVideoDialog(QDialog):
         self._play_button.setEnabled(shared and not playing)
         self._pause_button.setEnabled(playing)
         self._change_action.setVisible(shared)
+        self._change_youtube_action.setVisible(shared)
         self._stop_action.setVisible(shared)
         self._withdraw_action.setVisible(shared)
         self._sync_more_button()
@@ -643,12 +686,24 @@ class ReferenceVideoDialog(QDialog):
         if self._hosting:
             return
         self._last_follow_snapshot = snapshot
+        youtube = snapshot.source_kind == "youtube"
+        self._watch_lesson_button.setVisible(not youtube)
+        self._lesson_hint.setVisible(not youtube)
+        self._open_button.setText("Open lesson" if youtube else "Open my copy…")
+        self._open_button.setAccessibleName(self._open_button.text())
+        self._open_button.setAccessibleDescription(
+            "Open the host's YouTube lesson silently and follow their playback."
+            if youtube else "Open your copy of the same file the host is using to follow along."
+        )
+        self._open_button.setToolTip(self._open_button.accessibleDescription())
         if not self._room_available:
             self._headline.setText("Waiting for the room")
             self._status.setText(
                 "WebJam cannot confirm the host's current video. "
-                "Your local copy can stay. Return to the room "
-                "to check the connection."
+                "Return to the room to check the connection."
+                if youtube else
+                "WebJam cannot confirm the host's current video. "
+                "Your local copy can stay. Return to the room to check the connection."
             )
             self._surface_placeholder.setText(
                 "Your silent process video can stay here"
@@ -667,8 +722,9 @@ class ReferenceVideoDialog(QDialog):
             return
         self._return_button.setVisible(False)
         if self._copy_opening:
-            self._headline.setText("Opening your copy")
-            self._status.setText("Checking this local file before following the host.")
+            self._headline.setText("Opening the lesson" if youtube else "Opening your copy")
+            self._status.setText("Loading the silent lesson before following the host." if youtube else
+                                 "Checking this local file before following the host.")
             self._surface_placeholder.setText("Opening your silent process video")
             self._open_button.setVisible(False)
             self._open_button.setEnabled(False)
@@ -688,7 +744,7 @@ class ReferenceVideoDialog(QDialog):
         self._headline.setText(
             snapshot.source_display_name if sharing else _GUEST_EMPTY_HEADLINE
         )
-        self._status.setText(_FOLLOW_STATUS[state])
+        self._status.setText(snapshot.message if youtube else _FOLLOW_STATUS[state])
         if state is ReferenceVideoFollowState.NO_VIDEO:
             if snapshot.local_copy_prepared:
                 self._headline.setText("Your copy is open")
@@ -696,6 +752,8 @@ class ReferenceVideoDialog(QDialog):
                     "Waiting for the host to share. WebJam will check that your copy "
                     "matches before following. You can keep making."
                 )
+            elif youtube:
+                self._status.setText("The host stopped sharing the lesson. Keep making while they choose a video.")
             elif snapshot.can_close_local_copy:
                 self._status.setText(
                     "Your copy needs another try. Open it again, "
@@ -713,6 +771,11 @@ class ReferenceVideoDialog(QDialog):
                 ReferenceVideoFollowState.HIDDEN: "Video hidden on this computer",
             }.get(state, "Paint along")
         )
+        if youtube and state in {
+            ReferenceVideoFollowState.NEEDS_FILE, ReferenceVideoFollowState.MISMATCHED_FILE,
+            ReferenceVideoFollowState.FILE_UNAVAILABLE, ReferenceVideoFollowState.LOCAL_ATTENTION,
+        }:
+            self._surface_placeholder.setText("Open the lesson to follow along")
         self._render_position(snapshot.target_position_s, self._duration_s)
         self._position.setEnabled(False)
         # A retained local copy can still be closed when the host withdraws
@@ -740,12 +803,15 @@ class ReferenceVideoDialog(QDialog):
             ReferenceVideoFollowState.STALLED,
             ReferenceVideoFollowState.HOST_ATTENTION,
         }
+        if youtube and state is ReferenceVideoFollowState.NO_VIDEO:
+            needs_copy = False
         self._open_button.setVisible(needs_copy)
         self._open_button.setEnabled(needs_copy)
         self._hide_button.setVisible(keep_working)
         self._hide_button.setEnabled(keep_working)
         self._hide_button.setText("Show video" if self._hidden else "Hide video")
         self._close_action.setVisible(holds_copy)
+        self._close_action.setText("Close lesson" if youtube else "Close my copy")
         self._hide_action.setVisible(sharing and not keep_working)
         self._hide_action.setText("Show video" if self._hidden else "Hide video")
         self._sync_more_button()

@@ -94,9 +94,9 @@ def test_the_host_panel_opens_on_the_no_video_path(host_dialog):
     assert host_dialog.windowTitle() == "Paint along"
     assert host_dialog.minimumWidth() == 720
     assert host_dialog.minimumHeight() == 520
-    assert host_dialog._headline.text() == "Choose a process video"
+    assert host_dialog._headline.text() == "Choose a video to paint along"
     assert host_dialog._status.text() == (
-        "Paint in Procreate, Clip Studio Paint, Krita, or on paper beside WebJam."
+        "Choose a local video file or a YouTube lesson link. You control playback for the room."
     )
     assert host_dialog._surface_holder.isHidden() is False
     assert host_dialog._surface_placeholder.text() == (
@@ -156,7 +156,7 @@ def test_the_host_panel_shows_a_failure_instead_of_a_stale_source(host_dialog):
         )
     )
 
-    assert host_dialog._headline.text() == "Choose a process video"
+    assert host_dialog._headline.text() == "Choose a video to paint along"
     assert "couldn't open that video" in host_dialog._status.text()
     assert host_dialog._play_button.isEnabled() is False
     assert host_dialog._clock.text() == "0:00 / 0:00"
@@ -446,10 +446,10 @@ def test_the_launch_dialog_offers_art_without_a_local_project(qapp, tmp_path):
         # every caveat, waits until they are in the room.
         cards = {card.start_key: card for card in dialog._visible_start_cards()}
         paint_along = cards["paint_along"].accessibleDescription().casefold()
-        assert "already own" in paint_along
-        assert "own copy of the same file" in paint_along
-        assert "host keeps it in step" in paint_along
-        assert "supplies no videos" in paint_along
+        assert "file or lesson link" in paint_along
+        assert "local video file or a lesson link" in paint_along
+        assert "silent and follows the host" in paint_along
+        assert "talk in your meeting" in paint_along
     finally:
         dialog.deleteLater()
 

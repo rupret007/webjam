@@ -239,6 +239,7 @@ a = Analysis(
         *_extra_datas,
     ],
     hiddenimports=[
+        "PySide6.QtWebView",
         # Core modules
         "core.settings",
         "core.audio_engine",
@@ -362,7 +363,7 @@ a = Analysis(
         "websockets.sync.client",
         "segno",
     ],
-    hookspath=[],
+    hookspath=[str(ROOT / "packaging" / "pyinstaller-hooks")],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
@@ -373,11 +374,14 @@ a = Analysis(
         "PIL",
         "IPython",
         "jupyter",
-        # Webex is external-only. Do not ship an unused Chromium runtime,
-        # WebChannel bridge, embedded meeting page, or Guest Issuer surface.
+        # Conversation remains external. Paint along uses native WebKit on
+        # macOS and Qt WebEngine on the other desktop targets.
         "PySide6.QtWebChannel",
         "PySide6.QtWebEngineCore",
         "PySide6.QtWebEngineQuick",
+        "PySide6.QtWebEngineWidgets",
+    ] if sys.platform == "darwin" else [
+        "tkinter", "customtkinter", "matplotlib", "PIL", "IPython", "jupyter",
         "PySide6.QtWebEngineWidgets",
     ],
     win_no_prefer_redirects=False,

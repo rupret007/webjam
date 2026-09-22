@@ -258,6 +258,11 @@ def _run_app() -> int:
     logging.getLogger("webjam.qt").info("Starting Conductor UI")
 
     _configure_qt_attributes()
+    # Qt selects the native web view before QApplication exists. No page or
+    # network is opened until an artist explicitly chooses an online lesson.
+    from webjam_qt.widgets.youtube_video_player import initialize_youtube_webview
+
+    initialize_youtube_webview()
     app = QApplication.instance() or WebJamApplication(
         qt_arguments_without_test_night(arguments)
     )
@@ -460,6 +465,7 @@ def _run_app() -> int:
     finally:
         sys.excepthook = previous_exception_hook
         controller.shutdown()
+        QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     return exit_code
 
 
@@ -519,6 +525,12 @@ def run() -> int:
                 "Frozen Pocket Stage runtime smoke failed"
             )
             return 1
+    if (getattr(sys, "frozen", False)
+            and os.environ.get("WEBJAM_SMOKE_YOUTUBE_RUNTIME") == "1"):
+        from services.youtube_player_packaged_smoke import run_frozen_youtube_smoke
+        return run_frozen_youtube_smoke(
+            result_path=Path(os.environ.get("WEBJAM_SMOKE_YOUTUBE_RESULT", "")),
+        )
     try:
         return _run_app()
     except Exception:

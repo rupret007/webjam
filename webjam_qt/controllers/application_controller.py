@@ -2067,6 +2067,7 @@ class ApplicationController(QObject):
             intended_canvas=bool(start is not None and start.shared_canvas),
             intended_video=bool(start is not None and start.reference_video),
             paint_along_room=self._art_room_runs_paint_along(),
+            video_source_kind=ApplicationController._reference_video_source_kind(self),
         )
         presence = activities[0] if activities else ABSENT
         secondary = activities[1] if len(activities) > 1 else ABSENT
@@ -2126,6 +2127,7 @@ class ApplicationController(QObject):
                     intended_canvas=bool(start is not None and start.shared_canvas),
                     intended_video=bool(start is not None and start.reference_video),
                     paint_along_room=self._art_room_runs_paint_along(),
+                    video_source_kind=ApplicationController._reference_video_source_kind(self),
                 )
                 presence = activities[0] if activities else ABSENT
                 secondary_presence = activities[1] if len(activities) > 1 else ABSENT
@@ -13182,6 +13184,13 @@ class ApplicationController(QObject):
     # Art reference video
     # ------------------------------------------------------------------
 
+    def _reference_video_source_kind(self) -> str:
+        coordinator = getattr(self, "_reference_video", None)
+        if coordinator is None:
+            return "local"
+        snapshot = coordinator.host_snapshot if coordinator.hosting else coordinator.follow_snapshot
+        return getattr(snapshot, "source_kind", "local")
+
     def _reference_video_supported(self) -> bool:
         """Only the profile whose contract includes it may share video."""
 
@@ -13251,8 +13260,18 @@ class ApplicationController(QObject):
 
             return create_qt_reference_video_player(self.window)
 
+        def build_youtube_player():
+            from webjam_qt.widgets.youtube_video_player import create_youtube_video_player
+
+            player = create_youtube_video_player(self.window)
+            dialog = getattr(self, "_reference_video_dialog", None)
+            if dialog is not None:
+                dialog.attach_surface(player.surface)
+            return player
+
         coordinator = ReferenceVideoCoordinator(
             player_factory=build_player,
+            youtube_player_factory=build_youtube_player,
             host_peer_provider=self._room_host_publisher,
             on_host_snapshot=lambda snapshot: self._on_reference_video_host_snapshot(
                 snapshot, source=coordinator,
@@ -13286,12 +13305,14 @@ class ApplicationController(QObject):
                 "playing",
                 "paused",
             }
+            usable = usable or (state == "loading" and getattr(current, "source_kind", "local") == "youtube")
         else:
             current = snapshot if snapshot is not None else coordinator.follow_snapshot
             state = str(getattr(getattr(current, "state", None), "value", "") or "")
             # STALLED retains a proven local copy and intentionally holds its
             # last honest frame. Hidden and blocked copies expose no picture.
             usable = state in {"following", "stalled"}
+            usable = usable or bool(getattr(coordinator, "opening_youtube", False))
         return coordinator.player_surface if usable else None
 
     def _release_reference_video(self) -> None:
@@ -13355,6 +13376,11 @@ class ApplicationController(QObject):
                         lambda: coordinator.share(path)
                     )
                 )
+                dialog.share_youtube_requested.connect(
+                    lambda url: self._run_current_host_paint_along(coordinator, dialog,
+                        lambda: coordinator.share_youtube(url)
+                    )
+                )
                 dialog.withdraw_requested.connect(
                     lambda: self._run_current_host_paint_along(coordinator, dialog, coordinator.withdraw)
                 )
@@ -13378,6 +13404,11 @@ class ApplicationController(QObject):
                         coordinator, dialog, lambda: coordinator.open_local_copy(path)
                     )
                 )
+                dialog.open_youtube_requested.connect(
+                    lambda: self._run_current_guest_paint_along(
+                        coordinator, dialog, coordinator.open_youtube_lesson,
+                    )
+                )
                 dialog.close_local_copy_requested.connect(
                     lambda: self._run_current_guest_paint_along(
                         coordinator, dialog, coordinator.close_local_copy
@@ -13388,6 +13419,10 @@ class ApplicationController(QObject):
                         coordinator, dialog, lambda: coordinator.set_hidden(bool(hidden))
                     )
                 )
+            dialog.visibility_changed.connect(
+                lambda visible: coordinator.set_surface_visible(visible)
+                if getattr(self, "_reference_video", None) is coordinator else None
+            )
             dialog.return_requested.connect(
                 lambda: self._return_to_art_room(dialog)
             )
@@ -13395,6 +13430,7 @@ class ApplicationController(QObject):
                 lambda: self._watch_shared_lesson(coordinator, dialog)
             )
             self._reference_video_dialog = dialog
+        coordinator.set_surface_visible(True)
         self._sync_paint_along_room()
         if coordinator.hosting:
             dialog.set_host_snapshot(coordinator.host_snapshot)
@@ -13720,11 +13756,15 @@ class ApplicationController(QObject):
         if not self._sync_paint_along_room():
             return
         state = str(getattr(getattr(snapshot, "state", None), "value", "") or "")
-        if state == getattr(self, "_reference_video_notified_state", ""):
+        youtube = getattr(snapshot, "source_kind", "local") == "youtube"
+        notice_key = f"youtube:{state}:{snapshot.video_id}" if youtube else state
+        if notice_key == getattr(self, "_reference_video_notified_state", ""):
             return
         self._clear_reference_video_notice()
-        self._reference_video_notified_state = state
+        self._reference_video_notified_state = notice_key
         notice = self._REFERENCE_VIDEO_NOTICES.get(state)
+        if notice and youtube:
+            notice = snapshot.message
         if notice and not getattr(self, "_shutdown", False):
             self._flash_reference_video_notice(notice, ms=9000)
 

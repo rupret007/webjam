@@ -779,8 +779,13 @@ class LaunchDialog(QDialog):
         copy = _CREATOR_LAUNCH_COPY[self._selected_creator_profile.key]
         available = self._can_host()
         restriction = "" if available else "Hosting is available in the macOS app."
-        self._set_choice_helper(
+        next_step = (
+            "Host starts Paint along, then chooses a file or lesson link. Join uses the host's invite."
+            if start.key == "paint_along" else
             f"Host starts {start.label}. Join uses the host's invite."
+        )
+        self._set_choice_helper(
+            next_step
             if available else restriction
         )
         self._host_button.setEnabled(available and not self._submitting)
