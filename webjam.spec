@@ -374,7 +374,7 @@ a = Analysis(
         "PIL",
         "IPython",
         "jupyter",
-        # Conversation remains external. Paint along uses native WebKit on
+        # Webex is external-only. Paint along uses native WebKit on
         # macOS and Qt WebEngine on the other desktop targets.
         "PySide6.QtWebChannel",
         "PySide6.QtWebEngineCore",
