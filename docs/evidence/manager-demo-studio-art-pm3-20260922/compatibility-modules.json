@@ -1,0 +1,18 @@
+[
+  "tests/test_art_activity_guest_journey.py",
+  "tests/test_art_left_out_rules.py",
+  "tests/test_art_room_activities.py",
+  "tests/test_art_room_activities_ui.py",
+  "tests/test_art_room_overview.py",
+  "tests/test_art_room_overview_controller.py",
+  "tests/test_art_room_overview_ui.py",
+  "tests/test_art_room_presence.py",
+  "tests/test_art_shared_lesson_widgets.py",
+  "tests/test_art_start_ux.py",
+  "tests/test_paint_along_youtube_journey.py",
+  "tests/test_paint_along_youtube_ui.py",
+  "tests/test_reference_video_youtube.py",
+  "tests/test_shared_canvas.py",
+  "tests/test_shared_canvas_coordinator.py",
+  "tests/test_shared_canvas_ui.py"
+]

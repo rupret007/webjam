@@ -1,0 +1,334 @@
+{
+  "description": "Selected BEFORE/AFTER finite Art fixtures: 760x600 room windows or 540x260 canvas dialogs. 125 means widened glyphs, not OS scaling.",
+  "baseline_revision": "844ea1080500fc937101b19b21168b5a5525600c",
+  "versions": {
+    "before": {
+      "source": {
+        "base_revision": "844ea1080500fc937101b19b21168b5a5525600c",
+        "source_description": "Actual source files loaded for these rendered fixtures.",
+        "sha256": {
+          "core/art_companion.py": "9c296db011d28582d42f7e5abb509dd1d3df043835acc7f5ff543df9e482f3a5",
+          "core/art_room_activities.py": "81feae8cfdbdb78a0eadaea6cebc3ef514e4a822d6b42219956954042beca07c",
+          "core/art_room_overview.py": "c5dde7c9d78eceab5517442823024882a54e412be3de93966f5564a8b7690cb1",
+          "core/art_room_presence.py": "50a9d21071437ccafc88aaf9dfa0ce3ff555cf95957effbfdcf2ad11d5a410fb",
+          "core/creative_modes.py": "c97af586d1fd27e03aa93e0274134e7428836beb978ee81569de8e664dc40efc",
+          "core/meeting_companion.py": "268922771efd9e89bc247fcf3d19cbd87c7d661909a0731614405c102899fa05",
+          "core/session_conductor.py": "91e8fd809107b4e9044d55101aeb3fea521431ef500a197d61a4d6511897a60f",
+          "core/shared_canvas.py": "e630c0dd5f1701c723ff405884a4ff5a982b3bb1e84539f72155b8e625411017",
+          "webjam_qt/widgets/art_room_overview.py": "72b25e207f2bfb28147c30e96f6b155774c6bdb477b29fc82fd8ec01a1289e25",
+          "webjam_qt/widgets/session_hud.py": "2f102f69906fbf55c9b5059aac0c5fb959f0c0f4b7b0aea3d5af6515b92c6db5",
+          "webjam_qt/widgets/session_strip.py": "d05dcaf63888f80e936a0b4518b05282451b4f7610d9cf33afee0e7f65b3faad",
+          "webjam_qt/windows/conductor_window.py": "974831fe0e98308a45731578f174439c59d95a34d602f0d18234ed997ea3966c",
+          "webjam_qt/windows/shared_canvas.py": "85a8bc3a1e025f1c593392a18b6e19852a8b36dd021702a4bff401526c966573",
+          "webjam_qt/theme/conductor.qss": "facb7cd9ef37ff2f89ea09f49e8d70ada5237290f01a604418cf84954d41e476",
+          "webjam_qt/theme/tokens.py": "59841108ad3a045467f1a5daac5397bb0a23dddda42e55afb438d8de5fdb54f6",
+          "webjam_qt/theme/fonts/Inter-Bold.ttf": "288316099b1e0a47a4716d159098005eef7c0066921f34e3200393dbdb01947f",
+          "webjam_qt/theme/fonts/Inter-Medium.ttf": "97ad806f526e41546d46365bb3a393145f75b7b1568913db74549ad8b8dba872",
+          "webjam_qt/theme/fonts/Inter-Regular.ttf": "40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82",
+          "webjam_qt/theme/fonts/Inter-SemiBold.ttf": "78a843fade9d4612a5567302fb595b56976eb5fcebf4fea5a5912d638bafcde3"
+        },
+        "renderer_sha256": "4f8c728e9d27c1c7164f73369fd785a1ac74f92e0dc8c8878b48f5a181ffa6fa",
+        "room_size": [
+          760,
+          600
+        ],
+        "font_pixel_size": 13,
+        "glyph_width_percent": [
+          100,
+          125
+        ],
+        "proof_boundary": "Finite rendered room facts; no live transport, provider or physical device proof."
+      },
+      "fixtures": [
+        {
+          "fixture": "art-before-guest-make-canvas-100.png",
+          "role": "guest",
+          "case": "make-canvas",
+          "stretch": 100,
+          "making_detail": "",
+          "activities": [
+            "canvas"
+          ],
+          "keyboard_reached": [
+            "Open workspace",
+            "Set Up Conversation"
+          ],
+          "scroll_max": 0,
+          "connection_detail_accessible": true,
+          "image_sha256": "3c9ef7b5e9a38be24e922f11aeb18bb5b6a16a9c3d5b80f20c8651ea597a318b"
+        },
+        {
+          "fixture": "art-before-guest-make-missing-app-125.png",
+          "role": "guest",
+          "case": "make-missing-app",
+          "stretch": 125,
+          "making_detail": "",
+          "activities": [
+            "canvas"
+          ],
+          "keyboard_reached": [
+            "Open workspace",
+            "Set Up Conversation"
+          ],
+          "scroll_max": 0,
+          "connection_detail_accessible": true,
+          "image_sha256": "655e1af6f42f17582bd0bb21e0dc97e8d982df896ab1bedde5e5c7e2faacf465"
+        },
+        {
+          "fixture": "art-before-guest-paint-both-125.png",
+          "role": "guest",
+          "case": "paint-both",
+          "stretch": 125,
+          "making_detail": "",
+          "activities": [
+            "canvas",
+            "video"
+          ],
+          "keyboard_reached": [
+            "Open workspace",
+            "Open Paint along",
+            "Set Up Conversation"
+          ],
+          "scroll_max": 31,
+          "connection_detail_accessible": true,
+          "image_sha256": "24f0b7e12a2b244b71036ea273eb74ca5867408cdbf43adab16ed9323c357f65"
+        },
+        {
+          "fixture": "art-before-guest-install-125.png",
+          "role": "guest",
+          "case": "install",
+          "stretch": 125,
+          "status": "Install Drawpile to join the canvas, or just talk.",
+          "action": "Install Drawpile",
+          "image_sha256": "d6c19a4b0bfc4e4a7cec886345f2e8a4c927b014b688dd7110e8f2b4818af760"
+        },
+        {
+          "fixture": "art-before-host-make-canvas-100.png",
+          "role": "host",
+          "case": "make-canvas",
+          "stretch": 100,
+          "making_detail": "",
+          "activities": [
+            "canvas"
+          ],
+          "keyboard_reached": [
+            "Open workspace",
+            "Set Up Conversation"
+          ],
+          "scroll_max": 0,
+          "connection_detail_accessible": true,
+          "image_sha256": "80e92a0a2388cabe6e676ae2abff09eb1e11188d5942c5a1c49b36fe66fceae0"
+        },
+        {
+          "fixture": "art-before-host-make-missing-app-125.png",
+          "role": "host",
+          "case": "make-missing-app",
+          "stretch": 125,
+          "making_detail": "",
+          "activities": [
+            "canvas"
+          ],
+          "keyboard_reached": [
+            "Open workspace",
+            "Set Up Conversation"
+          ],
+          "scroll_max": 0,
+          "connection_detail_accessible": true,
+          "image_sha256": "3802746268f293192b2c8ccdf160057cd4cf6020294c99aa49f2c89d35b345f3"
+        },
+        {
+          "fixture": "art-before-host-paint-both-125.png",
+          "role": "host",
+          "case": "paint-both",
+          "stretch": 125,
+          "making_detail": "",
+          "activities": [
+            "canvas",
+            "video"
+          ],
+          "keyboard_reached": [
+            "Open workspace",
+            "Open Paint along",
+            "Set Up Conversation"
+          ],
+          "scroll_max": 31,
+          "connection_detail_accessible": true,
+          "image_sha256": "e87c266f1d263d2e7ba30eb253e049fa8ef9f41263748153974ba1f0689b6e99"
+        },
+        {
+          "fixture": "art-before-host-install-125.png",
+          "role": "host",
+          "case": "install",
+          "stretch": 125,
+          "status": "Install Drawpile to paint together.",
+          "action": "Install Drawpile",
+          "image_sha256": "a23c6b07e6692b3b7f4a97e463dfc9313228999e41b8b114b11179ebc5b073b7"
+        }
+      ]
+    },
+    "after": {
+      "source": {
+        "base_revision": "844ea1080500fc937101b19b21168b5a5525600c",
+        "source_description": "Actual source files loaded for these rendered fixtures.",
+        "sha256": {
+          "core/art_companion.py": "9c296db011d28582d42f7e5abb509dd1d3df043835acc7f5ff543df9e482f3a5",
+          "core/art_room_activities.py": "81feae8cfdbdb78a0eadaea6cebc3ef514e4a822d6b42219956954042beca07c",
+          "core/art_room_overview.py": "7439c0f9e62fa934203578246b3becb734a226214cd3445751d9505c70c23793",
+          "core/art_room_presence.py": "50a9d21071437ccafc88aaf9dfa0ce3ff555cf95957effbfdcf2ad11d5a410fb",
+          "core/creative_modes.py": "c97af586d1fd27e03aa93e0274134e7428836beb978ee81569de8e664dc40efc",
+          "core/meeting_companion.py": "268922771efd9e89bc247fcf3d19cbd87c7d661909a0731614405c102899fa05",
+          "core/session_conductor.py": "91e8fd809107b4e9044d55101aeb3fea521431ef500a197d61a4d6511897a60f",
+          "core/shared_canvas.py": "63c192d23c17981766acc022714f09aaea0ae6867bd3176d883def26b357c3fb",
+          "webjam_qt/widgets/art_room_overview.py": "a1b019d556709daf62db752be90e4838b01c3bb9fa31d4d5abb198addf2cc3dc",
+          "webjam_qt/widgets/session_hud.py": "2f102f69906fbf55c9b5059aac0c5fb959f0c0f4b7b0aea3d5af6515b92c6db5",
+          "webjam_qt/widgets/session_strip.py": "d05dcaf63888f80e936a0b4518b05282451b4f7610d9cf33afee0e7f65b3faad",
+          "webjam_qt/windows/conductor_window.py": "974831fe0e98308a45731578f174439c59d95a34d602f0d18234ed997ea3966c",
+          "webjam_qt/windows/shared_canvas.py": "ae3fd5b33b28f31868e03eae1669a522d79a4693df3ee63f6462e1a7b7b1be1d",
+          "webjam_qt/theme/conductor.qss": "facb7cd9ef37ff2f89ea09f49e8d70ada5237290f01a604418cf84954d41e476",
+          "webjam_qt/theme/tokens.py": "59841108ad3a045467f1a5daac5397bb0a23dddda42e55afb438d8de5fdb54f6",
+          "webjam_qt/theme/fonts/Inter-Bold.ttf": "288316099b1e0a47a4716d159098005eef7c0066921f34e3200393dbdb01947f",
+          "webjam_qt/theme/fonts/Inter-Medium.ttf": "97ad806f526e41546d46365bb3a393145f75b7b1568913db74549ad8b8dba872",
+          "webjam_qt/theme/fonts/Inter-Regular.ttf": "40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82",
+          "webjam_qt/theme/fonts/Inter-SemiBold.ttf": "78a843fade9d4612a5567302fb595b56976eb5fcebf4fea5a5912d638bafcde3"
+        },
+        "renderer_sha256": "4f8c728e9d27c1c7164f73369fd785a1ac74f92e0dc8c8878b48f5a181ffa6fa",
+        "room_size": [
+          760,
+          600
+        ],
+        "font_pixel_size": 13,
+        "glyph_width_percent": [
+          100,
+          125
+        ],
+        "proof_boundary": "Finite rendered room facts; no live transport, provider or physical device proof."
+      },
+      "fixtures": [
+        {
+          "fixture": "art-after-guest-make-canvas-100.png",
+          "role": "guest",
+          "case": "make-canvas",
+          "stretch": 100,
+          "making_detail": "Start making with paper, clay, a model, printer, or your usual app. Shared activities are optional.",
+          "activities": [
+            "canvas"
+          ],
+          "keyboard_reached": [
+            "Open workspace",
+            "Set Up Conversation"
+          ],
+          "scroll_max": 0,
+          "connection_detail_accessible": true,
+          "image_sha256": "9655f30ce77d26b05ed9e86a868bd38407356d50f941c20fb36e7e3eddd85365"
+        },
+        {
+          "fixture": "art-after-guest-make-missing-app-125.png",
+          "role": "guest",
+          "case": "make-missing-app",
+          "stretch": 125,
+          "making_detail": "Start making with paper, clay, a model, printer, or your usual app. Shared activities are optional.",
+          "activities": [
+            "canvas"
+          ],
+          "keyboard_reached": [
+            "Open workspace",
+            "Set Up Conversation"
+          ],
+          "scroll_max": 0,
+          "connection_detail_accessible": true,
+          "image_sha256": "ddb6155906a59f606aa781b7270351f4b142e7072185f33584a34fc21ea53b59"
+        },
+        {
+          "fixture": "art-after-guest-paint-both-125.png",
+          "role": "guest",
+          "case": "paint-both",
+          "stretch": 125,
+          "making_detail": "Start making with paper, clay, a model, printer, or your usual app. Shared activities are optional.",
+          "activities": [
+            "canvas",
+            "video"
+          ],
+          "keyboard_reached": [
+            "Open workspace",
+            "Open Paint along",
+            "Set Up Conversation"
+          ],
+          "scroll_max": 0,
+          "connection_detail_accessible": true,
+          "image_sha256": "844f472f20c51373d9c0a0839466eb719e925c2173f872a59203aa7780597505"
+        },
+        {
+          "fixture": "art-after-guest-install-125.png",
+          "role": "guest",
+          "case": "install",
+          "stretch": 125,
+          "status": "Install Drawpile to join the canvas. You can keep making with your own tools.",
+          "action": "Install Drawpile",
+          "image_sha256": "af1b17748d142a0c11490038b4a93bcffe20cc17e18a7bea90ef911af4bc8114"
+        },
+        {
+          "fixture": "art-after-host-make-canvas-100.png",
+          "role": "host",
+          "case": "make-canvas",
+          "stretch": 100,
+          "making_detail": "Start making with paper, clay, a model, printer, or your usual app. Shared activities are optional.",
+          "activities": [
+            "canvas"
+          ],
+          "keyboard_reached": [
+            "Open workspace",
+            "Set Up Conversation"
+          ],
+          "scroll_max": 0,
+          "connection_detail_accessible": true,
+          "image_sha256": "66ee166d8335069e4efb917ff98dd845559eede81b2aa981f129c39f29120ee9"
+        },
+        {
+          "fixture": "art-after-host-make-missing-app-125.png",
+          "role": "host",
+          "case": "make-missing-app",
+          "stretch": 125,
+          "making_detail": "Start making with paper, clay, a model, printer, or your usual app. Shared activities are optional.",
+          "activities": [
+            "canvas"
+          ],
+          "keyboard_reached": [
+            "Open workspace",
+            "Set Up Conversation"
+          ],
+          "scroll_max": 0,
+          "connection_detail_accessible": true,
+          "image_sha256": "fc3ac3f023c2bc9800bca795892c689452dc9281ee0d9a05c9c8510a2f4fe2d8"
+        },
+        {
+          "fixture": "art-after-host-paint-both-125.png",
+          "role": "host",
+          "case": "paint-both",
+          "stretch": 125,
+          "making_detail": "Start making with paper, clay, a model, printer, or your usual app. Shared activities are optional.",
+          "activities": [
+            "canvas",
+            "video"
+          ],
+          "keyboard_reached": [
+            "Open workspace",
+            "Open Paint along",
+            "Set Up Conversation"
+          ],
+          "scroll_max": 0,
+          "connection_detail_accessible": true,
+          "image_sha256": "d71f001228d5a952f2f124c4c82a40d06ce829952dd808c41b98833aa22d4d9c"
+        },
+        {
+          "fixture": "art-after-host-install-125.png",
+          "role": "host",
+          "case": "install",
+          "stretch": 125,
+          "status": "Install Drawpile to host a shared canvas. You can keep making with your own tools.",
+          "action": "Install Drawpile",
+          "image_sha256": "18ba24c0df4cd75f1e6f477842968b91b5b2c48df13d611d93529628b5f8a9a5"
+        }
+      ]
+    }
+  }
+}

@@ -97,6 +97,12 @@ class ArtRoomOverviewWidget(QScrollArea):
         connection.addWidget(self._connections_list)
         self._content_layout.addLayout(connection)
 
+        self._making_detail = self._label(
+            "ArtRoomOverviewDetail", "Make from your own space"
+        )
+        self._making_detail.hide()
+        connection.addWidget(self._making_detail)
+
         divider = QFrame()
         divider.setObjectName("ArtRoomOverviewDivider")
         divider.setFixedHeight(1)
@@ -229,6 +235,7 @@ class ArtRoomOverviewWidget(QScrollArea):
             (self._role, overview.role_label),
             (self._connection, overview.connection_label),
             (self._connection_detail, overview.connection_detail),
+            (self._making_detail, overview.making_detail),
             (self._activity, overview.activity_label),
             (self._activity_detail, overview.activity_detail),
             (self._secondary_activity, overview.secondary_activity_label),
@@ -272,7 +279,9 @@ class ArtRoomOverviewWidget(QScrollArea):
         description = ". ".join(
             text.rstrip(".") for text in (
                 overview.phase_label, overview.role_label,
+                overview.title if overview.making_detail else "",
                 overview.connection_label, overview.connection_detail,
+                overview.making_detail,
                 overview.activity_label, overview.activity_detail,
                 *secondary_description,
             ) if text
@@ -379,6 +388,18 @@ class ArtRoomOverviewWidget(QScrollArea):
             self._activity_row, self._secondary_activity_layout, self._actions,
         ):
             layout.setDirection(direction)
+        if self._overview is not None:
+            if self._overview.making_detail:
+                # The actionable own-tools sentence replaces this display
+                # heading, keeping both optional actions on compact screens.
+                self._title.hide()
+            # The connection heading still names the confirmed room fact.
+            # Its longer explanation remains in the accessible description;
+            # compact rooms keep the making step and activity actions visible.
+            self._connection_detail.setVisible(bool(
+                self._overview.connection_detail
+                and not (compact and self._overview.making_detail)
+            ))
         # Resizing for Conversation may move a button that already owns
         # focus, so it will not receive another FocusIn event. Wait until
         # the queued layout has settled before keeping that action visible.

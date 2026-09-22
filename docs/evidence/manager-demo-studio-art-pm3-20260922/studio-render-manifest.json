@@ -1,0 +1,968 @@
+{
+  "base_revision": "844ea1080500fc937101b19b21168b5a5525600c",
+  "source_sha256": {
+    "webjam_qt/widgets/recording_studio.py": "fcc6ad50d46b39e8e0dacb9f596cfaeb3596f6524db746a6bc53d063bc5e5006",
+    "webjam_qt/widgets/studio_editing.py": "43dba41a4e3235f3f5633170ca9ee029599a41e9accd2168da100b028f7975a7",
+    "webjam_qt/widgets/studio_review.py": "2a2a61bbd983935bc37a4c9cef82d42819aa035112ab396e25214c15f573f553",
+    "webjam_qt/windows/conductor_window.py": "974831fe0e98308a45731578f174439c59d95a34d602f0d18234ed997ea3966c",
+    "webjam_qt/theme/conductor.qss": "facb7cd9ef37ff2f89ea09f49e8d70ada5237290f01a604418cf84954d41e476",
+    "tests/test_studio_compact_workspace.py": "dbf4c54edb3ec109a1bc64ff30bcab7264da425a14e0ef602a48f1bc273039ab",
+    "docs/evidence/manager-demo-studio-art-pm3-20260922/render_studio.py": "31e453a7c30f716e4c8beb4e1e43907947f3b7fc68cdb0d5dfced1160fe7e189"
+  },
+  "fixtures": [
+    {
+      "image": "studio-after-760-theme-top.png",
+      "sha256": "0caea7a4bc450c3f0e9e6ed502996f7007f31b840e3dfd197b43ee2e945c1e14",
+      "window": [
+        760,
+        600
+      ],
+      "studio": [
+        760,
+        407
+      ],
+      "controls": [
+        {
+          "name": "\u25cf Record Session",
+          "text": "\u25cf Record Session",
+          "visible": true,
+          "enabled": false,
+          "rect": [
+            608,
+            129,
+            144,
+            54
+          ]
+        },
+        {
+          "name": "\u25b6 Play",
+          "text": "\u25b6 Play",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            8,
+            192,
+            76,
+            52
+          ]
+        },
+        {
+          "name": "Stop Studio playback",
+          "text": "\u25a0 Stop",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            90,
+            192,
+            74,
+            52
+          ]
+        },
+        {
+          "name": "Export aligned tracks",
+          "text": "Export Tracks",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            288,
+            192,
+            124,
+            52
+          ]
+        },
+        {
+          "name": "Studio playback output",
+          "text": "",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            330,
+            692,
+            166,
+            46
+          ]
+        },
+        {
+          "name": "StudioHint",
+          "text": "Take verified and ready to mix or export.",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            8,
+            504,
+            744,
+            16
+          ]
+        }
+      ]
+    },
+    {
+      "image": "studio-after-760-theme-mixer.png",
+      "sha256": "aa3aa78280dd567bdcf8d48b8a73f14d02bcb6cc651ce277f84112edfe86fbff",
+      "window": [
+        760,
+        600
+      ],
+      "studio": [
+        760,
+        407
+      ],
+      "controls": [
+        {
+          "name": "\u25cf Record Session",
+          "text": "\u25cf Record Session",
+          "visible": true,
+          "enabled": false,
+          "rect": [
+            608,
+            129,
+            144,
+            54
+          ]
+        },
+        {
+          "name": "\u25b6 Play",
+          "text": "\u25b6 Play",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            8,
+            192,
+            76,
+            52
+          ]
+        },
+        {
+          "name": "Stop Studio playback",
+          "text": "\u25a0 Stop",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            90,
+            192,
+            74,
+            52
+          ]
+        },
+        {
+          "name": "Export aligned tracks",
+          "text": "Export Tracks",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            288,
+            192,
+            124,
+            52
+          ]
+        },
+        {
+          "name": "Studio playback output",
+          "text": "",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            330,
+            631,
+            166,
+            46
+          ]
+        },
+        {
+          "name": "StudioHint",
+          "text": "Take verified and ready to mix or export.",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            8,
+            504,
+            744,
+            16
+          ]
+        }
+      ]
+    },
+    {
+      "image": "studio-after-760-22px-top.png",
+      "sha256": "9481b7aac19a5030b94f84c9f016730a79a7dd944a8d4d7fe3c099f088040da3",
+      "window": [
+        760,
+        600
+      ],
+      "studio": [
+        760,
+        407
+      ],
+      "controls": [
+        {
+          "name": "\u25cf Record Session",
+          "text": "\u25cf Record Session",
+          "visible": true,
+          "enabled": false,
+          "rect": [
+            508,
+            213,
+            244,
+            54
+          ]
+        },
+        {
+          "name": "\u25b6 Play",
+          "text": "\u25b6 Play",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            8,
+            271,
+            181,
+            52
+          ]
+        },
+        {
+          "name": "Stop Studio playback",
+          "text": "\u25a0 Stop",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            195,
+            271,
+            181,
+            52
+          ]
+        },
+        {
+          "name": "Export aligned tracks",
+          "text": "Export Tracks",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            569,
+            271,
+            183,
+            52
+          ]
+        },
+        {
+          "name": "Studio playback output",
+          "text": "",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            351,
+            805,
+            183,
+            46
+          ]
+        },
+        {
+          "name": "StudioHint",
+          "text": "Take verified and ready to mix or export.",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            8,
+            493,
+            744,
+            27
+          ]
+        }
+      ]
+    },
+    {
+      "image": "studio-after-1000-theme-top.png",
+      "sha256": "ad74fd8615e6ffe3d1359b13d65602580c34c2c631e18176026116b50e4f620a",
+      "window": [
+        1000,
+        740
+      ],
+      "studio": [
+        1000,
+        547
+      ],
+      "controls": [
+        {
+          "name": "\u25cf Record Session",
+          "text": "\u25cf Record Session",
+          "visible": true,
+          "enabled": false,
+          "rect": [
+            840,
+            137,
+            144,
+            54
+          ]
+        },
+        {
+          "name": "\u25b6 Play",
+          "text": "\u25b6 Play",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            16,
+            208,
+            76,
+            52
+          ]
+        },
+        {
+          "name": "Stop Studio playback",
+          "text": "\u25a0 Stop",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            98,
+            208,
+            74,
+            52
+          ]
+        },
+        {
+          "name": "Export aligned tracks",
+          "text": "Export Tracks",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            296,
+            208,
+            124,
+            52
+          ]
+        },
+        {
+          "name": "Studio playback output",
+          "text": "",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            353,
+            716,
+            246,
+            46
+          ]
+        },
+        {
+          "name": "StudioHint",
+          "text": "Take verified and ready to mix or export.",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            16,
+            636,
+            968,
+            16
+          ]
+        }
+      ]
+    },
+    {
+      "image": "studio-after-1000-22px-top.png",
+      "sha256": "87814ba65db572fa87776fa4ee28e9fd858a5815348acd5c373d9a3fb592cd2e",
+      "window": [
+        1000,
+        740
+      ],
+      "studio": [
+        1000,
+        547
+      ],
+      "controls": [
+        {
+          "name": "\u25cf Record Session",
+          "text": "\u25cf Record Session",
+          "visible": true,
+          "enabled": false,
+          "rect": [
+            765,
+            148,
+            219,
+            54
+          ]
+        },
+        {
+          "name": "\u25b6 Play",
+          "text": "\u25b6 Play",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            16,
+            229,
+            104,
+            52
+          ]
+        },
+        {
+          "name": "Stop Studio playback",
+          "text": "\u25a0 Stop",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            126,
+            229,
+            102,
+            52
+          ]
+        },
+        {
+          "name": "Export aligned tracks",
+          "text": "Export Tracks",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            405,
+            229,
+            183,
+            52
+          ]
+        },
+        {
+          "name": "Studio playback output",
+          "text": "",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            419,
+            737,
+            195,
+            46
+          ]
+        },
+        {
+          "name": "StudioHint",
+          "text": "Take verified and ready to mix or export.",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            16,
+            625,
+            968,
+            27
+          ]
+        }
+      ]
+    },
+    {
+      "image": "studio-after-1000-22px-bottom.png",
+      "sha256": "028190a424796e284ec0d0a4269f3dbb1a503d71dae111456b56fc01ee5ae363",
+      "window": [
+        1000,
+        740
+      ],
+      "studio": [
+        1000,
+        547
+      ],
+      "controls": [
+        {
+          "name": "\u25cf Record Session",
+          "text": "\u25cf Record Session",
+          "visible": true,
+          "enabled": false,
+          "rect": [
+            765,
+            148,
+            219,
+            54
+          ]
+        },
+        {
+          "name": "\u25b6 Play",
+          "text": "\u25b6 Play",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            16,
+            229,
+            104,
+            52
+          ]
+        },
+        {
+          "name": "Stop Studio playback",
+          "text": "\u25a0 Stop",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            126,
+            229,
+            102,
+            52
+          ]
+        },
+        {
+          "name": "Export aligned tracks",
+          "text": "Export Tracks",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            405,
+            229,
+            183,
+            52
+          ]
+        },
+        {
+          "name": "Studio playback output",
+          "text": "",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            419,
+            551,
+            195,
+            46
+          ]
+        },
+        {
+          "name": "StudioHint",
+          "text": "Take verified and ready to mix or export.",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            16,
+            625,
+            968,
+            27
+          ]
+        }
+      ]
+    },
+    {
+      "image": "studio-after-retry-and-notes-22px.png",
+      "sha256": "6c45fb5fb7f03239a1d604a3b22f2a31d0446a1ef08fe077177f944105388ddb",
+      "window": [
+        760,
+        600
+      ],
+      "studio": [
+        760,
+        340
+      ],
+      "controls": [
+        {
+          "name": "\u25cf Record Session",
+          "text": "\u25cf Record Session",
+          "visible": true,
+          "enabled": false,
+          "rect": [
+            508,
+            266,
+            244,
+            54
+          ]
+        },
+        {
+          "name": "\u25b6 Play",
+          "text": "\u25b6 Play",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            8,
+            324,
+            181,
+            52
+          ]
+        },
+        {
+          "name": "Stop Studio playback",
+          "text": "\u25a0 Stop",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            195,
+            324,
+            181,
+            52
+          ]
+        },
+        {
+          "name": "Export aligned tracks",
+          "text": "Export Tracks",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            569,
+            324,
+            183,
+            52
+          ]
+        },
+        {
+          "name": "Studio playback output",
+          "text": "",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            351,
+            858,
+            183,
+            46
+          ]
+        },
+        {
+          "name": "StudioHint",
+          "text": "Studio couldn't save those review choices. The recorded take is safe.",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            8,
+            478,
+            744,
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "image": "studio-after-playback-output-22px.png",
+      "sha256": "032ca1e203c9e12e89fb95f990590616a3448aff1ed557404127113fa49735f1",
+      "window": [
+        760,
+        600
+      ],
+      "studio": [
+        760,
+        407
+      ],
+      "controls": [
+        {
+          "name": "\u25cf Record Session",
+          "text": "\u25cf Record Session",
+          "visible": true,
+          "enabled": false,
+          "rect": [
+            508,
+            213,
+            244,
+            54
+          ]
+        },
+        {
+          "name": "\u25b6 Play",
+          "text": "\u25b6 Play",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            8,
+            271,
+            181,
+            52
+          ]
+        },
+        {
+          "name": "Stop Studio playback",
+          "text": "\u25a0 Stop",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            195,
+            271,
+            181,
+            52
+          ]
+        },
+        {
+          "name": "Export aligned tracks",
+          "text": "Export Tracks",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            569,
+            271,
+            183,
+            52
+          ]
+        },
+        {
+          "name": "Studio playback output",
+          "text": "",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            351,
+            407,
+            183,
+            46
+          ]
+        },
+        {
+          "name": "StudioHint",
+          "text": "Studio couldn't open the selected playback output. Choose another Playback output in Studio, then choose Play.",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            8,
+            467,
+            744,
+            53
+          ]
+        }
+      ]
+    },
+    {
+      "image": "studio-after-live-stop-and-notes-22px.png",
+      "sha256": "24dc8b922608a469ba540662ffd48464205b88f58176cab62b11530c3267c804",
+      "window": [
+        760,
+        600
+      ],
+      "studio": [
+        760,
+        347
+      ],
+      "controls": [
+        {
+          "name": "\u25a0 Stop Recording",
+          "text": "\u25a0 Stop Recording",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            535,
+            213,
+            217,
+            54
+          ]
+        },
+        {
+          "name": "\u25b6 Play",
+          "text": "\u25b6 Play",
+          "visible": false,
+          "enabled": false,
+          "rect": [
+            8,
+            252,
+            76,
+            52
+          ]
+        },
+        {
+          "name": "Stop Studio playback",
+          "text": "\u25a0 Stop",
+          "visible": false,
+          "enabled": false,
+          "rect": [
+            90,
+            252,
+            74,
+            52
+          ]
+        },
+        {
+          "name": "Export aligned tracks",
+          "text": "Export Tracks",
+          "visible": false,
+          "enabled": false,
+          "rect": [
+            288,
+            252,
+            183,
+            52
+          ]
+        },
+        {
+          "name": "Studio playback output",
+          "text": "",
+          "visible": false,
+          "enabled": true,
+          "rect": [
+            411,
+            744,
+            166,
+            46
+          ]
+        },
+        {
+          "name": "StudioHint",
+          "text": "Recording 1 proven musician source.",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            8,
+            493,
+            744,
+            27
+          ]
+        }
+      ]
+    },
+    {
+      "image": "studio-after-export-busy-22px.png",
+      "sha256": "0f567947992700a4b6c80a25cab66f54ea2c692a31d989cbb27e22ffbbf861c0",
+      "window": [
+        760,
+        600
+      ],
+      "studio": [
+        760,
+        407
+      ],
+      "controls": [
+        {
+          "name": "\u25cf Record Session",
+          "text": "\u25cf Record Session",
+          "visible": true,
+          "enabled": false,
+          "rect": [
+            508,
+            213,
+            244,
+            54
+          ]
+        },
+        {
+          "name": "\u25b6 Play",
+          "text": "\u25b6 Play",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            8,
+            271,
+            182,
+            52
+          ]
+        },
+        {
+          "name": "Stop Studio playback",
+          "text": "\u25a0 Stop",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            196,
+            271,
+            181,
+            52
+          ]
+        },
+        {
+          "name": "Exporting\u2026",
+          "text": "Exporting\u2026",
+          "visible": true,
+          "enabled": false,
+          "rect": [
+            571,
+            271,
+            181,
+            52
+          ]
+        },
+        {
+          "name": "Studio playback output",
+          "text": "",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            351,
+            805,
+            183,
+            46
+          ]
+        },
+        {
+          "name": "StudioHint",
+          "text": "Preparing aligned 24-bit stems and a stereo rough mix. The original take will not be changed.",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            8,
+            467,
+            744,
+            53
+          ]
+        }
+      ]
+    },
+    {
+      "image": "studio-after-aligned-originals-22px.png",
+      "sha256": "3ea941d61509ce7fb790f256a5f952dd91b548d0e6b75036d3f0fa7da06a6941",
+      "window": [
+        760,
+        600
+      ],
+      "studio": [
+        760,
+        407
+      ],
+      "controls": [
+        {
+          "name": "\u25cf Record Session",
+          "text": "\u25cf Record Session",
+          "visible": true,
+          "enabled": false,
+          "rect": [
+            508,
+            214,
+            244,
+            54
+          ]
+        },
+        {
+          "name": "\u25b6 Play",
+          "text": "\u25b6 Play",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            8,
+            272,
+            244,
+            52
+          ]
+        },
+        {
+          "name": "Stop Studio playback",
+          "text": "\u25a0 Stop",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            258,
+            272,
+            244,
+            52
+          ]
+        },
+        {
+          "name": "Export aligned originals without Studio edits",
+          "text": "Export Aligned Originals",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            8,
+            330,
+            339,
+            52
+          ]
+        },
+        {
+          "name": "Studio playback output",
+          "text": "",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            367,
+            830,
+            197,
+            46
+          ]
+        },
+        {
+          "name": "StudioHint",
+          "text": "Take verified and ready to mix or export.",
+          "visible": true,
+          "enabled": true,
+          "rect": [
+            8,
+            493,
+            744,
+            27
+          ]
+        }
+      ]
+    }
+  ],
+  "baseline_revision": "844ea1080500fc937101b19b21168b5a5525600c",
+  "baseline_image_sha256": {
+    "before-studio-760-600-125.png": "bf2aed039b2f37dc0e224d0d7995e9865530d781da1db890e2d033640a1b13e5",
+    "before-studio-760-600-normal.png": "4129d47b97696936e56e43a998f6ef46fa3aec74292b6811c9072f5704a368a4",
+    "before-studio-retry-125.png": "255ca32a1f1c7711fa52ccb5fb5752c0641b3ca7ee10e431cc1c850988770e70",
+    "before-studio-retry-normal.png": "bd5ccd7bbbf759edf5059cd2f43151572505fb79b7b0314e50c3d0cdbca0ecef"
+  },
+  "limits": "Actual offscreen Qt widgets with synthetic takes, recording states and failures. No physical audio, meeting, signing or release PASS."
+}

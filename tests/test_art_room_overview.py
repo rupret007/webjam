@@ -210,6 +210,46 @@ def test_both_offered_panels_keep_their_status_and_action(primary, secondary):
     assert overview.conversation_enabled
 
 
+@pytest.mark.parametrize("hosting", [False, True])
+@pytest.mark.parametrize("canvas_state,video_state", [
+    (CanvasCompanionState.READY, VideoCompanionState.NONE),
+    (CanvasCompanionState.MISSING_APP, VideoCompanionState.NONE),
+    (CanvasCompanionState.NONE, VideoCompanionState.NEEDS_FILE),
+    (CanvasCompanionState.NONE, VideoCompanionState.PLAYING),
+])
+def test_optional_activity_keeps_an_any_artist_next_step(hosting, canvas_state, video_state):
+    presence = art_room_presence(ArtCompanionProjection(
+        in_room=True, transport_allowed=hosting, canvas=canvas_state, video=video_state,
+    ), hosting=hosting)
+    for state in (ArtRoomState.WAITING, ArtRoomState.CONNECTED):
+        overview = art_room_overview(state=state, hosting=hosting, presence=presence)
+        if state is ArtRoomState.WAITING and not hosting:
+            assert not overview.making_detail
+            continue
+        assert overview.making_detail.startswith("Start making with paper, clay")
+        assert "model, printer, or your usual app" in overview.making_detail
+        assert "Shared activities are optional." in overview.making_detail
+        assert overview.activity_actions == (presence.target.value,)
+        assert overview.activity_detail == presence.description
+
+    for changes in (
+        dict(state=ArtRoomState.FAILED), dict(state=ArtRoomState.RECONNECTING),
+        dict(state=ArtRoomState.CONNECTED, stopping=True),
+        dict(state=ArtRoomState.CONNECTED, cleanup_required=True),
+        dict(state=ArtRoomState.CONNECTED, quitting=True),
+        dict(state=ArtRoomState.CONNECTED, ended=True),
+    ):
+        overview = art_room_overview(hosting=hosting, presence=presence, **changes)
+        assert not overview.making_detail
+        assert not overview.activity_actions
+
+
+def test_own_tools_room_does_not_repeat_its_existing_instruction():
+    overview = art_room_overview(state=ArtRoomState.CONNECTED, hosting=False)
+    assert "paper, clay, a model, printer, or your usual app" in overview.activity_detail
+    assert not overview.making_detail
+
+
 @pytest.mark.parametrize("secondary", [
     paint_along(), ABSENT,
     ArtRoomPresence(label="Invalid activity", target="unknown"),

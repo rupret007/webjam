@@ -48,8 +48,8 @@ from core.drawpile import (
 HOST_ONLY_CANVAS_MESSAGE = "Only the session host can share or stop the canvas."
 NO_CANVAS_MESSAGE = "No shared canvas. Talk and work as usual."
 NEEDS_DRAWPILE_MESSAGE = (
-    "The host is painting on a shared Drawpile canvas. Install Drawpile to "
-    "join it, or keep working here and just talk."
+    "Install Drawpile to join the host's shared canvas. "
+    "You can keep making with your own tools."
 )
 CANVAS_READY_MESSAGE = (
     "A shared canvas is ready. Open it to paint in Drawpile alongside the room."

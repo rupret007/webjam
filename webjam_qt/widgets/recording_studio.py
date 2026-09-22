@@ -17,9 +17,11 @@ from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QApplication,
+    QBoxLayout,
     QCheckBox,
     QFrame,
     QHBoxLayout,
@@ -398,6 +400,11 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._player._on_finished_epoch = self._on_finished_bg
         self._player._on_error_epoch = self._on_playback_error_bg
 
+        self._reveal_output_revision: int | None = None
+        self._focus_reveal_pending = False
+        self._workspace_layout_timer = QTimer(self)
+        self._workspace_layout_timer.setSingleShot(True)
+        self._workspace_layout_timer.timeout.connect(self._sync_workspace_layout)
         self._build_ui()
         self._studio_title_elide_timer = QTimer(self)
         self._studio_title_elide_timer.setSingleShot(True)
@@ -432,8 +439,10 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         root.setContentsMargins(Space.LG, Space.MD, Space.LG, Space.LG)
         root.setSpacing(Space.MD)
 
-        top = QHBoxLayout()
+        top = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        self._header_layout = top
         title_block = QVBoxLayout()
+        self._title_block = title_block
         title_block.setSpacing(2)
         self._eyebrow = QLabel("MULTITRACK STUDIO")
         self._eyebrow.setObjectName("StudioEyebrow")
@@ -454,21 +463,25 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         title_block.addWidget(self._title)
         title_block.addWidget(self._subtitle)
         top.addLayout(title_block, 1)
+        self._session_actions = QWidget()
+        session_actions = QHBoxLayout(self._session_actions)
+        session_actions.setContentsMargins(0, 0, 0, 0)
+        top.addWidget(self._session_actions)
         self._live_btn = QPushButton("Back to Live")
         self._live_btn.setObjectName("GhostButton")
         self._live_btn.setAccessibleName("Return to live room")
         self._live_btn.clicked.connect(self.return_live_requested.emit)
-        top.addWidget(self._live_btn)
+        session_actions.addWidget(self._live_btn)
         self._setup_btn = QPushButton("Setup")
         self._setup_btn.setObjectName("GhostButton")
         self._setup_btn.setAccessibleName("Open recording setup")
         self._setup_btn.clicked.connect(self.recording_setup_requested.emit)
-        top.addWidget(self._setup_btn)
+        session_actions.addWidget(self._setup_btn)
         self._record_btn = QPushButton("● Record Session")
         self._record_btn.setObjectName("StudioRecordButton")
         self._record_btn.setAccessibleName("Record Session")
         self._record_btn.clicked.connect(self.record_requested.emit)
-        top.addWidget(self._record_btn)
+        session_actions.addWidget(self._record_btn)
         root.addLayout(top)
 
         self._phase = QLabel("NOT RECORDING")
@@ -507,12 +520,24 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         splitter.addWidget(library)
 
         editor = QFrame()
+        self._editor = editor
         editor.setObjectName("StudioEditor")
         editor_layout = QVBoxLayout(editor)
         editor_layout.setContentsMargins(Space.MD, Space.MD, Space.MD, Space.MD)
         editor_layout.setSpacing(Space.SM)
 
-        transport = QHBoxLayout()
+        self._transport_widget = QWidget()
+        transport = QBoxLayout(QBoxLayout.Direction.LeftToRight, self._transport_widget)
+        self._transport_layout = transport
+        transport.setContentsMargins(0, 0, 0, 0)
+        self._transport_buttons = QWidget()
+        transport_buttons = QHBoxLayout(self._transport_buttons)
+        transport_buttons.setContentsMargins(0, 0, 0, 0)
+        self._transport_position = QWidget()
+        position_layout = QHBoxLayout(self._transport_position)
+        position_layout.setContentsMargins(0, 0, 0, 0)
+        transport.addWidget(self._transport_buttons)
+        transport.addWidget(self._transport_position, 1)
         self._play_btn = QPushButton("▶ Play")
         self._play_btn.setObjectName("AudioButton")
         self._play_btn.setAccessibleName("Play or pause the selected take")
@@ -538,16 +563,18 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._position.setObjectName("StudioPosition")
         self._scrub = QSlider(Qt.Orientation.Horizontal)
         self._scrub.setRange(0, 1000)
+        self._scrub.setMinimumWidth(120)
+        self._scrub.setFixedHeight(24)
         self._scrub.setAccessibleName("Selected take playhead")
         self._scrub.sliderPressed.connect(lambda: setattr(self, "_scrubbing", True))
         self._scrub.sliderReleased.connect(self._seek_from_scrub)
         self._scrubbing = False
-        transport.addWidget(self._play_btn)
-        transport.addWidget(self._stop_btn)
-        transport.addWidget(self._inspector_btn)
-        transport.addWidget(self._position)
-        transport.addWidget(self._scrub, 1)
-        editor_layout.addLayout(transport)
+        transport_buttons.addWidget(self._play_btn)
+        transport_buttons.addWidget(self._stop_btn)
+        transport_buttons.addWidget(self._inspector_btn)
+        position_layout.addWidget(self._position)
+        position_layout.addWidget(self._scrub, 1)
+        root.addWidget(self._transport_widget)
 
         master = QHBoxLayout()
         master.setContentsMargins(0, 0, 0, 0)
@@ -677,7 +704,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._export_btn.setAccessibleName("Export aligned tracks")
         self._export_btn.setEnabled(False)
         self._export_btn.clicked.connect(self._export_tracks)
-        actions.addWidget(self._export_btn)
+        transport_buttons.addWidget(self._export_btn)
         self._reveal_btn = QPushButton("Show Take")
         self._reveal_btn.setObjectName("GhostButton")
         self._reveal_btn.setAccessibleName("Show selected take folder")
@@ -775,12 +802,18 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._arrange_mixer_splitter.setStretchFactor(1, 1)
         self._arrange_mixer_splitter.setSizes([520, 180])
         editor_layout.addWidget(self._arrange_mixer_splitter, 1)
+        # Put the working canvas ahead of secondary mix and output controls.
+        # In a short embedded window, scrolling continues to those same controls.
+        for widget in (self._arrange_toolbar, self._legacy_timeline, self._arrange_mixer_splitter):
+            editor_layout.removeWidget(widget)
+        editor_layout.insertWidget(0, self._arrange_toolbar)
+        editor_layout.insertWidget(1, self._legacy_timeline)
+        editor_layout.insertWidget(2, self._arrange_mixer_splitter, 1)
 
         self._hint = QLabel("")
         self._hint.setObjectName("StudioHint")
         self._hint.setWordWrap(True)
         self._arrange_toolbar.hint_requested.connect(self._hint.setText)
-        editor_layout.addWidget(self._hint)
         splitter.addWidget(editor)
 
         inspector = QFrame()
@@ -819,7 +852,21 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 0)
         splitter.setSizes([220, 900, 230])
-        root.addWidget(splitter, 1)
+        self._workspace_scroll = QScrollArea()
+        self._workspace_scroll.setObjectName("StudioWorkspaceScroll")
+        self._workspace_scroll.setAccessibleName("Studio editing workspace")
+        self._workspace_scroll.setAccessibleDescription(
+            "Scroll to Arrange, mix controls, and playback output. "
+            "Use Tab to reach controls and Page Up or Page Down to scroll. "
+            "Playback, recording, and export stay above this workspace."
+        )
+        self._workspace_scroll.setWidgetResizable(True)
+        self._workspace_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._workspace_scroll.setWidget(splitter)
+        root.addWidget(self._workspace_scroll, 1)
+        root.addWidget(self._hint)
+        for widget in (splitter, self._editor, self._session_actions, self._transport_widget):
+            widget.installEventFilter(self)
         self._set_empty_inspector()
         self._update_inspector_visibility()
 
@@ -828,6 +875,106 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             lambda _minimum, _maximum: self._sync_timeline_ruler_inset()
         )
         self._setup_tab_order()
+        self._workspace_layout_timer.start(0)
+
+    def eventFilter(self, watched, event) -> bool:
+        if not self._waveform_shutdown:
+            if event.type() == QEvent.Type.FocusIn:
+                self._focus_reveal_pending = True
+                self._workspace_layout_timer.start(0)
+            elif event.type() in (
+                QEvent.Type.LayoutRequest, QEvent.Type.FontChange, QEvent.Type.StyleChange,
+            ):
+                self._workspace_layout_timer.start(0)
+        return super().eventFilter(watched, event)
+
+    def _sync_workspace_layout(self) -> None:
+        """Scroll the measured editing surface without shrinking its controls."""
+        if self._waveform_shutdown or not hasattr(self, "_workspace_scroll"):
+            return
+        root = self.layout()
+        short = self.height() < 500
+        spacing = Space.XS if short else Space.MD
+        margins = (Space.SM, Space.XS, Space.SM, Space.SM) if short else (
+            Space.LG, Space.MD, Space.LG, Space.LG,
+        )
+        if root.spacing() != spacing:
+            root.setSpacing(spacing)
+        current = root.contentsMargins()
+        if (current.left(), current.top(), current.right(), current.bottom()) != margins:
+            root.setContentsMargins(*margins)
+        available = self.contentsRect().width() - margins[0] - margins[2]
+        header_required = (
+            self._session_actions.minimumSizeHint().width()
+            + self._title_block.minimumSize().width()
+            + self._header_layout.spacing()
+        )
+        header_direction = (
+            QBoxLayout.Direction.TopToBottom if header_required > available
+            else QBoxLayout.Direction.LeftToRight
+        )
+        if self._header_layout.direction() != header_direction:
+            self._header_layout.setDirection(header_direction)
+        export_width = self._export_btn.minimumSizeHint().width() + 4
+        if self._export_btn.minimumWidth() != export_width:
+            self._export_btn.setMinimumWidth(export_width)
+        buttons = [
+            button for button in (
+                self._play_btn, self._stop_btn, self._inspector_btn, self._export_btn,
+            ) if not button.isHidden()
+        ]
+        buttons_width = (
+            sum(button.minimumSizeHint().width() for button in buttons)
+            + self._transport_buttons.layout().spacing() * max(0, len(buttons) - 1)
+        )
+        export_below = buttons_width > available
+        moved = self._export_btn.parentWidget() is self._transport_position
+        focused = self._export_btn.hasFocus()
+        if export_below != moved:
+            visible = not self._export_btn.isHidden()
+            if export_below:
+                self._transport_buttons.layout().removeWidget(self._export_btn)
+                self._transport_position.layout().insertWidget(0, self._export_btn)
+            else:
+                self._transport_position.layout().removeWidget(self._export_btn)
+                self._transport_buttons.layout().addWidget(self._export_btn)
+            self._export_btn.setVisible(visible)
+            self._setup_tab_order()
+            if focused:
+                self._export_btn.setFocus(Qt.FocusReason.OtherFocusReason)
+        transport_required = (
+            self._transport_buttons.minimumSizeHint().width()
+            + self._transport_position.minimumSizeHint().width()
+            + self._transport_layout.spacing()
+        )
+        transport_direction = (
+            QBoxLayout.Direction.TopToBottom if transport_required > available
+            else QBoxLayout.Direction.LeftToRight
+        )
+        if self._transport_layout.direction() != transport_direction:
+            self._transport_layout.setDirection(transport_direction)
+        self._set_compact_chrome(self.width() < 1080)
+        gain_width = max(46, self._master_gain_value.fontMetrics().horizontalAdvance("+12.0 dB") + 4)
+        if self._master_gain_value.width() != gain_width:
+            self._master_gain_value.setFixedWidth(gain_width)
+        needed = self._splitter.minimumSizeHint()
+        if self._splitter.minimumSize() != needed:
+            self._splitter.setMinimumSize(needed)
+        self._sync_studio_title()
+        reveal_revision = self._reveal_output_revision
+        if reveal_revision is not None:
+            self._reveal_output_revision = None
+            if reveal_revision == self._guidance_take_revision and not self._viewing_live:
+                self.layout().activate()
+                self._workspace_scroll.ensureWidgetVisible(self._output_picker, 0, 0)
+        if self._focus_reveal_pending:
+            self._focus_reveal_pending = False
+            focused = QApplication.focusWidget()
+            if focused is not None and self._workspace_scroll.isAncestorOf(focused):
+                self.layout().activate()
+                if self._track_container.isAncestorOf(focused):
+                    self._track_scroll.ensureWidgetVisible(focused, 0, 0)
+                self._workspace_scroll.ensureWidgetVisible(focused, 0, 0)
 
     def _studio_tab_order(self) -> tuple[QWidget, ...]:
         """Return keyboard traversal in the musician's Arrange workflow order."""
@@ -873,12 +1020,16 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         """Keep keyboard focus aligned with library, editing, mix, then export."""
 
         order = self._studio_tab_order()
+        for widget in order:
+            widget.installEventFilter(self)
         for current, following in itertools.pairwise(order):
             QWidget.setTabOrder(current, following)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._update_inspector_visibility()
+        if not self._waveform_shutdown:
+            self._workspace_layout_timer.start(0)
         self._sync_timeline_ruler_inset()
         # Child widths settle after this resize callback. Re-elide on the next
         # event-loop turn so a long take/session name never paints beneath the
@@ -995,14 +1146,12 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             self._play_btn,
             self._stop_btn,
             self._inspector_btn,
-            self._scrub,
-            self._output_picker,
             self._export_btn,
             self._reveal_btn,
         )
         for widget in controls:
             if compact:
-                widget.setFixedHeight(button_height)
+                widget.setFixedHeight(max(button_height, widget.minimumSizeHint().height()))
             else:
                 widget.setMinimumHeight(0)
                 widget.setMaximumHeight(16_777_215)
@@ -1012,14 +1161,14 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             self._remove_take_lane_btn,
         ):
             if compact:
-                widget.setFixedHeight(button_height)
+                widget.setFixedHeight(max(button_height, widget.minimumSizeHint().height()))
             else:
                 widget.setMinimumHeight(0)
                 widget.setMaximumHeight(16_777_215)
         if compact:
-            self._output_picker.setFixedHeight(40)
-            self._arrange_toolbar.setFixedHeight(40)
-            self._comp_toolbar.setFixedHeight(button_height)
+            self._output_picker.setFixedHeight(max(40, self._output_picker.minimumSizeHint().height()))
+            self._arrange_toolbar.setFixedHeight(max(40, self._arrange_toolbar.layout().minimumSize().height()))
+            self._comp_toolbar.setFixedHeight(max(button_height, self._comp_toolbar.layout().minimumSize().height()))
             # Recovery instructions remain readable at the compact floor.
             # Let wrapped text request its actual height instead of clipping
             # the next step to one line or a fixed three-line allowance.
@@ -2512,6 +2661,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._setup_tab_order()
 
     def _set_playback_controls_visible(self, visible: bool) -> None:
+        self._transport_widget.setVisible(visible)
         for widget in self._playback_controls:
             allowed = widget is not self._export_btn or self._track_export_allowed()
             widget.setVisible(visible and allowed)
@@ -3740,6 +3890,8 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 "Studio couldn't open the selected playback output. Choose "
                 "another Playback output in Studio, then choose Play."
             )
+            self._reveal_output_revision = self._guidance_take_revision
+            self._workspace_layout_timer.start(0)
         else:
             self._hint.setText(
                 "Studio couldn't continue playback safely. Reopen the take, then "
@@ -3970,6 +4122,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         if not self.prepare_close():
             return False
         self._waveform_shutdown = True
+        self._workspace_layout_timer.stop()
         self._studio_controller.shutdown()
         self._export_generation += 1
         self._export_cancel.set()

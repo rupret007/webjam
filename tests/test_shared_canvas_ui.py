@@ -166,6 +166,7 @@ def test_a_guest_without_drawpile_gets_a_recovery_not_an_error():
         assert _visible_buttons(dialog) == ["Install Drawpile"]
         assert dialog._chip.property("tone") == "recovery"
         assert "Install Drawpile to join the canvas" in dialog._status.text()
+        assert "keep making with your own tools" in dialog._status.text()
         # Never a fault report, never internal vocabulary.
         lowered = dialog._status.text().casefold()
         for banned in ("error", "failed", "capability", "traceback", "exception"):
@@ -321,7 +322,8 @@ def test_a_host_without_drawpile_gets_a_recovery_not_a_disabled_panel():
 
         assert _visible_buttons(dialog) == ["Install Drawpile"]
         assert dialog._chip.property("tone") == "recovery"
-        assert dialog._status.text() == "Install Drawpile to paint together."
+        assert "Install Drawpile to host a shared canvas" in dialog._status.text()
+        assert "keep making with your own tools" in dialog._status.text()
         assert dialog._invite_input.isHidden() is True
     finally:
         dialog.deleteLater()
