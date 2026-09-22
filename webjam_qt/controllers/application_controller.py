@@ -37,7 +37,12 @@ from core.creative_modes import (
     get_creator_profile_by_key_or_default,
     get_mode_by_key_or_default,
 )
-from core.reference_video import MISMATCHED_FILE_MESSAGE
+from core.reference_video import (
+    FILE_UNAVAILABLE_MESSAGE,
+    LOCAL_ATTENTION_MESSAGE,
+    MISMATCHED_FILE_MESSAGE,
+    NEEDS_FILE_MESSAGE,
+)
 from core.jamulus_rpc_client import (
     JamulusOrderedRosterProof,
     JamulusRpcMonitorIdentity,
@@ -664,6 +669,7 @@ class ApplicationController(QObject):
         self._reference_video_dialog = None
         self._reference_video_binding: tuple[str, str] | tuple[()] = ()
         self._reference_video_notified_state = ""
+        self._reference_video_notice_token = None
         self._shared_canvas = None
         self._shared_canvas_dialog = None
         self._shared_canvas_binding: tuple[str, str] | tuple[()] = ()
@@ -13248,8 +13254,12 @@ class ApplicationController(QObject):
         coordinator = ReferenceVideoCoordinator(
             player_factory=build_player,
             host_peer_provider=self._room_host_publisher,
-            on_host_snapshot=self._on_reference_video_host_snapshot,
-            on_follow_snapshot=self._on_reference_video_follow_snapshot,
+            on_host_snapshot=lambda snapshot: self._on_reference_video_host_snapshot(
+                snapshot, source=coordinator,
+            ),
+            on_follow_snapshot=lambda snapshot: self._on_reference_video_follow_snapshot(
+                snapshot, source=coordinator,
+            ),
         )
         if role == "host":
             coordinator.begin_host(session_id=session_id, session_key=session_key)
@@ -13287,6 +13297,7 @@ class ApplicationController(QObject):
     def _release_reference_video(self) -> None:
         """Return this computer to the no-video path and free its player."""
 
+        self._clear_reference_video_notice()
         ApplicationController._clear_shared_lesson_context(self)
         timer = getattr(self, "_reference_video_timer", None)
         if timer is not None:
@@ -13420,13 +13431,9 @@ class ApplicationController(QObject):
         else:
             dialog.close()
 
-    def _sync_paint_along_room(self) -> bool:
-        """Project current room authority without releasing the local copy."""
+    def _paint_along_room_availability(self, coordinator) -> tuple[bool, bool]:
+        """Return current room and video authority, even with the panel closed."""
 
-        dialog = getattr(self, "_reference_video_dialog", None)
-        coordinator = getattr(self, "_reference_video", None)
-        if dialog is None or coordinator is None:
-            return False
         room = getattr(self, "_room_participant", None)
         audio = getattr(self, "audio", None)
         closing = bool(
@@ -13441,15 +13448,9 @@ class ApplicationController(QObject):
                 and (room is None or not room.blocked)
                 and self._reference_video_binding == self._reference_video_identity()
             )
-            dialog.set_room_available(available)
-            dialog.set_watch_lesson_available(available)
-            if not available:
-                self._clear_shared_lesson_context()
-            return available
+            return available, available
         if not coordinator.following:
-            dialog.set_watch_lesson_available(False)
-            self._clear_shared_lesson_context()
-            return False
+            return False, False
         available = bool(
             not getattr(self, "_shutdown", False)
             and not closing
@@ -13476,17 +13477,46 @@ class ApplicationController(QObject):
             available = bool(
                 available and getattr(state, "creator_profile_key", "") == "art"
             )
-        # Reaching a lesson in Conversation needs a current Art room, not a
-        # matching local file or a healthy local player. Keep those facts apart.
-        dialog.set_watch_lesson_available(available)
-        if not available:
+        return available, available and coordinator.video_is_current(state)
+
+    def _sync_paint_along_room(self) -> bool:
+        """Project current room authority without releasing the local copy."""
+
+        coordinator = getattr(self, "_reference_video", None)
+        if coordinator is None:
+            self._clear_reference_video_notice()
+            return False
+        room_available, video_available = self._paint_along_room_availability(coordinator)
+        dialog = getattr(self, "_reference_video_dialog", None)
+        if dialog is not None:
+            # Conversation needs a current room, not a matching local video.
+            if coordinator.hosting:
+                # Offer Return to room before disabling the focused lesson
+                # control, so keyboard focus stays inside Paint along.
+                dialog.set_room_available(video_available)
+            dialog.set_watch_lesson_available(room_available)
+            if not coordinator.hosting:
+                dialog.set_room_available(video_available)
+                if video_available and coordinator.following:
+                    dialog.set_follow_snapshot(coordinator.follow_snapshot)
+        if not room_available:
             self._clear_shared_lesson_context()
-        if available:
-            available = coordinator.video_is_current(state)
-        dialog.set_room_available(available)
-        if available:
-            dialog.set_follow_snapshot(coordinator.follow_snapshot)
-        return available
+        if not video_available:
+            self._clear_reference_video_notice()
+        return video_available
+
+    def _clear_reference_video_notice(self) -> None:
+        """A retired video instruction must not clear a newer save/error notice."""
+
+        token = getattr(self, "_reference_video_notice_token", None)
+        self._reference_video_notice_token = None
+        self._reference_video_notified_state = ""
+        clear = getattr(self.window, "clear_flash_message", None)
+        if token is not None and callable(clear):
+            clear(token)
+
+    def _flash_reference_video_notice(self, text: str, *, ms: int) -> None:
+        self._reference_video_notice_token = self.window.flash_message(text, ms=ms)
 
     def _retire_shared_lesson_requests(self) -> None:
         """Retire requests while preserving useful same-room lesson guidance."""
@@ -13599,17 +13629,29 @@ class ApplicationController(QObject):
 
         from core.reference_video import ReferenceVideoError
 
+        owner = getattr(self, "_reference_video", None)
+
+        def current() -> bool:
+            # A decoder can pump events while opening. Its eventual error
+            # must still belong to this room and its available controls.
+            return bool(
+                owner is not None and owner is getattr(self, "_reference_video", None)
+                and self._sync_paint_along_room()
+            )
+
         try:
             operation()
         except ReferenceVideoError as exc:
-            self.window.flash_message(str(exc), ms=8000)
+            if current():
+                self._flash_reference_video_notice(str(exc), ms=8000)
         except Exception:  # noqa: BLE001 - never let a panel kill the room
             LOGGER.exception("A reference video operation failed safely")
-            self.window.flash_message(
-                "WebJam couldn't complete that Paint along request. The "
-                "room is still running.",
-                ms=8000,
-            )
+            if current():
+                self._flash_reference_video_notice(
+                    "WebJam couldn't complete that Paint along request. The "
+                    "room is still running.",
+                    ms=8000,
+                )
         dialog = getattr(self, "_reference_video_dialog", None)
         coordinator = getattr(self, "_reference_video", None)
         if dialog is not None and coordinator is not None:
@@ -13627,7 +13669,11 @@ class ApplicationController(QObject):
         # because today the video is the only thing in Art that owns one.
         self._tick_room_clock()
 
-    def _on_reference_video_host_snapshot(self, snapshot) -> None:
+    def _on_reference_video_host_snapshot(self, snapshot, *, source=None) -> None:
+        if source is not None and source is not getattr(self, "_reference_video", None):
+            return
+        if str(getattr(getattr(snapshot, "state", None), "value", "")) != "failed":
+            self._clear_reference_video_notice()
         dialog = getattr(self, "_reference_video_dialog", None)
         if dialog is not None:
             dialog.set_host_snapshot(snapshot)
@@ -13637,7 +13683,9 @@ class ApplicationController(QObject):
                 )
             )
 
-    def _on_reference_video_follow_snapshot(self, snapshot) -> None:
+    def _on_reference_video_follow_snapshot(self, snapshot, *, source=None) -> None:
+        if source is not None and source is not getattr(self, "_reference_video", None):
+            return
         dialog = getattr(self, "_reference_video_dialog", None)
         if dialog is not None:
             self._sync_paint_along_room()
@@ -13655,19 +13703,10 @@ class ApplicationController(QObject):
     #: One line per transition. These say what happened; the room's own chip
     #: says what to do about it. Recovery names the visible control, not a menu path.
     _REFERENCE_VIDEO_NOTICES = {
-        "needs_file": (
-            "The host shared a Paint along video. Open your own copy of the "
-            "same file to follow along, or keep working."
-        ),
+        "needs_file": NEEDS_FILE_MESSAGE,
         "mismatched_file": MISMATCHED_FILE_MESSAGE,
-        "file_unavailable": (
-            "Your Paint along copy moved, changed, or became "
-            "unreadable, so WebJam stopped following the host."
-        ),
-        "local_attention": (
-            "Your Paint along copy needs attention. Open it again to continue "
-            "following, or hide the video and keep making."
-        ),
+        "file_unavailable": FILE_UNAVAILABLE_MESSAGE,
+        "local_attention": LOCAL_ATTENTION_MESSAGE,
     }
 
     def _announce_reference_video_follow_state(self, snapshot) -> None:
@@ -13678,13 +13717,16 @@ class ApplicationController(QObject):
         steady state stays quiet.
         """
 
+        if not self._sync_paint_along_room():
+            return
         state = str(getattr(getattr(snapshot, "state", None), "value", "") or "")
         if state == getattr(self, "_reference_video_notified_state", ""):
             return
+        self._clear_reference_video_notice()
         self._reference_video_notified_state = state
         notice = self._REFERENCE_VIDEO_NOTICES.get(state)
         if notice and not getattr(self, "_shutdown", False):
-            self.window.flash_message(notice, ms=9000)
+            self._flash_reference_video_notice(notice, ms=9000)
 
     # ------------------------------------------------------------------
     # Art shared canvas

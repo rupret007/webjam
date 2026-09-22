@@ -150,6 +150,7 @@ def test_open_my_copy_recovers_through_the_actual_button(room, qapp, failure):
     assert room.panel._open_button.isVisible()
     assert room.panel._open_button.isEnabled()
     assert "Following the host" not in room.panel._status.text()
+    assert room.panel._open_button.text() in room.panel._status.text()
     if failure == "mismatched_file":
         assert room.panel._open_button.text() in room.panel._status.text()
         assert "your copy of the same file" in room.panel._status.text()

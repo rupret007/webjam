@@ -60,16 +60,16 @@ _FOLLOW_STATUS = {
         "Already have the video? Open your copy, or keep making while the host prepares theirs."
     ),
     ReferenceVideoFollowState.NEEDS_FILE: (
-        "Open your own copy of the same file to follow along."
+        OPEN_LOCAL_COPY_GUIDANCE
     ),
     ReferenceVideoFollowState.MISMATCHED_FILE: (
         f"That is not the same file. {OPEN_LOCAL_COPY_GUIDANCE}"
     ),
     ReferenceVideoFollowState.FILE_UNAVAILABLE: (
-        "Your copy moved or changed. Open it again to continue."
+        "Your copy moved or changed. Choose Open my copy… to find it again."
     ),
     ReferenceVideoFollowState.LOCAL_ATTENTION: (
-        "Your copy could not play here. Open it again to continue."
+        "Your copy could not play here. Choose Open my copy… to try again."
     ),
     ReferenceVideoFollowState.HOST_ATTENTION: (
         "The host needs to check the video before it can continue."

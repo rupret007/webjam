@@ -16,6 +16,7 @@ from tests.test_paint_along_player_health import _AudioOutput, _MediaBackend
 from webjam_qt.controllers.application_controller import ApplicationController
 from webjam_qt.widgets.reference_video_player import QtReferenceVideoPlayer
 from webjam_qt.windows.reference_video import ReferenceVideoDialog
+from webjam_qt.windows.conductor_window import ConductorWindow
 
 host, qapp = _host, _qapp
 
@@ -93,6 +94,31 @@ def host_video(host, monkeypatch):
     rig.video_path.write_bytes(b"synthetic lesson")
     rig.players = players
     return rig
+
+
+@pytest.mark.parametrize("newer_notice", [False, True])
+def test_successful_host_retry_retires_only_its_own_failure_notice(
+    host_video, monkeypatch, newer_notice,
+):
+    rig = host_video
+    app, dialog = rig.app, rig.app._reference_video_dialog
+    window = app.window
+    window.flash_message = ConductorWindow.flash_message.__get__(window)
+    factory = Mock(side_effect=[RuntimeError("synthetic unavailable player"), SurfacePlayer(window)])
+    monkeypatch.setattr("webjam_qt.widgets.reference_video_player.create_qt_reference_video_player", factory)
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a: (str(rig.video_path), ""))
+    dialog._share_button.click()
+    assert "unavailable" in window.statusBar().currentMessage()
+    if newer_notice:
+        window.flash_message("Notes could not be saved. Retry saving.")
+
+    dialog._share_button.click()
+
+    assert app._reference_video.host_snapshot.state is State.READY
+    assert dialog._play_button.isVisibleTo(dialog) and dialog._play_button.isEnabled()
+    assert window.statusBar().currentMessage() == (
+        "Notes could not be saved. Retry saving." if newer_notice else ""
+    )
 
 
 @pytest.mark.parametrize("operation", ["share", "play", "pause", "stop", "seek", "withdraw"])

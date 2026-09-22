@@ -18,6 +18,7 @@ from tests.test_art_activity_guest_journey import (
 )
 from tests.test_art_room_controller import drain
 from tests.test_native_art_activities import native_room as _native_room_fixture
+from webjam_qt.windows.conductor_window import ConductorWindow
 
 qapp = _qapp_fixture
 journey = _journey_fixture
@@ -72,6 +73,78 @@ def _assert_waiting_for_room(panel):
     assert not panel._hide_action.isVisible()
     assert not panel._clock.isVisibleTo(panel)
     assert not panel._position.isVisibleTo(panel)
+
+
+@pytest.mark.parametrize("terminal", [False, True])
+def test_player_failure_after_room_loss_waits_for_current_room_before_notifying(
+    guest, qapp, terminal,
+):
+    app, coordinator, _, players, offer = guest()
+    panel = _open_paint_along(app, qapp)
+    _click(panel._hide_button, qapp)
+    room = app._room_participant
+    room.lose_lan(room.lan_guest, room.generation, terminal)
+    app.window.flash_message.reset_mock()
+    players[0].fail_on.add("position")
+
+    app._tick_reference_video()
+
+    assert coordinator.follow_snapshot.state is ReferenceVideoFollowState.LOCAL_ATTENTION
+    _assert_waiting_for_room(panel)
+    app.window.flash_message.assert_not_called()
+    _poll(app, qapp, offer)
+    app._tick_reference_video()
+    assert panel._open_button.isVisibleTo(panel)
+    assert panel._open_button.text() in app.window.flash_message.call_args.args[0]
+    calls = app.window.flash_message.call_count
+    app._tick_reference_video()
+    assert app.window.flash_message.call_count == calls
+
+
+@pytest.mark.parametrize("replacement", [None, "same_text", "Notes could not be saved. Retry saving."])
+def test_room_loss_and_release_retire_only_the_current_video_notice(
+    guest, qapp, replacement,
+):
+    app, coordinator, _, players, _ = guest()
+    window = app.window
+    # Exercise the real shared status bar, including identical later text.
+    window.flash_message = ConductorWindow.flash_message.__get__(window)
+    panel = _open_paint_along(app, qapp)
+    _click(panel._hide_button, qapp)
+    players[0].fail_on.add("position")
+    app._tick_reference_video()
+    message = window.statusBar().currentMessage()
+    assert message
+    if replacement is not None:
+        replacement = message if replacement == "same_text" else replacement
+        window.flash_message(replacement, ms=9000)
+    room = app._room_participant
+
+    room.lose_lan(room.lan_guest, room.generation, False)
+
+    _assert_waiting_for_room(panel)
+    assert window.statusBar().currentMessage() == (replacement or "")
+    app._release_reference_video()
+    assert window.statusBar().currentMessage() == (replacement or "")
+
+
+def test_retired_video_callback_cannot_replace_the_new_rooms_notice(guest, qapp):
+    app, previous, _, _, offer = guest()
+    old_callback = previous._on_follow_snapshot
+    old_snapshot = previous.follow_snapshot
+    window = app.window
+    window.flash_message = ConductorWindow.flash_message.__get__(window)
+    app._release_reference_video()
+    current = app._reference_video_coordinator()
+    current.observe_host_state(offer)
+    app._tick_reference_video()
+    notice = window.statusBar().currentMessage()
+    assert "Open my copy…" in notice
+
+    old_callback(old_snapshot)
+
+    assert app._reference_video is current
+    assert window.statusBar().currentMessage() == notice
 
 
 @pytest.mark.parametrize("terminal", [False, True])

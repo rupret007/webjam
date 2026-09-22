@@ -70,12 +70,11 @@ NO_VIDEO_MESSAGE = "No Paint along video is shared. Talk and work as usual."
 HIDDEN_MESSAGE = (
     "Paint along is hidden on this computer. You are still in the room."
 )
-NEEDS_FILE_MESSAGE = (
-    "The host shared a Paint along video. Open your own copy of the same "
-    "file to follow along, or keep it hidden and stay in the room."
-)
 OPEN_LOCAL_COPY_GUIDANCE = (
     "Choose Open my copy… and select your copy of the same file the host is using."
+)
+NEEDS_FILE_MESSAGE = (
+    f"The host shared a Paint along video. {OPEN_LOCAL_COPY_GUIDANCE} Or keep working."
 )
 MISMATCHED_FILE_MESSAGE = (
     "That is not the same file the host is playing, so WebJam will not follow "
@@ -83,11 +82,11 @@ MISMATCHED_FILE_MESSAGE = (
 )
 FILE_UNAVAILABLE_MESSAGE = (
     "Your Paint along copy moved, changed, or became unreadable. "
-    "Open it again to follow the host."
+    "Choose Open my copy… to find it again."
 )
 LOCAL_ATTENTION_MESSAGE = (
-    "Paint along could not continue on this computer. Open your copy again "
-    "to try again, or close it and keep working in the room."
+    "Paint along could not continue on this computer. "
+    "Choose Open my copy… to try again, or keep working in the room."
 )
 HOST_ATTENTION_MESSAGE = (
     "The host's Paint along video needs attention. Nothing is "

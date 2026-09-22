@@ -112,6 +112,22 @@ def _as_host(controller: ApplicationController) -> None:
     controller.guest_peer = None
 
 
+def _confirm_guest_video_room(controller):
+    """Give notice tests real current-room evidence without opening a window."""
+
+    from core.session_conductor import ArtRoomState
+
+    receipt = _peer_state(_shared_video("a" * 64))
+    controller._room_participant = SimpleNamespace(
+        stopping=False, blocked=False, probing=False, state=ArtRoomState.CONNECTED,
+        lan_guest=SimpleNamespace(
+            connection_available=True, last_state=receipt,
+            invite=controller.guest_peer.invite,
+        ),
+    )
+    controller._reference_video_coordinator().observe_host_state(receipt)
+
+
 def _peer_state(reference_video: ReferenceVideoSessionSnapshot):
     return SessionStateSnapshot(
         session_id=SESSION_ID,
@@ -488,6 +504,7 @@ def test_an_artist_is_told_once_when_the_host_starts_sharing():
 
     controller = _controller("art")
     _as_guest(controller)
+    _confirm_guest_video_room(controller)
     controller._open_reference_video = MagicMock()
 
     controller._on_reference_video_follow_snapshot(
@@ -527,6 +544,7 @@ def test_an_artist_is_told_once_when_the_host_starts_sharing():
 def test_an_artist_is_told_when_their_copy_stops_matching(state, marker):
     controller = _controller("art")
     _as_guest(controller)
+    _confirm_guest_video_room(controller)
     controller._open_reference_video = MagicMock()
     controller._on_reference_video_follow_snapshot(
         _follow(ReferenceVideoFollowState.FOLLOWING)
@@ -564,6 +582,7 @@ def test_states_an_artist_chose_or_cannot_act_on_stay_quiet(state):
 def test_leaving_a_room_lets_the_next_one_speak_again():
     controller = _controller("art")
     _as_guest(controller)
+    _confirm_guest_video_room(controller)
     controller._open_reference_video = MagicMock()
     controller._on_reference_video_follow_snapshot(
         _follow(ReferenceVideoFollowState.NEEDS_FILE)
@@ -571,6 +590,7 @@ def test_leaving_a_room_lets_the_next_one_speak_again():
     assert controller.window.flash_message.call_count == 1
 
     controller._release_reference_video()
+    _confirm_guest_video_room(controller)
     controller._on_reference_video_follow_snapshot(
         _follow(ReferenceVideoFollowState.NEEDS_FILE)
     )

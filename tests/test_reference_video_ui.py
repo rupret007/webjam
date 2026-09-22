@@ -239,7 +239,8 @@ def test_a_follower_panel_asks_for_the_hosts_file(guest_dialog):
     guest_dialog.set_follow_snapshot(_follow(ReferenceVideoFollowState.NEEDS_FILE))
 
     assert guest_dialog._headline.text() == "lesson.mp4"
-    assert "open your own copy" in guest_dialog._status.text().casefold()
+    assert guest_dialog._open_button.text() in guest_dialog._status.text()
+    assert "your copy of the same file" in guest_dialog._status.text()
     assert guest_dialog._open_button.isEnabled() is True
     assert guest_dialog._hide_button.isHidden() is True
     assert guest_dialog._hide_action.isVisible() is True
