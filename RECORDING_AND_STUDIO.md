@@ -82,6 +82,15 @@ preflight, storage, and Shared Track identity. A changed fact fails closed;
 Cancel retires the provisional take without starting capture or creating
 media.
 
+Local Original blockers retain the input check's specific reason: insufficient
+channels, an invalid track map, an unavailable input or format, or invalid audio
+settings. **Recording Setup** remains available to review inputs and tracks or
+turn off optional Local Originals for a shared take. Setup cannot change the
+shared sample rate or buffer size, so those failures explicitly say so instead
+of promising an unavailable setting. After setup, choose **Record Session**
+again for a new plan and checks; an old readiness result cannot enable
+recording after the source selection changes.
+
 An opted-in guest is not treated as armed merely because its recent presence
 proof was Ready. After acceptance, the host sends that required participant a
 private, take-scoped arm bound to the immutable plan fingerprint and exact

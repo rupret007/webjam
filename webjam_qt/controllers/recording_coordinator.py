@@ -56,6 +56,7 @@ from core.recording_readiness_presentation import (
     RecordingStorageReadiness,
     SharedTrackPresentation,
     SharedTrackReadiness,
+    local_capture_readiness_detail,
 )
 from core.recording_sources import (
     RecordingSourceKind as LiveRecordingSourceKind,
@@ -4240,9 +4241,11 @@ class RecordingCoordinator:
         local_error_detail = (
             "Selected input device and exact 48 kHz mono/stereo map are ready."
             if local_ready
-            else (
-                "Check the selected input device, mapped channels, and 48 kHz "
-                "format before recording."
+            else local_capture_readiness_detail(
+                getattr(local_preflight, "errors", ()),
+                required_input_channels=getattr(
+                    local_preflight, "required_input_channels", None,
+                ),
             )
         )
         for binding, logical_source_id in zip(
@@ -4365,7 +4368,8 @@ class RecordingCoordinator:
         self._set_phase(RecorderPhase.IDLE)
         if setup:
             self._c.window.flash_message(
-                "Recording has not started. Fix the selected inputs, then choose Record Session again.",
+                "Recording has not started. Review the selected inputs or turn off "
+                "Local Originals, then choose Record Session again.",
                 ms=5000,
             )
             self._c._open_recording_setup()

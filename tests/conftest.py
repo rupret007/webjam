@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import os
 import sys
 import tempfile
@@ -13,6 +14,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 def _collected_sources_contain(request, *markers: str) -> bool:
     paths = {Path(str(item.path)) for item in request.session.items}
+    isolation_source = Path(__file__).resolve()
+    for item in request.session.items:
+        # A collected module can import a fixture whose source owns all of
+        # the controller construction. Pytest resolves the fixture closure
+        # before session fixtures run, including indirect fixture dependencies.
+        fixture_info = getattr(item, "_fixtureinfo", None)
+        fixture_definitions = getattr(fixture_info, "name2fixturedefs", {})
+        for definitions in fixture_definitions.values():
+            for definition in definitions:
+                try:
+                    source_file = inspect.getsourcefile(inspect.unwrap(definition.func))
+                except (TypeError, OSError):
+                    continue
+                if source_file:
+                    source_path = Path(source_file).resolve()
+                    # These autouse isolation helpers mention the very
+                    # components they patch; they must not trigger themselves
+                    # for every otherwise unrelated pure test module.
+                    if source_path != isolation_source:
+                        paths.add(source_path)
     for path in paths:
         try:
             source = path.read_text(encoding="utf-8")

@@ -20,6 +20,12 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Notes stay unsaved after an unconfirmed disk write, including when Undo
   restores earlier text. Recovery distinguishes a protected original, a long
   draft, and an unconfirmed save, with a working retry or export route.
+- Notes identifies storage-full, permission, and read-only failures without
+  exposing file paths. Retained drafts from other workspaces remain visible
+  while you edit; only a confirmed save or export of that exact draft clears it.
+- Record Session identifies input-channel, track-map, device/format, and audio
+  setting blockers. Recording Setup offers the available recovery controls and
+  an explicit Local Originals opt-out, then checks a fresh plan before Start.
 - Studio disables Record until session participants are available and keeps
   the reason visible on compact windows. Idle Studio does not claim readiness;
   Record Session still performs the source and storage checks.

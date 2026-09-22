@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.creative_modes import get_creator_profile_by_key_or_default
+from webjam_qt.controllers.session_persistence import notes_save_failure_state
 
 
 class NotesRecoveryDialog(QDialog):
@@ -62,6 +63,24 @@ class NotesRecoveryDialog(QDialog):
             message = (
                 "This draft is too long for local notes. Shorten it and choose Save Notes, "
                 "or choose Export Copy to keep the full draft in another file. "
+                "Your collaboration session stays open."
+            )
+        elif state == "disk_full":
+            message = (
+                "There is not enough storage to confirm this draft is saved. "
+                "Free up space and try Save Notes again, or choose Export Copy "
+                "to save to another drive. Your collaboration session stays open."
+            )
+        elif state == "permission_denied":
+            message = (
+                "WebJam does not have permission to save these local notes. "
+                "Restore write access and try Save Notes again, or choose Export Copy "
+                "to save in a writable folder. Your collaboration session stays open."
+            )
+        elif state == "read_only":
+            message = (
+                "The notes destination is read-only. Choose Export Copy to save "
+                "on a writable drive, or restore write access and try Save Notes again. "
                 "Your collaboration session stays open."
             )
         else:
@@ -148,8 +167,26 @@ class NotesRecoveryDialog(QDialog):
             acknowledged = retained and self._persistence.export_pending_notes(profile, text, path)
             if not acknowledged:
                 self._persistence.export_notes_copy(text, path)
-        except (OSError, ValueError):
-            self._set_message("The copy could not be saved. Choose another file and try again.")
+        except (OSError, ValueError) as exc:
+            messages = {
+                "disk_full": (
+                    "There is not enough storage to confirm the copy is saved. "
+                    "Free up space or choose a file on another drive and try again."
+                ),
+                "permission_denied": (
+                    "WebJam does not have permission to save the copy here. "
+                    "Choose another file in a writable folder and try again."
+                ),
+                "read_only": (
+                    "The copy destination is read-only. "
+                    "Choose another file on a writable drive and try again."
+                ),
+                "failed": (
+                    "The copy could not be confirmed saved. "
+                    "Choose another file and try again."
+                ),
+            }
+            self._set_message(messages[notes_save_failure_state(exc)])
             return
         self._remove_current()
 

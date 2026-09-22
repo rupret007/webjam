@@ -338,12 +338,51 @@ def test_blocked_local_inputs_open_setup_without_starting_recording():
     try:
         assert not dialog._start_button.isEnabled()
         assert dialog._setup_button.isVisibleTo(dialog)
-        assert "Fix the selected inputs" in dialog._setup_button.accessibleDescription()
+        assert "Review the selected inputs" in dialog._setup_button.accessibleDescription()
         assert dialog.rect().contains(dialog._setup_button.mapTo(dialog, dialog._setup_button.rect().bottomRight()))
         assert dialog._setup_button.hasFocus()
         QTest.keyClick(dialog, Qt.Key.Key_Return)
         assert dialog.result() == dialog.DialogCode.Rejected
         assert dialog.recovery_requested is RecordingReadinessRecovery.OPEN_RECORDING_SETUP
+        assert started == []
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize("code", ["insufficient_input_channels", "unsupported_sample_rate"])
+def test_specific_local_failure_is_visible_and_setup_never_starts_recording(code):
+    from dataclasses import replace
+    from core.recording_readiness_presentation import (
+        RecordingReadinessRecovery,
+        local_capture_readiness_detail,
+    )
+
+    detail = local_capture_readiness_detail((code,), required_input_channels=4)
+    snapshot = _snapshot()
+    sources = list(snapshot.sources)
+    sources[1] = replace(
+        sources[1], required=True, readiness=RecordingSourceReadiness.ACTION_NEEDED,
+        detail=detail,
+    )
+    snapshot = replace(
+        snapshot, sources=tuple(sources),
+        recovery=RecordingReadinessRecovery.OPEN_RECORDING_SETUP,
+    )
+    dialog = _show_dialog(snapshot, 520, 420)
+    started = []
+    dialog.start_requested.connect(started.append)
+    try:
+        assert detail in dialog._blockers_text.text()
+        assert detail in dialog._blockers.accessibleDescription()
+        assert detail in dialog.source_rows[1].accessibleDescription()
+        assert dialog._blockers.isVisibleTo(dialog)
+        assert dialog._setup_button.isVisibleTo(dialog)
+        assert dialog._setup_button.hasFocus()
+        assert not dialog._start_button.isEnabled()
+        assert "turn off Local Originals" in dialog._setup_button.accessibleDescription()
+        QTest.keyClick(dialog, Qt.Key.Key_Return)
+        assert dialog.recovery_requested is RecordingReadinessRecovery.OPEN_RECORDING_SETUP
+        assert dialog.result() == dialog.DialogCode.Rejected
         assert started == []
     finally:
         dialog.deleteLater()
@@ -369,3 +408,30 @@ def test_application_returns_setup_intent_only_for_the_exact_blocked_sheet(monke
         assert ApplicationController._confirm_recording_readiness(controller, _snapshot()) is False
     finally:
         window.deleteLater()
+
+
+def test_format_recovery_can_save_local_originals_off_without_changing_audio(monkeypatch):
+    from core.session_recording_plan import resolve_capture_tracks
+    from core.settings import AppSettings
+    from webjam_qt.windows.recording_setup import RecordingSetupDialog
+
+    settings = AppSettings(
+        local_capture_enabled=True, audio_samplerate=44100, audio_blocksize=256,
+    )
+    saved = []
+    monkeypatch.setattr("webjam_qt.windows.recording_setup.list_input_devices", lambda: [])
+    monkeypatch.setattr("webjam_qt.windows.recording_setup.save_settings", saved.append)
+    dialog = RecordingSetupDialog(settings)
+    try:
+        dialog._capture.setChecked(False)
+        dialog._save()
+        assert dialog.result() == dialog.DialogCode.Accepted
+        assert len(saved) == 1
+        assert not saved[0].local_capture_enabled
+        assert saved[0].local_capture_choice_made
+        assert resolve_capture_tracks(saved[0]) == ()
+        assert saved[0].audio_samplerate == 44100
+        assert saved[0].audio_blocksize == 256
+        assert settings.local_capture_enabled
+    finally:
+        dialog.deleteLater()

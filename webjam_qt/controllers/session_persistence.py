@@ -11,6 +11,7 @@ a successful save reports that notes are saved on this computer.
 """
 from __future__ import annotations
 
+import errno
 import json
 import logging
 import os
@@ -43,6 +44,20 @@ if set(_PROFILE_NOTES_FILES) != set(_PROFILE_ORDER):
     # A profile without its own scratchpad path would silently write another
     # profile's notes file, so refuse to start instead.
     raise RuntimeError("Every creator profile requires a private notes file.")
+
+
+def notes_save_failure_state(error: Exception) -> str:
+    """Classify known filesystem failures without projecting error text or paths."""
+    if not isinstance(error, OSError):
+        return "failed"
+    code = error.errno
+    if code == errno.ENOSPC or (hasattr(errno, "EDQUOT") and code == errno.EDQUOT):
+        return "disk_full"
+    if code in {errno.EACCES, errno.EPERM}:
+        return "permission_denied"
+    if code == errno.EROFS:
+        return "read_only"
+    return "failed"
 
 
 def _persistence_home() -> Path:
@@ -222,6 +237,7 @@ class SessionPersistence:
         # before directory fsync failed. Even Undo to the old saved text must
         # be written again before it can be acknowledged as saved.
         self._unconfirmed_notes: set[str] = set()
+        self._notes_save_failures: dict[str, str] = {}
         self._unreadable_notes: set[str] = set()
         self._exported_profiles: set[str] = set()
         self._notes_save_state = "saved"
@@ -323,8 +339,25 @@ class SessionPersistence:
         """Local drafts only; never part of session or invitation projections."""
         return tuple(self._pending_notes.items())
 
+    @property
+    def notes_recovery_summary(self) -> tuple[tuple[str, str], ...]:
+        """Stable workspace/reason pairs for local UI; no draft bytes or paths."""
+        summary = []
+        for profile in _PROFILE_ORDER:
+            if profile not in self._pending_notes:
+                continue
+            state = self.notes_recovery_state(profile)
+            if (state == "failed" and profile not in self._notes_save_failures
+                    and profile not in self._unconfirmed_notes):
+                state = "pending"
+            summary.append((profile, state))
+        return tuple(summary)
+
     def _notify_notes_state(self, state: str) -> None:
         self._notes_save_state = state
+        set_context = getattr(self._canvas, "set_notes_recovery_context", None)
+        if callable(set_context):
+            set_context(self._creator_profile_key, self.notes_recovery_summary)
         setter = getattr(self._canvas, "set_notes_save_state", None)
         if callable(setter):
             setter(state)
@@ -352,12 +385,13 @@ class SessionPersistence:
         text = self._pending_notes.get(profile, "")
         if len(text.encode("utf-8")) > _MAX_NOTES_FILE_BYTES:
             return "too_large"
-        return "failed"
+        return self._notes_save_failures.get(profile, "failed")
 
     def _retain_notes(self, profile: str, text: str) -> None:
         if (profile not in self._unconfirmed_notes
                 and text == self._settled_notes.get(profile, "")):
             self._pending_notes.pop(profile, None)
+            self._notes_save_failures.pop(profile, None)
         else:
             self._pending_notes[profile] = text
 
@@ -381,10 +415,12 @@ class SessionPersistence:
                 self._unconfirmed_notes.add(profile)
                 atomic_write_text(path, text, mode=0o600)
                 self._unconfirmed_notes.discard(profile)
+                self._notes_save_failures.pop(profile, None)
                 self._settled_notes[profile] = text
                 self._pending_notes.pop(profile, None)
                 self._exported_profiles.discard(profile)
             except Exception as exc:  # noqa: BLE001 - keep the draft for retry
+                self._notes_save_failures[profile] = notes_save_failure_state(exc)
                 self._log.debug("Could not save notes; error_type=%s", type(exc).__name__)
         self._refresh_notes_state()
         return not self._pending_notes
@@ -405,6 +441,7 @@ class SessionPersistence:
             return False
         self.export_notes_copy(expected, path)
         self._unconfirmed_notes.discard(profile)
+        self._notes_save_failures.pop(profile, None)
         self._settled_notes[profile] = expected
         self._exported_profiles.add(profile)
         self._pending_notes.pop(profile, None)

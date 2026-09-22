@@ -69,9 +69,16 @@ def _assert_real_notes_fit(window):
 
 @pytest.mark.parametrize("size", [(720, 560), (760, 600), (1040, 720)])
 @pytest.mark.parametrize("save_state", ["saved", "failed", "protected_original"])
+@pytest.mark.parametrize("retained_workspaces", [
+    (),
+    (("music", "disk_full"),),
+    (("podcast_voice", "permission_denied"), ("review_rehearsal", "protected_original")),
+    (("music", "permission_denied"), ("podcast_voice", "read_only"),
+     ("review_rehearsal", "protected_original"), ("art", "too_large")),
+])
 @pytest.mark.parametrize("font_stretch", [100, 125])
 def test_real_room_guidance_and_transition_text_keep_notes_usable(
-    native_room, qapp, size, save_state, font_stretch,
+    native_room, qapp, size, save_state, retained_workspaces, font_stretch,
 ):
     pair = native_room(profile="art")
     app, window = pair.app, pair.app.window
@@ -90,10 +97,15 @@ def test_real_room_guidance_and_transition_text_keep_notes_usable(
     meeting = window.webex_embed
     meeting_status = (meeting._status_label.text(), app.settings.webex_url)
     app._on_rail_view_changed("canvas")
+    if size[0] == 1040 and len(retained_workspaces) == 2:
+        # Keep the longest visible workspace names honest when an artist
+        # gives the room and Conversation more space in the wide layout.
+        window.center_splitter.setSizes([620, 420])
     for widget in panel.findChildren(QWidget):
         font = widget.font()
         font.setStretch(font_stretch)
         widget.setFont(font)
+    panel.set_notes_recovery_context("art", retained_workspaces)
     panel.set_notes_save_state(save_state)
     _settle(qapp)
     assert window.size() == QSize(*size)
@@ -106,13 +118,17 @@ def test_real_room_guidance_and_transition_text_keep_notes_usable(
         assert not meeting.isVisibleTo(window)
     else:
         assert meeting.isVisibleTo(window)
+        if len(retained_workspaces) == 2:
+            assert panel.width() <= 430
     assert (meeting._status_label.text(), app.settings.webex_url) == meeting_status
     QTest.mouseClick(panel.talk_share_button(), Qt.MouseButton.LeftButton)
     _settle(qapp)
     assert window.webex_embed is meeting and meeting.isVisibleTo(window)
     assert meeting.isAncestorOf(window.focusWidget())
     assert panel.current_notes() == _NOTES
-    assert panel._suggestion_button.isVisibleTo(panel) == (save_state == "saved")
+    assert panel._suggestion_button.isVisibleTo(panel) == (
+        save_state == "saved" and not retained_workspaces
+    )
     assert pair.players == [] and pair.launcher.joined == []
     app.bridge.launch_webex.assert_not_called()
 

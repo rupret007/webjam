@@ -826,6 +826,61 @@ class TestRecordButtonWiring(unittest.TestCase):
             c.recording.phase = prior_phase
             c.recording.plan_shared_track_for_next_take(required=False)
 
+    def test_readiness_retains_specific_local_capture_preflight_failures(self):
+        from core.local_capture import check_local_capture_preflight
+        from core.recording_readiness_presentation import RecordingReadinessRecovery
+        from core.session_recording_plan import InputMapBinding
+
+        c = self.controller
+        plan = self._install_bound_capture_plan((InputMapBinding("Stereo Mic", 2, True, True),))
+        tracks = plan.resolved_capture_tracks()
+        settings_before = (c.settings.audio_samplerate, c.settings.audio_blocksize)
+        cases = (
+            ("short interface", {"maximum": 1}, "needs 2 input channels", "choose an input"),
+            ("native failure", {"native_error": True}, "unavailable or cannot use", "Reconnect"),
+            ("sample rate", {"samplerate": 44100}, "require 48 kHz", "cannot change"),
+            ("buffer", {"blocksize": -1}, "buffer size is invalid", "cannot change"),
+            ("settings", {"samplerate": "invalid"}, "audio settings are invalid", "cannot change"),
+            ("track map", {"tracks": (object(),)}, "track map is invalid", "rebuild"),
+        )
+        try:
+            for label, values, failure, recovery in cases:
+                with self.subTest(label=label):
+                    options = dict(values)
+                    maximum = options.pop("maximum", 2)
+                    native_error = options.pop("native_error", False)
+                    fake_sd = SimpleNamespace(
+                        query_devices=MagicMock(return_value={"max_input_channels": maximum}),
+                        check_input_settings=MagicMock(
+                            side_effect=RuntimeError("/private/device secret-token") if native_error else None,
+                        ),
+                        InputStream=MagicMock(),
+                    )
+                    selected_tracks = options.pop("tracks", tracks)
+                    preflight = check_local_capture_preflight(
+                        tracks=selected_tracks, sounddevice_module=fake_sd, **options,
+                    )
+                    self.assertFalse(preflight.ready)
+                    snapshot = c.recording._build_recording_readiness_presentation(
+                        plan, local_preflight=preflight,
+                    )
+                    local = snapshot.sources[-1]
+                    self.assertIn(failure, local.detail)
+                    self.assertIn(recovery, local.detail)
+                    self.assertIn(local.detail, local.accessible_description)
+                    self.assertTrue(any(local.detail in item for item in snapshot.effective_blockers))
+                    self.assertNotIn("/private/device", local.detail)
+                    self.assertNotIn("secret-token", local.detail)
+                    self.assertFalse(snapshot.can_start)
+                    self.assertIs(snapshot.recovery, RecordingReadinessRecovery.OPEN_RECORDING_SETUP)
+                    fake_sd.InputStream.assert_not_called()
+            self.assertEqual(settings_before, (c.settings.audio_samplerate, c.settings.audio_blocksize))
+            self.assertFalse(c._recorder_armed)
+            self.assertFalse(c._server_recording)
+            self.assertIsNone(c.recording._local_capture)
+        finally:
+            c.recording._retire_active_take(plan.take_id)
+
     def test_readiness_setup_retires_old_plan_before_opening_and_rebuilds_fresh(self):
         from core.recording_readiness_presentation import RecordingReadinessRecovery
         from core.session_recording_plan import InputMapBinding

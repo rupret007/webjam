@@ -40,6 +40,10 @@ medium; see [Art](#art) below. No profile directly or automatically taps a
 meeting app, browser, or system output.
 
 Local notes save shortly after an edit. If a save fails, choose **Save Notes**.
+The Notes notice names retained workspaces, including a draft outside the one
+you are editing, and keeps that recovery action available while you type.
+Storage-full, permission, and read-only failures explain when to free space,
+retry, or export to a writable location without displaying private file paths.
 The recovery window can show drafts from another workspace without changing
 the current session. It explains whether to retry saving, shorten a long draft,
 or choose **Export Copy…**. If the original could not be opened, it is protected
@@ -872,6 +876,14 @@ bypass: WebJam rechecks the take/plan generation, roster, input maps, guest
 obligations, device preflight, storage, and Shared Track identity before it
 arms anything. Cancelling retires the provisional take without starting
 capture.
+
+When a Local Original blocks recording, the sheet distinguishes too few input
+channels, an invalid track map, an unavailable input or format, and invalid
+audio settings. **Recording Setup** lets you review inputs and tracks or turn
+off optional Local Originals to record the shared take. It cannot change the
+shared sample rate or buffer size; those failures say so. Returning from setup
+does not start capture. Choose **Record Session** again to build and check a
+fresh plan before Start Recording becomes available.
 
 For each opted-in guest Local Original, WebJam next sends a private,
 take-scoped arm only to that required guest. The guest opens the exact planned
