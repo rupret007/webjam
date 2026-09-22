@@ -1,4 +1,4 @@
-"""Published unsigned v0.28.1 Latest; older release entries deleted by owner."""
+"""v0.28.2 candidate source; published Latest remains v0.28.1 until publish."""
 
 from __future__ import annotations
 

@@ -6,11 +6,20 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-> Future work after published v0.28.1 belongs here. GitHub Latest is now
-> immutable v0.28.1 release `393030220`. Every published tag, release, and
-> asset remains immutable historical evidence. Older release entries
-> (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags
-> remain.
+> Future work after the unsigned v0.28.2 candidate belongs here once that round
+> is tagged and published as Latest. Until then GitHub Latest remains immutable
+> v0.28.1 release `393030220`. Every published tag, release, and asset remains
+> immutable historical evidence. Older release entries (v0.28.0, v0.27.2,
+> Jamulus catalog v1–v3) were deleted by owner; git tags remain.
+
+## [0.28.2] — Unsigned/ad-hoc private test release candidate
+
+> Prepared for Jeff Story testing after #143. Extends Jamulus webjam_range
+> ceiling from 0.28.1 → 0.28.2 so Host/Join and component-input CI continue to
+> reuse the exact baked 3.12.2 and 3.12.3 identities. GitHub Latest remains
+> immutable v0.28.1 release `393030220` until this candidate is tagged and
+> published. Physical, credentialed, signing, notarization, Gatekeeper, and
+> SmartScreen remain **NOT RUN**. Parked #37/#49 untouched.
 
 ### Room readiness and local recovery
 
@@ -53,7 +62,7 @@ All notable improvements and features for the WebJam creator collaboration platf
   Record Session still performs the source and storage checks.
 - Recurring recovery updates preserve keyboard focus in Notes and setup input.
 
-## [0.28.1] — Unsigned/ad-hoc private test release (GitHub Latest)
+## [0.28.1] — Unsigned/ad-hoc private test release (GitHub Latest until v0.28.2 publishes)
 
 > Published 2026-09-21 as GitHub **Latest**. Release ID `393030220` from
 > annotated tag `v0.28.1` (object `db44247a3ceefb97f4cac6e623deef1bd32648a8`)
