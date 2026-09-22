@@ -8,7 +8,7 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QTimer, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, QTimer, Signal
 from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication, QMessageBox
 
@@ -465,7 +465,7 @@ def _run_app() -> int:
     finally:
         sys.excepthook = previous_exception_hook
         controller.shutdown()
-        QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     return exit_code
 
 
