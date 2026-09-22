@@ -1399,7 +1399,6 @@ jobs:
             sha256sum dist/WebJam/webjam-fabric.exe \
               | awk '{print $1}' > dist/WebJam/webjam-fabric.sha256
             test -f dist/WebJam/WebJam.exe
-            python -m tests.support.run_frozen_youtube_smoke --binary dist/WebJam/WebJam.exe
             test -f dist/WebJam/webjam-fabric.exe
             test -s dist/WebJam/webjam-fabric.sha256
             printf '%s\n' \
@@ -1433,8 +1432,6 @@ jobs:
             file dist/WebJam/WebJam | grep -Eq 'ELF 64-bit.*x86-64'
             file dist/WebJam/webjam-fabric | grep -Eq 'ELF 64-bit.*x86-64'
             test -x dist/WebJam/WebJam
-            QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu xvfb-run -a \
-              python -m tests.support.run_frozen_youtube_smoke --binary dist/WebJam/WebJam
             test -x dist/WebJam/webjam-fabric
             test -f dist/WebJam/Jamulus/jamulus_3.12.2_ubuntu_amd64.deb
             test -f dist/WebJam/Jamulus/JAMULUS_COPYING.txt
@@ -1606,8 +1603,6 @@ jobs:
             ! grep -q 'com.apple.security.app-sandbox' \
               <<< "$headless_entitlements"
             test -x dist/WebJam.app/Contents/MacOS/WebJam
-            python -m tests.support.run_frozen_youtube_smoke \
-              --binary dist/WebJam.app/Contents/MacOS/WebJam
             test -x dist/WebJam.app/Contents/MacOS/webjam-fabric
             file dist/WebJam.app/Contents/MacOS/WebJam \
               | grep -q "$expected_machine"
@@ -1818,6 +1813,24 @@ jobs:
             ! grep -Eq 'WebJam failed during startup|Unhandled WebJam UI error' \
               "$fresh_home/webjam.log"
           fi
+
+      - name: Verify frozen lesson player
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          case "${{ matrix.target }}" in
+            macos-*)
+              python -m tests.support.run_frozen_youtube_smoke \
+                --binary dist/WebJam.app/Contents/MacOS/WebJam ;;
+            windows-x64)
+              python -m tests.support.run_frozen_youtube_smoke \
+                --binary dist/WebJam/WebJam.exe ;;
+            linux-x64)
+              QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu xvfb-run -a \
+                python -m tests.support.run_frozen_youtube_smoke \
+                --binary dist/WebJam/WebJam ;;
+            *) exit 1 ;;
+          esac
 
       - name: Reverify Intel cryptography after final ZIP packaging
         if: matrix.target == 'macos-x64'
