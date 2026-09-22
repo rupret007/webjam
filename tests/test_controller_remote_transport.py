@@ -524,8 +524,10 @@ def test_v3_guest_pre_enrollment_failure_stage_and_hud_retry_same_invitation(
 
     # Exercise the real connected controls after the proven pre-enrollment
     # failure. Both route back to v3 enrollment, never Band Check or legacy
-    # localhost Jamulus.
-    controller.window.participant_grid._empty_primary.click()
+    # localhost Jamulus. The participant grid button is hidden when a retry
+    # is available (show_primary=False), so the visible HUD action is the
+    # path musicians actually use.
+    controller.window.session_hud._action.click()
     _drain_until(
         qapp,
         lambda: (
