@@ -881,7 +881,7 @@ class TestFindJamulusFallback(unittest.TestCase):
 
     def test_future_source_still_rejects_the_bundled_client(self):
         bridge = _make_bridge()
-        bridge._runtime_webjam_version = MagicMock(return_value="0.28.2")
+        bridge._runtime_webjam_version = MagicMock(return_value="0.28.3")
         bridge._jamulus_component_target = ComponentTarget.WINDOWS_X64
         with patch(
             "services.bridge_service._bundled_jamulus_candidate",
