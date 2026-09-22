@@ -12,6 +12,19 @@ All notable improvements and features for the WebJam creator collaboration platf
 > (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags
 > remain.
 
+### Room readiness and local recovery
+
+- Enabled Art/Music choices use readable primary text while disabled choices
+  stay muted. Music's empty room names its disconnected state without claiming
+  recording readiness; recovery buttons announce their current action.
+- Notes stay unsaved after an unconfirmed disk write, including when Undo
+  restores earlier text. Recovery distinguishes a protected original, a long
+  draft, and an unconfirmed save, with a working retry or export route.
+- Studio disables Record until session participants are available and keeps
+  the reason visible on compact windows. Idle Studio does not claim readiness;
+  Record Session still performs the source and storage checks.
+- Recurring recovery updates preserve keyboard focus in Notes and setup input.
+
 ## [0.28.1] — Unsigned/ad-hoc private test release (GitHub Latest)
 
 > Published 2026-09-21 as GitHub **Latest**. Release ID `393030220` from

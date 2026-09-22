@@ -21,10 +21,7 @@ class NotesRecoveryDialog(QDialog):
         self._profile.setAccessibleName("Unsaved notes workspace")
         for key in self._drafts:
             self._profile.addItem(get_creator_profile_by_key_or_default(key).label, key)
-        self._message = QLabel(
-            "These drafts stay on this computer. Shorten a long draft and save, "
-            "or export a copy to another file. Your collaboration session stays open."
-        )
+        self._message = QLabel()
         self._message.setWordWrap(True)
         self._message.setTextFormat(Qt.TextFormat.PlainText)
         self._editor = QTextEdit()
@@ -51,6 +48,40 @@ class NotesRecoveryDialog(QDialog):
             return
         self._selected = self._profile.currentData()
         self._editor.setPlainText(self._drafts.get(self._selected, ""))
+        self._show_recovery_guidance()
+
+    def _show_recovery_guidance(self) -> None:
+        state = self._persistence.notes_recovery_state(self._selected)
+        if state == "protected_original":
+            message = (
+                "The original notes could not be opened and will not be overwritten. "
+                "Choose Export Copy to save this draft to another file. "
+                "Your collaboration session stays open."
+            )
+        elif state == "too_large":
+            message = (
+                "This draft is too long for local notes. Shorten it and choose Save Notes, "
+                "or choose Export Copy to keep the full draft in another file. "
+                "Your collaboration session stays open."
+            )
+        else:
+            message = (
+                "This draft could not be confirmed saved. Try Save Notes again, "
+                "or choose Export Copy to save it to another file. "
+                "Your collaboration session stays open."
+            )
+        self._set_message(message)
+        self._save.setEnabled(state != "protected_original")
+        self._save.setToolTip(
+            "The original cannot be overwritten. Choose Export Copy."
+            if state == "protected_original" else "Save this draft on this computer."
+        )
+        self._save.setAccessibleDescription(self._save.toolTip())
+        self._export.setAccessibleDescription("Save this draft to a separate local file.")
+
+    def _set_message(self, message: str) -> None:
+        self._message.setText(message)
+        self._message.setAccessibleDescription(message)
 
     def _retain_current(self) -> tuple[str, str] | None:
         profile = self._selected
@@ -59,7 +90,7 @@ class NotesRecoveryDialog(QDialog):
         # A session event may have edited the active notes while a native file
         # chooser was open. Never acknowledge a newer draft using older bytes.
         if expected is None or expected != self._originals.get(profile):
-            self._message.setText("Notes changed. Close this window and choose Save Notes again.")
+            self._set_message("Notes changed. Close this window and choose Save Notes again.")
             return None
         text = self._editor.toPlainText()
         if not self._persistence.revise_pending_notes(profile, expected, text):
@@ -76,7 +107,7 @@ class NotesRecoveryDialog(QDialog):
             return True
         if self._retain_current() is not None:
             return True
-        self._message.setText(
+        self._set_message(
             "The saved draft changed while you edited this copy. "
             "Choose Export Copy before leaving it."
         )
@@ -94,10 +125,7 @@ class NotesRecoveryDialog(QDialog):
         if draft[0] not in dict(self._persistence.unsaved_notes):
             self._remove_current()
         else:
-            self._message.setText(
-                "This draft could not be saved. Export a copy to another file, "
-                "or shorten it and try Save Notes again. Existing saved notes are unchanged."
-            )
+            self._show_recovery_guidance()
 
     def _export_current(self) -> None:
         profile, text = self._selected, self._editor.toPlainText()
@@ -121,7 +149,7 @@ class NotesRecoveryDialog(QDialog):
             if not acknowledged:
                 self._persistence.export_notes_copy(text, path)
         except (OSError, ValueError):
-            self._message.setText("The copy could not be saved. Choose another file and try again.")
+            self._set_message("The copy could not be saved. Choose another file and try again.")
             return
         self._remove_current()
 

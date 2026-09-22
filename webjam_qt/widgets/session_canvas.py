@@ -466,8 +466,11 @@ class SessionCanvas(QFrame):
         messages = {
             "saved": "Saved on this computer",
             "pending": "Saving notes…",
-            "failed": "Notes need saving. Choose Save Notes.",
+            "failed": "Notes could not be confirmed saved. Choose Save Notes.",
             "too_large": "Long draft: choose Save Notes to shorten or export it.",
+            "protected_original": (
+                "Original notes could not be opened. Choose Save Notes to export your draft."
+            ),
             "unreadable": "Saved notes could not be opened. The original is unchanged.",
             "exported": "Draft exported to your chosen file.",
         }
@@ -478,7 +481,14 @@ class SessionCanvas(QFrame):
         self._notes_save_state = state
         self._notes_save_status.setText(messages[state])
         self._notes_save_status.setAccessibleDescription(messages[state])
-        needs_attention = state in {"failed", "too_large"}
+        needs_attention = state in {"failed", "too_large", "protected_original"}
+        recovery_description = (
+            "Open notes recovery to export your draft without replacing the original."
+            if state == "protected_original"
+            else "Retry saving retained local notes, or export a separate copy."
+        )
+        self._save_notes_button.setToolTip(recovery_description)
+        self._save_notes_button.setAccessibleDescription(recovery_description)
         self._notes_save_status.setVisible(needs_attention or state in {"unreadable", "exported"})
         for button in getattr(self, "_normal_notes_buttons", ()):
             button.setVisible(not needs_attention)
@@ -541,7 +551,9 @@ class SessionCanvas(QFrame):
             + margins.left() + margins.right()
         )
         inline = self._art_profile and self.width() >= max(400, required)
-        available = self._art_profile and self._notes_save_state not in {"failed", "too_large"}
+        available = self._art_profile and self._notes_save_state not in {
+            "failed", "too_large", "protected_original"
+        }
         focused = self._suggestion_button.hasFocus()
         if inline != self._suggestion_inline:
             self._suggestion_inline = inline

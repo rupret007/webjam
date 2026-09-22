@@ -261,7 +261,7 @@ def test_participant_grid_applies_profile_vocabulary_and_preview_truth() -> None
         grid.set_creator_profile(podcast)
         assert grid._empty_ready.text() == "Run Sound Check"
         assert grid._empty_practice.text() == "Solo Voice"
-        assert grid._empty_primary.accessibleName() == "Start the recording session"
+        assert grid._empty_primary.accessibleName() == grid._empty_primary.text()
         assert grid._empty_message.text() == "Start the session to join the recording."
         grid.set_participants(
             [ParticipantPresentation(channel_id=1, name="Speaker One")]
@@ -324,7 +324,7 @@ def test_participant_grid_applies_profile_vocabulary_and_preview_truth() -> None
         assert "stems" not in art_visible
         assert "separate tracks" not in art_visible
         assert "preview" not in art_visible
-        assert grid._empty_eyebrow.text() == "READY"
+        assert grid._empty_eyebrow.text() == "NOT CONNECTED"
         assert grid._empty_hint.text() == ""
         assert "preview" not in grid._empty_state.accessibleDescription().casefold()
         assert re.search(r"\bjam\b", art_visible) is None

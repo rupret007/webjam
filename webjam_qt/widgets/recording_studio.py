@@ -332,8 +332,9 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._recording_elapsed = 0.0
         self._recording = False
         self._can_record = True
+        self._recording_unavailable_reason = ""
         self._phase_name = "idle"
-        self._phase_label = "READY"
+        self._phase_label = "NOT RECORDING"
         self._shared_guidance_text = ""
         self._viewing_live = True
         self._guidance_take_revision = 0
@@ -453,9 +454,11 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         top.addWidget(self._record_btn)
         root.addLayout(top)
 
-        self._phase = QLabel("READY")
+        self._phase = QLabel("NOT RECORDING")
         self._phase.setObjectName("StudioPhase")
         self._phase.setAccessibleName("Multitrack recorder status")
+        self._phase.setTextFormat(Qt.TextFormat.PlainText)
+        self._phase.setWordWrap(True)
         root.addWidget(self._phase)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -1156,6 +1159,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
 
     def set_can_record(self, enabled: bool, reason: str = "") -> None:
         self._can_record = bool(enabled)
+        self._recording_unavailable_reason = str(reason).strip() if not enabled else ""
         if not self._recording:
             self._refresh_record_button_enabled()
         if reason and not enabled:
@@ -1210,15 +1214,27 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             text = f"Non-destructive · {text}"
         self._shared_guidance_text = text
         self._render_studio_phase()
-        self._phase.setAccessibleDescription(guidance.accessible_description)
-        self._phase.setToolTip(guidance.accessible_description)
         self.setAccessibleDescription(guidance.accessible_description)
 
     def _render_studio_phase(self) -> None:
-        text = self._phase_label
+        text = (
+            f"NOT RECORDING · {self._recording_start_guidance()}"
+            if self._phase_name == "idle"
+            else self._phase_label
+        )
         if self._shared_guidance_text:
             text = f"{text} · {self._shared_guidance_text}"
         self._phase.setText(text)
+        self._phase.setAccessibleDescription(text)
+        self._phase.setToolTip(text)
+        if (
+            self._phase_name == "idle"
+            and self._viewing_live
+            and not self._recording_sources_authoritative
+        ):
+            # Compact Studio hides the long phase line. Keep the same next
+            # step in its visible hint, including after roster refreshes.
+            self._hint.setText(self._recording_start_guidance())
 
     def _emit_guidance_changed(self) -> None:
         """Publish semantic changes once; timers and playheads never call this."""
@@ -1721,10 +1737,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 if profile.key == "review_rehearsal"
                 else "Multitrack recorder status"
             )
-        self._record_btn.setAccessibleDescription(
-            "Record synchronized WebJam audio for this "
-            f"{self._session_noun}. {RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
-        )
+        self._refresh_record_button_enabled()
         if self._phase_name == "recording":
             self._phase_label = (
                 f"● RECORDING · {len(self._recording_sources)} exact sources"
@@ -1765,7 +1778,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         }:
             self._cancel_export_for_recording()
         labels = {
-            "idle": "READY · start audio, then Record Session",
+            "idle": "NOT RECORDING",
             "preflight": "PREPARING THE SESSION…",
             "starting": "PREPARING TRACKS…",
             "count_in": "COUNT-IN · recording is already active",
@@ -1807,7 +1820,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             "validating",
         }:
             set_labeled_action(self._record_btn, "Working…")
-            self._record_btn.setEnabled(False)
+            self._refresh_record_button_enabled()
         else:
             set_labeled_action(self._record_btn, "● Record Session")
             self._refresh_record_button_enabled()
@@ -1815,6 +1828,19 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             lane.waveform.set_recording(self._recording)
         self._refresh_recording_source_lanes()
         self._refresh_export_button()
+
+    def _recording_start_guidance(self) -> str:
+        if not self._live_creator_profile.capabilities.session_recording:
+            return "Open a Music room to record a session."
+        if not self._can_record:
+            return self._recording_unavailable_reason or (
+                "The host controls recording. Ask the host to choose Record Session."
+            )
+        if self._exporting:
+            return "Wait for the current export to finish, then choose Record Session."
+        if not self._live_participants:
+            return "Start Session to connect audio before choosing Record Session."
+        return "Choose Record Session to check sources and storage before recording."
 
     def _refresh_record_button_enabled(self) -> None:
         """Keep record/stop availability consistent with export and recorder state."""
@@ -1836,6 +1862,20 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 and bool(self._live_participants)
             )
         )
+        detail = (
+            "Finish stopping the current recording."
+            if self._phase_name == "stop_failed"
+            else "Stop the current recording and save the take."
+            if self._recording
+            else "Wait for the current recording operation to finish."
+            if busy
+            else self._recording_start_guidance()
+        )
+        self._record_btn.setToolTip(detail)
+        self._record_btn.setAccessibleDescription(
+            f"{detail} {RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+        )
+        self._render_studio_phase()
 
     def _cancel_export_for_recording(self) -> None:
         """Give an already-starting recorder priority over a stale export race."""
@@ -2574,6 +2614,8 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         if self._lanes:
             self._select_track(next(iter(self._lanes)))
 
+        self._render_studio_phase()
+
     def _show_live_session(self) -> None:
         if self._exporting:
             self._hint.setText(
@@ -3198,7 +3240,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._live_btn.setEnabled(False)
         self._new_take_btn.setEnabled(False)
         self._setup_btn.setEnabled(False)
-        self._record_btn.setEnabled(False)
+        self._refresh_record_button_enabled()
         self._export_btn.setEnabled(False)
         set_labeled_action(
             self._export_btn,

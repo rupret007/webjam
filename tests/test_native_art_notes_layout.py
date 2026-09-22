@@ -68,7 +68,7 @@ def _assert_real_notes_fit(window):
 
 
 @pytest.mark.parametrize("size", [(720, 560), (760, 600), (1040, 720)])
-@pytest.mark.parametrize("save_state", ["saved", "failed"])
+@pytest.mark.parametrize("save_state", ["saved", "failed", "protected_original"])
 @pytest.mark.parametrize("font_stretch", [100, 125])
 def test_real_room_guidance_and_transition_text_keep_notes_usable(
     native_room, qapp, size, save_state, font_stretch,

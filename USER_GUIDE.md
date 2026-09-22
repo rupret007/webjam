@@ -41,9 +41,11 @@ meeting app, browser, or system output.
 
 Local notes save shortly after an edit. If a save fails, choose **Save Notes**.
 The recovery window can show drafts from another workspace without changing
-the current session. Shorten a long draft or choose **Export Copy…**. A failed
-load leaves the original saved file unchanged. Keep the app open until new
-notes have been saved or exported; Quit preserves that recovery opportunity.
+the current session. It explains whether to retry saving, shorten a long draft,
+or choose **Export Copy…**. If the original could not be opened, it is protected
+and Export Copy saves your new draft separately. An unconfirmed write stays
+unsaved even after Undo; retry or export before quitting. Keep the app open until
+new notes have been saved or exported; Quit preserves that recovery opportunity.
 Accepting a Song suggestion also saves the resulting notes.
 
 ## Art

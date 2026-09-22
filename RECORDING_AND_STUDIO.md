@@ -56,6 +56,12 @@ explicit local-capture setting when Record Session is requested. It does not
 perform those checks during Host or Join. A failed record preflight preserves
 the live session and explains the next safe action.
 
+Idle Studio says **NOT RECORDING** and explains the next step. With no session
+participants, connect audio using **Start Session** first; guests see that the
+host owns recording. The explanation stays visible in compact windows. An
+available **Record Session** button opens the checks; it is not a readiness
+verdict, and checking free storage does not reserve disk space.
+
 Before capture begins, one durable take-scoped recording plan binds the exact
 roster/server stems, Shared Track source fingerprint and playback generation,
 host logical mono/stereo topology, guest Local Original count/map obligations

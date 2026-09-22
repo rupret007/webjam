@@ -218,6 +218,10 @@ class SessionPersistence:
         self._borrowed_title: str | None = None
         self._pending_notes: dict[str, str] = {}
         self._settled_notes: dict[str, str] = {}
+        # A failed atomic write may already have replaced the destination
+        # before directory fsync failed. Even Undo to the old saved text must
+        # be written again before it can be acknowledged as saved.
+        self._unconfirmed_notes: set[str] = set()
         self._unreadable_notes: set[str] = set()
         self._exported_profiles: set[str] = set()
         self._notes_save_state = "saved"
@@ -326,7 +330,9 @@ class SessionPersistence:
             setter(state)
 
     def _refresh_notes_state(self) -> None:
-        if any(len(text.encode("utf-8")) > _MAX_NOTES_FILE_BYTES
+        if any(profile in self._unreadable_notes for profile in self._pending_notes):
+            state = "protected_original"
+        elif any(len(text.encode("utf-8")) > _MAX_NOTES_FILE_BYTES
                for text in self._pending_notes.values()):
             state = "too_large"
         elif self._pending_notes:
@@ -339,8 +345,18 @@ class SessionPersistence:
             state = "saved"
         self._notify_notes_state(state)
 
+    def notes_recovery_state(self, profile: str) -> str:
+        """Return the bounded reason for one retained workspace draft."""
+        if profile in self._unreadable_notes:
+            return "protected_original"
+        text = self._pending_notes.get(profile, "")
+        if len(text.encode("utf-8")) > _MAX_NOTES_FILE_BYTES:
+            return "too_large"
+        return "failed"
+
     def _retain_notes(self, profile: str, text: str) -> None:
-        if text == self._settled_notes.get(profile, ""):
+        if (profile not in self._unconfirmed_notes
+                and text == self._settled_notes.get(profile, "")):
             self._pending_notes.pop(profile, None)
         else:
             self._pending_notes[profile] = text
@@ -360,8 +376,11 @@ class SessionPersistence:
                     continue
                 path = _persistence_home() / _PROFILE_NOTES_FILES[profile]
                 if path.is_symlink():
+                    self._unreadable_notes.add(profile)
                     raise ValueError("Notes destination is not a regular file.")
+                self._unconfirmed_notes.add(profile)
                 atomic_write_text(path, text, mode=0o600)
+                self._unconfirmed_notes.discard(profile)
                 self._settled_notes[profile] = text
                 self._pending_notes.pop(profile, None)
                 self._exported_profiles.discard(profile)
@@ -385,6 +404,7 @@ class SessionPersistence:
         if self._pending_notes.get(profile) != expected:
             return False
         self.export_notes_copy(expected, path)
+        self._unconfirmed_notes.discard(profile)
         self._settled_notes[profile] = expected
         self._exported_profiles.add(profile)
         self._pending_notes.pop(profile, None)

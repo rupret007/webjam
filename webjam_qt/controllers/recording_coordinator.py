@@ -5240,7 +5240,7 @@ class RecordingCoordinator:
             self._c._show_actionable_error(
                 "Recording Storage Needs Attention",
                 what_failed=(
-                    "WebJam can't reserve storage for the exact server and "
+                    "WebJam can't verify enough free storage for the exact server and "
                     "Local Original plan. No recorder was started."
                 ),
                 likely_cause=exact_storage.detail,

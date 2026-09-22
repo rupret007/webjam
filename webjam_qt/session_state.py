@@ -35,10 +35,6 @@ class SessionUiState:
 
     @classmethod
     def idle(cls, server: str = "", hosting: bool = False) -> SessionUiState:
-        if hosting:
-            hint = "Multitrack recording is ready on this Mac"
-        else:
-            hint = "Your host records everyone as separate tracks"
         return cls(
             SessionPhase.NOT_CONNECTED,
             "Ready when you are",
@@ -47,7 +43,9 @@ class SessionUiState:
             primary_text="Start Session",
             show_ready_check=False,
             show_practice=False,
-            hint=hint,
+            # No recorder, storage, or remote-source readiness is known here.
+            # Record Session owns its preflight once a session exists.
+            hint="",
         )
 
     @classmethod
