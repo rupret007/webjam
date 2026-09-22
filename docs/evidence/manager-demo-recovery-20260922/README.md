@@ -68,6 +68,10 @@ test_art_room_overview_ui.py
 
 Swift protocol/transport tests accept both new desktop recovery action values while keeping phone recording commands disabled. `go test ./...` passes in `transport`; production ruff, compileall, dependency consistency, runtime dependency policy, UX smoke, and diff checks pass. Hosted results belong to the PR's exact tip and are recorded in its PRE_KAREN body once complete.
 
+The first hosted run exposed `test_live_hud_waits_for_human_hearing_confirmation_before_using_ready_style`: recovery rendering accessed Studio before checking whether the current role/action used it. The same failure reproduced locally. Product guards now reject ineligible recovery before accessing its UI owner; the original test is unchanged. The corrected native-startup/shared-recovery gate passes 128 tests.
+
+An additional [12-module controller compatibility gate](controller-compatibility-modules.json) passes 376 tests in fresh processes, matching CI's Qt lifetime isolation. Run each listed module with `.venv/bin/python -m pytest -q`. Combined with the 577-test primary gate and 211-test Art subset, local coverage is **1,125 unique Python tests** (the 20 Local Originals profile and 19 unified-guidance tests appear in both gates).
+
 ## Ranked remaining work
 
 1. Embedded schema-2 Studio at the full-window 760×600 floor still compresses Arrange/mixer content beneath its toolbars. The new recovery action and footer fit, but this pre-existing layout deserves a dedicated interaction pass. The 1000×740 screenshot shows the usable demo workspace.

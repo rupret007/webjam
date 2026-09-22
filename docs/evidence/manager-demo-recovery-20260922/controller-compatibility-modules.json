@@ -1,0 +1,14 @@
+[
+  "tests/test_jamulus_native_startup.py",
+  "tests/test_application_controller_band_check_gate.py",
+  "tests/test_application_controller_creator_copy.py",
+  "tests/test_local_originals_choice_profiles.py",
+  "tests/test_unified_musician_guidance.py",
+  "tests/test_test_night_controller.py",
+  "tests/test_reference_video_application_integration.py",
+  "tests/test_reference_track_application_integration.py",
+  "tests/test_application_controller_session_pulse.py",
+  "tests/test_music_ai_settings_and_boundaries.py",
+  "tests/test_remote_host_loopback_binding.py",
+  "tests/test_art_companion_fallback.py"
+]

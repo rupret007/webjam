@@ -9902,29 +9902,32 @@ class ApplicationController(QObject):
     def _guest_recording_setup_context(self, facts=None, presentation=None):
         """Bind optional capture recovery to the current, idle guest owner."""
         facts = facts or self._session_conductor_facts()
+        if facts.role is not SessionRole.GUEST:
+            return None
+        guest = getattr(self, "guest_peer", None)
+        preflight = getattr(guest, "local_capture_preflight", None)
+        if not isinstance(preflight, LocalCapturePreflight) or preflight.ready:
+            return None
         presentation = presentation or derive_session_presentation(facts)
-        studio = self.window.recording_studio
+        studio = getattr(self.window, "recording_studio", None)
+        if studio is None:
+            return None
         if facts.studio is ReviewState.REVIEWING and bool(getattr(studio, "_viewing_live", False)):
             # Opening an empty take deck still shows the live inspector. Its
             # optional capture recovery stays actionable until a take is
             # actually selected. Keep canonical review facts unchanged.
             presentation = derive_session_presentation(replace(facts, studio=ReviewState.IDLE))
-        guest = getattr(self, "guest_peer", None)
-        preflight = getattr(guest, "local_capture_preflight", None)
         signal = getattr(getattr(getattr(guest, "last_state", None), "signal", None), "value", "")
         if (
             getattr(self, "_shutdown", False)
             or getattr(self, "_shutdown_in_progress", False)
             or getattr(self, "_shutdown_cleanup_pending", False)
             or getattr(self, "_startup_attempt", None) is not None
-            or facts.role is not SessionRole.GUEST
             or facts.music_path is not MusicPathState.AUTHENTICATED
             or facts.local_participant is not EvidenceState.VERIFIED
             or presentation.phase not in {SessionConductorPhase.CONNECTED, SessionConductorPhase.LIVE}
             or not self.creator_profile.capabilities.session_recording
             or not self._local_originals_available()
-            or not isinstance(preflight, LocalCapturePreflight)
-            or preflight.ready
             or bool(getattr(guest, "active_take_id", ""))
             or bool(getattr(guest, "capture_finalization_needs_attention", False))
             or signal in {"recording", "finalizing", "needs_attention"}
@@ -9942,7 +9945,11 @@ class ApplicationController(QObject):
     def _studio_save_retry_context(self, facts=None, presentation=None):
         facts = facts or self._session_conductor_facts()
         presentation = presentation or derive_session_presentation(facts)
-        studio = self.window.recording_studio
+        if presentation.primary_action is not SessionPrimaryAction.RETRY_STUDIO_SAVE:
+            return None
+        studio = getattr(self.window, "recording_studio", None)
+        if studio is None:
+            return None
         if (
             getattr(self, "_shutdown", False)
             or getattr(self, "_shutdown_in_progress", False)
@@ -9951,7 +9958,6 @@ class ApplicationController(QObject):
             or not self.creator_profile.capabilities.take_editing
             or getattr(self, "_last_content_key", "stage") != "takes"
             or not studio.isVisibleTo(self.window)
-            or presentation.primary_action is not SessionPrimaryAction.RETRY_STUDIO_SAVE
         ):
             return None
         owner = studio.studio_save_retry_context()
