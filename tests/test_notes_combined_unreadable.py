@@ -81,7 +81,6 @@ def test_hidden_music_draft_does_not_hide_current_art_recheck(
     assert case.owner.unsaved_notes == (("music", "Retained Music draft"),)
     assert case.canvas.current_notes() == ""
     case.art.write_text("Saved Art after access is fixed")
-    print("STATUS:", case.canvas._notes_save_status.text())
     assert case.canvas._recheck_notes_button.isVisibleTo(case.canvas), (
         "The current empty Art original can be safely rechecked while Music remains unsaved."
     )

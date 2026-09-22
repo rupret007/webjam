@@ -8,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtCore import QPoint, QCoreApplication, QEvent
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QApplication, QPushButton, QWidget
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QWidget
 from shiboken6 import isValid
 
 from core.settings import AppSettings
@@ -87,6 +87,9 @@ def test_setup_recovery_controls_fit_at_compact_sizes(
             assert point.y() + rect.height() <= viewport.height()
         for checkbox in (dialog._capture, dialog._repair_format):
             assert checkbox.width() >= checkbox.sizeHint().width()
+        for label in dialog.findChildren(QLabel):
+            if label.wordWrap() and label.isVisibleTo(dialog):
+                assert label.height() >= label.heightForWidth(label.width()), label.objectName()
         save = next(
             button for button in dialog.findChildren(QPushButton)
             if button.text() == "Save Recording Setup"

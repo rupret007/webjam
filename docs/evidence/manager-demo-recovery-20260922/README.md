@@ -35,13 +35,14 @@ These are actual offscreen Qt fixtures with synthetic participants, source files
 | Studio playback failure, 760×600 | [Visible Playback output and Play](studio-playback-recovery.png) |
 | Studio export failure, standalone 760×600 | [Effective 125% text size](studio-export-125.png) |
 | Notes, 280×560 | [Unavailable original](notes-recheck.png), [reopened original](notes-reopened.png) |
-| Two workspace recovery, 280×560 | [22px status and actions](notes-workspace-recovery-large-text.png) |
+| Two workspace recovery, 280×560 | [22px wider-font status and actions](notes-workspace-recovery-large-text.png) |
+| Music original recovery, 280×560 | [22px wider-font action contents](notes-recheck-large-text.png) |
 
 The screenshot fixtures use the same controller/Studio/Notes setup and failure injection as the regression files above. Rendering uses `QT_QPA_PLATFORM=offscreen`, `load_stylesheet()`, and the actual widget's `grab()`. Layout tests additionally exercise 125% wider glyphs in Recording Setup, long folder paths including literal `<archive>`, and 13px/22px Notes text.
 
 ## Local verification
 
-The exact 30-module recovery/readiness gate is in [focused-modules.json](focused-modules.json). Run from the repo root:
+The exact 32-module recovery/readiness gate passes 677 tests and is in [focused-modules.json](focused-modules.json). Run from the repo root:
 
 ```sh
 QT_QPA_PLATFORM=offscreen .venv/bin/python - <<'PY'
@@ -70,12 +71,14 @@ Swift protocol/transport tests accept both new desktop recovery action values wh
 
 The first hosted run exposed `test_live_hud_waits_for_human_hearing_confirmation_before_using_ready_style`: recovery rendering accessed Studio before checking whether the current role/action used it. The same failure reproduced locally. Product guards now reject ineligible recovery before accessing its UI owner; the original test is unchanged. The corrected native-startup/shared-recovery gate passes 128 tests.
 
-An additional [12-module controller compatibility gate](controller-compatibility-modules.json) passes 376 tests in fresh processes, matching CI's Qt lifetime isolation. Run each listed module with `.venv/bin/python -m pytest -q`. Combined with the 577-test primary gate and 211-test Art subset, local coverage is **1,125 unique Python tests** (the 20 Local Originals profile and 19 unified-guidance tests appear in both gates).
+An additional [12-module controller compatibility gate](controller-compatibility-modules.json) passes 376 tests in fresh processes, matching CI's Qt lifetime isolation. Run each listed module with `.venv/bin/python -m pytest -q`. Combined with the 677-test primary gate and 211-test Art subset, local coverage is **1,225 unique Python tests** (the 20 Local Originals profile and 19 unified-guidance tests appear in both gates).
+
+Hosted Linux then exposed clipping in the original combined-Notes 22px assertion. Wider/taller Verdana text reproduced the defect locally. The Art footer now chooses the arrangement needing less height during recovery, and the status label reserves its measured wrapped height. Measurement is refreshed when width, font, copy or visibility changes, and clears when recovery ends. The long Music Recheck action also uses narrow padding. The original assertion remains intact; three added regressions verify both Notes states, actual button-content space, and reflow/reset behavior. The wider-font images above show the resulting 280×560 layouts. Studio and Setup also passed the existing 22 layout tests with wider/taller fonts; this stress check supplements hosted Linux verification.
 
 ## Ranked remaining work
 
 1. Embedded schema-2 Studio at the full-window 760×600 floor still compresses Arrange/mixer content beneath its toolbars. The new recovery action and footer fit, but this pre-existing layout deserves a dedicated interaction pass. The 1000×740 screenshot shows the usable demo workspace.
-2. Healthy Notes' existing toolbar/pulse can clip at 22px in a narrow panel after recovery. The failure and combined recovery states tested here remain readable.
+2. Healthy Music Notes' existing toolbar/pulse can clip at 22px in a narrow panel after recovery. The failure and combined recovery states tested here remain readable.
 3. Studio save recovery still uses general storage guidance. Distinguishing permission, space, and external-document conflicts with separate safe remedies is a further product slice; this change retains conflict protection and quit veto rather than forcing an overwrite.
 
 Leave OPEN DRAFT for independent Karen review and Jeff feel. No merge, tag, release, Latest, spend, signing/notarization, or physical PASS; parked #37/#49 are untouched.

@@ -13,6 +13,7 @@ import sys
 
 from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -102,6 +103,7 @@ class SessionCanvas(QFrame):
         self._notes_recovery_summary: tuple[tuple[str, str], ...] = ()
         self._notes_need_attention = False
         self._notes_attention_presentation = None
+        self._notes_recovery_measurement = None
         self._notes_export_handler: Callable[[str, str], None] | None = None
 
         self._header = QLabel("Session Canvas")
@@ -361,6 +363,7 @@ class SessionCanvas(QFrame):
         layout.addWidget(self._pulse)
         layout.addWidget(self._notes, stretch=1)
         chat_row = QHBoxLayout()
+        self._chat_row = chat_row
         chat_row.setContentsMargins(Space.MD, 0, Space.MD, 0)
         chat_row.addWidget(self._chat_input)
         chat_row.addWidget(self._art_communication)
@@ -620,6 +623,7 @@ class SessionCanvas(QFrame):
             # readout; the shared guidance facts themselves remain unchanged.
             self._guidance.setVisible(not combined)
         self._sync_suggestion_layout()
+        self._sync_notes_recovery_layout()
         # Retained drafts belong to the window even while this panel is hidden.
         # Project only bounded workspace/reason copy, never the draft itself.
         notice = (
@@ -698,6 +702,44 @@ class SessionCanvas(QFrame):
         if focused and available and not self._suggestion_button.hasFocus():
             self._suggestion_button.setFocus(Qt.FocusReason.OtherFocusReason)
 
+    def _sync_notes_recovery_layout(self) -> None:
+        """Fit recovery copy using the current font and available Notes width."""
+        if not hasattr(self, "_chat_row") or self.layout() is None:
+            return
+        margins = self.layout().contentsMargins()
+        width = max(1, self.contentsRect().width() - margins.left() - margins.right())
+        status = self._notes_save_status
+        measurement = (
+            width, status.isHidden(), status.text(), status.font().key(),
+            self.styleSheet(), status.styleSheet(), status.margin(), status.indent(),
+            status.contentsMargins(),
+        )
+        if measurement != self._notes_recovery_measurement:
+            # QLabel includes its existing minimum in heightForWidth. Clear it
+            # only for changed inputs, then cache the natural measurement so
+            # the geometry update cannot perpetuate LayoutRequest events.
+            self._notes_recovery_measurement = measurement
+            status.setMinimumHeight(0)
+            if not status.isHidden():
+                status.setMinimumHeight(max(0, status.heightForWidth(width)))
+
+        communication = self._art_communication.layout()
+        direction = QBoxLayout.Direction.LeftToRight
+        if self._art_profile and self._notes_need_attention:
+            chat_margins = self._chat_row.contentsMargins()
+            footer_width = max(1, width - chat_margins.left() - chat_margins.right())
+            button = self._talk_share_button.minimumSizeHint()
+            beside_width = max(1, footer_width - button.width() - communication.spacing())
+            beside_height = max(self._communication_hint.heightForWidth(beside_width), button.height())
+            stacked_height = (
+                self._communication_hint.heightForWidth(footer_width)
+                + button.height() + communication.spacing()
+            )
+            if stacked_height < beside_height:
+                direction = QBoxLayout.Direction.TopToBottom
+        if communication.direction() != direction:
+            communication.setDirection(direction)
+
     def _sync_notes_controls(self) -> None:
         compact = self._art_profile and self.height() < 500
         narrow = self._art_profile and self.width() < 400
@@ -719,7 +761,17 @@ class SessionCanvas(QFrame):
                 margin = Space.XS if compact else Space.SM
                 readout.layout().setContentsMargins(Space.MD, margin, Space.MD, margin)
                 readout.layout().setSpacing(0 if compact else Space.XS)
+        if not self._art_profile:
+            # The long recovery action must fit the same narrow rail in Music.
+            # Art keeps its existing compact-height and narrow-padding rules.
+            recheck_style = (
+                f"padding-left: {Space.XS}px; padding-right: {Space.XS}px;"
+                if self.width() < 400 else ""
+            )
+            if self._recheck_notes_button.styleSheet() != recheck_style:
+                self._recheck_notes_button.setStyleSheet(recheck_style)
         self._sync_suggestion_layout()
+        self._sync_notes_recovery_layout()
 
     def eventFilter(self, watched, event) -> bool:
         if (watched is getattr(self, "_notes", None) and self._art_profile
