@@ -522,6 +522,7 @@ def art_watch_share_sentence(
 def art_make_together_activity_detail(
     *,
     meeting_service: str = DEFAULT_MEETING_SERVICE,
+    conversation_configured: bool = False,
 ) -> str:
     """Brief Make-together activity detail for the room overview.
 
@@ -532,9 +533,14 @@ def art_make_together_activity_detail(
     """
 
     del meeting_service  # overview stays brief and service-agnostic
+    next_action = (
+        "Choose Conversation for the external meeting controls."
+        if conversation_configured
+        else "Choose Set Up Conversation to add an external meeting link."
+    )
     return (
         "Use paper, clay, a model, printer, or your usual app. "
-        "Open Conversation for Talk · make · share or watch-together."
+        f"{next_action}"
     )
 
 

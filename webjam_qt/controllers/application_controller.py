@@ -37,6 +37,7 @@ from core.creative_modes import (
     get_creator_profile_by_key_or_default,
     get_mode_by_key_or_default,
 )
+from core.reference_video import MISMATCHED_FILE_MESSAGE
 from core.jamulus_rpc_client import (
     JamulusOrderedRosterProof,
     JamulusRpcMonitorIdentity,
@@ -13652,16 +13653,13 @@ class ApplicationController(QObject):
     #: Follow states worth interrupting an artist for, and what to say. A
     #: state that resolves itself, or that the artist chose, stays silent.
     #: One line per transition. These say what happened; the room's own chip
-    #: says what to do about it, so none of them names a menu path any more.
+    #: says what to do about it. Recovery names the visible control, not a menu path.
     _REFERENCE_VIDEO_NOTICES = {
         "needs_file": (
             "The host shared a Paint along video. Open your own copy of the "
             "same file to follow along, or keep working."
         ),
-        "mismatched_file": (
-            "That is not the same file the host is playing, so WebJam will "
-            "not follow it. Open the host's exact file, or hide the video."
-        ),
+        "mismatched_file": MISMATCHED_FILE_MESSAGE,
         "file_unavailable": (
             "Your Paint along copy moved, changed, or became "
             "unreadable, so WebJam stopped following the host."

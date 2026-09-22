@@ -74,9 +74,12 @@ NEEDS_FILE_MESSAGE = (
     "The host shared a Paint along video. Open your own copy of the same "
     "file to follow along, or keep it hidden and stay in the room."
 )
+OPEN_LOCAL_COPY_GUIDANCE = (
+    "Choose Open my copy… and select your copy of the same file the host is using."
+)
 MISMATCHED_FILE_MESSAGE = (
     "That is not the same file the host is playing, so WebJam will not follow "
-    "it. Open the host's exact file, or keep the video hidden."
+    f"it. {OPEN_LOCAL_COPY_GUIDANCE}"
 )
 FILE_UNAVAILABLE_MESSAGE = (
     "Your Paint along copy moved, changed, or became unreadable. "

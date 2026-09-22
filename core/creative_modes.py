@@ -411,7 +411,7 @@ _ART_STARTS = (
     CreatorStart(
         key="talk_and_make",
         label="Make together",
-        summary="Talk, make, or draw together in one room.",
+        summary="Talk and make with your own tools, or share a canvas.",
         detail=(
             "Open one room to talk and make. Everyone can work in their own "
             "space, or the host can open one shared canvas from inside the "
@@ -421,7 +421,7 @@ _ART_STARTS = (
     CreatorStart(
         key="paint_along",
         label="Paint along",
-        summary="Follow one silent process video while you paint.",
+        summary="Paint beside a silent video. Everyone opens their own copy.",
         detail=(
             "Open the room with one silent process video the host already "
             "owns or may use. Paint in your usual app or on paper beside "

@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 from shiboken6 import isValid
 
 from core.reference_video import (
+    OPEN_LOCAL_COPY_GUIDANCE,
     ReferenceVideoFollowSnapshot,
     ReferenceVideoFollowState,
     ReferenceVideoSnapshot,
@@ -62,7 +63,7 @@ _FOLLOW_STATUS = {
         "Open your own copy of the same file to follow along."
     ),
     ReferenceVideoFollowState.MISMATCHED_FILE: (
-        "That is not the same file. Open the host's exact copy."
+        f"That is not the same file. {OPEN_LOCAL_COPY_GUIDANCE}"
     ),
     ReferenceVideoFollowState.FILE_UNAVAILABLE: (
         "Your copy moved or changed. Open it again to continue."
@@ -307,7 +308,7 @@ class ReferenceVideoDialog(QDialog):
             self._open_button = self._add_button(
                 controls,
                 "Open my copy…",
-                "Open your own copy of the host's exact file to follow along.",
+                "Open your copy of the same file the host is using to follow along.",
                 self._choose_local_copy,
             )
             self._hide_button = self._add_button(
@@ -407,7 +408,7 @@ class ReferenceVideoDialog(QDialog):
             # minimum. Stretch gives the video all remaining space on larger
             # windows without forcing it over the controls on compact ones.
             self.setMinimumSize(0, 0)
-            self._surface_holder.setMinimumHeight(0)
+            self._surface_holder.setMinimumHeight(40)
         else:
             self.setMinimumSize(720, 520)
             self._surface_holder.setMinimumHeight(360)
@@ -580,7 +581,11 @@ class ReferenceVideoDialog(QDialog):
         if loading:
             self._status.setText("Checking the video. You can go back to the room while it opens.")
         elif snapshot.error:
-            self._status.setText(snapshot.error)
+            recovery = (
+                f" Use {self._share_button.text()} to open a local video again."
+                if not shared else ""
+            )
+            self._status.setText(f"{snapshot.error}{recovery}")
         elif not shared:
             self._status.setText(_HOST_EMPTY_STATUS)
         else:

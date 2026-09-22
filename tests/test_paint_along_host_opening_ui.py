@@ -61,6 +61,9 @@ def test_host_has_one_real_next_action_at_compact_size(qapp, state, action):
         qapp.processEvents()
         assert [button.text() for button in _primary(dialog)] == [action]
         button = _primary(dialog)[0]
+        if state is State.FAILED:
+            assert button.text() in dialog._status.text()
+            assert snapshot.error in dialog._status.text()
         assert dialog.rect().contains(button.geometry())
         assert dialog.rect().contains(dialog._hint.geometry())
         if not shared:

@@ -60,10 +60,13 @@ def test_cold_guest_room_loss_and_leave_never_show_music_roster(qapp, controller
     assert not str(app.settings.webex_url or "").strip()
     assert panel._overview.conversation_action_label == "Set Up Conversation"
     assert panel.conversation_button().text() == "Set Up Conversation"
+    assert "Choose Set Up Conversation" in panel._overview.activity_detail
     app._set_session_meeting_url("https://example.webex.com/meet/room")
     app._sync_art_room_overview()
     assert panel._overview.conversation_action_label == "Conversation"
     assert panel.conversation_button().text() == "Conversation"
+    assert "Choose Conversation" in panel._overview.activity_detail
+    assert "Set Up Conversation" not in panel._overview.activity_detail
     app.settings.webex_url = ""
     app._sync_art_room_overview()
 

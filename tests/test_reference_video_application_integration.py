@@ -536,6 +536,10 @@ def test_an_artist_is_told_when_their_copy_stops_matching(state, marker):
     controller._on_reference_video_follow_snapshot(_follow(state))
 
     assert marker in controller.window.flash_message.call_args.args[0]
+    if state is ReferenceVideoFollowState.MISMATCHED_FILE:
+        message = controller.window.flash_message.call_args.args[0]
+        assert "Open my copy…" in message
+        assert "your copy of the same file" in message
 
 
 @pytest.mark.parametrize(
