@@ -13297,7 +13297,7 @@ class ApplicationController(QObject):
     def _release_reference_video(self) -> None:
         """Return this computer to the no-video path and free its player."""
 
-        self._clear_reference_video_notice()
+        ApplicationController._clear_reference_video_notice(self)
         ApplicationController._clear_shared_lesson_context(self)
         timer = getattr(self, "_reference_video_timer", None)
         if timer is not None:

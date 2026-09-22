@@ -12,7 +12,8 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 from shiboken6 import isValid
 
-from core.art_room_overview import ArtRoomOverview
+from core.art_room_overview import ArtRoomOverview, art_room_overview
+from core.session_conductor import ArtRoomState
 from core.creative_modes import get_creator_profile_by_key
 from webjam_qt.theme import load_stylesheet
 from webjam_qt.widgets.participant_card import ParticipantPresentation
@@ -100,6 +101,38 @@ def window(qapp):
         # modules restyle QApplication.
         QCoreApplication.sendPostedEvents(window, QEvent.Type.DeferredDelete)
         assert not isValid(window)
+
+
+@pytest.mark.parametrize("hosting", [False, True])
+@pytest.mark.parametrize("size", [(720, 560), (1440, 900)])
+def test_own_tools_guidance_has_one_heading_and_keeps_recovery_context(window, qapp, hosting, size):
+    current = art_room_overview(
+        state=ArtRoomState.WAITING if hosting else ArtRoomState.CONNECTED,
+        hosting=hosting,
+    )
+    window.set_art_room_overview(current)
+    window.resize(*size)
+    _settle(qapp)
+    panel = window.art_room_overview
+    headings = [
+        label for label in panel.findChildren(QLabel)
+        if label.isVisibleTo(window) and label.text() == current.activity_label
+    ]
+    assert len(headings) == 1
+    assert panel._activity_detail.isVisibleTo(window)
+    assert panel.conversation_button().isVisibleTo(window)
+    assert panel.conversation_button().isEnabled()
+
+    # Recovery adds distinct context; returning to the room removes the
+    # redundant heading again, without leaving a stale visibility decision.
+    recovery = art_room_overview(state=ArtRoomState.FAILED, hosting=hosting)
+    window.set_art_room_overview(recovery)
+    _settle(qapp)
+    assert panel._title.isVisibleTo(window)
+    assert panel._title.text() == recovery.title
+    window.set_art_room_overview(current)
+    _settle(qapp)
+    assert not panel._title.isVisibleTo(window)
 
 
 def test_art_body_replaces_empty_mixer_and_preserves_music_cards(window, qapp):
