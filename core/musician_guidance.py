@@ -466,7 +466,7 @@ def _studio_output(
     elif state is ReviewState.REVIEWING:
         value = (GuidanceState.WORKING, "Choose a take to review")
     else:
-        value = (GuidanceState.NOT_STARTED, "Studio not open")
+        value = (GuidanceState.NOT_STARTED, "No take open for review")
     return GuidanceOutput("studio", "Studio", value[0], value[1])
 
 

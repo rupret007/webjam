@@ -924,7 +924,7 @@ class StudioArrangementWorkflowMixin:
         if self._viewing_live or source_info is None:
             lane = self._lanes[channel_id]
             self._set_inspector_values(
-                status="RECORDING" if self._recording else "ARMED",
+                status="RECORDING" if self._recording else "NOT RECORDING",
                 source=self._live_input_description(),
                 timeline=(
                     f"REC {_fmt_time(self._recording_elapsed)}"

@@ -23,7 +23,7 @@ from __future__ import annotations
 import itertools
 from collections.abc import Callable
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QCloseEvent,
     QDragEnterEvent,
@@ -77,6 +77,7 @@ from webjam_qt.widgets.room_help import RoomHelpPanel
 class ConductorWindow(QMainWindow):
     close_requested = Signal()
     test_night_requested = Signal()
+    notes_review_requested = Signal()
 
     # Fallback only.  A real session sizes itself from the display through
     # fit_to_screen(); this is what a screenless/headless host gets.
@@ -242,12 +243,32 @@ class ConductorWindow(QMainWindow):
         body_layout.addWidget(self.workspace_stack, stretch=1)
         body_layout.addWidget(self.song_overlay)
 
+        self._notes_attention = False
+        self._notes_notice = QFrame()
+        self._notes_notice.setObjectName("NotesRecoveryNotice")
+        notice_layout = QHBoxLayout(self._notes_notice)
+        notice_layout.setContentsMargins(Space.LG, Space.XS, Space.LG, Space.XS)
+        self._notes_notice_label = QLabel()
+        self._notes_notice_label.setTextFormat(Qt.TextFormat.PlainText)
+        self._notes_notice_label.setWordWrap(True)
+        self._notes_review_button = QPushButton("Review Notes")
+        self._notes_review_button.setObjectName("GhostButton")
+        self._notes_review_button.setAccessibleName("Review Notes")
+        self._notes_review_button.clicked.connect(self.notes_review_requested.emit)
+        notice_layout.addWidget(self._notes_notice_label, 1)
+        notice_layout.addWidget(self._notes_review_button)
+        self._notes_notice.hide()
+        self.session_canvas.notes_attention_changed.connect(self._set_notes_attention)
+        self.session_canvas.installEventFilter(self)
+        self.workspace_stack.currentChanged.connect(self._sync_notes_notice)
+
         central = QWidget()
         central_layout = QVBoxLayout(central)
         central_layout.setContentsMargins(0, 0, 0, 0)
         central_layout.setSpacing(0)
         central_layout.addWidget(self.session_strip)
         central_layout.addWidget(self.session_hud)
+        central_layout.addWidget(self._notes_notice)
         central_layout.addWidget(body_container, stretch=1)
         central_layout.addWidget(self.session_controls)
 
@@ -847,6 +868,27 @@ class ConductorWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Public helpers for ApplicationController
     # ------------------------------------------------------------------
+    def _set_notes_attention(self, attention: bool, heading: str, detail: str) -> None:
+        self._notes_attention = attention
+        self._notes_notice_label.setText(heading)
+        self._notes_notice_label.setAccessibleDescription(detail)
+        description = f"{heading} Review retained local drafts without changing your workspace."
+        self._notes_review_button.setAccessibleDescription(description)
+        self._notes_review_button.setToolTip(description)
+        self._sync_notes_notice()
+
+    def _sync_notes_notice(self, *_args) -> None:
+        self._notes_notice.setVisible(
+            self._notes_attention and not self.session_canvas.isVisibleTo(self)
+        )
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self.session_canvas and event.type() in {
+            QEvent.Type.Show, QEvent.Type.Hide,
+        }:
+            self._sync_notes_notice()
+        return super().eventFilter(watched, event)
+
     def can_show_paint_along_automatically(self) -> bool:
         """A guest's first offer may enter from Room, without replacing work."""
 

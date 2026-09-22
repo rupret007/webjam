@@ -878,6 +878,8 @@ def test_live_roster_never_claims_tracks_before_recorder_proof():
         assert "awaiting recorder proof" in studio._lanes[2]._detail.text()
         assert "mapped automatically after recorder proof" in studio._subtitle.text()
         assert "armed" not in studio._hint.text().casefold()
+        studio._select_track(2)
+        assert studio._inspector_values["status"].text() == "NOT RECORDING"
     finally:
         studio.shutdown()
 

@@ -46,7 +46,7 @@ _NOTES_RECOVERY_COPY = {
     "read_only": "Storage is read-only. Choose Save Notes to export elsewhere.",
     "recovered": "Recovered draft: choose Save Notes to review it before saving.",
     "recovery_conflict": (
-        "Recovered draft needs a separate copy. Choose Save Notes to review and export it."
+        "Saved notes changed. Choose Save Notes to review and keep both versions."
     ),
 }
 _NOTES_SAVE_MESSAGES = {
@@ -74,6 +74,7 @@ class SessionCanvas(QFrame):
     notes_changed = Signal(str)
     notes_restored = Signal()  # owner-held document changed; never a user edit
     save_notes_requested = Signal()
+    notes_attention_changed = Signal(bool, str, str)
     chat_submitted = Signal(str)   # user pressed Enter in the chat box
     brief_export_requested = Signal()
     suggestion_requested = Signal()  # Art: Suggestion on these notes/canvas
@@ -96,6 +97,7 @@ class SessionCanvas(QFrame):
         self._notes_active_profile_key = "music"
         self._notes_recovery_summary: tuple[tuple[str, str], ...] = ()
         self._notes_need_attention = False
+        self._notes_attention_presentation = None
         self._notes_export_handler: Callable[[str, str], None] | None = None
 
         self._header = QLabel("Session Canvas")
@@ -571,6 +573,16 @@ class SessionCanvas(QFrame):
         if hasattr(self, "_pulse"):
             self._pulse.setVisible(not self._notes_need_attention)
         self._sync_suggestion_layout()
+        # Retained drafts belong to the window even while this panel is hidden.
+        # Project only bounded workspace/reason copy, never the draft itself.
+        notice = (
+            needs_attention,
+            message.split("\n", 1)[0] if failures else "Local notes need attention.",
+            description,
+        )
+        if notice != self._notes_attention_presentation:
+            self._notes_attention_presentation = notice
+            self.notes_attention_changed.emit(*notice)
 
     def set_session_pulse(self, pulse: SessionPulse) -> None:
         """Render the current local pulse without interpreting note markup."""
