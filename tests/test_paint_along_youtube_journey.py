@@ -14,6 +14,11 @@ def test_online_guest_room_next_action_open_leave_return_and_withdraw(journey, q
     lesson = YouTubeLesson("M7lc1UVf-VE")
     def factory(parent=None):
         player = JourneyPlayer(parent)
+        original_play = player.play
+        def play():
+            assert player.surface.isVisible(), "online playback requires a visible player"
+            original_play()
+        player.play = play
         players.append(player)
         return player
     monkeypatch.setattr("webjam_qt.widgets.youtube_video_player.create_youtube_video_player", factory)
@@ -47,6 +52,11 @@ def test_online_guest_room_next_action_open_leave_return_and_withdraw(journey, q
     assert players[-1].state == "paused"
     _click(_room_button(app, "video"), qapp)
     app._tick_reference_video()
+    assert app._reference_video.follow_snapshot.state is ReferenceVideoFollowState.FOLLOWING
+    assert players[-1].loads == [lesson] and players[-1].state == "playing"
+    publish(replace(video, needs_attention=True))
+    assert players[-1].state == "paused"
+    publish(video)
     assert app._reference_video.follow_snapshot.state is ReferenceVideoFollowState.FOLLOWING
     assert players[-1].loads == [lesson] and players[-1].state == "playing"
     publish(ReferenceVideoSessionSnapshot(generation=2))

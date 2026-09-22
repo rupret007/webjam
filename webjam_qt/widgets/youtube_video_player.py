@@ -50,22 +50,26 @@ class YouTubeVideoPlayer:
             raise ReferenceVideoPlayerError("This lesson player is closed.")
         value = self._bridge.read()
         if not isinstance(value, dict):
-            raise ReferenceVideoPlayerError(_UNAVAILABLE)
+            self._fail(_UNAVAILABLE)
         if not allow_error:
             if value.get("error"):
-                raise ReferenceVideoPlayerError(_UNAVAILABLE)
+                self._fail(_UNAVAILABLE)
             if value.get("blocked"):
-                raise ReferenceVideoPlayerError("The lesson did not start. Open the lesson again, then choose Play.")
+                self._fail("The lesson did not start. Open the lesson again, then choose Play.")
             if (value.get("ready") and value.get("muted") is not True
                     and (self._loaded or value.get("state") == 1)):
-                self._bridge.clear()
-                self._loaded = False
-                raise ReferenceVideoPlayerError("The lesson could not stay silent. Try the link again or choose a local video.")
+                self._fail("The lesson could not stay silent. Try the link again or choose a local video.")
         for key in ("position", "duration"):
             number = value.get(key, 0)
             if type(number) not in (int, float) or not math.isfinite(number) or not 0 <= number <= 86_400:
-                raise ReferenceVideoPlayerError(_UNAVAILABLE)
+                self._fail(_UNAVAILABLE)
         return value
+
+    def _fail(self, message):
+        self._generation += 1
+        self._loaded = False
+        self._bridge.clear()
+        raise ReferenceVideoPlayerError(message)
 
     def _wait(self, predicate, *, timeout=3.0, allow_error=False):
         generation = self._generation
@@ -143,6 +147,12 @@ class YouTubeVideoPlayer:
     def position_s(self):
         self._require_loaded()
         return float(self._snapshot()["position"])
+
+    def playback_state(self):
+        self._require_loaded()
+        return {0: "ended", 1: "playing", 2: "paused", 3: "buffering", 5: "ready"}.get(
+            self._snapshot().get("state"), "buffering",
+        )
 
     def close(self):
         if self._closed:

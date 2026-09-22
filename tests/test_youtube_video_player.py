@@ -110,6 +110,7 @@ def test_unhealthy_observations_stop_truthful_playback(change):
     bridge.value.update(change)
     with pytest.raises(ReferenceVideoPlayerError):
         video.position_s()
+    assert bridge.value["state"] == -1
 
 
 def test_hidden_player_never_starts_background_playback():

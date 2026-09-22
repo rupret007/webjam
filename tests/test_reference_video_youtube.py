@@ -294,3 +294,21 @@ def test_guest_navigation_contains_pause_failure_and_preserves_retry_truth():
     coordinator.set_surface_visible(False)
     assert coordinator.follow_snapshot.state is ReferenceVideoFollowState.LOCAL_ATTENTION
     assert "Open lesson" in coordinator.follow_snapshot.message
+
+
+def test_host_provider_pause_end_and_buffering_are_reported_to_followers():
+    player = LessonPlayer()
+    player.set_muted(True)
+    observed = ["playing"]
+    player.playback_state = lambda: observed[0]
+    host = ReferenceVideoHostController(player, identity_signer=signer(), is_host=lambda: True)
+    host.share_youtube(URL)
+    host.play()
+    observed[0] = "buffering"
+    assert host.refresh().needs_attention
+    observed[0] = "playing"
+    assert not host.refresh().needs_attention
+    for state in ("paused", "ended"):
+        host.play()
+        observed[0] = state
+        assert host.refresh().state is ReferenceVideoState.PAUSED

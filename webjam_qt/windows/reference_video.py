@@ -449,6 +449,10 @@ class ReferenceVideoDialog(QDialog):
     def set_watch_lesson_available(self, available: bool) -> None:
         """Navigation follows room ownership, independently of a local file."""
 
+        if not available and self._watch_lesson_button.hasFocus():
+            target = self._return_button if self._return_button.isVisible() else self._back_button
+            if target.isVisible() and target.isEnabled():
+                target.setFocus(Qt.FocusReason.OtherFocusReason)
         self._watch_lesson_button.setEnabled(bool(available))
 
     def _watch_shared_lesson(self) -> None:

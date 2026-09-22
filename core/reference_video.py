@@ -695,6 +695,15 @@ class ReferenceVideoHostController:
                 return self._snapshot_locked()
             try:
                 self._position_s = self._clamp(self._player.position_s())
+                playback_state = getattr(self._player, "playback_state", None)
+                if self._source_kind == "youtube" and callable(playback_state):
+                    observed = playback_state()
+                    if observed in {"paused", "ended"}:
+                        self._state = ReferenceVideoState.PAUSED
+                    self._error = (
+                        "The lesson is buffering. Playback will follow when it is ready."
+                        if observed == "buffering" else ""
+                    )
             except Exception:
                 return self._fail_locked(
                     "WebJam lost track of that video on this computer."

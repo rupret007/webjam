@@ -13698,6 +13698,14 @@ class ApplicationController(QObject):
         if self._shutdown or coordinator is None:
             return
         try:
+            dialog = getattr(self, "_reference_video_dialog", None)
+            if (getattr(coordinator, "following", False) and dialog is not None
+                    and dialog.isVisible()
+                    and coordinator.follow_snapshot.source_kind == "youtube"
+                    and self._sync_paint_along_room()):
+                # A recovered host may make the proven lesson usable again.
+                # Restore its visible surface before the player resumes.
+                dialog.attach_surface(self._paint_along_surface(coordinator))
             coordinator.tick()
         except Exception:  # noqa: BLE001 - a periodic sample is best effort
             LOGGER.debug("Reference video tick failed", exc_info=True)
