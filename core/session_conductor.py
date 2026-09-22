@@ -87,6 +87,7 @@ class SessionPrimaryAction(str, Enum):
     RESET_INVITE = "reset_invite"
     PASTE_NEW_INVITE = "paste_new_invite"
     OPEN_AUDIO_SETTINGS = "open_audio_settings"
+    OPEN_RECORDING_SETUP = "open_recording_setup"
     ADD_CONVERSATION = "add_conversation"
     SAVE_CONVERSATION = "save_conversation"
     ENTER_JAM = "enter_jam"
@@ -99,6 +100,7 @@ class SessionPrimaryAction(str, Enum):
     REVIEW_TAKE = "review_take"
     SELECT_TAKE = "select_take"
     EXPORT_TRACKS = "export_tracks"
+    RETRY_STUDIO_SAVE = "retry_studio_save"
     END_SESSION = "end_session"
     OPEN_DETAILS = "open_details"
     CHECK_SESSION = "check_session"
@@ -115,6 +117,7 @@ class SessionPrimaryAction(str, Enum):
             SessionPrimaryAction.RESET_INVITE: "Reset Invite",
             SessionPrimaryAction.PASTE_NEW_INVITE: "Paste New Invite",
             SessionPrimaryAction.OPEN_AUDIO_SETTINGS: "Open Audio Setup",
+            SessionPrimaryAction.OPEN_RECORDING_SETUP: "Recording Setup",
             SessionPrimaryAction.ADD_CONVERSATION: "Add Conversation",
             SessionPrimaryAction.SAVE_CONVERSATION: "Save Conversation",
             SessionPrimaryAction.ENTER_JAM: "Enter Jam",
@@ -127,6 +130,7 @@ class SessionPrimaryAction(str, Enum):
             SessionPrimaryAction.REVIEW_TAKE: "Review Take",
             SessionPrimaryAction.SELECT_TAKE: "Choose a Take",
             SessionPrimaryAction.EXPORT_TRACKS: "Export Tracks",
+            SessionPrimaryAction.RETRY_STUDIO_SAVE: "Retry Save",
             SessionPrimaryAction.END_SESSION: "End Session",
             SessionPrimaryAction.OPEN_DETAILS: "Open Details",
             SessionPrimaryAction.CHECK_SESSION: "Check session",
@@ -1127,9 +1131,9 @@ def _presentation(
             )
         if facts.studio_edits in {EvidenceState.FAILED, EvidenceState.BLOCKED}:
             return present(
-                SessionPrimaryAction.OPEN_DETAILS,
+                SessionPrimaryAction.RETRY_STUDIO_SAVE,
                 "Studio choices need attention",
-                "WebJam couldn't confirm that the latest non-destructive choices were saved.",
+                "WebJam couldn't save your latest Studio choices. Check file access and free space, then choose Retry Save.",
                 "The recorded take is unchanged, but the latest Studio choices are not confirmed.",
                 preservation,
             )

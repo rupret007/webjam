@@ -430,7 +430,7 @@ public struct SnapshotBody: Codable, Equatable, Sendable {
             "add_conversation", "save_conversation", "enter_jam", "retry_setup", "close_setup",
             "wait", "try_reconnect", "record", "stop_recording", "review_take",
             "select_take", "export_tracks", "end_session", "open_details",
-            "check_session",
+            "check_session", "open_recording_setup", "retry_studio_save",
         ])
         let recordingStates = Set([
             "idle", "starting", "recording", "stopping", "verifying", "ready",

@@ -203,6 +203,23 @@ def _studio_document_differs_from_default(
     return current != expected
 
 
+@dataclass(frozen=True, repr=False)
+class _StudioSaveRetryContext:
+    """Private identity of one selected take's failed unsaved document."""
+
+    studio_identity: int
+    take_identity: int
+    take_path: str
+    controller_identity: int
+    controller_generation: int
+    document_identity: int
+    document_revision: int
+    store_token: str | None
+    take_revision: int
+    live_profile_key: str
+    take_profile_key: str
+
+
 @dataclass(frozen=True)
 class _ExportWorkerOutcome:
     """One worker result tagged so stale take callbacks can be discarded."""
@@ -1003,16 +1020,11 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             self._output_picker.setFixedHeight(40)
             self._arrange_toolbar.setFixedHeight(40)
             self._comp_toolbar.setFixedHeight(button_height)
-            # Review Preview's capability boundary must remain fully readable,
-            # not merely available through accessibility metadata. Reserve a
-            # compact three-line status record while leaving the mixer at its
-            # existing 88 px minimum. Music/Podcast retain their exact one-line
-            # compact layout.
-            self._hint.setFixedHeight(
-                max(48, self._hint.fontMetrics().lineSpacing() * 3 + Space.XS)
-                if review_boundary
-                else 18
-            )
+            # Recovery instructions remain readable at the compact floor.
+            # Let wrapped text request its actual height instead of clipping
+            # the next step to one line or a fixed three-line allowance.
+            self._hint.setMinimumHeight(self._hint.fontMetrics().lineSpacing())
+            self._hint.setMaximumHeight(16_777_215)
         else:
             for widget in (
                 self._output_picker,
@@ -1028,7 +1040,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         ):
             self._hint.setProperty("compact", compact)
             self._hint.setProperty("reviewBoundary", review_boundary)
-            self._hint.setWordWrap(not compact or review_boundary)
+            self._hint.setWordWrap(True)
             self._hint.style().unpolish(self._hint)
             self._hint.style().polish(self._hint)
         self._phase.setVisible(not compact)
@@ -1200,6 +1212,60 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             save_failed=bool(selected and self._studio_persistence_failed),
             can_export=bool(selected and self._can_export_current_take()),
         )
+
+    def studio_save_retry_context(self) -> _StudioSaveRetryContext | None:
+        """Bind a retry to the exact editable review and unsaved document.
+
+        This token is local UI ownership, not a recording or storage claim.
+        Saving still uses the Studio controller's exact durable load token.
+        """
+
+        take = self._current
+        owner = self._studio_controller
+        if (
+            self._waveform_shutdown
+            or self._viewing_live
+            or take is None
+            or not self._take_editing_allowed()
+            or self._exporting
+            or not self._studio_persistence_failed
+            or not owner.dirty
+            or owner.is_shutdown
+        ):
+            return None
+        try:
+            document = owner.document
+            path = self._track_export_selection_key(take)
+            if (
+                document is not self._studio_state
+                or owner.take_path != path
+                or self._studio_state_take_path != path
+            ):
+                return None
+            return _StudioSaveRetryContext(
+                studio_identity=id(self),
+                take_identity=id(take),
+                take_path=str(path),
+                controller_identity=id(owner),
+                controller_generation=owner.generation,
+                document_identity=id(document),
+                document_revision=document.revision,
+                store_token=owner.store_token,
+                take_revision=self._guidance_take_revision,
+                live_profile_key=self._live_creator_profile.key,
+                take_profile_key=self._creator_profile_key,
+            )
+        except (OSError, RuntimeError, StudioControllerError):
+            return None
+
+    def retry_studio_save(self, expected_context: object) -> bool:
+        """Retry only the failed document that supplied the visible action."""
+
+        if not isinstance(expected_context, _StudioSaveRetryContext):
+            return False
+        if expected_context != self.studio_save_retry_context():
+            return False
+        return self._flush_studio_state()
 
     def set_musician_guidance(
         self,
@@ -3672,7 +3738,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         elif isinstance(error, PlaybackDeviceError):
             self._hint.setText(
                 "Studio couldn't open the selected playback output. Choose "
-                "another output in Recording Setup, then try again."
+                "another Playback output in Studio, then choose Play."
             )
         else:
             self._hint.setText(

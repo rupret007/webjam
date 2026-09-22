@@ -18,7 +18,20 @@ from core.recording_readiness_presentation import (
     SharedTrackPresentation,
     SharedTrackReadiness,
     local_capture_readiness_detail,
+    local_capture_shared_recovery_detail,
 )
+
+
+@pytest.mark.parametrize("channels", [True, -1, 33, "PRIVATE_DEVICE"])
+def test_shared_local_original_recovery_has_one_bounded_private_detail_free_action(channels):
+    detail = local_capture_shared_recovery_detail(
+        ("insufficient_input_channels", "PRIVATE_DEVICE /private/input token=SECRET"),
+        required_input_channels=channels,
+    )
+    assert "needs more input channels" in detail
+    assert detail.count("Choose Recording Setup") == 1
+    assert "PRIVATE" not in detail and "SECRET" not in detail
+    assert len(detail) <= 200
 
 
 def _source(

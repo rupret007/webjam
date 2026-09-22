@@ -23,6 +23,7 @@ import time
 import unicodedata
 import uuid
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -51,7 +52,10 @@ from core.local_capture import (
     LocalCapturePreflight, LocalCapturePreflightError, LocalCaptureTrack,
     check_local_capture_preflight,
 )
-from core.recording_readiness_presentation import local_capture_readiness_detail
+from core.recording_readiness_presentation import (
+    local_capture_readiness_detail,
+    local_capture_shared_recovery_detail,
+)
 from core.meeting_companion import art_watch_share_sentence, build_invite_message
 from core.musician_guidance import (
     GuidanceDisplayOverride,
@@ -91,6 +95,7 @@ from core.session_conductor import (
     SessionPrimaryAction,
     SessionRole,
     TakeValidationState,
+    derive_session_presentation,
 )
 from core.session_health import SessionHealth
 from core.session_intelligence import build_session_pulse
@@ -4298,6 +4303,7 @@ class ApplicationController(QObject):
         self.window.session_canvas.notes_changed.connect(self._schedule_notes_save)
         self.window.session_canvas.notes_restored.connect(self._refresh_session_pulse)
         self.window.session_canvas.save_notes_requested.connect(self._recover_notes)
+        self.window.session_canvas.recheck_saved_notes_requested.connect(self._recheck_saved_notes)
         self.window.notes_review_requested.connect(self._review_retained_notes)
         self.window.session_canvas.brief_export_requested.connect(
             self._refresh_session_pulse
@@ -9875,6 +9881,7 @@ class ApplicationController(QObject):
             SessionPrimaryAction.RESET_INVITE: "reset_invite",
             SessionPrimaryAction.PASTE_NEW_INVITE: "paste_invite",
             SessionPrimaryAction.OPEN_AUDIO_SETTINGS: "bring_jamulus",
+            SessionPrimaryAction.OPEN_RECORDING_SETUP: "recording_setup",
             SessionPrimaryAction.ADD_CONVERSATION: "add_webex",
             SessionPrimaryAction.SAVE_CONVERSATION: "save_webex",
             SessionPrimaryAction.ENTER_JAM: "enter_jam",
@@ -9886,10 +9893,71 @@ class ApplicationController(QObject):
             SessionPrimaryAction.REVIEW_TAKE: "review_take",
             SessionPrimaryAction.SELECT_TAKE: "select_take",
             SessionPrimaryAction.EXPORT_TRACKS: "export_tracks",
+            SessionPrimaryAction.RETRY_STUDIO_SAVE: "retry_studio_save",
             SessionPrimaryAction.END_SESSION: "end_session",
             SessionPrimaryAction.OPEN_DETAILS: "open_details",
             SessionPrimaryAction.CHECK_SESSION: "check_session",
         }.get(action, "primary")
+
+    def _guest_recording_setup_context(self, facts=None, presentation=None):
+        """Bind optional capture recovery to the current, idle guest owner."""
+        facts = facts or self._session_conductor_facts()
+        presentation = presentation or derive_session_presentation(facts)
+        studio = self.window.recording_studio
+        if facts.studio is ReviewState.REVIEWING and bool(getattr(studio, "_viewing_live", False)):
+            # Opening an empty take deck still shows the live inspector. Its
+            # optional capture recovery stays actionable until a take is
+            # actually selected. Keep canonical review facts unchanged.
+            presentation = derive_session_presentation(replace(facts, studio=ReviewState.IDLE))
+        guest = getattr(self, "guest_peer", None)
+        preflight = getattr(guest, "local_capture_preflight", None)
+        signal = getattr(getattr(getattr(guest, "last_state", None), "signal", None), "value", "")
+        if (
+            getattr(self, "_shutdown", False)
+            or getattr(self, "_shutdown_in_progress", False)
+            or getattr(self, "_shutdown_cleanup_pending", False)
+            or getattr(self, "_startup_attempt", None) is not None
+            or facts.role is not SessionRole.GUEST
+            or facts.music_path is not MusicPathState.AUTHENTICATED
+            or facts.local_participant is not EvidenceState.VERIFIED
+            or presentation.phase not in {SessionConductorPhase.CONNECTED, SessionConductorPhase.LIVE}
+            or not self.creator_profile.capabilities.session_recording
+            or not self._local_originals_available()
+            or not isinstance(preflight, LocalCapturePreflight)
+            or preflight.ready
+            or bool(getattr(guest, "active_take_id", ""))
+            or bool(getattr(guest, "capture_finalization_needs_attention", False))
+            or signal in {"recording", "finalizing", "needs_attention"}
+            or bool(getattr(self.window.recording_studio, "_exporting", False))
+        ):
+            return None
+        # These local-only snapshots never enter public guidance or diagnostics.
+        # An old painted button cannot authorize a replacement guest/settings.
+        return (
+            guest, preflight, self.creator_profile.key,
+            getattr(self, "_session_conductor_token", None),
+            getattr(self, "_settings_generation", 0), deepcopy(self.settings),
+        )
+
+    def _studio_save_retry_context(self, facts=None, presentation=None):
+        facts = facts or self._session_conductor_facts()
+        presentation = presentation or derive_session_presentation(facts)
+        studio = self.window.recording_studio
+        if (
+            getattr(self, "_shutdown", False)
+            or getattr(self, "_shutdown_in_progress", False)
+            or getattr(self, "_shutdown_cleanup_pending", False)
+            or getattr(self, "_startup_attempt", None) is not None
+            or not self.creator_profile.capabilities.take_editing
+            or getattr(self, "_last_content_key", "stage") != "takes"
+            or not studio.isVisibleTo(self.window)
+            or presentation.primary_action is not SessionPrimaryAction.RETRY_STUDIO_SAVE
+        ):
+            return None
+        owner = studio.studio_save_retry_context()
+        if owner is None:
+            return None
+        return self.creator_profile.key, getattr(self, "_session_conductor_token", None), owner
 
     def _render_session_conductor(
         self,
@@ -9911,6 +9979,28 @@ class ApplicationController(QObject):
             ),
         )
         presentation = snapshot.presentation
+        self._rendered_guest_recording_setup = None
+        self._rendered_studio_save_retry = None
+        if display_override is None:
+            context = self._guest_recording_setup_context(facts, presentation)
+            if context is not None:
+                self._rendered_guest_recording_setup = context
+                preflight = context[1]
+                detail = local_capture_shared_recovery_detail(
+                    preflight.errors, required_input_channels=preflight.required_input_channels,
+                )
+                display_override = GuidanceDisplayOverride(
+                    "Local Originals need attention",
+                    detail,
+                    SessionPrimaryAction.OPEN_RECORDING_SETUP,
+                )
+                self.window.session_hud.set_state(
+                    display_override.title, display_override.message,
+                    invite_available=False, action_text="Recording Setup",
+                    action_visible=True, action_kind="recording_setup",
+                )
+            else:
+                self._rendered_studio_save_retry = self._studio_save_retry_context(facts, presentation)
         self._last_guidance_display_override = display_override
         self._last_session_conductor_snapshot = snapshot
         self._last_session_conductor = presentation
@@ -10250,6 +10340,14 @@ class ApplicationController(QObject):
             self._open_band_check(start_session_when_ready=True)
         elif action == "bring_jamulus":
             self._bring_jamulus_forward()
+        elif action == "recording_setup":
+            rendered = getattr(self, "_rendered_guest_recording_setup", None)
+            if rendered is not None and rendered == self._guest_recording_setup_context():
+                self._open_recording_setup()
+        elif action == "retry_studio_save":
+            rendered = getattr(self, "_rendered_studio_save_retry", None)
+            if rendered is not None and rendered == self._studio_save_retry_context():
+                self.window.recording_studio.retry_studio_save(rendered[2])
         elif action in {"record", "stop_recording"}:
             self._on_record_requested()
         elif action == "review_take":
@@ -15695,6 +15793,19 @@ class ApplicationController(QObject):
         if timer is not None:
             timer.stop()
         return self._persistence._save_notes_only()
+
+    def _recheck_saved_notes(self, profile: str) -> None:
+        """Read an unavailable original without starting a save or changing workspace."""
+        if (self._shutdown or self._shutdown_in_progress or self._shutdown_cleanup_pending
+                or profile != self._persistence.profile_key):
+            return
+        if self._persistence.reload_unreadable_notes(profile):
+            self.window.flash_message("Saved notes reopened on this computer.", ms=5000)
+        elif profile == self._persistence.unreadable_notes_profile:
+            self.window.flash_message(
+                "Saved notes are still unavailable. Check file access and choose Recheck Saved Notes again.",
+                ms=7000,
+            )
 
     def _recover_notes(self) -> None:
         if self._save_notes():

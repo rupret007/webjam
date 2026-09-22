@@ -90,6 +90,52 @@ def local_capture_readiness_detail(
     )
 
 
+def local_capture_shared_recovery_detail(
+    errors: Iterable[str],
+    *,
+    required_input_channels: int | None = None,
+) -> str:
+    """Give the shared UI one current, optional Local Original remedy.
+
+    This is bounded owner-reported copy, not permission to record or change a
+    live audio format. Recording Setup explains any further guarded steps.
+    """
+
+    codes = {
+        code for code in islice(errors, 8)
+        if isinstance(code, str) and len(code) <= 64
+    }
+    if "invalid_capture_settings" in codes:
+        problem = "Local Original audio settings are invalid."
+    elif {"unsupported_sample_rate", "invalid_block_size"} & codes:
+        problems = []
+        if "unsupported_sample_rate" in codes:
+            problems.append("Local Originals require 48 kHz.")
+        if "invalid_block_size" in codes:
+            problems.append("The Local Original audio buffer size is invalid.")
+        problem = " ".join(problems)
+    elif "invalid_track_map" in codes:
+        problem = "The Local Original track map is invalid."
+    elif "insufficient_input_channels" in codes:
+        needed = (
+            f"needs {required_input_channels} input channels"
+            if type(required_input_channels) is int
+            and 1 <= required_input_channels <= 32
+            else "needs more input channels"
+        )
+        problem = f"The Local Original map {needed}."
+    elif "input_device_or_format_unavailable" in codes:
+        problem = (
+            "The selected Local Original input is unavailable or cannot use 48 kHz."
+        )
+    else:
+        problem = "Local Original readiness could not be verified."
+    return (
+        f"{problem} Choose Recording Setup to review Local Originals "
+        "or turn them off."
+    )
+
+
 class RecordingReadinessModelError(ValueError):
     """Raised when a UI snapshot is ambiguous, unsafe, or unbounded."""
 
@@ -522,4 +568,5 @@ __all__ = [
     "SharedTrackPresentation",
     "SharedTrackReadiness",
     "local_capture_readiness_detail",
+    "local_capture_shared_recovery_detail",
 ]

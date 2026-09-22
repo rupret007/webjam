@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (  # noqa: E402
     QLineEdit,
     QPushButton,
 )
+from shiboken6 import isValid  # noqa: E402
 
 from core.creative_modes import get_creator_profile_by_key_or_default  # noqa: E402
 from core.session_recording_plan import (  # noqa: E402
@@ -41,12 +42,19 @@ APP = QApplication.instance() or QApplication([])
 
 @pytest.fixture(autouse=True)
 def _dispose_top_level_widgets() -> None:
-    """Release each test's dialogs before Qt owns interpreter teardown."""
+    """Retire this test's dialogs after their queued layout work settles."""
 
+    existing = set(QApplication.topLevelWidgets())
     yield
-    for widget in QApplication.topLevelWidgets():
+    owned = [widget for widget in QApplication.topLevelWidgets() if widget not in existing]
+    for widget in owned:
         widget.close()
-        widget.deleteLater()
+    # Do not delete Studio windows retained by a sibling module. Also drain
+    # queued callbacks while our dialogs still have valid Qt receivers.
+    APP.processEvents()
+    for widget in owned:
+        if isValid(widget):
+            widget.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     APP.processEvents()
 

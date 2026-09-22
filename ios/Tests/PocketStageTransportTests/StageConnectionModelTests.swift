@@ -445,7 +445,9 @@ func backgroundingRetiresControlsAndRequiresFreshPairing() async throws {
 @Test
 @MainActor
 func desktopRecoverySnapshotsNeverEnablePhoneRecordingCommands() async throws {
-    for action in ["paste_new_invite", "close_setup"] {
+    for action in [
+        "paste_new_invite", "close_setup", "open_recording_setup", "retry_studio_save",
+    ] {
         let factory = MockSocketFactory()
         let model = makeModel(factory: factory)
         let socket = try await connect(

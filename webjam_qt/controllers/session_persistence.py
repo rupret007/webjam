@@ -464,6 +464,38 @@ class SessionPersistence:
         self._refresh_notes_state()
 
     @property
+    def unreadable_notes_profile(self) -> str | None:
+        """The active unavailable original that has no draft to replace."""
+        profile = self._creator_profile_key
+        if (profile in self._unreadable_notes and profile not in self._pending_notes
+                and not self._canvas.current_notes()):
+            return profile
+        return None
+
+    def reload_unreadable_notes(self, profile: str) -> bool:
+        """Reopen an unavailable original only while its active editor is empty."""
+        def still_empty() -> bool:
+            return profile in _PROFILE_NOTES_FILES and profile == self.unreadable_notes_profile
+
+        if not still_empty():
+            return False
+        try:
+            text = _read_bounded_notes(_persistence_home() / _PROFILE_NOTES_FILES[profile])
+        except (OSError, ValueError) as exc:
+            self._log.debug("Could not recheck notes; error_type=%s", type(exc).__name__)
+            return False
+        # Missing notes are still unavailable, not a confirmed empty original.
+        # Recheck context after IO so a later edit or workspace change wins.
+        if text is None or not still_empty():
+            return False
+        self._unreadable_notes.discard(profile)
+        self._settled_notes[profile] = text
+        self._notes_baselines[profile] = notes_fingerprint(text)
+        self._canvas.restore_notes(text)
+        self._refresh_notes_state()
+        return True
+
+    @property
     def has_unsaved_notes(self) -> bool:
         return bool(self._pending_notes)
 
@@ -492,6 +524,9 @@ class SessionPersistence:
 
     def _notify_notes_state(self, state: str) -> None:
         self._notes_save_state = state
+        set_unavailable = getattr(self._canvas, "set_notes_original_unavailable", None)
+        if callable(set_unavailable):
+            set_unavailable(self.unreadable_notes_profile)
         set_context = getattr(self._canvas, "set_notes_recovery_context", None)
         if callable(set_context):
             set_context(self._creator_profile_key, self.notes_recovery_summary)
