@@ -1,0 +1,22 @@
+{
+  "baseline": "78a24d75bd1dc046c59452de59e9702e907851c4",
+  "source_sha256": {
+    "webjam_qt/widgets/session_canvas.py": "7955dd74b04feb11efa684d911b8c38c5b983f41828baad9cc2e789a26d391d9",
+    "tests/test_notes_demo_layout.py": "55d7455aee5b1fcd979b1d79bd5594a59ad6e368ddb5887c1a7ee6a1e90a5a55"
+  },
+  "images_sha256": {
+    "before-music-13.png": "5753e5fe4a924b8576d1f2ad21bfd8452255d3496bd27f1931b22df26fdc64e0",
+    "before-music-22.png": "86e33eca54f65590525cef722cedd4ce69286e4f5618df09307311bcc27dbe73",
+    "before-healthy-22.png": "0138643000d7e47529ba8cfbfd7b7ab9ec8cfd5a51d1b0538a9eccd92a38ca3d",
+    "after-music-13.png": "3289601ba0a5d254cacfaefae5b10602c841c25582075a06eb961592ed608fbf",
+    "after-music-22.png": "1da7b78d7b9b2711f034da4b6ffbdcf4aa4448c8140f9453f96abb975c37ce02",
+    "after-healthy-22.png": "417af38ec5370436768f836a941aba58d662ffb11bde1ae00d0cbdb1cbde90d3",
+    "after-details-scrolled-22.png": "3f369b6e0f1ca60f7a9d777f67640add3e1849be3d56cdf72874897d3cab958e",
+    "after-save-failure-22.png": "b4a895ec6aa3c62bb3424c89a23eeafa0b59f66eb82d3be14f3dc2caad4bf00e",
+    "after-recheck-22.png": "b29bc336578016b28e37d36fbf2b6d602f3a042c211c227ec5b28d833c96c3a9",
+    "art-combined-22.png": "fa4e31158f7d2e2c52d064a34461b42778ecbb32a2c4a182cc74241196aada1b",
+    "leftover-studio-760.png": "4129d47b97696936e56e43a998f6ef46fa3aec74292b6811c9072f5704a368a4",
+    "leftover-studio-conflict.png": "0696ba4a4ec9ba4243616f1e69c340566e164d2c46f3b805d1fc0f985faac4b6"
+  },
+  "render_results": "15 rendered-fixture cases passed; actual offscreen Qt with synthetic state. No physical microphone, recording, meeting or platform acceptance claim."
+}

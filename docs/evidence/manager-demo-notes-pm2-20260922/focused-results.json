@@ -1,0 +1,506 @@
+[
+  {
+    "module": "tests/test_application_controller_creator_copy.py",
+    "exit": 0,
+    "seconds": 0.84,
+    "summary": "35 passed in 0.57s"
+  },
+  {
+    "module": "tests/test_application_controller_session_pulse.py",
+    "exit": 0,
+    "seconds": 1.43,
+    "summary": "6 passed in 1.18s"
+  },
+  {
+    "module": "tests/test_art_canvas_connection_journey.py",
+    "exit": 0,
+    "seconds": 2.63,
+    "summary": "15 passed in 2.37s"
+  },
+  {
+    "module": "tests/test_art_cold_invitation_context.py",
+    "exit": 0,
+    "seconds": 4.02,
+    "summary": "23 passed in 3.52s"
+  },
+  {
+    "module": "tests/test_art_conversation_layout.py",
+    "exit": 0,
+    "seconds": 2.58,
+    "summary": "32 passed in 2.26s"
+  },
+  {
+    "module": "tests/test_art_conversation_next_action.py",
+    "exit": 0,
+    "seconds": 3.38,
+    "summary": "32 passed in 3.10s"
+  },
+  {
+    "module": "tests/test_art_exit_next_action.py",
+    "exit": 0,
+    "seconds": 7.46,
+    "summary": "27 passed in 7.17s"
+  },
+  {
+    "module": "tests/test_art_lan_host_portable.py",
+    "exit": 0,
+    "seconds": 4.49,
+    "summary": "4 passed in 4.23s"
+  },
+  {
+    "module": "tests/test_art_lan_host_recovery.py",
+    "exit": 0,
+    "seconds": 4.72,
+    "summary": "22 passed in 4.46s"
+  },
+  {
+    "module": "tests/test_art_lan_retry.py",
+    "exit": 0,
+    "seconds": 4.29,
+    "summary": "35 passed in 4.01s"
+  },
+  {
+    "module": "tests/test_art_lesson_request_journey.py",
+    "exit": 0,
+    "seconds": 16.85,
+    "summary": "17 passed in 16.56s"
+  },
+  {
+    "module": "tests/test_art_native_retry.py",
+    "exit": 0,
+    "seconds": 1.48,
+    "summary": "3 passed in 1.17s"
+  },
+  {
+    "module": "tests/test_art_notes_communication.py",
+    "exit": 0,
+    "seconds": 1.98,
+    "summary": "48 passed in 1.73s"
+  },
+  {
+    "module": "tests/test_art_notes_conversation_journey.py",
+    "exit": 0,
+    "seconds": 4.97,
+    "summary": "18 passed in 4.70s"
+  },
+  {
+    "module": "tests/test_art_paint_along_connection_journey.py",
+    "exit": 0,
+    "seconds": 3.0,
+    "summary": "15 passed in 2.69s"
+  },
+  {
+    "module": "tests/test_art_profile_guidance_journey.py",
+    "exit": 0,
+    "seconds": 3.8,
+    "summary": "14 passed in 3.50s"
+  },
+  {
+    "module": "tests/test_art_room_connection_names_journey.py",
+    "exit": 0,
+    "seconds": 6.69,
+    "summary": "33 passed in 6.41s"
+  },
+  {
+    "module": "tests/test_art_room_overview_controller.py",
+    "exit": 0,
+    "seconds": 1.41,
+    "summary": "6 passed in 1.16s"
+  },
+  {
+    "module": "tests/test_art_room_overview_ui.py",
+    "exit": 0,
+    "seconds": 4.19,
+    "summary": "51 passed in 3.97s"
+  },
+  {
+    "module": "tests/test_art_room_recovery.py",
+    "exit": 0,
+    "seconds": 1.31,
+    "summary": "6 passed in 1.05s"
+  },
+  {
+    "module": "tests/test_art_room_return_journey.py",
+    "exit": 0,
+    "seconds": 6.28,
+    "summary": "24 passed in 6.01s"
+  },
+  {
+    "module": "tests/test_art_room_return_ui.py",
+    "exit": 0,
+    "seconds": 1.36,
+    "summary": "17 passed in 1.11s"
+  },
+  {
+    "module": "tests/test_art_shared_lesson_journey.py",
+    "exit": 0,
+    "seconds": 12.14,
+    "summary": "54 passed in 11.84s"
+  },
+  {
+    "module": "tests/test_art_start_ux.py",
+    "exit": 0,
+    "seconds": 1.06,
+    "summary": "43 passed in 0.84s"
+  },
+  {
+    "module": "tests/test_art_video_offer_navigation.py",
+    "exit": 0,
+    "seconds": 6.19,
+    "summary": "25 passed in 5.91s"
+  },
+  {
+    "module": "tests/test_byok_write_help.py",
+    "exit": 0,
+    "seconds": 0.86,
+    "summary": "26 passed in 0.62s"
+  },
+  {
+    "module": "tests/test_chat.py",
+    "exit": 0,
+    "seconds": 1.0,
+    "summary": "9 passed in 0.76s"
+  },
+  {
+    "module": "tests/test_chat_send.py",
+    "exit": 0,
+    "seconds": 0.99,
+    "summary": "5 passed in 0.74s"
+  },
+  {
+    "module": "tests/test_composed_invitation_music_mix.py",
+    "exit": 0,
+    "seconds": 1.4,
+    "summary": "4 passed in 1.15s"
+  },
+  {
+    "module": "tests/test_composed_music_mix_cleanup.py",
+    "exit": 0,
+    "seconds": 1.82,
+    "summary": "6 passed in 1.53s"
+  },
+  {
+    "module": "tests/test_controller_remote_transport.py",
+    "exit": 0,
+    "seconds": 2.99,
+    "summary": "31 passed in 2.43s"
+  },
+  {
+    "module": "tests/test_controller_room_help.py",
+    "exit": 0,
+    "seconds": 1.17,
+    "summary": "3 passed in 0.92s"
+  },
+  {
+    "module": "tests/test_creator_profile_guidance.py",
+    "exit": 0,
+    "seconds": 1.83,
+    "summary": "17 passed in 1.57s"
+  },
+  {
+    "module": "tests/test_feel_pass.py",
+    "exit": 0,
+    "seconds": 0.86,
+    "summary": "14 passed in 0.63s"
+  },
+  {
+    "module": "tests/test_guest_preflight_fresh_studio.py",
+    "exit": 0,
+    "seconds": 1.35,
+    "summary": "3 passed in 1.10s"
+  },
+  {
+    "module": "tests/test_guest_preflight_shared_recovery.py",
+    "exit": 0,
+    "seconds": 3.03,
+    "summary": "20 passed in 2.75s"
+  },
+  {
+    "module": "tests/test_guest_recording_preflight_guidance.py",
+    "exit": 0,
+    "seconds": 3.15,
+    "summary": "22 passed in 2.87s"
+  },
+  {
+    "module": "tests/test_guest_recording_studio_refresh.py",
+    "exit": 0,
+    "seconds": 1.75,
+    "summary": "5 passed in 1.51s"
+  },
+  {
+    "module": "tests/test_host_share_join_flow.py",
+    "exit": 0,
+    "seconds": 2.59,
+    "summary": "69 passed in 2.05s"
+  },
+  {
+    "module": "tests/test_local_originals_choice_profiles.py",
+    "exit": 0,
+    "seconds": 0.85,
+    "summary": "20 passed in 0.63s"
+  },
+  {
+    "module": "tests/test_music_lan_host_recovery.py",
+    "exit": 0,
+    "seconds": 5.69,
+    "summary": "29 passed in 5.44s"
+  },
+  {
+    "module": "tests/test_musician_guidance.py",
+    "exit": 0,
+    "seconds": 0.25,
+    "summary": "40 passed in 0.09s"
+  },
+  {
+    "module": "tests/test_native_art_notes_layout.py",
+    "exit": 0,
+    "seconds": 25.67,
+    "summary": "97 passed in 25.19s"
+  },
+  {
+    "module": "tests/test_native_art_room_return.py",
+    "exit": 0,
+    "seconds": 3.23,
+    "summary": "9 passed in 2.90s"
+  },
+  {
+    "module": "tests/test_notes_combined_unreadable.py",
+    "exit": 0,
+    "seconds": 1.39,
+    "summary": "15 passed in 1.15s"
+  },
+  {
+    "module": "tests/test_notes_demo_layout.py",
+    "exit": 0,
+    "seconds": 2.67,
+    "summary": "19 passed in 2.36s"
+  },
+  {
+    "module": "tests/test_notes_discovery_ui.py",
+    "exit": 0,
+    "seconds": 1.74,
+    "summary": "9 passed in 1.48s"
+  },
+  {
+    "module": "tests/test_notes_export_recovery_boundary.py",
+    "exit": 0,
+    "seconds": 0.89,
+    "summary": "9 passed in 0.67s"
+  },
+  {
+    "module": "tests/test_notes_font_reflow.py",
+    "exit": 0,
+    "seconds": 0.9,
+    "summary": "3 passed in 0.67s"
+  },
+  {
+    "module": "tests/test_notes_original_recheck.py",
+    "exit": 0,
+    "seconds": 0.9,
+    "summary": "27 passed in 0.69s"
+  },
+  {
+    "module": "tests/test_notes_recovery_checkpoint.py",
+    "exit": 0,
+    "seconds": 0.28,
+    "summary": "33 passed in 0.12s"
+  },
+  {
+    "module": "tests/test_notes_recovery_checkpoint_notice.py",
+    "exit": 0,
+    "seconds": 0.81,
+    "summary": "3 passed in 0.57s"
+  },
+  {
+    "module": "tests/test_notes_recovery_guidance.py",
+    "exit": 0,
+    "seconds": 0.82,
+    "summary": "5 passed in 0.60s"
+  },
+  {
+    "module": "tests/test_notes_restart_recovery.py",
+    "exit": 0,
+    "seconds": 1.47,
+    "summary": "23 passed in 1.25s"
+  },
+  {
+    "module": "tests/test_notes_restart_recovery_ui.py",
+    "exit": 0,
+    "seconds": 1.25,
+    "summary": "8 passed in 1.01s"
+  },
+  {
+    "module": "tests/test_notes_retry_integrity.py",
+    "exit": 0,
+    "seconds": 0.91,
+    "summary": "21 passed in 0.69s"
+  },
+  {
+    "module": "tests/test_notes_retry_quit.py",
+    "exit": 0,
+    "seconds": 1.05,
+    "summary": "1 passed in 0.81s"
+  },
+  {
+    "module": "tests/test_notes_save_failures.py",
+    "exit": 0,
+    "seconds": 1.24,
+    "summary": "20 passed in 0.99s"
+  },
+  {
+    "module": "tests/test_notes_unreadable_recheck.py",
+    "exit": 0,
+    "seconds": 1.45,
+    "summary": "19 passed in 1.20s"
+  },
+  {
+    "module": "tests/test_notes_workspace_recovery.py",
+    "exit": 0,
+    "seconds": 0.82,
+    "summary": "5 passed in 0.59s"
+  },
+  {
+    "module": "tests/test_paint_along_guest_opening_ui.py",
+    "exit": 0,
+    "seconds": 4.37,
+    "summary": "16 passed in 4.10s"
+  },
+  {
+    "module": "tests/test_paint_along_host_opening_ui.py",
+    "exit": 0,
+    "seconds": 3.08,
+    "summary": "17 passed in 2.81s"
+  },
+  {
+    "module": "tests/test_paint_along_prepared_copy.py",
+    "exit": 0,
+    "seconds": 6.21,
+    "summary": "24 passed in 5.93s"
+  },
+  {
+    "module": "tests/test_pocket_stage_controller.py",
+    "exit": 0,
+    "seconds": 3.07,
+    "summary": "31 passed in 2.26s"
+  },
+  {
+    "module": "tests/test_qt_widgets.py",
+    "exit": 0,
+    "seconds": 2.93,
+    "summary": "100 passed, 42 subtests passed in 2.18s"
+  },
+  {
+    "module": "tests/test_recording_format_controller.py",
+    "exit": 0,
+    "seconds": 2.0,
+    "summary": "19 passed in 1.76s"
+  },
+  {
+    "module": "tests/test_recording_readiness.py",
+    "exit": 0,
+    "seconds": 0.23,
+    "summary": "8 passed in 0.07s"
+  },
+  {
+    "module": "tests/test_recording_readiness_presentation.py",
+    "exit": 0,
+    "seconds": 0.25,
+    "summary": "20 passed in 0.10s"
+  },
+  {
+    "module": "tests/test_recording_readiness_ui.py",
+    "exit": 0,
+    "seconds": 0.96,
+    "summary": "16 passed in 0.75s"
+  },
+  {
+    "module": "tests/test_recording_setup_compact_recovery.py",
+    "exit": 0,
+    "seconds": 0.88,
+    "summary": "8 passed in 0.68s"
+  },
+  {
+    "module": "tests/test_recording_studio.py",
+    "exit": 0,
+    "seconds": 5.5,
+    "summary": "133 passed in 5.01s"
+  },
+  {
+    "module": "tests/test_recovery_lifecycle_contract.py",
+    "exit": 0,
+    "seconds": 3.25,
+    "summary": "34 passed in 2.35s"
+  },
+  {
+    "module": "tests/test_rejected_invitation_journey.py",
+    "exit": 0,
+    "seconds": 3.78,
+    "summary": "10 passed in 3.53s"
+  },
+  {
+    "module": "tests/test_room_help_widget.py",
+    "exit": 0,
+    "seconds": 0.68,
+    "summary": "8 passed in 0.48s"
+  },
+  {
+    "module": "tests/test_session_canvas_atomic_export.py",
+    "exit": 0,
+    "seconds": 0.71,
+    "summary": "11 passed, 5 subtests passed in 0.51s"
+  },
+  {
+    "module": "tests/test_session_conductor.py",
+    "exit": 0,
+    "seconds": 0.21,
+    "summary": "12 passed in 0.06s"
+  },
+  {
+    "module": "tests/test_session_persistence.py",
+    "exit": 0,
+    "seconds": 2.35,
+    "summary": "27 passed, 2 subtests passed in 1.59s"
+  },
+  {
+    "module": "tests/test_song_tools_coordinator.py",
+    "exit": 0,
+    "seconds": 1.63,
+    "summary": "128 passed in 1.27s"
+  },
+  {
+    "module": "tests/test_studio_demo_recovery_actions.py",
+    "exit": 0,
+    "seconds": 2.3,
+    "summary": "8 passed in 1.99s"
+  },
+  {
+    "module": "tests/test_studio_retry_api.py",
+    "exit": 0,
+    "seconds": 1.64,
+    "summary": "14 passed in 1.38s"
+  },
+  {
+    "module": "tests/test_two_session_art_host_recovery.py",
+    "exit": 0,
+    "seconds": 1.62,
+    "summary": "6 passed in 1.37s"
+  },
+  {
+    "module": "tests/test_two_session_art_integration.py",
+    "exit": 0,
+    "seconds": 1.58,
+    "summary": "4 passed in 1.32s"
+  },
+  {
+    "module": "tests/test_unified_musician_guidance.py",
+    "exit": 0,
+    "seconds": 4.0,
+    "summary": "19 passed in 3.60s"
+  },
+  {
+    "module": "tests/test_zero_key_music.py",
+    "exit": 0,
+    "seconds": 0.88,
+    "summary": "22 passed in 0.66s"
+  }
+]
