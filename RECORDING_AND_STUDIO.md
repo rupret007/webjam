@@ -62,6 +62,12 @@ host owns recording. The explanation stays visible in compact windows. An
 available **Record Session** button opens the checks; it is not a readiness
 verdict, and checking free storage does not reserve disk space.
 
+When storage fails during a session, repair free space or write access and
+choose **Try Again**. Changing the Takes folder requires ending the session
+first, choosing the folder in **Recording Setup**, and starting again. A retry
+builds a new take plan from the current participants and inputs before asking
+to record; it does not reuse the failed plan.
+
 Before capture begins, one durable take-scoped recording plan binds the exact
 roster/server stems, Shared Track source fingerprint and playback generation,
 host logical mono/stereo topology, guest Local Original count/map obligations

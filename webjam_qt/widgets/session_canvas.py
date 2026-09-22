@@ -7,6 +7,7 @@ not media timecode. Chat is the separate live shared-text path.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 import sys
 
@@ -43,6 +44,10 @@ _NOTES_RECOVERY_COPY = {
     "disk_full": "Storage is full. Choose Save Notes to retry or export elsewhere.",
     "permission_denied": "Permission denied. Choose Save Notes to retry or export elsewhere.",
     "read_only": "Storage is read-only. Choose Save Notes to export elsewhere.",
+    "recovered": "Recovered draft: choose Save Notes to review it before saving.",
+    "recovery_conflict": (
+        "Recovered draft needs a separate copy. Choose Save Notes to review and export it."
+    ),
 }
 
 
@@ -81,6 +86,7 @@ class SessionCanvas(QFrame):
         self._notes_active_profile_key = "music"
         self._notes_recovery_summary: tuple[tuple[str, str], ...] = ()
         self._notes_need_attention = False
+        self._notes_export_handler: Callable[[str, str], None] | None = None
 
         self._header = QLabel("Session Canvas")
         self._header.setObjectName("CanvasHeader")
@@ -753,6 +759,17 @@ class SessionCanvas(QFrame):
         self._notes.setTextCursor(cursor)
         self._notes.setFocus()
 
+    def set_notes_export_handler(self, handler: Callable[[str, str], None]) -> None:
+        """Use the persistence owner's protected destination policy for copies."""
+        self._notes_export_handler = handler
+
+    def _write_notes_export(self, text: str, path: str) -> None:
+        if self._notes_export_handler is not None:
+            self._notes_export_handler(text, path)
+        else:
+            from core.file_io import atomic_write_text
+            atomic_write_text(path, text, mode=0o600)
+
     def export_notes(self) -> None:
         """Prompt the user to save current notes to a file."""
         text = self.current_notes()
@@ -766,8 +783,12 @@ class SessionCanvas(QFrame):
         )
         if path:
             try:
-                from core.file_io import atomic_write_text
-                atomic_write_text(path, text)
+                self._write_notes_export(text, path)
+            except ValueError:
+                QMessageBox.warning(
+                    self, "Choose a Separate File",
+                    "Choose a separate file for this copy so saved notes and recovery copies stay intact.",
+                )
             except OSError:
                 QMessageBox.warning(
                     self, "Export Failed",
@@ -791,9 +812,12 @@ class SessionCanvas(QFrame):
         )
         if path:
             try:
-                from core.file_io import atomic_write_text
-
-                atomic_write_text(path, text)
+                self._write_notes_export(text, path)
+            except ValueError:
+                QMessageBox.warning(
+                    self, "Choose a Separate File",
+                    "Choose a separate file for this copy so saved notes and recovery copies stay intact.",
+                )
             except OSError:
                 QMessageBox.warning(
                     self,

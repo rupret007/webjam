@@ -4,6 +4,7 @@ Owns the small bit of state that must survive an app restart:
 
 * fixed profile note files   — free-form local session canvas notes
 * ``~/.webjam_session.json`` — profile-keyed title and compatibility mode
+* private recovery checkpoint — exact retained drafts for review after restart
 
 Notes retain failed drafts per profile and report a bounded local save state.
 Metadata remains best-effort. Atomic writes prevent half-written files; only
@@ -24,6 +25,13 @@ from core.creative_modes import (
     get_mode_by_key,
 )
 from core.file_io import atomic_write_text
+from core.notes_recovery import (
+    MAX_RECOVERY_DRAFT_BYTES,
+    NotesRecoveryDraft,
+    notes_fingerprint,
+    read_notes_recovery,
+    write_notes_recovery,
+)
 
 _NOTES_FILE = ".webjam_notes.md"
 _PROFILE_NOTES_FILES = {
@@ -33,6 +41,7 @@ _PROFILE_NOTES_FILES = {
     "art": ".webjam_notes.art.md",
 }
 _SESSION_FILE = ".webjam_session.json"
+_NOTES_RECOVERY_FILE = ".webjam_notes.recovery.json"
 _SESSION_SCHEMA_VERSION = 2
 _MAX_SESSION_FILE_BYTES = 64 * 1024
 _MAX_NOTES_FILE_BYTES = 1024 * 1024
@@ -112,17 +121,22 @@ def _read_bounded_json(path: Path) -> object | None:
 def _read_bounded_notes(path: Path) -> str | None:
     """Read one fixed local-notes file without links or unbounded input."""
 
-    if path.is_symlink():
-        raise ValueError("Session notes cannot be a symbolic link.")
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-    flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
-        descriptor = os.open(path, flags)
+        before = path.lstat()
     except FileNotFoundError:
         return None
+    if not stat.S_ISREG(before.st_mode) or before.st_size > _MAX_NOTES_FILE_BYTES:
+        raise ValueError("Session notes are not a bounded regular file.")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    descriptor = os.open(path, flags)
     try:
         info = os.fstat(descriptor)
-        if not stat.S_ISREG(info.st_mode) or info.st_size > _MAX_NOTES_FILE_BYTES:
+        current = path.lstat()
+        if (not stat.S_ISREG(info.st_mode) or not stat.S_ISREG(current.st_mode)
+                or (before.st_dev, before.st_ino) != (info.st_dev, info.st_ino)
+                or (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino)
+                or info.st_size > _MAX_NOTES_FILE_BYTES):
             raise ValueError("Session notes are not a bounded regular file.")
         with os.fdopen(descriptor, "rb") as handle:
             descriptor = -1
@@ -241,6 +255,18 @@ class SessionPersistence:
         self._unreadable_notes: set[str] = set()
         self._exported_profiles: set[str] = set()
         self._notes_save_state = "saved"
+        # Original identity is independent of settled/exported text: exporting
+        # a draft deliberately does not replace the original notes file.
+        self._notes_baselines: dict[str, str | None] = {}
+        self._recovered_notes: set[str] = set()
+        self._recovery_conflicts: set[str] = set()
+        self._recovery_loaded = False
+        self._recovery_checkpoint: dict[str, NotesRecoveryDraft] = {}
+        self._checkpoint_confirmed = True
+        self._checkpoint_blocked = False
+        set_export_handler = getattr(self._canvas, "set_notes_export_handler", None)
+        if callable(set_export_handler):
+            set_export_handler(self.export_notes_copy)
 
     @property
     def profile_key(self) -> str:
@@ -303,7 +329,101 @@ class SessionPersistence:
     # ------------------------------------------------------------------
     # Notes
     # ------------------------------------------------------------------
+    def _load_notes_recovery(self) -> None:
+        """Offer every retained workspace after restart without applying it."""
+        if self._recovery_loaded:
+            return
+        self._recovery_loaded = True
+        try:
+            checkpoint = read_notes_recovery(_persistence_home() / _NOTES_RECOVERY_FILE)
+        except (OSError, ValueError) as exc:
+            # An unreadable/unsupported recovery file may hold the only copy.
+            # Preserve it, while still allowing ordinary notes saves to work.
+            self._checkpoint_blocked = True
+            self._checkpoint_confirmed = False
+            self._log.debug("Could not load notes recovery; error_type=%s", type(exc).__name__)
+            return
+        self._recovery_checkpoint = checkpoint
+        for profile, draft in checkpoint.items():
+            self._notes_baselines[profile] = draft.baseline_fingerprint
+            try:
+                original = _read_bounded_notes(_persistence_home() / _PROFILE_NOTES_FILES[profile])
+                self._settled_notes[profile] = original or ""
+                if original == draft.text:
+                    # A primary save may have succeeded just before recovery
+                    # cleanup failed. Its exact bytes are already present.
+                    self._notes_baselines[profile] = notes_fingerprint(original)
+                    continue
+                if notes_fingerprint(original) != draft.baseline_fingerprint:
+                    self._recovery_conflicts.add(profile)
+            except (OSError, ValueError):
+                self._unreadable_notes.add(profile)
+                self._settled_notes[profile] = ""
+            self._pending_notes[profile] = draft.text
+            self._recovered_notes.add(profile)
+
+    def _capture_notes_baseline(self, profile: str) -> None:
+        if profile in self._notes_baselines:
+            return
+        try:
+            original = _read_bounded_notes(_persistence_home() / _PROFILE_NOTES_FILES[profile])
+            self._notes_baselines[profile] = notes_fingerprint(original)
+        except (OSError, ValueError):
+            self._notes_baselines[profile] = None
+            self._unreadable_notes.add(profile)
+
+    def _checkpoint_notes(self) -> None:
+        """Checkpoint on save boundaries; never claim an unconfirmed copy."""
+        if self._checkpoint_blocked:
+            return
+        desired = {}
+        for profile, text in self._pending_notes.items():
+            self._capture_notes_baseline(profile)
+            if len(text.encode("utf-8")) > MAX_RECOVERY_DRAFT_BYTES:
+                # Keep the previous good revision rather than truncate it or
+                # erase another workspace's recovery because this one is long.
+                if profile in self._recovery_checkpoint:
+                    desired[profile] = self._recovery_checkpoint[profile]
+                continue
+            desired[profile] = NotesRecoveryDraft(text, self._notes_baselines[profile])
+        if desired == self._recovery_checkpoint and self._checkpoint_confirmed:
+            return
+        path = _persistence_home() / _NOTES_RECOVERY_FILE
+        previous = self._recovery_checkpoint
+        try:
+            write_notes_recovery(path, desired, expected=previous)
+        except (OSError, ValueError) as exc:
+            self._checkpoint_confirmed = False
+            # Like a primary save, publication may precede a failed directory
+            # sync. Recognize our own published bytes but rewrite on retry;
+            # observing them does not prove the failed sync succeeded.
+            try:
+                observed = read_notes_recovery(path)
+                if observed == previous or observed == desired:
+                    self._recovery_checkpoint = observed
+                else:
+                    self._checkpoint_blocked = True
+            except (OSError, ValueError):
+                self._checkpoint_blocked = True
+            self._log.debug("Could not checkpoint notes; error_type=%s", type(exc).__name__)
+            return
+        self._recovery_checkpoint = desired
+        self._checkpoint_confirmed = True
+
+    def notes_restart_recovery_state(self, profile: str) -> str:
+        """Whether the current exact draft has a confirmed restart checkpoint."""
+        draft = self._recovery_checkpoint.get(profile)
+        if (not self._checkpoint_blocked and self._checkpoint_confirmed
+                and draft is not None and profile in self._pending_notes
+                and draft.text == self._pending_notes[profile]):
+            return "confirmed"
+        return "unconfirmed"
+
+    def notes_recovery_requires_review(self, profile: str) -> bool:
+        return profile in self._recovered_notes
+
     def _load_notes_only(self, *, clear_missing: bool = False) -> None:
+        self._load_notes_recovery()
         profile = self._creator_profile_key
         if profile in self._pending_notes:
             self._canvas.restore_notes(self._pending_notes[profile])
@@ -314,11 +434,13 @@ class SessionPersistence:
                 text = _read_bounded_notes(self._notes_path())
                 self._unreadable_notes.discard(profile)
                 self._settled_notes[profile] = text or ""
+                self._notes_baselines[profile] = notes_fingerprint(text)
                 if text is not None or clear_missing:
                     self._canvas.restore_notes(text or "")
             except Exception as exc:  # noqa: BLE001 - preserve rejected originals
                 self._unreadable_notes.add(profile)
                 self._settled_notes[profile] = ""
+                self._notes_baselines[profile] = None
                 if clear_missing:
                     self._canvas.restore_notes("")
                 else:
@@ -365,9 +487,13 @@ class SessionPersistence:
     def _refresh_notes_state(self) -> None:
         if any(profile in self._unreadable_notes for profile in self._pending_notes):
             state = "protected_original"
+        elif self._recovery_conflicts & self._pending_notes.keys():
+            state = "recovery_conflict"
         elif any(len(text.encode("utf-8")) > _MAX_NOTES_FILE_BYTES
                for text in self._pending_notes.values()):
             state = "too_large"
+        elif self._recovered_notes & self._pending_notes.keys():
+            state = "recovered"
         elif self._pending_notes:
             state = "failed"
         elif self._creator_profile_key in self._exported_profiles:
@@ -382,13 +508,17 @@ class SessionPersistence:
         """Return the bounded reason for one retained workspace draft."""
         if profile in self._unreadable_notes:
             return "protected_original"
+        if profile in self._recovery_conflicts:
+            return "recovery_conflict"
         text = self._pending_notes.get(profile, "")
         if len(text.encode("utf-8")) > _MAX_NOTES_FILE_BYTES:
             return "too_large"
+        if profile in self._recovered_notes:
+            return self._notes_save_failures.get(profile, "recovered")
         return self._notes_save_failures.get(profile, "failed")
 
     def _retain_notes(self, profile: str, text: str) -> None:
-        if (profile not in self._unconfirmed_notes
+        if (profile not in self._unconfirmed_notes and profile not in self._recovered_notes
                 and text == self._settled_notes.get(profile, "")):
             self._pending_notes.pop(profile, None)
             self._notes_save_failures.pop(profile, None)
@@ -397,15 +527,18 @@ class SessionPersistence:
 
     def notes_changed(self, text: str) -> None:
         """Keep the current draft before an eventual debounced disk write."""
+        self._load_notes_recovery()
         self._retain_notes(self._creator_profile_key, text)
         self._notify_notes_state("pending")
 
     def _save_notes_only(self) -> bool:
         """Save changed drafts; preserve rejected originals and failed writes."""
+        self._load_notes_recovery()
         self._retain_notes(self._creator_profile_key, self._canvas.current_notes())
+        self._checkpoint_notes()
         for profile, text in tuple(self._pending_notes.items()):
             try:
-                if (profile in self._unreadable_notes
+                if (profile in self._unreadable_notes or profile in self._recovered_notes
                         or len(text.encode("utf-8")) > _MAX_NOTES_FILE_BYTES):
                     continue
                 path = _persistence_home() / _PROFILE_NOTES_FILES[profile]
@@ -417,13 +550,54 @@ class SessionPersistence:
                 self._unconfirmed_notes.discard(profile)
                 self._notes_save_failures.pop(profile, None)
                 self._settled_notes[profile] = text
+                self._notes_baselines[profile] = notes_fingerprint(text)
                 self._pending_notes.pop(profile, None)
                 self._exported_profiles.discard(profile)
             except Exception as exc:  # noqa: BLE001 - keep the draft for retry
                 self._notes_save_failures[profile] = notes_save_failure_state(exc)
                 self._log.debug("Could not save notes; error_type=%s", type(exc).__name__)
+        self._checkpoint_notes()
         self._refresh_notes_state()
         return not self._pending_notes
+
+    def save_recovered_notes(self, profile: str, expected: str) -> bool:
+        """Explicitly save a reviewed draft while its original still matches."""
+        if profile not in self._recovered_notes or self._pending_notes.get(profile) != expected:
+            return False
+        if len(expected.encode("utf-8")) > _MAX_NOTES_FILE_BYTES:
+            return False
+        self._checkpoint_notes()
+        if self._pending_notes.get(profile) != expected:
+            return False
+        path = _persistence_home() / _PROFILE_NOTES_FILES[profile]
+        try:
+            original = _read_bounded_notes(path)
+            if (notes_fingerprint(original) != self._notes_baselines.get(profile)
+                    and original != expected):
+                self._recovery_conflicts.add(profile)
+                self._refresh_notes_state()
+                return False
+            self._unconfirmed_notes.add(profile)
+            atomic_write_text(path, expected, mode=0o600)
+        except (OSError, ValueError) as exc:
+            self._notes_save_failures[profile] = notes_save_failure_state(exc)
+            self._refresh_notes_state()
+            return False
+        self._notes_baselines[profile] = notes_fingerprint(expected)
+        self._settled_notes[profile] = expected
+        self._unconfirmed_notes.discard(profile)
+        if self._pending_notes.get(profile) != expected:
+            self._refresh_notes_state()
+            return False
+        self._pending_notes.pop(profile)
+        self._recovered_notes.discard(profile)
+        self._recovery_conflicts.discard(profile)
+        self._unreadable_notes.discard(profile)
+        self._notes_save_failures.pop(profile, None)
+        self._exported_profiles.discard(profile)
+        self._checkpoint_notes()
+        self._refresh_notes_state()
+        return True
 
     def revise_pending_notes(self, profile: str, expected: str, text: str) -> bool:
         """Edit a retained draft without switching the active session profile."""
@@ -432,6 +606,7 @@ class SessionPersistence:
         self._retain_notes(profile, text)
         if profile == self._creator_profile_key:
             self._canvas.restore_notes(text)
+        self._checkpoint_notes()
         self._refresh_notes_state()
         return True
 
@@ -445,6 +620,9 @@ class SessionPersistence:
         self._settled_notes[profile] = expected
         self._exported_profiles.add(profile)
         self._pending_notes.pop(profile, None)
+        self._recovered_notes.discard(profile)
+        self._recovery_conflicts.discard(profile)
+        self._checkpoint_notes()
         self._refresh_notes_state()
         return True
 
@@ -453,7 +631,7 @@ class SessionPersistence:
         destination = Path(path)
         if destination.is_symlink() or destination.resolve() in {
             (_persistence_home() / name).resolve()
-            for name in _PROFILE_NOTES_FILES.values()
+            for name in (*_PROFILE_NOTES_FILES.values(), _NOTES_RECOVERY_FILE)
         }:
             raise ValueError("Choose a separate notes file for this copy.")
         atomic_write_text(destination, text, mode=0o600)

@@ -4505,6 +4505,44 @@ def test_recording_setup_preserves_explicit_joiner_local_original_preference(tmp
     assert "host confirms a take" in dialog._capture_help.text()
 
 
+@pytest.mark.parametrize(("audio_running", "host_active"), [(True, False), (False, True), (False, False)])
+def test_recording_setup_folder_change_requires_session_to_end(audio_running, host_active):
+    from webjam_qt.controllers.application_controller import ApplicationController
+
+    settings = AppSettings(takes_directory="/temporary/existing-takes")
+    window = QWidget()
+    controller = SimpleNamespace(
+        window=window, settings=settings,
+        creator_profile=get_creator_profile_by_key_or_default("music"),
+        host_peer=SimpleNamespace(active=host_active),
+        _shutdown_cleanup_blocks_action=lambda: False,
+        _local_originals_available=lambda: True,
+        _is_jamulus_running=lambda: audio_running,
+    )
+    locked = audio_running or host_active
+
+    def inspect_setup(dialog):
+        choose = next(button for button in dialog.findChildren(QPushButton)
+                      if button.text() == "Choose Folder")
+        assert choose.isEnabled() is not locked
+        if locked:
+            assert "End or restart" in choose.toolTip()
+        choose.click()
+        return dialog.DialogCode.Rejected
+
+    try:
+        with (
+            patch("webjam_qt.windows.recording_setup.list_input_devices", return_value=[]),
+            patch.object(RecordingSetupDialog, "exec", inspect_setup),
+            patch("webjam_qt.windows.recording_setup.QFileDialog.getExistingDirectory", return_value="") as picker,
+        ):
+            ApplicationController._open_recording_setup(controller)
+        assert picker.call_count == int(not locked)
+        assert settings.takes_directory == "/temporary/existing-takes"
+    finally:
+        window.deleteLater()
+
+
 def test_recording_setup_keeps_compact_content_scrollable_and_footer_visible(
     tmp_path,
 ):

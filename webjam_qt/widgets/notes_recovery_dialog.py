@@ -39,6 +39,7 @@ class NotesRecoveryDialog(QDialog):
             layout.addWidget(widget)
         self._selected = None
         self._profile.currentIndexChanged.connect(self._select)
+        self._editor.textChanged.connect(self._show_recovery_guidance)
         self._select()
 
     def _select(self) -> None:
@@ -58,6 +59,17 @@ class NotesRecoveryDialog(QDialog):
                 "The original notes could not be opened and will not be overwritten. "
                 "Choose Export Copy to save this draft to another file. "
                 "Your collaboration session stays open."
+            )
+        elif state == "recovery_conflict":
+            message = (
+                "The recovered draft could not be safely matched to the current saved notes. "
+                "Choose Export Copy to keep both versions. The saved notes will not be replaced."
+            )
+        elif state == "recovered":
+            message = (
+                "Review this draft recovered after restart. Save Notes updates the original "
+                "if it still matches the earlier version, or choose Export Copy to keep "
+                "a separate file. Your collaboration session stays open."
             )
         elif state == "too_large":
             message = (
@@ -89,16 +101,30 @@ class NotesRecoveryDialog(QDialog):
                 "or choose Export Copy to save it to another file. "
                 "Your collaboration session stays open."
             )
+        checkpoint = getattr(self._persistence, "notes_restart_recovery_state", None)
+        if callable(checkpoint):
+            exact_draft = (
+                self._editor.toPlainText()
+                == dict(self._persistence.unsaved_notes).get(self._selected)
+            )
+            message += (
+                " A recovery copy of this draft is saved on this computer."
+                if exact_draft and checkpoint(self._selected) == "confirmed"
+                else " A restart recovery copy could not be confirmed. Keep WebJam open until saving or exporting succeeds."
+            )
         self._set_message(message)
-        self._save.setEnabled(state != "protected_original")
+        protected = state in {"protected_original", "recovery_conflict"}
+        self._save.setEnabled(not protected)
         self._save.setToolTip(
             "The original cannot be overwritten. Choose Export Copy."
-            if state == "protected_original" else "Save this draft on this computer."
+            if protected else "Save this draft on this computer."
         )
         self._save.setAccessibleDescription(self._save.toolTip())
         self._export.setAccessibleDescription("Save this draft to a separate local file.")
 
     def _set_message(self, message: str) -> None:
+        if message == self._message.text():
+            return
         self._message.setText(message)
         self._message.setAccessibleDescription(message)
 
@@ -140,7 +166,11 @@ class NotesRecoveryDialog(QDialog):
         draft = self._retain_current()
         if draft is None:
             return
-        self._persistence._save_notes_only()
+        review_required = getattr(self._persistence, "notes_recovery_requires_review", None)
+        if callable(review_required) and review_required(draft[0]):
+            self._persistence.save_recovered_notes(*draft)
+        else:
+            self._persistence._save_notes_only()
         if draft[0] not in dict(self._persistence.unsaved_notes):
             self._remove_current()
         else:

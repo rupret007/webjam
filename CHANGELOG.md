@@ -23,9 +23,16 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Notes identifies storage-full, permission, and read-only failures without
   exposing file paths. Retained drafts from other workspaces remain visible
   while you edit; only a confirmed save or export of that exact draft clears it.
+- Private Notes recovery checkpoints retain the last confirmed draft across
+  unexpected exit. Recovered drafts require explicit review; changed or
+  unreadable originals stay protected. Editing updates recovery-copy status,
+  and ordinary Notes/brief exports cannot overwrite originals or checkpoints.
 - Record Session identifies input-channel, track-map, device/format, and audio
   setting blockers. Recording Setup offers the available recovery controls and
   an explicit Local Originals opt-out, then checks a fresh plan before Start.
+- Recording storage recovery explains when the session must end before
+  changing Takes folders. Retry checks a new take plan with current inputs
+  and participants before any recording starts.
 - Studio disables Record until session participants are available and keeps
   the reason visible on compact windows. Idle Studio does not claim readiness;
   Record Session still performs the source and storage checks.

@@ -4881,8 +4881,10 @@ class RecordingCoordinator:
                     "not safely store recording recovery evidence."
                 ),
                 next_action=(
-                    "Choose a writable Takes folder in Recording Setup, then "
-                    "try Record Session again. No server recording was started."
+                    "Check free space and write access on the recording drive, "
+                    "then try again. To change folders, end this session and "
+                    "choose a writable Takes folder in Recording Setup before "
+                    "starting again. No server recording was started."
                 ),
                 retry_callback=self._c._on_record_requested,
             )
@@ -5249,8 +5251,11 @@ class RecordingCoordinator:
                 ),
                 likely_cause=exact_storage.detail,
                 next_action=(
-                    "Free up space or choose another Takes folder, then retry "
-                    "without changing the participant or input plan."
+                    "Free up space and try again. To change the Takes folder, "
+                    "end this session first, choose a writable folder in "
+                    "Recording Setup, then start the session and choose "
+                    "Record Session again. WebJam will recheck the current "
+                    "participants and inputs."
                 ),
                 retry_callback=self._c._on_record_requested,
             )

@@ -52,6 +52,19 @@ unsaved even after Undo; retry or export before quitting. Keep the app open unti
 new notes have been saved or exported; Quit preserves that recovery opportunity.
 Accepting a Song suggestion also saves the resulting notes.
 
+WebJam also attempts a private recovery copy before saving notes. After an
+unexpected exit, recovered drafts from any workspace appear in Notes for
+review. Choose **Save Notes** to review and explicitly save a recovered draft,
+or **Export Copy…** to keep it separately. If the saved original changed or
+cannot be read safely, recovery preserves it and offers export instead.
+
+Restart recovery covers the last confirmed copy, not every keystroke. The
+recovery window tells you whether its current text has a confirmed copy;
+editing that text updates the message. Full or read-only storage can prevent
+both saving and recovery copies, and very large drafts may require export.
+Keep WebJam open until Save Notes or Export Copy succeeds. Ordinary Notes and
+brief exports also protect WebJam's original notes and recovery files.
+
 ## Art
 
 WebJam welcomes artists in any medium who want to collaborate with each
