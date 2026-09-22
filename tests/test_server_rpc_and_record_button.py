@@ -838,9 +838,9 @@ class TestRecordButtonWiring(unittest.TestCase):
         cases = (
             ("short interface", {"maximum": 1}, "needs 2 input channels", "choose an input"),
             ("native failure", {"native_error": True}, "unavailable or cannot use", "Reconnect"),
-            ("sample rate", {"samplerate": 44100}, "require 48 kHz", "cannot change"),
-            ("buffer", {"blocksize": -1}, "buffer size is invalid", "cannot change"),
-            ("settings", {"samplerate": "invalid"}, "audio settings are invalid", "cannot change"),
+            ("sample rate", {"samplerate": 44100}, "require 48 kHz", "automatic buffer option"),
+            ("buffer", {"blocksize": -1}, "buffer size is invalid", "automatic buffer option"),
+            ("settings", {"samplerate": "invalid"}, "audio settings are invalid", "automatic buffer option"),
             ("track map", {"tracks": (object(),)}, "track map is invalid", "rebuild"),
         )
         try:

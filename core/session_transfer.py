@@ -75,6 +75,19 @@ PRESENCE_V2_DEFAULT_LEASE_S = 15.0
 PRESENCE_V2_MIN_LEASE_S = 1.0
 PRESENCE_V2_MAX_LEASE_S = 60.0
 PRESENCE_V2_MIN_REMAINING_LEASE_MS = 1
+LOCAL_ORIGINAL_FAILURE_CODES = (
+    "invalid_capture_settings",
+    "unsupported_sample_rate",
+    "invalid_block_size",
+    "invalid_track_map",
+    "insufficient_input_channels",
+    "input_device_or_format_unavailable",
+)
+_LOCAL_ORIGINAL_DIAGNOSTIC_FIELDS = frozenset({
+    "local_original_diagnostic_version",
+    "local_original_failure_codes",
+    "local_original_required_input_channels",
+})
 
 
 class SessionTransferError(RuntimeError):
@@ -157,6 +170,56 @@ def _presence_int(value: object, label: str, *, positive: bool = False) -> int:
         qualifier = "positive" if positive else "non-negative"
         raise ValueError(f"{label} must be {qualifier}.")
     return parsed
+
+
+def _presence_local_original_diagnostic(
+    version: object,
+    codes: object,
+    required_input_channels: object,
+    *,
+    capture_enabled: bool,
+    track_count: int | None,
+) -> tuple[int, tuple[str, ...], int]:
+    """Validate bounded capability failures without accepting native error text."""
+
+    if type(version) is not int or version not in (0, 1):
+        raise ValueError("local_original_diagnostic_version must be 0 or 1.")
+    if (
+        type(codes) is not tuple
+        or len(codes) > len(LOCAL_ORIGINAL_FAILURE_CODES)
+        or any(type(code) is not str or code not in LOCAL_ORIGINAL_FAILURE_CODES for code in codes)
+        or len(set(codes)) != len(codes)
+    ):
+        raise ValueError("local_original_failure_codes must contain unique supported codes.")
+    if type(required_input_channels) is not int or not 0 <= required_input_channels <= 32:
+        raise ValueError("local_original_required_input_channels must be between 0 and 32.")
+    if not version and (codes or required_input_channels):
+        raise ValueError("Local Original diagnostics require version 1.")
+    if (codes or required_input_channels) and (
+        capture_enabled is not True or track_count is not None
+    ):
+        raise ValueError("Local Original failures require an unresolved capture contract.")
+    canonical = tuple(code for code in LOCAL_ORIGINAL_FAILURE_CODES if code in codes)
+    return version, canonical, required_input_channels
+
+
+def _presence_diagnostic_mapping(payload: Mapping[str, object]) -> dict[str, object]:
+    """Read only a complete, explicitly negotiated JSON diagnostic extension."""
+
+    present = _LOCAL_ORIGINAL_DIAGNOSTIC_FIELDS.intersection(payload)
+    if not present:
+        return {}
+    if present != _LOCAL_ORIGINAL_DIAGNOSTIC_FIELDS:
+        raise ValueError("The Local Original diagnostic extension is incomplete.")
+    version = payload["local_original_diagnostic_version"]
+    codes = payload["local_original_failure_codes"]
+    if type(version) is not int or version != 1 or type(codes) is not list:
+        raise ValueError("The Local Original diagnostic extension is unsupported.")
+    return {
+        "local_original_diagnostic_version": version,
+        "local_original_failure_codes": tuple(codes),
+        "local_original_required_input_channels": payload["local_original_required_input_channels"],
+    }
 
 
 def _presence_ordinal_tuple(
@@ -443,6 +506,9 @@ class PresenceV2Proof:
     local_original_map_fingerprint: str = ""
     local_original_channel_counts: tuple[int, ...] = ()
     local_original_source_ids: tuple[str, ...] = ()
+    local_original_diagnostic_version: int = 0
+    local_original_failure_codes: tuple[str, ...] = ()
+    local_original_required_input_channels: int = 0
 
     def __post_init__(self) -> None:
         if type(self.protocol_version) is not int or self.protocol_version != 2:
@@ -525,6 +591,15 @@ class PresenceV2Proof:
             )
             if len(set(source_ids)) != len(source_ids):
                 raise ValueError("Local Original source IDs must be unique.")
+        diagnostic_version, failure_codes, required_input_channels = (
+            _presence_local_original_diagnostic(
+                self.local_original_diagnostic_version,
+                self.local_original_failure_codes,
+                self.local_original_required_input_channels,
+                capture_enabled=self.capture_enabled,
+                track_count=track_count,
+            )
+        )
         object.__setattr__(self, "participant_id", participant_id)
         object.__setattr__(self, "display_name", _clean_name(self.display_name))
         object.__setattr__(self, "ordered_roster_digest", digest)
@@ -541,6 +616,9 @@ class PresenceV2Proof:
         object.__setattr__(self, "local_original_map_fingerprint", map_fingerprint)
         object.__setattr__(self, "local_original_channel_counts", channel_counts)
         object.__setattr__(self, "local_original_source_ids", source_ids)
+        object.__setattr__(self, "local_original_diagnostic_version", diagnostic_version)
+        object.__setattr__(self, "local_original_failure_codes", failure_codes)
+        object.__setattr__(self, "local_original_required_input_channels", required_input_channels)
 
     @property
     def local_original_topology_exact(self) -> bool:
@@ -556,6 +634,40 @@ class PresenceV2Proof:
 
     def __repr__(self) -> str:
         return "PresenceV2Proof(private=[redacted])"
+
+
+def _presence_v2_mapping(
+    proof: PresenceV2Proof, *, include_diagnostic: bool = False,
+) -> dict[str, object]:
+    """Preserve the legacy v2 response shape unless diagnostics were requested."""
+
+    payload: dict[str, object] = {
+        "participant_id": proof.participant_id,
+        "display_name": proof.display_name,
+        "ordered_roster_digest": proof.ordered_roster_digest,
+        "roster_count": proof.roster_count,
+        "self_ordinal": proof.self_ordinal,
+        "process_generation": proof.process_generation,
+        "rpc_connection_generation": proof.rpc_connection_generation,
+        "audio_connection_generation": proof.audio_connection_generation,
+        "challenge": proof.challenge,
+        "challenge_epoch": proof.challenge_epoch,
+        "topology_epoch": proof.topology_epoch,
+        "presence_generation": proof.presence_generation,
+        "capture_enabled": proof.capture_enabled,
+        "protocol_version": proof.protocol_version,
+        "local_original_track_count": proof.local_original_track_count,
+        "local_original_map_fingerprint": proof.local_original_map_fingerprint,
+        "local_original_channel_counts": list(proof.local_original_channel_counts),
+        "local_original_source_ids": list(proof.local_original_source_ids),
+    }
+    if include_diagnostic:
+        payload.update({
+            "local_original_diagnostic_version": proof.local_original_diagnostic_version,
+            "local_original_failure_codes": list(proof.local_original_failure_codes),
+            "local_original_required_input_channels": proof.local_original_required_input_channels,
+        })
+    return payload
 
 
 @dataclass(frozen=True, repr=False)
@@ -1345,6 +1457,9 @@ class EnrollmentRegistry:
         local_original_map_fingerprint: str = "",
         local_original_channel_counts: tuple[int, ...] = (),
         local_original_source_ids: tuple[str, ...] = (),
+        local_original_diagnostic_version: int = 0,
+        local_original_failure_codes: tuple[str, ...] = (),
+        local_original_required_input_channels: int = 0,
         _allow_ambiguous_ordinal: bool = False,
     ) -> PresenceV2Proof:
         """Accept one fresh cooperative claim from an authenticated WebJam peer.
@@ -1375,6 +1490,9 @@ class EnrollmentRegistry:
             local_original_map_fingerprint=local_original_map_fingerprint,
             local_original_channel_counts=local_original_channel_counts,
             local_original_source_ids=local_original_source_ids,
+            local_original_diagnostic_version=local_original_diagnostic_version,
+            local_original_failure_codes=local_original_failure_codes,
+            local_original_required_input_channels=local_original_required_input_channels,
         )
         with self._lock:
             record = next(
@@ -1690,6 +1808,32 @@ class EnrollmentRegistry:
             return tuple(
                 LocalOriginalObligation.from_presence_proof(newest[participant_id])
                 for participant_id in sorted(newest)
+            )
+
+    def current_local_original_diagnostic_proofs(self) -> tuple[PresenceV2Proof, ...]:
+        """Return negotiated diagnostics from each owner's newest fresh proof.
+
+        Select all versions before filtering: a newer legacy proof must clear
+        earlier diagnostics, including during active/pending lease rollover.
+        """
+
+        with self._lock:
+            if not self.presence_v2_configured():
+                return ()
+            now = self._presence_v2_now_locked()
+            self._advance_presence_v2_epochs_locked(now)
+            newest: dict[str, PresenceV2Proof] = {}
+            for epoch in (self._presence_v2_active, self._presence_v2_pending):
+                if epoch is None or now >= epoch.expires_at:
+                    continue
+                for proof in epoch.by_participant.values():
+                    prior = newest.get(proof.participant_id)
+                    if prior is None or proof.presence_generation > prior.presence_generation:
+                        newest[proof.participant_id] = proof
+            return tuple(
+                newest[participant_id]
+                for participant_id in sorted(newest)
+                if newest[participant_id].local_original_diagnostic_version == 1
             )
 
     def legacy_capture_enabled_participant_ids(self) -> tuple[str, ...]:
@@ -4658,6 +4802,7 @@ class SessionPeerServer:
                         capture_enabled = payload["capture_enabled"]
                         if type(capture_enabled) is not bool:
                             raise ValueError("capture_enabled must be a boolean.")
+                        diagnostic = _presence_diagnostic_mapping(payload)
                         proof = owner.registry.bind_presence_v2(
                             participant_id,
                             str(payload.get("display_name", "Musician")),
@@ -4688,6 +4833,7 @@ class SessionPeerServer:
                             local_original_source_ids=tuple(
                                 payload.get("local_original_source_ids", ())
                             ),
+                            **diagnostic,
                         )
                     except TransferAuthenticationError as exc:
                         self._error(HTTPStatus.UNAUTHORIZED, "unauthorized", str(exc))
@@ -4703,7 +4849,10 @@ class SessionPeerServer:
                     ) as exc:
                         self._error(HTTPStatus.BAD_REQUEST, "invalid_request", str(exc))
                         return
-                    self._json(HTTPStatus.OK, asdict(proof))
+                    self._json(
+                        HTTPStatus.OK,
+                        _presence_v2_mapping(proof, include_diagnostic=bool(diagnostic)),
+                    )
                     return
                 if route == "/v1/presence":
                     try:
@@ -5236,6 +5385,9 @@ class SessionPeerClient:
         local_original_map_fingerprint: str = "",
         local_original_channel_counts: tuple[int, ...] = (),
         local_original_source_ids: tuple[str, ...] = (),
+        local_original_diagnostic_version: int = 0,
+        local_original_failure_codes: tuple[str, ...] = (),
+        local_original_required_input_channels: int = 0,
     ) -> PresenceV2Proof:
         candidate = PresenceV2Proof(
             participant_id=enrollment.participant_id,
@@ -5255,22 +5407,41 @@ class SessionPeerClient:
             local_original_map_fingerprint=local_original_map_fingerprint,
             local_original_channel_counts=local_original_channel_counts,
             local_original_source_ids=local_original_source_ids,
+            local_original_diagnostic_version=local_original_diagnostic_version,
+            local_original_failure_codes=local_original_failure_codes,
+            local_original_required_input_channels=local_original_required_input_channels,
         )
         payload = self._request(
             "POST",
             "/v2/presence",
             token=enrollment.participant_token,
             participant_id=enrollment.participant_id,
-            body=json.dumps(asdict(candidate), separators=(",", ":")).encode("utf-8"),
+            body=json.dumps(
+                _presence_v2_mapping(
+                    candidate, include_diagnostic=local_original_diagnostic_version == 1,
+                ),
+                separators=(",", ":"),
+            ).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
         try:
-            proof = PresenceV2Proof(**payload)
+            diagnostic = _presence_diagnostic_mapping(payload)
+            base_payload = {
+                key: value for key, value in payload.items()
+                if key not in _LOCAL_ORIGINAL_DIAGNOSTIC_FIELDS
+            }
+            proof = PresenceV2Proof(**base_payload, **diagnostic)
         except (TypeError, ValueError) as exc:
             raise SessionTransferError(
                 "The host returned an invalid recorder-presence proof."
             ) from exc
-        if proof != candidate:
+        expected = candidate if diagnostic else replace(
+            candidate,
+            local_original_diagnostic_version=0,
+            local_original_failure_codes=(),
+            local_original_required_input_channels=0,
+        )
+        if proof != expected:
             raise SessionTransferError(
                 "The host returned an inconsistent recorder-presence proof."
             )

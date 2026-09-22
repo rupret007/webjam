@@ -223,7 +223,8 @@ def test_unknown_capture_codes_stay_private_and_keep_a_recovery_route() -> None:
         assert len(detail) <= 320
     assert "could not be verified" in unknown
     assert "require 48 kHz" in mixed
-    assert "cannot change the sample rate or buffer" in mixed
+    assert "automatic buffer option" in mixed
+    assert "End or leave the session" in mixed
 
 
 def test_combined_capture_format_failures_preserve_both_facts_and_full_route() -> None:

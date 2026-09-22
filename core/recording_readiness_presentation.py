@@ -34,8 +34,8 @@ def local_capture_readiness_detail(
     """Explain an owner-reported capture failure without guessing its cause.
 
     Only fixed preflight codes are rendered. Settings failures take priority
-    over device remedies: Recording Setup cannot edit the shared audio sample
-    rate or buffer, but can explicitly turn off optional Local Originals.
+    over device remedies: Recording Setup can repair the local format after
+    the session ends, or explicitly turn off optional Local Originals now.
     """
 
     codes = {
@@ -46,9 +46,9 @@ def local_capture_readiness_detail(
         # Failed settings conversion also emits rate/buffer sentinel errors;
         # those do not prove that all three saved settings are wrong.
         return (
-            "Local Original audio settings are invalid. Recording Setup cannot "
-            "change the sample rate or buffer. Turn off Local Originals there "
-            "to record only the shared take."
+            "Local Original audio settings are invalid. End or leave the session, "
+            "then check the input and use Recording Setup's 48 kHz / automatic "
+            "buffer option. Turn off Local Originals to record only the shared take."
         )
     setting_failures = []
     if "unsupported_sample_rate" in codes:
@@ -57,8 +57,8 @@ def local_capture_readiness_detail(
         setting_failures.append("The Local Original audio buffer size is invalid.")
     if setting_failures:
         return " ".join(setting_failures) + (
-            " Recording Setup cannot change the sample rate or buffer. "
-            "Turn off Local Originals there to record only the shared take."
+            " End or leave the session, then use Recording Setup's 48 kHz / "
+            "automatic buffer option. Turn off Local Originals to record only the shared take."
         )
     if "invalid_track_map" in codes:
         return (

@@ -37,6 +37,14 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Guests see their own specific Local Original input failure in Studio and can
   open Recording Setup. Host recording stays blocked until fresh presence
   verifies the choice; repeated unchanged checks preserve keyboard focus.
+- Recording Setup can explicitly repair WebJam local audio to 48 kHz with an
+  automatic buffer after owned audio and cleanup are idle. It shows effective
+  launch overrides, preserves capture consent, and rechecks ownership before
+  saving. A repair retires unused plans and invalidates prior Band Check
+  evidence; audio starts only on the next explicit request.
+- Hosts receive bounded, participant-specific Local Original failure reports
+  from compatible guests. Reports follow fresh authenticated presence and
+  cannot grant readiness; older clients and hosts keep generic guidance.
 - Recording storage recovery explains when the session must end before
   changing Takes folders. Retry checks a new take plan with current inputs
   and participants before any recording starts.

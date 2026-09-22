@@ -901,10 +901,17 @@ capture.
 When a Local Original blocks recording, the sheet distinguishes too few input
 channels, an invalid track map, an unavailable input or format, and invalid
 audio settings. **Recording Setup** lets you review inputs and tracks or turn
-off optional Local Originals to record the shared take. It cannot change the
-shared sample rate or buffer size; those failures say so. Returning from setup
-does not start capture. Choose **Record Session** again to build and check a
-fresh plan before Start Recording becomes available.
+off optional Local Originals to record the shared take. After ending or leaving
+the session, choose **Use 48 kHz and automatic buffer** in Setup to repair
+WebJam's local recording format. Save keeps capture consent separate and does
+not start audio. Setup explains when a launch override must be changed before
+restarting WebJam. Start Session and Band Check use the saved setup; choose
+**Record Session** again for a fresh plan and input checks. Jamulus manages its
+live audio settings separately.
+
+When supported guests report input failures, the host sees their names and
+the specific problems. Older guests retain generic Setup guidance. Fresh guest
+checks must confirm the repaired choice before recording can start.
 
 For each opted-in guest Local Original, WebJam next sends a private,
 take-scoped arm only to that required guest. The guest opens the exact planned

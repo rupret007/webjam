@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from copy import deepcopy
 
 from PySide6.QtCore import Qt, QUrl
@@ -29,7 +30,7 @@ from core.meeting_link import (
     COMPACT_MEETING_CAPTURE_NOTICE,
     RECORD_SESSION_MEETING_CAPTURE_NOTICE,
 )
-from core.settings import AppSettings, save_settings
+from core.settings import AppSettings, audio_format_environment_overrides, save_settings
 from webjam_qt.theme.tokens import Space
 
 LOGGER = logging.getLogger("webjam.qt.recording_setup")
@@ -177,6 +178,7 @@ class RecordingSetupDialog(QDialog):
         local_originals_available: bool = True,
         takes_folder_editable: bool = True,
         creator_profile: CreatorProfile | str | None = None,
+        format_change_guard: Callable[[], str] | None = None,
     ) -> None:
         super().__init__(parent)
         profile = _resolve_creator_profile(creator_profile)
@@ -186,6 +188,7 @@ class RecordingSetupDialog(QDialog):
         self._creator_profile = profile
         self._local_originals_available = bool(local_originals_available)
         self._takes_folder_editable = bool(takes_folder_editable)
+        self._format_change_guard = format_change_guard or (lambda: "")
         self.setObjectName("RecordingSetupDialog")
         self.setWindowTitle("WebJam Recording Setup")
         self.setModal(True)
@@ -197,6 +200,7 @@ class RecordingSetupDialog(QDialog):
         root.setSpacing(Space.MD)
 
         scroll = QScrollArea()
+        self._scroll = scroll
         scroll.setObjectName("RecordingSetupScrollArea")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -353,6 +357,50 @@ class RecordingSetupDialog(QDialog):
         self._capture_help.setWordWrap(True)
         content.addWidget(self._capture_help)
 
+        self._format_status = QLabel(self._current_format_text())
+        self._format_status.setObjectName("SimpleSettingsFieldLabel")
+        self._format_status.setTextFormat(Qt.TextFormat.PlainText)
+        self._format_status.setWordWrap(True)
+        self._format_status.setAccessibleName("Current WebJam local audio format")
+        self._format_status.setAccessibleDescription(self._format_status.text())
+        content.addWidget(self._format_status)
+
+        self._repair_format = QCheckBox("Use 48 kHz and automatic buffer")
+        self._repair_format.setAccessibleName("Use 48 kHz and automatic buffer")
+        content.addWidget(self._repair_format)
+        self._format_help = QLabel()
+        self._format_help.setObjectName("SimpleSettingsSubtitle")
+        self._format_help.setTextFormat(Qt.TextFormat.PlainText)
+        self._format_help.setWordWrap(True)
+        reason = self._format_change_block_reason()
+        format_help = (
+            "Save stores this format for WebJam Local Originals and metering. "
+            "Start Session rechecks the setup. "
+            "Choose Local Originals separately above. "
+            "Live-session audio is managed separately."
+        )
+        overrides = audio_format_environment_overrides()
+        if overrides:
+            names = [
+                name for key, name in (
+                    ("audio_samplerate", "WEBJAM_AUDIO_SAMPLERATE"),
+                    ("audio_blocksize", "WEBJAM_AUDIO_BLOCKSIZE"),
+                ) if key in overrides and name not in reason
+            ]
+            if names:
+                format_help = (
+                    "Launch overrides control this format: " + ", ".join(names)
+                    + ". Their values take precedence over saved preferences. " + format_help
+                )
+        if reason:
+            format_help = f"{reason} {format_help}"
+        self._format_help.setText(format_help)
+        self._format_help.setAccessibleDescription(format_help)
+        self._repair_format.setEnabled(not reason)
+        self._repair_format.setToolTip(format_help)
+        self._repair_format.setAccessibleDescription(format_help)
+        content.addWidget(self._format_help)
+
         self._input_label = QLabel("Local Original recording input")
         self._input_label.setObjectName("SimpleSettingsFieldLabel")
         self._input = QComboBox()
@@ -446,6 +494,50 @@ class RecordingSetupDialog(QDialog):
         self._capture.toggled.connect(self._sync_capture_fields)
         self._sync_capture_fields()
 
+    @property
+    def format_repair_requested(self) -> bool:
+        """Whether the user explicitly selected the supported local format."""
+
+        return self._repair_format.isChecked()
+
+    def _current_format_text(self) -> str:
+        try:
+            rate = int(self._settings.audio_samplerate)
+            rate_text = f"{rate / 1000:g} kHz" if rate > 0 else "Unavailable"
+        except (TypeError, ValueError):
+            rate_text = "Unavailable"
+        try:
+            block = int(self._settings.audio_blocksize)
+            block_text = "Automatic" if block == 0 else f"{block} frames" if block > 0 else "Invalid"
+        except (TypeError, ValueError):
+            block_text = "Invalid"
+        return f"WebJam local audio: {rate_text} · Buffer: {block_text}"
+
+    def _format_change_block_reason(self) -> str:
+        try:
+            guard_reason = self._format_change_guard()
+        except Exception:  # noqa: BLE001 - lifecycle failures stay path-free
+            guard_reason = (
+                "Close Recording Setup, finish ending or leaving the session, "
+                "then reopen Recording Setup."
+            )
+        overrides = audio_format_environment_overrides()
+        conflicts = [
+            name for key, name, target in (
+                ("audio_samplerate", "WEBJAM_AUDIO_SAMPLERATE", 48000),
+                ("audio_blocksize", "WEBJAM_AUDIO_BLOCKSIZE", 0),
+            )
+            if key in overrides and overrides[key] != target
+        ]
+        reasons = [guard_reason] if guard_reason else []
+        if conflicts:
+            reasons.append(
+                "Launch overrides prevent this change: " + ", ".join(conflicts)
+                + ". Remove or update the conflicting launch override, restart "
+                "WebJam, then reopen Recording Setup."
+            )
+        return " ".join(reasons)
+
     def _sync_capture_fields(self) -> None:
         visible = self._capture.isEnabled() and self._capture.isChecked()
         self._input_label.setVisible(visible)
@@ -459,7 +551,9 @@ class RecordingSetupDialog(QDialog):
 
     def _show_error(self, message: str) -> None:
         self._error.setText(message)
+        self._error.setAccessibleDescription(message)
         self._error.setVisible(True)
+        self._scroll.ensureWidgetVisible(self._error)
 
     def _show_folder(self) -> None:
         path = str(self._settings.takes_directory or "")
@@ -530,6 +624,12 @@ class RecordingSetupDialog(QDialog):
             self._refresh_tracks_summary()
 
     def _save(self) -> None:
+        repair_format = self._repair_format.isChecked()
+        if repair_format:
+            reason = self._format_change_block_reason()
+            if reason:
+                self._show_error(reason)
+                return
         capture = self._capture.isEnabled() and self._capture.isChecked()
         input_index = self._input.currentData()
         if capture and input_index is None:
@@ -563,14 +663,18 @@ class RecordingSetupDialog(QDialog):
                 f"selected interface provides {available_channels}."
             )
             return
+        candidate = deepcopy(self._settings)
         if self._local_originals_available:
-            self._settings.local_capture_enabled = capture
-            self._settings.local_capture_choice_made = True
-            self._settings.input_maps = [dict(e) for e in self._input_maps]
+            candidate.local_capture_enabled = capture
+            candidate.local_capture_choice_made = True
+            candidate.input_maps = [dict(e) for e in self._input_maps]
         if capture:
-            self._settings.audio_input_device_index = int(input_index)
+            candidate.audio_input_device_index = int(input_index)
+        if repair_format:
+            candidate.audio_samplerate = 48000
+            candidate.audio_blocksize = 0
         try:
-            save_settings(self._settings)
+            save_settings(candidate)
         except Exception:  # noqa: BLE001 - settings errors can carry local paths
             LOGGER.error("Could not save recording setup")
             self._show_error(
@@ -578,4 +682,5 @@ class RecordingSetupDialog(QDialog):
                 "try again."
             )
             return
+        self._settings = candidate
         self.accept()

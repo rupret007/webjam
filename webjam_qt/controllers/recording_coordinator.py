@@ -25,6 +25,7 @@ from core.creative_modes import (
     canonical_creator_profile_key,
     get_creator_profile_by_key_or_default,
 )
+from core.guest_recording_guidance import guest_recording_failure_summary
 from core.jamulus_roster_identity import (
     JamulusRosterIdentityError,
     ordered_common_roster_digest,
@@ -5209,9 +5210,20 @@ class RecordingCoordinator:
         if guest_plan_issues:
             failed_take_id = self._take_id
             self._set_phase(RecorderPhase.ERROR)
+            guest_diagnostics = getattr(
+                self._c.host_peer, "recording_local_original_diagnostics", None,
+            )
+            summary = ""
+            if callable(guest_diagnostics):
+                try:
+                    summary = guest_recording_failure_summary(guest_diagnostics())
+                except Exception:  # noqa: BLE001 - optional diagnosis cannot bypass the gate
+                    LOGGER.debug("Guest recording guidance was unavailable")
             self._c._show_actionable_error(
                 "Guest Recording Plan Needs Attention",
                 what_failed=(
+                    f"No recorder was started. {summary}"
+                    if summary else
                     "WebJam couldn't prove every connected guest's exact "
                     "Local Original choice before recording. No recorder was started."
                 ),
@@ -5220,8 +5232,8 @@ class RecordingCoordinator:
                     "could not be verified, or their recording presence is not current."
                 ),
                 next_action=(
-                    "Ask guests to check Recording Setup for their Local Original "
-                    "inputs and tracks, or turn optional Local Originals off. "
+                    "Ask guests to open Recording Setup to fix their Local Original "
+                    "audio settings, inputs or tracks, or turn Local Originals off. "
                     "After everyone has finished joining and the participant "
                     "list settles, retry Record Session."
                 ),

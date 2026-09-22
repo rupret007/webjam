@@ -91,17 +91,28 @@ media.
 Local Original blockers retain the input check's specific reason: insufficient
 channels, an invalid track map, an unavailable input or format, or invalid audio
 settings. **Recording Setup** remains available to review inputs and tracks or
-turn off optional Local Originals for a shared take. Setup cannot change the
-shared sample rate or buffer size, so those failures explicitly say so instead
-of promising an unavailable setting. After setup, choose **Record Session**
-again for a new plan and checks; an old readiness result cannot enable
-recording after the source selection changes.
+turn off optional Local Originals for a shared take. Setup shows the effective
+WebJam local audio format. To repair it, close Setup, end or leave the session,
+then reopen Setup and choose **Use 48 kHz and automatic buffer** before saving.
+This changes WebJam's Local Original and metering preferences; Jamulus manages
+live-session audio separately. Recording and cleanup must finish first. Notes
+stay available, and the repair does not turn Local Originals on or start audio.
+
+Valid launch overrides are named in Setup. A conflicting override must be
+removed or updated before restarting WebJam; saving cannot override it. Failed
+saves keep the running format unchanged and allow retry. Start Session and
+Band Check use the committed setup; **Record Session** still builds a new plan
+and performs fresh device and participant checks before capture.
 
 Guests see their own input check's specific reason in Studio, with **Recording
 Setup** available to repair the input or track choice. The host's recording
 check remains blocked until fresh guest presence verifies the current choice;
 an unavailable input is never treated as an intentional opt-out. Repeated
 unchanged checks keep keyboard focus in the current editor or setup control.
+With supported peers, the host's blocked-recording message names the guests
+and their current input problems. Older peers retain the generic guidance.
+These reports explain the blocker; they never authorize recording or turn an
+unavailable input into an opt-out. Repaired inputs require fresh presence.
 
 An opted-in guest is not treated as armed merely because its recent presence
 proof was Ready. After acceptance, the host sends that required participant a

@@ -85,6 +85,11 @@ class RealAudioEngine:
         if self.running:
             return
         self.running = True
+        # Settings can be replaced while idle. Report the format this start
+        # attempts; assigning settings while running must not relabel its stream.
+        self._diagnostics.samplerate = self.settings.audio_samplerate
+        self._diagnostics.blocksize = self.settings.audio_blocksize
+        self._diagnostics.latency_mode = self.settings.audio_latency
 
         if sd is not None and np is not None:
             device_idx = self._resolve_device()
