@@ -486,7 +486,7 @@ def test_one_next_click_language_shared_by_art_and_music_surfaces():
     # Overview Make-together detail stays brief (fits with Conversation closed).
     detail = art_make_together_activity_detail()
     assert "paper, clay, a model, printer, or your usual app" in detail
-    assert "Open Conversation" in detail
+    assert "Choose Set Up Conversation" in detail
     assert WATCH_TOGETHER_ACTIONS not in detail
     assert WEBJAM_DOES_NOT_PLAY_MOVIE not in detail
     assert paint_along_local_note() not in detail

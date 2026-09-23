@@ -113,7 +113,11 @@ class RoomState:
     def from_mapping(cls, value: object) -> RoomState:
         try:
             raw = _exact_mapping(value, _ROOM_FIELDS)
-            video_raw = _exact_mapping(raw["reference_video"], _VIDEO_FIELDS)
+            video_value = raw["reference_video"]
+            video_fields = _VIDEO_FIELDS
+            if type(video_value) is dict and video_value.get("source_kind") == "youtube":
+                video_fields = video_fields | {"source_kind", "video_id"}
+            video_raw = _exact_mapping(video_value, video_fields)
             canvas_raw = _exact_mapping(raw["shared_canvas"], _CANVAS_FIELDS)
             video = ReferenceVideoSessionSnapshot.from_mapping(video_raw)
             canvas = SharedCanvasSessionSnapshot.from_mapping(canvas_raw)

@@ -255,6 +255,7 @@ class ConductorWindow(QMainWindow):
 
         # --- Status bar
         self._status_bar = QStatusBar(self)
+        self._flash_message_token: object | None = None
         self.setStatusBar(self._status_bar)
 
         # Server-recording indicator — hidden until the server's recorder
@@ -1034,23 +1035,37 @@ class ConductorWindow(QMainWindow):
 
     def flash_message(
         self, text: str, *, ms: int = 4000, color: str | None = None
-    ) -> None:
+    ) -> object:
         """Show a temporary status-bar message, optionally tinted.
 
         ``color`` accepts any Qt stylesheet color value.
         highlights attention-worthy banners (reconnect warnings, etc.). The
         tint is cleared automatically once the message times out or is
         replaced — see ``_on_status_message_changed``.
+        The returned token lets a caller retire only its own message.
         """
+        token = object()
+        self._flash_message_token = token
         self._status_bar.setStyleSheet(
             f"QStatusBar{{color: {color};}}" if color else ""
         )
         self._status_bar.setVisible(True)
         self._status_bar.showMessage(text, ms)
+        return token
+
+    def clear_flash_message(self, token: object | None) -> bool:
+        """Retire a message only if no later caller or timeout replaced it."""
+
+        if token is None or token is not self._flash_message_token:
+            return False
+        self._flash_message_token = None
+        self._status_bar.clearMessage()
+        return True
 
     def _on_status_message_changed(self, text: str) -> None:
         """Clear any flash_message() color tint once its message clears."""
         if not text:
+            self._flash_message_token = None
             self._status_bar.setStyleSheet("")
             if not self._status_recording.isVisible():
                 self._status_bar.setVisible(False)

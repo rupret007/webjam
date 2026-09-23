@@ -263,7 +263,9 @@ QLabel#PaintAlongPlaceholder {
     background-color: transparent;
     font-size: ${FONT_SIZE_LG}px;
     font-weight: ${FONT_WEIGHT_MEDIUM};
-    padding: ${SPACE_XL}px;
+    /* Embedded video surfaces can be only 40px tall. Reserve room for the
+       status text instead of clipping it between two 24px padding bands. */
+    padding: ${SPACE_XS}px ${SPACE_XL}px;
 }
 
 QToolButton#PaintAlongMore {

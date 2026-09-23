@@ -60,7 +60,10 @@ def test_empty_paint_along_offers_shared_lesson_without_requiring_a_file(qapp, h
                    and button.isVisibleTo(panel) and button.isEnabled()]
         assert len(offered) == 1
         assert offered[0].objectName() == "GhostButton"
-        assert offered[0].y() < panel._headline.y()
+        # Paint along's own file/link choice comes first; external meeting
+        # handoff remains reachable below it as a secondary action.
+        assert offered[0].y() > panel._headline.y()
+        assert offered[0].geometry().bottom() <= panel.height()
     finally:
         panel.close()
         panel.deleteLater()

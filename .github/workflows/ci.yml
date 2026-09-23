@@ -1407,8 +1407,8 @@ jobs:
               | dist/WebJam/webjam-fabric.exe \
               | grep -q '"type":"stopped"'
             test -n "$(find dist/WebJam -path '*/webjam_qt/theme/conductor.qss' -print -quit)"
-            test -z "$(find dist/WebJam -iname '*QtWebEngine*' -print -quit)"
-            test -z "$(find dist/WebJam -iname '*QtWebChannel*' -print -quit)"
+            test -n "$(find dist/WebJam -iname '*QtWebEngineProcess*' -print -quit)"
+            test -n "$(find dist/WebJam -iname '*qtwebview_webengine*' -print -quit)"
             test -f dist/WebJam/_internal/Jamulus/jamulus_3.12.2_win.exe
             test "$(tr -d '\r\n' < dist/WebJam/_internal/webjam-build-id.txt)" = "$build_id"
             # spec uses COLLECT → produces dist/WebJam/ directory; zip it
@@ -1437,8 +1437,8 @@ jobs:
             test -f dist/WebJam/Jamulus/JAMULUS_COPYING.txt
             echo "029f8858f21a5fb36da5144046473575caa2a26f2c7d8db162953b89d8c8ccc9  dist/WebJam/Jamulus/jamulus_3.12.2_ubuntu_amd64.deb" | sha256sum -c -
             test -f dist/WebJam/_internal/webjam_qt/theme/conductor.qss
-            test -z "$(find dist/WebJam -iname '*QtWebEngine*' -print -quit)"
-            test -z "$(find dist/WebJam -iname '*QtWebChannel*' -print -quit)"
+            test -n "$(find dist/WebJam -iname '*QtWebEngineProcess*' -print -quit)"
+            test -n "$(find dist/WebJam -iname '*qtwebview_webengine*' -print -quit)"
             test "$(tr -d '\r\n' < dist/WebJam/_internal/webjam-build-id.txt)" = "$build_id"
             cp packaging/linux/README-LINUX.txt dist/WebJam/README-LINUX.txt
             cp packaging/linux/install-jamulus.sh dist/WebJam/install-jamulus.sh
@@ -1813,6 +1813,24 @@ jobs:
             ! grep -Eq 'WebJam failed during startup|Unhandled WebJam UI error' \
               "$fresh_home/webjam.log"
           fi
+
+      - name: Verify frozen lesson player
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          case "${{ matrix.target }}" in
+            macos-*)
+              python -m tests.support.run_frozen_youtube_smoke \
+                --binary dist/WebJam.app/Contents/MacOS/WebJam ;;
+            windows-x64)
+              python -m tests.support.run_frozen_youtube_smoke \
+                --binary dist/WebJam/WebJam.exe ;;
+            linux-x64)
+              QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu xvfb-run -a \
+                python -m tests.support.run_frozen_youtube_smoke \
+                --binary dist/WebJam/WebJam ;;
+            *) exit 1 ;;
+          esac
 
       - name: Reverify Intel cryptography after final ZIP packaging
         if: matrix.target == 'macos-x64'

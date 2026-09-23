@@ -100,7 +100,11 @@ def test_art_host_click_selects_only_the_chosen_room_without_a_music_install(doo
     dialog = rig.dialog
     _select_start(dialog, start)
     assert dialog._host_button.isEnabled()
-    assert not dialog._choice_helper.text()
+    assert dialog._choice_helper.text() == (
+        "Host starts Paint along, then chooses a file or lesson link. Join uses the host's invite."
+        if start == "paint_along" else
+        f"Host starts {dialog.selected_start.label}. Join uses the host's invite."
+    )
     assert dialog._join_button.isEnabled()
     assert_no_banned_first_screen_words(harvest_first_screen(dialog))
 
@@ -181,7 +185,7 @@ def test_profile_start_and_back_changes_keep_current_art_next_action(door, platf
     _select_profile(dialog, "art")
     _select_start(dialog, "talk_and_make")
     assert dialog._host_button.isEnabled()
-    assert not dialog._choice_helper.text()
+    assert dialog._choice_helper.text() == "Host starts Make together. Join uses the host's invite."
     assert "Start Make together as the host" in dialog._host_button.accessibleDescription()
     assert "macOS" not in dialog._host_button.accessibleDescription()
     assert_no_banned_first_screen_words(harvest_first_screen(dialog))
@@ -223,7 +227,7 @@ def test_failed_save_recovers_same_art_action_and_retry_submits_once(door):
     assert not dialog._submitting
     assert dialog._host_button.isEnabled()
     assert dialog._join_button.isEnabled()
-    assert not dialog._choice_helper.text()
+    assert dialog._choice_helper.text() == "Host starts Paint along, then chooses a file or lesson link. Join uses the host's invite."
     assert dialog._choice_error.isVisibleTo(dialog)
     assert "private path" not in dialog._choice_error.text()
     assert "Paint along" in dialog._host_button.accessibleDescription()

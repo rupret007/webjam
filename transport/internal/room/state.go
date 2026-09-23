@@ -43,6 +43,8 @@ type Video struct {
 	PositionS          float64 `json:"position_s"`
 	DurationS          float64 `json:"duration_s"`
 	NeedsAttention     bool    `json:"needs_attention"`
+	SourceKind         string  `json:"source_kind,omitempty"`
+	VideoID            string  `json:"video_id,omitempty"`
 }
 type Canvas struct {
 	Schema       int    `json:"schema"`
@@ -79,7 +81,17 @@ func Decode(encoded []byte) (*State, error) {
 		return nil, ErrInvalid
 	}
 	var video, canvas map[string]json.RawMessage
-	if json.Unmarshal(root["reference_video"], &video) != nil || !keys(video, "schema", "generation", "playback_generation", "state", "shared", "source_display_name", "identity_digest", "position_s", "duration_s", "needs_attention") {
+	if json.Unmarshal(root["reference_video"], &video) != nil {
+		return nil, ErrInvalid
+	}
+	videoKeys := []string{"schema", "generation", "playback_generation", "state", "shared", "source_display_name", "identity_digest", "position_s", "duration_s", "needs_attention"}
+	if _, online := video["source_kind"]; online {
+		videoKeys = append(videoKeys, "source_kind", "video_id")
+		if string(video["source_kind"]) != `"youtube"` {
+			return nil, ErrInvalid
+		}
+	}
+	if !keys(video, videoKeys...) {
 		return nil, ErrInvalid
 	}
 	if json.Unmarshal(root["shared_canvas"], &canvas) != nil || !keys(canvas, "schema", "generation", "shared", "join_url", "server_label", "session_label") {
@@ -197,8 +209,16 @@ func (s State) Validate() error {
 }
 
 var digestPattern = regexp.MustCompile(`\A[0-9a-f]{64}\z`)
+var youtubeIDPattern = regexp.MustCompile(`\A[A-Za-z0-9_-]{11}\z`)
 
 func (v Video) Validate() error {
+	if v.SourceKind == "youtube" {
+		if !v.Shared || !youtubeIDPattern.MatchString(v.VideoID) {
+			return ErrInvalid
+		}
+	} else if v.SourceKind != "" || v.VideoID != "" {
+		return ErrInvalid
+	}
 	if v.Schema != 1 || v.Generation > maxGeneration || v.PlaybackGeneration > maxGeneration || !label(v.SourceDisplayName, 255, 1024) || strings.ContainsAny(v.SourceDisplayName, "/\\") {
 		return ErrInvalid
 	}

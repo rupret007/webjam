@@ -39,6 +39,21 @@ def test_full_room_state_roundtrip_keeps_existing_video_and_canvas_owners() -> N
         assert private not in repr(state)
 
 
+def test_youtube_source_roundtrips_as_a_bounded_art_extension():
+    state = replace(_state(), reference_video=replace(
+        _state().reference_video, source_kind="youtube", video_id="M7lc1UVf-VE",
+        source_display_name="YouTube lesson",
+    ))
+    assert RoomState.from_mapping(state.to_mapping()) == state
+    assert state.reference_video.video_id not in repr(state)
+    for extra in ({"source_url": "https://example.com"}, {"source_kind": "website"},
+                  {"video_id": "https://youtu.be/M7lc1UVf-VE"}):
+        raw = state.to_mapping()
+        raw["reference_video"].update(extra)
+        with pytest.raises(ValueError):
+            RoomState.from_mapping(raw)
+
+
 @pytest.mark.parametrize("path,value", [
     (("schema",), True), (("schema",), 2), (("revision",), True),
     (("revision",), 0), (("revision",), MAX_ROOM_REVISION + 1),
