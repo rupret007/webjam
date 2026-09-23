@@ -85,7 +85,7 @@ def test_make_together_is_complete_without_optional_tools_or_a_roster():
         assert overview.activity_label == "Make from your own space"
         assert overview.activity_detail == art_make_together_activity_detail()
         assert "paper, clay, a model, printer, or your usual app" in overview.activity_detail
-        assert "Open Conversation" in overview.activity_detail
+        assert "Choose Set Up Conversation" in overview.activity_detail
         # Full Webex / movie essay stays on Conversation — not overview.
         assert "Join / Open Meeting or Show Webex App" not in overview.activity_detail
         assert "WebJam does not play the movie." not in overview.activity_detail
@@ -133,6 +133,10 @@ def test_conversation_button_names_its_next_click_from_the_saved_meeting(hosting
         ready = art_room_overview(
             state=state, hosting=hosting, conversation_configured=True,
         )
+        assert f"Choose {needs_setup.conversation_action_label}" in needs_setup.activity_detail
+        assert "external meeting link" in needs_setup.activity_detail
+        assert f"Choose {ready.conversation_action_label}" in ready.activity_detail
+        assert "Set Up Conversation" not in ready.activity_detail
         assert needs_setup.conversation_action_label == "Set Up Conversation"
         assert ready.conversation_action_label == "Conversation"
 

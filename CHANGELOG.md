@@ -6,6 +6,28 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+### Readable Music Notes
+
+- Music, Podcast & Voice, and Review & Rehearsal Notes open with their writing
+  area and full tool labels. **Session
+  details** reveals the existing NOW and Creative Pulse readouts in a scrollable
+  area, leaving the shared HUD as the primary next-action surface.
+- Narrow and enlarged-text Notes reflows **Export…** onto its own row when
+  needed. Recovery temporarily hides session details to keep the message and action
+  beside the draft. Layout changes preserve
+  notes, selection and keyboard focus.
+
+### Recording controls and retained Notes
+
+- A visible **Review Notes** action finds drafts from hidden workspaces without
+  changing the current room, including standalone Studio.
+- Notes retries preserve externally changed originals and retain conflicting
+  drafts through Undo and Quit. Recovery recognizes WebJam's own unconfirmed
+  writes; copy exports reject case aliases and links to protected Notes files.
+- Stop and Finish Stop remain available through first-time recording choices
+  and pending exports. A changed session or take invalidates an open recording
+  or export confirmation. Returning from take review refreshes guest readiness.
+
 > Future work after the unsigned v0.28.2 candidate belongs here once that round
 > is tagged and published as Latest. Until then GitHub Latest remains immutable
 > v0.28.1 release `393030220`. Every published tag, release, and asset remains

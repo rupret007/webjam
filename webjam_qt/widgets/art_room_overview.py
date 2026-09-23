@@ -361,9 +361,14 @@ class ArtRoomOverviewWidget(QScrollArea):
         )
         self._body_layout.setContentsMargins(margin, vertical_margin, margin, vertical_margin)
         # Short rooms retain names, activities and actions while omitting
-        # the additional display heading.
+        # the additional display heading. Own-tools rooms also omit it
+        # when it repeats the activity heading directly below.
         if self._overview is not None:
-            self._title.setVisible(bool(self._overview.title) and not short)
+            self._title.setVisible(bool(
+                self._overview.title
+                and self._overview.title != self._overview.activity_label
+                and not short
+            ))
         self._content_layout.setSpacing(Space.SM if compact else Space.LG)
         direction = (
             QBoxLayout.Direction.TopToBottom

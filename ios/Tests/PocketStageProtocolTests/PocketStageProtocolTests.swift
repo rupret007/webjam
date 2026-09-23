@@ -198,7 +198,9 @@ private func goldenSnapshot(
 
 
 @Test func desktopRecoveryActionsRemainValidSnapshotFacts() throws {
-    for action in ["paste_new_invite", "close_setup"] {
+    for action in [
+        "paste_new_invite", "close_setup", "open_recording_setup", "retry_studio_save",
+    ] {
         let data = try goldenSnapshot { body in
             body["primary_action"] = action
             body["phase"] = "indeterminate"

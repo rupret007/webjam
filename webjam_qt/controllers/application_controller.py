@@ -23,6 +23,7 @@ import time
 import unicodedata
 import uuid
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -37,6 +38,12 @@ from core.creative_modes import (
     get_creator_profile_by_key_or_default,
     get_mode_by_key_or_default,
 )
+from core.reference_video import (
+    FILE_UNAVAILABLE_MESSAGE,
+    LOCAL_ATTENTION_MESSAGE,
+    MISMATCHED_FILE_MESSAGE,
+    NEEDS_FILE_MESSAGE,
+)
 from core.jamulus_rpc_client import (
     JamulusOrderedRosterProof,
     JamulusRpcMonitorIdentity,
@@ -45,7 +52,10 @@ from core.local_capture import (
     LocalCapturePreflight, LocalCapturePreflightError, LocalCaptureTrack,
     check_local_capture_preflight,
 )
-from core.recording_readiness_presentation import local_capture_readiness_detail
+from core.recording_readiness_presentation import (
+    local_capture_readiness_detail,
+    local_capture_shared_recovery_detail,
+)
 from core.meeting_companion import art_watch_share_sentence, build_invite_message
 from core.musician_guidance import (
     GuidanceDisplayOverride,
@@ -85,6 +95,7 @@ from core.session_conductor import (
     SessionPrimaryAction,
     SessionRole,
     TakeValidationState,
+    derive_session_presentation,
 )
 from core.session_health import SessionHealth
 from core.session_intelligence import build_session_pulse
@@ -663,6 +674,7 @@ class ApplicationController(QObject):
         self._reference_video_dialog = None
         self._reference_video_binding: tuple[str, str] | tuple[()] = ()
         self._reference_video_notified_state = ""
+        self._reference_video_notice_token = None
         self._shared_canvas = None
         self._shared_canvas_dialog = None
         self._shared_canvas_binding: tuple[str, str] | tuple[()] = ()
@@ -1795,24 +1807,28 @@ class ApplicationController(QObject):
             if self._shutdown or guest is not getattr(self, "guest_peer", None):
                 return
             self._render_guest_peer_state()
-            studio = self.window.recording_studio
-            signal = getattr(
-                getattr(getattr(guest, "last_state", None), "signal", None),
-                "value", "idle",
-            )
-            if (
-                not bool(getattr(self.settings, "host_server_enabled", False))
-                and not bool(getattr(guest, "active_take_id", ""))
-                and not bool(getattr(guest, "capture_finalization_needs_attention", False))
-                and signal not in {"recording", "finalizing", "needs_attention"}
-                and not studio.guidance_facts().take_selected
-            ):
-                # A pre-take remedy must not replace current capture,
-                # preservation, or selected-take review guidance.
-                studio.set_can_record(False, self._guest_recording_reason())
+            ApplicationController._refresh_guest_recording_start_guidance(self, guest)
             self._update_session_hud()
 
         self._ui_invoker.invoke(refresh)
+
+    def _refresh_guest_recording_start_guidance(self, expected_guest=None) -> None:
+        guest = getattr(self, "guest_peer", None)
+        if (guest is None or getattr(self, "_shutdown", False)
+                or (expected_guest is not None and guest is not expected_guest)):
+            return
+        studio = self.window.recording_studio
+        signal = getattr(
+            getattr(getattr(guest, "last_state", None), "signal", None), "value", "idle",
+        )
+        if (not bool(getattr(self.settings, "host_server_enabled", False))
+                and not bool(getattr(guest, "active_take_id", ""))
+                and not bool(getattr(guest, "capture_finalization_needs_attention", False))
+                and signal not in {"recording", "finalizing", "needs_attention"}
+                and not studio.guidance_facts().take_selected):
+            # Reproject the current owner after review, even when its latest
+            # preflight result did not change and will emit no new callback.
+            studio.set_can_record(False, self._guest_recording_reason())
 
     def _render_guest_peer_state(self) -> None:
         """Render host-published peer truth without granting guest authority."""
@@ -2060,6 +2076,7 @@ class ApplicationController(QObject):
             intended_canvas=bool(start is not None and start.shared_canvas),
             intended_video=bool(start is not None and start.reference_video),
             paint_along_room=self._art_room_runs_paint_along(),
+            video_source_kind=ApplicationController._reference_video_source_kind(self),
         )
         presence = activities[0] if activities else ABSENT
         secondary = activities[1] if len(activities) > 1 else ABSENT
@@ -2119,6 +2136,7 @@ class ApplicationController(QObject):
                     intended_canvas=bool(start is not None and start.shared_canvas),
                     intended_video=bool(start is not None and start.reference_video),
                     paint_along_room=self._art_room_runs_paint_along(),
+                    video_source_kind=ApplicationController._reference_video_source_kind(self),
                 )
                 presence = activities[0] if activities else ABSENT
                 secondary_presence = activities[1] if len(activities) > 1 else ABSENT
@@ -4285,6 +4303,8 @@ class ApplicationController(QObject):
         self.window.session_canvas.notes_changed.connect(self._schedule_notes_save)
         self.window.session_canvas.notes_restored.connect(self._refresh_session_pulse)
         self.window.session_canvas.save_notes_requested.connect(self._recover_notes)
+        self.window.session_canvas.recheck_saved_notes_requested.connect(self._recheck_saved_notes)
+        self.window.notes_review_requested.connect(self._review_retained_notes)
         self.window.session_canvas.brief_export_requested.connect(
             self._refresh_session_pulse
         )
@@ -7324,7 +7344,7 @@ class ApplicationController(QObject):
             self._render_session_conductor()
             return
         studio = getattr(getattr(self, "window", None), "recording_studio", None)
-        if bool(getattr(studio, "export_in_progress", False)):
+        if not recording_authority_active and bool(getattr(studio, "export_in_progress", False)):
             self.window.flash_message(
                 "Wait for the Studio export to finish before starting a new take. "
                 "The current recordings are safe.",
@@ -7334,19 +7354,51 @@ class ApplicationController(QObject):
 
         settings = getattr(self, "settings", None)
         needs_choice = bool(
-            settings is not None
+            not recording_authority_active
+            and settings is not None
             and getattr(settings, "host_server_enabled", False)
             and not getattr(settings, "local_capture_enabled", False)
             and not getattr(settings, "local_capture_choice_made", False)
         )
         if needs_choice:
+            from copy import deepcopy
             from webjam_qt.windows.recording_setup import LocalOriginalsChoiceDialog
 
+            opening_settings = deepcopy(settings)
+
+            def choice_context():
+                room = getattr(self, "_room_participant", None)
+                recorder = getattr(self, "recording", None)
+                return (
+                    getattr(self, "_settings_generation", 0), self.creator_profile.key,
+                    getattr(self, "_session_conductor_token", None),
+                    id(getattr(self, "guest_peer", None)), id(getattr(self, "host_peer", None)),
+                    bool(getattr(getattr(self, "host_peer", None), "active", False)),
+                    id(room), getattr(room, "generation", None),
+                    id(recorder), getattr(recorder, "phase", None),
+                    getattr(recorder, "_recording_generation", 0),
+                    getattr(recorder, "_hosted_preflight_generation", 0),
+                    bool(getattr(self, "_recorder_armed", False)),
+                    bool(getattr(self, "_server_recording", False)),
+                    bool(getattr(studio, "export_in_progress", False)),
+                    bool(getattr(self, "_shutdown", False)),
+                )
+
+            opening_context = choice_context()
             choice_dialog = LocalOriginalsChoiceDialog(
                 parent=self.window,
                 creator_profile=self.creator_profile,
             )
             if choice_dialog.exec() != LocalOriginalsChoiceDialog.DialogCode.Accepted:
+                return
+            if (self.settings is not settings or self.settings != opening_settings
+                    or choice_context() != opening_context
+                    or self._shutdown_cleanup_blocks_action()
+                    or self._music_room_blocks_new_take()):
+                self.window.flash_message(
+                    "The session changed while recording choices were open. "
+                    "Review Studio before choosing Record Session again.", ms=7000,
+                )
                 return
             choice = choice_dialog.choice
             if choice not in {"shared", "local"}:
@@ -9829,6 +9881,7 @@ class ApplicationController(QObject):
             SessionPrimaryAction.RESET_INVITE: "reset_invite",
             SessionPrimaryAction.PASTE_NEW_INVITE: "paste_invite",
             SessionPrimaryAction.OPEN_AUDIO_SETTINGS: "bring_jamulus",
+            SessionPrimaryAction.OPEN_RECORDING_SETUP: "recording_setup",
             SessionPrimaryAction.ADD_CONVERSATION: "add_webex",
             SessionPrimaryAction.SAVE_CONVERSATION: "save_webex",
             SessionPrimaryAction.ENTER_JAM: "enter_jam",
@@ -9840,10 +9893,77 @@ class ApplicationController(QObject):
             SessionPrimaryAction.REVIEW_TAKE: "review_take",
             SessionPrimaryAction.SELECT_TAKE: "select_take",
             SessionPrimaryAction.EXPORT_TRACKS: "export_tracks",
+            SessionPrimaryAction.RETRY_STUDIO_SAVE: "retry_studio_save",
             SessionPrimaryAction.END_SESSION: "end_session",
             SessionPrimaryAction.OPEN_DETAILS: "open_details",
             SessionPrimaryAction.CHECK_SESSION: "check_session",
         }.get(action, "primary")
+
+    def _guest_recording_setup_context(self, facts=None, presentation=None):
+        """Bind optional capture recovery to the current, idle guest owner."""
+        facts = facts or self._session_conductor_facts()
+        if facts.role is not SessionRole.GUEST:
+            return None
+        guest = getattr(self, "guest_peer", None)
+        preflight = getattr(guest, "local_capture_preflight", None)
+        if not isinstance(preflight, LocalCapturePreflight) or preflight.ready:
+            return None
+        presentation = presentation or derive_session_presentation(facts)
+        studio = getattr(self.window, "recording_studio", None)
+        if studio is None:
+            return None
+        if facts.studio is ReviewState.REVIEWING and bool(getattr(studio, "_viewing_live", False)):
+            # Opening an empty take deck still shows the live inspector. Its
+            # optional capture recovery stays actionable until a take is
+            # actually selected. Keep canonical review facts unchanged.
+            presentation = derive_session_presentation(replace(facts, studio=ReviewState.IDLE))
+        signal = getattr(getattr(getattr(guest, "last_state", None), "signal", None), "value", "")
+        if (
+            getattr(self, "_shutdown", False)
+            or getattr(self, "_shutdown_in_progress", False)
+            or getattr(self, "_shutdown_cleanup_pending", False)
+            or getattr(self, "_startup_attempt", None) is not None
+            or facts.music_path is not MusicPathState.AUTHENTICATED
+            or facts.local_participant is not EvidenceState.VERIFIED
+            or presentation.phase not in {SessionConductorPhase.CONNECTED, SessionConductorPhase.LIVE}
+            or not self.creator_profile.capabilities.session_recording
+            or not self._local_originals_available()
+            or bool(getattr(guest, "active_take_id", ""))
+            or bool(getattr(guest, "capture_finalization_needs_attention", False))
+            or signal in {"recording", "finalizing", "needs_attention"}
+            or bool(getattr(self.window.recording_studio, "_exporting", False))
+        ):
+            return None
+        # These local-only snapshots never enter public guidance or diagnostics.
+        # An old painted button cannot authorize a replacement guest/settings.
+        return (
+            guest, preflight, self.creator_profile.key,
+            getattr(self, "_session_conductor_token", None),
+            getattr(self, "_settings_generation", 0), deepcopy(self.settings),
+        )
+
+    def _studio_save_retry_context(self, facts=None, presentation=None):
+        facts = facts or self._session_conductor_facts()
+        presentation = presentation or derive_session_presentation(facts)
+        if presentation.primary_action is not SessionPrimaryAction.RETRY_STUDIO_SAVE:
+            return None
+        studio = getattr(self.window, "recording_studio", None)
+        if studio is None:
+            return None
+        if (
+            getattr(self, "_shutdown", False)
+            or getattr(self, "_shutdown_in_progress", False)
+            or getattr(self, "_shutdown_cleanup_pending", False)
+            or getattr(self, "_startup_attempt", None) is not None
+            or not self.creator_profile.capabilities.take_editing
+            or getattr(self, "_last_content_key", "stage") != "takes"
+            or not studio.isVisibleTo(self.window)
+        ):
+            return None
+        owner = studio.studio_save_retry_context()
+        if owner is None:
+            return None
+        return self.creator_profile.key, getattr(self, "_session_conductor_token", None), owner
 
     def _render_session_conductor(
         self,
@@ -9865,6 +9985,28 @@ class ApplicationController(QObject):
             ),
         )
         presentation = snapshot.presentation
+        self._rendered_guest_recording_setup = None
+        self._rendered_studio_save_retry = None
+        if display_override is None:
+            context = self._guest_recording_setup_context(facts, presentation)
+            if context is not None:
+                self._rendered_guest_recording_setup = context
+                preflight = context[1]
+                detail = local_capture_shared_recovery_detail(
+                    preflight.errors, required_input_channels=preflight.required_input_channels,
+                )
+                display_override = GuidanceDisplayOverride(
+                    "Local Originals need attention",
+                    detail,
+                    SessionPrimaryAction.OPEN_RECORDING_SETUP,
+                )
+                self.window.session_hud.set_state(
+                    display_override.title, display_override.message,
+                    invite_available=False, action_text="Recording Setup",
+                    action_visible=True, action_kind="recording_setup",
+                )
+            else:
+                self._rendered_studio_save_retry = self._studio_save_retry_context(facts, presentation)
         self._last_guidance_display_override = display_override
         self._last_session_conductor_snapshot = snapshot
         self._last_session_conductor = presentation
@@ -10204,6 +10346,14 @@ class ApplicationController(QObject):
             self._open_band_check(start_session_when_ready=True)
         elif action == "bring_jamulus":
             self._bring_jamulus_forward()
+        elif action == "recording_setup":
+            rendered = getattr(self, "_rendered_guest_recording_setup", None)
+            if rendered is not None and rendered == self._guest_recording_setup_context():
+                self._open_recording_setup()
+        elif action == "retry_studio_save":
+            rendered = getattr(self, "_rendered_studio_save_retry", None)
+            if rendered is not None and rendered == self._studio_save_retry_context():
+                self.window.recording_studio.retry_studio_save(rendered[2])
         elif action in {"record", "stop_recording"}:
             self._on_record_requested()
         elif action == "review_take":
@@ -10382,6 +10532,13 @@ class ApplicationController(QObject):
             current = None
         previous = getattr(self, "_last_studio_guidance_facts", None)
         if current is not None:
+            if getattr(self, "_last_content_key", "") == "takes":
+                if current.take_selected:
+                    self._conductor_studio_reviewing = True
+                elif previous is not None and previous.take_selected:
+                    # New live take has successfully left review. Retaining
+                    # library intent would keep SELECT_TAKE above live setup.
+                    self._conductor_studio_reviewing = False
             if (
                 previous is not None
                 and current != previous
@@ -10389,6 +10546,7 @@ class ApplicationController(QObject):
             ):
                 self._conductor_export = ExportState.IDLE
             self._last_studio_guidance_facts = current
+            ApplicationController._refresh_guest_recording_start_guidance(self)
         self._update_session_hud()
 
     def _reset_session_conductor_attempt(self) -> None:
@@ -13175,6 +13333,13 @@ class ApplicationController(QObject):
     # Art reference video
     # ------------------------------------------------------------------
 
+    def _reference_video_source_kind(self) -> str:
+        coordinator = getattr(self, "_reference_video", None)
+        if coordinator is None:
+            return "local"
+        snapshot = coordinator.host_snapshot if coordinator.hosting else coordinator.follow_snapshot
+        return getattr(snapshot, "source_kind", "local")
+
     def _reference_video_supported(self) -> bool:
         """Only the profile whose contract includes it may share video."""
 
@@ -13244,11 +13409,25 @@ class ApplicationController(QObject):
 
             return create_qt_reference_video_player(self.window)
 
+        def build_youtube_player():
+            from webjam_qt.widgets.youtube_video_player import create_youtube_video_player
+
+            player = create_youtube_video_player(self.window)
+            dialog = getattr(self, "_reference_video_dialog", None)
+            if dialog is not None:
+                dialog.attach_surface(player.surface)
+            return player
+
         coordinator = ReferenceVideoCoordinator(
             player_factory=build_player,
+            youtube_player_factory=build_youtube_player,
             host_peer_provider=self._room_host_publisher,
-            on_host_snapshot=self._on_reference_video_host_snapshot,
-            on_follow_snapshot=self._on_reference_video_follow_snapshot,
+            on_host_snapshot=lambda snapshot: self._on_reference_video_host_snapshot(
+                snapshot, source=coordinator,
+            ),
+            on_follow_snapshot=lambda snapshot: self._on_reference_video_follow_snapshot(
+                snapshot, source=coordinator,
+            ),
         )
         if role == "host":
             coordinator.begin_host(session_id=session_id, session_key=session_key)
@@ -13275,17 +13454,20 @@ class ApplicationController(QObject):
                 "playing",
                 "paused",
             }
+            usable = usable or (state == "loading" and getattr(current, "source_kind", "local") == "youtube")
         else:
             current = snapshot if snapshot is not None else coordinator.follow_snapshot
             state = str(getattr(getattr(current, "state", None), "value", "") or "")
             # STALLED retains a proven local copy and intentionally holds its
             # last honest frame. Hidden and blocked copies expose no picture.
             usable = state in {"following", "stalled"}
+            usable = usable or bool(getattr(coordinator, "opening_youtube", False))
         return coordinator.player_surface if usable else None
 
     def _release_reference_video(self) -> None:
         """Return this computer to the no-video path and free its player."""
 
+        ApplicationController._clear_reference_video_notice(self)
         ApplicationController._clear_shared_lesson_context(self)
         timer = getattr(self, "_reference_video_timer", None)
         if timer is not None:
@@ -13343,6 +13525,11 @@ class ApplicationController(QObject):
                         lambda: coordinator.share(path)
                     )
                 )
+                dialog.share_youtube_requested.connect(
+                    lambda url: self._run_current_host_paint_along(coordinator, dialog,
+                        lambda: coordinator.share_youtube(url)
+                    )
+                )
                 dialog.withdraw_requested.connect(
                     lambda: self._run_current_host_paint_along(coordinator, dialog, coordinator.withdraw)
                 )
@@ -13366,6 +13553,11 @@ class ApplicationController(QObject):
                         coordinator, dialog, lambda: coordinator.open_local_copy(path)
                     )
                 )
+                dialog.open_youtube_requested.connect(
+                    lambda: self._run_current_guest_paint_along(
+                        coordinator, dialog, coordinator.open_youtube_lesson,
+                    )
+                )
                 dialog.close_local_copy_requested.connect(
                     lambda: self._run_current_guest_paint_along(
                         coordinator, dialog, coordinator.close_local_copy
@@ -13376,6 +13568,10 @@ class ApplicationController(QObject):
                         coordinator, dialog, lambda: coordinator.set_hidden(bool(hidden))
                     )
                 )
+            dialog.visibility_changed.connect(
+                lambda visible: coordinator.set_surface_visible(visible)
+                if getattr(self, "_reference_video", None) is coordinator else None
+            )
             dialog.return_requested.connect(
                 lambda: self._return_to_art_room(dialog)
             )
@@ -13383,6 +13579,7 @@ class ApplicationController(QObject):
                 lambda: self._watch_shared_lesson(coordinator, dialog)
             )
             self._reference_video_dialog = dialog
+        coordinator.set_surface_visible(True)
         self._sync_paint_along_room()
         if coordinator.hosting:
             dialog.set_host_snapshot(coordinator.host_snapshot)
@@ -13419,13 +13616,9 @@ class ApplicationController(QObject):
         else:
             dialog.close()
 
-    def _sync_paint_along_room(self) -> bool:
-        """Project current room authority without releasing the local copy."""
+    def _paint_along_room_availability(self, coordinator) -> tuple[bool, bool]:
+        """Return current room and video authority, even with the panel closed."""
 
-        dialog = getattr(self, "_reference_video_dialog", None)
-        coordinator = getattr(self, "_reference_video", None)
-        if dialog is None or coordinator is None:
-            return False
         room = getattr(self, "_room_participant", None)
         audio = getattr(self, "audio", None)
         closing = bool(
@@ -13440,15 +13633,9 @@ class ApplicationController(QObject):
                 and (room is None or not room.blocked)
                 and self._reference_video_binding == self._reference_video_identity()
             )
-            dialog.set_room_available(available)
-            dialog.set_watch_lesson_available(available)
-            if not available:
-                self._clear_shared_lesson_context()
-            return available
+            return available, available
         if not coordinator.following:
-            dialog.set_watch_lesson_available(False)
-            self._clear_shared_lesson_context()
-            return False
+            return False, False
         available = bool(
             not getattr(self, "_shutdown", False)
             and not closing
@@ -13475,17 +13662,46 @@ class ApplicationController(QObject):
             available = bool(
                 available and getattr(state, "creator_profile_key", "") == "art"
             )
-        # Reaching a lesson in Conversation needs a current Art room, not a
-        # matching local file or a healthy local player. Keep those facts apart.
-        dialog.set_watch_lesson_available(available)
-        if not available:
+        return available, available and coordinator.video_is_current(state)
+
+    def _sync_paint_along_room(self) -> bool:
+        """Project current room authority without releasing the local copy."""
+
+        coordinator = getattr(self, "_reference_video", None)
+        if coordinator is None:
+            self._clear_reference_video_notice()
+            return False
+        room_available, video_available = self._paint_along_room_availability(coordinator)
+        dialog = getattr(self, "_reference_video_dialog", None)
+        if dialog is not None:
+            # Conversation needs a current room, not a matching local video.
+            if coordinator.hosting:
+                # Offer Return to room before disabling the focused lesson
+                # control, so keyboard focus stays inside Paint along.
+                dialog.set_room_available(video_available)
+            dialog.set_watch_lesson_available(room_available)
+            if not coordinator.hosting:
+                dialog.set_room_available(video_available)
+                if video_available and coordinator.following:
+                    dialog.set_follow_snapshot(coordinator.follow_snapshot)
+        if not room_available:
             self._clear_shared_lesson_context()
-        if available:
-            available = coordinator.video_is_current(state)
-        dialog.set_room_available(available)
-        if available:
-            dialog.set_follow_snapshot(coordinator.follow_snapshot)
-        return available
+        if not video_available:
+            self._clear_reference_video_notice()
+        return video_available
+
+    def _clear_reference_video_notice(self) -> None:
+        """A retired video instruction must not clear a newer save/error notice."""
+
+        token = getattr(self, "_reference_video_notice_token", None)
+        self._reference_video_notice_token = None
+        self._reference_video_notified_state = ""
+        clear = getattr(self.window, "clear_flash_message", None)
+        if token is not None and callable(clear):
+            clear(token)
+
+    def _flash_reference_video_notice(self, text: str, *, ms: int) -> None:
+        self._reference_video_notice_token = self.window.flash_message(text, ms=ms)
 
     def _retire_shared_lesson_requests(self) -> None:
         """Retire requests while preserving useful same-room lesson guidance."""
@@ -13598,17 +13814,29 @@ class ApplicationController(QObject):
 
         from core.reference_video import ReferenceVideoError
 
+        owner = getattr(self, "_reference_video", None)
+
+        def current() -> bool:
+            # A decoder can pump events while opening. Its eventual error
+            # must still belong to this room and its available controls.
+            return bool(
+                owner is not None and owner is getattr(self, "_reference_video", None)
+                and self._sync_paint_along_room()
+            )
+
         try:
             operation()
         except ReferenceVideoError as exc:
-            self.window.flash_message(str(exc), ms=8000)
+            if current():
+                self._flash_reference_video_notice(str(exc), ms=8000)
         except Exception:  # noqa: BLE001 - never let a panel kill the room
             LOGGER.exception("A reference video operation failed safely")
-            self.window.flash_message(
-                "WebJam couldn't complete that Paint along request. The "
-                "room is still running.",
-                ms=8000,
-            )
+            if current():
+                self._flash_reference_video_notice(
+                    "WebJam couldn't complete that Paint along request. The "
+                    "room is still running.",
+                    ms=8000,
+                )
         dialog = getattr(self, "_reference_video_dialog", None)
         coordinator = getattr(self, "_reference_video", None)
         if dialog is not None and coordinator is not None:
@@ -13619,6 +13847,14 @@ class ApplicationController(QObject):
         if self._shutdown or coordinator is None:
             return
         try:
+            dialog = getattr(self, "_reference_video_dialog", None)
+            if (getattr(coordinator, "following", False) and dialog is not None
+                    and dialog.isVisible()
+                    and coordinator.follow_snapshot.source_kind == "youtube"
+                    and self._sync_paint_along_room()):
+                # A recovered host may make the proven lesson usable again.
+                # Restore its visible surface before the player resumes.
+                dialog.attach_surface(self._paint_along_surface(coordinator))
             coordinator.tick()
         except Exception:  # noqa: BLE001 - a periodic sample is best effort
             LOGGER.debug("Reference video tick failed", exc_info=True)
@@ -13626,7 +13862,11 @@ class ApplicationController(QObject):
         # because today the video is the only thing in Art that owns one.
         self._tick_room_clock()
 
-    def _on_reference_video_host_snapshot(self, snapshot) -> None:
+    def _on_reference_video_host_snapshot(self, snapshot, *, source=None) -> None:
+        if source is not None and source is not getattr(self, "_reference_video", None):
+            return
+        if str(getattr(getattr(snapshot, "state", None), "value", "")) != "failed":
+            self._clear_reference_video_notice()
         dialog = getattr(self, "_reference_video_dialog", None)
         if dialog is not None:
             dialog.set_host_snapshot(snapshot)
@@ -13636,7 +13876,9 @@ class ApplicationController(QObject):
                 )
             )
 
-    def _on_reference_video_follow_snapshot(self, snapshot) -> None:
+    def _on_reference_video_follow_snapshot(self, snapshot, *, source=None) -> None:
+        if source is not None and source is not getattr(self, "_reference_video", None):
+            return
         dialog = getattr(self, "_reference_video_dialog", None)
         if dialog is not None:
             self._sync_paint_along_room()
@@ -13652,24 +13894,12 @@ class ApplicationController(QObject):
     #: Follow states worth interrupting an artist for, and what to say. A
     #: state that resolves itself, or that the artist chose, stays silent.
     #: One line per transition. These say what happened; the room's own chip
-    #: says what to do about it, so none of them names a menu path any more.
+    #: says what to do about it. Recovery names the visible control, not a menu path.
     _REFERENCE_VIDEO_NOTICES = {
-        "needs_file": (
-            "The host shared a Paint along video. Open your own copy of the "
-            "same file to follow along, or keep working."
-        ),
-        "mismatched_file": (
-            "That is not the same file the host is playing, so WebJam will "
-            "not follow it. Open the host's exact file, or hide the video."
-        ),
-        "file_unavailable": (
-            "Your Paint along copy moved, changed, or became "
-            "unreadable, so WebJam stopped following the host."
-        ),
-        "local_attention": (
-            "Your Paint along copy needs attention. Open it again to continue "
-            "following, or hide the video and keep making."
-        ),
+        "needs_file": NEEDS_FILE_MESSAGE,
+        "mismatched_file": MISMATCHED_FILE_MESSAGE,
+        "file_unavailable": FILE_UNAVAILABLE_MESSAGE,
+        "local_attention": LOCAL_ATTENTION_MESSAGE,
     }
 
     def _announce_reference_video_follow_state(self, snapshot) -> None:
@@ -13680,13 +13910,20 @@ class ApplicationController(QObject):
         steady state stays quiet.
         """
 
-        state = str(getattr(getattr(snapshot, "state", None), "value", "") or "")
-        if state == getattr(self, "_reference_video_notified_state", ""):
+        if not self._sync_paint_along_room():
             return
-        self._reference_video_notified_state = state
+        state = str(getattr(getattr(snapshot, "state", None), "value", "") or "")
+        youtube = getattr(snapshot, "source_kind", "local") == "youtube"
+        notice_key = f"youtube:{state}:{snapshot.video_id}" if youtube else state
+        if notice_key == getattr(self, "_reference_video_notified_state", ""):
+            return
+        self._clear_reference_video_notice()
+        self._reference_video_notified_state = notice_key
         notice = self._REFERENCE_VIDEO_NOTICES.get(state)
+        if notice and youtube:
+            notice = snapshot.message
         if notice and not getattr(self, "_shutdown", False):
-            self.window.flash_message(notice, ms=9000)
+            self._flash_reference_video_notice(notice, ms=9000)
 
     # ------------------------------------------------------------------
     # Art shared canvas
@@ -15563,13 +15800,41 @@ class ApplicationController(QObject):
             timer.stop()
         return self._persistence._save_notes_only()
 
+    def _recheck_saved_notes(self, profile: str) -> None:
+        """Read an unavailable original without starting a save or changing workspace."""
+        if (self._shutdown or self._shutdown_in_progress or self._shutdown_cleanup_pending
+                or profile != self._persistence.profile_key):
+            return
+        if self._persistence.reload_unreadable_notes(profile):
+            self.window.flash_message("Saved notes reopened on this computer.", ms=5000)
+        elif profile == self._persistence.unreadable_notes_profile:
+            self.window.flash_message(
+                "Saved notes are still unavailable. Check file access and choose Recheck Saved Notes again.",
+                ms=7000,
+            )
+
     def _recover_notes(self) -> None:
         if self._save_notes():
             return
+        ApplicationController._review_retained_notes(self)
+
+    def _review_retained_notes(self) -> None:
+        """Review hidden drafts without retrying writes or changing the live workspace."""
+        if not self._persistence.has_unsaved_notes:
+            return
+        timer = getattr(self, "_notes_save_timer", None)
+        resume_autosave = timer is not None and timer.isActive()
+        if timer is not None:
+            timer.stop()
         from webjam_qt.widgets.notes_recovery_dialog import NotesRecoveryDialog
 
         dialog = NotesRecoveryDialog(self._persistence, self.window)
-        dialog.exec()
+        try:
+            dialog.exec()
+        finally:
+            if (resume_autosave and not getattr(self, "_shutdown", False)
+                    and self._persistence.has_unsaved_notes):
+                timer.start()
 
     def _schedule_notes_save(self, text: str) -> None:
         if not self._shutdown:

@@ -378,6 +378,31 @@ def test_authenticated_guest_receives_the_host_reference_video_projection(
     assert observed.creator_profile_key == "art"
 
 
+def test_authenticated_online_lesson_offer_roundtrips_without_a_file_path(tmp_path):
+    from core.youtube_lesson import YouTubeLesson
+
+    credentials = SessionCredentials.create()
+    signer = session_identity_signer(session_id=credentials.session_id,
+                                     session_key=credentials.invite_token)
+    lesson = YouTubeLesson("M7lc1UVf-VE")
+    control = SessionControlState(tmp_path, credentials.session_id, creator_profile_key="art")
+    expected = control.publish_reference_video(
+        shared=True, state="paused", source_display_name="YouTube lesson",
+        source_kind="youtube", video_id=lesson.video_id,
+        identity_digest=signer(lesson.content_sha256), position_s=20, duration_s=300,
+    )
+    server, enrollment = _serve(tmp_path, control, credentials)
+    try:
+        observed = SessionPeerClient("127.0.0.1", server.address[1],
+            credentials=credentials).state(enrollment).reference_video
+    finally:
+        server.stop()
+    assert observed == expected
+    assert observed.source_kind == "youtube" and observed.video_id == lesson.video_id
+    assert observed.identity_digest == signer(lesson.content_sha256)
+    assert "http" not in repr(observed.to_mapping())
+
+
 def test_a_late_joining_artist_lands_on_the_hosts_current_position(
     tmp_path: Path,
 ) -> None:

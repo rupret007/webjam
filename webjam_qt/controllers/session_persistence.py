@@ -262,6 +262,10 @@ class SessionPersistence:
         # before directory fsync failed. Even Undo to the old saved text must
         # be written again before it can be acknowledged as saved.
         self._unconfirmed_notes: set[str] = set()
+        # An atomic write can publish before its directory sync fails. Keep
+        # only the before/attempted identities, never trust a later reread as
+        # proof that an external edit was ours.
+        self._notes_write_fingerprints: dict[str, frozenset[str]] = {}
         self._notes_save_failures: dict[str, str] = {}
         self._unreadable_notes: set[str] = set()
         self._exported_profiles: set[str] = set()
@@ -460,6 +464,38 @@ class SessionPersistence:
         self._refresh_notes_state()
 
     @property
+    def unreadable_notes_profile(self) -> str | None:
+        """The active unavailable original that has no draft to replace."""
+        profile = self._creator_profile_key
+        if (profile in self._unreadable_notes and profile not in self._pending_notes
+                and not self._canvas.current_notes()):
+            return profile
+        return None
+
+    def reload_unreadable_notes(self, profile: str) -> bool:
+        """Reopen an unavailable original only while its active editor is empty."""
+        def still_empty() -> bool:
+            return profile in _PROFILE_NOTES_FILES and profile == self.unreadable_notes_profile
+
+        if not still_empty():
+            return False
+        try:
+            text = _read_bounded_notes(_persistence_home() / _PROFILE_NOTES_FILES[profile])
+        except (OSError, ValueError) as exc:
+            self._log.debug("Could not recheck notes; error_type=%s", type(exc).__name__)
+            return False
+        # Missing notes are still unavailable, not a confirmed empty original.
+        # Recheck context after IO so a later edit or workspace change wins.
+        if text is None or not still_empty():
+            return False
+        self._unreadable_notes.discard(profile)
+        self._settled_notes[profile] = text
+        self._notes_baselines[profile] = notes_fingerprint(text)
+        self._canvas.restore_notes(text)
+        self._refresh_notes_state()
+        return True
+
+    @property
     def has_unsaved_notes(self) -> bool:
         return bool(self._pending_notes)
 
@@ -488,6 +524,9 @@ class SessionPersistence:
 
     def _notify_notes_state(self, state: str) -> None:
         self._notes_save_state = state
+        set_unavailable = getattr(self._canvas, "set_notes_original_unavailable", None)
+        if callable(set_unavailable):
+            set_unavailable(self.unreadable_notes_profile)
         set_context = getattr(self._canvas, "set_notes_recovery_context", None)
         if callable(set_context):
             set_context(self._creator_profile_key, self.notes_recovery_summary)
@@ -532,6 +571,7 @@ class SessionPersistence:
 
     def _retain_notes(self, profile: str, text: str) -> None:
         if (profile not in self._unconfirmed_notes and profile not in self._recovered_notes
+                and profile not in self._recovery_conflicts
                 and text == self._settled_notes.get(profile, "")):
             self._pending_notes.pop(profile, None)
             self._notes_save_failures.pop(profile, None)
@@ -551,16 +591,30 @@ class SessionPersistence:
         self._checkpoint_notes()
         for profile, text in tuple(self._pending_notes.items()):
             try:
+                # A blocked recovery journal must not bypass original checks.
+                self._capture_notes_baseline(profile)
                 if (profile in self._unreadable_notes or profile in self._recovered_notes
+                        or profile in self._recovery_conflicts
                         or len(text.encode("utf-8")) > _MAX_NOTES_FILE_BYTES):
                     continue
                 path = _persistence_home() / _PROFILE_NOTES_FILES[profile]
-                if path.is_symlink():
+                try:
+                    original = _read_bounded_notes(path)
+                except ValueError:
                     self._unreadable_notes.add(profile)
-                    raise ValueError("Notes destination is not a regular file.")
+                    raise
+                observed = notes_fingerprint(original)
+                allowed = self._notes_write_fingerprints.get(profile, frozenset())
+                if observed != self._notes_baselines[profile] and observed not in allowed:
+                    self._recovery_conflicts.add(profile)
+                    continue
+                self._notes_write_fingerprints[profile] = frozenset((
+                    observed, notes_fingerprint(text),
+                ))
                 self._unconfirmed_notes.add(profile)
                 atomic_write_text(path, text, mode=0o600)
                 self._unconfirmed_notes.discard(profile)
+                self._notes_write_fingerprints.pop(profile, None)
                 self._notes_save_failures.pop(profile, None)
                 self._settled_notes[profile] = text
                 self._notes_baselines[profile] = notes_fingerprint(text)
@@ -585,11 +639,16 @@ class SessionPersistence:
         path = _persistence_home() / _PROFILE_NOTES_FILES[profile]
         try:
             original = _read_bounded_notes(path)
-            if (notes_fingerprint(original) != self._notes_baselines.get(profile)
-                    and original != expected):
+            observed = notes_fingerprint(original)
+            allowed = self._notes_write_fingerprints.get(profile, frozenset())
+            if (observed != self._notes_baselines.get(profile)
+                    and original != expected and observed not in allowed):
                 self._recovery_conflicts.add(profile)
                 self._refresh_notes_state()
                 return False
+            self._notes_write_fingerprints[profile] = frozenset((
+                observed, notes_fingerprint(expected),
+            ))
             self._unconfirmed_notes.add(profile)
             atomic_write_text(path, expected, mode=0o600)
         except (OSError, ValueError) as exc:
@@ -599,6 +658,7 @@ class SessionPersistence:
         self._notes_baselines[profile] = notes_fingerprint(expected)
         self._settled_notes[profile] = expected
         self._unconfirmed_notes.discard(profile)
+        self._notes_write_fingerprints.pop(profile, None)
         if self._pending_notes.get(profile) != expected:
             self._refresh_notes_state()
             return False
@@ -674,6 +734,7 @@ class SessionPersistence:
         self._notes_baselines[profile] = original.fingerprint
         self._pending_notes.pop(profile)
         self._unconfirmed_notes.discard(profile)
+        self._notes_write_fingerprints.pop(profile, None)
         self._recovered_notes.discard(profile)
         self._recovery_conflicts.discard(profile)
         self._unreadable_notes.discard(profile)
@@ -691,6 +752,8 @@ class SessionPersistence:
             return False
         self.export_notes_copy(expected, path)
         self._unconfirmed_notes.discard(profile)
+        # A copy does not settle an ambiguous primary publication. Remember
+        # those bounded identities so the next edit can safely retry there.
         self._notes_save_failures.pop(profile, None)
         self._settled_notes[profile] = expected
         self._exported_profiles.add(profile)
@@ -704,10 +767,27 @@ class SessionPersistence:
     def export_notes_copy(self, text: str, path: str) -> None:
         """Export local recovery text without overwriting a profile original."""
         destination = Path(path)
-        if destination.is_symlink() or destination.resolve() in {
-            (_persistence_home() / name).resolve()
-            for name in (*_PROFILE_NOTES_FILES.values(), _NOTES_RECOVERY_FILE)
-        }:
+        home = _persistence_home()
+        names = (*_PROFILE_NOTES_FILES.values(), _NOTES_RECOVERY_FILE)
+
+        def same_existing_file(left: Path, right: Path) -> bool:
+            try:
+                return left.samefile(right)
+            except FileNotFoundError:
+                return False
+
+        # resolve() alone preserves case on APFS and cannot identify hardlinks.
+        # Reserve this namespace even before a primary exists; trailing dots
+        # and spaces may also alias a basename on Windows.
+        in_notes_home = (
+            destination.parent.resolve() == home.resolve()
+            or same_existing_file(destination.parent, home)
+        )
+        reserved_name = destination.name.rstrip(" .").casefold() in {
+            name.casefold() for name in names
+        }
+        if (destination.is_symlink() or (in_notes_home and reserved_name)
+                or any(same_existing_file(destination, home / name) for name in names)):
             raise ValueError("Choose a separate notes file for this copy.")
         atomic_write_text(destination, text, mode=0o600)
 

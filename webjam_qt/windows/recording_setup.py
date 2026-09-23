@@ -334,7 +334,7 @@ class RecordingSetupDialog(QDialog):
         content.addWidget(subtitle)
 
         self._capture = QCheckBox(
-            "Keep configured interface inputs as isolated Local Originals"
+            "Keep local inputs as Local Originals"
         )
         self._capture.setAccessibleName("Record configured isolated local inputs")
         self._capture.setChecked(
@@ -451,6 +451,11 @@ class RecordingSetupDialog(QDialog):
             "Takes: " + (str(settings.takes_directory or "Not configured"))
         )
         self._folder.setObjectName("SimpleSettingsSubtitle")
+        self._folder.setTextFormat(Qt.TextFormat.PlainText)
+        self._folder.setWordWrap(True)
+        self._folder.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred,
+        )
         self._folder.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )

@@ -168,7 +168,9 @@ def art_room_overview(
 
     active = phase in {"waiting", "connected"}
     activity = "Make from your own space"
-    activity_detail = art_make_together_activity_detail()
+    activity_detail = art_make_together_activity_detail(
+        conversation_configured=conversation_configured,
+    )
     action = ""
     action_label = ""
     if active and presence.offered:

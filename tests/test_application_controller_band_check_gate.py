@@ -29,6 +29,7 @@ from webjam_qt.controllers.application_controller import (  # noqa: E402
 )
 from webjam_qt.controllers.audio_coordinator import AudioCoordinator  # noqa: E402
 from webjam_qt.controllers.recording_coordinator import (  # noqa: E402
+    RecorderPhase,
     RecordingCoordinator,
 )
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
@@ -946,17 +947,20 @@ def test_record_request_is_blocked_while_studio_export_is_running(tmp_path) -> N
 
 def test_recording_retry_is_blocked_if_export_started_after_prompt() -> None:
     flash_message = mock.Mock()
-    coordinator = RecordingCoordinator.__new__(RecordingCoordinator)
-    coordinator._c = SimpleNamespace(
+    controller = SimpleNamespace(
+        _recorder_armed=False,
+        settings=AppSettings(server_rpc_secret_file="fixture-rpc-secret"),
         window=SimpleNamespace(
             recording_studio=SimpleNamespace(export_in_progress=True),
             flash_message=flash_message,
         )
     )
+    coordinator = RecordingCoordinator(controller)
 
     coordinator.on_record_requested()
 
     assert "export" in flash_message.call_args.args[0].lower()
+    assert coordinator.phase is RecorderPhase.IDLE
 
 
 def test_matching_recovery_only_restores_the_next_safe_native_prompt() -> None:

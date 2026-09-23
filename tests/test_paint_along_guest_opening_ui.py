@@ -15,6 +15,7 @@ from tests.test_art_notes_conversation_journey import qapp as _qapp, room as _ro
 from tests.test_art_room_controller import drain
 from tests.test_paint_along_host_opening_ui import SurfacePlayer
 from webjam_qt.controllers.application_controller import ApplicationController
+from webjam_qt.windows.conductor_window import ConductorWindow
 
 qapp, room = _qapp, _room
 
@@ -145,6 +146,47 @@ def test_cancelling_guest_file_choice_preserves_the_next_action(guest, monkeypat
     dialog._open_button.click()
     assert dialog._open_button.isEnabled() and dialog._status.text() == status
     pair.player_factory.assert_not_called()
+
+
+@pytest.mark.parametrize("role", ["lan", "native"])
+@pytest.mark.parametrize("change", ["loss", "cleanup", "retired"])
+def test_late_load_error_cannot_overwrite_a_newer_notice_after_room_change(
+    guest, qapp, monkeypatch, role, change,
+):
+    pair = guest(role)
+    app, dialog = pair.app, pair.app._reference_video_dialog
+    app.window.flash_message = ConductorWindow.flash_message.__get__(app.window)
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a: (str(pair.path), ""))
+    newer = "Notes could not be saved. Retry saving."
+
+    def loading(player):
+        if change == "loss":
+            room = app._room_participant
+            if role == "lan":
+                room.lose_lan(room.lan_guest, room.generation, False)
+            else:
+                app._remote_session.mark_connection_lost(
+                    expected_generation=app._remote_session.snapshot.generation,
+                )
+        elif change == "cleanup":
+            app.audio.require_cleanup_retry(
+                hosting=False, art_room=True, error="The room is still closing.",
+                title="Finish leaving the room",
+            )
+        else:
+            app._release_reference_video()
+            app._open_reference_video()
+        # Let the transport's own queued loss notice arrive first; the save
+        # message below is then newer than both the operation and room loss.
+        qapp.processEvents()
+        app._sync_paint_along_room()
+        app.window.flash_message(newer)
+        player.after_load_error = True
+
+    pair.during_load = loading
+    dialog._open_button.click()
+    qapp.processEvents()
+    assert app.window.statusBar().currentMessage() == newer
 
 
 @pytest.mark.parametrize("role", ["lan", "native"])
