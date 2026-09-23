@@ -6,6 +6,34 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+> Changes after the unsigned v0.28.3 candidate belong here. This round
+> creates a reviewable unsigned draft; GitHub Latest remains immutable
+> v0.28.1 release `393030220`. Every published tag, release, and asset remains
+> immutable historical evidence. Older release entries (v0.28.0, v0.27.2,
+> Jamulus catalog v1–v3) were deleted by owner; git tags remain.
+
+## [0.28.3] — Unsigned/ad-hoc private test release candidate
+
+> Prepared for Jeff Story testing after #145, #146, #147, #148, and #150.
+> Extends the unchanged baked Jamulus 3.12.2/3.12.3 compatibility ceiling
+> from 0.28.2 to 0.28.3. Existing v0.28.2 remains its own unsigned draft;
+> published Latest remains v0.28.1. Physical, credentialed, signing,
+> notarization, Gatekeeper, and SmartScreen remain **NOT RUN**.
+
+### Paint along lessons and Art next actions
+
+- Paint along supports silent YouTube lessons and clearer host/guest
+  next actions, while preserving local process-video copies and the
+  external Conversation boundary.
+
+### Record along: Logic handoff, Phase 1
+
+- The explicit offline source export command writes aligned 24-bit WAV
+  stems, SMF Type 1 MIDI, constant-tempo metadata, markers, and Logic
+  import instructions from a stopped-session manifest.
+- This phase hands off portable files; the exporter is not wired to the
+  Studio UI. See [Logic handoff Phase 1](docs/LOGIC_HANDOFF_PHASE1.md).
+
 ### Readable Music Notes
 
 - Music, Podcast & Voice, and Review & Rehearsal Notes open with their writing
@@ -27,12 +55,6 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Stop and Finish Stop remain available through first-time recording choices
   and pending exports. A changed session or take invalidates an open recording
   or export confirmation. Returning from take review refreshes guest readiness.
-
-> Future work after the unsigned v0.28.2 candidate belongs here once that round
-> is tagged and published as Latest. Until then GitHub Latest remains immutable
-> v0.28.1 release `393030220`. Every published tag, release, and asset remains
-> immutable historical evidence. Older release entries (v0.28.0, v0.27.2,
-> Jamulus catalog v1–v3) were deleted by owner; git tags remain.
 
 ## [0.28.2] — Unsigned/ad-hoc private test release candidate
 

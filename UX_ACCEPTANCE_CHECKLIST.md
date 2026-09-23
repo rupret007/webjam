@@ -1,6 +1,6 @@
-# WebJam v0.28.2 source UX acceptance checklist
+# WebJam v0.28.3 source UX acceptance checklist
 
-> This checklist describes current unsigned v0.28.2 source. Immutable
+> This checklist describes current unsigned v0.28.3 source. Immutable
 > unsigned/ad-hoc release `393030220` is GitHub **Latest** for private testing.
 > Annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peels to exact commit `200cac9eb04d01611696cdc147957b36daef257f`; seven
 > packages are covered by `WebJam-v0.28.1-SHA256SUMS.txt`. Older release entries

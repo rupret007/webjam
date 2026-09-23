@@ -1,6 +1,6 @@
-# WebJam creator guide — v0.28.2 source
+# WebJam creator guide — v0.28.3 source
 
-> This guide describes current unsigned v0.28.2 source. GitHub **Latest** is the
+> This guide describes current unsigned v0.28.3 source. GitHub **Latest** is the
 > immutable unsigned/ad-hoc v0.28.1 private test release `393030220` from exact
 > tag commit `200cac9eb04d01611696cdc147957b36daef257f`, with seven packages plus
 > `WebJam-v0.28.1-SHA256SUMS.txt`. A later checkout or branch artifact is source
