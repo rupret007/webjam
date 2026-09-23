@@ -128,7 +128,7 @@ def test_component_sbom_names_the_exact_desktop_version() -> None:
         "baked-jamulus-records-approved-through-webjam-0.28.3"
     )
     assert properties["webjam:build-eligibility"] == (
-        "source-and-package-published-unsigned-test-only"
+        "source-and-package-candidate-unsigned-test-only"
     )
 
 

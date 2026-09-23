@@ -15,22 +15,25 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [0.28.3] — Unsigned/ad-hoc private test release candidate
 
-> Prepared from master `7f5df4ec2faa91245097fc8180277d32d7332546` after
-> #145–#148 and #150. Extends the Jamulus webjam_range ceiling from 0.28.2
-> to 0.28.3 while retaining the exact baked 3.12.2 and 3.12.3 identities.
-> The signed catalog remains sealed at exact WebJam v0.22.5. Windows remains
-> unsigned; macOS remains ad-hoc signed and unnotarized. Physical, credentialed,
-> signing, notarization, Gatekeeper, and SmartScreen gates remain **NOT RUN**.
-> #149 and parked #37/#49 are outside this candidate's changes.
+> Prepared for Jeff Story testing after #145, #146, #147, #148, and #150.
+> Extends the unchanged baked Jamulus 3.12.2/3.12.3 compatibility ceiling
+> from 0.28.2 to 0.28.3. Existing v0.28.2 remains its own unsigned draft;
+> published Latest remains v0.28.1. Physical, credentialed, signing,
+> notarization, Gatekeeper, and SmartScreen remain **NOT RUN**.
 
-### Paint along and Art next actions (#145)
+### Paint along lessons and Art next actions
 
-- Paint along can use silent YouTube lessons, with clearer Art next actions
-  and local-copy guidance.
+- Paint along supports silent YouTube lessons and clearer host/guest
+  next actions, while preserving local process-video copies and the
+  external Conversation boundary.
 
-### Offline Record-along Logic handoff (#150)
+### Record along: Logic handoff, Phase 1
 
-- Offline Record-along exports a Logic handoff with MIDI and PCM24 stems.
+- The explicit offline source export command writes aligned 24-bit WAV
+  stems, SMF Type 1 MIDI, constant-tempo metadata, markers, and Logic
+  import instructions from a stopped-session manifest.
+- This phase hands off portable files; the exporter is not wired to the
+  Studio UI. See [Logic handoff Phase 1](docs/LOGIC_HANDOFF_PHASE1.md).
 
 ### Readable Music Notes
 

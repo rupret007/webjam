@@ -14,8 +14,9 @@
 
 > **What this checkout is:** unsigned v0.28.3 candidate source for Jeff's
 > testing. GitHub **Latest** remains immutable v0.28.1 release `393030220`.
-> The exact published v0.28.1 release assets—not this checkout or a branch
-> artifact—are package evidence until v0.28.3 is tagged and published. Live
+> The published v0.28.1 assets remain evidence for that release. The new
+> v0.28.3 candidate needs its own checksum-bound draft packages; this
+> checkout alone is not package evidence. Live
 > Host/Join and package builds reuse the exact baked Jamulus 3.12.2 and 3.12.3
 > records through v0.28.3; the signed public catalog is unchanged. No physical
 > PASS result is claimed.
