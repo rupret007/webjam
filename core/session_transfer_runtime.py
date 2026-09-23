@@ -1774,6 +1774,8 @@ class HostPeerSession:
         duration_s: float = 0.0,
         needs_attention: bool = False,
         playback_generation: int | None = None,
+        source_kind: str = "local",
+        video_id: str = "",
     ) -> ReferenceVideoSessionSnapshot | None:
         """Publish bounded reference video transport for authenticated peers.
 
@@ -1793,6 +1795,8 @@ class HostPeerSession:
             duration_s=duration_s,
             needs_attention=needs_attention,
             playback_generation=playback_generation,
+            source_kind=source_kind,
+            video_id=video_id,
         )
 
     def publish_shared_canvas_state(

@@ -145,18 +145,19 @@ def test_art_door_is_two_starts_then_host_join(qapp, tmp_path: Path):
         ] == [
             (
                 "Make together",
-                "Talk, make, or draw together in one room.",
+                "Talk and make with your own tools, or share a canvas.",
             ),
             (
                 "Paint along",
-                "Follow one silent process video while you paint.",
+                "Paint beside a silent video, from a file or lesson link.",
             ),
         ]
         assert others == ["Host", "Join"]
         assert set(dialog._workspace_actions) == {"music", "podcast_voice", "review_rehearsal"}
         assert dialog._creator_profile_selector.isHidden() is True
         assert dialog._name_input.isHidden() is True
-        assert dialog._choice_helper.isHidden() is True
+        assert dialog._choice_helper.isVisibleTo(dialog._choice_page)
+        assert dialog._choice_helper.text() == "Host starts Make together. Join uses the host's invite."
         spoken = harvest_first_screen(dialog)
         assert "podcast & voice" not in spoken
         assert "review & rehearsal" not in spoken
@@ -251,7 +252,8 @@ def test_art_door_keeps_host_and_join_on_the_supported_window(
             "paint_along",
         ]
         assert dialog.height() + 40 <= 600
-        assert dialog._choice_helper.isHidden() is True
+        assert dialog._choice_helper.isVisibleTo(dialog)
+        assert dialog.rect().contains(QRect(dialog._choice_helper.mapTo(dialog, QPoint()), dialog._choice_helper.size()))
         assert {card.height() for card in visible_starts} == {64}
         for widget in (
             dialog._art_profile_card,

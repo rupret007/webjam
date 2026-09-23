@@ -204,7 +204,7 @@ def test_choosing_a_card_binds_host_to_that_card(qapp, tmp_path: Path):
         cards["paint_along"].setChecked(True)
         host_described = dialog._host_button.accessibleDescription().casefold()
         assert "start paint along as the host" in host_described
-        assert "own copy of the same file" in host_described
+        assert "local video file or a lesson link" in host_described
     finally:
         dialog.deleteLater()
 
@@ -254,17 +254,19 @@ def test_the_name_field_asks_for_a_name(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
-def test_the_page_never_says_the_same_thing_twice(qapp, tmp_path: Path):
-    """A card already says what it does; repeating it below is noise.
-
-    Where Art hosting works, the helper line has nothing left to add and
-    stays empty. An unavailable platform carries the one thing a card cannot:
-    that hosting is unavailable here at all.
-    """
+def test_the_page_names_what_host_and_join_do_with_the_card_choice(qapp, tmp_path: Path):
+    """The visible next step follows the card; Join still uses the invitation."""
 
     dialog = _dialog(tmp_path)
     try:
-        assert dialog._choice_helper.text() == ""
+        for card in _visible_cards(dialog):
+            card.click()
+            assert dialog._choice_helper.isVisibleTo(dialog._choice_page)
+            assert dialog._choice_helper.text() == (
+                "Host starts Paint along, then chooses a file or lesson link. Join uses the host's invite."
+                if card.accessibleName() == "Paint along" else
+                f"Host starts {card.accessibleName()}. Join uses the host's invite."
+            )
         # The two cards carry the instruction, so the headline and the
         # subtitle above them step aside rather than crowd them.
         assert dialog._choice_title.isVisibleTo(dialog._choice_page) is False
@@ -280,7 +282,8 @@ def test_the_page_never_says_the_same_thing_twice(qapp, tmp_path: Path):
         try:
             assert elsewhere._host_button.isEnabled() is available
             assert elsewhere._choice_helper.text() == (
-                "" if available else "Hosting is available in the macOS app."
+                "Host starts Make together. Join uses the host's invite."
+                if available else "Hosting is available in the macOS app."
             )
         finally:
             elsewhere.deleteLater()
@@ -563,11 +566,11 @@ def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
         ] == [
             (
                 "Make together",
-                "Talk, make, or draw together in one room.",
+                "Talk and make with your own tools, or share a canvas.",
             ),
             (
                 "Paint along",
-                "Follow one silent process video while you paint.",
+                "Paint beside a silent video, from a file or lesson link.",
             ),
         ]
         others = [
@@ -647,6 +650,11 @@ def test_every_visible_door_button_matches_owner_lock(qapp, tmp_path, profile, i
         for button in buttons:
             assert dialog.rect().contains(button.mapTo(dialog, button.rect().topLeft()))
             assert dialog.rect().contains(button.mapTo(dialog, button.rect().bottomRight()))
+        if profile == "art":
+            helper = dialog._choice_helper
+            assert helper.isVisibleTo(dialog)
+            assert helper.height() >= helper.heightForWidth(helper.width())
+            assert dialog.rect().contains(helper.mapTo(dialog, helper.rect().bottomRight()))
         assert not dialog._install_jamulus_button.isVisibleTo(dialog)
         assert_no_banned_first_screen_words(harvest_first_screen(dialog))
     finally:

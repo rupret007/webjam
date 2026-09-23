@@ -771,12 +771,7 @@ class LaunchDialog(QDialog):
         )
 
     def _refresh_start_presentation(self) -> None:
-        """Bind Host to the chosen card without repeating the card's words.
-
-        The card already states what it does, so the helper line below only
-        carries what the card cannot: whether hosting is possible here at all.
-        Saying the same sentence twice on one screen is noise, not clarity.
-        """
+        """Explain which choice Host uses and how a guest joins instead."""
 
         start = self.selected_start
         if start is None:
@@ -784,7 +779,15 @@ class LaunchDialog(QDialog):
         copy = _CREATOR_LAUNCH_COPY[self._selected_creator_profile.key]
         available = self._can_host()
         restriction = "" if available else "Hosting is available in the macOS app."
-        self._set_choice_helper(restriction)
+        next_step = (
+            "Host starts Paint along, then chooses a file or lesson link. Join uses the host's invite."
+            if start.key == "paint_along" else
+            f"Host starts {start.label}. Join uses the host's invite."
+        )
+        self._set_choice_helper(
+            next_step
+            if available else restriction
+        )
         self._host_button.setEnabled(available and not self._submitting)
         self._host_button.setAccessibleDescription(
             f"Start {start.label} as the host. {start.detail} "

@@ -245,7 +245,8 @@ def test_art_door_keeps_two_starts_and_host_join_inside_760_by_600(
         assert dialog.rect().contains(_rect_in(dialog._menu_bar, dialog))
         assert dialog.width() <= 760
         assert dialog.height() + 40 <= 600
-        assert dialog._choice_helper.isVisibleTo(dialog) is False
+        assert dialog._choice_helper.isVisibleTo(dialog)
+        assert dialog.rect().contains(_rect_in(dialog._choice_helper, dialog))
         for control in (
             dialog._art_profile_card,
             dialog._music_profile_card,

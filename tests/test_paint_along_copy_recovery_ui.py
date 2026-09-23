@@ -150,6 +150,15 @@ def test_open_my_copy_recovers_through_the_actual_button(room, qapp, failure):
     assert room.panel._open_button.isVisible()
     assert room.panel._open_button.isEnabled()
     assert "Following the host" not in room.panel._status.text()
+    assert room.panel._open_button.text() in room.panel._status.text()
+    if failure == "mismatched_file":
+        assert room.panel._open_button.text() in room.panel._status.text()
+        assert "your copy of the same file" in room.panel._status.text()
+        # A second wrong selection must keep the actionable ownership wording
+        # in the error that the controller displays as well as the panel.
+        room.choose(room.first)
+        assert room.panel._open_button.text() in room.errors[-1]
+        assert "your copy of the same file" in room.errors[-1]
     room.player.fail_load = room.player.fail_play = False
     replacement = room.second if failure == "mismatched_file" else room.first
     room.errors.clear()
@@ -219,6 +228,8 @@ def test_recovery_and_room_navigation_fit_without_overlap(room, qapp, state, siz
     primary = panel._hide_button if state == "following" else panel._open_button
     assert (window.width(), window.height()) == size
     assert panel._surface_holder.height() >= 40
+    placeholder = panel._surface_placeholder
+    assert placeholder.height() >= placeholder.heightForWidth(placeholder.width())
     for widget in (panel._headline, panel._status, panel._surface_holder, primary, panel._more_button, panel._back_button, panel._hint):
         assert widget.isVisible()
         assert panel.rect().contains(widget.geometry())

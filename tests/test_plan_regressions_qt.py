@@ -78,6 +78,16 @@ class TestStatusBannerColor(unittest.TestCase):
         self.window._status_bar.clearMessage()
         self.assertEqual(self.window._status_bar.styleSheet(), "")
 
+    def test_expired_owner_cannot_clear_a_new_message_with_identical_text(self):
+        token = self.window.flash_message("Check your local copy.")
+        self.window._status_bar.clearMessage()
+        self.assertFalse(self.window.clear_flash_message(token))
+        current = self.window.flash_message("Check your local copy.")
+        self.assertFalse(self.window.clear_flash_message(token))
+        self.assertEqual(self.window.statusBar().currentMessage(), "Check your local copy.")
+        self.assertTrue(self.window.clear_flash_message(current))
+        self.assertEqual(self.window.statusBar().currentMessage(), "")
+
 
 class TestWebexLaunchCardShutdownCompatibility(unittest.TestCase):
     """Regression: shutdown keeps the lightweight launch-card contract."""

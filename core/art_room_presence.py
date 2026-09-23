@@ -124,6 +124,7 @@ def art_room_presence(
     intended_canvas: bool = False,
     intended_video: bool = False,
     paint_along_room: bool = False,
+    video_source_kind: str = "local",
 ) -> ArtRoomPresence:
     """Return the one line this room should show, or nothing.
 
@@ -173,6 +174,10 @@ def art_room_presence(
     video_attention = _VIDEO_ATTENTION.get(projection.video)
     if video_attention is not None:
         label, description, next_click = video_attention
+        if video_source_kind == "youtube" and next_click == _OPEN_MY_COPY:
+            label = "Open lesson" if projection.video is VideoCompanionState.NEEDS_FILE else label
+            description = "Choose Open lesson to follow the host's YouTube video silently."
+            next_click = "Open lesson"
         return ArtRoomPresence(
             label=label,
             description=description,
@@ -207,6 +212,8 @@ def art_room_presence(
         return ArtRoomPresence(
             label="Paint along",
             description=(
+                "Open Paint along to follow the YouTube lesson silently."
+                if video_source_kind == "youtube" else
                 "The host shared a video. Each artist can follow using their "
                 "own copy."
             ),
@@ -226,8 +233,7 @@ def art_room_presence(
         return ArtRoomPresence(
             label="Set up Paint along",
             description=(
-                "Open the panel to share one local "
-                "video each artist can follow on their own copy."
+                "Open Paint along, then choose a local video file or a lesson link."
             ),
             target=ArtPresenceTarget.VIDEO,
         )
@@ -239,8 +245,7 @@ def art_room_presence(
         return ArtRoomPresence(
             label="Paint along is starting",
             description=(
-                "The host chose Paint along. Open the panel and load your "
-                "own copy of the video, then you follow when they share it."
+                "The host chose Paint along. Open the panel to see their video choice."
             ),
             target=ArtPresenceTarget.VIDEO,
         )
