@@ -9,7 +9,9 @@ from unittest import mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtWidgets import QApplication
+from shiboken6 import isValid
 
 from core.network_invite import BandInvite
 from core.remote_invitation import issue_remote_invitation
@@ -52,8 +54,15 @@ def controllers(qapp, tmp_path):
 
     yield create
     for app in reversed(made):
-        app.shutdown()
-        app.window.deleteLater()
+        assert app.shutdown()
+        window = app.window
+        window.close()
+        window.deleteLater()
+        # These tests do not run QApplication.exec(); processEvents() alone
+        # leaves DeferredDelete queued until native objects outlive the fixture.
+        QCoreApplication.sendPostedEvents(window, QEvent.Type.DeferredDelete)
+        assert not isValid(window)
+        assert not isValid(app)
     qapp.processEvents()
 
 
