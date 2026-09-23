@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenu,
+    QScrollArea,
     QMessageBox,
     QPushButton,
     QSizePolicy,
@@ -208,6 +209,11 @@ class SessionCanvas(QFrame):
         toolbar.setSpacing(Space.XS)
         toolbar.addWidget(self._suggestion_row)
         toolbar.addLayout(chrome_row)
+        self._music_export_row = QWidget()
+        export_row = QHBoxLayout(self._music_export_row)
+        export_row.setContentsMargins(Space.XS, 0, Space.XS, 0)
+        self._music_export_row.hide()
+        toolbar.addWidget(self._music_export_row)
         self._notes_save_status = QLabel()
         self._notes_save_status.setObjectName("NotesSaveStatus")
         self._notes_save_status.setTextFormat(Qt.TextFormat.PlainText)
@@ -361,6 +367,28 @@ class SessionCanvas(QFrame):
         layout.addLayout(toolbar)
         layout.addWidget(self._guidance)
         layout.addWidget(self._pulse)
+        self._music_details_button = QPushButton("Session details")
+        self._music_details_button.setObjectName("GhostButton")
+        self._music_details_button.setCheckable(True)
+        self._music_details_button.setAccessibleDescription(
+            "Show or hide session guidance and the creative pulse. Your local notes stay below."
+        )
+        self._music_details_button.toggled.connect(self._toggle_music_details)
+        self._music_readouts = QWidget()
+        readout_layout = QVBoxLayout(self._music_readouts)
+        readout_layout.setContentsMargins(0, 0, 0, 0)
+        readout_layout.setSpacing(Space.SM)
+        self._music_readout_scroll = QScrollArea()
+        self._music_readout_scroll.setObjectName("MusicNotesReadouts")
+        self._music_readout_scroll.setAccessibleName("Session guidance and creative pulse")
+        self._music_readout_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._music_readout_scroll.setWidgetResizable(True)
+        self._music_readout_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._music_readout_scroll.setWidget(self._music_readouts)
+        self._music_readout_scroll.hide()
+        self._music_readout_measurement = None
+        layout.insertWidget(2, self._music_details_button)
+        layout.insertWidget(3, self._music_readout_scroll, stretch=1)
         layout.addWidget(self._notes, stretch=1)
         chat_row = QHBoxLayout()
         self._chat_row = chat_row
@@ -623,6 +651,7 @@ class SessionCanvas(QFrame):
             # readout; the shared guidance facts themselves remain unchanged.
             self._guidance.setVisible(not combined)
         self._sync_suggestion_layout()
+        self._sync_music_notes_layout()
         self._sync_notes_recovery_layout()
         # Retained drafts belong to the window even while this panel is hidden.
         # Project only bounded workspace/reason copy, never the draft itself.
@@ -771,7 +800,104 @@ class SessionCanvas(QFrame):
             if self._recheck_notes_button.styleSheet() != recheck_style:
                 self._recheck_notes_button.setStyleSheet(recheck_style)
         self._sync_suggestion_layout()
+        self._sync_music_notes_layout()
         self._sync_notes_recovery_layout()
+
+    def _toggle_music_details(self, expanded: bool) -> None:
+        if not expanded and self._music_readout_scroll.isAncestorOf(self.focusWidget()):
+            self._music_details_button.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._music_readout_scroll.setVisible(
+            expanded and not self._art_profile and not self._notes_need_attention
+        )
+        self._sync_music_notes_layout()
+
+    def _sync_music_notes_layout(self) -> None:
+        if not hasattr(self, "_music_readout_scroll"):
+            return
+        scroll = self._music_readout_scroll
+        inner = self._music_readouts.layout()
+        music = not self._art_profile
+        for offset, readout in enumerate((self._guidance, self._pulse)):
+            visible = not readout.isHidden()
+            if music and readout.parentWidget() is not self._music_readouts:
+                self.layout().removeWidget(readout)
+                inner.addWidget(readout)
+                readout.setVisible(visible)
+            elif not music and readout.parentWidget() is self._music_readouts:
+                inner.removeWidget(readout)
+                self.layout().insertWidget(2 + offset, readout)
+                readout.setMinimumHeight(0)
+                readout.setVisible(visible)
+        details_available = music and not self._notes_need_attention
+        self._music_details_button.setVisible(details_available)
+        scroll.setVisible(details_available and self._music_details_button.isChecked())
+        if not music:
+            self._music_readout_measurement = None
+        else:
+            rules = "min-height: 24px; padding-top: 4px; padding-bottom: 4px;"
+            if self.width() < 400:
+                rules += " padding-left: 4px; padding-right: 4px;"
+            for button in (
+                *self._toolbar_buttons,
+                self._save_notes_button,
+                self._music_details_button,
+            ):
+                style = rules if self.width() < 400 else ""
+                if button.styleSheet() != style:
+                    button.setStyleSheet(style)
+            width = max(1, scroll.viewport().width())
+            measurement = (
+                width,
+                tuple(
+                    (
+                        readout.isHidden(),
+                        readout.font().key(),
+                        tuple(
+                            (label.text(), label.font().key())
+                            for label in readout.findChildren(QLabel)
+                        ),
+                    )
+                    for readout in (self._guidance, self._pulse)
+                ),
+            )
+            if measurement != self._music_readout_measurement:
+                self._music_readout_measurement = measurement
+                self._music_readouts.setMinimumHeight(0)
+                for readout in (self._guidance, self._pulse):
+                    readout.setMinimumHeight(0)
+                    needed = readout.heightForWidth(width)
+                    if needed >= 0:
+                        readout.setMinimumHeight(needed)
+                needed = self._music_readouts.heightForWidth(width)
+                if needed >= 0:
+                    self._music_readouts.setMinimumHeight(needed)
+        # Music retains every tool's complete label; move only Export to a
+        # second row if the current font cannot fit the normal tools row.
+        buttons = [
+            button for button in (
+                self._normal_notes_buttons[0], self._export_button,
+                self._save_notes_button, self._normal_notes_buttons[1],
+            )
+            if not button.isHidden()
+        ]
+        required = (
+            sum(button.minimumSizeHint().width() for button in buttons)
+            + Space.XS * (len(buttons) + 1)
+        )
+        split = music and required > self.width()
+        moved = self._export_button.parentWidget() is self._music_export_row
+        focused = self._export_button.hasFocus()
+        if split != moved:
+            if split:
+                self._chrome_row.removeWidget(self._export_button)
+                self._music_export_row.layout().addWidget(self._export_button)
+            else:
+                self._music_export_row.layout().removeWidget(self._export_button)
+                self._chrome_row.insertWidget(1, self._export_button)
+            self._export_button.show()
+        self._music_export_row.setVisible(split)
+        if focused and not self._export_button.hasFocus():
+            self._export_button.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def eventFilter(self, watched, event) -> bool:
         if (watched is getattr(self, "_notes", None) and self._art_profile

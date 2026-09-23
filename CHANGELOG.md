@@ -6,6 +6,17 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+### Readable Music Notes
+
+- Music, Podcast & Voice, and Review & Rehearsal Notes open with their writing
+  area and full tool labels. **Session
+  details** reveals the existing NOW and Creative Pulse readouts in a scrollable
+  area, leaving the shared HUD as the primary next-action surface.
+- Narrow and enlarged-text Notes reflows **Export…** onto its own row when
+  needed. Recovery temporarily hides session details to keep the message and action
+  beside the draft. Layout changes preserve
+  notes, selection and keyboard focus.
+
 ### Recording controls and retained Notes
 
 - A visible **Review Notes** action finds drafts from hidden workspaces without

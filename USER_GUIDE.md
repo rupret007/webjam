@@ -14,10 +14,21 @@
 ## Follow the current guide
 
 The always-visible Session HUD is the dominant action surface. **Notes** opens
-Session Canvas, where **NOW** repeats the same status, next step, evidence-based
-reason, output results, and recent meaningful events. Studio repeats the shared
-next step while showing take validation, non-destructive edit/save state, and
-export outcome. These are views of one result, not separate checklists.
+your local writing area. In Music, Podcast & Voice, and Review & Rehearsal,
+choose **Session details** to read the same
+status, next step, evidence-based reason, output results, and recent events in
+**NOW**, followed by **Creative Pulse**. Scroll these details when the window is
+small; your notes and local-save recovery controls stay outside that scroll.
+The details start closed so the writing area and the HUD's next action are easy
+to find. When local notes need recovery, the details stay hidden so the recovery
+message and action have room. Your expanded-details choice returns after recovery.
+Art keeps NOW and Creative Pulse in its Notes panel. Studio repeats the
+shared next step while showing take validation, non-destructive edit/save state,
+and export outcome. These are views of one result, not separate checklists.
+
+Notes tools keep their full labels at enlarged text sizes. **Export…** moves to
+its own row when the tools need more room. Resizing or opening Session details
+does not save, discard, export, or send your notes.
 
 The **Creative Pulse** below NOW summarizes explicit decisions, actions,
 blockers, questions, references, and creator-profile checkpoints from your local
