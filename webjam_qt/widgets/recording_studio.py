@@ -894,7 +894,12 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             return
         root = self.layout()
         short = self.height() < 500
-        spacing = Space.XS if short else Space.MD
+        base_spacing = Space.XS if short else Space.MD
+        # When controls use larger fonts, increase spacing to prevent overlap
+        # between vertically-stacked header and transport rows. The phase label
+        # is hidden in compact mode, so spacing must cover the full button height.
+        button_height = self._record_btn.minimumSizeHint().height()
+        spacing = max(base_spacing, button_height // 6) if short else base_spacing
         margins = (Space.SM, Space.XS, Space.SM, Space.SM) if short else (
             Space.LG, Space.MD, Space.LG, Space.LG,
         )
@@ -904,8 +909,37 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         if (current.left(), current.top(), current.right(), current.bottom()) != margins:
             root.setContentsMargins(*margins)
         available = self.contentsRect().width() - margins[0] - margins[2]
+        # Calculate header_required assuming all title elements are visible.
+        # This avoids a layout cycle where hiding elements makes space, then
+        # re-showing them when space appears to be available.
+        session_actions_width = self._session_actions.minimumSizeHint().width()
+        # Eyebrow is wider than title in most fonts; use its width as the base.
+        eyebrow_width = self._eyebrow.minimumSizeHint().width()
+        title_width = self._title.minimumSizeHint().width()
+        full_title_block_width = max(eyebrow_width, title_width)
+        header_required_full = (
+            session_actions_width + full_title_block_width + self._header_layout.spacing()
+        )
+        # In compact mode, progressively hide title details (eyebrow, subtitle)
+        # to make room for session action buttons in a horizontal layout.
+        # The full vertical header stack doesn't fit in very short windows.
+        compact_hide_subtitle = short and header_required_full > available
+        visibility_changed = False
+        if self._subtitle.isHidden() != compact_hide_subtitle:
+            self._subtitle.setVisible(not compact_hide_subtitle)
+            visibility_changed = True
+        # If hiding subtitle and the eyebrow width is the limiting factor, hide eyebrow too.
+        compact_hide_eyebrow = compact_hide_subtitle and (
+            session_actions_width + eyebrow_width > available
+        )
+        if self._eyebrow.isHidden() != compact_hide_eyebrow:
+            self._eyebrow.setVisible(not compact_hide_eyebrow)
+            visibility_changed = True
+        # Use actual title_block size for direction decision after visibility settled.
+        if visibility_changed:
+            self._title_block.activate()
         header_required = (
-            self._session_actions.minimumSizeHint().width()
+            session_actions_width
             + self._title_block.minimumSize().width()
             + self._header_layout.spacing()
         )
@@ -915,6 +949,13 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         )
         if self._header_layout.direction() != header_direction:
             self._header_layout.setDirection(header_direction)
+        # When header stacks vertically in compact mode, use consistent spacing
+        # to prevent overlap with the transport row below when fonts are large.
+        # In wide mode, leave the default spacing unchanged.
+        if short:
+            header_spacing = spacing if header_direction == QBoxLayout.Direction.TopToBottom else 0
+            if self._header_layout.spacing() != header_spacing:
+                self._header_layout.setSpacing(header_spacing)
         export_width = self._export_btn.minimumSizeHint().width() + 4
         if self._export_btn.minimumWidth() != export_width:
             self._export_btn.setMinimumWidth(export_width)
@@ -954,6 +995,9 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         if self._transport_layout.direction() != transport_direction:
             self._transport_layout.setDirection(transport_direction)
         self._set_compact_chrome(self.width() < 1080)
+        # After compact chrome adjusts button heights, ensure the root layout
+        # recalculates positions before the next paint cycle.
+        self.layout().activate()
         gain_width = max(46, self._master_gain_value.fontMetrics().horizontalAdvance("+12.0 dB") + 4)
         if self._master_gain_value.width() != gain_width:
             self._master_gain_value.setFixedWidth(gain_width)
@@ -1155,6 +1199,10 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             else:
                 widget.setMinimumHeight(0)
                 widget.setMaximumHeight(16_777_215)
+        # Ensure session_actions container expands to fit its buttons.
+        actions_height = self._session_actions.layout().minimumSize().height()
+        if self._session_actions.minimumHeight() != actions_height:
+            self._session_actions.setMinimumHeight(actions_height if compact else 0)
         for widget in (
             self._add_take_lane_btn,
             self._audition_take_lane_btn,
