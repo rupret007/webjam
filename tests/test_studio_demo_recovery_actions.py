@@ -4,9 +4,10 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QCoreApplication, QEvent, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QComboBox
+from shiboken6 import isValid
 
 from core import studio_controller as studio_owner_module
 from core.settings import AppSettings
@@ -268,5 +269,10 @@ def test_playback_failure_names_visible_playback_output_and_play_controls(
         assert (take / 'guitar.wav').read_bytes() == original
     finally:
         setup.reject()
-        studio.shutdown()
+        assert studio.shutdown()
         studio.close()
+        # Dispose both parentless widgets while QApplication is still alive.
+        for widget in (setup, studio):
+            widget.deleteLater()
+            QCoreApplication.sendPostedEvents(widget, QEvent.Type.DeferredDelete)
+            assert not isValid(widget)
