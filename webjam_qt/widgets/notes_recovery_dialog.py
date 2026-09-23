@@ -132,7 +132,7 @@ class NotesRecoveryDialog(QDialog):
             )
         elif state == "recovery_conflict":
             message = (
-                "The recovered draft could not be safely matched to the current saved notes. "
+                "This draft could not be safely matched to the current saved notes. "
                 "Choose Export Copy to keep both versions, or Recheck Saved Notes to review "
                 "the current original. The saved notes will not be replaced."
             )

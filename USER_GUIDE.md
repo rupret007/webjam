@@ -42,6 +42,9 @@ meeting app, browser, or system output.
 Local notes save shortly after an edit. If a save fails, choose **Save Notes**.
 The Notes notice names retained workspaces, including a draft outside the one
 you are editing, and keeps that recovery action available while you type.
+When Notes is hidden, **Review Notes** stays visible above the current workspace,
+including standalone Studio. It opens retained drafts for review without
+switching the room or retrying a write before you choose what to save.
 Storage-full, permission, and read-only failures explain when to free space,
 retry, or export to a writable location without displaying private file paths.
 The recovery window can show drafts from another workspace without changing
@@ -57,6 +60,8 @@ unexpected exit, recovered drafts from any workspace appear in Notes for
 review. Choose **Save Notes** to review and explicitly save a recovered draft,
 or **Export Copy…** to keep it separately. If the saved original changed or
 cannot be read safely, recovery preserves it and offers export instead.
+The same protection applies if another app changes saved notes while you are
+repairing a failed save. Review both versions before choosing which to keep.
 
 After fixing access to a protected original, choose **Recheck Saved Notes**.
 Review the saved version without changing it, then choose **Export Draft & Use
@@ -878,6 +883,12 @@ two-channel PCM-24 WAV; that topology remains stereo through recovery, Studio,
 and export. If every row is opted out, no host Local Original is recorded. A
 guest is never blocked from
 joining because Local Originals are not configured.
+
+**Stop Recording** and **Finish Stop** do not require a first-time recording
+choice or wait for a Studio export. If the session changes while a recording
+choice is open, review Studio and choose **Record Session** again. Returning
+through **New live take** shows the current live recording guidance; a save
+failure keeps the selected take open until its choices are safe.
 
 Before any recorder starts, WebJam freezes one take-scoped plan with the exact
 roster/server stem IDs, Shared Track fingerprint and playback generation, host

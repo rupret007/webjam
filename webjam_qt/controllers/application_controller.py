@@ -1802,24 +1802,28 @@ class ApplicationController(QObject):
             if self._shutdown or guest is not getattr(self, "guest_peer", None):
                 return
             self._render_guest_peer_state()
-            studio = self.window.recording_studio
-            signal = getattr(
-                getattr(getattr(guest, "last_state", None), "signal", None),
-                "value", "idle",
-            )
-            if (
-                not bool(getattr(self.settings, "host_server_enabled", False))
-                and not bool(getattr(guest, "active_take_id", ""))
-                and not bool(getattr(guest, "capture_finalization_needs_attention", False))
-                and signal not in {"recording", "finalizing", "needs_attention"}
-                and not studio.guidance_facts().take_selected
-            ):
-                # A pre-take remedy must not replace current capture,
-                # preservation, or selected-take review guidance.
-                studio.set_can_record(False, self._guest_recording_reason())
+            ApplicationController._refresh_guest_recording_start_guidance(self, guest)
             self._update_session_hud()
 
         self._ui_invoker.invoke(refresh)
+
+    def _refresh_guest_recording_start_guidance(self, expected_guest=None) -> None:
+        guest = getattr(self, "guest_peer", None)
+        if (guest is None or getattr(self, "_shutdown", False)
+                or (expected_guest is not None and guest is not expected_guest)):
+            return
+        studio = self.window.recording_studio
+        signal = getattr(
+            getattr(getattr(guest, "last_state", None), "signal", None), "value", "idle",
+        )
+        if (not bool(getattr(self.settings, "host_server_enabled", False))
+                and not bool(getattr(guest, "active_take_id", ""))
+                and not bool(getattr(guest, "capture_finalization_needs_attention", False))
+                and signal not in {"recording", "finalizing", "needs_attention"}
+                and not studio.guidance_facts().take_selected):
+            # Reproject the current owner after review, even when its latest
+            # preflight result did not change and will emit no new callback.
+            studio.set_can_record(False, self._guest_recording_reason())
 
     def _render_guest_peer_state(self) -> None:
         """Render host-published peer truth without granting guest authority."""
@@ -4294,6 +4298,7 @@ class ApplicationController(QObject):
         self.window.session_canvas.notes_changed.connect(self._schedule_notes_save)
         self.window.session_canvas.notes_restored.connect(self._refresh_session_pulse)
         self.window.session_canvas.save_notes_requested.connect(self._recover_notes)
+        self.window.notes_review_requested.connect(self._review_retained_notes)
         self.window.session_canvas.brief_export_requested.connect(
             self._refresh_session_pulse
         )
@@ -7333,7 +7338,7 @@ class ApplicationController(QObject):
             self._render_session_conductor()
             return
         studio = getattr(getattr(self, "window", None), "recording_studio", None)
-        if bool(getattr(studio, "export_in_progress", False)):
+        if not recording_authority_active and bool(getattr(studio, "export_in_progress", False)):
             self.window.flash_message(
                 "Wait for the Studio export to finish before starting a new take. "
                 "The current recordings are safe.",
@@ -7343,19 +7348,51 @@ class ApplicationController(QObject):
 
         settings = getattr(self, "settings", None)
         needs_choice = bool(
-            settings is not None
+            not recording_authority_active
+            and settings is not None
             and getattr(settings, "host_server_enabled", False)
             and not getattr(settings, "local_capture_enabled", False)
             and not getattr(settings, "local_capture_choice_made", False)
         )
         if needs_choice:
+            from copy import deepcopy
             from webjam_qt.windows.recording_setup import LocalOriginalsChoiceDialog
 
+            opening_settings = deepcopy(settings)
+
+            def choice_context():
+                room = getattr(self, "_room_participant", None)
+                recorder = getattr(self, "recording", None)
+                return (
+                    getattr(self, "_settings_generation", 0), self.creator_profile.key,
+                    getattr(self, "_session_conductor_token", None),
+                    id(getattr(self, "guest_peer", None)), id(getattr(self, "host_peer", None)),
+                    bool(getattr(getattr(self, "host_peer", None), "active", False)),
+                    id(room), getattr(room, "generation", None),
+                    id(recorder), getattr(recorder, "phase", None),
+                    getattr(recorder, "_recording_generation", 0),
+                    getattr(recorder, "_hosted_preflight_generation", 0),
+                    bool(getattr(self, "_recorder_armed", False)),
+                    bool(getattr(self, "_server_recording", False)),
+                    bool(getattr(studio, "export_in_progress", False)),
+                    bool(getattr(self, "_shutdown", False)),
+                )
+
+            opening_context = choice_context()
             choice_dialog = LocalOriginalsChoiceDialog(
                 parent=self.window,
                 creator_profile=self.creator_profile,
             )
             if choice_dialog.exec() != LocalOriginalsChoiceDialog.DialogCode.Accepted:
+                return
+            if (self.settings is not settings or self.settings != opening_settings
+                    or choice_context() != opening_context
+                    or self._shutdown_cleanup_blocks_action()
+                    or self._music_room_blocks_new_take()):
+                self.window.flash_message(
+                    "The session changed while recording choices were open. "
+                    "Review Studio before choosing Record Session again.", ms=7000,
+                )
                 return
             choice = choice_dialog.choice
             if choice not in {"shared", "local"}:
@@ -10391,6 +10428,13 @@ class ApplicationController(QObject):
             current = None
         previous = getattr(self, "_last_studio_guidance_facts", None)
         if current is not None:
+            if getattr(self, "_last_content_key", "") == "takes":
+                if current.take_selected:
+                    self._conductor_studio_reviewing = True
+                elif previous is not None and previous.take_selected:
+                    # New live take has successfully left review. Retaining
+                    # library intent would keep SELECT_TAKE above live setup.
+                    self._conductor_studio_reviewing = False
             if (
                 previous is not None
                 and current != previous
@@ -10398,6 +10442,7 @@ class ApplicationController(QObject):
             ):
                 self._conductor_export = ExportState.IDLE
             self._last_studio_guidance_facts = current
+            ApplicationController._refresh_guest_recording_start_guidance(self)
         self._update_session_hud()
 
     def _reset_session_conductor_attempt(self) -> None:
@@ -15654,10 +15699,25 @@ class ApplicationController(QObject):
     def _recover_notes(self) -> None:
         if self._save_notes():
             return
+        ApplicationController._review_retained_notes(self)
+
+    def _review_retained_notes(self) -> None:
+        """Review hidden drafts without retrying writes or changing the live workspace."""
+        if not self._persistence.has_unsaved_notes:
+            return
+        timer = getattr(self, "_notes_save_timer", None)
+        resume_autosave = timer is not None and timer.isActive()
+        if timer is not None:
+            timer.stop()
         from webjam_qt.widgets.notes_recovery_dialog import NotesRecoveryDialog
 
         dialog = NotesRecoveryDialog(self._persistence, self.window)
-        dialog.exec()
+        try:
+            dialog.exec()
+        finally:
+            if (resume_autosave and not getattr(self, "_shutdown", False)
+                    and self._persistence.has_unsaved_notes):
+                timer.start()
 
     def _schedule_notes_save(self, text: str) -> None:
         if not self._shutdown:

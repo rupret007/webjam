@@ -3204,6 +3204,17 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                         "remain saved and every recording is unchanged."
                     )
                     return
+        # The confirmation pumps native events: a take, recorder or arrangement
+        # owner may have changed while the musician was choosing. That consent
+        # cannot start a worker for a different or newly unavailable source.
+        if (self._current is not take or self._studio_state is not studio_document
+                or not self._can_export_current_take()):
+            self._hint.setText(
+                "Studio changed while export was being confirmed. "
+                "Review the current take before exporting again."
+            )
+            self._refresh_export_button()
+            return
         studio_source_catalog = self._studio_source_catalog
         selectable_track_ids = set(_selectable_track_export_track_ids(take))
         states: dict[int | str, TrackMixSettings] = {}

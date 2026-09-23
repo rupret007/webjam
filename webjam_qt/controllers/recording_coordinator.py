@@ -5369,14 +5369,6 @@ class RecordingCoordinator:
         self._continue_recording_start(plan)
 
     def on_record_requested(self) -> None:
-        studio = getattr(getattr(self._c, "window", None), "recording_studio", None)
-        if bool(getattr(studio, "export_in_progress", False)):
-            self._c.window.flash_message(
-                "Wait for the Studio export to finish before starting a new take. "
-                "The current recordings are safe.",
-                ms=6000,
-            )
-            return
         pending_shutdown_take = str(self._shutdown_validation_pending_take_id or "")
         if pending_shutdown_take and pending_shutdown_take == self._take_id:
             self._request_shutdown_take_validation(pending_shutdown_take)
@@ -5411,6 +5403,13 @@ class RecordingCoordinator:
 
         target_armed = not self._c._recorder_armed
         if target_armed:
+            studio = getattr(getattr(self._c, "window", None), "recording_studio", None)
+            if bool(getattr(studio, "export_in_progress", False)):
+                self._c.window.flash_message(
+                    "Wait for the Studio export to finish before starting a new take. "
+                    "The current recordings are safe.", ms=6000,
+                )
+                return
             self._set_phase(RecorderPhase.PREFLIGHT)
             real_participants = [
                 participant
