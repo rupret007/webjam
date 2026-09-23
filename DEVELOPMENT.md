@@ -7,7 +7,7 @@
 > evidence, not a substitute for an exact release asset. Older release entries
 > (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags
 > remain. The existing Jamulus 3.12.2 and 3.12.3 compatibility records are
-> explicitly approved through v0.28.1. Live client/server selection and the
+> explicitly approved through v0.28.3. Live client/server selection and the
 > component-input build gate reuse those exact baked identities; the signed
 > public catalog stays sealed at exact WebJam v0.22.5.
 

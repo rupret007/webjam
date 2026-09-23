@@ -7,7 +7,7 @@
 > evidence, not one of those checksum-bound packages. Older release entries
 > (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags
 > remain. The existing exact Jamulus 3.12.2 and 3.12.3 records are approved
-> through v0.28.1 for Host/Join. Windows remains unsigned; macOS remains ad-hoc
+> through v0.28.3 for Host/Join. Windows remains unsigned; macOS remains ad-hoc
 > signed and unnotarized. No physical, credentialed, signing, or notarization
 > PASS is claimed.
 

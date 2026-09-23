@@ -13,11 +13,13 @@ keeps the product story and five-minute demo intentionally short.
 > unnotarized; every physical test remains **NOT RUN** until recorded against
 > those packages.
 
-> **Source boundary:** this checkout reports unsigned v0.28.1 matching the
-> published tag. A checkout or branch artifact is not a package; use the exact
-> release assets above. Its baked Jamulus 3.12.2 and 3.12.3 records are approved
-> through v0.28.1, so live Host/Join and required package-build CI are
-> source-eligible. All v0.28.1 physical/hardware rows remain **NOT RUN**.
+> **Source boundary:** this checkout reports unsigned v0.28.3 candidate source
+> including #145–#148 and #150; the v0.28.2 draft at `a51154e5` is stale. A
+> checkout or branch artifact is not a package; use the exact published release
+> assets above until the successor is published. Its baked Jamulus 3.12.2 and
+> 3.12.3 records extend through v0.28.3, so live Host/Join and required
+> package-build CI are source-eligible. All physical/hardware rows remain
+> **NOT RUN**.
 
 ## Start here
 

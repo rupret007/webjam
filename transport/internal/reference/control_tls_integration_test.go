@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net"
@@ -22,6 +23,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -208,12 +210,12 @@ func startTLSControlService(t *testing.T) tlsControlService {
 	if err != nil {
 		t.Fatal("reference service source unavailable")
 	}
-	python := findTLSIntegrationPython(root)
+	python, discovery := findTLSIntegrationPython(root)
 	if python == "" {
 		if os.Getenv("WEBJAM_REQUIRE_TLS_INTEGRATION") == "1" {
-			t.Fatal("Python 3.10+ is required for this TLS integration run")
+			t.Fatalf("Python 3.10+ is required for this TLS integration run: %s", discovery)
 		}
-		t.Skip("Python 3.10+ unavailable for real TLS service integration")
+		t.Skipf("Python 3.10+ unavailable for real TLS service integration: %s", discovery)
 	}
 	certPath, keyPath, roots := tlsControlServiceCertificates(t)
 	const script = `
@@ -299,26 +301,69 @@ asyncio.run(main())
 	return tlsControlService{}
 }
 
-func findTLSIntegrationPython(root string) string {
+const tlsPythonVersionProbe = "import sys; print('Python %d.%d.%d' % sys.version_info[:3]); raise SystemExit(0 if sys.version_info >= (3, 10) else 1)"
+
+func findTLSIntegrationPython(root string) (string, string) {
 	candidates := []string{filepath.Join(root, ".venv", "bin", "python"), "python3", "python"}
 	if runtime.GOOS == "windows" {
 		candidates = append([]string{filepath.Join(root, ".venv", "Scripts", "python.exe")}, candidates...)
 	}
+	// setup-python supplies the installed interpreter's directory. Prefer it
+	// over PATH aliases, which can resolve to Windows application shims.
+	if location := os.Getenv("pythonLocation"); location != "" {
+		configured := filepath.Join(location, "bin", "python")
+		if runtime.GOOS == "windows" {
+			configured = filepath.Join(location, "python.exe")
+		}
+		candidates = append([]string{configured}, candidates...)
+	}
+	// Cold hosted Windows interpreter startup can exceed two seconds. Bound
+	// both each probe and discovery overall within the 90s TLS suite budget.
+	discovery, stop := context.WithTimeout(context.Background(), 15*time.Second)
+	defer stop()
+	seen := make(map[string]bool)
+	var failures []string
 	for _, candidate := range candidates {
+		if discovery.Err() != nil {
+			failures = append(failures, "Python discovery deadline exceeded")
+			break
+		}
 		path, err := exec.LookPath(candidate)
 		if err != nil {
+			failures = append(failures, fmt.Sprintf("%q: %v", candidate, err))
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		probe := exec.CommandContext(ctx, path, "-c", "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)")
-		probe.WaitDelay = 500 * time.Millisecond
-		err = probe.Run()
+		identity := filepath.Clean(path)
+		if runtime.GOOS == "windows" {
+			identity = strings.ToLower(identity)
+		}
+		if seen[identity] {
+			continue
+		}
+		seen[identity] = true
+		ctx, cancel := context.WithTimeout(discovery, 10*time.Second)
+		probe := exec.CommandContext(ctx, path, "-c", tlsPythonVersionProbe)
+		err = runTLSIntegrationPythonProbe(ctx, probe)
 		cancel()
 		if err == nil {
-			return path
+			return path, ""
 		}
+		failures = append(failures, fmt.Sprintf("%q: %v", path, err))
 	}
-	return ""
+	return "", strings.Join(failures, "; ")
+}
+
+func runTLSIntegrationPythonProbe(ctx context.Context, probe *exec.Cmd) error {
+	probe.WaitDelay = 500 * time.Millisecond
+	output := &boundedProcessLog{}
+	probe.Stdout, probe.Stderr = output, output
+	if err := probe.Run(); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("version probe deadline exceeded: %w; output: %q", ctx.Err(), output.String())
+		}
+		return fmt.Errorf("version probe failed: %w; output: %q", err, output.String())
+	}
+	return nil
 }
 
 func tlsControlServiceCertificates(t *testing.T) (string, string, *x509.CertPool) {

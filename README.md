@@ -26,8 +26,11 @@ own systems that remain independent.
 
 
 > **Source boundary:** this checkout reports unsigned v0.28.3 and prepares a
-> candidate for Jeff's testing. GitHub **Latest** is still immutable v0.28.1
-> release `393030220`—this checkout does not tag, publish, or mutate that release.
+> candidate for Jeff's testing from master `7f5df4ec2faa`, including #145–#148
+> and the offline Record-along Logic handoff in #150. The v0.28.2 draft at
+> `a51154e5` is stale and remains separate. At candidate preparation, GitHub
+> **Latest** is still immutable v0.28.1 release `393030220`; source preparation
+> does not establish publication of v0.28.3 or mutate that release.
 > A checkout or branch artifact is still source evidence, not a substitute for
 > one of the checksum-bound packages. Jeff explicitly approved the existing
 > Jamulus 3.12.2 and 3.12.3 records through v0.28.3, so live Host/Join and the
@@ -690,8 +693,10 @@ SmartScreen results remain **NOT RUN**. Do not retag or mutate release
 `393030220`.
 
 This checkout reports unsigned **v0.28.3** and prepares a candidate for Jeff's
-testing. GitHub Latest is still immutable v0.28.1 release `393030220`—this
-source does not tag, publish, or mutate that release. Shared Track play uses
+testing from master `7f5df4ec2faa`, including #145–#148 and #150. The v0.28.2
+draft at `a51154e5` remains stale. At candidate preparation, GitHub Latest is
+still immutable v0.28.1 release `393030220`; source preparation alone does not
+establish publication of v0.28.3 or mutate that release. Shared Track play uses
 this Mac's BlackHole route and the bundled headless client; the signed catalog
 remains sealed at exact WebJam v0.22.5. The baked Jamulus 3.12.2 and 3.12.3
 records extend through v0.28.3, so Host/Join and the required package-build

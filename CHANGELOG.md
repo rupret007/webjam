@@ -6,11 +6,12 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-> Changes after the unsigned v0.28.3 candidate belong here. This round
-> creates a reviewable unsigned draft; GitHub Latest remains immutable
-> v0.28.1 release `393030220`. Every published tag, release, and asset remains
-> immutable historical evidence. Older release entries (v0.28.0, v0.27.2,
-> Jamulus catalog v1–v3) were deleted by owner; git tags remain.
+> Future work after the unsigned v0.28.3 candidate belongs here. At candidate
+> preparation, GitHub Latest remains immutable v0.28.1 release `393030220`;
+> v0.28.2 remains a stale draft at `a51154e533ce5662ca4b541a866dd9b1954452b1`.
+> Every published tag, release, and asset remains immutable historical evidence.
+> Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted
+> by owner; git tags remain.
 
 ## [0.28.3] — Unsigned/ad-hoc private test release candidate
 
@@ -106,7 +107,7 @@ All notable improvements and features for the WebJam creator collaboration platf
   Record Session still performs the source and storage checks.
 - Recurring recovery updates preserve keyboard focus in Notes and setup input.
 
-## [0.28.1] — Unsigned/ad-hoc private test release (GitHub Latest until v0.28.2 publishes)
+## [0.28.1] — Unsigned/ad-hoc private test release (GitHub Latest at v0.28.3 candidate preparation)
 
 > Published 2026-09-21 as GitHub **Latest**. Release ID `393030220` from
 > annotated tag `v0.28.1` (object `db44247a3ceefb97f4cac6e623deef1bd32648a8`)

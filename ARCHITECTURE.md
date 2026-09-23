@@ -7,7 +7,7 @@
 > text, a later checkout, and branch CI are not substitutes for those exact
 > checksum-verified release assets. Older release entries (v0.28.0, v0.27.2,
 > Jamulus catalog v1–v3) were deleted by owner; git tags remain. The existing
-> Jamulus 3.12.2 and 3.12.3 records are approved through v0.28.1, so baked
+> Jamulus 3.12.2 and 3.12.3 records are approved through v0.28.3, so baked
 > Host/Join selection and the package build gate are source-eligible.
 > The signed public catalog remains sealed at exact WebJam v0.22.5.
 > All v0.28.1 physical, credentialed, signing, and platform-trust gates stay
