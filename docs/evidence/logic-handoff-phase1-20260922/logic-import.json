@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "observed_utc": "2026-09-23T04:19:43.300951+00:00",
+  "status": "passed_bounded_cold_import_timeline_check",
+  "application": {
+    "name": "Logic Pro",
+    "version": "12.3.1",
+    "initially_running": false
+  },
+  "pack_folder": "Logic-Handoff-Stub-20260923T040619725919Z-b3tcu23m",
+  "project": {
+    "window_title": "Untitled - Tracks",
+    "new_unsaved_test_project": true,
+    "saved_project_created": false,
+    "sample_rate_hz": 48000,
+    "tempo_bpm": 120,
+    "time_signature": [
+      4,
+      4
+    ]
+  },
+  "regions": [
+    {
+      "name": "01-Bass",
+      "kind": "audio",
+      "track": "Audio 1",
+      "channels": 1,
+      "source_file": "01-Bass.wav",
+      "start_bar": 1,
+      "end_bar": 3,
+      "source_duration_seconds": 4
+    },
+    {
+      "name": "02-Melody.1",
+      "kind": "audio",
+      "track": "Audio 2",
+      "channels": 2,
+      "source_file": "02-Melody.wav",
+      "start_bar": 1,
+      "end_bar": 3,
+      "source_duration_seconds": 4
+    },
+    {
+      "name": "Melody",
+      "kind": "midi",
+      "track": "GM Device 1",
+      "visible_note_count": 8,
+      "start_bar": 1,
+      "end_bar": 3
+    }
+  ],
+  "markers": [
+    {
+      "name": "Start",
+      "bar": 1,
+      "seconds_at_observed_tempo": 0
+    },
+    {
+      "name": "Middle",
+      "bar": 2,
+      "seconds_at_observed_tempo": 2
+    }
+  ],
+  "observed_audio_import_properties": "Both audio chooser selections reported WAVE, 48 kHz, 24-bit, 0:00:04:000; Melody Stereo and Bass Mono.",
+  "timeline_evidence": "Logic accessibility independently reported each of the three regions starts at 1 bar and ends at 3 bars. Final separate tracks were confirmed by distinct region y coordinates (188,253,318 before zoom) and the final screenshot. At 120 BPM in 4/4, two bars are four seconds.",
+  "workflow_notes": [
+    "Opened only the generated session.mid while Logic was closed. No prior user project restored.",
+    "Dismissed the notice that an unavailable previously selected interface would fall back to Mac mini Speakers for this session; no device preferences were edited.",
+    "Verified the new project was already set to 48 kHz before audio import.",
+    "Created audio tracks using New Tracks, then imported the two generated WAVs individually through Audio File import.",
+    "The two audio regions initially occupied Audio 1. Moved only the visible Melody audio region to Audio 2 by Cut/Paste at bar one; Logic appended .1 to its region name. Reverified all starts and ends after moving.",
+    "MIDI opened on GM Device 1 with no instrument assigned. No sound library, plug-in, audio routing driver, cloud service, phone, or controller was required.",
+    "No playback or recording was performed. No project was saved. The new test project remains open with all three regions selected and zoomed to fit; no cut operation is pending.",
+    "The parent audit observed Logic adding LGWV metadata chunks to imported WAV containers while preserving PCM payloads, sample rates, frame counts, and bit depth; its before/after hashes are recorded separately in stub-pack.json."
+  ],
+  "limitations": [
+    "This is a cold-import check of the generated four-second constant-tempo stub, not general certification of every accepted session or Logic version.",
+    "No audio playback, rendered bounce, instrument sound check, or sample-level post-import audio comparison was performed.",
+    "The final timeline and project settings were inspected through Logic UI/accessibility. Exact file formats and source PCM integrity are covered by the separate automated/native file checks.",
+    "The README multi-file drag-and-drop gesture was not exercised; the same supplied files were imported through Logic Audio File commands."
+  ],
+  "screenshots": [
+    {
+      "file": "logic-aligned-tracks.png",
+      "sha256": "c5b8a2bf25beab9053cb953368406d83a80a70a7365873c00927a6e644648df0"
+    },
+    {
+      "file": "logic-project-48khz.png",
+      "sha256": "79473bc2d5921ebb05b7d09b1b71e5c6b03cd52a017a209f02f59cae88ac9898"
+    }
+  ]
+}

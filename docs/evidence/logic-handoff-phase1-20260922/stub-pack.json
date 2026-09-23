@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "scope": "WEBJAM_LOGIC_HANDOFF_P1_20260922",
+  "base_sha": "a51154e533ce5662ca4b541a866dd9b1954452b1",
+  "folder_relative_to_home": "Music/WebJam/LogicHandoff/Logic-Handoff-Stub-20260923T040619725919Z-b3tcu23m",
+  "synthetic_stub": true,
+  "platform": "macOS-15.8-arm64-arm-64bit",
+  "files": [
+    {
+      "file": "01-Bass.wav",
+      "bytes": 576044,
+      "sha256": "e8cb489a6809d2abca9b37b5a4cc73b1689f495caf1021922ef4daf68f403a6e",
+      "sample_rate": 48000,
+      "frames": 192000,
+      "sample_width_bytes": 3,
+      "channels": 1,
+      "duration_seconds": 4.0
+    },
+    {
+      "file": "02-Melody.wav",
+      "bytes": 1152044,
+      "sha256": "25cc4424075f2140720e19e723485229f3b4e22618c7422abba74d20cba3bcde",
+      "sample_rate": 48000,
+      "frames": 192000,
+      "sample_width_bytes": 3,
+      "channels": 2,
+      "duration_seconds": 4.0
+    },
+    {
+      "file": "README.md",
+      "bytes": 1803,
+      "sha256": "e51d8c048c0ea3d6f781a9637517b75b2e7daf18dff1207a34444a4633316df9"
+    },
+    {
+      "file": "session.mid",
+      "bytes": 195,
+      "sha256": "52c27154d52ee6ebae66d00a0f954e71eb0692fb2a7433da917b4f71fb04203b"
+    },
+    {
+      "file": "tempo.json",
+      "bytes": 1044,
+      "sha256": "ae27bcb589349a530719615911d456ad5265f4a84d3db15a53982ad3213825bd"
+    }
+  ],
+  "tempo": {
+    "schema_version": 1,
+    "session_name": "Logic Handoff Stub",
+    "sample_rate": 48000,
+    "bit_depth": 24,
+    "audio_format": "WAV",
+    "frames": 192000,
+    "duration_seconds": 4.0,
+    "bpm": 120.0,
+    "effective_bpm": 120.0,
+    "tempo_microseconds_per_quarter": 500000,
+    "time_signature": [
+      4,
+      4
+    ],
+    "midi_ppq": 32760,
+    "midi_end_tick": 262080,
+    "midi_duration_seconds": 4.0,
+    "midi_tick_seconds": 1.5262515262515263e-05,
+    "midi_max_quantization_error_seconds": 7.631257631257631e-06,
+    "midi_note_count": 8,
+    "stems": [
+      {
+        "file": "01-Bass.wav",
+        "name": "Bass",
+        "start_frame": 0,
+        "source_frames": 192000,
+        "channels": 1
+      },
+      {
+        "file": "02-Melody.wav",
+        "name": "Melody",
+        "start_frame": 0,
+        "source_frames": 192000,
+        "channels": 2
+      }
+    ],
+    "markers": [
+      {
+        "name": "Start",
+        "frame": 0,
+        "seconds": 0.0,
+        "midi_tick": 0
+      },
+      {
+        "name": "Middle",
+        "frame": 96000,
+        "seconds": 2.0,
+        "midi_tick": 131040
+      }
+    ]
+  },
+  "native_audio_inspection": "afinfo: both PCM signed 24-bit little-endian, 48000 Hz, 192000 frames, 4.000000 seconds; mono bass and stereo melody",
+  "native_file_inspection": "file: Standard MIDI data (format 1), 2 tracks, PPQ 32760",
+  "logic_cold_import": "PASS for inspected Logic Pro 12.3.1 stub: separate Bass/Melody audio and Melody MIDI regions each bar1 to bar3, 48kHz project, 120BPM, 4/4, Start/Middle markers. No listening/playback claim.",
+  "readme_after_north_star_update": {
+    "bytes": 2256,
+    "sha256": "762c7194dbbc055634278eab7b5a09e6b8cb2e0344a1ed85e0912fb56a194138"
+  },
+  "files_after_logic_import": [
+    {
+      "file": "01-Bass.wav",
+      "bytes": 577560,
+      "sha256": "30eb4cb787baa3214a4c554656f0ad4f0e27f9132afee2ca134ede4ba67111ff",
+      "pcm_sha256": "8fd643c838ceaeb6296103f798c5968534c4afa0d02ec55c57e7911a9f341df7",
+      "pcm_unchanged": true,
+      "observed_added_chunk": "LGWV, 1508 bytes"
+    },
+    {
+      "file": "02-Melody.wav",
+      "bytes": 1153560,
+      "sha256": "5e4799c3995104dd25833bec5607f35a3b57d6bb81dc37ecefc73c92b5e77b11",
+      "pcm_sha256": "e711dde0f6a41529e5226152b12cc7831b36d338ac6c3c5df184e5e5e5bc38e0",
+      "pcm_unchanged": true,
+      "observed_added_chunk": "LGWV, 1508 bytes"
+    }
+  ],
+  "final_source_reproduction": "Fresh final-source WAVs, MIDI and tempo.json exactly match initial export hashes. After import Logic added LGWV metadata to WAV containers; PCM samples, format, frame count and SR remain identical. README refreshed with the Record-along arc and SMF Type 1 headline."
+}
