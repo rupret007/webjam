@@ -1,13 +1,13 @@
-# Developing WebJam v0.28.2
+# Developing WebJam v0.28.3
 
-> **Current source line:** this guide describes v0.28.2 source. GitHub
+> **Current source line:** this guide describes v0.28.3 source. GitHub
 > **Latest** is immutable unsigned/ad-hoc private test release `393030220`,
 > published `2026-09-21T14:30:22Z` from annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to
 > exact commit `200cac9eb04d01611696cdc147957b36daef257f`. A checkout or branch artifact remains source
 > evidence, not a substitute for an exact release asset. Older release entries
 > (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags
 > remain. The existing Jamulus 3.12.2 and 3.12.3 compatibility records are
-> explicitly approved through v0.28.1. Live client/server selection and the
+> explicitly approved through v0.28.3. Live client/server selection and the
 > component-input build gate reuse those exact baked identities; the signed
 > public catalog stays sealed at exact WebJam v0.22.5.
 

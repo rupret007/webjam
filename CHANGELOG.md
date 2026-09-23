@@ -6,6 +6,32 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+> Future work after the unsigned v0.28.3 candidate belongs here. At candidate
+> preparation, GitHub Latest remains immutable v0.28.1 release `393030220`;
+> v0.28.2 remains a stale draft at `a51154e533ce5662ca4b541a866dd9b1954452b1`.
+> Every published tag, release, and asset remains immutable historical evidence.
+> Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted
+> by owner; git tags remain.
+
+## [0.28.3] — Unsigned/ad-hoc private test release candidate
+
+> Prepared from master `7f5df4ec2faa91245097fc8180277d32d7332546` after
+> #145–#148 and #150. Extends the Jamulus webjam_range ceiling from 0.28.2
+> to 0.28.3 while retaining the exact baked 3.12.2 and 3.12.3 identities.
+> The signed catalog remains sealed at exact WebJam v0.22.5. Windows remains
+> unsigned; macOS remains ad-hoc signed and unnotarized. Physical, credentialed,
+> signing, notarization, Gatekeeper, and SmartScreen gates remain **NOT RUN**.
+> #149 and parked #37/#49 are outside this candidate's changes.
+
+### Paint along and Art next actions (#145)
+
+- Paint along can use silent YouTube lessons, with clearer Art next actions
+  and local-copy guidance.
+
+### Offline Record-along Logic handoff (#150)
+
+- Offline Record-along exports a Logic handoff with MIDI and PCM24 stems.
+
 ### Readable Music Notes
 
 - Music, Podcast & Voice, and Review & Rehearsal Notes open with their writing
@@ -27,12 +53,6 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Stop and Finish Stop remain available through first-time recording choices
   and pending exports. A changed session or take invalidates an open recording
   or export confirmation. Returning from take review refreshes guest readiness.
-
-> Future work after the unsigned v0.28.2 candidate belongs here once that round
-> is tagged and published as Latest. Until then GitHub Latest remains immutable
-> v0.28.1 release `393030220`. Every published tag, release, and asset remains
-> immutable historical evidence. Older release entries (v0.28.0, v0.27.2,
-> Jamulus catalog v1–v3) were deleted by owner; git tags remain.
 
 ## [0.28.2] — Unsigned/ad-hoc private test release candidate
 
@@ -84,7 +104,7 @@ All notable improvements and features for the WebJam creator collaboration platf
   Record Session still performs the source and storage checks.
 - Recurring recovery updates preserve keyboard focus in Notes and setup input.
 
-## [0.28.1] — Unsigned/ad-hoc private test release (GitHub Latest until v0.28.2 publishes)
+## [0.28.1] — Unsigned/ad-hoc private test release (GitHub Latest at v0.28.3 candidate preparation)
 
 > Published 2026-09-21 as GitHub **Latest**. Release ID `393030220` from
 > annotated tag `v0.28.1` (object `db44247a3ceefb97f4cac6e623deef1bd32648a8`)

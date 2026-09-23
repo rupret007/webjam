@@ -12,12 +12,12 @@
 > commit `200cac9eb04d01611696cdc147957b36daef257f`. Use the exact release asset and attached checksum manifest
 > as download evidence; a checkout or branch artifact is not a substitute.
 
-> **What this checkout is:** unsigned v0.28.2 candidate source for Jeff's
+> **What this checkout is:** unsigned v0.28.3 candidate source for Jeff's
 > testing. GitHub **Latest** remains immutable v0.28.1 release `393030220`.
 > The exact published v0.28.1 release assets—not this checkout or a branch
-> artifact—are package evidence until v0.28.2 is tagged and published. Live
+> artifact—are package evidence until v0.28.3 is tagged and published. Live
 > Host/Join and package builds reuse the exact baked Jamulus 3.12.2 and 3.12.3
-> records through v0.28.2; the signed public catalog is unchanged. No physical
+> records through v0.28.3; the signed public catalog is unchanged. No physical
 > PASS result is claimed.
 
 WebJam brings artists together to make, learn, and collaborate across mediums.
@@ -33,7 +33,7 @@ the meeting app, browser, or system output. Local Originals record only the
 input devices you explicitly select, so do not route meeting or system audio
 into those inputs.
 
-The current v0.28.2 source keeps Music and Podcast & Voice as GA
+The current v0.28.3 source keeps Music and Podcast & Voice as GA
 creator profiles. Art and Review & Rehearsal are visibly Preview. Art offers
 **Make together**—a live room where people work locally and the host may open
 one shared canvas—or host-clocked **Paint along**, but no recording or
@@ -134,7 +134,7 @@ owns installation and WebJam retains its embedded 3.12.2 fallback instead of
 claiming it can roll back the system package.
 
 The exact baked Jamulus 3.12.2 and 3.12.3 records are approved through unsigned
-v0.28.2, so live Host/Join is source-eligible. This checkout is still not
+v0.28.3, so live Host/Join is source-eligible. This checkout is still not
 package evidence or a physical-test result.
 
 Jamulus displays a name on a second line after eight characters and accepts no

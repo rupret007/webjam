@@ -6,7 +6,7 @@ Allow two minutes for the door, then another minute to open a Make together
 room and find its Conversation controls. One computer is enough to show that
 next action; a second artist is needed to demonstrate joining and making together.
 
-> **Boundary:** this script runs v0.28.2 candidate source while GitHub Latest
+> **Boundary:** this script runs v0.28.3 candidate source while GitHub Latest
 > remains published unsigned release `393030220` (v0.28.1), not a signed
 > package. Every v0.28.1 physical and platform-trust gate remains **NOT RUN** —
 > see [README](README.md)

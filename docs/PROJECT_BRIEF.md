@@ -1,6 +1,6 @@
 # WebJam project brief
 
-**Review date:** 2026-09-21
+**Review date:** 2026-09-23
 **Status:** published unsigned/ad-hoc v0.28.1 is GitHub Latest release
 `393030220`, published `2026-09-21T14:30:22Z`. Annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8`
 peels to exact commit `200cac9eb04d01611696cdc147957b36daef257f`. Its seven packages are covered by
@@ -137,8 +137,10 @@ services receive friendly labels; generic providers remain neutral and receive
 no native-verification claim. Exact Jamulus correlation, bounded guest
 observation, and fail-closed take/export evidence remain the authority.
 
-This is the v0.28.1 source identity matching the published GitHub Latest
-release `393030220`. A checkout or branch artifact is not package evidence.
+This checkout reports unsigned v0.28.3 candidate source including #145–#148
+and #150. The v0.28.2 draft at `a51154e5` is stale; at candidate preparation,
+published GitHub Latest remains v0.28.1 release `393030220`. A checkout or
+branch artifact is not package evidence.
 Familiar DAW interactions are used for clarity and musical flow without copying
 Apple artwork, exact layouts, assets, or trade dress. Physical audibility,
 isolation, alignment, recovery, output, and packaged UX remain **NOT RUN**.

@@ -1,4 +1,4 @@
-# WebJam v0.28.2 source test procedure
+# WebJam v0.28.3 source test procedure
 
 > GitHub **Latest** is immutable unsigned/ad-hoc v0.28.1 private test release
 > `393030220`, published from annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to
@@ -10,7 +10,7 @@
 > Publication did not create physical PASS.
 > Published v0.27.1 history remain immutable.
 > Required component-input CI exercises the existing exact Jamulus 3.12.2 and
-> 3.12.3 records now approved through v0.28.1. Physical steps still require an
+> 3.12.3 records now approved through v0.28.3. Physical steps still require an
 > exact package handoff and remain **NOT RUN**.
 
 ## Scope

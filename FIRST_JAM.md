@@ -1,12 +1,12 @@
-# First Session — WebJam v0.28.2 source candidate
+# First Session — WebJam v0.28.3 source candidate
 
-> This guide describes current unsigned v0.28.2 candidate source. GitHub
+> This guide describes current unsigned v0.28.3 candidate source. GitHub
 > **Latest** remains immutable release `393030220` (v0.28.1). A checkout or
 > branch artifact is not a substitute for one of the exact checksum-verified
 > packages. Record every physical gate as **NOT RUN** until it is observed
 > against exact release bytes. Older release entries (v0.28.0, v0.27.2) were
 > deleted by owner; git tags remain. Host/Join is source-eligible through the
-> exact baked Jamulus 3.12.2 and 3.12.3 records through v0.28.2, but do not
+> exact baked Jamulus 3.12.2 and 3.12.3 records through v0.28.3, but do not
 > treat this checkout as a package or physical-test result.
 
 Before Host or Join, choose **Art** or **Music**. Those are the equal first
