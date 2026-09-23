@@ -150,7 +150,7 @@ def test_studio_review_uses_studio_owned_action_and_truthful_outputs(
         )
         controller._update_session_hud()
         guidance = controller._last_musician_guidance
-        assert guidance.primary_action is SessionPrimaryAction.OPEN_DETAILS
+        assert guidance.primary_action is SessionPrimaryAction.RETRY_STUDIO_SAVE
         assert guidance.output("studio").state is GuidanceState.NEEDS_ATTENTION
 
         controller._conductor_export = ExportState.COMPLETE
@@ -589,7 +589,8 @@ def test_embedded_studio_keeps_guidance_and_primary_controls_visible_at_760_by_6
         assert not studio._phase.isVisibleTo(studio)
         assert studio._hint.isVisibleTo(studio)
         assert studio._record_btn.isVisibleTo(studio)
-        assert not studio._hint.wordWrap()
+        assert studio._hint.wordWrap()
+        assert studio._hint.height() >= studio._hint.heightForWidth(studio._hint.width())
 
         bounds = studio.contentsRect()
         for widget in (studio._hint, studio._record_btn):

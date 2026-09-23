@@ -13,6 +13,7 @@ import sys
 
 from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -52,7 +53,9 @@ _NOTES_RECOVERY_COPY = {
 _NOTES_SAVE_MESSAGES = {
     "saved": "Saved on this computer",
     **_NOTES_RECOVERY_COPY,
-    "unreadable": "Saved notes could not be opened. The original is unchanged.",
+    "unreadable": (
+        "Saved notes could not be opened. Choose Recheck Saved Notes."
+    ),
     "exported": "Draft exported to your chosen file.",
     "recovery_unavailable": (
         "A recovery copy could not be used safely. "
@@ -74,6 +77,7 @@ class SessionCanvas(QFrame):
     notes_changed = Signal(str)
     notes_restored = Signal()  # owner-held document changed; never a user edit
     save_notes_requested = Signal()
+    recheck_saved_notes_requested = Signal(str)
     notes_attention_changed = Signal(bool, str, str)
     chat_submitted = Signal(str)   # user pressed Enter in the chat box
     brief_export_requested = Signal()
@@ -95,9 +99,11 @@ class SessionCanvas(QFrame):
         self._art_profile = False
         self._talk_share_available = True
         self._notes_active_profile_key = "music"
+        self._notes_original_unavailable: str | None = None
         self._notes_recovery_summary: tuple[tuple[str, str], ...] = ()
         self._notes_need_attention = False
         self._notes_attention_presentation = None
+        self._notes_recovery_measurement = None
         self._notes_export_handler: Callable[[str, str], None] | None = None
 
         self._header = QLabel("Session Canvas")
@@ -214,6 +220,15 @@ class SessionCanvas(QFrame):
         self._save_notes_button.clicked.connect(self.save_notes_requested.emit)
         toolbar.addWidget(self._notes_save_status)
         chrome_row.insertWidget(2, self._save_notes_button)
+        self._recheck_notes_button = QPushButton("Recheck Saved Notes")
+        self._recheck_notes_button.setObjectName("GhostButton")
+        self._recheck_notes_button.setAccessibleName("Recheck Saved Notes")
+        self._recheck_notes_button.setAccessibleDescription(
+            "Reopen saved notes on this computer after restoring file access. No files are changed."
+        )
+        self._recheck_notes_button.setToolTip(self._recheck_notes_button.accessibleDescription())
+        self._recheck_notes_button.clicked.connect(self._request_notes_recheck)
+        toolbar.addWidget(self._recheck_notes_button)
         self._normal_notes_buttons = (ts_btn, clear_btn)
         self._notes_save_state = ""
         self.set_notes_save_state("saved")
@@ -348,6 +363,7 @@ class SessionCanvas(QFrame):
         layout.addWidget(self._pulse)
         layout.addWidget(self._notes, stretch=1)
         chat_row = QHBoxLayout()
+        self._chat_row = chat_row
         chat_row.setContentsMargins(Space.MD, 0, Space.MD, 0)
         chat_row.addWidget(self._chat_input)
         chat_row.addWidget(self._art_communication)
@@ -497,6 +513,19 @@ class SessionCanvas(QFrame):
     def current_notes(self) -> str:
         return self._notes.toPlainText()
 
+    def _request_notes_recheck(self) -> None:
+        # A queued click must not replace a draft typed since this action was shown.
+        profile = self._notes_original_unavailable
+        if profile is not None and not self.current_notes():
+            self.recheck_saved_notes_requested.emit(profile)
+
+    def set_notes_original_unavailable(self, profile: str | None) -> None:
+        """Keep active original recovery separate from retained workspace drafts."""
+        profile = profile if profile in _NOTES_WORKSPACE_LABELS else None
+        if profile != self._notes_original_unavailable:
+            self._notes_original_unavailable = profile
+            self._render_notes_save_state()
+
     def set_notes_save_state(self, state: str) -> None:
         if state not in _NOTES_SAVE_MESSAGES:
             raise ValueError("Unknown local notes save state.")
@@ -526,7 +555,9 @@ class SessionCanvas(QFrame):
         summary = self._notes_recovery_summary
         failures = tuple((key, reason) for key, reason in summary if reason != "pending")
         needs_attention = bool(failures) or state in set(_NOTES_RECOVERY_COPY) - {"pending"}
-        self._notes_need_attention = needs_attention or state == "recovery_unavailable"
+        unavailable = self._notes_original_unavailable
+        combined = bool(unavailable and failures)
+        self._notes_need_attention = needs_attention or bool(unavailable) or state == "recovery_unavailable"
         message = _NOTES_SAVE_MESSAGES[state]
         description = message
         selected_reason = state
@@ -550,6 +581,19 @@ class SessionCanvas(QFrame):
                 f"{_NOTES_WORKSPACE_LABELS[key]}: {_NOTES_RECOVERY_COPY[reason]}"
                 for key, reason in summary
             )
+        if combined:
+            # A different workspace's draft cannot hide this empty editor's
+            # read-only recovery. Keep the longer failure detail accessible.
+            short_reason = _NOTES_RECOVERY_COPY[selected_reason].split(". ", 1)[0].split(":", 1)[0].rstrip(".")
+            message = (
+                f"{_NOTES_WORKSPACE_LABELS[unavailable]} saved notes could not be opened. "
+                "Choose Recheck Saved Notes.\n"
+                f"{_NOTES_WORKSPACE_LABELS[key]}: {short_reason}. Choose Save Notes."
+            )
+            description = message + "\n" + description
+        elif unavailable:
+            message = _NOTES_SAVE_MESSAGES["unreadable"]
+            description = message
         self._notes_save_status.setText(message)
         self._notes_save_status.setAccessibleDescription(description)
         self._notes_save_status.setToolTip(description)
@@ -563,21 +607,28 @@ class SessionCanvas(QFrame):
         self._save_notes_button.setToolTip(recovery_description)
         self._save_notes_button.setAccessibleDescription(recovery_description)
         self._notes_save_status.setVisible(
-            needs_attention or state in {"unreadable", "exported", "recovery_unavailable"}
+            needs_attention or bool(unavailable)
+            or state in {"unreadable", "exported", "recovery_unavailable"}
         )
         for button in getattr(self, "_normal_notes_buttons", ()):
-            button.setVisible(not needs_attention)
+            button.setVisible(not needs_attention and unavailable is None)
         self._save_notes_button.setVisible(needs_attention)
+        self._recheck_notes_button.setVisible(unavailable is not None)
         # A save failure belongs beside the draft, above optional suggestions.
         # Keep the editor and recovery reachable at the compact window floor.
         if hasattr(self, "_pulse"):
             self._pulse.setVisible(not self._notes_need_attention)
+        if hasattr(self, "_guidance"):
+            # Two local recovery actions take priority over the duplicate HUD
+            # readout; the shared guidance facts themselves remain unchanged.
+            self._guidance.setVisible(not combined)
         self._sync_suggestion_layout()
+        self._sync_notes_recovery_layout()
         # Retained drafts belong to the window even while this panel is hidden.
         # Project only bounded workspace/reason copy, never the draft itself.
         notice = (
             needs_attention,
-            message.split("\n", 1)[0] if failures else "Local notes need attention.",
+            heading if failures else "Local notes need attention.",
             description,
         )
         if notice != self._notes_attention_presentation:
@@ -651,6 +702,44 @@ class SessionCanvas(QFrame):
         if focused and available and not self._suggestion_button.hasFocus():
             self._suggestion_button.setFocus(Qt.FocusReason.OtherFocusReason)
 
+    def _sync_notes_recovery_layout(self) -> None:
+        """Fit recovery copy using the current font and available Notes width."""
+        if not hasattr(self, "_chat_row") or self.layout() is None:
+            return
+        margins = self.layout().contentsMargins()
+        width = max(1, self.contentsRect().width() - margins.left() - margins.right())
+        status = self._notes_save_status
+        measurement = (
+            width, status.isHidden(), status.text(), status.font().key(),
+            self.styleSheet(), status.styleSheet(), status.margin(), status.indent(),
+            status.contentsMargins(),
+        )
+        if measurement != self._notes_recovery_measurement:
+            # QLabel includes its existing minimum in heightForWidth. Clear it
+            # only for changed inputs, then cache the natural measurement so
+            # the geometry update cannot perpetuate LayoutRequest events.
+            self._notes_recovery_measurement = measurement
+            status.setMinimumHeight(0)
+            if not status.isHidden():
+                status.setMinimumHeight(max(0, status.heightForWidth(width)))
+
+        communication = self._art_communication.layout()
+        direction = QBoxLayout.Direction.LeftToRight
+        if self._art_profile and self._notes_need_attention:
+            chat_margins = self._chat_row.contentsMargins()
+            footer_width = max(1, width - chat_margins.left() - chat_margins.right())
+            button = self._talk_share_button.minimumSizeHint()
+            beside_width = max(1, footer_width - button.width() - communication.spacing())
+            beside_height = max(self._communication_hint.heightForWidth(beside_width), button.height())
+            stacked_height = (
+                self._communication_hint.heightForWidth(footer_width)
+                + button.height() + communication.spacing()
+            )
+            if stacked_height < beside_height:
+                direction = QBoxLayout.Direction.TopToBottom
+        if communication.direction() != direction:
+            communication.setDirection(direction)
+
     def _sync_notes_controls(self) -> None:
         compact = self._art_profile and self.height() < 500
         narrow = self._art_profile and self.width() < 400
@@ -662,7 +751,7 @@ class SessionCanvas(QFrame):
             rules = [f"min-height: {Space.LG}px;"] if compact else []
             if narrow:
                 rules.append(f"padding-left: {Space.XS}px; padding-right: {Space.XS}px;")
-            for button in (*self._toolbar_buttons, self._save_notes_button):
+            for button in (*self._toolbar_buttons, self._save_notes_button, self._recheck_notes_button):
                 button.setStyleSheet(" ".join(rules))
             self.layout().setSpacing(Space.XS if compact else Space.SM)
             self.layout().setContentsMargins(0, 0, 0, Space.XS if compact else Space.MD)
@@ -672,7 +761,17 @@ class SessionCanvas(QFrame):
                 margin = Space.XS if compact else Space.SM
                 readout.layout().setContentsMargins(Space.MD, margin, Space.MD, margin)
                 readout.layout().setSpacing(0 if compact else Space.XS)
+        if not self._art_profile:
+            # The long recovery action must fit the same narrow rail in Music.
+            # Art keeps its existing compact-height and narrow-padding rules.
+            recheck_style = (
+                f"padding-left: {Space.XS}px; padding-right: {Space.XS}px;"
+                if self.width() < 400 else ""
+            )
+            if self._recheck_notes_button.styleSheet() != recheck_style:
+                self._recheck_notes_button.setStyleSheet(recheck_style)
         self._sync_suggestion_layout()
+        self._sync_notes_recovery_layout()
 
     def eventFilter(self, watched, event) -> bool:
         if (watched is getattr(self, "_notes", None) and self._art_profile
