@@ -1,0 +1,16 @@
+{
+  "ruff": "passed; full runtime trees and all changed test modules, --no-cache",
+  "syntax": "passed; compileall core webjam_qt ui services api tests, temporary pycache",
+  "dependency_consistency": "passed; pip check",
+  "runtime_dependency_policy": "passed",
+  "ux_smoke": "passed; temporary pycache",
+  "git_diff_check": "passed",
+  "go": "No Go source changed; exact-tip hosted Transport job required before DONE.",
+  "source_sha256": {
+    "core/art_room_overview.py": "7439c0f9e62fa934203578246b3becb734a226214cd3445751d9505c70c23793",
+    "core/shared_canvas.py": "63c192d23c17981766acc022714f09aaea0ae6867bd3176d883def26b357c3fb",
+    "webjam_qt/widgets/art_room_overview.py": "a1b019d556709daf62db752be90e4838b01c3bb9fa31d4d5abb198addf2cc3dc",
+    "webjam_qt/widgets/recording_studio.py": "fcc6ad50d46b39e8e0dacb9f596cfaeb3596f6524db746a6bc53d063bc5e5006",
+    "webjam_qt/windows/shared_canvas.py": "ae3fd5b33b28f31868e03eae1669a522d79a4693df3ee63f6462e1a7b7b1be1d"
+  }
+}

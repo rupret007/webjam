@@ -1,0 +1,27 @@
+{
+  "modules": 16,
+  "seconds": 32.11,
+  "failed_modules": [],
+  "source_drift": [],
+  "passed": 1187,
+  "failed": 0,
+  "skipped": 0,
+  "subtests": 0,
+  "base_tip": "ec6fac77bd9ec477bfefd64bb07b8ca1d6cb478a",
+  "pm3_base_tip": "844ea1080500fc937101b19b21168b5a5525600c",
+  "patch_applies_cleanly": true,
+  "patch_sha256": "87de0b911d0e4b7f3096acfeeee37ae1f563477ed969f7ed3e1e93320f00644f",
+  "pm3_source_sha256": {
+    "core/art_room_overview.py": "7439c0f9e62fa934203578246b3becb734a226214cd3445751d9505c70c23793",
+    "core/shared_canvas.py": "63c192d23c17981766acc022714f09aaea0ae6867bd3176d883def26b357c3fb",
+    "webjam_qt/widgets/art_room_overview.py": "a1b019d556709daf62db752be90e4838b01c3bb9fa31d4d5abb198addf2cc3dc",
+    "webjam_qt/windows/shared_canvas.py": "ae3fd5b33b28f31868e03eae1669a522d79a4693df3ee63f6462e1a7b7b1be1d"
+  },
+  "combined_source_sha256": {
+    "core/art_room_overview.py": "8063fa90f3cf46e24a9cf0ab2feed702fa30d03843d3908d7b0b3aba05326a76",
+    "core/shared_canvas.py": "63c192d23c17981766acc022714f09aaea0ae6867bd3176d883def26b357c3fb",
+    "webjam_qt/widgets/art_room_overview.py": "665ce59144f21ebaf7ce059814e9f62a7e9ecf521832a53d71daeee02836e35d",
+    "webjam_qt/windows/shared_canvas.py": "ae3fd5b33b28f31868e03eae1669a522d79a4693df3ee63f6462e1a7b7b1be1d"
+  },
+  "modules_manifest": "compatibility-modules.json"
+}

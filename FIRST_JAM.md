@@ -1,17 +1,16 @@
-# First Session — WebJam v0.28.3 source candidate
+# First Session — WebJam v0.28.3
 
-> This guide describes current unsigned v0.28.3 candidate source. GitHub
-> **Latest** remains immutable release `393030220` (v0.28.1). A checkout or
-> branch artifact is not a substitute for one of the exact checksum-verified
-> packages. Record every physical gate as **NOT RUN** until it is observed
-> against exact release bytes. Older release entries (v0.28.0, v0.27.2) were
-> deleted by owner; git tags remain. Host/Join is source-eligible through the
-> exact baked Jamulus 3.12.2 and 3.12.3 records through v0.28.3, but do not
-> treat this checkout as a package or physical-test result.
+> **Show baseline, checked 2026-09-24:** published unsigned/ad-hoc
+> [v0.28.3](https://github.com/rupret007/webjam/releases/tag/v0.28.3) is GitHub
+> Latest, release `394985116`, from commit
+> `da16749abc9f87cde127e01ea10a7712e5ce7800`. Verify the selected package with
+> `WebJam-v0.28.3-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
+> and unnotarized. Branch changes and automated checks do not establish
+> physical show readiness. See [the show one-pager](SHOW_ONEPAGER.md) and [demo script](DEMO_SCRIPT.md).
 
 Before Host or Join, choose **Art** or **Music**. Those are the equal first
 clicks. Art then offers **Make together** or **Paint along**, then **Host** or
-**Join**. **Make together** means “Talk, make, or draw together in one room”; a
+**Join**. **Make together** means “Talk and make with your own tools, or share a canvas”; a
 host may open one shared canvas from inside the room. Music is **Host** or
 **Join** only. Profiles that support recording keep the same evidence
 rules for their recorders. The launch **File** menu contains **New Music Project…**,
@@ -23,9 +22,10 @@ is a newer Preview; the aim is to build it out to the same depth as Music.
 Make from your own space with paper, clay, a model, a printer, or your usual
 app. A shared canvas is optional. Inside the room, **Conversation** lets you
 open a meeting and share a demonstration in Webex or your chosen service.
-Everyone can follow there. In **Paint along**, choose **Watch a shared lesson**
-to reach Conversation for a YouTube lesson with sound. The local-file option
-stays available and silent.
+Everyone can follow there. In **Paint along**, the host chooses
+**Choose process video…** or **YouTube link…** for a silent video inside
+WebJam. **Watch a shared lesson** instead opens Conversation for a separate
+meeting demonstration with sound.
 
 ## Start an Art room
 
@@ -41,11 +41,12 @@ stays available and silent.
    choose **Set Up Conversation**, then **Add Link**. With a saved link, the
    room button says **Conversation** and the panel offers **Join / Open
    Meeting**. Opening the panel alone opens no meeting.
-   For a YouTube lesson, choose **Paint along →
-   Watch a shared lesson**, then use Conversation's next action. Finish
-   joining the meeting there; WebJam cannot confirm who can see or hear it.
-   The host shares the lesson with sound and pauses the browser when asked.
-   You can also follow a matching silent local file in Paint along.
+   In Paint along, the host chooses **Choose process video…** for a local file
+   or **YouTube link…** for a lesson, then **Play**. Guests choose
+   **Open my copy…** for the same local file or **Open lesson** for YouTube;
+   both stay silent. For a separate demonstration with sound, choose
+   **Watch a shared lesson**, then Conversation's next action. Finish joining
+   the meeting and share there; WebJam cannot confirm who can see or hear it.
    A shared canvas opens only when you choose it.
 5. If the room loses contact, follow its reconnecting or recovery guidance.
    Use **Paste New Invite** with a fresh invitation when the old one may have
@@ -154,3 +155,15 @@ immutable historical evidence for the prior release.
 
 If Jamulus needs another change, choose **Bring Jamulus Forward** in the setup
 surface or **More → Audio Settings in Jamulus** after entering the session.
+
+
+## Historical release evidence
+
+The superseded v0.28.1 download record is release `393030220`, published
+`2026-09-21T14:30:22Z`: annotated tag object
+`db44247a3ceefb97f4cac6e623deef1bd32648a8` peels to
+`200cac9eb04d01611696cdc147957b36daef257f`. Its seven packages and
+`WebJam-v0.28.1-SHA256SUMS.txt` remain evidence for that historical release.
+Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by
+owner; git tags remain. Those records do not verify the current show candidate.
+Physical observations remain **NOT RUN** until recorded against exact bytes.

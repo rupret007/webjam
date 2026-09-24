@@ -39,6 +39,7 @@ class ArtRoomOverview:
     secondary_activity_action: str = ""
     secondary_activity_action_label: str = ""
     secondary_activity_enabled: bool = False
+    making_detail: str = ""
 
     @property
     def activity_actions(self) -> tuple[str, ...]:
@@ -204,6 +205,11 @@ def art_room_overview(
         secondary_activity_action=secondary_action,
         secondary_activity_action_label=secondary_action_label,
         secondary_activity_enabled=active and bool(secondary_action),
+        making_detail=(
+            "Start making with paper, clay, a model, printer, or your usual app. "
+            "Shared activities are optional."
+            if active and (action or secondary_action) else ""
+        ),
         # Conversation only reveals the separate meeting controls. Its
         # availability is independent of the Art transport connection.
         conversation_enabled=not (stopping or cleanup_required or quitting),

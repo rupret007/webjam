@@ -1,25 +1,12 @@
 # WebJam, simply
 
-> **Private test release:** GitHub
-> [Latest](https://github.com/rupret007/webjam/releases/latest) is immutable
-> unsigned/ad-hoc v0.28.1 release `393030220`, published
-> `2026-09-21T14:30:22Z`. Verify one of its seven packages against
-> `WebJam-v0.28.1-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
-> and unnotarized. Older release entries (v0.28.0, v0.27.2, Jamulus catalog
-> v1–v3) were deleted by owner; git tags remain.
-
-> **Published Latest note:** annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peels to exact
-> commit `200cac9eb04d01611696cdc147957b36daef257f`. Use the exact release asset and attached checksum manifest
-> as download evidence; a checkout or branch artifact is not a substitute.
-
-> **What this checkout is:** unsigned v0.28.3 candidate source for Jeff's
-> testing. GitHub **Latest** remains immutable v0.28.1 release `393030220`.
-> The published v0.28.1 assets remain evidence for that release. The new
-> v0.28.3 candidate needs its own checksum-bound draft packages; this
-> checkout alone is not package evidence. Live
-> Host/Join and package builds reuse the exact baked Jamulus 3.12.2 and 3.12.3
-> records through v0.28.3; the signed public catalog is unchanged. No physical
-> PASS result is claimed.
+> **Show baseline, checked 2026-09-24:** published unsigned/ad-hoc
+> [v0.28.3](https://github.com/rupret007/webjam/releases/tag/v0.28.3) is GitHub
+> Latest, release `394985116`, from commit
+> `da16749abc9f87cde127e01ea10a7712e5ce7800`. Verify the selected package with
+> `WebJam-v0.28.3-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
+> and unnotarized. Branch changes and automated checks do not establish
+> physical show readiness. See [the show one-pager](SHOW_ONEPAGER.md) and [demo script](DEMO_SCRIPT.md).
 
 WebJam brings artists together to make, learn, and collaborate across mediums.
 Music supports live audio and separate recorded tracks; Art welcomes people
@@ -46,9 +33,9 @@ mutation, track export, shared notes, visual sync, and media timecode. No
 profile directly or automatically taps a meeting app, browser, or system
 output.
 
-Current published private test release (GitHub Latest): **v0.28.1**. Use only the exact assets attached to
-immutable GitHub release `393030220` and verify them with
-`WebJam-v0.28.1-SHA256SUMS.txt`. Older release entries (v0.28.0, v0.27.2) were deleted by owner; git tags remain.
+Current published private test release (GitHub Latest): **v0.28.3**, as checked
+on 2026-09-24. Verify the exact selected package with its attached checksum
+manifest before installing.
 The four-platform release covers
 Windows, Ubuntu 22.04, Intel Mac, and
 Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc
@@ -92,23 +79,26 @@ invitation was not submitted. If it may have been used, choose **Paste New Invit
 WebJam and use a fresh invitation. A failed room cleanup keeps **Try End Room**
 or **Try Leave Room** available until it finishes.
 
-In **Paint along**, WebJam turns its existing window into a silent process-video
+In **Paint along**, WebJam turns its existing window into a silent video
 companion once the room exists. Paint in Procreate, Clip Studio Paint, Krita,
-or on paper beside it. Paint along stays the silent local process video—each person opens
-their own copy. It is not the movie-watch path. To watch a movie or demo together, open
-**Conversation**, choose **Join / Open Meeting** or **Show Webex App**, then
-use the meeting app's own share—WebJam does not play the movie. Make
-together works with everyone's own tools, including clay and printers;
-opening a shared canvas is optional. There is no third preview window. The host chooses **Choose
-process video…** and controls play/pause; a guest chooses **Open my copy…** for
-the same local file. **Back to room** or Escape returns to the conductor
-without ending the room.
+or on paper beside it. The host chooses **Choose process video…** for a local
+file or **YouTube link…** for a lesson, then controls play/pause. A guest
+chooses **Open my copy…** for the same local file, or **Open lesson** to stream
+the host's YouTube lesson silently. **Back to room** or Escape returns to the
+conductor without ending the room. There is no third preview window.
+
+For a demonstration with sound through a meeting, **Watch a shared lesson**
+opens **Conversation**. Choose **Join / Open Meeting** or **Show Webex App**,
+then use the meeting app's own share. That media is played by the meeting
+service. Make together works with everyone's own tools, including clay and
+printers; opening a shared canvas is optional.
 
 If a host first offers Paint along while a guest is using Notes, Conversation,
 or a dialog, that work stays visible. The guest can choose **Open Paint along**
 in Room, or use the offered Paint along line, when ready. Returning to Room
 does not open the deferred video automatically. A first offer from the untouched
-Room still opens **Open my copy…** directly.
+Room still opens Paint along directly; the guest's next action matches the
+host's source: **Open my copy…** or **Open lesson**.
 
 While a host's process video opens, **Cancel opening** stops the attempt.
 **Play** appears when the file is ready; a missing or failed file offers
@@ -143,6 +133,11 @@ more than 16 UTF-16 units. WebJam shows that preview anywhere you enter your
 Jamulus display name, so it will not be silently shortened later.
 
 ## Create locally
+
+From the launch screen, choose **File → New Music Project…**, then
+**Play Along / Record**, **New Project**, or **Open Project…**. If a live
+session is open, end or leave it, quit WebJam, and relaunch first. The live
+**Studio** button opens completed-take review.
 
 Music and Podcast & Voice can use their local-project actions to play with
 reference audio, record ideas, rearrange sections/chapters, mix, or bounce a
@@ -257,3 +252,15 @@ execute it against this checkout. The
 remains immutable historical evidence. The
 [v0.24 checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md) remains
 immutable historical evidence for the prior package.
+
+
+## Historical release evidence
+
+The superseded v0.28.1 download record is release `393030220`, published
+`2026-09-21T14:30:22Z`: annotated tag object
+`db44247a3ceefb97f4cac6e623deef1bd32648a8` peels to
+`200cac9eb04d01611696cdc147957b36daef257f`. Its seven packages and
+`WebJam-v0.28.1-SHA256SUMS.txt` remain evidence for that historical release.
+Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by
+owner; git tags remain. Those records do not verify the current show candidate.
+Physical observations remain **NOT RUN** until recorded against exact bytes.

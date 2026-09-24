@@ -587,9 +587,10 @@ class ConductorWindow(QMainWindow):
         """Display the same short workflow the live screen presents."""
         import sys
 
-        from PySide6.QtWidgets import QMessageBox
+        from shiboken6 import isValid
 
         from webjam_qt import __version__
+        from webjam_qt.windows.help_dialog import HelpDialog
 
         if sys.platform == "darwin":
             navigation_shortcuts = "⌘1 / ⌘2 / ⌘3"
@@ -609,7 +610,33 @@ class ConductorWindow(QMainWindow):
             if profile.key == "music"
             else f"{navigation_shortcuts} — Live / Notes / Studio"
         )
-        if self._reference_studio_only and profile.key == "podcast_voice":
+        if profile.key == "art":
+            body = (
+                f"<b>WebJam v{__version__} — Art</b><br>"
+                "<i>Make together with your own tools.</i><br><br>"
+                "<b>1.</b> At launch, choose <b>Make together</b> or "
+                "<b>Paint along</b>, then <b>Host</b>. Guests choose <b>Join</b> "
+                "with the host's invite.<br>"
+                "<b>2.</b> The host uses <b>Copy Invite</b>. In the room, "
+                "<b>More</b> opens <b>Paint along…</b>; the host can also "
+                "choose the optional <b>Shared Canvas…</b> handoff.<br>"
+                "<b>3.</b> For Paint along, the host chooses "
+                "<b>Choose process video…</b> or <b>YouTube link…</b>. Guests "
+                "choose <b>Open my copy…</b> for the same local file, or "
+                "<b>Open lesson</b> for YouTube. Video stays silent and follows "
+                "the host; local files are not transferred.<br>"
+                "<b>4.</b> Paint in your usual app or on paper. "
+                "<b>Set Up Conversation</b> or <b>Conversation</b> shows "
+                "optional external meeting controls; <b>Join / Open Meeting</b> "
+                "opens the configured link.<br>"
+                "<b>5.</b> Use <b>Back to room</b> to return from Paint along. "
+                "<b>Notes</b> stay on this computer.<br>"
+                "<b>6.</b> The host chooses <b>End Room</b>; guests choose "
+                "<b>Leave Room</b>.<br><br>"
+                "F11 — Toggle full screen<br>"
+                "Esc — Back to room from Paint along; otherwise leave full screen"
+            )
+        elif self._reference_studio_only and profile.key == "podcast_voice":
             body = (
                 f"<b>WebJam v{__version__} — Podcast & Voice Studio</b><br>"
                 "<i>Record and edit an episode or voice project offline.</i><br><br>"
@@ -638,11 +665,13 @@ class ConductorWindow(QMainWindow):
                 f"<b>WebJam v{__version__} — Reference Studio</b><br>"
                 "<i>Build and rehearse a song offline.</i><br><br>"
                 "<b>1.</b> Choose <b>Play Along / Record</b>, "
-                "<b>New Project</b>, or <b>Open Project</b>.<br>"
+                "<b>New Project</b>, or <b>Open Project…</b>.<br>"
                 "<b>2.</b> Import a backing track you own or may use.<br>"
                 "<b>3.</b> Add tracks, map recording inputs, and arrange regions.<br>"
                 "<b>4.</b> Save the project, then use <b>Bounce</b> to export "
                 "your demo.<br><br>"
+                "This standalone Music workspace opens from launch "
+                "<b>File → New Music Project…</b>. "
                 "Reference Studio audio is separate from Jamulus live audio "
                 "and settings.<br><br>"
                 "F11 / Esc — Enter / leave full screen"
@@ -696,12 +725,16 @@ class ConductorWindow(QMainWindow):
             body = (
                 f"<b>WebJam v{__version__}</b><br>"
                 "<i>Host. Share. Join. Play.</i><br><br>"
-                "<b>1.</b> Choose <b>Host a Jam</b> or <b>Join a Jam</b>.<br>"
+                "<b>1.</b> At launch, choose <b>Music</b>, then <b>Host</b> "
+                "or <b>Join</b>.<br>"
                 "<b>2.</b> The host presses <b>Copy Invite</b> and sends the link.<br>"
                 "<b>3.</b> Play. Each musician tile shows real connection and level truth.<br>"
                 "<b>4.</b> The host presses <b>Record Session</b> for synchronized tracks.<br>"
-                "<b>5.</b> Choose <b>Studio</b> to build a song project or "
-                "review completed session takes.<br>"
+                "<b>5.</b> Choose <b>Studio</b> to review completed session "
+                "takes. For a standalone Music project, end or leave the "
+                "session and relaunch WebJam. Choose "
+                "<b>File → New Music Project…</b>, then "
+                "<b>Play Along / Record</b> or <b>Open Project…</b>.<br>"
                 "<b>6.</b> Choose <b>Conversation</b> to show meeting controls. "
                 "<b>Show Webex App</b> brings the verified application forward "
                 "without reopening a meeting link; Webex chooses which of its "
@@ -719,14 +752,21 @@ class ConductorWindow(QMainWindow):
                 f"{reset_shortcut} — Reset every fader to 0 dB<br>"
                 "F11 / Esc — Enter / leave full screen"
             )
-        box = QMessageBox()
-        box.setWindowTitle("WebJam Help")
-        box.setTextFormat(Qt.TextFormat.RichText)
-        box.setText(body)
-        from webjam_qt.theme.brand import render_brand_pixmap
-
-        box.setIconPixmap(render_brand_pixmap(64))
-        self._exec_message_box_on_screen(box)
+        screen = QGuiApplication.screenAt(self.frameGeometry().center())
+        if screen is None:
+            screen = QGuiApplication.primaryScreen()
+        previous_focus = self.focusWidget()
+        dialog = HelpDialog(body, screen.availableGeometry() if screen else None)
+        try:
+            dialog.exec()
+        finally:
+            dialog.deleteLater()
+            if isValid(self) and self.isVisible():
+                self.raise_()
+                self.activateWindow()
+                if (previous_focus is not None and isValid(previous_focus)
+                        and previous_focus.isVisible() and previous_focus.isEnabled()):
+                    previous_focus.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def show_about(self) -> None:
         """Show privacy-safe package identity and the candidate trust boundary."""

@@ -78,6 +78,9 @@ def _private_and_local(app, caplog):
     app.bridge.launch_webex.assert_not_called()
     assert app.creator_profile.key == "art"
     assert app.settings.last_creator_profile_key == "music"
+    overview = app.window.art_room_overview._overview
+    if overview.activity_actions:
+        assert "Shared activities are optional." in overview.making_detail
 
 
 @pytest.fixture

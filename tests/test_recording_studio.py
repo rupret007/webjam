@@ -1408,7 +1408,8 @@ def test_schema2_waveform_lifecycle_stops_pending_publication(
         studio.shutdown()
 
 
-def test_arrange_toolbar_edits_reload_cycle_and_preserve_source_truth(tmp_path):
+@pytest.mark.parametrize("font_stretch", [100, 125])
+def test_arrange_toolbar_edits_reload_cycle_and_preserve_source_truth(tmp_path, font_stretch):
     take_dir, _track_ids = _schema2_studio_take(tmp_path)
     manifest = take_dir / "webjam-take.json"
     media = tuple(sorted((take_dir / "media").glob("*.wav")))
@@ -1418,6 +1419,12 @@ def test_arrange_toolbar_edits_reload_cycle_and_preserve_source_truth(tmp_path):
         player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
     )
     studio.setStyleSheet(load_stylesheet())
+    # Exercise wider platform glyph metrics as well as the local theme. The
+    # active No Fades / No Xfade labels must remain visible at the 760px floor.
+    for widget in studio._arrange_toolbar.findChildren(QLabel) + studio._arrange_toolbar.findChildren(QPushButton):
+        font = widget.font()
+        font.setStretch(font_stretch)
+        widget.setFont(font)
     try:
         studio._take_list.setCurrentRow(0)
         document = studio._studio_state

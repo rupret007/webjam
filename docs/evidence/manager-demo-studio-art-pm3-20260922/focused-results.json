@@ -1,0 +1,1532 @@
+[
+  {
+    "module": "tests/test_application_controller_creator_copy.py",
+    "returncode": 0,
+    "seconds": 0.81,
+    "passed": 35,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_application_controller_session_pulse.py",
+    "returncode": 0,
+    "seconds": 1.57,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_activity_guest_journey.py",
+    "returncode": 0,
+    "seconds": 3.44,
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_audio_cleanup.py",
+    "returncode": 0,
+    "seconds": 0.84,
+    "passed": 15,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_canvas_connection_journey.py",
+    "returncode": 0,
+    "seconds": 2.73,
+    "passed": 15,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_cold_invitation_context.py",
+    "returncode": 0,
+    "seconds": 4.16,
+    "passed": 23,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_companion.py",
+    "returncode": 0,
+    "seconds": 0.28,
+    "passed": 72,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_companion_fallback.py",
+    "returncode": 0,
+    "seconds": 0.82,
+    "passed": 40,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_companion_http_policy.py",
+    "returncode": 0,
+    "seconds": 0.21,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 11,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_companion_projection.py",
+    "returncode": 0,
+    "seconds": 0.63,
+    "passed": 43,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_companion_swift_integration.py",
+    "returncode": 0,
+    "seconds": 0.23,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 3,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_conversation_layout.py",
+    "returncode": 0,
+    "seconds": 2.58,
+    "passed": 32,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_conversation_link_journey.py",
+    "returncode": 0,
+    "seconds": 4.88,
+    "passed": 18,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_conversation_next_action.py",
+    "returncode": 0,
+    "seconds": 3.6,
+    "passed": 32,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_exit_guidance.py",
+    "returncode": 0,
+    "seconds": 0.23,
+    "passed": 14,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_exit_next_action.py",
+    "returncode": 0,
+    "seconds": 7.58,
+    "passed": 27,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_host_platforms.py",
+    "returncode": 0,
+    "seconds": 1.09,
+    "passed": 33,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_invitation_entry.py",
+    "returncode": 0,
+    "seconds": 0.24,
+    "passed": 33,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_invitation_flow.py",
+    "returncode": 0,
+    "seconds": 2.46,
+    "passed": 30,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_join_entry_ui.py",
+    "returncode": 0,
+    "seconds": 1.49,
+    "passed": 52,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_lan_host_portable.py",
+    "returncode": 0,
+    "seconds": 4.51,
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_lan_host_recovery.py",
+    "returncode": 0,
+    "seconds": 5.02,
+    "passed": 22,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_lan_retry.py",
+    "returncode": 0,
+    "seconds": 4.44,
+    "passed": 35,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_left_out_rules.py",
+    "returncode": 0,
+    "seconds": 1.13,
+    "passed": 76,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_lesson_request_journey.py",
+    "returncode": 0,
+    "seconds": 17.32,
+    "passed": 17,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_lesson_request_widgets.py",
+    "returncode": 0,
+    "seconds": 1.84,
+    "passed": 23,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_meeting_coexistence.py",
+    "returncode": 0,
+    "seconds": 1.07,
+    "passed": 59,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_native_retry.py",
+    "returncode": 0,
+    "seconds": 1.2,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_notes_communication.py",
+    "returncode": 0,
+    "seconds": 2.09,
+    "passed": 48,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_notes_conversation_journey.py",
+    "returncode": 0,
+    "seconds": 5.06,
+    "passed": 18,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_paint_along_connection_journey.py",
+    "returncode": 0,
+    "seconds": 2.85,
+    "passed": 15,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_participant_door.py",
+    "returncode": 0,
+    "seconds": 1.15,
+    "passed": 33,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_pending_profile_facts.py",
+    "returncode": 0,
+    "seconds": 3.16,
+    "passed": 17,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_profile.py",
+    "returncode": 0,
+    "seconds": 0.66,
+    "passed": 47,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_profile_guidance_journey.py",
+    "returncode": 0,
+    "seconds": 3.86,
+    "passed": 14,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_room_activities.py",
+    "returncode": 0,
+    "seconds": 0.75,
+    "passed": 628,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_room_activities_ui.py",
+    "returncode": 0,
+    "seconds": 8.15,
+    "passed": 90,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_room_connection_facts.py",
+    "returncode": 0,
+    "seconds": 0.85,
+    "passed": 26,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_room_connection_names.py",
+    "returncode": 0,
+    "seconds": 6.92,
+    "passed": 19,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_room_connection_names_journey.py",
+    "returncode": 0,
+    "seconds": 7.51,
+    "passed": 33,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_room_contract.py",
+    "returncode": 0,
+    "seconds": 0.3,
+    "passed": 14,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_room_controller.py",
+    "returncode": 0,
+    "seconds": 2.07,
+    "passed": 17,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_room_overview.py",
+    "returncode": 0,
+    "seconds": 0.27,
+    "passed": 29,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_room_overview_controller.py",
+    "returncode": 0,
+    "seconds": 1.37,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_room_overview_lifetime.py",
+    "returncode": 0,
+    "seconds": 0.76,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_room_overview_ui.py",
+    "returncode": 0,
+    "seconds": 4.46,
+    "passed": 51,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_room_presence.py",
+    "returncode": 0,
+    "seconds": 0.78,
+    "passed": 52,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_room_recovery.py",
+    "returncode": 0,
+    "seconds": 1.35,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_room_return_journey.py",
+    "returncode": 0,
+    "seconds": 6.74,
+    "passed": 24,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_room_return_ui.py",
+    "returncode": 0,
+    "seconds": 1.37,
+    "passed": 17,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_session_strip.py",
+    "returncode": 0,
+    "seconds": 0.8,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_shared_lesson_journey.py",
+    "returncode": 0,
+    "seconds": 12.2,
+    "passed": 54,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_shared_lesson_native_host.py",
+    "returncode": 0,
+    "seconds": 1.64,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_shared_lesson_widgets.py",
+    "returncode": 0,
+    "seconds": 1.75,
+    "passed": 35,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_start_ux.py",
+    "returncode": 0,
+    "seconds": 1.04,
+    "passed": 43,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_art_video_offer_navigation.py",
+    "returncode": 0,
+    "seconds": 6.58,
+    "passed": 25,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_byok_write_help.py",
+    "returncode": 0,
+    "seconds": 0.89,
+    "passed": 26,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_canvas_publication_journey.py",
+    "returncode": 0,
+    "seconds": 2.2,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_canvas_publication_recovery.py",
+    "returncode": 0,
+    "seconds": 0.7,
+    "passed": 38,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_canvas_publication_recovery_ui.py",
+    "returncode": 0,
+    "seconds": 4.65,
+    "passed": 37,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_chat.py",
+    "returncode": 0,
+    "seconds": 0.99,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_chat_send.py",
+    "returncode": 0,
+    "seconds": 1.01,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_composed_invitation_music_mix.py",
+    "returncode": 0,
+    "seconds": 1.43,
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_composed_music_mix_cleanup.py",
+    "returncode": 0,
+    "seconds": 1.87,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_controller_remote_transport.py",
+    "returncode": 0,
+    "seconds": 3.05,
+    "passed": 31,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_controller_room_help.py",
+    "returncode": 0,
+    "seconds": 1.16,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_creator_profile_guidance.py",
+    "returncode": 0,
+    "seconds": 1.92,
+    "passed": 17,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_feel_pass.py",
+    "returncode": 0,
+    "seconds": 0.87,
+    "passed": 14,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_guest_preflight_fresh_studio.py",
+    "returncode": 0,
+    "seconds": 1.39,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_guest_preflight_shared_recovery.py",
+    "returncode": 0,
+    "seconds": 2.94,
+    "passed": 20,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_guest_recording_preflight_guidance.py",
+    "returncode": 0,
+    "seconds": 3.22,
+    "passed": 22,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_guest_recording_studio_refresh.py",
+    "returncode": 0,
+    "seconds": 1.88,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_host_share_join_flow.py",
+    "returncode": 0,
+    "seconds": 2.67,
+    "passed": 69,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_local_originals_choice_profiles.py",
+    "returncode": 0,
+    "seconds": 0.87,
+    "passed": 20,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_meeting_companion.py",
+    "returncode": 0,
+    "seconds": 0.72,
+    "passed": 54,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_music_lan_host_recovery.py",
+    "returncode": 0,
+    "seconds": 6.22,
+    "passed": 29,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_musician_guidance.py",
+    "returncode": 0,
+    "seconds": 0.28,
+    "passed": 40,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_native_art_activities.py",
+    "returncode": 0,
+    "seconds": 2.62,
+    "passed": 12,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_native_art_notes_layout.py",
+    "returncode": 0,
+    "seconds": 27.16,
+    "passed": 97,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_native_art_room_return.py",
+    "returncode": 0,
+    "seconds": 3.39,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_native_canvas_publication.py",
+    "returncode": 0,
+    "seconds": 0.66,
+    "passed": 44,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_notes_combined_unreadable.py",
+    "returncode": 0,
+    "seconds": 1.43,
+    "passed": 15,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_notes_demo_layout.py",
+    "returncode": 0,
+    "seconds": 2.76,
+    "passed": 19,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_notes_discovery_ui.py",
+    "returncode": 0,
+    "seconds": 1.67,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_notes_export_recovery_boundary.py",
+    "returncode": 0,
+    "seconds": 0.86,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_notes_font_reflow.py",
+    "returncode": 0,
+    "seconds": 0.91,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_notes_original_recheck.py",
+    "returncode": 0,
+    "seconds": 0.91,
+    "passed": 27,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_notes_recovery_checkpoint.py",
+    "returncode": 0,
+    "seconds": 0.27,
+    "passed": 33,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_notes_recovery_checkpoint_notice.py",
+    "returncode": 0,
+    "seconds": 0.81,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_notes_recovery_guidance.py",
+    "returncode": 0,
+    "seconds": 0.83,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_notes_restart_recovery.py",
+    "returncode": 0,
+    "seconds": 1.54,
+    "passed": 23,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_notes_restart_recovery_ui.py",
+    "returncode": 0,
+    "seconds": 1.33,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_notes_retry_integrity.py",
+    "returncode": 0,
+    "seconds": 0.92,
+    "passed": 21,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_notes_retry_quit.py",
+    "returncode": 0,
+    "seconds": 1.04,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_notes_save_failures.py",
+    "returncode": 0,
+    "seconds": 1.32,
+    "passed": 20,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_notes_unreadable_recheck.py",
+    "returncode": 0,
+    "seconds": 1.48,
+    "passed": 19,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_notes_workspace_recovery.py",
+    "returncode": 0,
+    "seconds": 0.89,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_paint_along_copy_recovery.py",
+    "returncode": 0,
+    "seconds": 0.66,
+    "passed": 34,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_paint_along_copy_recovery_ui.py",
+    "returncode": 0,
+    "seconds": 5.77,
+    "passed": 39,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_paint_along_guest_journey.py",
+    "returncode": 0,
+    "seconds": 1.87,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_paint_along_guest_opening_ui.py",
+    "returncode": 0,
+    "seconds": 4.57,
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_paint_along_host_opening.py",
+    "returncode": 0,
+    "seconds": 0.66,
+    "passed": 22,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_paint_along_host_opening_ui.py",
+    "returncode": 0,
+    "seconds": 3.62,
+    "passed": 17,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_paint_along_player_health.py",
+    "returncode": 0,
+    "seconds": 0.68,
+    "passed": 29,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_paint_along_prepared_copy.py",
+    "returncode": 0,
+    "seconds": 7.48,
+    "passed": 24,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_paint_along_seek_input.py",
+    "returncode": 0,
+    "seconds": 1.63,
+    "passed": 21,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_pocket_stage_controller.py",
+    "returncode": 0,
+    "seconds": 3.19,
+    "passed": 31,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_qt_widgets.py",
+    "returncode": 0,
+    "seconds": 3.05,
+    "passed": 100,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 42
+  },
+  {
+    "module": "tests/test_recording_format_controller.py",
+    "returncode": 0,
+    "seconds": 2.05,
+    "passed": 19,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_recording_readiness.py",
+    "returncode": 0,
+    "seconds": 0.23,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_recording_readiness_presentation.py",
+    "returncode": 0,
+    "seconds": 0.27,
+    "passed": 20,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_recording_readiness_ui.py",
+    "returncode": 0,
+    "seconds": 0.96,
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_recording_setup_compact_recovery.py",
+    "returncode": 0,
+    "seconds": 0.87,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_recording_studio.py",
+    "returncode": 0,
+    "seconds": 5.42,
+    "passed": 133,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_recovery_lifecycle_contract.py",
+    "returncode": 0,
+    "seconds": 3.18,
+    "passed": 34,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_reference_studio_application.py",
+    "returncode": 0,
+    "seconds": 1.76,
+    "passed": 14,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_reference_studio_mixer_ui.py",
+    "returncode": 0,
+    "seconds": 0.69,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_reference_studio_packaged_smoke.py",
+    "returncode": 0,
+    "seconds": 0.69,
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_reference_studio_recording_ui.py",
+    "returncode": 0,
+    "seconds": 1.3,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_reference_studio_shell.py",
+    "returncode": 0,
+    "seconds": 0.82,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_reference_studio_tools.py",
+    "returncode": 0,
+    "seconds": 0.67,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_reference_studio_workspace.py",
+    "returncode": 0,
+    "seconds": 1.28,
+    "passed": 58,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_reference_video.py",
+    "returncode": 0,
+    "seconds": 0.33,
+    "passed": 73,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_reference_video_application_integration.py",
+    "returncode": 0,
+    "seconds": 0.84,
+    "passed": 37,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_reference_video_coordinator.py",
+    "returncode": 0,
+    "seconds": 0.63,
+    "passed": 25,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_reference_video_ui.py",
+    "returncode": 0,
+    "seconds": 1.04,
+    "passed": 32,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_rejected_invitation_journey.py",
+    "returncode": 0,
+    "seconds": 3.79,
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_room_help_widget.py",
+    "returncode": 0,
+    "seconds": 0.67,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_session_canvas_atomic_export.py",
+    "returncode": 0,
+    "seconds": 0.7,
+    "passed": 11,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 5
+  },
+  {
+    "module": "tests/test_session_conductor.py",
+    "returncode": 0,
+    "seconds": 0.22,
+    "passed": 12,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_session_persistence.py",
+    "returncode": 0,
+    "seconds": 2.34,
+    "passed": 27,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 2
+  },
+  {
+    "module": "tests/test_session_transfer_art_start.py",
+    "returncode": 0,
+    "seconds": 1.84,
+    "passed": 23,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_session_transfer_reference_video.py",
+    "returncode": 0,
+    "seconds": 1.86,
+    "passed": 29,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_session_transfer_shared_canvas.py",
+    "returncode": 0,
+    "seconds": 1.82,
+    "passed": 27,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_shared_canvas.py",
+    "returncode": 0,
+    "seconds": 0.25,
+    "passed": 64,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_shared_canvas_coordinator.py",
+    "returncode": 0,
+    "seconds": 0.61,
+    "passed": 22,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_shared_canvas_ui.py",
+    "returncode": 0,
+    "seconds": 0.9,
+    "passed": 48,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_song_studio_clone.py",
+    "returncode": 0,
+    "seconds": 0.39,
+    "passed": 13,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_song_studio_controller.py",
+    "returncode": 0,
+    "seconds": 0.28,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_song_studio_mixer_renderer.py",
+    "returncode": 0,
+    "seconds": 0.56,
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_song_studio_reconcile.py",
+    "returncode": 0,
+    "seconds": 0.29,
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_song_studio_renderer.py",
+    "returncode": 0,
+    "seconds": 0.34,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_song_studio_store.py",
+    "returncode": 0,
+    "seconds": 0.3,
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_song_studio_waveforms.py",
+    "returncode": 0,
+    "seconds": 0.5,
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_song_tools_coordinator.py",
+    "returncode": 0,
+    "seconds": 1.72,
+    "passed": 128,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_arrange.py",
+    "returncode": 0,
+    "seconds": 0.75,
+    "passed": 22,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_compact_workspace.py",
+    "returncode": 0,
+    "seconds": 5.46,
+    "passed": 18,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_comping.py",
+    "returncode": 0,
+    "seconds": 0.37,
+    "passed": 13,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_controller.py",
+    "returncode": 0,
+    "seconds": 0.3,
+    "passed": 15,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_demo_recovery_actions.py",
+    "returncode": 0,
+    "seconds": 2.52,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_export.py",
+    "returncode": 0,
+    "seconds": 0.81,
+    "passed": 45,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_history.py",
+    "returncode": 0,
+    "seconds": 0.24,
+    "passed": 18,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_mixer.py",
+    "returncode": 0,
+    "seconds": 0.34,
+    "passed": 15,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_project.py",
+    "returncode": 0,
+    "seconds": 0.25,
+    "passed": 11,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_project_home.py",
+    "returncode": 0,
+    "seconds": 0.67,
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_project_v3.py",
+    "returncode": 0,
+    "seconds": 0.23,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_renderer.py",
+    "returncode": 0,
+    "seconds": 1.1,
+    "passed": 41,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_retry_api.py",
+    "returncode": 0,
+    "seconds": 1.79,
+    "passed": 14,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_sections.py",
+    "returncode": 0,
+    "seconds": 0.33,
+    "passed": 23,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_source_catalog.py",
+    "returncode": 0,
+    "seconds": 0.36,
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_state.py",
+    "returncode": 0,
+    "seconds": 0.28,
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_store.py",
+    "returncode": 0,
+    "seconds": 0.35,
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_stress.py",
+    "returncode": 0,
+    "seconds": 0.71,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_tempo.py",
+    "returncode": 0,
+    "seconds": 0.23,
+    "passed": 21,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_waveform.py",
+    "returncode": 0,
+    "seconds": 0.32,
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_studio_waveforms.py",
+    "returncode": 0,
+    "seconds": 0.62,
+    "passed": 11,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_two_session_art_host_recovery.py",
+    "returncode": 0,
+    "seconds": 1.61,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_two_session_art_integration.py",
+    "returncode": 0,
+    "seconds": 1.57,
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_unified_musician_guidance.py",
+    "returncode": 0,
+    "seconds": 3.93,
+    "passed": 19,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  },
+  {
+    "module": "tests/test_zero_key_music.py",
+    "returncode": 0,
+    "seconds": 0.92,
+    "passed": 22,
+    "failed": 0,
+    "skipped": 0,
+    "subtests": 0
+  }
+]

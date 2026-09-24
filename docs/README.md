@@ -4,27 +4,19 @@ This index is the front door for WebJam's documentation. Start with the
 audience that matches what you are trying to do; the root [README](../README.md)
 keeps the product story and five-minute demo intentionally short.
 
-> **Current testing release:** GitHub **Latest** is immutable unsigned/ad-hoc
-> v0.28.1 private test release `393030220`, published `2026-09-21T14:30:22Z`. Use
-> only one of its seven packages verified by `WebJam-v0.28.1-SHA256SUMS.txt`.
-> Annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peels to exact commit `200cac9eb04d01611696cdc147957b36daef257f`.
-> Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by
-> owner; git tags remain. Windows is unsigned; macOS is ad-hoc signed and
-> unnotarized; every physical test remains **NOT RUN** until recorded against
-> those packages.
-
-> **Source boundary:** this checkout reports unsigned v0.28.3 candidate source
-> including #145–#148 and #150; the v0.28.2 draft at `a51154e5` is stale. A
-> checkout or branch artifact is not a package; use the exact published release
-> assets above until the successor is published. Its baked Jamulus 3.12.2 and
-> 3.12.3 records extend through v0.28.3, so live Host/Join and required
-> package-build CI are source-eligible. All physical/hardware rows remain
-> **NOT RUN**.
+> **Show baseline, checked 2026-09-24:** published unsigned/ad-hoc
+> [v0.28.3](https://github.com/rupret007/webjam/releases/tag/v0.28.3) is GitHub
+> Latest, release `394985116`, from commit
+> `da16749abc9f87cde127e01ea10a7712e5ce7800`. Verify the selected package with
+> `WebJam-v0.28.3-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
+> and unnotarized. Branch changes and automated checks do not establish
+> physical show readiness. See [the show one-pager](../SHOW_ONEPAGER.md) and [demo script](../DEMO_SCRIPT.md).
 
 ## Start here
 
 | Audience | Read | Outcome |
 | --- | --- | --- |
+| Manager demo | [Show one-pager](../SHOW_ONEPAGER.md) and [demo script](../DEMO_SCRIPT.md) | Run the prepared four-part arc in under ten minutes; record the rehearsal result |
 | Evaluator or stakeholder | [Project brief](PROJECT_BRIEF.md) | Understand the product thesis, architecture, evidence, and roadmap |
 | Showing someone the door | [Two-minute demo script](../DEMO.md) | Show the Art/Music first screen without running a live session |
 | New creator | [Simple-language guide](../README_SIMPLE.md) | Understand WebJam in plain words before anything technical |
@@ -104,6 +96,17 @@ keeps the product story and five-minute demo intentionally short.
   safe evidence handling.
 - [Support](../SUPPORT.md) — musician troubleshooting and issue routing.
 - [Code of Conduct](../CODE_OF_CONDUCT.md) — collaboration expectations.
+
+## Historical release evidence
+
+The superseded v0.28.1 download record is release `393030220`, published
+`2026-09-21T14:30:22Z`: annotated tag object
+`db44247a3ceefb97f4cac6e623deef1bd32648a8` peels to
+`200cac9eb04d01611696cdc147957b36daef257f`. Its seven packages and
+`WebJam-v0.28.1-SHA256SUMS.txt` remain evidence for that historical release.
+Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by
+owner; git tags remain. Those records do not verify the current show candidate.
+Physical observations remain **NOT RUN** until recorded against exact bytes.
 
 ## Documentation rules
 

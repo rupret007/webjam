@@ -4,7 +4,7 @@ import pytest
 from PySide6.QtWidgets import QFileDialog, QInputDialog
 
 from core.reference_video import ReferenceVideoSnapshot, ReferenceVideoState, ReferenceVideoFollowSnapshot, ReferenceVideoFollowState
-from tests.test_reference_video_ui import qapp
+from tests.test_reference_video_ui import qapp as qapp
 from webjam_qt.windows.reference_video import ReferenceVideoDialog
 
 

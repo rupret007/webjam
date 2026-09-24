@@ -13,6 +13,30 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted
 > by owner; git tags remain.
 
+### Compact Studio and Art room guidance
+
+- Studio keeps recording, playback, export, and the current guidance visible
+  while the editing workspace scrolls at a readable size in compact windows.
+  Resizing and scrolling preserve the selected take and its pending edits.
+- An offered Art canvas or Paint along activity keeps a clear next step for
+  making with paper, clay, a model, printer, or your usual app. Shared
+  activities remain optional; missing Drawpile does not prevent making
+  together with your own tools. Art still has two doors.
+
+### Help for Art and Music
+
+- Art F1 / More → Help now describes Art rooms, host tools, silent Paint along,
+  guest source choices, and local Notes.
+- Music Help uses the current Host / Join labels and separates live Studio
+  take review from standalone projects opened through launch File → New Music
+  Project… and then Play Along / Record or Open Project….
+- Help keeps its window and close button on compact screens. Long or enlarged
+  instructions scroll independently; keyboard dismissal returns to the
+  originating workspace without changing the room or local work.
+- The Mac package guide identifies candidates by their bundled build metadata
+  and checksum receipt, and distinguishes standalone Music from Preview
+  restrictions. Older release details are explicitly historical.
+
 ## [0.28.3] — Unsigned/ad-hoc private test release candidate
 
 > Prepared for Jeff Story testing after #145, #146, #147, #148, and #150.

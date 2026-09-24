@@ -5,12 +5,14 @@ a backing track. It can open without a WebJam session, Webex, or Jamulus. Its
 local playback and recording choices do not change the device, buffer, mix, or
 connection owned by Jamulus.
 
-> **v0.28.3 source guide:** GitHub **Latest** is immutable unsigned/ad-hoc
-> private test release `393030220`, published from annotated tag object
-> `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to exact commit `200cac9eb04d01611696cdc147957b36daef257f`. Always verify one of its
-> seven package assets against `WebJam-v0.28.1-SHA256SUMS.txt`; a checkout or
-> branch artifact is not a package substitute. Older release entries (v0.28.0,
-> v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags remain.
+> **v0.28.3 source guide.**
+> **Show baseline, checked 2026-09-24:** published unsigned/ad-hoc
+> [v0.28.3](https://github.com/rupret007/webjam/releases/tag/v0.28.3) is GitHub
+> Latest, release `394985116`, from commit
+> `da16749abc9f87cde127e01ea10a7712e5ce7800`. Verify the selected package with
+> `WebJam-v0.28.3-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
+> and unnotarized. Branch changes and automated checks do not establish
+> physical show readiness. See [the show one-pager](../SHOW_ONEPAGER.md) and [demo script](../DEMO_SCRIPT.md).
 
 Windows packages are unsigned. Mac packages are ad-hoc signed and unnotarized.
 Automated checks do not prove that a particular interface, driver, speaker, or
@@ -35,10 +37,13 @@ even if a caller bypasses a disabled visible action.
 
 ## Start a project
 
-Open **Reference Studio** from WebJam's main rail.
+On WebJam's launch screen, choose **File → New Music Project…** to open
+Reference Studio. If a live Music session is open, end or leave it, quit
+WebJam, and relaunch to reach that menu. The live session's **Studio** button
+opens completed-take review.
 
-- Choose **Play Along / Record** to name a project and collect a local backing
-  track in one flow.
+- Choose **Play Along / Record**, select a local backing track, then choose
+  where to create its `.webjam` project folder.
 - Choose **New Project** to begin without backing audio.
 - Choose **Open Project…** or a recent project to continue saved work.
 
@@ -263,3 +268,15 @@ The [desktop release runbook](DESKTOP_RELEASE_RUNBOOK.md) defines the package
 and publication gates. The
 [architecture decision](adr/0006-standalone-reference-studio-projects.md)
 defines the persistence, migration, audio-isolation, and trust boundaries.
+
+
+## Historical release evidence
+
+The superseded v0.28.1 download record is release `393030220`, published
+`2026-09-21T14:30:22Z`: annotated tag object
+`db44247a3ceefb97f4cac6e623deef1bd32648a8` peels to
+`200cac9eb04d01611696cdc147957b36daef257f`. Its seven packages and
+`WebJam-v0.28.1-SHA256SUMS.txt` remain evidence for that historical release.
+Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by
+owner; git tags remain. Those records do not verify the current show candidate.
+Physical observations remain **NOT RUN** until recorded against exact bytes.

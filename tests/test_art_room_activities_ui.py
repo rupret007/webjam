@@ -114,6 +114,11 @@ def test_hidden_video_has_its_own_quiet_route_beside_canvas(window, qapp):
     assert current.secondary_activity_detail in secondary.accessibleDescription()
     assert current.secondary_activity_label in panel.accessibleDescription()
     assert current.activity_label in panel.accessibleDescription()
+    assert panel._making_detail.isVisibleTo(window)
+    assert current.making_detail in panel.accessibleDescription()
+    assert current.title in panel.accessibleDescription()
+    assert not panel._title.isVisibleTo(window)
+    assert "Shared activities are optional." in panel._making_detail.text()
 
     actions, conversations = [], []
     panel.activity_requested.connect(actions.append)
@@ -204,11 +209,12 @@ def test_second_activity_renders_plain_text_with_full_accessible_status(window):
     assert panel.secondary_activity_button().toolTip() == current.secondary_activity_detail
 
 
-@pytest.mark.parametrize("size", [(720, 560), (1040, 720)])
+@pytest.mark.parametrize("size", [(720, 560), (760, 600), (1040, 720)])
 @pytest.mark.parametrize("conversation_open", [False, True])
 @pytest.mark.parametrize("font_stretch", [100, 125])
 @pytest.mark.parametrize(("canvas", "video"), [
     ("ready", "hidden"), ("missing_app", "hidden"),
+    ("ready", "ready"),
     ("ready", "needs_file"), ("missing_app", "local_attention"),
     ("share_pending", "hidden"), ("withdraw_pending", "hidden"),
 ])
@@ -221,6 +227,8 @@ def test_both_production_activities_fit_and_keep_keyboard_actions_reachable(
     window.session_strip.set_audio_state("End Room" if hosting else "Leave Room")
     panel = window.art_room_overview
     assert current.role_label == ("Host" if hosting else "Guest")
+    assert panel._making_detail.isVisibleTo(window)
+    assert "paper, clay, a model, printer, or your usual app" in panel._making_detail.text()
     # Deterministically exercise wider glyph metrics without changing a
     # machine's font/DPI settings or replacing production stylesheet sizes.
     for widget in panel._content.findChildren(QLabel) + panel._content.findChildren(QPushButton):

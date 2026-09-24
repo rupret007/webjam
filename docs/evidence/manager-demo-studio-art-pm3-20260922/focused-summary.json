@@ -1,0 +1,25 @@
+{
+  "modules": 170,
+  "seconds": 358.6,
+  "failed_modules": [],
+  "source_drift": [
+    "tests/test_studio_compact_workspace.py"
+  ],
+  "passed": 4685,
+  "failed": 0,
+  "skipped": 14,
+  "subtests": 49,
+  "runtime_source_drift": [],
+  "final_studio_recheck": {
+    "module": "tests/test_studio_compact_workspace.py",
+    "sha256": "dbf4c54edb3ec109a1bc64ff30bcab7264da425a14e0ef602a48f1bc273039ab",
+    "passed": 18,
+    "seconds": 5.34,
+    "reason": "Two test-only portability refinements were made during the broad gate. Runtime source stayed frozen; this fresh final-file rerun removes ambiguity about the amended fixture. The 170-module total counts this module once."
+  },
+  "renderer_cases": {
+    "studio": 9,
+    "art": 28
+  },
+  "limits": "14 Swift opt-in tests skipped locally; hosted integration checks are separate. Rendered synthetic fixtures do not establish physical device or provider PASS."
+}

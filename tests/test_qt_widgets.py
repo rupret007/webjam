@@ -1492,17 +1492,23 @@ class TestConductorWindow(unittest.TestCase):
         from unittest import mock
 
         with mock.patch(
-            "PySide6.QtWidgets.QMessageBox.exec",
+            "webjam_qt.windows.help_dialog.HelpDialog.exec",
             return_value=0,
         ), mock.patch(
-            "PySide6.QtWidgets.QMessageBox.setText",
+            "PySide6.QtWidgets.QTextBrowser.setHtml",
         ) as set_text:
             w.show_help()
 
         body = set_text.call_args.args[0]
         self.assertIn("Choose <b>Studio</b>", body)
-        self.assertIn("build a song project", body)
+        self.assertNotIn("build a song project", body)
+        self.assertIn("choose <b>Music</b>, then <b>Host</b> or <b>Join</b>", body)
+        self.assertNotIn("Host a Jam", body)
+        self.assertNotIn("Join a Jam", body)
         self.assertIn("review completed session takes", body)
+        self.assertIn("end or leave the session and relaunch WebJam", body)
+        self.assertIn("File → New Music Project…", body)
+        self.assertIn("<b>Play Along / Record</b> or <b>Open Project…</b>", body)
         self.assertIn("Choose <b>Conversation</b> to show meeting controls", body)
         self.assertIn(
             "<b>Show Webex App</b> brings the verified application forward",
@@ -1515,6 +1521,49 @@ class TestConductorWindow(unittest.TestCase):
         self.assertIn("Recheck Route", body)
         self.assertNotIn("Multitrack Studio", body)
 
+    def test_art_help_follows_current_profile_without_music_actions(self):
+        from unittest import mock
+
+        from core.creative_modes import get_creator_profile_by_key_or_default
+
+        window = self._window()
+        try:
+            # Help must follow profile changes in this window, including a
+            # return to Music, rather than retaining a previous help body.
+            for profile_key in ("music", "art", "music"):
+                with self.subTest(profile_key=profile_key):
+                    window.set_creator_profile(
+                        get_creator_profile_by_key_or_default(profile_key)
+                    )
+                    workspace = window.workspace_stack.currentWidget()
+                    with mock.patch(
+                        "webjam_qt.windows.help_dialog.HelpDialog.exec", return_value=0,
+                    ), mock.patch(
+                        "PySide6.QtWidgets.QTextBrowser.setHtml",
+                    ) as set_text:
+                        window.show_help()
+                    body = set_text.call_args.args[0]
+                    self.assertIs(window.workspace_stack.currentWidget(), workspace)
+                    if profile_key == "art":
+                        for token in (
+                            "— Art", "Make together", "Paint along", "<b>More</b>",
+                            "Shared Canvas…", "Choose process video…",
+                            "YouTube link…", "Open my copy…", "Open lesson",
+                            "silent", "local files are not transferred", "Conversation",
+                            "Back to room", "Notes", "End Room", "Leave Room",
+                        ):
+                            self.assertIn(token, body)
+                        for token in (
+                            "musician", "Record Session", "Studio", "Shared Track",
+                            "Band Check", "monitor mix", "fader", "F2", "Song", "AI Image",
+                        ):
+                            self.assertNotIn(token, body)
+                    else:
+                        self.assertIn("review completed session takes", body)
+                        self.assertNotIn("Paint along", body)
+        finally:
+            window.close()
+
     def test_help_copy_uses_real_macos_shortcut_modifiers(self):
         w = self._window()
         from unittest import mock
@@ -1523,10 +1572,10 @@ class TestConductorWindow(unittest.TestCase):
             "sys.platform",
             "darwin",
         ), mock.patch(
-            "PySide6.QtWidgets.QMessageBox.exec",
+            "webjam_qt.windows.help_dialog.HelpDialog.exec",
             return_value=0,
         ), mock.patch(
-            "PySide6.QtWidgets.QMessageBox.setText",
+            "PySide6.QtWidgets.QTextBrowser.setHtml",
         ) as set_text:
             w.show_help()
 
@@ -1553,10 +1602,10 @@ class TestConductorWindow(unittest.TestCase):
                 get_creator_profile_by_key_or_default(profile_key)
             )
             with mock.patch("sys.platform", "darwin"), mock.patch(
-                "PySide6.QtWidgets.QMessageBox.exec",
+                "webjam_qt.windows.help_dialog.HelpDialog.exec",
                 return_value=0,
             ), mock.patch(
-                "PySide6.QtWidgets.QMessageBox.setText",
+                "PySide6.QtWidgets.QTextBrowser.setHtml",
             ) as set_text:
                 window.show_help()
 
@@ -1590,10 +1639,10 @@ class TestConductorWindow(unittest.TestCase):
                     get_creator_profile_by_key_or_default(profile_key)
                 )
                 with mock.patch(
-                    "PySide6.QtWidgets.QMessageBox.exec",
+                    "webjam_qt.windows.help_dialog.HelpDialog.exec",
                     return_value=0,
                 ), mock.patch(
-                    "PySide6.QtWidgets.QMessageBox.setText",
+                    "PySide6.QtWidgets.QTextBrowser.setHtml",
                 ) as set_text:
                     w.show_help()
                 body = set_text.call_args.args[0]
@@ -1780,10 +1829,10 @@ class TestConductorWindow(unittest.TestCase):
 
         w.show_reference_studio_only()
         with mock.patch(
-            "PySide6.QtWidgets.QMessageBox.exec",
+            "webjam_qt.windows.help_dialog.HelpDialog.exec",
             return_value=0,
         ), mock.patch(
-            "PySide6.QtWidgets.QMessageBox.setText",
+            "PySide6.QtWidgets.QTextBrowser.setHtml",
         ) as set_text:
             w.show_help()
 
@@ -1791,6 +1840,8 @@ class TestConductorWindow(unittest.TestCase):
         self.assertIn("Build and rehearse a song offline", body)
         self.assertIn("Import a backing track", body)
         self.assertIn("separate from Jamulus", body)
+        self.assertIn("File → New Music Project…", body)
+        self.assertIn("Open Project…", body)
         self.assertNotIn("Copy Invite", body)
 
     def test_close_event_respects_confirm_close_veto(self):

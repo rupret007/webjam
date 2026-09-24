@@ -212,7 +212,7 @@ def test_help_and_about_use_the_canonical_trefoil_not_a_generic_icon():
         initial_title="Band Rehearsal",
     )
     expected = render_brand_pixmap(64).toImage()
-    for show_dialog in (window.show_help, window.show_about):
+    for show_dialog in (window.show_about,):
         with (
             mock.patch(
                 "PySide6.QtWidgets.QMessageBox.exec",
@@ -229,6 +229,12 @@ def test_help_and_about_use_the_canonical_trefoil_not_a_generic_icon():
         assert supplied.size().width() == 64
         assert supplied.size().height() == 64
         assert supplied.toImage() == expected
+    dialogs = []
+    with mock.patch("webjam_qt.windows.help_dialog.HelpDialog.exec", lambda dialog: dialogs.append(dialog) or 0):
+        window.show_help()
+    dialog = dialogs[0]
+    supplied = dialog.findChild(QLabel, "HelpBrand").pixmap()
+    assert supplied.toImage() == expected
     window.close()
 
 

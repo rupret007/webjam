@@ -13,6 +13,12 @@
 
 ## Follow the current guide
 
+Press **F1** or choose **More → Help** for the current workspace's instructions.
+Help keeps **OK** visible on compact screens while long or enlarged text
+scrolls. Use **Tab / Shift+Tab** to move between the text and **OK**, and
+**Page Down / Page Up** to read the text. **Enter** on OK or **Esc** closes Help
+and returns to your workspace without changing the room, Notes, or recording.
+
 The always-visible Session HUD is the dominant action surface. **Notes** opens
 your local writing area. In Music, Podcast & Voice, and Review & Rehearsal,
 choose **Session details** to read the same
@@ -134,6 +140,11 @@ room. A canvas that needs a drawing app does not block **Open Paint along**,
 and video recovery does not hide **Open canvas**. If you hid the video, return
 through **Open Paint along**, then choose **Show video** when you want it
 visible again. Your existing local copy stays open.
+
+When the room offers a shared canvas or Paint along, its next step still
+includes paper, clay, a model, printer, or your usual app. Shared activities
+are optional. You only need Drawpile to use the shared canvas; artists using
+their own tools can keep making together.
 
 In **Notes** or Paint along, choose **Back to room** to see the full room and
 its current activities or recovery action. Your notes, selection and undo
@@ -978,6 +989,14 @@ clears it instead of presenting uncertain rows as recorder truth.
 
 Studio is designed for familiar multitrack review and arrangement. It
 deliberately does not integrate with or control Logic or another editor.
+
+In a compact window, the record and playback controls, **Export Tracks** (or
+**Export Aligned Originals** on Windows), and current guidance stay visible.
+Scroll the editing workspace to reach Arrange, take lanes, mixer controls,
+playback output, and source details. Keyboard focus brings those controls into
+view. Resizing or scrolling does not change the selected take, save an edit,
+start playback or recording, or export anything. **Review Notes** still finds
+a retained draft while Studio stays open.
 
 The editing, arrangement, comping, mix-mutation, and export steps below apply
 only to Music and Podcast & Voice. Review & Rehearsal Preview can play, scrub,
