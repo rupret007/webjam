@@ -4,7 +4,11 @@ from dataclasses import replace
 from core.reference_video import ReferenceVideoFollowState, session_identity_signer
 from core.session_transfer import ReferenceVideoSessionSnapshot
 from core.youtube_lesson import YouTubeLesson
-from tests.test_paint_along_guest_journey import journey, qapp, JourneyPlayer
+from tests.test_paint_along_guest_journey import (
+    JourneyPlayer,
+    journey as journey,
+    qapp as qapp,
+)
 from tests.test_art_room_controller import state
 from tests.test_art_activity_guest_journey import _click, _back_to_room, _room_button
 

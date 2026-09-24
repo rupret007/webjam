@@ -587,9 +587,10 @@ class ConductorWindow(QMainWindow):
         """Display the same short workflow the live screen presents."""
         import sys
 
-        from PySide6.QtWidgets import QMessageBox
+        from shiboken6 import isValid
 
         from webjam_qt import __version__
+        from webjam_qt.windows.help_dialog import HelpDialog
 
         if sys.platform == "darwin":
             navigation_shortcuts = "⌘1 / ⌘2 / ⌘3"
@@ -751,14 +752,21 @@ class ConductorWindow(QMainWindow):
                 f"{reset_shortcut} — Reset every fader to 0 dB<br>"
                 "F11 / Esc — Enter / leave full screen"
             )
-        box = QMessageBox()
-        box.setWindowTitle("WebJam Help")
-        box.setTextFormat(Qt.TextFormat.RichText)
-        box.setText(body)
-        from webjam_qt.theme.brand import render_brand_pixmap
-
-        box.setIconPixmap(render_brand_pixmap(64))
-        self._exec_message_box_on_screen(box)
+        screen = QGuiApplication.screenAt(self.frameGeometry().center())
+        if screen is None:
+            screen = QGuiApplication.primaryScreen()
+        previous_focus = self.focusWidget()
+        dialog = HelpDialog(body, screen.availableGeometry() if screen else None)
+        try:
+            dialog.exec()
+        finally:
+            dialog.deleteLater()
+            if isValid(self) and self.isVisible():
+                self.raise_()
+                self.activateWindow()
+                if (previous_focus is not None and isValid(previous_focus)
+                        and previous_focus.isVisible() and previous_focus.isEnabled()):
+                    previous_focus.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def show_about(self) -> None:
         """Show privacy-safe package identity and the candidate trust boundary."""

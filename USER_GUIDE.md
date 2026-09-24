@@ -13,6 +13,12 @@
 
 ## Follow the current guide
 
+Press **F1** or choose **More → Help** for the current workspace's instructions.
+Help keeps **OK** visible on compact screens while long or enlarged text
+scrolls. Use **Tab / Shift+Tab** to move between the text and **OK**, and
+**Page Down / Page Up** to read the text. **Enter** on OK or **Esc** closes Help
+and returns to your workspace without changing the room, Notes, or recording.
+
 The always-visible Session HUD is the dominant action surface. **Notes** opens
 your local writing area. In Music, Podcast & Voice, and Review & Rehearsal,
 choose **Session details** to read the same

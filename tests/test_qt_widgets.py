@@ -1492,10 +1492,10 @@ class TestConductorWindow(unittest.TestCase):
         from unittest import mock
 
         with mock.patch(
-            "PySide6.QtWidgets.QMessageBox.exec",
+            "webjam_qt.windows.help_dialog.HelpDialog.exec",
             return_value=0,
         ), mock.patch(
-            "PySide6.QtWidgets.QMessageBox.setText",
+            "PySide6.QtWidgets.QTextBrowser.setHtml",
         ) as set_text:
             w.show_help()
 
@@ -1537,9 +1537,9 @@ class TestConductorWindow(unittest.TestCase):
                     )
                     workspace = window.workspace_stack.currentWidget()
                     with mock.patch(
-                        "PySide6.QtWidgets.QMessageBox.exec", return_value=0,
+                        "webjam_qt.windows.help_dialog.HelpDialog.exec", return_value=0,
                     ), mock.patch(
-                        "PySide6.QtWidgets.QMessageBox.setText",
+                        "PySide6.QtWidgets.QTextBrowser.setHtml",
                     ) as set_text:
                         window.show_help()
                     body = set_text.call_args.args[0]
@@ -1572,10 +1572,10 @@ class TestConductorWindow(unittest.TestCase):
             "sys.platform",
             "darwin",
         ), mock.patch(
-            "PySide6.QtWidgets.QMessageBox.exec",
+            "webjam_qt.windows.help_dialog.HelpDialog.exec",
             return_value=0,
         ), mock.patch(
-            "PySide6.QtWidgets.QMessageBox.setText",
+            "PySide6.QtWidgets.QTextBrowser.setHtml",
         ) as set_text:
             w.show_help()
 
@@ -1602,10 +1602,10 @@ class TestConductorWindow(unittest.TestCase):
                 get_creator_profile_by_key_or_default(profile_key)
             )
             with mock.patch("sys.platform", "darwin"), mock.patch(
-                "PySide6.QtWidgets.QMessageBox.exec",
+                "webjam_qt.windows.help_dialog.HelpDialog.exec",
                 return_value=0,
             ), mock.patch(
-                "PySide6.QtWidgets.QMessageBox.setText",
+                "PySide6.QtWidgets.QTextBrowser.setHtml",
             ) as set_text:
                 window.show_help()
 
@@ -1639,10 +1639,10 @@ class TestConductorWindow(unittest.TestCase):
                     get_creator_profile_by_key_or_default(profile_key)
                 )
                 with mock.patch(
-                    "PySide6.QtWidgets.QMessageBox.exec",
+                    "webjam_qt.windows.help_dialog.HelpDialog.exec",
                     return_value=0,
                 ), mock.patch(
-                    "PySide6.QtWidgets.QMessageBox.setText",
+                    "PySide6.QtWidgets.QTextBrowser.setHtml",
                 ) as set_text:
                     w.show_help()
                 body = set_text.call_args.args[0]
@@ -1829,10 +1829,10 @@ class TestConductorWindow(unittest.TestCase):
 
         w.show_reference_studio_only()
         with mock.patch(
-            "PySide6.QtWidgets.QMessageBox.exec",
+            "webjam_qt.windows.help_dialog.HelpDialog.exec",
             return_value=0,
         ), mock.patch(
-            "PySide6.QtWidgets.QMessageBox.setText",
+            "PySide6.QtWidgets.QTextBrowser.setHtml",
         ) as set_text:
             w.show_help()
 

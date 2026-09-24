@@ -30,6 +30,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Music Help uses the current Host / Join labels and separates live Studio
   take review from standalone projects opened through launch File → New Music
   Project… and then Play Along / Record or Open Project….
+- Help keeps its window and close button on compact screens. Long or enlarged
+  instructions scroll independently; keyboard dismissal returns to the
+  originating workspace without changing the room or local work.
 
 ## [0.28.3] — Unsigned/ad-hoc private test release candidate
 
