@@ -11,6 +11,9 @@ from __future__ import annotations
 import itertools
 import logging
 import queue
+import shutil
+import subprocess
+import sys
 import threading
 from collections.abc import Iterable, Mapping
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
@@ -69,6 +72,13 @@ from core.take_export import (
     TrackExportResult,
     TrackMixSettings,
     export_track_package,
+)
+from core.logic_handoff import export_logic_handoff, LogicHandoffError
+from core.logic_handoff_adapter import (
+    build_handoff_session,
+    can_export_to_logic,
+    LogicHandoffAdapterError,
+    DEFAULT_BPM,
 )
 from core.take_library import TakeInfo, TakeValidationResult, discover_takes
 from core.take_player import (
@@ -344,6 +354,9 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         )
         self._export_generation = 0
         self._export_cancel = threading.Event()
+        self._logic_handoff_results: queue.SimpleQueue[
+            tuple[Path, object | None, str | None, bool]
+        ] = queue.SimpleQueue()
         self._export_thread: threading.Thread | None = None
         self._exporting = False
         self._reveal_path: Path | None = None
@@ -711,6 +724,17 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._reveal_btn.setEnabled(False)
         self._reveal_btn.clicked.connect(self._reveal_current)
         actions.addWidget(self._reveal_btn)
+        self._send_to_logic_btn = QPushButton("Send to Logic")
+        self._send_to_logic_btn.setObjectName("GhostButton")
+        self._send_to_logic_btn.setAccessibleName("Export session to Logic Pro")
+        self._send_to_logic_btn.setToolTip(
+            "Create a Logic-ready handoff folder with aligned 24-bit stems, "
+            "MIDI tempo/markers, and import instructions."
+        )
+        self._send_to_logic_btn.setEnabled(False)
+        self._send_to_logic_btn.setVisible(sys.platform == "darwin")
+        self._send_to_logic_btn.clicked.connect(self._send_to_logic)
+        actions.addWidget(self._send_to_logic_btn)
         self._originals_btn = QPushButton("Show My Originals")
         self._originals_btn.setObjectName("GhostButton")
         self._originals_btn.setAccessibleName("Show preserved Local Originals folder")
@@ -750,6 +774,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             self._master_limiter,
             self._export_btn,
             self._reveal_btn,
+            self._send_to_logic_btn,
         )
         self._master_controls = (
             self._master_label,
@@ -1057,7 +1082,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                     lane._pan,
                 ]
             )
-        order.extend([self._export_btn, self._reveal_btn, self._originals_btn])
+        order.extend([self._export_btn, self._reveal_btn, self._send_to_logic_btn, self._originals_btn])
         return tuple(order)
 
     def _setup_tab_order(self) -> None:
@@ -1209,6 +1234,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             self._inspector_btn,
             self._export_btn,
             self._reveal_btn,
+            self._send_to_logic_btn,
         )
         for widget in controls:
             if compact:
@@ -2205,6 +2231,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         if self._current is None:
             self._export_btn.setEnabled(False)
             self._reveal_btn.setEnabled(False)
+            self._send_to_logic_btn.setEnabled(False)
 
     def _stack_exact_repeated_takes(self, completed_path: Path) -> int:
         """Attach safe prior takes to the newly completed editable take."""
@@ -2928,6 +2955,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._reveal_btn.setEnabled(False)
         set_labeled_action(self._reveal_btn, "Show Take")
         self._export_btn.setEnabled(False)
+        self._send_to_logic_btn.setEnabled(False)
         self._viewing_live = True
         self._apply_creator_profile_presentation(self._live_creator_profile)
         if changed_take:
@@ -3025,6 +3053,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         if not self._exporting:
             self._refresh_export_presentation()
             self._export_btn.setEnabled(self._can_export_current_take())
+            self._refresh_send_to_logic_button()
 
     def _refresh_export_presentation(self) -> None:
         """Label the unsupported-platform path as originals-only."""
@@ -3060,6 +3089,196 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         set_labeled_action(self._export_btn, "Export Tracks")
         self._export_btn.setAccessibleName("Export aligned tracks")
         self._export_btn.setToolTip("")
+
+    def _refresh_send_to_logic_button(self) -> None:
+        """Update Send to Logic button state based on current take."""
+        if sys.platform != "darwin":
+            self._send_to_logic_btn.setVisible(False)
+            return
+
+        self._send_to_logic_btn.setVisible(True)
+        can_send, reason = self._can_send_to_logic()
+        self._send_to_logic_btn.setEnabled(can_send)
+        if not can_send and reason:
+            self._send_to_logic_btn.setToolTip(reason)
+        else:
+            self._send_to_logic_btn.setToolTip(
+                "Create a Logic-ready handoff folder with aligned 24-bit stems, "
+                "MIDI tempo/markers, and import instructions."
+            )
+
+    def _can_send_to_logic(self) -> tuple[bool, str]:
+        """Check if the current take can be exported to Logic."""
+        if self._recording:
+            return False, "Stop recording before sending to Logic."
+        if self._exporting:
+            return False, "Wait for the current export to finish."
+        take = self._current
+        if take is None:
+            return False, "Select a completed take to send to Logic."
+        if not self._track_export_allowed():
+            return False, "Track export is unavailable for this take."
+        return can_export_to_logic(take.path)
+
+    def _send_to_logic(self) -> None:
+        """Export the current take to a Logic-ready handoff folder."""
+        take = self._current
+        if take is None:
+            return
+        can_send, reason = self._can_send_to_logic()
+        if not can_send:
+            self._hint.setText(reason or "Cannot send to Logic.")
+            return
+
+        self._stop_playback()
+        take_path = take.path.expanduser().resolve()
+
+        self._send_to_logic_btn.setEnabled(False)
+        self._export_btn.setEnabled(False)
+        set_labeled_action(self._send_to_logic_btn, "Sending…")
+        self._hint.setText("Creating Logic handoff folder…")
+
+        def worker():
+            result = None
+            error = None
+            bpm_is_default = False
+            try:
+                adapter_result = build_handoff_session(take_path)
+                bpm_is_default = adapter_result.bpm_is_default
+                result = export_logic_handoff(adapter_result.session)
+            except (LogicHandoffAdapterError, LogicHandoffError) as exc:
+                error = str(exc)
+            except Exception as exc:
+                LOGGER.exception("Logic handoff failed unexpectedly")
+                error = "Logic handoff failed unexpectedly."
+            self._logic_handoff_results.put((take_path, result, error, bpm_is_default))
+
+        self._executor.submit(worker)
+
+    def _drain_logic_handoff_results(self) -> None:
+        """Process completed Logic handoff results on the UI thread."""
+        while True:
+            try:
+                take_path, result, error, bpm_is_default = self._logic_handoff_results.get_nowait()
+            except queue.Empty:
+                return
+
+            current_path = (
+                None
+                if self._current is None
+                else self._current.path.expanduser().resolve()
+            )
+            if current_path != take_path:
+                self._restore_logic_handoff_controls()
+                self._hint.setText(
+                    "The Logic handoff finished after Studio changed takes, so its result "
+                    "was not attached here. The recorded takes are unchanged."
+                )
+                continue
+
+            self._finish_logic_handoff(result, error, bpm_is_default)
+
+    def _restore_logic_handoff_controls(self) -> None:
+        """Re-enable controls after Logic handoff completes or is cancelled."""
+        set_labeled_action(self._send_to_logic_btn, "Send to Logic")
+        self._send_to_logic_btn.setEnabled(True)
+        self._refresh_export_button()
+
+    def _finish_logic_handoff(self, result, error: str | None, bpm_is_default: bool) -> None:
+        """Handle the completed Logic handoff result on the UI thread."""
+        self._restore_logic_handoff_controls()
+
+        if error is not None:
+            LOGGER.error("Logic handoff failed: %s", error)
+            self._hint.setText(
+                f"Logic handoff failed: {error}. The original take is safe."
+            )
+            return
+
+        if result is None:
+            self._hint.setText(
+                "Logic handoff did not complete. The original take is safe."
+            )
+            return
+
+        bpm_note = ""
+        if bpm_is_default:
+            bpm_note = (
+                f" BPM is the default ({DEFAULT_BPM:g}); the project did not "
+                "specify a tempo."
+            )
+
+        folder_name = result.folder.name
+        stem_count = len(result.stems)
+        logic_available = self._is_logic_pro_available()
+
+        self._reveal_path = result.folder
+
+        if logic_available:
+            answer = QMessageBox.question(
+                self,
+                "Open in Logic Pro?",
+                f"Logic handoff ready: {folder_name}\n\n"
+                f"{stem_count} aligned 24-bit stems · "
+                f"{result.sample_rate / 1000:g} kHz\n\n"
+                "Open session.mid in Logic Pro as a new project?\n\n"
+                "After opening:\n"
+                f"1. Set the project sample rate to {result.sample_rate} Hz\n"
+                "2. Drag all WAV stems together to bar 1 / time zero"
+                + bpm_note,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if answer == QMessageBox.StandardButton.Yes:
+                self._open_in_logic(result.midi)
+                self._hint.setText(
+                    f"Logic handoff sent · {stem_count} stems · {folder_name} · "
+                    f"Opening in Logic Pro.{bpm_note}"
+                )
+            else:
+                self._reveal_folder(result.folder)
+                self._hint.setText(
+                    f"Logic handoff ready · {stem_count} stems · {folder_name} · "
+                    f"Open session.mid as a new Logic project, set sample rate to "
+                    f"{result.sample_rate} Hz, then drag all WAVs to bar 1."
+                    + bpm_note
+                )
+        else:
+            self._reveal_folder(result.folder)
+            self._hint.setText(
+                f"Logic handoff ready · {stem_count} stems · {folder_name} · "
+                f"Open session.mid as a new Logic project, set sample rate to "
+                f"{result.sample_rate} Hz, then drag all WAVs to bar 1."
+                + bpm_note
+            )
+
+    def _is_logic_pro_available(self) -> bool:
+        """Check if Logic Pro is installed (macOS only)."""
+        if sys.platform != "darwin":
+            return False
+        logic_paths = [
+            Path("/Applications/Logic Pro.app"),
+            Path("/Applications/Logic Pro X.app"),
+        ]
+        return any(path.is_dir() for path in logic_paths)
+
+    def _open_in_logic(self, midi_path: Path) -> None:
+        """Open a MIDI file in Logic Pro (macOS only)."""
+        if sys.platform != "darwin":
+            return
+        try:
+            subprocess.Popen(
+                ["open", "-a", "Logic Pro", str(midi_path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            LOGGER.warning("Could not open Logic Pro: %s", exc)
+            self._reveal_folder(midi_path.parent)
+
+    def _reveal_folder(self, folder: Path) -> None:
+        """Reveal a folder in Finder (macOS) or Explorer (Windows)."""
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
     def _set_track_export_included(
         self,
@@ -3534,6 +3753,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._setup_btn.setEnabled(False)
         self._refresh_record_button_enabled()
         self._export_btn.setEnabled(False)
+        self._send_to_logic_btn.setEnabled(False)
         set_labeled_action(
             self._export_btn,
             "Exporting…",
@@ -4173,6 +4393,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                     seek_enabled=bool(self._current is not None),
                 )
         self._drain_export_results()
+        self._drain_logic_handoff_results()
 
     def prepare_close(self) -> bool:
         """Synchronously persist Studio edits without making the UI unusable."""
