@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -80,19 +81,25 @@ class StudioEditingToolbar(QWidget):
         self.setObjectName("StudioArrangeToolbar")
         self.setAccessibleName("Studio arrangement controls")
 
-        actions = QHBoxLayout(self)
+        actions = QBoxLayout(QBoxLayout.Direction.LeftToRight, self)
+        self._actions_layout = actions
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(Space.SM)
+        self._marker_actions = QHBoxLayout()
+        self._region_actions = QHBoxLayout()
+        for group in (self._marker_actions, self._region_actions):
+            group.setSpacing(Space.SM)
+            actions.addLayout(group)
         label = QLabel("ARRANGE")
         label.setObjectName("StudioSectionTitle")
-        actions.addWidget(label)
+        self._marker_actions.addWidget(label)
 
         self.add_marker_button = QPushButton("＋ Marker")
         self.add_marker_button.setObjectName("GhostButton")
         self.add_marker_button.setAccessibleName("Add named marker at playhead")
         self.add_marker_button.setToolTip("Add a named marker at the playhead.")
         self.add_marker_button.clicked.connect(lambda _checked=False: self.add_marker())
-        actions.addWidget(self.add_marker_button)
+        self._marker_actions.addWidget(self.add_marker_button)
 
         self.add_section_button = QPushButton("＋ Section")
         self.add_section_button.setObjectName("GhostButton")
@@ -103,7 +110,7 @@ class StudioEditingToolbar(QWidget):
         self.add_section_button.clicked.connect(
             lambda _checked=False: self.add_section()
         )
-        actions.addWidget(self.add_section_button)
+        self._marker_actions.addWidget(self.add_section_button)
 
         self.cycle_region_button = QPushButton("Cycle Region")
         self.cycle_region_button.setObjectName("GhostButton")
@@ -112,7 +119,7 @@ class StudioEditingToolbar(QWidget):
             "Set or clear the cycle range using the selected region."
         )
         self.cycle_region_button.clicked.connect(self.toggle_cycle)
-        actions.addWidget(self.cycle_region_button)
+        self._region_actions.addWidget(self.cycle_region_button)
 
         self.region_fades_button = QPushButton("5 ms Fades")
         self.region_fades_button.setObjectName("GhostButton")
@@ -123,7 +130,7 @@ class StudioEditingToolbar(QWidget):
             "Add or remove short click-safe equal-power fades."
         )
         self.region_fades_button.clicked.connect(self.toggle_region_fades)
-        actions.addWidget(self.region_fades_button)
+        self._region_actions.addWidget(self.region_fades_button)
 
         self.crossfade_button = QPushButton("Crossfade")
         self.crossfade_button.setObjectName("GhostButton")
@@ -134,9 +141,26 @@ class StudioEditingToolbar(QWidget):
             "Add or remove an equal-power crossfade across the nearest overlap."
         )
         self.crossfade_button.clicked.connect(self.toggle_crossfade)
-        actions.addWidget(self.crossfade_button)
+        self._region_actions.addWidget(self.crossfade_button)
+        self._marker_actions.addStretch(1)
+        self._region_actions.addStretch(1)
         actions.addStretch(1)
         self.setVisible(False)
+
+    def set_available_width(self, width: int) -> None:
+        """Keep the existing actions readable when their labels need two rows."""
+
+        needed = (
+            self._marker_actions.minimumSize().width()
+            + self._region_actions.minimumSize().width()
+            + self._actions_layout.spacing()
+        )
+        direction = (
+            QBoxLayout.Direction.TopToBottom if needed > width
+            else QBoxLayout.Direction.LeftToRight
+        )
+        if self._actions_layout.direction() != direction:
+            self._actions_layout.setDirection(direction)
 
     def _label(self, full_text: str) -> str:
         if not self._compact:
@@ -167,9 +191,11 @@ class StudioEditingToolbar(QWidget):
         button.ensurePolished()
         hint = button.minimumSizeHint()
         button.setMinimumHeight(hint.height())
-        button.setMinimumWidth(hint.width())
+        # Leave room for stylesheet borders/rounding at enlarged font sizes.
+        width = hint.width() + 4
+        button.setMinimumWidth(width)
         if self._compact:
-            button.setMaximumWidth(hint.width())
+            button.setMaximumWidth(width)
         else:
             button.setMaximumWidth(16_777_215)
 

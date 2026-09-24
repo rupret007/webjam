@@ -1,5 +1,10 @@
 # PM3: compact Studio and a next step for every artist
 
+> Historical evidence for the original September 22 draft, before its rebase.
+> Counts, screenshots, stack and release statements below describe that original
+> source only. The [September 24 review handoff](../show-wave-pr149-20260924/PRE_KAREN.md)
+> records the current base, retained CI failure, and exact-tip verification plan.
+
 One additional OPEN DRAFT above #148 (`844ea1080500fc937101b19b21168b5a5525600c`).
 The [baseline audit](audit-baseline.md) records #145–#148, parked holds, master,
 and unchanged Latest. The new work resolves #148's explicitly ranked compact

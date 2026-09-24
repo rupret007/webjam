@@ -1177,6 +1177,23 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         """Keep Arrange and its one-lane mixer usable at the 760 px floor."""
 
         self._arrange_toolbar.set_compact(compact)
+        # Measure against the viewport, not the already widened splitter:
+        # otherwise an overflowing single-row toolbar keeps its own overflow.
+        workspace_width = self.width() - (
+            self.layout().contentsMargins().left()
+            + self.layout().contentsMargins().right()
+        )
+        if hasattr(self, "_workspace_scroll") and self.isVisible():
+            workspace_width = min(workspace_width, self._workspace_scroll.viewport().width())
+        for panel in (self._library, self._inspector):
+            if not panel.isHidden():
+                workspace_width -= max(panel.minimumWidth(), panel.minimumSizeHint().width())
+                workspace_width -= self._splitter.handleWidth()
+        editor_margins = self._editor.layout().contentsMargins()
+        self._arrange_toolbar.set_available_width(
+            workspace_width - editor_margins.left() - editor_margins.right()
+            - 2 * self._editor.frameWidth()
+        )
         review_boundary = bool(
             compact
             and self._creator_profile_key == "review_rehearsal"

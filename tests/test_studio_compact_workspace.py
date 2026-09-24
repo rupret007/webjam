@@ -11,6 +11,7 @@ from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication, QStyle, QStyleOptionButton
 
 from core.take_player import PlaybackDeviceError
+from core.take_project import new_project_id
 from tests.test_art_room_controller import controllers as _controllers_fixture
 from tests.test_art_room_controller import qapp as _qapp_fixture
 from tests.test_recording_studio import _schema2_studio_take
@@ -177,6 +178,66 @@ def test_reflow_settles_and_preserves_document_selection_and_audio(loaded, qapp,
         _settle(qapp, 30)
         assert counter.count == count
     assert widths[-1] < widths[0]
+    assert before == (studio._current, owner.document, owner.generation, studio._take_list.currentRow())
+    play.assert_not_called()
+    stop.assert_not_called()
+    flush.assert_not_called()
+
+
+def test_arrange_actions_remain_reachable_after_labels_grow_and_reflow(loaded, qapp, monkeypatch):
+    _, window, studio = loaded
+    region = studio._studio_state.regions[0]
+    studio._studio_arrange._user_select_region(region)
+    assert studio._perform_arrange_edit(
+        "Create overlap",
+        lambda value: value.duplicate_region(
+            region.region_id, new_region_id=new_project_id(),
+            timeline_start_frame=region.timeline_start_frame,
+        ),
+        reload_audio=True,
+    )
+    studio._toggle_selected_cycle()
+    studio._toggle_selected_region_fades()
+    studio._toggle_selected_crossfade()
+    assert studio._region_fades_btn.text() == "No Fades"
+    assert studio._crossfade_btn.text() == "No Xfade"
+    owner = studio._studio_controller
+    before = (studio._current, owner.document, owner.generation, studio._take_list.currentRow())
+    play, stop, flush = Mock(), Mock(), Mock(return_value=True)
+    monkeypatch.setattr(studio._player, "play", play)
+    monkeypatch.setattr(studio._player, "stop", stop)
+    monkeypatch.setattr(studio, "_flush_studio_state", flush)
+    buttons = (
+        studio._add_marker_btn, studio._add_section_btn, studio._cycle_region_btn,
+        studio._region_fades_btn, studio._crossfade_btn,
+    )
+    counter = _LayoutCounter()
+    studio.installEventFilter(counter)
+    studio._splitter.installEventFilter(counter)
+    window.activateWindow()
+    for font_size, width, details in (
+        (22, 760, False), (22, 760, True), (13, 1100, False), (13, 760, False),
+    ):
+        studio._crossfade_btn.setFocus(Qt.FocusReason.TabFocusReason)
+        studio.setStyleSheet(f"QLabel, QPushButton {{font-size:{font_size}px;}}")
+        window.resize(width, 600)
+        studio._set_compact_inspector_open(details)
+        _settle(qapp, 30)
+        assert studio._crossfade_btn.hasFocus()
+        assert window.size().toTuple() == (width, 600)
+        viewport = studio._workspace_scroll.viewport()
+        rectangles = [_rect(studio._arrange_toolbar, button) for button in buttons]
+        for index, rect in enumerate(rectangles):
+            assert studio._arrange_toolbar.rect().contains(rect)
+            assert not any(rect.intersects(other) for other in rectangles[:index])
+        for button in buttons:
+            button.setFocus(Qt.FocusReason.TabFocusReason)
+            _settle(qapp)
+            assert viewport.rect().contains(_rect(viewport, button))
+            _button_fits(button)
+        count = counter.count
+        _settle(qapp, 30)
+        assert counter.count == count
     assert before == (studio._current, owner.document, owner.generation, studio._take_list.currentRow())
     play.assert_not_called()
     stop.assert_not_called()
