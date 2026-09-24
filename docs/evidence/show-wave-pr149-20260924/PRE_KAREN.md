@@ -45,6 +45,18 @@ Current synthetic review views: [compact Studio](studio-compact.png),
 The [render manifest](render-manifest.json) binds these images to source hashes;
 they are not observations of physical recording or a real remote participant.
 
+The first exact-tip full local gate at `7192935fb337466523b6695aff5261bd31c61b03`
+stopped after 406 successful modules: three 125%-font recovery cases still
+expected Playback output to be initially above the fold. That expectation
+predates PM3's scrolling editor. An independent probe of all three exact
+fixtures reached the complete picker with four real Tab keypresses; Play,
+Export and Setup stayed visible, with unchanged retry token/document/generation.
+The recovery test now retains its geometry/readability assertions, checks fixed
+controls immediately, then checks output reachability through actual keyboard
+navigation and unchanged save identity. All 14 module cases pass. The failed
+full-gate log remains under that original tip; the corrected tip requires a
+new complete gate and is not qualified by the earlier partial run.
+
 ## Verification and review boundary
 
 Before pushing, run Ruff, dependency consistency/policy and vulnerability audits,

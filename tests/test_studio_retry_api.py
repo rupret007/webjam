@@ -4,6 +4,8 @@ import re
 from unittest.mock import Mock
 
 import pytest
+from PySide6.QtCore import QPoint, QRect, Qt
+from PySide6.QtTest import QTest
 from tests.test_art_room_controller import qapp as _qapp_fixture
 from tests.test_recording_studio import _schema2_studio_take, _schema2_repeated_take, _SilentSink, RATE
 from core import studio_controller as owner_module
@@ -130,6 +132,31 @@ def test_compact_recovery_text_wraps_inside_supported_geometry(review, qapp, kin
     assert studio._studio_arrange.height() >= 150
     assert studio._track_scroll.height() >= 88
     assert studio._hint.geometry().bottom() <= studio._hint.parentWidget().contentsRect().bottom()
-    for control in (studio._play_btn, studio._output_picker, studio._export_btn, studio._setup_btn):
+    fixed_controls = (studio._play_btn, studio._export_btn, studio._setup_btn)
+    for control in fixed_controls:
         assert control.isVisibleTo(studio)
         assert studio.contentsRect().contains(control.mapTo(studio, control.rect().bottomRight()))
+
+    # Output belongs to the scrolling editor; save/export recovery keeps its
+    # guidance and primary controls fixed. Reach output through the real tab
+    # order, rather than requiring every editor control above the fold.
+    owner = studio._studio_controller
+    before = (owner.document, owner.generation, studio.studio_save_retry_context())
+    studio.activateWindow()
+    studio._take_list.setFocus(Qt.FocusReason.TabFocusReason)
+    for _ in range(12):
+        qapp.processEvents()
+        if studio._output_picker.hasFocus():
+            break
+        assert studio.focusWidget() is not None
+        QTest.keyClick(studio.focusWidget(), Qt.Key.Key_Tab)
+    qapp.processEvents()
+    qapp.processEvents()
+    assert studio._output_picker.hasFocus()
+    viewport = studio._workspace_scroll.viewport()
+    assert viewport.rect().contains(QRect(
+        studio._output_picker.mapTo(viewport, QPoint()), studio._output_picker.size(),
+    ))
+    for control in fixed_controls:
+        assert studio.contentsRect().contains(QRect(control.mapTo(studio, QPoint()), control.size()))
+    assert before == (owner.document, owner.generation, studio.studio_save_retry_context())
