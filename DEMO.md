@@ -6,14 +6,16 @@ Allow two minutes for the door, then another minute to open a Make together
 room and find its Conversation controls. One computer is enough to show that
 next action; a second artist is needed to demonstrate joining and making together.
 
-> **Boundary:** this script runs v0.28.3 candidate source while GitHub Latest
-> remains published unsigned release `393030220` (v0.28.1), not a signed
-> package. Every v0.28.1 physical and platform-trust gate remains **NOT RUN** —
-> see [README](README.md)
-> for the exact published release and its checksums. The door-only part stops
-> before Host or Join. The room continuation starts a real local-network Art
-> room, then ends it; it requires no Jamulus, meeting launch, shared canvas,
-> or video file.
+> **Show baseline, checked 2026-09-24:** published unsigned/ad-hoc
+> [v0.28.3](https://github.com/rupret007/webjam/releases/tag/v0.28.3) is GitHub
+> Latest, release `394985116`, from commit
+> `da16749abc9f87cde127e01ea10a7712e5ce7800`. Verify the selected package with
+> `WebJam-v0.28.3-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
+> and unnotarized. Branch changes and automated checks do not establish
+> physical show readiness. See [the show one-pager](SHOW_ONEPAGER.md) and [demo script](DEMO_SCRIPT.md).
+> This shorter door script stops before Host or Join. Its optional room
+> continuation starts a real local-network Art room, then ends it; it needs
+> no Jamulus, meeting launch, shared canvas, or video file.
 
 ## Run it
 
@@ -40,10 +42,10 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/test_art_start_ux.
    [docs/MERGE_AND_RELEASE.md](docs/MERGE_AND_RELEASE.md#1-ten-second-ux-gate).
 
 2. **Choose Art.** Two more cards appear:
-   - **Make together** — "Talk, make, or draw together in one room." Everyone
+   - **Make together** — "Talk and make with your own tools, or share a canvas." Everyone
      works in their own space; the host can open one shared canvas from
      inside the room if the group wants to draw together.
-   - **Paint along** — "Follow one silent process video while you paint."
+   - **Paint along** — "Paint beside a silent video, from a file or lesson link."
 
    Point out that neither card names Jamulus, Webex, Drawpile, Krita, or any
    other tool — that's enforced by `tests/test_art_start_ux.py`, not a styling
@@ -66,9 +68,10 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/test_art_start_ux.
 
 2. **Point out Copy Invite and Waiting for artists to connect.** The room
    says **Make from your own space** and explains: "Use paper, clay, a model,
-   printer, or your usual app. Open Conversation for Talk · make · share or
-   watch-together." Full Talk · make · share / Webex honesty lives on the
-   Conversation surface, not this short overview line.
+   printer, or your usual app." With no saved meeting link, the next sentence
+   says "Choose Set Up Conversation to add an external meeting link."
+   With a saved link, it says "Choose Conversation for the external meeting
+   controls."
    No one else has joined merely because the room is open or the invite was
    copied. For an actual collaborator, follow the invitation steps in
    [First Session](FIRST_JAM.md#start-an-art-room).
@@ -94,9 +97,12 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/test_art_start_ux.
 
 For a **Paint along** walkthrough instead, choose that card before **Host**.
 If the room overview is still showing, choose **Open Paint along**. Its
-workspace offers **Watch a shared lesson**, which leads to the
-same Conversation controls, or **Choose process video…** for a silent local
-file. **Back to room** returns without ending the room; finish with **End Room**.
+workspace offers **Choose process video…** for a silent local file or
+**YouTube link…** for a silent lesson inside WebJam. Guests choose
+**Open my copy…** for the same local file or **Open lesson** for YouTube.
+The separate **Watch a shared lesson** action leads to Conversation for a
+meeting demonstration with sound. **Back to room** returns without ending
+the room; finish with **End Room**.
 Showing those choices does not prove video playback or shared meeting media.
 
 ## What this does and doesn't prove
@@ -127,9 +133,17 @@ Showing those choices does not prove video playback or shared meeting media.
 ## If something looks different from this doc
 
 Record `git rev-parse HEAD` with your walkthrough notes. This script was
-checked against source based on master
-`200cac9eb04d01611696cdc147957b36daef257f` (v0.28.1); published v0.28.1 packages
-come from `200cac9eb04d01611696cdc147957b36daef257f`.
+rechecked against master base
+`da16749abc9f87cde127e01ea10a7712e5ce7800` (v0.28.3). This source check is
+separate from the unperformed physical walkthrough.
 If the app disagrees with this file, record its exact wording and the source
 commit. The door and room checks above help locate the mismatch; this source
 guide can drift.
+
+
+## Historical evidence boundary
+
+The earlier v0.28.1 release `393030220` is superseded as Latest. Its existing
+ledger is unchanged: every v0.28.1 physical and platform-trust gate remains
+**NOT RUN** until observed against that exact package. That historical status
+neither proves nor fails the current show candidate.
