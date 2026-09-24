@@ -23,6 +23,14 @@ All notable improvements and features for the WebJam creator collaboration platf
   activities remain optional; missing Drawpile does not prevent making
   together with your own tools. Art still has two doors.
 
+### Help for Art and Music
+
+- Art F1 / More → Help now describes Art rooms, host tools, silent Paint along,
+  guest source choices, and local Notes.
+- Music Help uses the current Host / Join labels and separates live Studio
+  take review from standalone projects opened through launch File → New Music
+  Project… and then Play Along / Record or Open Project….
+
 ## [0.28.3] — Unsigned/ad-hoc private test release candidate
 
 > Prepared for Jeff Story testing after #145, #146, #147, #148, and #150.
