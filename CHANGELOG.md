@@ -7,7 +7,7 @@ All notable improvements and features for the WebJam creator collaboration platf
 ## [Unreleased]
 
 > Future work after the unsigned v0.28.3 candidate belongs here. At candidate
-> preparation, GitHub Latest remains immutable v0.28.1 release `393030220`;
+> preparation, GitHub Latest remains v0.28.3 release `394985116`;
 > v0.28.2 remains a stale draft at `a51154e533ce5662ca4b541a866dd9b1954452b1`.
 > Every published tag, release, and asset remains immutable historical evidence.
 > Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted
