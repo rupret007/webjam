@@ -1,23 +1,18 @@
-WEBJAM v0.28.1 UNSIGNED PRIVATE TEST PACKAGE
+WEBJAM UNSIGNED PRIVATE TEST PACKAGE
 ============================================
 
-PACKAGE BOUNDARY: GitHub Latest is immutable release 393030220, published
-2026-09-21T14:30:22Z from annotated tag object db44247a3ceefb97f4cac6e623deef1bd32648a8 peeling to exact commit
-200cac9eb04d01611696cdc147957b36daef257f. It has seven packages plus WebJam-v0.28.1-SHA256SUMS.txt. Use this
-private test package only when its exact filename and SHA-256 appear in that
-manifest. A checkout or branch build is not a substitute. Older release entries
-(v0.28.0, v0.27.2, Jamulus catalog v1-v3) were deleted by owner; git tags remain.
-The existing exact Jamulus 3.12.2 and 3.12.3 records are approved through v0.28.1
-for live Host/Join.
-Physical audio, hardware, Gatekeeper, signing, and notarization gates remain
-NOT RUN unless the release evidence names this exact file and SHA-256.
+PACKAGE BOUNDARY: Read the adjacent "WebJam Candidate Info.txt" for this
+package's version, exact source build ID, architecture, and trust state. Match
+those values and this file's container SHA-256 to the candidate handoff receipt
+or the published release's checksum manifest before installing. A version
+number alone does not identify a tested build. An Actions test candidate is
+not a new published release and does not change GitHub Latest.
 
-Everything below describes the published unsigned private test package. It is
-ad-hoc signed and NOT notarized or reviewed by Apple. No v0.28.1 physical-test
-result exists.
+This package is ad-hoc signed and NOT notarized or reviewed by Apple. Physical
+audio, hardware, Gatekeeper, Developer ID signing, and notarization gates remain
+NOT RUN unless the evidence names this exact build and container SHA-256.
 
-This release upgrades cryptography to 50.0.0 for CVE-2026-69247,
-CVE-2026-69248, and CVE-2026-69249. Apple-silicon uses an exact hash-locked
+The package uses cryptography 50.0.0. Apple-silicon uses an exact hash-locked
 upstream wheel. Because upstream no longer publishes an Intel macOS wheel,
 the Intel build uses WebJam's documented, hash-locked native x86_64
 source-build exception with static OpenSSL 3.5.7 LTS; CI verifies its official
@@ -39,7 +34,7 @@ Optional verified installer helpers
 -----------------------------------
 The two `.command` helpers verify the adjacent app's signature, version, build,
 architecture, executable inventory, and transport checksum before installing.
-To run one after verifying the release checksum, open Terminal, type
+To run one after verifying the candidate or release checksum, open Terminal, type
 `/bin/bash ` (including the trailing space), drag the chosen helper into the
 Terminal window, and press Return.
 
@@ -64,17 +59,23 @@ Shared Track profile/control files under your own
 ~/Library/Application Support/WebJam folder. Host, Join, and Shared Track
 must not ask WebJam for permission to access data from other apps.
 
-The source retains Music and Podcast & Voice as GA creator profiles. Review &
-Rehearsal is Preview. Live WebJam-audio Host/Join, Record Session, and
-playback/read-only completed-take review are source-eligible; meanwhile standalone projects, take
-edit/comp/mix mutation, track export, shared notes, visual sync, and media
-timecode are blocked. No profile directly or automatically taps a meeting app,
-browser, or system output. Local scratchpad notes remain profile-scoped on this
-Mac only; they are never shared or media-timecoded.
+Music and Podcast & Voice are GA creator profiles. Live Studio reviews
+completed session takes. For a separate local Music project, end or leave the
+session and relaunch WebJam. Choose File > New Music Project..., then
+Play Along / Record or Open Project.... Standalone Studio owns its own local
+playback, recording, editing, and export; it does not feed Jamulus.
 
-The sealed v0.22.5 Jamulus catalog does not authorize v0.28.1 and is rejected.
+Review & Rehearsal is Preview: live Host/Join, Record Session, and read-only
+completed-take review are available, while standalone projects and take
+editing/export are blocked in that profile. Art is Preview: Make together and
+Paint along use your own tools, with optional external canvas and conversation
+handoffs. Reference video stays silent; each local-file guest needs a matching
+copy. No profile directly or automatically taps a meeting app, browser, or
+system output. Local scratchpad notes remain on this Mac only.
+
+The sealed v0.22.5 Jamulus catalog does not authorize this v0.28.3 candidate.
 The baked registry separately authorizes the existing exact Jamulus 3.12.2 and
-3.12.3 records through v0.28.1. Presence of embedded 3.12.2 bytes does not
+3.12.3 records through v0.28.3. Presence of embedded 3.12.2 bytes does not
 authorize an identity mismatch. Shared Track uses its separate approved
 headless path; unlisted client/server versions still fail closed.
 
@@ -123,6 +124,16 @@ connect your iPhone, and press Run. A paid Apple Developer Program membership
 and XcodeGen are not required for this owner-device test. This is source for
 temporary Personal Team installation, not a pre-signed or App Store-distributed
 iPhone app.
+
+Historical release reference (not this candidate's identity)
+----------------------------------------------------------
+v0.28.1 was GitHub Latest as release 393030220, published 2026-09-21T14:30:22Z,
+from annotated tag object db44247a3ceefb97f4cac6e623deef1bd32648a8 peeling to
+200cac9eb04d01611696cdc147957b36daef257f. It had seven packages plus
+WebJam-v0.28.1-SHA256SUMS.txt, with the existing exact Jamulus records approved
+through v0.28.1. Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1-v3)
+were deleted by owner; git tags remain. Those historical checksums do not
+qualify this candidate. Use its own build metadata and checksum receipt above.
 
 Apple's guidance for unidentified apps:
 https://support.apple.com/en-us/102445

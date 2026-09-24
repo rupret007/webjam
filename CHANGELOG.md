@@ -33,6 +33,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Help keeps its window and close button on compact screens. Long or enlarged
   instructions scroll independently; keyboard dismissal returns to the
   originating workspace without changing the room or local work.
+- The Mac package guide identifies candidates by their bundled build metadata
+  and checksum receipt, and distinguishes standalone Music from Preview
+  restrictions. Older release details are explicitly historical.
 
 ## [0.28.3] — Unsigned/ad-hoc private test release candidate
 

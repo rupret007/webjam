@@ -36,6 +36,13 @@ recording owner. Two imported pytest fixtures now use explicit re-exports,
 clearing the existing eight full-test-tree Ruff findings without changing
 fixture behavior.
 
+Package review also found that the macOS install guide still called v0.28.1
+Latest and ambiguously applied Review & Rehearsal's project restrictions to
+Music. The guide now directs installers to the package's exact build metadata
+and checksum receipt, distinguishes the Music and Preview workflows, and keeps
+the old release facts under an explicitly historical heading. The earlier
+integration gate was superseded for this copy correction, not reported green.
+
 ## Pre-freeze evidence
 
 - Focused Help, widget, brand, dispatcher, and affected fixture tests:
