@@ -1,0 +1,301 @@
+{
+  "window": [
+    760,
+    600
+  ],
+  "studio": [
+    760,
+    407
+  ],
+  "widgets": [
+    {
+      "name": "AudioButton",
+      "type": "QPushButton",
+      "size": [
+        114,
+        44
+      ],
+      "rect": [
+        190,
+        120,
+        114,
+        44
+      ],
+      "visible": true,
+      "minimum_hint": [
+        114,
+        52
+      ],
+      "text": "\u25b6 Play",
+      "contents_width": 80,
+      "text_width": 79
+    },
+    {
+      "name": "GhostButton",
+      "type": "QPushButton",
+      "size": [
+        111,
+        44
+      ],
+      "rect": [
+        312,
+        120,
+        111,
+        44
+      ],
+      "visible": true,
+      "minimum_hint": [
+        111,
+        52
+      ],
+      "text": "\u25a0 Stop",
+      "contents_width": 77,
+      "text_width": 77
+    },
+    {
+      "name": "GhostButton",
+      "type": "QPushButton",
+      "size": [
+        102,
+        44
+      ],
+      "rect": [
+        424,
+        31,
+        102,
+        44
+      ],
+      "visible": true,
+      "minimum_hint": [
+        102,
+        52
+      ],
+      "text": "Setup",
+      "contents_width": 68,
+      "text_width": 68
+    },
+    {
+      "name": "StudioRecordButton",
+      "type": "QPushButton",
+      "size": [
+        206,
+        44
+      ],
+      "rect": [
+        538,
+        31,
+        206,
+        44
+      ],
+      "visible": true,
+      "minimum_hint": [
+        244,
+        54
+      ],
+      "text": "\u25cf Record Session",
+      "contents_width": 172,
+      "text_width": 210
+    },
+    {
+      "name": "StudioArrangeToolbar",
+      "type": "StudioEditingToolbar",
+      "size": [
+        541,
+        40
+      ],
+      "rect": [
+        190,
+        196,
+        541,
+        40
+      ],
+      "visible": true,
+      "minimum_hint": [
+        750,
+        52
+      ]
+    },
+    {
+      "name": "StudioCompToolbar",
+      "type": "QWidget",
+      "size": [
+        541,
+        44
+      ],
+      "rect": [
+        190,
+        234,
+        541,
+        44
+      ],
+      "visible": true,
+      "minimum_hint": [
+        677,
+        44
+      ]
+    },
+    {
+      "name": "StudioOutputPicker",
+      "type": "_CompactComboBox",
+      "size": [
+        166,
+        40
+      ],
+      "rect": [
+        328,
+        272,
+        166,
+        40
+      ],
+      "visible": true,
+      "minimum_hint": [
+        140,
+        46
+      ]
+    },
+    {
+      "name": "PrimaryButton",
+      "type": "QPushButton",
+      "size": [
+        129,
+        44
+      ],
+      "rect": [
+        465,
+        272,
+        129,
+        44
+      ],
+      "visible": true,
+      "minimum_hint": [
+        200,
+        52
+      ],
+      "text": "Export Tracks",
+      "contents_width": 95,
+      "text_width": 165
+    },
+    {
+      "name": "",
+      "type": "QSplitter",
+      "size": [
+        541,
+        30
+      ],
+      "rect": [
+        190,
+        310,
+        541,
+        30
+      ],
+      "visible": true,
+      "minimum_hint": [
+        480,
+        240
+      ]
+    },
+    {
+      "name": "StudioArrange",
+      "type": "StudioArrange",
+      "size": [
+        541,
+        150
+      ],
+      "rect": [
+        190,
+        310,
+        541,
+        150
+      ],
+      "visible": true,
+      "minimum_hint": [
+        480,
+        150
+      ]
+    },
+    {
+      "name": "StudioTrackScroll",
+      "type": "QScrollArea",
+      "size": [
+        541,
+        88
+      ],
+      "rect": [
+        190,
+        326,
+        541,
+        88
+      ],
+      "visible": true,
+      "minimum_hint": [
+        60,
+        60
+      ]
+    },
+    {
+      "name": "StudioHint",
+      "type": "QLabel",
+      "size": [
+        541,
+        30
+      ],
+      "rect": [
+        190,
+        348,
+        541,
+        30
+      ],
+      "visible": true,
+      "minimum_hint": [
+        110,
+        35
+      ],
+      "text": "Take verified and ready to mix or export.",
+      "wrapped_height": 35
+    },
+    {
+      "name": "GhostButton",
+      "type": "QPushButton",
+      "size": [
+        125,
+        52
+      ],
+      "rect": [
+        282,
+        196,
+        125,
+        52
+      ],
+      "visible": true,
+      "minimum_hint": [
+        125,
+        52
+      ],
+      "text": "\uff0b Mark",
+      "contents_width": 91,
+      "text_width": 91
+    },
+    {
+      "name": "GhostButton",
+      "type": "QPushButton",
+      "size": [
+        99,
+        52
+      ],
+      "rect": [
+        465,
+        196,
+        99,
+        52
+      ],
+      "visible": true,
+      "minimum_hint": [
+        99,
+        52
+      ],
+      "text": "Cycle",
+      "contents_width": 65,
+      "text_width": 65
+    }
+  ]
+}

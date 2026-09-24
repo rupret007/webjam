@@ -1,0 +1,15 @@
+{
+  "boundary": "Synthetic Qt fixtures; pre-freeze source hashes, not physical PASS.",
+  "images": {
+    "studio-compact.png": "e12b1204ec80de0cad571752fee7a3f3e8b0d32705fac54903db586e1fb0deef",
+    "studio-retry-22px.png": "3fccad05e824efdf8aa72e1ea327e57ca56539bae3467830c1ff1928672a8894",
+    "art-guest-125.png": "844f472f20c51373d9c0a0839466eb719e925c2173f872a59203aa7780597505"
+  },
+  "source_sha256": {
+    "core/art_room_overview.py": "8063fa90f3cf46e24a9cf0ab2feed702fa30d03843d3908d7b0b3aba05326a76",
+    "webjam_qt/widgets/art_room_overview.py": "665ce59144f21ebaf7ce059814e9f62a7e9ecf521832a53d71daeee02836e35d",
+    "webjam_qt/widgets/recording_studio.py": "226c01213cb4501d8bf9f53650f9b94a41f723fb153ac2da4e5f7a0380c7f7e7",
+    "webjam_qt/widgets/studio_editing.py": "136e2e128e8b0043495d5d7ee2ba80e378fc106daeb01402c57067a7037003b5",
+    "webjam_qt/theme/conductor.qss": "397383f7e825fc3d4f5e51c725449daa63cfed1cea4394cf2d9726edf6ef0839"
+  }
+}

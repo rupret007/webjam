@@ -47,8 +47,12 @@ _GUEST_HINT = (
     "invitation. Drawpile decides who may paint, and WebJam cannot see the "
     "canvas or who is on it."
 )
-_HOST_NO_DRAWPILE = "Install Drawpile to paint together."
-_GUEST_NO_DRAWPILE = "Install Drawpile to join the canvas, or just talk."
+_HOST_NO_DRAWPILE = (
+    "Install Drawpile to host a shared canvas. You can keep making with your own tools."
+)
+_GUEST_NO_DRAWPILE = (
+    "Install Drawpile to join the canvas. You can keep making with your own tools."
+)
 _SHARED_STATUS = (
     "The room can open this canvas, including anyone who joins later. WebJam "
     "cannot see the canvas, so Drawpile shows who is actually painting."

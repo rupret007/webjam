@@ -13,6 +13,16 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted
 > by owner; git tags remain.
 
+### Compact Studio and Art room guidance
+
+- Studio keeps recording, playback, export, and the current guidance visible
+  while the editing workspace scrolls at a readable size in compact windows.
+  Resizing and scrolling preserve the selected take and its pending edits.
+- An offered Art canvas or Paint along activity keeps a clear next step for
+  making with paper, clay, a model, printer, or your usual app. Shared
+  activities remain optional; missing Drawpile does not prevent making
+  together with your own tools. Art still has two doors.
+
 ## [0.28.3] — Unsigned/ad-hoc private test release candidate
 
 > Prepared for Jeff Story testing after #145, #146, #147, #148, and #150.

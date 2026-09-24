@@ -1,0 +1,1108 @@
+[
+  {
+    "module": "tests/test_art_activity_guest_journey.py",
+    "returncode": 0,
+    "seconds": 4.453,
+    "summary": "10 passed in 4.15s",
+    "counts": {
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_activity_guest_journey.log"
+  },
+  {
+    "module": "tests/test_art_audio_cleanup.py",
+    "returncode": 0,
+    "seconds": 1.245,
+    "summary": "15 passed in 0.98s",
+    "counts": {
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_audio_cleanup.log"
+  },
+  {
+    "module": "tests/test_art_canvas_connection_journey.py",
+    "returncode": 0,
+    "seconds": 3.56,
+    "summary": "15 passed in 3.26s",
+    "counts": {
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_canvas_connection_journey.log"
+  },
+  {
+    "module": "tests/test_art_cold_invitation_context.py",
+    "returncode": 0,
+    "seconds": 5.973,
+    "summary": "23 passed in 5.38s",
+    "counts": {
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_cold_invitation_context.log"
+  },
+  {
+    "module": "tests/test_art_companion.py",
+    "returncode": 0,
+    "seconds": 0.394,
+    "summary": "72 passed in 0.14s",
+    "counts": {
+      "passed": 72,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_companion.log"
+  },
+  {
+    "module": "tests/test_art_companion_fallback.py",
+    "returncode": 0,
+    "seconds": 1.854,
+    "summary": "40 passed in 1.49s",
+    "counts": {
+      "passed": 40,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_companion_fallback.log"
+  },
+  {
+    "module": "tests/test_art_companion_http_policy.py",
+    "returncode": 0,
+    "seconds": 0.276,
+    "summary": "11 skipped in 0.06s",
+    "counts": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 11,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_companion_http_policy.log"
+  },
+  {
+    "module": "tests/test_art_companion_projection.py",
+    "returncode": 0,
+    "seconds": 1.422,
+    "summary": "43 passed in 1.13s",
+    "counts": {
+      "passed": 43,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_companion_projection.log"
+  },
+  {
+    "module": "tests/test_art_companion_swift_integration.py",
+    "returncode": 0,
+    "seconds": 0.3,
+    "summary": "3 skipped in 0.11s",
+    "counts": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 3,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_companion_swift_integration.log"
+  },
+  {
+    "module": "tests/test_art_conversation_layout.py",
+    "returncode": 0,
+    "seconds": 3.968,
+    "summary": "32 passed in 3.63s",
+    "counts": {
+      "passed": 32,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_conversation_layout.log"
+  },
+  {
+    "module": "tests/test_art_conversation_link_journey.py",
+    "returncode": 0,
+    "seconds": 5.947,
+    "summary": "18 passed in 5.64s",
+    "counts": {
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_conversation_link_journey.log"
+  },
+  {
+    "module": "tests/test_art_conversation_next_action.py",
+    "returncode": 0,
+    "seconds": 4.871,
+    "summary": "32 passed in 4.55s",
+    "counts": {
+      "passed": 32,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_conversation_next_action.log"
+  },
+  {
+    "module": "tests/test_art_exit_guidance.py",
+    "returncode": 0,
+    "seconds": 0.298,
+    "summary": "14 passed in 0.08s",
+    "counts": {
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_exit_guidance.log"
+  },
+  {
+    "module": "tests/test_art_exit_next_action.py",
+    "returncode": 0,
+    "seconds": 9.278,
+    "summary": "27 passed in 8.90s",
+    "counts": {
+      "passed": 27,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_exit_next_action.log"
+  },
+  {
+    "module": "tests/test_art_host_platforms.py",
+    "returncode": 0,
+    "seconds": 1.9,
+    "summary": "33 passed in 1.58s",
+    "counts": {
+      "passed": 33,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_host_platforms.log"
+  },
+  {
+    "module": "tests/test_art_invitation_entry.py",
+    "returncode": 0,
+    "seconds": 0.319,
+    "summary": "33 passed in 0.12s",
+    "counts": {
+      "passed": 33,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_invitation_entry.log"
+  },
+  {
+    "module": "tests/test_art_invitation_flow.py",
+    "returncode": 0,
+    "seconds": 4.179,
+    "summary": "30 passed in 3.80s",
+    "counts": {
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_invitation_flow.log"
+  },
+  {
+    "module": "tests/test_art_join_entry_ui.py",
+    "returncode": 0,
+    "seconds": 2.453,
+    "summary": "52 passed in 2.15s",
+    "counts": {
+      "passed": 52,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_join_entry_ui.log"
+  },
+  {
+    "module": "tests/test_art_lan_host_portable.py",
+    "returncode": 0,
+    "seconds": 5.544,
+    "summary": "4 passed in 5.15s",
+    "counts": {
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_lan_host_portable.log"
+  },
+  {
+    "module": "tests/test_art_lan_host_recovery.py",
+    "returncode": 0,
+    "seconds": 6.024,
+    "summary": "22 passed in 5.68s",
+    "counts": {
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_lan_host_recovery.log"
+  },
+  {
+    "module": "tests/test_art_lan_retry.py",
+    "returncode": 0,
+    "seconds": 5.172,
+    "summary": "35 passed in 4.88s",
+    "counts": {
+      "passed": 35,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_lan_retry.log"
+  },
+  {
+    "module": "tests/test_art_left_out_rules.py",
+    "returncode": 0,
+    "seconds": 1.537,
+    "summary": "76 passed in 1.24s",
+    "counts": {
+      "passed": 76,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_left_out_rules.log"
+  },
+  {
+    "module": "tests/test_art_lesson_request_journey.py",
+    "returncode": 0,
+    "seconds": 17.698,
+    "summary": "17 passed in 17.42s",
+    "counts": {
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_lesson_request_journey.log"
+  },
+  {
+    "module": "tests/test_art_lesson_request_widgets.py",
+    "returncode": 0,
+    "seconds": 2.225,
+    "summary": "23 passed in 1.94s",
+    "counts": {
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_lesson_request_widgets.log"
+  },
+  {
+    "module": "tests/test_art_meeting_coexistence.py",
+    "returncode": 0,
+    "seconds": 1.63,
+    "summary": "59 passed in 1.39s",
+    "counts": {
+      "passed": 59,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_meeting_coexistence.log"
+  },
+  {
+    "module": "tests/test_art_native_retry.py",
+    "returncode": 0,
+    "seconds": 2.169,
+    "summary": "3 passed in 1.87s",
+    "counts": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_native_retry.log"
+  },
+  {
+    "module": "tests/test_art_notes_communication.py",
+    "returncode": 0,
+    "seconds": 2.74,
+    "summary": "48 passed in 2.45s",
+    "counts": {
+      "passed": 48,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_notes_communication.log"
+  },
+  {
+    "module": "tests/test_art_notes_conversation_journey.py",
+    "returncode": 0,
+    "seconds": 5.985,
+    "summary": "18 passed in 5.66s",
+    "counts": {
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_notes_conversation_journey.log"
+  },
+  {
+    "module": "tests/test_art_paint_along_connection_journey.py",
+    "returncode": 0,
+    "seconds": 3.774,
+    "summary": "15 passed in 3.45s",
+    "counts": {
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_paint_along_connection_journey.log"
+  },
+  {
+    "module": "tests/test_art_participant_door.py",
+    "returncode": 0,
+    "seconds": 1.652,
+    "summary": "33 passed in 1.41s",
+    "counts": {
+      "passed": 33,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_participant_door.log"
+  },
+  {
+    "module": "tests/test_art_pending_profile_facts.py",
+    "returncode": 0,
+    "seconds": 3.637,
+    "summary": "17 passed in 3.35s",
+    "counts": {
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_pending_profile_facts.log"
+  },
+  {
+    "module": "tests/test_art_profile.py",
+    "returncode": 0,
+    "seconds": 1.178,
+    "summary": "47 passed in 0.95s",
+    "counts": {
+      "passed": 47,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_profile.log"
+  },
+  {
+    "module": "tests/test_art_profile_guidance_journey.py",
+    "returncode": 0,
+    "seconds": 4.375,
+    "summary": "14 passed in 4.11s",
+    "counts": {
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_profile_guidance_journey.log"
+  },
+  {
+    "module": "tests/test_art_room_activities.py",
+    "returncode": 0,
+    "seconds": 0.824,
+    "summary": "628 passed in 0.65s",
+    "counts": {
+      "passed": 628,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_room_activities.log"
+  },
+  {
+    "module": "tests/test_art_room_activities_ui.py",
+    "returncode": 0,
+    "seconds": 4.999,
+    "summary": "54 passed in 4.79s",
+    "counts": {
+      "passed": 54,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_room_activities_ui.log"
+  },
+  {
+    "module": "tests/test_art_room_connection_facts.py",
+    "returncode": 0,
+    "seconds": 0.951,
+    "summary": "26 passed in 0.78s",
+    "counts": {
+      "passed": 26,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_room_connection_facts.log"
+  },
+  {
+    "module": "tests/test_art_room_connection_names.py",
+    "returncode": 0,
+    "seconds": 6.889,
+    "summary": "19 passed in 6.73s",
+    "counts": {
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_room_connection_names.log"
+  },
+  {
+    "module": "tests/test_art_room_connection_names_journey.py",
+    "returncode": 0,
+    "seconds": 8.569,
+    "summary": "33 passed in 8.20s",
+    "counts": {
+      "passed": 33,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_room_connection_names_journey.log"
+  },
+  {
+    "module": "tests/test_art_room_contract.py",
+    "returncode": 0,
+    "seconds": 0.427,
+    "summary": "14 passed in 0.21s",
+    "counts": {
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_room_contract.log"
+  },
+  {
+    "module": "tests/test_art_room_controller.py",
+    "returncode": 0,
+    "seconds": 3.039,
+    "summary": "17 passed in 2.65s",
+    "counts": {
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_room_controller.log"
+  },
+  {
+    "module": "tests/test_art_room_overview.py",
+    "returncode": 0,
+    "seconds": 0.312,
+    "summary": "20 passed in 0.12s",
+    "counts": {
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_room_overview.log"
+  },
+  {
+    "module": "tests/test_art_room_overview_controller.py",
+    "returncode": 0,
+    "seconds": 2.318,
+    "summary": "6 passed in 1.96s",
+    "counts": {
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_room_overview_controller.log"
+  },
+  {
+    "module": "tests/test_art_room_overview_lifetime.py",
+    "returncode": 0,
+    "seconds": 1.257,
+    "summary": "3 passed in 0.98s",
+    "counts": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_room_overview_lifetime.log"
+  },
+  {
+    "module": "tests/test_art_room_overview_ui.py",
+    "returncode": 0,
+    "seconds": 5.258,
+    "summary": "51 passed in 4.98s",
+    "counts": {
+      "passed": 51,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_room_overview_ui.log"
+  },
+  {
+    "module": "tests/test_art_room_presence.py",
+    "returncode": 0,
+    "seconds": 1.161,
+    "summary": "52 passed in 0.87s",
+    "counts": {
+      "passed": 52,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_room_presence.log"
+  },
+  {
+    "module": "tests/test_art_room_recovery.py",
+    "returncode": 0,
+    "seconds": 1.912,
+    "summary": "6 passed in 1.64s",
+    "counts": {
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_room_recovery.log"
+  },
+  {
+    "module": "tests/test_art_room_return_journey.py",
+    "returncode": 0,
+    "seconds": 7.06,
+    "summary": "24 passed in 6.70s",
+    "counts": {
+      "passed": 24,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_room_return_journey.log"
+  },
+  {
+    "module": "tests/test_art_room_return_ui.py",
+    "returncode": 0,
+    "seconds": 1.635,
+    "summary": "17 passed in 1.40s",
+    "counts": {
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_room_return_ui.log"
+  },
+  {
+    "module": "tests/test_art_session_strip.py",
+    "returncode": 0,
+    "seconds": 1.255,
+    "summary": "6 passed in 1.02s",
+    "counts": {
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_session_strip.log"
+  },
+  {
+    "module": "tests/test_art_shared_lesson_journey.py",
+    "returncode": 0,
+    "seconds": 13.066,
+    "summary": "54 passed in 12.72s",
+    "counts": {
+      "passed": 54,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_shared_lesson_journey.log"
+  },
+  {
+    "module": "tests/test_art_shared_lesson_native_host.py",
+    "returncode": 0,
+    "seconds": 2.42,
+    "summary": "6 passed in 2.07s",
+    "counts": {
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_shared_lesson_native_host.log"
+  },
+  {
+    "module": "tests/test_art_shared_lesson_widgets.py",
+    "returncode": 0,
+    "seconds": 2.01,
+    "summary": "35 passed in 1.77s",
+    "counts": {
+      "passed": 35,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_shared_lesson_widgets.log"
+  },
+  {
+    "module": "tests/test_art_start_ux.py",
+    "returncode": 0,
+    "seconds": 1.45,
+    "summary": "43 passed in 1.22s",
+    "counts": {
+      "passed": 43,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_start_ux.log"
+  },
+  {
+    "module": "tests/test_art_video_offer_navigation.py",
+    "returncode": 0,
+    "seconds": 7.28,
+    "summary": "25 passed in 6.99s",
+    "counts": {
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_art_video_offer_navigation.log"
+  },
+  {
+    "module": "tests/test_canvas_publication_journey.py",
+    "returncode": 0,
+    "seconds": 2.804,
+    "summary": "8 passed in 2.52s",
+    "counts": {
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_canvas_publication_journey.log"
+  },
+  {
+    "module": "tests/test_canvas_publication_recovery.py",
+    "returncode": 0,
+    "seconds": 1.13,
+    "summary": "38 passed in 0.91s",
+    "counts": {
+      "passed": 38,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_canvas_publication_recovery.log"
+  },
+  {
+    "module": "tests/test_canvas_publication_recovery_ui.py",
+    "returncode": 0,
+    "seconds": 5.007,
+    "summary": "37 passed in 4.77s",
+    "counts": {
+      "passed": 37,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_canvas_publication_recovery_ui.log"
+  },
+  {
+    "module": "tests/test_meeting_companion.py",
+    "returncode": 0,
+    "seconds": 1.196,
+    "summary": "54 passed in 0.96s",
+    "counts": {
+      "passed": 54,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_meeting_companion.log"
+  },
+  {
+    "module": "tests/test_native_art_activities.py",
+    "returncode": 0,
+    "seconds": 3.066,
+    "summary": "12 passed in 2.77s",
+    "counts": {
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_native_art_activities.log"
+  },
+  {
+    "module": "tests/test_native_art_notes_layout.py",
+    "returncode": 0,
+    "seconds": 29.256,
+    "summary": "97 passed in 28.55s",
+    "counts": {
+      "passed": 97,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_native_art_notes_layout.log"
+  },
+  {
+    "module": "tests/test_native_art_room_return.py",
+    "returncode": 0,
+    "seconds": 4.653,
+    "summary": "9 passed in 4.31s",
+    "counts": {
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_native_art_room_return.log"
+  },
+  {
+    "module": "tests/test_native_canvas_publication.py",
+    "returncode": 0,
+    "seconds": 1.297,
+    "summary": "44 passed in 1.02s",
+    "counts": {
+      "passed": 44,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_native_canvas_publication.log"
+  },
+  {
+    "module": "tests/test_paint_along_copy_recovery.py",
+    "returncode": 0,
+    "seconds": 1.269,
+    "summary": "34 passed in 1.00s",
+    "counts": {
+      "passed": 34,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_paint_along_copy_recovery.log"
+  },
+  {
+    "module": "tests/test_paint_along_copy_recovery_ui.py",
+    "returncode": 0,
+    "seconds": 6.766,
+    "summary": "39 passed in 6.44s",
+    "counts": {
+      "passed": 39,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_paint_along_copy_recovery_ui.log"
+  },
+  {
+    "module": "tests/test_paint_along_guest_journey.py",
+    "returncode": 0,
+    "seconds": 2.697,
+    "summary": "8 passed in 2.36s",
+    "counts": {
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_paint_along_guest_journey.log"
+  },
+  {
+    "module": "tests/test_paint_along_guest_opening_ui.py",
+    "returncode": 0,
+    "seconds": 5.483,
+    "summary": "16 passed in 5.15s",
+    "counts": {
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_paint_along_guest_opening_ui.log"
+  },
+  {
+    "module": "tests/test_paint_along_host_opening.py",
+    "returncode": 0,
+    "seconds": 1.239,
+    "summary": "22 passed in 0.97s",
+    "counts": {
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_paint_along_host_opening.log"
+  },
+  {
+    "module": "tests/test_paint_along_host_opening_ui.py",
+    "returncode": 0,
+    "seconds": 4.12,
+    "summary": "17 passed in 3.84s",
+    "counts": {
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_paint_along_host_opening_ui.log"
+  },
+  {
+    "module": "tests/test_paint_along_player_health.py",
+    "returncode": 0,
+    "seconds": 0.918,
+    "summary": "29 passed in 0.67s",
+    "counts": {
+      "passed": 29,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_paint_along_player_health.log"
+  },
+  {
+    "module": "tests/test_paint_along_prepared_copy.py",
+    "returncode": 0,
+    "seconds": 7.674,
+    "summary": "24 passed in 7.36s",
+    "counts": {
+      "passed": 24,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_paint_along_prepared_copy.log"
+  },
+  {
+    "module": "tests/test_paint_along_seek_input.py",
+    "returncode": 0,
+    "seconds": 2.153,
+    "summary": "21 passed in 1.91s",
+    "counts": {
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_paint_along_seek_input.log"
+  },
+  {
+    "module": "tests/test_reference_video.py",
+    "returncode": 0,
+    "seconds": 0.42,
+    "summary": "73 passed in 0.26s",
+    "counts": {
+      "passed": 73,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_reference_video.log"
+  },
+  {
+    "module": "tests/test_reference_video_application_integration.py",
+    "returncode": 0,
+    "seconds": 1.409,
+    "summary": "37 passed in 1.17s",
+    "counts": {
+      "passed": 37,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_reference_video_application_integration.log"
+  },
+  {
+    "module": "tests/test_reference_video_coordinator.py",
+    "returncode": 0,
+    "seconds": 1.102,
+    "summary": "25 passed in 0.88s",
+    "counts": {
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_reference_video_coordinator.log"
+  },
+  {
+    "module": "tests/test_reference_video_ui.py",
+    "returncode": 0,
+    "seconds": 1.514,
+    "summary": "32 passed in 1.28s",
+    "counts": {
+      "passed": 32,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_reference_video_ui.log"
+  },
+  {
+    "module": "tests/test_session_transfer_art_start.py",
+    "returncode": 0,
+    "seconds": 1.852,
+    "summary": "23 passed in 1.67s",
+    "counts": {
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_session_transfer_art_start.log"
+  },
+  {
+    "module": "tests/test_session_transfer_reference_video.py",
+    "returncode": 0,
+    "seconds": 1.877,
+    "summary": "29 passed in 1.70s",
+    "counts": {
+      "passed": 29,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_session_transfer_reference_video.log"
+  },
+  {
+    "module": "tests/test_two_session_art_host_recovery.py",
+    "returncode": 0,
+    "seconds": 2.532,
+    "summary": "6 passed in 2.25s",
+    "counts": {
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_two_session_art_host_recovery.log"
+  },
+  {
+    "module": "tests/test_two_session_art_integration.py",
+    "returncode": 0,
+    "seconds": 2.476,
+    "summary": "4 passed in 2.16s",
+    "counts": {
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "subtests": 0
+    },
+    "log": "test_two_session_art_integration.log"
+  }
+]

@@ -1,0 +1,301 @@
+{
+  "window": [
+    760,
+    600
+  ],
+  "studio": [
+    760,
+    400
+  ],
+  "widgets": [
+    {
+      "name": "AudioButton",
+      "type": "QPushButton",
+      "size": [
+        76,
+        44
+      ],
+      "rect": [
+        226,
+        100,
+        76,
+        44
+      ],
+      "visible": true,
+      "minimum_hint": [
+        76,
+        52
+      ],
+      "text": "\u25b6 Play",
+      "contents_width": 42,
+      "text_width": 41
+    },
+    {
+      "name": "GhostButton",
+      "type": "QPushButton",
+      "size": [
+        74,
+        44
+      ],
+      "rect": [
+        310,
+        100,
+        74,
+        44
+      ],
+      "visible": true,
+      "minimum_hint": [
+        74,
+        52
+      ],
+      "text": "\u25a0 Stop",
+      "contents_width": 40,
+      "text_width": 40
+    },
+    {
+      "name": "GhostButton",
+      "type": "QPushButton",
+      "size": [
+        70,
+        44
+      ],
+      "rect": [
+        518,
+        21,
+        70,
+        44
+      ],
+      "visible": true,
+      "minimum_hint": [
+        70,
+        52
+      ],
+      "text": "Setup",
+      "contents_width": 36,
+      "text_width": 35
+    },
+    {
+      "name": "StudioRecordButton",
+      "type": "QPushButton",
+      "size": [
+        144,
+        44
+      ],
+      "rect": [
+        600,
+        21,
+        144,
+        44
+      ],
+      "visible": true,
+      "minimum_hint": [
+        144,
+        54
+      ],
+      "text": "\u25cf Record Session",
+      "contents_width": 110,
+      "text_width": 109
+    },
+    {
+      "name": "StudioArrangeToolbar",
+      "type": "StudioEditingToolbar",
+      "size": [
+        505,
+        40
+      ],
+      "rect": [
+        226,
+        180,
+        505,
+        40
+      ],
+      "visible": true,
+      "minimum_hint": [
+        502,
+        52
+      ]
+    },
+    {
+      "name": "StudioCompToolbar",
+      "type": "QWidget",
+      "size": [
+        505,
+        44
+      ],
+      "rect": [
+        226,
+        220,
+        505,
+        44
+      ],
+      "visible": true,
+      "minimum_hint": [
+        425,
+        44
+      ]
+    },
+    {
+      "name": "StudioOutputPicker",
+      "type": "_CompactComboBox",
+      "size": [
+        166,
+        40
+      ],
+      "rect": [
+        329,
+        260,
+        166,
+        40
+      ],
+      "visible": true,
+      "minimum_hint": [
+        140,
+        46
+      ]
+    },
+    {
+      "name": "PrimaryButton",
+      "type": "QPushButton",
+      "size": [
+        120,
+        44
+      ],
+      "rect": [
+        503,
+        260,
+        120,
+        44
+      ],
+      "visible": true,
+      "minimum_hint": [
+        120,
+        52
+      ],
+      "text": "Export Tracks",
+      "contents_width": 86,
+      "text_width": 86
+    },
+    {
+      "name": "",
+      "type": "QSplitter",
+      "size": [
+        505,
+        31
+      ],
+      "rect": [
+        226,
+        300,
+        505,
+        31
+      ],
+      "visible": true,
+      "minimum_hint": [
+        480,
+        240
+      ]
+    },
+    {
+      "name": "StudioArrange",
+      "type": "StudioArrange",
+      "size": [
+        505,
+        150
+      ],
+      "rect": [
+        226,
+        300,
+        505,
+        150
+      ],
+      "visible": true,
+      "minimum_hint": [
+        480,
+        150
+      ]
+    },
+    {
+      "name": "StudioTrackScroll",
+      "type": "QScrollArea",
+      "size": [
+        505,
+        88
+      ],
+      "rect": [
+        226,
+        316,
+        505,
+        88
+      ],
+      "visible": true,
+      "minimum_hint": [
+        60,
+        60
+      ]
+    },
+    {
+      "name": "StudioHint",
+      "type": "QLabel",
+      "size": [
+        505,
+        32
+      ],
+      "rect": [
+        226,
+        339,
+        505,
+        32
+      ],
+      "visible": true,
+      "minimum_hint": [
+        75,
+        32
+      ],
+      "text": "Studio couldn't save those review choices. The recorded take is safe.",
+      "wrapped_height": 32
+    },
+    {
+      "name": "GhostButton",
+      "type": "QPushButton",
+      "size": [
+        82,
+        52
+      ],
+      "rect": [
+        309,
+        180,
+        82,
+        52
+      ],
+      "visible": true,
+      "minimum_hint": [
+        82,
+        52
+      ],
+      "text": "\uff0b Mark",
+      "contents_width": 48,
+      "text_width": 47
+    },
+    {
+      "name": "GhostButton",
+      "type": "QPushButton",
+      "size": [
+        68,
+        52
+      ],
+      "rect": [
+        504,
+        180,
+        68,
+        52
+      ],
+      "visible": true,
+      "minimum_hint": [
+        68,
+        52
+      ],
+      "text": "Cycle",
+      "contents_width": 34,
+      "text_width": 34
+    }
+  ]
+}

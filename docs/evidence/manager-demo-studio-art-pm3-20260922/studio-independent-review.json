@@ -1,0 +1,6 @@
+{
+  "returncode": 0,
+  "before_sha256": "fcc6ad50d46b39e8e0dacb9f596cfaeb3596f6524db746a6bc53d063bc5e5006",
+  "after_sha256": "fcc6ad50d46b39e8e0dacb9f596cfaeb3596f6524db746a6bc53d063bc5e5006",
+  "summary": "4 passed, 1 warning in 1.69s"
+}
