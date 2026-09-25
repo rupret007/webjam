@@ -10,6 +10,7 @@ import json
 import uuid
 import wave
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -218,3 +219,34 @@ class TestOpenInLogicLauncher:
 
         assert opened is False
         assert calls == []
+
+
+class TestLogicHandoffStatusHints:
+    """Ensure non-macOS messaging stays DAW-honest and fail-closed."""
+
+    def test_finish_logic_handoff_non_macos_uses_daw_wording(self, monkeypatch, tmp_path: Path) -> None:
+        import webjam_qt.widgets.recording_studio as studio_widget
+
+        monkeypatch.setattr(studio_widget.sys, "platform", "linux")
+        revealed: list[Path] = []
+        hint_messages: list[str] = []
+        dummy = SimpleNamespace()
+        dummy._restore_logic_handoff_controls = lambda: None
+        dummy._is_logic_pro_available = lambda: False
+        dummy._reveal_folder = lambda folder: revealed.append(folder)
+        dummy._hint = SimpleNamespace(setText=lambda text: hint_messages.append(text))
+        dummy._reveal_path = None
+        result = SimpleNamespace(
+            folder=tmp_path / "handoff",
+            stems=(tmp_path / "01-lead.wav",),
+            sample_rate=48000,
+            midi=tmp_path / "session.mid",
+        )
+
+        studio_widget.RecordingStudio._finish_logic_handoff(dummy, result, None, False)
+
+        assert revealed == [result.folder]
+        assert dummy._reveal_path == result.folder
+        assert hint_messages
+        assert "DAW handoff ready" in hint_messages[-1]
+        assert "in your DAW" in hint_messages[-1]

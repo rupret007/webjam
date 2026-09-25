@@ -65,7 +65,7 @@ appears in the Recording Studio's playback controls. The button:
    plus `logic-import-map.csv` for quick per-stem timing checks
 6. On success:
    - If Logic Pro is installed: prompts to open `session.mid` in Logic
-   - Otherwise: reveals the handoff folder in Finder
+   - Otherwise: reveals the handoff folder in the platform file manager
 7. On failure: displays error and restores controls
 
 ### Logic Pro detection (macOS only)

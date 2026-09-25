@@ -3194,7 +3194,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         """Re-enable controls after Logic handoff completes or is cancelled."""
         label = "Send to Logic" if sys.platform == "darwin" else "Export for DAW"
         set_labeled_action(self._send_to_logic_btn, label)
-        self._send_to_logic_btn.setEnabled(True)
+        self._refresh_send_to_logic_button()
         self._refresh_export_button()
 
     def _finish_logic_handoff(self, result, error: str | None, bpm_is_default: bool) -> None:
@@ -3267,12 +3267,20 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 )
         else:
             self._reveal_folder(result.folder)
-            self._hint.setText(
-                f"Logic handoff ready · {stem_count} stems · {folder_name} · "
-                f"Open session.mid as a new Logic project, set sample rate to "
-                f"{result.sample_rate} Hz, then drag all WAVs to bar 1."
-                + bpm_note
-            )
+            if sys.platform == "darwin":
+                self._hint.setText(
+                    f"Logic handoff ready · {stem_count} stems · {folder_name} · "
+                    f"Open session.mid as a new Logic project, set sample rate to "
+                    f"{result.sample_rate} Hz, then drag all WAVs to bar 1."
+                    + bpm_note
+                )
+            else:
+                self._hint.setText(
+                    f"DAW handoff ready · {stem_count} stems · {folder_name} · "
+                    f"Open session.mid in your DAW, set sample rate to "
+                    f"{result.sample_rate} Hz, then drag all WAVs to bar 1."
+                    + bpm_note
+                )
 
     def _is_logic_pro_available(self) -> bool:
         """Check if Logic Pro is installed (macOS only)."""

@@ -29,6 +29,15 @@ MIDI_PPQ = 32760
 LOGIC_SAMPLE_RATES = (44100, 48000, 88200, 96000, 176400, 192000)
 _CHUNK_FRAMES = 65536
 _MAX_VLQ = 0x0FFFFFFF
+_IMPORT_MAP_COLUMNS = (
+    "file",
+    "stem_name",
+    "start_frame",
+    "start_seconds",
+    "source_frames",
+    "source_seconds",
+    "channels",
+)
 
 
 class LogicHandoffError(ValueError):
@@ -325,17 +334,7 @@ def _import_map_csv(session: HandoffSession, metadata: dict) -> str:
     """Build a Logic-friendly stem timing map for quick import checks."""
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
-    writer.writerow(
-        (
-            "file",
-            "stem_name",
-            "start_frame",
-            "start_seconds",
-            "source_frames",
-            "source_seconds",
-            "channels",
-        )
-    )
+    writer.writerow(_IMPORT_MAP_COLUMNS)
     for stem in metadata["stems"]:
         start_frame = int(stem["start_frame"])
         source_frames = int(stem["source_frames"])
@@ -351,6 +350,93 @@ def _import_map_csv(session: HandoffSession, metadata: dict) -> str:
             )
         )
     return buffer.getvalue()
+
+
+def _validate_import_map_text(
+    csv_text: str, *, expected_stem_files: set[str]
+) -> None:
+    """Validate import-map CSV content before publishing the handoff."""
+    if not csv_text.strip():
+        raise LogicHandoffError("logic-import-map.csv is empty.")
+    try:
+        reader = csv.DictReader(io.StringIO(csv_text))
+        fieldnames = tuple(reader.fieldnames or ())
+    except csv.Error as exc:
+        raise LogicHandoffError(
+            f"logic-import-map.csv is unreadable: {exc}"
+        ) from exc
+    if fieldnames != _IMPORT_MAP_COLUMNS:
+        raise LogicHandoffError(
+            "logic-import-map.csv has an invalid header."
+        )
+    rows: list[dict[str, str]] = []
+    try:
+        rows = [row for row in reader]
+    except csv.Error as exc:
+        raise LogicHandoffError(
+            f"logic-import-map.csv has malformed rows: {exc}"
+        ) from exc
+    if len(rows) != len(expected_stem_files):
+        raise LogicHandoffError(
+            "logic-import-map.csv does not match the exported stem count."
+        )
+    seen_files: set[str] = set()
+    for row in rows:
+        stem_file = (row.get("file") or "").strip()
+        if not stem_file:
+            raise LogicHandoffError("logic-import-map.csv contains a blank stem file name.")
+        if stem_file in seen_files:
+            raise LogicHandoffError(
+                "logic-import-map.csv contains duplicate stem rows."
+            )
+        if stem_file not in expected_stem_files:
+            raise LogicHandoffError(
+                "logic-import-map.csv references an unknown exported stem."
+            )
+        try:
+            start_frame = int(row["start_frame"])
+            source_frames = int(row["source_frames"])
+            channels = int(row["channels"])
+            start_seconds = float(row["start_seconds"])
+            source_seconds = float(row["source_seconds"])
+        except (TypeError, ValueError, KeyError) as exc:
+            raise LogicHandoffError(
+                "logic-import-map.csv contains invalid numeric values."
+            ) from exc
+        if start_frame < 0 or source_frames <= 0:
+            raise LogicHandoffError(
+                "logic-import-map.csv contains invalid frame ranges."
+            )
+        if channels not in (1, 2):
+            raise LogicHandoffError(
+                "logic-import-map.csv contains an invalid channel count."
+            )
+        if not (math.isfinite(start_seconds) and math.isfinite(source_seconds)):
+            raise LogicHandoffError(
+                "logic-import-map.csv contains non-finite timing values."
+            )
+        if start_seconds < 0 or source_seconds <= 0:
+            raise LogicHandoffError(
+                "logic-import-map.csv contains negative timing values."
+            )
+        seen_files.add(stem_file)
+    if seen_files != expected_stem_files:
+        raise LogicHandoffError(
+            "logic-import-map.csv is missing one or more exported stems."
+        )
+
+
+def _validate_import_map_file(path: Path, *, expected_stem_files: set[str]) -> None:
+    """Fail closed when the import map was not fully written."""
+    if not path.is_file():
+        raise LogicHandoffError("logic-import-map.csv was not written.")
+    try:
+        csv_text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise LogicHandoffError(
+            f"logic-import-map.csv could not be read: {exc}"
+        ) from exc
+    _validate_import_map_text(csv_text, expected_stem_files=expected_stem_files)
 
 
 def export_logic_handoff(
@@ -421,6 +507,11 @@ def export_logic_handoff(
                     for marker in sorted(session.markers, key=lambda item: item.frame)
                 ],
             }
+            import_map_text = _import_map_csv(session, metadata)
+            expected_stem_files = {item["file"] for item in stem_metadata}
+            _validate_import_map_text(
+                import_map_text, expected_stem_files=expected_stem_files
+            )
             root.mkdir(parents=True, exist_ok=True)
             staging = Path(tempfile.mkdtemp(prefix=".logic-handoff-", dir=root))
             # Retain the exclusive staging suffix in the timestamped final name
@@ -434,12 +525,21 @@ def export_logic_handoff(
                 ("session.mid", midi),
                 ("tempo.json", (json.dumps(metadata, indent=2, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8")),
                 ("README.md", _readme(session, metadata).encode("utf-8")),
-                ("logic-import-map.csv", _import_map_csv(session, metadata).encode("utf-8")),
+                ("logic-import-map.csv", import_map_text.encode("utf-8")),
             ):
                 target = staging / name
-                with target.open("xb") as handle:
-                    handle.write(data)
+                try:
+                    with target.open("xb") as handle:
+                        handle.write(data)
+                except OSError as exc:
+                    raise LogicHandoffError(
+                        f"Logic handoff could not write {name}: {exc}"
+                    ) from exc
                 os.chmod(target, 0o600)
+            _validate_import_map_file(
+                staging / "logic-import-map.csv",
+                expected_stem_files=expected_stem_files,
+            )
             for _stem, handle, _reader, stamp in sources:
                 if _source_stamp(handle) != stamp:
                     raise LogicHandoffError("Source audio changed during export; stop recording and retry.")

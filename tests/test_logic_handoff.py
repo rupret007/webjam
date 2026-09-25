@@ -307,6 +307,36 @@ def test_import_map_csv_matches_exported_stems(tmp_path):
     assert [float(row["source_seconds"]) for row in rows] == pytest.approx([25 / 48000, 25 / 48000])
 
 
+def test_corrupt_import_map_is_rejected_before_publication(tmp_path, monkeypatch):
+    source = _source(tmp_path)
+    destination = tmp_path / "exports"
+
+    def corrupt_map(*_args, **_kwargs):
+        return "bad,header\nnot,enough\n"
+
+    monkeypatch.setattr(handoff, "_import_map_csv", corrupt_map)
+    with pytest.raises(LogicHandoffError, match="logic-import-map.csv"):
+        export_logic_handoff(_session(source), destination_root=destination)
+    _assert_unpublished(destination)
+
+
+def test_import_map_write_failure_reports_specific_file(tmp_path, monkeypatch):
+    source = _source(tmp_path)
+    destination = tmp_path / "exports"
+    real_open = Path.open
+
+    def fail_import_map_open(path, *args, **kwargs):
+        mode = args[0] if args else kwargs.get("mode")
+        if path.name == "logic-import-map.csv" and mode == "xb":
+            raise OSError("simulated import-map write failure")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", fail_import_map_open)
+    with pytest.raises(LogicHandoffError, match="logic-import-map.csv"):
+        export_logic_handoff(_session(source), destination_root=destination)
+    _assert_unpublished(destination)
+
+
 def test_audio_only_session_has_honest_empty_performance_track(tmp_path):
     result = export_logic_handoff(_session(_source(tmp_path)), destination_root=tmp_path / "exports")
     kind, _, tracks = _read_midi(result.midi)

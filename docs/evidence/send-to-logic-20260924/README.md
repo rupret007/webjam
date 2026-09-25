@@ -44,8 +44,11 @@ in the Recording Studio's playback controls area.
 
 ### State 7: Success (other platforms or Logic not installed)
 - Folder revealed in file manager (Finder/Explorer/xdg-open)
-- Hint area: "Logic handoff ready · N stems · folder name · Open session.mid
-  as a new Logic project, set sample rate to X Hz, then drag all WAVs to bar 1."
+- Hint area (macOS without Logic): "Logic handoff ready · N stems · folder name ·
+  Open session.mid as a new Logic project, set sample rate to X Hz, then drag
+  all WAVs to bar 1."
+- Hint area (non-macOS): "DAW handoff ready · N stems · folder name · Open
+  session.mid in your DAW, set sample rate to X Hz, then drag all WAVs to bar 1."
 
 ## Gate Verification
 
