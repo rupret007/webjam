@@ -170,7 +170,7 @@ def test_payload_reuses_the_approved_v0280_records() -> None:
         for entry in official_jamulus_compatibility_registry().entries
     )
     assert not any(
-        entry.supports_webjam("0.28.4")
+        entry.supports_webjam("0.28.5")
         for entry in official_jamulus_compatibility_registry().entries
     )
     assert "assert all(entry.supports_webjam(__version__)" in CI_WORKFLOW

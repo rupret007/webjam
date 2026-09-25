@@ -320,7 +320,8 @@ def test_official_registry_authorizes_v0283_but_no_future_patch():
     assert all(entry.supports_webjam("0.28.1") for entry in registry.entries)
     assert all(entry.supports_webjam("0.28.2") for entry in registry.entries)
     assert all(entry.supports_webjam("0.28.4") for entry in registry.entries)
-    assert not any(entry.supports_webjam("0.28.4") for entry in registry.entries)
+    # Beyond the baked ceiling: next patch must stay unauthorized until extended.
+    assert not any(entry.supports_webjam("0.28.5") for entry in registry.entries)
 
     for target in ComponentTarget:
         for role in (JamulusRole.CLIENT, JamulusRole.SERVER):
@@ -333,7 +334,7 @@ def test_official_registry_authorizes_v0283_but_no_future_patch():
             assert registry.compatible(
                 role=role,
                 target=target,
-                webjam_version="0.28.4",
+                webjam_version="0.28.5",
             ) == ()
 
 
