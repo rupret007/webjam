@@ -8,6 +8,8 @@ optional add-on taking the session down with it.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from core.drawpile import (
@@ -284,6 +286,45 @@ def test_a_peer_failure_never_breaks_the_hosts_canvas():
     assert snapshot.shared is True
     assert snapshot.pending_action is SharedCanvasPendingAction.SHARE
     assert snapshot.can_retry_publication
+
+
+def test_a_peer_failure_is_warned_once_while_retries_continue(caplog):
+    peer = FakeHostPeer(explode=True)
+    coordinator = _coordinator(peer=peer)
+    coordinator.begin_host()
+
+    with caplog.at_level(logging.WARNING, logger="webjam.qt.shared_canvas_coordinator"):
+        coordinator.share(WEB_INVITE)
+        coordinator.tick()
+        coordinator.tick()
+
+    warnings = [
+        record.message for record in caplog.records
+        if record.levelname == "WARNING"
+    ]
+    assert warnings == ["Shared canvas peer state could not be published"]
+
+
+def test_a_successful_retry_rearms_the_peer_failure_warning(caplog):
+    peer = FakeHostPeer(explode=True)
+    coordinator = _coordinator(peer=peer)
+    coordinator.begin_host()
+
+    with caplog.at_level(logging.WARNING, logger="webjam.qt.shared_canvas_coordinator"):
+        coordinator.share(WEB_INVITE)
+        peer.explode = False
+        coordinator.tick()
+        peer.explode = True
+        coordinator.withdraw()
+
+    warnings = [
+        record.message for record in caplog.records
+        if record.levelname == "WARNING"
+    ]
+    assert warnings == [
+        "Shared canvas peer state could not be published",
+        "Shared canvas peer state could not be published",
+    ]
 
 
 # ---------------------------------------------------------------------------

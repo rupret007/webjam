@@ -82,6 +82,7 @@ class SharedCanvasCoordinator:
         self._inflight: _PendingPublication | None = None
         self._publication_peer = None
         self._observed_canvas = None
+        self._publish_failed = False
 
     # -- lifecycle -----------------------------------------------------
 
@@ -137,6 +138,7 @@ class SharedCanvasCoordinator:
         self._inflight = None
         self._publication_peer = None
         self._observed_canvas = None
+        self._publish_failed = False
         generation = self._generation
         if host is not None:
             try:
@@ -351,6 +353,11 @@ class SharedCanvasCoordinator:
                 accepted = self._matching_receipt(receipt, projection)
         except Exception:  # payloads and transport details stay private
             accepted = False
+            if not self._publish_failed:
+                LOGGER.warning("Shared canvas peer state could not be published")
+            self._publish_failed = True
+        else:
+            self._publish_failed = False
         current = (generation == self._generation and intent == self._intent_generation
                    and host is self._host and self.hosting and pending is self._pending)
         if current and accepted:
