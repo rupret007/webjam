@@ -44,10 +44,6 @@ class HelpDialog(QDialog):
         self._body.setOpenLinks(False)
         self._body.setOpenExternalLinks(False)
         self._body.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._body.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-            | Qt.TextInteractionFlag.TextSelectableByKeyboard
-        )
         self._body.setHtml(body)
         content.addWidget(self._body, 1)
         layout.addLayout(content, 1)

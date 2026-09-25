@@ -119,25 +119,6 @@ def test_real_help_fits_scrolls_and_returns_without_changing_work(app, profile, 
         app.setStyleSheet(previous_style)
 
 
-def test_help_text_browser_is_selectable_only(app):
-    """The Help dialog's text browser allows selection but not editing."""
-    dialog = HelpDialog("<p>Test content</p>")
-    try:
-        dialog.show()
-        app.processEvents()
-
-        flags = dialog._body.textInteractionFlags()
-        assert flags & Qt.TextInteractionFlag.TextSelectableByMouse
-        assert flags & Qt.TextInteractionFlag.TextSelectableByKeyboard
-        assert not (flags & Qt.TextInteractionFlag.TextEditable)
-        assert not (flags & Qt.TextInteractionFlag.LinksAccessibleByMouse)
-        assert not (flags & Qt.TextInteractionFlag.LinksAccessibleByKeyboard)
-
-        dialog.close()
-    finally:
-        dialog.deleteLater()
-
-
 def test_help_falls_back_to_primary_display_for_an_offscreen_parent(app):
     window = ConductorWindow(
         mode_entries=[("music_jam", "Music Jam")], initial_mode_key="music_jam",
