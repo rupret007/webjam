@@ -304,8 +304,12 @@ class SharedCanvasCoordinator:
     # -- peer plane ----------------------------------------------------
 
     def _request_publication(self, action, projection) -> SharedCanvasSnapshot:
-        self._host_controller()
+        host = self._host_controller()
         self._intent_generation += 1
+        if action is SharedCanvasPendingAction.SHARE:
+            host.share(projection.join_url)
+        else:
+            host.withdraw()
         pending = _PendingPublication(action, projection)
         self._pending = pending
         return self._attempt_publication(pending)
@@ -359,10 +363,6 @@ class SharedCanvasCoordinator:
             current = (generation == self._generation and intent == self._intent_generation
                        and host is self._host and self.hosting and pending is self._pending)
             if current and accepted:
-                if pending.action is SharedCanvasPendingAction.SHARE:
-                    host.share(pending.projection.join_url)
-                else:
-                    host.withdraw()
                 if (generation == self._generation and intent == self._intent_generation
                         and pending is self._pending):
                     self._pending = None

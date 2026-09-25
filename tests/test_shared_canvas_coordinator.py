@@ -240,7 +240,7 @@ def test_publication_is_skipped_while_the_peer_plane_is_inactive():
     coordinator.share(WEB_INVITE)
 
     assert peer.published == []
-    assert coordinator.host_snapshot.shared is False
+    assert coordinator.host_snapshot.shared is True
     assert coordinator.host_snapshot.pending_action is SharedCanvasPendingAction.SHARE
     assert coordinator.host_snapshot.can_retry_publication
 
@@ -281,7 +281,7 @@ def test_a_peer_failure_never_breaks_the_hosts_canvas():
 
     snapshot = coordinator.share(WEB_INVITE)
 
-    assert snapshot.shared is False
+    assert snapshot.shared is True
     assert snapshot.pending_action is SharedCanvasPendingAction.SHARE
     assert snapshot.can_retry_publication
 
