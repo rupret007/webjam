@@ -1,8 +1,8 @@
 # Send to Logic / Export for DAW Evidence
 
-Date: 2026-09-24
+Date: 2026-09-25
 PR: #155
-Commit: 2d1cf07
+Commit: 93188ec
 
 ## Button States
 

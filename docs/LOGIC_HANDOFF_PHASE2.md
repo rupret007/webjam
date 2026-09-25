@@ -43,12 +43,12 @@ uses the project's `tempo_bpm` if present (non-default), otherwise 120 BPM. When
 the default is used, `bpm_is_default=True` ensures the UI clearly communicates this
 to the user so they know the tempo map is a placeholder.
 
-## UI integration: Send to Logic button
+## UI integration: Send to Logic / Export for DAW button
 
-A "Send to Logic" button appears in the Recording Studio's playback controls
-(macOS only). The button:
+A "Send to Logic" button (macOS) or "Export for DAW" button (Windows/Linux)
+appears in the Recording Studio's playback controls. The button:
 
-- Is visible only on macOS (`sys.platform == "darwin"`)
+- Shows "Send to Logic" on macOS, "Export for DAW" on other platforms
 - Is disabled while recording is in progress
 - Is disabled while another export is running
 - Is disabled when no completed take is selected
@@ -67,13 +67,20 @@ A "Send to Logic" button appears in the Recording Studio's playback controls
    - Otherwise: reveals the handoff folder in Finder
 7. On failure: displays error and restores controls
 
-### Logic Pro detection
+### Logic Pro detection (macOS only)
 
-The UI checks for Logic Pro by looking for app bundles at:
+On macOS, the UI checks for Logic Pro by looking for app bundles at:
 - `/Applications/Logic Pro.app`
 - `/Applications/Logic Pro X.app`
 
 When detected, the user is offered to open `session.mid` directly in Logic.
+
+### Cross-platform folder reveal
+
+After export completes, the handoff folder is revealed using platform-native methods:
+- macOS: `open` command (Finder)
+- Windows: `os.startfile()` or `explorer` (Explorer)
+- Linux: `xdg-open` (default file manager)
 
 ## Files changed
 
@@ -106,13 +113,13 @@ Covers:
 python -m pytest tests/test_send_to_logic_ui.py -v
 ```
 
-Covers (requires Qt display):
-- Button visibility on macOS vs other platforms
-- Button states (disabled during recording/export/no take)
-- Button enabled with valid take
-- Export workflow (button text changes to "Sending…")
-- Logic Pro detection
-- No overwrite of original take data
+Covers:
+- Full export integration (creates stems and MIDI)
+- Original take data not modified
+- Export folder created separately
+- `can_export_to_logic` validation
+- Cross-platform export works regardless of platform
+- Export produces DAW-compatible files (WAV + SMF)
 
 ## Honest behavior
 
