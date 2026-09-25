@@ -81,6 +81,7 @@ class SharedCanvasCoordinator:
         self._pending: _PendingPublication | None = None
         self._inflight: _PendingPublication | None = None
         self._publication_peer = None
+        self._accepted_projection = SharedCanvasSessionSnapshot()
         self._observed_canvas = None
         self._publish_failed = False
 
@@ -137,6 +138,7 @@ class SharedCanvasCoordinator:
         self._pending = None
         self._inflight = None
         self._publication_peer = None
+        self._accepted_projection = SharedCanvasSessionSnapshot()
         self._observed_canvas = None
         self._publish_failed = False
         generation = self._generation
@@ -219,8 +221,21 @@ class SharedCanvasCoordinator:
         pending = self._pending
         if pending is None:
             return snapshot
+        accepted = self._accepted_projection
+        accepted_invite = None
+        if accepted.shared and accepted.join_url:
+            try:
+                accepted_invite = parse_canvas_invite(accepted.join_url)
+            except DrawpileError:
+                accepted_invite = None
         return replace(
             snapshot, pending_action=pending.action,
+            shared=bool(accepted.shared and accepted.join_url),
+            server_label=accepted.server_label if accepted.shared else "",
+            session_label=accepted.session_label if accepted.shared else "",
+            carries_password=bool(
+                accepted_invite is not None and accepted_invite.carries_password
+            ),
             can_retry_publication=self.hosting and pending is not self._inflight,
             error=(SHARE_NOT_CONFIRMED_MESSAGE
                    if pending.action is SharedCanvasPendingAction.SHARE
@@ -372,6 +387,7 @@ class SharedCanvasCoordinator:
             if current and accepted:
                 if (generation == self._generation and intent == self._intent_generation
                         and pending is self._pending):
+                    self._accepted_projection = pending.projection
                     self._pending = None
         if self._inflight is pending:
             self._inflight = None
