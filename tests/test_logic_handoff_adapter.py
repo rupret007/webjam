@@ -1,7 +1,6 @@
 """Unit tests for the Logic handoff adapter."""
 
 import json
-import tempfile
 import uuid
 import wave
 from pathlib import Path

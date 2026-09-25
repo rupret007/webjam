@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import struct
@@ -180,7 +181,8 @@ def test_stems_are_pcm24_with_exact_common_length_and_offsets(tmp_path):
     assert result.midi.name == "session.mid"
     assert result.tempo.name == "tempo.json"
     assert result.readme.name == "README.md"
-    assert all(path.is_file() for path in (result.midi, result.tempo, result.readme))
+    assert result.import_map.name == "logic-import-map.csv"
+    assert all(path.is_file() for path in (result.midi, result.tempo, result.readme, result.import_map))
 
 
 def test_type1_midi_has_real_notes_markers_meter_and_common_end(tmp_path):
@@ -282,6 +284,27 @@ def test_tempo_metadata_agrees_with_actual_audio_and_midi(tmp_path):
         "seconds": 87654 / 48000,
         "midi_tick": marker_tick,
     }]
+
+
+def test_import_map_csv_matches_exported_stems(tmp_path):
+    source = _source(tmp_path, frames=25, channels=2)
+    session = _session(
+        source,
+        frames=200,
+        stems=(AudioStem("Lead Vocal", source, 40), AudioStem("Double, Left", source, 80)),
+    )
+    result = export_logic_handoff(session, destination_root=tmp_path / "exports")
+
+    with result.import_map.open("r", encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+
+    assert [row["file"] for row in rows] == [path.name for path in result.stems]
+    assert [row["stem_name"] for row in rows] == ["Lead Vocal", "Double, Left"]
+    assert [int(row["start_frame"]) for row in rows] == [40, 80]
+    assert [int(row["source_frames"]) for row in rows] == [25, 25]
+    assert [int(row["channels"]) for row in rows] == [2, 2]
+    assert [float(row["start_seconds"]) for row in rows] == pytest.approx([40 / 48000, 80 / 48000])
+    assert [float(row["source_seconds"]) for row in rows] == pytest.approx([25 / 48000, 25 / 48000])
 
 
 def test_audio_only_session_has_honest_empty_performance_track(tmp_path):

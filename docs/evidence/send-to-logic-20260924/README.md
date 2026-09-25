@@ -2,7 +2,7 @@
 
 Date: 2026-09-25
 PR: #155
-Commit: 93188ec
+Commit: Rolling PR head (see #155 latest commit SHA)
 
 ## Button States
 
@@ -80,6 +80,7 @@ Test breakdown:
 - test_send_to_logic_ui.py: 6 tests
   - Full export integration: 4 tests
   - Cross-platform compatibility: 2 tests
+  - Export package includes `logic-import-map.csv` for stem timing verification
 
 ## Platform Behavior
 

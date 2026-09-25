@@ -3243,11 +3243,20 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 QMessageBox.StandardButton.Yes,
             )
             if answer == QMessageBox.StandardButton.Yes:
-                self._open_in_logic(result.midi)
-                self._hint.setText(
-                    f"Logic handoff sent · {stem_count} stems · {folder_name} · "
-                    f"Opening in Logic Pro.{bpm_note}"
-                )
+                opened_in_logic = self._open_in_logic(result.midi)
+                self._reveal_folder(result.folder)
+                if opened_in_logic:
+                    self._hint.setText(
+                        f"Logic handoff sent · {stem_count} stems · {folder_name} · "
+                        f"Opening in Logic Pro. Handoff folder revealed for drag-in."
+                        + bpm_note
+                    )
+                else:
+                    self._hint.setText(
+                        f"Logic handoff ready · {stem_count} stems · {folder_name} · "
+                        "Could not open Logic Pro automatically. Handoff folder revealed."
+                        + bpm_note
+                    )
             else:
                 self._reveal_folder(result.folder)
                 self._hint.setText(
@@ -3275,19 +3284,33 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         ]
         return any(path.is_dir() for path in logic_paths)
 
-    def _open_in_logic(self, midi_path: Path) -> None:
+    def _open_in_logic(self, midi_path: Path) -> bool:
         """Open a MIDI file in Logic Pro (macOS only)."""
         if sys.platform != "darwin":
-            return
-        try:
-            subprocess.Popen(
-                ["open", "-a", "Logic Pro", str(midi_path)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+            return False
+        commands = (
+            ["open", "-b", "com.apple.logic10", str(midi_path)],
+            ["open", "-a", "Logic Pro", str(midi_path)],
+        )
+        for command in commands:
+            try:
+                completed = subprocess.run(
+                    command,
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                LOGGER.warning("Could not run Logic launch command %s: %s", command, exc)
+                continue
+            if completed.returncode == 0:
+                return True
+            LOGGER.info(
+                "Logic launch command failed (exit %s): %s",
+                completed.returncode,
+                command,
             )
-        except (OSError, subprocess.SubprocessError) as exc:
-            LOGGER.warning("Could not open Logic Pro: %s", exc)
-            self._reveal_folder(midi_path.parent)
+        return False
 
     def _reveal_folder(self, folder: Path) -> None:
         """Reveal a folder in Finder (macOS), Explorer (Windows), or file manager (Linux)."""

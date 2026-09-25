@@ -62,6 +62,7 @@ appears in the Recording Studio's playback controls. The button:
 3. Button disables and shows "Sending…"
 4. Adapter builds `HandoffSession` from take data (off-thread)
 5. Logic handoff exports aligned 24-bit stems and MIDI file (off-thread)
+   plus `logic-import-map.csv` for quick per-stem timing checks
 6. On success:
    - If Logic Pro is installed: prompts to open `session.mid` in Logic
    - Otherwise: reveals the handoff folder in Finder
@@ -141,5 +142,6 @@ Follow the generated `README.md` in the handoff folder:
 1. Open `session.mid` as a **new project** in Logic to load tempo, meter, and markers
 2. Set the project sample rate to match the session (shown in the completion message)
 3. Drag all WAV stems together to bar 1 / time zero as separate tracks
-4. Keep original audio timing; disable automatic tempo matching/Flex stretching
-5. Verify alignment in Logic, including the session end and any named markers
+4. Use `logic-import-map.csv` to verify each stem's source length and start time
+5. Keep original audio timing; disable automatic tempo matching/Flex stretching
+6. Verify alignment in Logic, including the session end and any named markers

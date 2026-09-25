@@ -170,6 +170,7 @@ def test_cli_real_manifest_exports_stopped_audio_with_declared_alignment(tmp_pat
     assert Path(receipt["midi"]).read_bytes().startswith(b"MThd")
     assert Path(receipt["tempo"]).is_file()
     assert Path(receipt["readme"]).is_file()
+    assert Path(receipt["import_map"]).is_file()
 
 
 def test_cli_stub_exports_real_stems_and_pitched_notes_then_removes_temporary_sources(tmp_path: Path, monkeypatch, capsys):

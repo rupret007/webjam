@@ -17,7 +17,6 @@ from core.logic_handoff import export_logic_handoff
 from core.logic_handoff_adapter import (
     build_handoff_session,
     can_export_to_logic,
-    LogicHandoffAdapterError,
 )
 
 
@@ -158,6 +157,7 @@ class TestCrossPlatformExportLabel:
 
         assert export_result.folder.exists()
         assert (export_result.folder / "README.md").exists()
+        assert (export_result.folder / "logic-import-map.csv").exists()
 
     def test_export_produces_daw_compatible_files(self, tmp_path: Path) -> None:
         """Export produces files compatible with any DAW."""
@@ -168,3 +168,53 @@ class TestCrossPlatformExportLabel:
         assert export_result.midi.suffix == ".mid"
         for stem in export_result.stems:
             assert stem.suffix == ".wav"
+
+
+class TestOpenInLogicLauncher:
+    """Test Logic launcher behavior used by the Send to Logic flow."""
+
+    def test_open_in_logic_tries_bundle_then_app_name(self, monkeypatch, tmp_path: Path) -> None:
+        import webjam_qt.widgets.recording_studio as studio_widget
+
+        calls: list[list[str]] = []
+
+        class _Result:
+            def __init__(self, returncode: int) -> None:
+                self.returncode = returncode
+
+        def fake_run(command, **_kwargs):
+            calls.append(command)
+            if len(calls) == 1:
+                return _Result(1)
+            return _Result(0)
+
+        monkeypatch.setattr(studio_widget.sys, "platform", "darwin")
+        monkeypatch.setattr(studio_widget.subprocess, "run", fake_run)
+
+        midi = tmp_path / "session.mid"
+        opened = studio_widget.RecordingStudio._open_in_logic(object(), midi)
+
+        assert opened is True
+        assert calls == [
+            ["open", "-b", "com.apple.logic10", str(midi)],
+            ["open", "-a", "Logic Pro", str(midi)],
+        ]
+
+    def test_open_in_logic_returns_false_off_macos(self, monkeypatch, tmp_path: Path) -> None:
+        import webjam_qt.widgets.recording_studio as studio_widget
+
+        calls: list[list[str]] = []
+
+        def fake_run(command, **_kwargs):
+            calls.append(command)
+            pytest.fail("subprocess.run should not be called off macOS")
+
+        monkeypatch.setattr(studio_widget.sys, "platform", "linux")
+        monkeypatch.setattr(studio_widget.subprocess, "run", fake_run)
+
+        opened = studio_widget.RecordingStudio._open_in_logic(
+            object(), tmp_path / "session.mid"
+        )
+
+        assert opened is False
+        assert calls == []
