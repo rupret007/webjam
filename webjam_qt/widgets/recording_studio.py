@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import itertools
 import logging
+import os
 import queue
-import shutil
 import subprocess
 import sys
 import threading
@@ -47,6 +47,13 @@ from core.creative_modes import (
     get_creator_profile_by_key,
     get_creator_profile_by_key_or_default,
 )
+from core.logic_handoff import LogicHandoffError, export_logic_handoff
+from core.logic_handoff_adapter import (
+    DEFAULT_BPM,
+    LogicHandoffAdapterError,
+    build_handoff_session,
+    can_export_to_logic,
+)
 from core.meeting_link import RECORD_SESSION_MEETING_CAPTURE_NOTICE
 from core.musician_guidance import (
     MusicianGuidanceSnapshot,
@@ -72,13 +79,6 @@ from core.take_export import (
     TrackExportResult,
     TrackMixSettings,
     export_track_package,
-)
-from core.logic_handoff import export_logic_handoff, LogicHandoffError
-from core.logic_handoff_adapter import (
-    build_handoff_session,
-    can_export_to_logic,
-    LogicHandoffAdapterError,
-    DEFAULT_BPM,
 )
 from core.take_library import TakeInfo, TakeValidationResult, discover_takes
 from core.take_player import (
@@ -724,15 +724,21 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._reveal_btn.setEnabled(False)
         self._reveal_btn.clicked.connect(self._reveal_current)
         actions.addWidget(self._reveal_btn)
-        self._send_to_logic_btn = QPushButton("Send to Logic")
+        self._send_to_logic_btn = QPushButton(
+            "Send to Logic" if sys.platform == "darwin" else "Export for DAW"
+        )
         self._send_to_logic_btn.setObjectName("GhostButton")
-        self._send_to_logic_btn.setAccessibleName("Export session to Logic Pro")
+        self._send_to_logic_btn.setAccessibleName(
+            "Export session to Logic Pro"
+            if sys.platform == "darwin"
+            else "Export session for DAW import"
+        )
         self._send_to_logic_btn.setToolTip(
             "Create a Logic-ready handoff folder with aligned 24-bit stems, "
-            "MIDI tempo/markers, and import instructions."
+            "MIDI tempo/markers, and import instructions. "
+            "Works with any DAW that imports WAV and Standard MIDI files."
         )
         self._send_to_logic_btn.setEnabled(False)
-        self._send_to_logic_btn.setVisible(sys.platform == "darwin")
         self._send_to_logic_btn.clicked.connect(self._send_to_logic)
         actions.addWidget(self._send_to_logic_btn)
         self._originals_btn = QPushButton("Show My Originals")
@@ -3091,12 +3097,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._export_btn.setToolTip("")
 
     def _refresh_send_to_logic_button(self) -> None:
-        """Update Send to Logic button state based on current take."""
-        if sys.platform != "darwin":
-            self._send_to_logic_btn.setVisible(False)
-            return
-
-        self._send_to_logic_btn.setVisible(True)
+        """Update Send to Logic / Export for DAW button state based on current take."""
         can_send, reason = self._can_send_to_logic()
         self._send_to_logic_btn.setEnabled(can_send)
         if not can_send and reason:
@@ -3104,7 +3105,8 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         else:
             self._send_to_logic_btn.setToolTip(
                 "Create a Logic-ready handoff folder with aligned 24-bit stems, "
-                "MIDI tempo/markers, and import instructions."
+                "MIDI tempo/markers, and import instructions. "
+                "Works with any DAW that imports WAV and Standard MIDI files."
             )
 
     def _can_send_to_logic(self) -> tuple[bool, str]:
@@ -3148,7 +3150,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 result = export_logic_handoff(adapter_result.session)
             except (LogicHandoffAdapterError, LogicHandoffError) as exc:
                 error = str(exc)
-            except Exception as exc:
+            except Exception:
                 LOGGER.exception("Logic handoff failed unexpectedly")
                 error = "Logic handoff failed unexpectedly."
             self._logic_handoff_results.put((take_path, result, error, bpm_is_default))
@@ -3170,17 +3172,28 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             )
             if current_path != take_path:
                 self._restore_logic_handoff_controls()
-                self._hint.setText(
-                    "The Logic handoff finished after Studio changed takes, so its result "
-                    "was not attached here. The recorded takes are unchanged."
-                )
+                if result is not None and error is None:
+                    self._reveal_path = result.folder
+                    self._reveal_folder(result.folder)
+                    folder_name = result.folder.name
+                    stem_count = len(result.stems)
+                    self._hint.setText(
+                        f"Logic handoff finished for a different take · "
+                        f"{stem_count} stems · {folder_name} · Revealed in file browser."
+                    )
+                else:
+                    self._hint.setText(
+                        "The Logic handoff finished after Studio changed takes. "
+                        "The recorded takes are unchanged."
+                    )
                 continue
 
             self._finish_logic_handoff(result, error, bpm_is_default)
 
     def _restore_logic_handoff_controls(self) -> None:
         """Re-enable controls after Logic handoff completes or is cancelled."""
-        set_labeled_action(self._send_to_logic_btn, "Send to Logic")
+        label = "Send to Logic" if sys.platform == "darwin" else "Export for DAW"
+        set_labeled_action(self._send_to_logic_btn, label)
         self._send_to_logic_btn.setEnabled(True)
         self._refresh_export_button()
 
@@ -3277,8 +3290,43 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             self._reveal_folder(midi_path.parent)
 
     def _reveal_folder(self, folder: Path) -> None:
-        """Reveal a folder in Finder (macOS) or Explorer (Windows)."""
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+        """Reveal a folder in Finder (macOS), Explorer (Windows), or file manager (Linux)."""
+        folder_str = str(folder)
+        if sys.platform == "darwin":
+            try:
+                subprocess.Popen(
+                    ["open", folder_str],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                return
+            except (OSError, subprocess.SubprocessError):
+                pass
+        elif sys.platform == "win32":
+            try:
+                os.startfile(folder_str)
+                return
+            except (OSError, AttributeError):
+                try:
+                    subprocess.Popen(
+                        ["explorer", folder_str],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    return
+                except (OSError, subprocess.SubprocessError):
+                    pass
+        else:
+            try:
+                subprocess.Popen(
+                    ["xdg-open", folder_str],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                return
+            except (OSError, subprocess.SubprocessError):
+                pass
+        QDesktopServices.openUrl(QUrl.fromLocalFile(folder_str))
 
     def _set_track_export_included(
         self,

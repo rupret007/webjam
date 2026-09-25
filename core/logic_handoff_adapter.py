@@ -17,16 +17,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from core.logic_handoff import (
+    LOGIC_SAMPLE_RATES,
     AudioStem,
     HandoffSession,
-    LogicHandoffError,
     Marker,
-    MidiTrack,
-    LOGIC_SAMPLE_RATES,
 )
-from core.take_library import TakeInfo, load_take
 from core.take_project import TakeProject, load_take_project
-
 
 DEFAULT_BPM = 120.0
 DEFAULT_NUMERATOR = 4
@@ -64,21 +60,6 @@ def _load_project(take_path: Path) -> TakeProject:
     return project
 
 
-def _load_take_info(take_path: Path) -> TakeInfo:
-    """Load TakeInfo from a take directory."""
-    try:
-        info = load_take(take_path)
-    except Exception as exc:
-        raise LogicHandoffAdapterError(
-            f"Could not load take info: {exc}"
-        ) from exc
-    if info is None:
-        raise LogicHandoffAdapterError(
-            "The take folder contains no readable audio tracks."
-        )
-    return info
-
-
 def _validate_sample_rate(rate: int) -> None:
     """Validate that the sample rate is supported by Logic."""
     if rate not in LOGIC_SAMPLE_RATES:
@@ -88,25 +69,17 @@ def _validate_sample_rate(rate: int) -> None:
         )
 
 
-def _compute_session_frames(project: TakeProject, take_info: TakeInfo) -> int:
+def _compute_session_frames(project: TakeProject) -> int:
     """Compute the total session frames from track data.
 
     Uses the maximum extent of all tracks (start_frame + source frames).
     """
     max_frame = 0
-    sample_rate = project.project_sample_rate
 
     for track in project.tracks:
         for segment in track.segments:
             segment_end = segment.project_start_frame + segment.frame_count
             max_frame = max(max_frame, segment_end)
-
-    if max_frame <= 0:
-        for track in take_info.tracks:
-            offset_frames = round(track.offset_s * sample_rate)
-            duration_frames = round(track.duration_s * sample_rate)
-            track_end = offset_frames + duration_frames
-            max_frame = max(max_frame, track_end)
 
     if max_frame <= 0:
         raise LogicHandoffAdapterError(
@@ -116,44 +89,126 @@ def _compute_session_frames(project: TakeProject, take_info: TakeInfo) -> int:
     return max_frame
 
 
+def _validate_segment_path(
+    segment_path: str,
+    take_path: Path,
+    track_name: str,
+    segment_index: int,
+) -> Path:
+    """Validate and resolve a segment path, ensuring it's inside the take directory.
+
+    Raises LogicHandoffAdapterError if the path is invalid, escapes the take
+    directory, or is a symlink.
+    """
+    raw_path = take_path / segment_path
+    try:
+        resolved = raw_path.resolve(strict=False)
+    except (OSError, ValueError) as exc:
+        raise LogicHandoffAdapterError(
+            f"Cannot resolve path for '{track_name}' segment {segment_index + 1}: {exc}"
+        ) from exc
+
+    if raw_path.is_symlink():
+        raise LogicHandoffAdapterError(
+            f"Symlinks are not allowed: '{track_name}' segment {segment_index + 1} "
+            f"at '{segment_path}' is a symbolic link."
+        )
+
+    try:
+        resolved.relative_to(take_path)
+    except ValueError:
+        raise LogicHandoffAdapterError(
+            f"Path traversal detected: '{track_name}' segment {segment_index + 1} "
+            f"at '{segment_path}' resolves outside the take directory."
+        )
+
+    if not resolved.is_file():
+        raise LogicHandoffAdapterError(
+            f"Missing audio file for '{track_name}' segment {segment_index + 1}: "
+            f"'{segment_path}' does not exist or is not a file."
+        )
+
+    return resolved
+
+
+def _check_segment_overlaps(
+    segments: list[tuple[str, int, int]],
+    track_name: str,
+) -> None:
+    """Check for overlapping segments within a track.
+
+    Args:
+        segments: List of (name, start_frame, end_frame) tuples.
+        track_name: Track name for error messages.
+
+    Raises:
+        LogicHandoffAdapterError if segments overlap.
+    """
+    sorted_segs = sorted(segments, key=lambda s: s[1])
+    for i in range(1, len(sorted_segs)):
+        prev_name, _, prev_end = sorted_segs[i - 1]
+        curr_name, curr_start, _ = sorted_segs[i]
+        if curr_start < prev_end:
+            raise LogicHandoffAdapterError(
+                f"Overlapping segments in track '{track_name}': "
+                f"'{prev_name}' and '{curr_name}' overlap. "
+                "Flatten or resolve overlaps before exporting."
+            )
+
+
 def _build_stems(
     project: TakeProject,
-    take_info: TakeInfo,
     take_path: Path,
 ) -> tuple[AudioStem, ...]:
     """Build AudioStem entries from the take's track data.
 
-    Uses exact start_frame alignment from the recording manifest/timeline.
+    Exports every segment from every track. Each segment becomes its own stem
+    with exact start_frame alignment from the recording manifest/timeline.
+    Multi-segment tracks get numbered stems (e.g., "Guitar", "Guitar (part 2)").
+
+    Raises LogicHandoffAdapterError if:
+    - A segment path escapes the take directory (path traversal)
+    - A segment path is a symlink
+    - A segment file is missing
+    - Segments within a track overlap
     """
     stems: list[AudioStem] = []
-    sample_rate = project.project_sample_rate
-
-    track_paths: dict[str, Path] = {}
-    for track in take_info.tracks:
-        if track.path.is_file():
-            track_paths[track.name] = track.path
 
     for project_track in sorted(project.tracks, key=lambda t: t.order):
         if not project_track.segments:
             continue
 
-        primary_segment = project_track.primary_segment
-        segment_path = take_path / primary_segment.path
-        if not segment_path.is_file():
-            if project_track.name in track_paths:
-                segment_path = track_paths[project_track.name]
-            else:
-                continue
+        track_segments: list[tuple[str, int, int]] = []
 
-        start_frame = primary_segment.project_start_frame
-
-        stems.append(
-            AudioStem(
-                name=project_track.name,
-                path=segment_path,
-                start_frame=start_frame,
+        for seg_idx, segment in enumerate(project_track.segments):
+            resolved_path = _validate_segment_path(
+                segment.path, take_path, project_track.name, seg_idx
             )
-        )
+
+            start_frame = segment.project_start_frame
+            end_frame = start_frame + segment.frame_count
+
+            if len(project_track.segments) == 1:
+                stem_name = project_track.name
+            else:
+                stem_name = (
+                    project_track.name
+                    if seg_idx == 0
+                    else f"{project_track.name} (part {seg_idx + 1})"
+                )
+
+            track_segments.append((stem_name, start_frame, end_frame))
+
+            stems.append(
+                AudioStem(
+                    name=stem_name,
+                    path=resolved_path,
+                    start_frame=start_frame,
+                )
+            )
+
+        if len(track_segments) > 1:
+            _check_segment_overlaps(track_segments, project_track.name)
 
     if not stems:
         raise LogicHandoffAdapterError(
@@ -207,7 +262,6 @@ def build_handoff_session(
         )
 
     project = _load_project(path)
-    take_info = _load_take_info(path)
 
     sample_rate = project.project_sample_rate
     _validate_sample_rate(sample_rate)
@@ -221,8 +275,8 @@ def build_handoff_session(
         numerator == DEFAULT_NUMERATOR and denominator == DEFAULT_DENOMINATOR
     )
 
-    frames = _compute_session_frames(project, take_info)
-    stems = _build_stems(project, take_info, path)
+    frames = _compute_session_frames(project)
+    stems = _build_stems(project, path)
     markers = _build_markers(project)
 
     session_name = project.session_title or project.take_name or path.name
@@ -251,6 +305,8 @@ def build_handoff_session(
 def can_export_to_logic(take_path: str | Path) -> tuple[bool, str]:
     """Check if a take can be exported to Logic.
 
+    Performs full validation including path safety checks.
+
     Returns:
         A tuple of (can_export, reason). If can_export is False, reason
         explains why.
@@ -268,29 +324,10 @@ def can_export_to_logic(take_path: str | Path) -> tuple[bool, str]:
                 f"Sample rate {sample_rate} Hz is not supported by Logic."
             )
 
-        take_info = _load_take_info(path)
-
-        if not project.tracks and not take_info.tracks:
+        if not project.tracks:
             return False, "The take contains no audio tracks."
 
-        has_file = False
-        for track in project.tracks:
-            for segment in track.segments:
-                segment_path = path / segment.path
-                if segment_path.is_file():
-                    has_file = True
-                    break
-            if has_file:
-                break
-
-        if not has_file:
-            for track in take_info.tracks:
-                if track.path.is_file():
-                    has_file = True
-                    break
-
-        if not has_file:
-            return False, "No accessible audio files found in the take."
+        _build_stems(project, path)
 
         return True, ""
 
