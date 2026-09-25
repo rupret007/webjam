@@ -211,6 +211,7 @@ def main(argv: list[str] | None = None) -> int:
         "midi": str(result.midi),
         "tempo": str(result.tempo),
         "readme": str(result.readme),
+        "import_map": str(result.import_map),
         "sample_rate": result.sample_rate,
         "frames": result.frames,
     }, sort_keys=True))

@@ -13,6 +13,8 @@ import math
 import os
 import re
 import shutil
+import csv
+import io
 import stat
 import struct
 import tempfile
@@ -27,6 +29,15 @@ MIDI_PPQ = 32760
 LOGIC_SAMPLE_RATES = (44100, 48000, 88200, 96000, 176400, 192000)
 _CHUNK_FRAMES = 65536
 _MAX_VLQ = 0x0FFFFFFF
+_IMPORT_MAP_COLUMNS = (
+    "file",
+    "stem_name",
+    "start_frame",
+    "start_seconds",
+    "source_frames",
+    "source_seconds",
+    "channels",
+)
 
 
 class LogicHandoffError(ValueError):
@@ -81,6 +92,7 @@ class HandoffResult:
     midi: Path
     tempo: Path
     readme: Path
+    import_map: Path
     sample_rate: int
     frames: int
 
@@ -283,38 +295,148 @@ def _readme(session: HandoffSession, metadata: dict) -> str:
     ) or "- No markers supplied."
     stems = "\n".join(f"- {item['file']} ({item['channels']} channel(s))" for item in metadata["stems"])
     return (
-        f"# Record along — Logic handoff — {session.name}\n\n"
-        "WebJam is one arc: Jamulus band-together, Play along (Music), Paint along (Art), "
-        "and Record along into Logic through this handoff pack.\n\n"
-        "**SMF Type 1 MIDI + aligned 24-bit stems** are the Record-along handoff: "
-        "editable, playable note parts alongside the audio. For Jeff's Logic / Front Stage "
-        "direction, Phase 1 delivers these portable files; it does not add Front Stage "
-        "integration. Other DAWs/apps need compatible SMF and WAV import.\n\n"
-        f"Sample rate: **{session.sample_rate} Hz**. Audio: **24-bit PCM WAV**.\n"
-        f"Length: **{session.frames} frames / {metadata['duration_seconds']:.9f} seconds**.\n"
+        f"# Logic handoff — {session.name}\n\n"
+        "This folder is a WebJam handoff pack for Logic Pro and other DAWs.\n\n"
+        "It includes:\n"
+        "- `session.mid` (SMF Type 1 tempo, meter, markers, and any supplied MIDI notes)\n"
+        "- Numbered 24-bit WAV stems aligned to one common timeline\n"
+        "- `tempo.json` with exact timing metadata\n"
+        "- `logic-import-map.csv` with per-stem timing and source details\n\n"
+        f"Sample rate: **{session.sample_rate} Hz**\n"
+        f"Length: **{session.frames} frames / {metadata['duration_seconds']:.9f} seconds**\n"
         f"Tempo: **{session.bpm:g} BPM requested**, {metadata['effective_bpm']:.9f} BPM in MIDI "
-        f"({metadata['tempo_microseconds_per_quarter']} microseconds/quarter).\n"
-        f"Time signature: **{session.numerator}/{session.denominator}**.\n\n"
-        "## Import into a new Logic Pro project\n\n"
-        "1. Open session.mid in Logic as a new project to read its tempo, time signature, and markers.\n"
-        f"2. Set the project sample rate to **{session.sample_rate} Hz** before adding audio.\n"
-        "3. Select all WAV stems from this folder and drag them together to bar 1 / project time zero, "
-        "creating separate tracks. Keep their original timing; disable automatic tempo matching or Flex stretching.\n"
-        "4. Assign instruments to the MIDI tracks and check the markers and common end against tempo.json. "
-        "Save the Logic project with its audio files copied into it.\n\n"
-        "This is an offline interchange folder, not a .logicx project. No cloud, routing device, "
-        "controller, or phone connection is required. The sources were supplied explicitly; "
-        "their start frames are the caller's alignment decisions. Original files are unchanged.\n\n"
+        f"({metadata['tempo_microseconds_per_quarter']} microseconds/quarter)\n"
+        f"Time signature: **{session.numerator}/{session.denominator}**\n\n"
+        "## Recommended Logic Pro import flow\n\n"
+        "1. Open `session.mid` in Logic as a **new project** so Logic reads tempo, meter, and markers.\n"
+        f"2. Set Logic's project sample rate to **{session.sample_rate} Hz** before adding audio.\n"
+        "3. Select all WAV files in this folder and drag them together to bar 1 / project time zero.\n"
+        "4. Keep original stem timing; disable automatic tempo matching/Flex stretching.\n"
+        "5. Compare timeline endpoints and markers against `tempo.json`, then save your `.logicx` project.\n\n"
+        "## Notes\n\n"
         f"SMF Type 1, {MIDI_PPQ} ticks/quarter; {notes} supplied MIDI note(s). "
-        + ("No MIDI performance was supplied: the MIDI file contains tempo/markers and an empty performance track. " if notes == 0 else "")
+        + (
+            "No MIDI performance was supplied: the MIDI file contains tempo/markers and an empty performance track. "
+            if notes == 0
+            else ""
+        )
         + "No audio-to-MIDI transcription or live MIDI capture is performed.\n\n"
         "Every WAV includes leading/trailing silence as needed and has exactly the declared frame length. "
         "Every MIDI track ends at the same tick. MIDI uses the nearest tick to each frame timestamp, "
         f"with at most {metadata['midi_max_quantization_error_seconds']:.9f} seconds of rounding per event. "
-        "Logic may visually trim empty MIDI tail space; tempo.json retains the exact audio endpoint. "
-        "Tempo is constant in Phase 1. No sample-rate conversion, normalization, effects, BWF or iXML is applied.\n\n"
+        "Tempo is constant in Phase 1. No sample-rate conversion, normalization, effects, BWF, or iXML is applied. "
+        "Original source files are unchanged.\n\n"
         f"## Stems\n\n{stems}\n\n## Markers\n\n{marker_lines}\n"
     )
+
+
+def _import_map_csv(session: HandoffSession, metadata: dict) -> str:
+    """Build a Logic-friendly stem timing map for quick import checks."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(_IMPORT_MAP_COLUMNS)
+    for stem in metadata["stems"]:
+        start_frame = int(stem["start_frame"])
+        source_frames = int(stem["source_frames"])
+        writer.writerow(
+            (
+                stem["file"],
+                stem["name"],
+                start_frame,
+                f"{start_frame / session.sample_rate:.9f}",
+                source_frames,
+                f"{source_frames / session.sample_rate:.9f}",
+                int(stem["channels"]),
+            )
+        )
+    return buffer.getvalue()
+
+
+def _validate_import_map_text(
+    csv_text: str, *, expected_stem_files: set[str]
+) -> None:
+    """Validate import-map CSV content before publishing the handoff."""
+    if not csv_text.strip():
+        raise LogicHandoffError("logic-import-map.csv is empty.")
+    try:
+        reader = csv.DictReader(io.StringIO(csv_text))
+        fieldnames = tuple(reader.fieldnames or ())
+    except csv.Error as exc:
+        raise LogicHandoffError(
+            f"logic-import-map.csv is unreadable: {exc}"
+        ) from exc
+    if fieldnames != _IMPORT_MAP_COLUMNS:
+        raise LogicHandoffError(
+            "logic-import-map.csv has an invalid header."
+        )
+    rows: list[dict[str, str]] = []
+    try:
+        rows = [row for row in reader]
+    except csv.Error as exc:
+        raise LogicHandoffError(
+            f"logic-import-map.csv has malformed rows: {exc}"
+        ) from exc
+    if len(rows) != len(expected_stem_files):
+        raise LogicHandoffError(
+            "logic-import-map.csv does not match the exported stem count."
+        )
+    seen_files: set[str] = set()
+    for row in rows:
+        stem_file = (row.get("file") or "").strip()
+        if not stem_file:
+            raise LogicHandoffError("logic-import-map.csv contains a blank stem file name.")
+        if stem_file in seen_files:
+            raise LogicHandoffError(
+                "logic-import-map.csv contains duplicate stem rows."
+            )
+        if stem_file not in expected_stem_files:
+            raise LogicHandoffError(
+                "logic-import-map.csv references an unknown exported stem."
+            )
+        try:
+            start_frame = int(row["start_frame"])
+            source_frames = int(row["source_frames"])
+            channels = int(row["channels"])
+            start_seconds = float(row["start_seconds"])
+            source_seconds = float(row["source_seconds"])
+        except (TypeError, ValueError, KeyError) as exc:
+            raise LogicHandoffError(
+                "logic-import-map.csv contains invalid numeric values."
+            ) from exc
+        if start_frame < 0 or source_frames <= 0:
+            raise LogicHandoffError(
+                "logic-import-map.csv contains invalid frame ranges."
+            )
+        if channels not in (1, 2):
+            raise LogicHandoffError(
+                "logic-import-map.csv contains an invalid channel count."
+            )
+        if not (math.isfinite(start_seconds) and math.isfinite(source_seconds)):
+            raise LogicHandoffError(
+                "logic-import-map.csv contains non-finite timing values."
+            )
+        if start_seconds < 0 or source_seconds <= 0:
+            raise LogicHandoffError(
+                "logic-import-map.csv contains negative timing values."
+            )
+        seen_files.add(stem_file)
+    if seen_files != expected_stem_files:
+        raise LogicHandoffError(
+            "logic-import-map.csv is missing one or more exported stems."
+        )
+
+
+def _validate_import_map_file(path: Path, *, expected_stem_files: set[str]) -> None:
+    """Fail closed when the import map was not fully written."""
+    if not path.is_file():
+        raise LogicHandoffError("logic-import-map.csv was not written.")
+    try:
+        csv_text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise LogicHandoffError(
+            f"logic-import-map.csv could not be read: {exc}"
+        ) from exc
+    _validate_import_map_text(csv_text, expected_stem_files=expected_stem_files)
 
 
 def export_logic_handoff(
@@ -385,6 +507,11 @@ def export_logic_handoff(
                     for marker in sorted(session.markers, key=lambda item: item.frame)
                 ],
             }
+            import_map_text = _import_map_csv(session, metadata)
+            expected_stem_files = {item["file"] for item in stem_metadata}
+            _validate_import_map_text(
+                import_map_text, expected_stem_files=expected_stem_files
+            )
             root.mkdir(parents=True, exist_ok=True)
             staging = Path(tempfile.mkdtemp(prefix=".logic-handoff-", dir=root))
             # Retain the exclusive staging suffix in the timestamped final name
@@ -398,11 +525,21 @@ def export_logic_handoff(
                 ("session.mid", midi),
                 ("tempo.json", (json.dumps(metadata, indent=2, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8")),
                 ("README.md", _readme(session, metadata).encode("utf-8")),
+                ("logic-import-map.csv", import_map_text.encode("utf-8")),
             ):
                 target = staging / name
-                with target.open("xb") as handle:
-                    handle.write(data)
+                try:
+                    with target.open("xb") as handle:
+                        handle.write(data)
+                except OSError as exc:
+                    raise LogicHandoffError(
+                        f"Logic handoff could not write {name}: {exc}"
+                    ) from exc
                 os.chmod(target, 0o600)
+            _validate_import_map_file(
+                staging / "logic-import-map.csv",
+                expected_stem_files=expected_stem_files,
+            )
             for _stem, handle, _reader, stamp in sources:
                 if _source_stamp(handle) != stamp:
                     raise LogicHandoffError("Source audio changed during export; stop recording and retry.")
@@ -413,6 +550,7 @@ def export_logic_handoff(
         return HandoffResult(
             folder=final, stems=tuple(final / item["file"] for item in stem_metadata),
             midi=final / "session.mid", tempo=final / "tempo.json", readme=final / "README.md",
+            import_map=final / "logic-import-map.csv",
             sample_rate=session.sample_rate, frames=session.frames,
         )
     except (OSError, RuntimeError) as exc:

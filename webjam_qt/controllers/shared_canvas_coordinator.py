@@ -81,7 +81,9 @@ class SharedCanvasCoordinator:
         self._pending: _PendingPublication | None = None
         self._inflight: _PendingPublication | None = None
         self._publication_peer = None
+        self._accepted_projection = SharedCanvasSessionSnapshot()
         self._observed_canvas = None
+        self._publish_failed = False
 
     # -- lifecycle -----------------------------------------------------
 
@@ -136,7 +138,9 @@ class SharedCanvasCoordinator:
         self._pending = None
         self._inflight = None
         self._publication_peer = None
+        self._accepted_projection = SharedCanvasSessionSnapshot()
         self._observed_canvas = None
+        self._publish_failed = False
         generation = self._generation
         if host is not None:
             try:
@@ -191,6 +195,21 @@ class SharedCanvasCoordinator:
             return self.host_snapshot
         return self._attempt_publication(pending)
 
+    def tick(self) -> None:
+        """Retry only the currently pending publication, if any.
+
+        Hosts can offer a canvas before authenticated peer control is ready.
+        The Art cadence calls this method to retry undelivered publication
+        until the peer plane accepts it, without republishing after success.
+        """
+
+        if not self.hosting:
+            return
+        pending = self._pending
+        if pending is None or pending is self._inflight:
+            return
+        self._attempt_publication(pending)
+
     def open_canvas_as_host(self) -> SharedCanvasSnapshot:
         return self._host_operation(lambda host: host.open_canvas())
 
@@ -202,8 +221,21 @@ class SharedCanvasCoordinator:
         pending = self._pending
         if pending is None:
             return snapshot
+        accepted = self._accepted_projection
+        accepted_invite = None
+        if accepted.shared and accepted.join_url:
+            try:
+                accepted_invite = parse_canvas_invite(accepted.join_url)
+            except DrawpileError:
+                accepted_invite = None
         return replace(
             snapshot, pending_action=pending.action,
+            shared=bool(accepted.shared and accepted.join_url),
+            server_label=accepted.server_label if accepted.shared else "",
+            session_label=accepted.session_label if accepted.shared else "",
+            carries_password=bool(
+                accepted_invite is not None and accepted_invite.carries_password
+            ),
             can_retry_publication=self.hosting and pending is not self._inflight,
             error=(SHARE_NOT_CONFIRMED_MESSAGE
                    if pending.action is SharedCanvasPendingAction.SHARE
@@ -289,8 +321,16 @@ class SharedCanvasCoordinator:
     # -- peer plane ----------------------------------------------------
 
     def _request_publication(self, action, projection) -> SharedCanvasSnapshot:
-        self._host_controller()
+        host = self._host_controller()
         self._intent_generation += 1
+        if action is SharedCanvasPendingAction.SHARE:
+            host.share(projection.join_url)
+        elif action is SharedCanvasPendingAction.WITHDRAW:
+            # Keep the last accepted local offer available until the peer plane
+            # confirms withdrawal with a matching typed receipt.
+            pass
+        else:
+            host.withdraw()
         pending = _PendingPublication(action, projection)
         self._pending = pending
         return self._attempt_publication(pending)
@@ -332,6 +372,11 @@ class SharedCanvasCoordinator:
                 accepted = self._matching_receipt(receipt, projection)
         except Exception:  # payloads and transport details stay private
             accepted = False
+            if not self._publish_failed:
+                LOGGER.warning("Shared canvas peer state could not be published")
+            self._publish_failed = True
+        else:
+            self._publish_failed = False
         current = (generation == self._generation and intent == self._intent_generation
                    and host is self._host and self.hosting and pending is self._pending)
         if current and accepted:
@@ -344,12 +389,11 @@ class SharedCanvasCoordinator:
             current = (generation == self._generation and intent == self._intent_generation
                        and host is self._host and self.hosting and pending is self._pending)
             if current and accepted:
-                if pending.action is SharedCanvasPendingAction.SHARE:
-                    host.share(pending.projection.join_url)
-                else:
-                    host.withdraw()
                 if (generation == self._generation and intent == self._intent_generation
                         and pending is self._pending):
+                    if pending.action is SharedCanvasPendingAction.WITHDRAW:
+                        host.withdraw()
+                    self._accepted_projection = pending.projection
                     self._pending = None
         if self._inflight is pending:
             self._inflight = None

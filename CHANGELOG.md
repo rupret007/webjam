@@ -7,11 +7,15 @@ All notable improvements and features for the WebJam creator collaboration platf
 ## [Unreleased]
 
 > Future work after the unsigned v0.28.3 candidate belongs here. At candidate
-> preparation, GitHub Latest remains immutable v0.28.1 release `393030220`;
+> preparation, GitHub Latest remains v0.28.3 release `394985116`;
 > v0.28.2 remains a stale draft at `a51154e533ce5662ca4b541a866dd9b1954452b1`.
 > Every published tag, release, and asset remains immutable historical evidence.
 > Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted
 > by owner; git tags remain.
+
+### CI: Mac desktop rebuilds the Pocket Stage kit
+
+- Build Desktop (macos-x64) and (macos-arm64) now generate **Pocket Stage iPhone Setup** on the Mac builder after the iOS compile job succeeds. They no longer download `webjam-pocket-stage-ios-setup-${{ github.sha }}`. GitHub can delete that artifact when a sibling pull_request run is cancelled, which failed PR Mac builds while the same-commit push stayed green. The iOS job still compiles Pocket Stage and still uploads the SHA-named kit for candidate binding.
 
 ### Compact Studio and Art room guidance
 
@@ -884,6 +888,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 ### Room-clock delivery: retry truth the room did not receive
 
 - A host no longer treats a locally rendered room clock as delivered when the private peer plane is inactive, rejects one update, or has not attached authenticated session control yet. The same bounded pulse is retried on the next tick, then returns to change-only publishing after a successful delivery; live audio and transport ownership are unchanged.
+
+### Shared-canvas delivery: carry the invite after peer control arrives
+
+- Sharing a Drawpile canvas before authenticated session control is ready no longer leaves guests without the invite. The host retries only the undelivered memory-only projection on Art's bounded cadence, then returns to change-only publishing as soon as the peer plane accepts it. Drawpile still owns the canvas, and WebJam still opens or publishes nothing on a guest's behalf.
 
 ### Music AI upload portability: one FLAC type on every desktop
 

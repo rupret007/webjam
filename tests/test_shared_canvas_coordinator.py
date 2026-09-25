@@ -8,6 +8,8 @@ optional add-on taking the session down with it.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from core.drawpile import (
@@ -57,14 +59,25 @@ class FakeLauncher:
 class FakeHostPeer:
     """Stands in for the authenticated peer plane."""
 
-    def __init__(self, *, active: bool = True, explode: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        active: bool = True,
+        explode: bool = False,
+        accept: bool = True,
+    ) -> None:
         self.active = active
         self.explode = explode
+        self.accept = accept
+        self.attempts: list[dict] = []
         self.published: list[dict] = []
 
     def publish_shared_canvas_state(self, **kwargs):
         if self.explode:
             raise RuntimeError("peer plane is unhappy")
+        self.attempts.append(kwargs)
+        if not self.accept:
+            return None
         self.published.append(kwargs)
         return SharedCanvasSessionSnapshot(**kwargs)
 
@@ -233,6 +246,35 @@ def test_publication_is_skipped_while_the_peer_plane_is_inactive():
     assert coordinator.host_snapshot.pending_action is SharedCanvasPendingAction.SHARE
     assert coordinator.host_snapshot.can_retry_publication
 
+    peer.active = True
+    coordinator.tick()
+    coordinator.tick()
+
+    assert len(peer.published) == 1
+    assert peer.published[0]["join_url"] == NORMALIZED
+
+
+def test_a_peer_rejection_is_retried_until_session_control_accepts_the_canvas():
+    """A callable peer without session control has delivered nothing yet."""
+
+    peer = FakeHostPeer(accept=False)
+    coordinator = _coordinator(peer=peer)
+    coordinator.begin_host()
+
+    snapshot = coordinator.share(WEB_INVITE)
+
+    assert snapshot.shared is False
+    assert len(peer.attempts) == 1
+    assert peer.published == []
+
+    peer.accept = True
+    coordinator.tick()
+    coordinator.tick()
+
+    assert len(peer.attempts) == 2
+    assert len(peer.published) == 1
+    assert peer.published[0]["join_url"] == NORMALIZED
+
 
 def test_a_peer_failure_never_breaks_the_hosts_canvas():
     peer = FakeHostPeer(explode=True)
@@ -244,6 +286,45 @@ def test_a_peer_failure_never_breaks_the_hosts_canvas():
     assert snapshot.shared is False
     assert snapshot.pending_action is SharedCanvasPendingAction.SHARE
     assert snapshot.can_retry_publication
+
+
+def test_a_peer_failure_is_warned_once_while_retries_continue(caplog):
+    peer = FakeHostPeer(explode=True)
+    coordinator = _coordinator(peer=peer)
+    coordinator.begin_host()
+
+    with caplog.at_level(logging.WARNING, logger="webjam.qt.shared_canvas_coordinator"):
+        coordinator.share(WEB_INVITE)
+        coordinator.tick()
+        coordinator.tick()
+
+    warnings = [
+        record.message for record in caplog.records
+        if record.levelname == "WARNING"
+    ]
+    assert warnings == ["Shared canvas peer state could not be published"]
+
+
+def test_a_successful_retry_rearms_the_peer_failure_warning(caplog):
+    peer = FakeHostPeer(explode=True)
+    coordinator = _coordinator(peer=peer)
+    coordinator.begin_host()
+
+    with caplog.at_level(logging.WARNING, logger="webjam.qt.shared_canvas_coordinator"):
+        coordinator.share(WEB_INVITE)
+        peer.explode = False
+        coordinator.tick()
+        peer.explode = True
+        coordinator.withdraw()
+
+    warnings = [
+        record.message for record in caplog.records
+        if record.levelname == "WARNING"
+    ]
+    assert warnings == [
+        "Shared canvas peer state could not be published",
+        "Shared canvas peer state could not be published",
+    ]
 
 
 # ---------------------------------------------------------------------------
