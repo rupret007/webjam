@@ -1,10 +1,10 @@
 # WebJam, simply
 
 > **Show baseline, checked 2026-09-24:** published unsigned/ad-hoc
-> [v0.28.3](https://github.com/rupret007/webjam/releases/tag/v0.28.3) is GitHub
-> Latest, release `394985116`, from commit
+> [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4) is the unsigned candidate under cut;
+> published Latest remains v0.28.3 (`394985116`) until this candidate publishes, from commit
 > `da16749abc9f87cde127e01ea10a7712e5ce7800`. Verify the selected package with
-> `WebJam-v0.28.3-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
+> `WebJam-v0.28.4-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
 > and unnotarized. Branch changes and automated checks do not establish
 > physical show readiness. See [the show one-pager](SHOW_ONEPAGER.md) and [demo script](DEMO_SCRIPT.md).
 
@@ -21,7 +21,7 @@ the meeting app, browser, or system output. Local Originals record only the
 input devices you explicitly select, so do not route meeting or system audio
 into those inputs.
 
-The current v0.28.3 source keeps Music and Podcast & Voice as GA
+The current v0.28.4 source keeps Music and Podcast & Voice as GA
 creator profiles. Art and Review & Rehearsal are visibly Preview. Art offers
 **Make together**—a live room where people work locally and the host may open
 one shared canvas—or host-clocked **Paint along**, but no recording or
@@ -33,7 +33,7 @@ mutation, track export, shared notes, visual sync, and media timecode. No
 profile directly or automatically taps a meeting app, browser, or system
 output.
 
-Current published private test release (GitHub Latest): **v0.28.3**, as checked
+Current published private test release (GitHub Latest): **v0.28.4**, as checked
 on 2026-09-24. Verify the exact selected package with its attached checksum
 manifest before installing.
 The four-platform release covers
@@ -125,7 +125,7 @@ owns installation and WebJam retains its embedded 3.12.2 fallback instead of
 claiming it can roll back the system package.
 
 The exact baked Jamulus 3.12.2 and 3.12.3 records are approved through unsigned
-v0.28.3, so live Host/Join is source-eligible. This checkout is still not
+v0.28.4, so live Host/Join is source-eligible. This checkout is still not
 package evidence or a physical-test result.
 
 Jamulus displays a name on a second line after eight characters and accepts no

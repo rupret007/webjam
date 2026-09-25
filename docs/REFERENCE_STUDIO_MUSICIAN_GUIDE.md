@@ -5,12 +5,12 @@ a backing track. It can open without a WebJam session, Webex, or Jamulus. Its
 local playback and recording choices do not change the device, buffer, mix, or
 connection owned by Jamulus.
 
-> **v0.28.3 source guide.**
+> **v0.28.4 source guide.**
 > **Show baseline, checked 2026-09-24:** published unsigned/ad-hoc
-> [v0.28.3](https://github.com/rupret007/webjam/releases/tag/v0.28.3) is GitHub
+> [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4) is GitHub
 > Latest, release `394985116`, from commit
 > `da16749abc9f87cde127e01ea10a7712e5ce7800`. Verify the selected package with
-> `WebJam-v0.28.3-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
+> `WebJam-v0.28.4-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
 > and unnotarized. Branch changes and automated checks do not establish
 > physical show readiness. See [the show one-pager](../SHOW_ONEPAGER.md) and [demo script](../DEMO_SCRIPT.md).
 

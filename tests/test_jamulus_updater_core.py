@@ -319,7 +319,7 @@ def test_official_registry_authorizes_v0283_but_no_future_patch():
     assert all(entry.supports_webjam("0.28.0") for entry in registry.entries)
     assert all(entry.supports_webjam("0.28.1") for entry in registry.entries)
     assert all(entry.supports_webjam("0.28.2") for entry in registry.entries)
-    assert all(entry.supports_webjam("0.28.3") for entry in registry.entries)
+    assert all(entry.supports_webjam("0.28.4") for entry in registry.entries)
     assert not any(entry.supports_webjam("0.28.4") for entry in registry.entries)
 
     for target in ComponentTarget:
@@ -327,7 +327,7 @@ def test_official_registry_authorizes_v0283_but_no_future_patch():
             candidates = registry.compatible(
                 role=role,
                 target=target,
-                webjam_version="0.28.3",
+                webjam_version="0.28.4",
             )
             assert [item.version for item in candidates] == ["3.12.3", "3.12.2"]
             assert registry.compatible(
@@ -356,10 +356,10 @@ def test_v0281_payload_reuses_approved_records_and_verifies(tmp_path: Path):
         now=lambda: issued_at,
     )
 
-    verified = verifier.verify(envelope, webjam_version="0.28.3")
+    verified = verifier.verify(envelope, webjam_version="0.28.4")
 
     assert verified.sequence == 7
-    assert verified.webjam_version == "0.28.3"
+    assert verified.webjam_version == "0.28.4"
     assert tuple(component.to_dict() for component in verified.components) == tuple(
         payload["components"]
     )

@@ -7,10 +7,10 @@ room and find its Conversation controls. One computer is enough to show that
 next action; a second artist is needed to demonstrate joining and making together.
 
 > **Show baseline, checked 2026-09-24:** published unsigned/ad-hoc
-> [v0.28.3](https://github.com/rupret007/webjam/releases/tag/v0.28.3) is GitHub
-> Latest, release `394985116`, from commit
+> [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4) is the unsigned candidate under cut;
+> published Latest remains v0.28.3 (`394985116`) until this candidate publishes, from commit
 > `da16749abc9f87cde127e01ea10a7712e5ce7800`. Verify the selected package with
-> `WebJam-v0.28.3-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
+> `WebJam-v0.28.4-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
 > and unnotarized. Branch changes and automated checks do not establish
 > physical show readiness. See [the show one-pager](SHOW_ONEPAGER.md) and [demo script](DEMO_SCRIPT.md).
 > This shorter door script stops before Host or Join. Its optional room
@@ -134,7 +134,7 @@ Showing those choices does not prove video playback or shared meeting media.
 
 Record `git rev-parse HEAD` with your walkthrough notes. This script was
 rechecked against master base
-`da16749abc9f87cde127e01ea10a7712e5ce7800` (v0.28.3). This source check is
+`da16749abc9f87cde127e01ea10a7712e5ce7800` (v0.28.4). This source check is
 separate from the unperformed physical walkthrough.
 If the app disagrees with this file, record its exact wording and the source
 commit. The door and room checks above help locate the mismatch; this source

@@ -67,9 +67,9 @@ def _make_bridge(tmp: str):
     # binaries are executable; upstream macOS apps are source evidence only.
     # Dedicated tests cover the release-integrated Mac fallback.
     bridge._jamulus_component_target = ComponentTarget.WINDOWS_X64
-    # Exercise the approved v0.28.3 baked-component boundary. The sealed
+    # Exercise the approved v0.28.4 baked-component boundary. The sealed
     # public catalog remains independently pinned to exact WebJam v0.22.5.
-    bridge._runtime_webjam_version = MagicMock(return_value="0.28.3")
+    bridge._runtime_webjam_version = MagicMock(return_value="0.28.4")
     bridge.find_jamulus_server = MagicMock(
         return_value="/Applications/JamulusServer.app/Contents/MacOS/JamulusServer"
     )
@@ -600,7 +600,7 @@ class TestHostedServerDiscovery(unittest.TestCase):
                 "services.bridge_service._bundled_jamulus_server_candidate",
                 return_value="/bundled/JamulusServer",
             ):
-                self.assertEqual(bridge._runtime_webjam_version(), "0.28.3")
+                self.assertEqual(bridge._runtime_webjam_version(), "0.28.4")
                 self.assertEqual(
                     bridge._approved_embedded_runtime_versions(
                         JamulusRole.SERVER

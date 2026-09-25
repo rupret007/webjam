@@ -20,17 +20,17 @@ fallbacks, and an unfilled physical rehearsal receipt.
 
 > **Testing download, checked 2026-09-24:** GitHub
 > [Latest](https://github.com/rupret007/webjam/releases/latest) is the published
-> [v0.28.3 private test release](https://github.com/rupret007/webjam/releases/tag/v0.28.3),
+> [v0.28.4 private test candidate](https://github.com/rupret007/webjam/releases/tag/v0.28.4) (cut in progress; published Latest remains v0.28.3 until publish),
 > release `394985116`, published `2026-09-24T07:29:15Z` from commit
 > `da16749abc9f87cde127e01ea10a7712e5ce7800`. Verify the selected package with
-> `WebJam-v0.28.3-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
+> `WebJam-v0.28.4-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
 > and unnotarized. Publication does not establish physical audio or show readiness.
 
-> **Source boundary:** this checkout reports unsigned v0.28.3; show-wave
+> **Source boundary:** this checkout reports unsigned v0.28.4; show-wave
 > changes remain separate drafts until exact-tip checks and Bob/Karen review.
 > No new publish/tag/Latest until Bob says **FINAL BUILD** after all MATCHED
 > and Bob + Karen QA. A branch artifact is not a checksum-bound release package.
-> The existing Jamulus 3.12.2 and 3.12.3 records are approved through v0.28.3;
+> The existing Jamulus 3.12.2 and 3.12.3 records are approved through v0.28.4;
 > the signed catalog remains sealed at exact WebJam v0.22.5.
 
 New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
@@ -42,8 +42,8 @@ showing someone the door? See the [two-minute demo script](DEMO.md).
 | Area | Current state |
 | --- | --- |
 | Product | Creator-facing desktop conductor around Jamulus, optional external meeting conversation, Studio, Pocket Stage, and Phase 1 native Art companion (source / unsigned simulator) |
-| Published line | Unsigned/ad-hoc v0.28.3 GitHub Latest private test release `394985116`; verify `WebJam-v0.28.3-SHA256SUMS.txt` |
-| Current source line | Reports unsigned v0.28.3; show-wave work stays draft. Host/Join reuses the exact baked Jamulus 3.12.2/3.12.3 compatibility records through v0.28.3 |
+| Published line | Unsigned/ad-hoc v0.28.4 candidate (Latest remains v0.28.3 `394985116` until publish); verify `WebJam-v0.28.4-SHA256SUMS.txt` |
+| Current source line | Reports unsigned v0.28.4; show-wave work stays draft. Host/Join reuses the exact baked Jamulus 3.12.2/3.12.3 compatibility records through v0.28.4 |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -102,7 +102,7 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
 
 ## Creator profiles
 
-Current v0.28.3 source applies one saved creator profile across launch,
+Current v0.28.4 source applies one saved creator profile across launch,
 Host/Join, readiness, the live surface, recording, Studio, session records, and
 new standalone projects:
 
@@ -226,7 +226,7 @@ remain available for rollback. Windows and Linux keep installation OS-owned
 and retain the embedded 3.12.2 fallback; they do not claim an app-managed
 previous-version rollback.
 
-The unsigned v0.28.3 source reuses the existing exact Jamulus 3.12.2 and 3.12.3
+The unsigned v0.28.4 source reuses the existing exact Jamulus 3.12.2 and 3.12.3
 compatibility records. The bundled 3.12.2 fallback is eligible for Host/Join;
 unlisted versions still fail closed. Managed updates remain independently
 bound to the signed catalog, which is sealed at exact WebJam v0.22.5.
@@ -507,7 +507,7 @@ preserves the compatible two-mono-input default. Disabling or opting out of
 every configured row records no host Local Original. The input-map editor never
 changes Jamulus music settings.
 
-After that choice, current v0.28.3 source opens one path-free **Record
+After that choice, current v0.28.4 source opens one path-free **Record
 Session Readiness** sheet before it arms anything. The sheet lists every exact
 planned server track, Local Original, and Shared Track with its source label,
 mono/stereo format, required/optional status, current readiness, and a bounded
@@ -590,7 +590,7 @@ inventing guest evidence. Studio adds an undoable **Reset Mix** that preserves
 export inclusion, keeps overload indicators latched for the playback epoch,
 and automatically selects and opens a durably finalized take.
 
-The current v0.28.3 Studio source view distinguishes plan-bound Jamulus server,
+The current v0.28.4 Studio source view distinguishes plan-bound Jamulus server,
 Local Original, and Shared Track lanes and can show their current state, level,
 reported dropouts, and overload warning. A malformed, legacy, or duplicate
 projection is cleared rather than presented as authoritative source truth.
@@ -669,12 +669,12 @@ existing on GitHub does not manufacture that proof. Do not use an untagged
 checkout or ordinary branch build as a release.
 
 At the 2026-09-24 show-wave check, GitHub
-[Latest](https://github.com/rupret007/webjam/releases/latest) is published
-unsigned/ad-hoc [v0.28.3](https://github.com/rupret007/webjam/releases/tag/v0.28.3),
+[Latest](https://github.com/rupret007/webjam/releases/latest) published Latest remains v0.28.3 until
+unsigned/ad-hoc [v0.28.4] publishes; candidate(https://github.com/rupret007/webjam/releases/tag/v0.28.4),
 release `394985116`. Its annotated tag object
 `d004ccfb13f1d2ed9b4a95229dcd9dfc2bfd5b08` peels to
 `da16749abc9f87cde127e01ea10a7712e5ce7800`; its seven packages and
-`WebJam-v0.28.3-SHA256SUMS.txt` are the baseline download. No show-wave PR is
+`WebJam-v0.28.4-SHA256SUMS.txt` are the baseline download. No show-wave PR is
 included in that release merely because it has green branch CI.
 
 Historical download record: the
@@ -691,11 +691,11 @@ this unsigned round. Physical, signing, notarization, Gatekeeper, and
 SmartScreen results remain **NOT RUN**. Do not retag or mutate release
 `393030220`.
 
-The published v0.28.3 baseline includes #145–#148 and #150. The v0.28.2
+The published v0.28.4 baseline includes #145–#148 and #150. The v0.28.2
 draft at `a51154e5` remains a separate historical candidate. Shared Track play uses
 this Mac's BlackHole route and the bundled headless client; the signed catalog
 remains sealed at exact WebJam v0.22.5. The baked Jamulus 3.12.2 and 3.12.3
-records extend through v0.28.3, so Host/Join and the required package-build
+records extend through v0.28.4, so Host/Join and the required package-build
 gate are source-eligible. Every physical result remains **NOT RUN**.
 
 The prior

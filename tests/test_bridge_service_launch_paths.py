@@ -67,9 +67,9 @@ def _make_bridge():
         },
         component_store_root=isolated_component_store_root(),
     )
-    # Exercise the approved v0.28.3 baked-component boundary. The sealed
+    # Exercise the approved v0.28.4 baked-component boundary. The sealed
     # public catalog remains independently pinned to exact WebJam v0.22.5.
-    bridge._runtime_webjam_version = MagicMock(return_value="0.28.3")
+    bridge._runtime_webjam_version = MagicMock(return_value="0.28.4")
     return bridge
 
 
@@ -866,7 +866,7 @@ class TestFindJamulusFallback(unittest.TestCase):
                 "Jamulus.app/Contents/MacOS/Jamulus"
             ),
         ):
-            self.assertEqual(bridge._runtime_webjam_version(), "0.28.3")
+            self.assertEqual(bridge._runtime_webjam_version(), "0.28.4")
             self.assertEqual(
                 bridge._approved_embedded_runtime_versions(JamulusRole.CLIENT),
                 frozenset({"3.12.2", "3.12.3"}),

@@ -41,6 +41,16 @@ All notable improvements and features for the WebJam creator collaboration platf
   and checksum receipt, and distinguishes standalone Music from Preview
   restrictions. Older release details are explicitly historical.
 
+## [0.28.4] — Unsigned/ad-hoc private test release candidate
+
+> Private unsigned/ad-hoc test candidate on master after Send to Logic (#155).
+> Bumps packaged version from 0.28.3 to 0.28.4. Existing v0.28.3 remains its
+> own immutable published release until this candidate is tagged and published.
+> Physical/signing/notarization remain **NOT RUN**.
+
+### Added
+- Send to Logic button with adapter for take handoff (#155).
+
 ## [0.28.3] — Unsigned/ad-hoc private test release candidate
 
 > Prepared for Jeff Story testing after #145, #146, #147, #148, and #150.
