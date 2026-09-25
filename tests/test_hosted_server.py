@@ -615,7 +615,9 @@ class TestHostedServerDiscovery(unittest.TestCase):
     def test_future_source_still_rejects_the_bundled_server(self):
         with tempfile.TemporaryDirectory() as tmp:
             bridge = self._real_discovery_bridge(tmp)
-            bridge._runtime_webjam_version = MagicMock(return_value="0.28.4")
+            # Beyond the approved baked ceiling (0.28.4): future source must still
+            # reject the bundled server until the compatibility range is extended.
+            bridge._runtime_webjam_version = MagicMock(return_value="0.28.5")
             with patch.object(Path, "is_file", return_value=True), patch(
                 "services.bridge_service._bundled_jamulus_server_candidate",
                 return_value="/bundled/JamulusServer",
