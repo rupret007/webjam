@@ -550,11 +550,11 @@ CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
         quick_help=(
             "Preview opens a room for artists in any medium: talk while you "
             "paint, draw, sculpt, or build. The host may add a shared canvas "
-            "via Drawpile and a local video file or YouTube lesson to follow. "
+            "via Drawpile and a local video or YouTube lesson to follow. "
             "Each artist opens their own copy and follows the host's transport. "
             "WebJam draws no strokes, ships no video, and follows nothing it "
-            "cannot prove is the same file. There is no camera feed, recorded "
-            f"take, or frame-accurate review. {MEETING_DIRECT_CAPTURE_BOUNDARY}"
+            "cannot prove is the same file. There is no camera feed, no recorded "
+            f"take, and no frame-accurate review. {MEETING_DIRECT_CAPTURE_BOUNDARY}"
         ),
         review_prompts=(
             "What did this piece need that you could not see alone?",
