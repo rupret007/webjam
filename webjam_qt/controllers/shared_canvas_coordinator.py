@@ -325,6 +325,10 @@ class SharedCanvasCoordinator:
         self._intent_generation += 1
         if action is SharedCanvasPendingAction.SHARE:
             host.share(projection.join_url)
+        elif action is SharedCanvasPendingAction.WITHDRAW:
+            # Keep the last accepted local offer available until the peer plane
+            # confirms withdrawal with a matching typed receipt.
+            pass
         else:
             host.withdraw()
         pending = _PendingPublication(action, projection)
@@ -387,6 +391,8 @@ class SharedCanvasCoordinator:
             if current and accepted:
                 if (generation == self._generation and intent == self._intent_generation
                         and pending is self._pending):
+                    if pending.action is SharedCanvasPendingAction.WITHDRAW:
+                        host.withdraw()
                     self._accepted_projection = pending.projection
                     self._pending = None
         if self._inflight is pending:
