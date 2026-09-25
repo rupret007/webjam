@@ -1,13 +1,13 @@
-# WebJam creator guide — v0.28.3 source
+# WebJam creator guide — v0.28.4 source
 
-> This guide describes current unsigned v0.28.3 source. GitHub **Latest** is the
+> This guide describes current unsigned v0.28.4 source. GitHub **Latest** is the
 > immutable unsigned/ad-hoc v0.28.1 private test release `393030220` from exact
 > tag commit `200cac9eb04d01611696cdc147957b36daef257f`, with seven packages plus
 > `WebJam-v0.28.1-SHA256SUMS.txt`. A later checkout or branch artifact is source
 > evidence, not one of those checksum-bound packages. Older release entries
 > (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags
 > remain. The existing exact Jamulus 3.12.2 and 3.12.3 records are approved
-> through v0.28.3 for Host/Join. Windows remains unsigned; macOS remains ad-hoc
+> through v0.28.4 for Host/Join. Windows remains unsigned; macOS remains ad-hoc
 > signed and unnotarized. No physical, credentialed, signing, or notarization
 > PASS is claimed.
 

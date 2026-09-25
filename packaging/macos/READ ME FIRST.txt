@@ -73,9 +73,9 @@ handoffs. Reference video stays silent; each local-file guest needs a matching
 copy. No profile directly or automatically taps a meeting app, browser, or
 system output. Local scratchpad notes remain on this Mac only.
 
-The sealed v0.22.5 Jamulus catalog does not authorize this v0.28.3 candidate.
+The sealed v0.22.5 Jamulus catalog does not authorize this v0.28.4 candidate.
 The baked registry separately authorizes the existing exact Jamulus 3.12.2 and
-3.12.3 records through v0.28.3. Presence of embedded 3.12.2 bytes does not
+3.12.3 records through v0.28.4. Presence of embedded 3.12.2 bytes does not
 authorize an identity mismatch. Shared Track uses its separate approved
 headless path; unlisted client/server versions still fail closed.
 

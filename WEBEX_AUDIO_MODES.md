@@ -1,6 +1,6 @@
-# Meeting-platform companion guidance — v0.28.3 source
+# Meeting-platform companion guidance — v0.28.4 source
 
-> This document describes current unsigned v0.28.3 source. GitHub **Latest** is
+> This document describes current unsigned v0.28.4 source. GitHub **Latest** is
 > immutable unsigned/ad-hoc private test release `393030220`, published from
 > annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to exact commit `200cac9eb04d01611696cdc147957b36daef257f`, with
 > seven packages plus `WebJam-v0.28.1-SHA256SUMS.txt`. Older release entries

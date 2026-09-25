@@ -93,7 +93,7 @@ def _create_minimal_take(
     manifest = {
         "schema_version": 2,
         "revision": 1,
-        "app_version": "0.28.3",
+        "app_version": "0.28.4",
         "session_id": session_id,
         "take_id": take_id,
         "session_title": "Test Session",
@@ -349,7 +349,7 @@ def _create_multi_segment_take(
     manifest = {
         "schema_version": 2,
         "revision": 1,
-        "app_version": "0.28.3",
+        "app_version": "0.28.4",
         "session_id": str(uuid.uuid4()),
         "take_id": str(uuid.uuid4()),
         "session_title": "Multi-segment Session",
@@ -496,7 +496,7 @@ class TestPathSafety:
         manifest = {
             "schema_version": 2,
             "revision": 1,
-            "app_version": "0.28.3",
+            "app_version": "0.28.4",
             "session_id": str(uuid.uuid4()),
             "take_id": str(uuid.uuid4()),
             "session_title": "Traversal Test",
@@ -559,7 +559,7 @@ class TestPathSafety:
         manifest = {
             "schema_version": 2,
             "revision": 1,
-            "app_version": "0.28.3",
+            "app_version": "0.28.4",
             "session_id": str(uuid.uuid4()),
             "take_id": str(uuid.uuid4()),
             "session_title": "Symlink Test",
@@ -613,7 +613,7 @@ class TestPathSafety:
         manifest = {
             "schema_version": 2,
             "revision": 1,
-            "app_version": "0.28.3",
+            "app_version": "0.28.4",
             "session_id": str(uuid.uuid4()),
             "take_id": str(uuid.uuid4()),
             "session_title": "Missing File Test",
@@ -670,7 +670,7 @@ class TestPathSafety:
         manifest = {
             "schema_version": 2,
             "revision": 1,
-            "app_version": "0.28.3",
+            "app_version": "0.28.4",
             "session_id": str(uuid.uuid4()),
             "take_id": str(uuid.uuid4()),
             "session_title": "Traversal Test",

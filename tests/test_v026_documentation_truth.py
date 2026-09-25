@@ -1,4 +1,4 @@
-"""v0.28.3 candidate source; published Latest remains v0.28.1 until publish."""
+"""v0.28.4 candidate source; published Latest remains v0.28.1 until publish."""
 
 from __future__ import annotations
 
