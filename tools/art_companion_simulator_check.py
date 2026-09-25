@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +12,21 @@ from pathlib import Path
 
 def run(*arguments: str) -> str:
     return subprocess.check_output(arguments, text=True).strip()
+
+
+TRANSIENT_BACKGROUND_ASSERTION = "Failed to get background assertion for target app"
+
+
+def _should_retry_simulator_run(*, exit_code: int, log_path: Path) -> bool:
+    """Retry exactly once for known simulator infrastructure launch flakes."""
+
+    if exit_code == 0:
+        return False
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return TRANSIENT_BACKGROUND_ASSERTION in text
 
 
 def main() -> None:
@@ -42,22 +58,38 @@ def check_devices(root: Path, output: Path) -> None:
         log = output / f"{label}.log"
         entry = {"device": name, "status": "incomplete", "exit_code": None, "result": result.name}
         try:
-            with log.open("w", encoding="utf-8") as handle:
-                try:
-                    completed = subprocess.run(
-                        [
-                            "xcodebuild", "-project", str(root / "ios/WebJamArtCompanion.xcodeproj"),
-                            "-scheme", "ArtCompanion", "-sdk", "iphonesimulator",
-                            "-destination", f"platform=iOS Simulator,id={identifier}",
-                            "-parallel-testing-enabled", "NO", "-resultBundlePath", str(result),
-                            "CODE_SIGNING_ALLOWED=NO", "test",
-                        ],
-                        stdout=handle, stderr=subprocess.STDOUT, timeout=900, check=False,
-                    )
-                    entry.update(status="passed" if completed.returncode == 0 else "failed",
-                                 exit_code=completed.returncode)
-                except subprocess.TimeoutExpired:
-                    entry.update(status="timed_out", exit_code=124)
+            max_attempts = 2
+            for attempt in range(1, max_attempts + 1):
+                if result.exists():
+                    shutil.rmtree(result, ignore_errors=True)
+                with log.open("a" if attempt > 1 else "w", encoding="utf-8") as handle:
+                    if attempt > 1:
+                        handle.write(
+                            "\n--- retrying once after simulator background assertion flake ---\n\n"
+                        )
+                    try:
+                        completed = subprocess.run(
+                            [
+                                "xcodebuild", "-project", str(root / "ios/WebJamArtCompanion.xcodeproj"),
+                                "-scheme", "ArtCompanion", "-sdk", "iphonesimulator",
+                                "-destination", f"platform=iOS Simulator,id={identifier}",
+                                "-parallel-testing-enabled", "NO", "-resultBundlePath", str(result),
+                                "CODE_SIGNING_ALLOWED=NO", "test",
+                            ],
+                            stdout=handle, stderr=subprocess.STDOUT, timeout=900, check=False,
+                        )
+                    except subprocess.TimeoutExpired:
+                        entry.update(status="timed_out", exit_code=124)
+                        break
+                if completed.returncode == 0:
+                    entry.update(status="passed", exit_code=0)
+                    break
+                if (attempt < max_attempts and _should_retry_simulator_run(
+                    exit_code=completed.returncode, log_path=log
+                )):
+                    continue
+                entry.update(status="failed", exit_code=completed.returncode)
+                break
             export_code = 0
             if result.exists():
                 with (output / f"{label}-export.log").open("w", encoding="utf-8") as handle:
