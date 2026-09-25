@@ -549,12 +549,14 @@ CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
         default_goal="Share a table, talk, and move one piece forward.",
         quick_help=(
             "Preview opens a room for artists in any medium: talk while you "
-            "paint, draw, sculpt, or build. The host may add a shared canvas "
-            "via Drawpile and a local video or YouTube lesson to follow. "
-            "Each artist opens their own copy and follows the host's transport. "
-            "WebJam draws no strokes, ships no video, and follows nothing it "
-            "cannot prove is the same file. There is no camera feed, no recorded "
-            f"take, and no frame-accurate review. {MEETING_DIRECT_CAPTURE_BOUNDARY}"
+            "paint, draw, sculpt, or build. The host may add a shared canvas, "
+            "painted by Drawpile and only brokered by WebJam, and one local "
+            "video file they have the right to play, which each artist opens "
+            "their own copy of and which follows the host's transport. WebJam "
+            "draws no strokes, ships and downloads no video, and follows "
+            "nothing it cannot prove is the same file. There is no camera "
+            "feed, no recorded take, and no frame-accurate or timecoded "
+            f"review. {MEETING_DIRECT_CAPTURE_BOUNDARY}"
         ),
         review_prompts=(
             "What did this piece need that you could not see alone?",
