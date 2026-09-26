@@ -848,7 +848,15 @@ QPushButton#LaunchPrimary:focus {
     border: 2px solid ${COLOR_TEXT_PRIMARY};
 }
 
-QPushButton#LaunchPrimary:disabled {
+QPushButton#LaunchPrimary:disabled,
+QPushButton#LaunchPrimary[joinBlocked="true"] {
+    background-color: ${COLOR_BG_PANEL};
+    color: ${COLOR_TEXT_MUTED};
+    border-color: ${COLOR_BORDER_SUBTLE};
+}
+
+QPushButton#LaunchPrimary[joinBlocked="true"]:hover,
+QPushButton#LaunchPrimary[joinBlocked="true"]:pressed {
     background-color: ${COLOR_BG_PANEL};
     color: ${COLOR_TEXT_MUTED};
     border-color: ${COLOR_BORDER_SUBTLE};

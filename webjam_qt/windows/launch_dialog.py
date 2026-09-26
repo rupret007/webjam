@@ -178,6 +178,40 @@ class _InvitationInput(QLineEdit):
             event.accept()
 
 
+class _JoinPrimaryButton(QPushButton):
+    """Join primary that stays keyboard-reachable before an invite is pasted."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._invite_ready = False
+        self._submission_locked = False
+        super().setEnabled(True)
+        self._sync_blocked_presentation()
+
+    def set_invite_ready(self, ready: bool) -> None:
+        self._invite_ready = bool(ready)
+        self._sync_blocked_presentation()
+
+    def set_submission_locked(self, locked: bool) -> None:
+        self._submission_locked = bool(locked)
+        self._sync_blocked_presentation()
+
+    def isEnabled(self) -> bool:
+        if self._submission_locked or not self._invite_ready:
+            return False
+        return super().isEnabled()
+
+    def _sync_blocked_presentation(self) -> None:
+        blocked = self._submission_locked or not self._invite_ready
+        super().setEnabled(True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, blocked)
+        self.setProperty("joinBlocked", blocked)
+        style = self.style()
+        style.unpolish(self)
+        style.polish(self)
+        self.update()
+
+
 class ProfileCard(QCommandLinkButton):
     """One equal first-screen choice: Art or Music.
 
@@ -883,10 +917,11 @@ class LaunchDialog(QDialog):
         self._join_error.setWordWrap(True)
         layout.addWidget(self._join_error)
 
-        self._join_button_primary = QPushButton()
+        self._join_button_primary = _JoinPrimaryButton()
         self._join_button_primary.setObjectName("LaunchPrimary")
         self._join_button_primary.setMinimumHeight(48)
         self._join_button_primary.setDefault(True)
+        self._join_button_primary.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._join_button_primary.clicked.connect(self._join)
         layout.addWidget(self._join_button_primary)
         layout.addStretch(2)
@@ -1123,7 +1158,9 @@ class LaunchDialog(QDialog):
             "Invitation pasted — choose Join" if has_invite else "Paste your invitation"
         )
         if hasattr(self, "_join_button_primary"):
-            self._join_button_primary.setEnabled(has_invite and not self._submitting)
+            self._join_button_primary.set_invite_ready(
+                has_invite and not self._submitting
+            )
 
     def _persist_role_choice(
         self, candidate: AppSettings, *, save_creator_choice: bool = True,
@@ -1192,6 +1229,8 @@ class LaunchDialog(QDialog):
         self.accept()
 
     def _join(self) -> None:
+        if not self._join_button_primary.isEnabled():
+            return
         value = self._invite_input.text()
         self._invite_input.clear()
         self.accept_invite(value)
@@ -1224,11 +1263,11 @@ class LaunchDialog(QDialog):
             )
             if not contains_private_material:
                 self._invite_input.setText(raw)
+            # Restore controls before showing the error; refreshing invite status
+            # would clear the message we are about to present.
+            self._restore_submission(refresh_invite_status=False)
             self._join_status.setText("Needs attention")
             self._join_error.setText(str(exc))
-            # The field was disabled during submission. Restore it before
-            # returning keyboard focus to the replacement invitation.
-            self._restore_submission()
             self._announce_error(self._join_error, focus=self._invite_input)
             return False
         return self.accept_invitation(
@@ -1340,7 +1379,7 @@ class LaunchDialog(QDialog):
         for action in self._workspace_actions.values():
             action.setEnabled(False)
         self._setup_action.setEnabled(False)
-        self._join_button_primary.setEnabled(False)
+        self._join_button_primary.set_submission_locked(True)
         self._invite_input.setEnabled(False)
         self._creator_profile_selector.setEnabled(False)
         for card in getattr(self, "_profile_cards", {}).values():
@@ -1353,7 +1392,7 @@ class LaunchDialog(QDialog):
         button.setAccessibleName(label)
         return True
 
-    def _restore_submission(self) -> None:
+    def _restore_submission(self, *, refresh_invite_status: bool = True) -> None:
         self._submitting = False
         for action in getattr(self, "_workspace_actions", {}).values():
             action.setEnabled(True)
@@ -1363,8 +1402,13 @@ class LaunchDialog(QDialog):
         self._apply_creator_profile_presentation()
         self._name_input.setEnabled(True)
         if hasattr(self, "_join_button_primary"):
+            self._join_button_primary.set_submission_locked(False)
             self._invite_input.setEnabled(True)
-            self._on_invite_text_changed()
+            if refresh_invite_status:
+                self._on_invite_text_changed()
+            else:
+                has_invite = bool(self._invite_input.text().strip())
+                self._join_button_primary.set_invite_ready(has_invite)
 
     def _validated_musician_name(self) -> str | None:
         try:
