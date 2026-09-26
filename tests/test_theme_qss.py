@@ -62,7 +62,7 @@ class TestStylesheet(unittest.TestCase):
     def test_settings_wizard_widgets_are_styled(self):
         # The SetupWizard QWizard previously rendered native chrome; keep it
         # inside the dark theme.
-        for selector in ("QWizard", "QSpinBox", "QLabel#WizardError"):
+        for selector in ("QWizard", "QSpinBox", "QLabel#WizardError", "QLabel#WizardNotice"):
             self.assertIn(selector, self.qss)
 
     def test_black_orange_theme_coverage_selectors_present(self):
@@ -76,6 +76,8 @@ class TestStylesheet(unittest.TestCase):
             "QLineEdit#CanvasChatInput",
             "#HelpDialog",
             "QLabel#StatusRecording",
+            "QLabel#StatusAudio",
+            "QPushButton#LaunchSecondary:disabled",
         ):
             self.assertIn(selector, self.qss)
 

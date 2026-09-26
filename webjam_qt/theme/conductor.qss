@@ -882,6 +882,22 @@ QPushButton#LaunchSecondary:focus {
     border: 2px solid ${COLOR_TEXT_PRIMARY};
 }
 
+QPushButton#LaunchSecondary:pressed {
+    background-color: ${COLOR_BG_PANEL};
+    border-color: ${COLOR_BORDER_STRONG};
+}
+
+QPushButton#LaunchSecondary:disabled {
+    background-color: ${COLOR_BG_PANEL};
+    color: ${COLOR_TEXT_MUTED};
+    border-color: ${COLOR_BORDER_SUBTLE};
+}
+
+QPushButton#LaunchSecondary:disabled:hover {
+    background-color: ${COLOR_BG_PANEL};
+    border-color: ${COLOR_BORDER_SUBTLE};
+}
+
 /* Orange marks the selected profile/activity. Keyboard focus on a different
    choice is white, so moving focus never looks like changing the room. */
 QCommandLinkButton#LaunchProfileCard {
@@ -1158,8 +1174,16 @@ QPushButton#QuietAction:focus {
 }
 
 #LaunchJoinStatus {
-    color: ${COLOR_TEXT_PRIMARY};
     font-size: ${FONT_SIZE_SM}px;
+}
+
+#LaunchJoinStatus[joinReady="false"] {
+    color: ${COLOR_TEXT_MUTED};
+    font-weight: ${FONT_WEIGHT_NORMAL};
+}
+
+#LaunchJoinStatus[joinReady="true"] {
+    color: ${COLOR_TEXT_PRIMARY};
     font-weight: ${FONT_WEIGHT_SEMIBOLD};
 }
 
@@ -1206,6 +1230,23 @@ QLabel#StatusRecording {
     color: ${COLOR_ACCENT_RECORD};
     font-weight: ${FONT_WEIGHT_BOLD};
     letter-spacing: 1px;
+}
+
+QLabel#StatusAudio,
+QLabel#StatusVideo,
+QLabel#StatusSession {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+    padding: 0 ${SPACE_SM}px;
+}
+
+QLabel#WizardNotice {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_SECONDARY};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_SM}px;
+    padding: ${SPACE_SM}px ${SPACE_MD}px;
+    font-size: ${FONT_SIZE_SM}px;
 }
 
 /* -------------------------------------------------------------------------
