@@ -11580,7 +11580,10 @@ class ApplicationController(QObject):
             self.window.session_strip.set_tools_enabled(not self.audio.stopping)
             self.window.set_status_audio("")
             self.window.set_status_server("")
-            self.window.set_status_video(self.bridge.webex_state)
+            # Conversation and SessionHud own live truth in Art; legacy status
+            # chips would only steal compact Notes height without new facts.
+            self.window.set_status_video("")
+            self.window.set_status_latency("")
             self.window.session_strip.set_video_state(
                 _meeting_open_action_label(self._effective_meeting_url()), enabled=True,
             )

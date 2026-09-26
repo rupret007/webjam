@@ -1087,15 +1087,20 @@ class ConductorWindow(QMainWindow):
 
     def set_status_recording(self, active: bool) -> None:
         """Show/hide the red ● REC chip in the status bar."""
-        self._status_recording.setVisible(bool(active))
+        self._set_status_chip_active(self._status_recording, bool(active))
         self._sync_status_bar_visibility()
+
+    def _set_status_chip_active(self, widget: QLabel, active: bool) -> None:
+        widget.setProperty("status_permanent", bool(active))
+        widget.setVisible(bool(active))
+
+    def _status_chip_requests_bar(self, widget: QLabel) -> bool:
+        return bool(widget.property("status_permanent"))
 
     def _sync_status_bar_visibility(self) -> None:
         has_message = bool(self._status_bar.currentMessage())
-        # Use isHidden(), not isVisible(): chip labels stay explicitly shown
-        # while the bar itself is still hidden, and isVisible() would lie.
         has_permanent = any(
-            not widget.isHidden()
+            self._status_chip_requests_bar(widget)
             for widget in (
                 self._status_recording,
                 self._status_audio,
@@ -1116,19 +1121,19 @@ class ConductorWindow(QMainWindow):
     def set_status_audio(self, text: str) -> None:
         label = str(text or "").strip()
         self._status_audio.setText(f"Audio: {label}" if label else "Audio: —")
-        self._status_audio.setVisible(bool(label))
+        self._set_status_chip_active(self._status_audio, bool(label))
         self._sync_status_bar_visibility()
 
     def set_status_video(self, text: str) -> None:
         label = str(text or "").strip()
         self._status_video.setText(f"Video: {label}" if label else "Video: —")
-        self._status_video.setVisible(bool(label))
+        self._set_status_chip_active(self._status_video, bool(label))
         self._sync_status_bar_visibility()
 
     def set_status_latency(self, text: str) -> None:
         label = str(text or "").strip()
         self._status_latency.setText(f"Session: {label}" if label else "Session: —")
-        self._status_latency.setVisible(bool(label))
+        self._set_status_chip_active(self._status_latency, bool(label))
         self._sync_status_bar_visibility()
 
     def set_status_routing(self, text: str) -> None:
