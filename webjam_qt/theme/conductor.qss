@@ -1219,6 +1219,7 @@ QTextBrowser#HelpBody {
     border-radius: ${RADIUS_MD}px;
     padding: ${SPACE_MD}px;
     font-size: ${FONT_SIZE_BASE}px;
+    max-height: ${LAYOUT_HELP_BODY_MAX_HEIGHT}px;
 }
 
 QDialogButtonBox#HelpActions QPushButton {

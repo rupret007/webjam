@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 
 from webjam_qt.controllers.window_layout import centered_window_rect
 from webjam_qt.theme.brand import render_brand_pixmap
-from webjam_qt.theme.tokens import Space
+from webjam_qt.theme.tokens import Layout, Space
 
 
 class HelpDialog(QDialog):
@@ -47,6 +47,7 @@ class HelpDialog(QDialog):
         self._body.setOpenLinks(False)
         self._body.setOpenExternalLinks(False)
         self._body.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._body.setMaximumHeight(Layout.HELP_BODY_MAX_HEIGHT)
         self._body.setHtml(body)
         content.addWidget(self._body, 1)
         layout.addLayout(content, 1)

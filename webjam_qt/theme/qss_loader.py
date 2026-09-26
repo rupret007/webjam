@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from webjam_qt.theme.tokens import Color, Font, Radius, Space
+from webjam_qt.theme.tokens import Color, Font, Layout, Radius, Space
 
 
 def load_stylesheet() -> str:
@@ -12,7 +12,7 @@ def load_stylesheet() -> str:
     template = qss_path.read_text(encoding="utf-8")
 
     substitutions: dict[str, str] = {}
-    for cls in (Color, Space, Radius, Font):
+    for cls in (Color, Space, Radius, Font, Layout):
         for name in dir(cls):
             if name.startswith("_"):
                 continue

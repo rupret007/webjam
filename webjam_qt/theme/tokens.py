@@ -80,6 +80,12 @@ class Radius:
     PILL = 999
 
 
+class Layout:
+    # Cap the help reader so enlarged text and shorter profiles still scroll
+    # inside the fixed dialog instead of expanding the viewport to fit.
+    HELP_BODY_MAX_HEIGHT = 260
+
+
 class Font:
     # Inter ships with the app (webjam_qt/theme/fonts, loaded in
     # app._configure_default_font); the rest of the chain is the fallback
