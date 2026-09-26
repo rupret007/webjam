@@ -1164,6 +1164,8 @@ class TestConductorWindow(unittest.TestCase):
         w = self._window()
         w.set_status_audio("Connected")
         self.assertIn("Connected", w._status_audio.text())
+        self.assertTrue(w._status_audio.isVisible())
+        self.assertTrue(w._status_bar.isVisible())
 
     def test_meeting_controls_are_bottom_aligned_and_end_is_destructive(self):
         w = self._window()

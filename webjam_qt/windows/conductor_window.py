@@ -57,7 +57,6 @@ from core.meeting_link import (
     RECORD_SESSION_MEETING_CAPTURE_NOTICE,
     STUDIO_MEETING_CAPTURE_NOTICE,
 )
-from webjam_qt.theme import Color
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets import (
     ParticipantGrid,
@@ -284,9 +283,6 @@ class ConductorWindow(QMainWindow):
         # musician). Deliberately loud: the whole band should know.
         self._status_recording = QLabel("● REC", self._status_bar)
         self._status_recording.setObjectName("StatusRecording")
-        self._status_recording.setStyleSheet(
-            f"color: {Color.ACCENT_RECORD}; font-weight: 700; letter-spacing: 1px;"
-        )
         self._status_recording.setToolTip(
             "The Jamulus server is recording this session — every musician "
             "gets their own track."
@@ -1089,10 +1085,20 @@ class ConductorWindow(QMainWindow):
     def set_status_recording(self, active: bool) -> None:
         """Show/hide the red ● REC chip in the status bar."""
         self._status_recording.setVisible(bool(active))
-        if active:
-            self._status_bar.setVisible(True)
-        elif not self._status_bar.currentMessage():
-            self._status_bar.setVisible(False)
+        self._sync_status_bar_visibility()
+
+    def _sync_status_bar_visibility(self) -> None:
+        has_message = bool(self._status_bar.currentMessage())
+        has_permanent = any(
+            widget.isVisible()
+            for widget in (
+                self._status_recording,
+                self._status_audio,
+                self._status_video,
+                self._status_latency,
+            )
+        )
+        self._status_bar.setVisible(has_message or has_permanent)
 
     def set_status_server(self, text: str) -> None:
         """Retain hosted-server text for diagnostics, not the live surface."""
@@ -1103,13 +1109,22 @@ class ConductorWindow(QMainWindow):
         self._status_server.setVisible(False)
 
     def set_status_audio(self, text: str) -> None:
-        self._status_audio.setText(f"Audio: {text}")
+        label = str(text or "").strip()
+        self._status_audio.setText(f"Audio: {label}" if label else "Audio: —")
+        self._status_audio.setVisible(bool(label))
+        self._sync_status_bar_visibility()
 
     def set_status_video(self, text: str) -> None:
-        self._status_video.setText(f"Video: {text}")
+        label = str(text or "").strip()
+        self._status_video.setText(f"Video: {label}" if label else "Video: —")
+        self._status_video.setVisible(bool(label))
+        self._sync_status_bar_visibility()
 
     def set_status_latency(self, text: str) -> None:
-        self._status_latency.setText(f"Session: {text}")
+        label = str(text or "").strip()
+        self._status_latency.setText(f"Session: {label}" if label else "Session: —")
+        self._status_latency.setVisible(bool(label))
+        self._sync_status_bar_visibility()
 
     def set_status_routing(self, text: str) -> None:
         # Routing is automatic and intentionally absent from the musician UI.
@@ -1149,8 +1164,7 @@ class ConductorWindow(QMainWindow):
         if not text:
             self._flash_message_token = None
             self._status_bar.setStyleSheet("")
-            if not self._status_recording.isVisible():
-                self._status_bar.setVisible(False)
+            self._sync_status_bar_visibility()
 
     def resizeEvent(self, event) -> None:
         """Keep every bottom-bar action readable on compact live windows."""

@@ -74,6 +74,8 @@ class TestStylesheet(unittest.TestCase):
             "QLabel#TakeTitle",
             "QLabel#ParticipantAvatar",
             "QLineEdit#CanvasChatInput",
+            "#HelpDialog",
+            "QLabel#StatusRecording",
         ):
             self.assertIn(selector, self.qss)
 

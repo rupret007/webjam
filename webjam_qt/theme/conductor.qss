@@ -1160,10 +1160,44 @@ QPushButton#QuietAction:focus {
     font-size: ${FONT_SIZE_XS}px;
 }
 
-#LaunchError {
+QLabel#LaunchError, QLabel#LaunchNamePreview[error="true"] {
     color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_SM}px;
+    padding: ${SPACE_SM}px ${SPACE_MD}px;
     min-height: 20px;
     font-size: ${FONT_SIZE_SM}px;
+}
+
+#LaunchNameLabel, #LaunchCreatorProfileLabel {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#HelpDialog {
+    background-color: ${COLOR_BG_BASE};
+}
+
+QTextBrowser#HelpBody {
+    background-color: ${COLOR_BG_INPUT};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_MD}px;
+    font-size: ${FONT_SIZE_BASE}px;
+}
+
+QDialogButtonBox#HelpActions QPushButton {
+    min-width: 120px;
+    min-height: 34px;
+}
+
+QLabel#StatusRecording {
+    color: ${COLOR_ACCENT_RECORD};
+    font-weight: ${FONT_WEIGHT_BOLD};
+    letter-spacing: 1px;
 }
 
 /* -------------------------------------------------------------------------
