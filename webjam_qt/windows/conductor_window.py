@@ -298,8 +298,11 @@ class ConductorWindow(QMainWindow):
         self._status_server.setVisible(False)
 
         self._status_audio = QLabel("Audio: —", self._status_bar)
+        self._status_audio.setObjectName("StatusAudio")
         self._status_video = QLabel("Video: —", self._status_bar)
+        self._status_video.setObjectName("StatusVideo")
         self._status_latency = QLabel("Session: —", self._status_bar)
+        self._status_latency.setObjectName("StatusSession")
         self._status_routing = QLabel("", self._status_bar)
         self._status_audio.setVisible(False)
         self._status_video.setVisible(False)

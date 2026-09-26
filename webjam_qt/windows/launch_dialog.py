@@ -1157,6 +1157,10 @@ class LaunchDialog(QDialog):
         self._join_status.setText(
             "Invitation pasted — choose Join" if has_invite else "Paste your invitation"
         )
+        self._join_status.setProperty("joinReady", "true" if has_invite else "false")
+        join_style = self._join_status.style()
+        join_style.unpolish(self._join_status)
+        join_style.polish(self._join_status)
         if hasattr(self, "_join_button_primary"):
             self._join_button_primary.set_invite_ready(
                 has_invite and not self._submitting
