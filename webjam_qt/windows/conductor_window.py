@@ -1092,8 +1092,10 @@ class ConductorWindow(QMainWindow):
 
     def _sync_status_bar_visibility(self) -> None:
         has_message = bool(self._status_bar.currentMessage())
+        # Use isHidden(), not isVisible(): chip labels stay explicitly shown
+        # while the bar itself is still hidden, and isVisible() would lie.
         has_permanent = any(
-            widget.isVisible()
+            not widget.isHidden()
             for widget in (
                 self._status_recording,
                 self._status_audio,
