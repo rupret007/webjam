@@ -145,7 +145,7 @@ def test_art_door_is_two_starts_then_host_join(qapp, tmp_path: Path):
         ] == [
             (
                 "Make together",
-                "Talk and make with your own tools, or share a canvas.",
+                "Talk and make with your own tools.",
             ),
             (
                 "Paint along",
