@@ -86,7 +86,7 @@ def test_art_and_music_are_equal_first_clicks(qapp, tmp_path: Path):
         ]
         assert [(card.accessibleName(), card.description()) for card in cards] == [
             ("Art", "Make art together."),
-            ("Music", "Play live together."),
+            ("Music", "Write songs or play live together."),
         ]
         assert cards[0].isChecked() is False
         assert cards[1].isChecked() is True
@@ -145,11 +145,11 @@ def test_art_door_is_two_starts_then_host_join(qapp, tmp_path: Path):
         ] == [
             (
                 "Make together",
-                "Talk and make with your own tools, or share a canvas.",
+                "Paint, sculpt, 3D print, or just talk.",
             ),
             (
                 "Paint along",
-                "Paint beside a silent video, from a file or lesson link.",
+                "Follow a silent video from a file or lesson link.",
             ),
         ]
         assert others == ["Host", "Join"]

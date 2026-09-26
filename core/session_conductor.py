@@ -748,9 +748,9 @@ def _presentation(
         if facts.art_room is ArtRoomState.CONNECTED:
             return present(
                 SessionPrimaryAction.NONE, "You’re in",
-                "Make together with your own tools. Paint along and Conversation "
-                "are here when you want them.",
-                "Room connection confirmed. Paint along checks your local video separately.",
+                "Make from your own space with your own tools. "
+                "Conversation is here when you want to talk.",
+                "Room connection confirmed. Optional shared layers have their own next step.",
             )
         if facts.art_room is ArtRoomState.RECONNECTING:
             return present(

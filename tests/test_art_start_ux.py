@@ -299,7 +299,7 @@ def test_a_profile_without_cards_keeps_its_headline_and_helper(
         assert dialog._choice_title.isVisibleTo(dialog._choice_page) is False
         assert dialog._choice_subtitle.isVisibleTo(dialog._choice_page) is False
         assert dialog._choice_helper.text() == ""
-        assert dialog._music_profile_card.description() == "Play live together."
+        assert dialog._music_profile_card.description() == "Write songs or play live together."
         assert dialog._creator_profile_label.isVisibleTo(dialog._choice_page) is False
         assert dialog._creator_profile_selector.isVisibleTo(dialog._choice_page) is False
         assert set(dialog._workspace_actions) == {"music", "podcast_voice", "review_rehearsal"}
@@ -456,7 +456,7 @@ def test_joining_asks_for_one_invitation_and_nothing_else(qapp, tmp_path: Path):
         assert dialog._join_title.text() == "Join the room."
         assert "paste the invite" in dialog._join_subtitle.text().casefold()
         described = dialog._join_button_primary.accessibleDescription().casefold()
-        assert "nothing else to pick" in described
+        assert described == "paste the host's invite to join their activity."
 
         # No start card is reachable from the join page.
         for cards in dialog._start_cards.values():
@@ -566,11 +566,11 @@ def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
         ] == [
             (
                 "Make together",
-                "Talk and make with your own tools, or share a canvas.",
+                "Paint, sculpt, 3D print, or just talk.",
             ),
             (
                 "Paint along",
-                "Paint beside a silent video, from a file or lesson link.",
+                "Follow a silent video from a file or lesson link.",
             ),
         ]
         others = [
@@ -708,5 +708,48 @@ def test_paint_along_mark_stays_neutral_in_every_native_icon_state(qapp, tmp_pat
                             assert pixel.red() == pixel.green() == pixel.blue(), (mode, state, x, y)
                             levels.add(pixel.red())
                 assert len(levels) > 16  # The detailed face must remain, not an empty icon.
+    finally:
+        dialog.deleteLater()
+
+
+def test_music_quick_help_keeps_webex_off_the_door_contract():
+    """Music profile copy must not carry door-banned Webex."""
+
+    music = get_creator_profile_by_key("music")
+    spoken = music.quick_help.casefold()
+    assert "webex" not in spoken
+    assert "show webex app" not in spoken
+    assert "talk in conversation" in spoken
+    assert "join / open meeting" in spoken
+
+
+def test_make_together_summary_does_not_promise_a_canvas_at_start():
+    """Canvas is an in-room optional add-on, not a start-card promise."""
+
+    start = get_creator_profile_by_key("art").get_start("talk_and_make")
+    assert start.summary == "Paint, sculpt, 3D print, or just talk."
+    assert "canvas" not in start.summary.casefold()
+    assert start.talk_only is True
+    assert start.shared_canvas is False
+    assert "shared canvas from inside the room" in start.detail.casefold()
+    assert "work in their own space" in start.detail.casefold()
+
+
+@pytest.mark.parametrize("profile_key", ["music", "art"])
+def test_live_door_harvest_keeps_other_workspaces_off_screen(qapp, tmp_path, profile_key):
+    dialog = _dialog(tmp_path, profile_key)
+    try:
+        # Harvest both Art selections, including the changing Host description.
+        for card in _visible_cards(dialog) or [None]:
+            if card is not None:
+                card.click()
+            spoken = harvest_first_screen(dialog)
+            assert_no_banned_first_screen_words(spoken)
+            for hidden_door in ("podcast", "review", "new music project"):
+                assert hidden_door not in spoken
+            assert "write songs or play live together" in spoken
+            if profile_key == "art":
+                assert "paint, sculpt, 3d print, or just talk" in spoken
+                assert "follow a silent video from a file or lesson link" in spoken
     finally:
         dialog.deleteLater()

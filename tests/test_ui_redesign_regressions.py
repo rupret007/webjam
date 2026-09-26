@@ -141,7 +141,7 @@ def test_launch_hierarchy_is_one_primary_then_two_clear_alternatives(
         assert dialog._studio_button.isHidden()
         assert not dialog._studio_button.isVisibleTo(dialog)
         assert dialog._choice_helper.text() == ""
-        assert dialog._music_profile_card.description() == "Play live together."
+        assert dialog._music_profile_card.description() == "Write songs or play live together."
         assert dialog._art_profile_card.description() == "Make art together."
         assert dialog._name_input.accessibleName() == "Your name"
         assert not dialog._name_label.isVisibleTo(dialog)
@@ -212,7 +212,7 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
         ):
             assert not hidden.isVisibleTo(dialog)
         assert dialog._choice_helper.text() == ""
-        assert dialog._music_profile_card.description() == "Play live together."
+        assert dialog._music_profile_card.description() == "Write songs or play live together."
         assert dialog._name_input.accessibleName() == "Your name"
 
         dialog.show_join()
@@ -300,7 +300,7 @@ def test_windows_launch_name_roles_and_installer_do_not_overlap_at_default_size(
         ):
             assert not hidden.isVisibleTo(dialog)
         assert dialog._name_input.accessibleName() == "Your name"
-        assert dialog._music_profile_card.description() == "Play live together."
+        assert dialog._music_profile_card.description() == "Write songs or play live together."
         art_rect = _rect_in(dialog._art_profile_card, dialog)
         music_rect = _rect_in(dialog._music_profile_card, dialog)
         assert dialog._art_profile_card.isVisibleTo(dialog)
