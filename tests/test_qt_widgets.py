@@ -1168,6 +1168,35 @@ class TestConductorWindow(unittest.TestCase):
         self.assertFalse(w._status_audio.isHidden())
         self.assertFalse(w._status_bar.isHidden())
 
+    def test_status_chips_layout_without_overlap_when_shown(self):
+        w = self._window()
+        w.resize(1200, 800)
+        w.show()
+        _qapp().processEvents()
+        try:
+            w.set_status_audio("Connected")
+            w.set_status_video("On")
+            w.set_status_latency("42 ms")
+            _qapp().processEvents()
+            chips = (w._status_audio, w._status_video, w._status_latency)
+            bar_rect = w._status_bar.rect()
+            for chip in chips:
+                geo = chip.geometry()
+                self.assertGreater(geo.width(), 0)
+                self.assertGreater(geo.height(), 0)
+                self.assertGreaterEqual(geo.left(), bar_rect.left())
+                self.assertLessEqual(geo.right(), bar_rect.right())
+                self.assertGreaterEqual(geo.top(), bar_rect.top())
+                self.assertLessEqual(geo.bottom(), bar_rect.bottom())
+            for index, first in enumerate(chips):
+                for second in chips[index + 1 :]:
+                    self.assertFalse(
+                        first.geometry().intersects(second.geometry()),
+                        msg=(first.text(), second.text()),
+                    )
+        finally:
+            w.close()
+
     def test_meeting_controls_are_bottom_aligned_and_end_is_destructive(self):
         w = self._window()
         w.resize(1200, 800)

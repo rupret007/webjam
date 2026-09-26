@@ -81,8 +81,11 @@ class Radius:
 
 
 class Layout:
-    # Cap the help reader so enlarged text and shorter profiles still scroll
-    # inside the fixed dialog instead of expanding the viewport to fit.
+    # HelpDialog body viewport cap (px). Must fit the longest profile copy
+    # (Art “Paint along…” section) plus footer OK row inside the fixed dialog
+    # on the smallest supported geometry (760×600 with 80px margins in
+    # tests/test_help_dialog.py::test_real_help_fits_scrolls_and_returns_without_changing_work).
+    # Python setMaximumHeight is authoritative; conductor.qss max-height mirrors it.
     HELP_BODY_MAX_HEIGHT = 260
 
 

@@ -308,7 +308,11 @@ class ConductorWindow(QMainWindow):
         self._status_video.setVisible(False)
         self._status_latency.setVisible(False)
         self._status_routing.setVisible(False)
+        # Permanent widgets stack right-to-left in add order; REC stays rightmost.
         self._status_bar.addPermanentWidget(self._status_recording)
+        self._status_bar.addPermanentWidget(self._status_latency)
+        self._status_bar.addPermanentWidget(self._status_video)
+        self._status_bar.addPermanentWidget(self._status_audio)
         self._status_bar.clearMessage()
         self._status_bar.setVisible(False)
         # Reset any temporary flash_message() color once its timed message
