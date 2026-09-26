@@ -370,7 +370,7 @@ def test_make_together_keeps_canvas_setup_inside_the_room(qapp, tmp_path: Path):
         cards = {card.start_key: card for card in _visible_cards(dialog)}
         cards["talk_and_make"].setChecked(True)
         described = cards["talk_and_make"].accessibleDescription().casefold()
-        assert "use your own tools, or just talk" in described
+        assert "work in their own space" in described
         assert "shared canvas from inside the room" in described
     finally:
         dialog.deleteLater()
@@ -710,6 +710,29 @@ def test_paint_along_mark_stays_neutral_in_every_native_icon_state(qapp, tmp_pat
                 assert len(levels) > 16  # The detailed face must remain, not an empty icon.
     finally:
         dialog.deleteLater()
+
+
+def test_music_quick_help_keeps_webex_off_the_door_contract():
+    """Music profile copy must not carry door-banned Webex."""
+
+    music = get_creator_profile_by_key("music")
+    spoken = music.quick_help.casefold()
+    assert "webex" not in spoken
+    assert "show webex app" not in spoken
+    assert "talk in conversation" in spoken
+    assert "join / open meeting" in spoken
+
+
+def test_make_together_summary_does_not_promise_a_canvas_at_start():
+    """Canvas is an in-room optional add-on, not a start-card promise."""
+
+    start = get_creator_profile_by_key("art").get_start("talk_and_make")
+    assert start.summary == "Paint, sculpt, 3D print, or just talk."
+    assert "canvas" not in start.summary.casefold()
+    assert start.talk_only is True
+    assert start.shared_canvas is False
+    assert "shared canvas from inside the room" in start.detail.casefold()
+    assert "work in their own space" in start.detail.casefold()
 
 
 @pytest.mark.parametrize("profile_key", ["music", "art"])

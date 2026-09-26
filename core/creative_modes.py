@@ -413,8 +413,9 @@ _ART_STARTS = (
         label="Make together",
         summary="Paint, sculpt, 3D print, or just talk.",
         detail=(
-            "Use your own tools, or just talk. The host can open a "
-            "shared canvas from inside the room."
+            "Open one room to talk and make. Everyone can work in their own "
+            "space. The host can open one shared canvas from inside the room "
+            "when the group wants to draw together."
         ),
     ),
     CreatorStart(
@@ -439,10 +440,10 @@ CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
         default_goal="Lock timing and balance for one complete song run.",
         quick_help=(
             "Use WebJam's live audio path for the music; an external meeting "
-            "link remains optional for conversation. Talk in Webex · play in "
-            "WebJam. To watch a movie or demo together, choose Join / Open "
-            "Meeting or Show Webex App, then in Webex choose Share and pick the "
-            "WebJam window or your demo. WebJam does not play the movie."
+            "link remains optional for conversation. Talk in Conversation · "
+            "play in WebJam. To watch a movie or demo together, open "
+            "Conversation, choose Join / Open Meeting, then share the WebJam "
+            "window or your demo in that meeting. WebJam does not play the movie."
         ),
         review_prompts=(
             "What section needs a tighter groove?",
