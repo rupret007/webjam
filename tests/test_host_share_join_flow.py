@@ -518,6 +518,7 @@ def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     assert visible_fields == [dialog._invite_input]
     assert dialog._name_input.isVisibleTo(dialog) is False
     assert dialog._join_button_primary.text() == "Join"
+    assert dialog._join_button_primary.isEnabled() is False
     assert dialog._join_status.text() == "Paste your invitation"
     assert "never saved" in dialog._join_privacy.text()
     assert dialog._invite_input.echoMode() is QLineEdit.EchoMode.Password
@@ -558,7 +559,7 @@ def test_join_door_reports_checking_without_reflecting_private_text(
     assert "incomplete" in dialog._join_error.text().casefold()
     assert dialog._invite_input.text() == ""
     assert "PRIVATE-CAPABILITY-SENTINEL" not in rendered
-    assert dialog._join_button_primary.isEnabled()
+    assert dialog._join_button_primary.isEnabled() is False
     dialog.close()
 
 
@@ -608,7 +609,7 @@ def test_pasted_join_save_failure_is_visible_and_retryable(qapp, tmp_path):
     assert dialog._invite_input.text() == ""
     assert dialog._invite_input.hasFocus()
     assert dialog._join_button_primary.text() == "Join"
-    assert dialog._join_button_primary.isEnabled()
+    assert dialog._join_button_primary.isEnabled() is False
     dialog.close()
 
 
@@ -634,7 +635,7 @@ def test_cold_invitation_save_failure_is_visible_on_join_page(qapp, tmp_path):
     assert dialog._invite_input.text() == ""
     assert dialog._invite_input.hasFocus()
     assert dialog._join_button_primary.text() == "Join"
-    assert dialog._join_button_primary.isEnabled()
+    assert dialog._join_button_primary.isEnabled() is False
     dialog.close()
 
 

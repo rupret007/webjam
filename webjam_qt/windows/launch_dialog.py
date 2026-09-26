@@ -64,7 +64,7 @@ from webjam_qt.invitation_ingress import (
     parse_invitation_at_ingress,
 )
 from webjam_qt.theme.brand import BrandMark
-from webjam_qt.theme.tokens import Space
+from webjam_qt.theme.tokens import Color, Space
 from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
 
 LOGGER = logging.getLogger("webjam.qt.launch_dialog")
@@ -437,7 +437,9 @@ class LaunchDialog(QDialog):
         brand_row.setSpacing(Space.SM)
         self._logo = BrandMark(30)
         self._logo.setObjectName("LaunchBrandMark")
-        self._wordmark = QLabel('Web<span style="color: #BF5700;">Jam</span>')
+        self._wordmark = QLabel(
+            f'Web<span style="color: {Color.ACCENT_PRIMARY};">Jam</span>'
+        )
         self._wordmark.setObjectName("LaunchLogo")
         self._wordmark.setTextFormat(Qt.TextFormat.RichText)
         self._wordmark.setAccessibleName("WebJam")
@@ -894,6 +896,7 @@ class LaunchDialog(QDialog):
         back.clicked.connect(self.show_choices)
         layout.addWidget(back, 0, Qt.AlignmentFlag.AlignHCenter)
         self._apply_creator_profile_presentation()
+        self._on_invite_text_changed()
         return page
 
     @property
@@ -1115,11 +1118,12 @@ class LaunchDialog(QDialog):
             return
         self.invitation_meeting_url = ""
         self._clear_join_error()
+        has_invite = bool(self._invite_input.text().strip())
         self._join_status.setText(
-            "Invitation pasted — choose Join"
-            if self._invite_input.text().strip()
-            else "Paste your invitation"
+            "Invitation pasted — choose Join" if has_invite else "Paste your invitation"
         )
+        if hasattr(self, "_join_button_primary"):
+            self._join_button_primary.setEnabled(has_invite and not self._submitting)
 
     def _persist_role_choice(
         self, candidate: AppSettings, *, save_creator_choice: bool = True,
@@ -1359,8 +1363,8 @@ class LaunchDialog(QDialog):
         self._apply_creator_profile_presentation()
         self._name_input.setEnabled(True)
         if hasattr(self, "_join_button_primary"):
-            self._join_button_primary.setEnabled(True)
             self._invite_input.setEnabled(True)
+            self._on_invite_text_changed()
 
     def _validated_musician_name(self) -> str | None:
         try:
