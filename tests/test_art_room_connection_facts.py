@@ -47,6 +47,8 @@ def test_art_room_can_connect_with_no_audio_evidence(role):
     assert facts.local_participant is EvidenceState.NOT_STARTED
     assert facts.human_two_way_audibility is EvidenceState.NOT_STARTED
     assert "Jamulus" not in view.message
+    assert view.message.startswith("Make from your own space")
+    assert "paint along" not in view.message.casefold()
 
 
 def test_room_membership_does_not_make_music_connected():

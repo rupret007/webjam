@@ -566,7 +566,7 @@ def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
         ] == [
             (
                 "Make together",
-                "Talk and make with your own tools, or share a canvas.",
+                "Talk and make with your own tools.",
             ),
             (
                 "Paint along",
@@ -710,3 +710,49 @@ def test_paint_along_mark_stays_neutral_in_every_native_icon_state(qapp, tmp_pat
                 assert len(levels) > 16  # The detailed face must remain, not an empty icon.
     finally:
         dialog.deleteLater()
+
+
+def test_music_quick_help_keeps_webex_off_the_door_contract():
+    """MiniMax leftover: Music profile copy must not carry door-banned Webex."""
+
+    music = get_creator_profile_by_key("music")
+    spoken = music.quick_help.casefold()
+    assert "webex" not in spoken
+    assert "show webex app" not in spoken
+    assert "talk in conversation" in spoken
+    assert "join / open meeting" in spoken
+
+
+def test_make_together_summary_does_not_promise_a_canvas_at_start():
+    """Canvas is an in-room optional add-on, not a start-card promise."""
+
+    start = get_creator_profile_by_key("art").get_start("talk_and_make")
+    assert start.summary == "Talk and make with your own tools."
+    assert "share a canvas" not in start.summary.casefold()
+    assert start.talk_only is True
+    assert start.shared_canvas is False
+    assert "shared canvas from inside the room" in start.detail.casefold()
+    assert "work in their own space" in start.detail.casefold()
+
+
+def test_music_door_hides_new_music_project_role_copy(qapp, tmp_path: Path):
+    """ROLE_COPY local studio stays off the live Music Host/Join door."""
+
+    dialog = _dialog(tmp_path, "music")
+    try:
+        assert dialog._studio_button.isHidden() is True
+        assert dialog._studio_button.isEnabled() is False
+        assert "New Music Project" not in [
+            button.text()
+            for button in _visible_buttons(dialog)
+            if button.objectName() in {"LaunchPrimary", "LaunchSecondary"}
+        ]
+        spoken = _first_screen_spoken(dialog)
+        # File menu may still offer workspace routes; the live door buttons do not.
+        assert dialog._host_button.text() == "Host"
+        assert dialog._join_button.text() == "Join"
+        _assert_first_screen_has_no_banned_words(spoken)
+    finally:
+        dialog.deleteLater()
+
+
