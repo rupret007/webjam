@@ -11566,6 +11566,7 @@ class ApplicationController(QObject):
             return
         room = getattr(self, "_room_participant", None)
         if room is not None and (self.creator_profile.key == "art" or self._art_room_active()):
+            self.window.set_legacy_status_chips_enabled(False)
             hosting = (getattr(self.audio, "_stop_hosting", False)
                        if self.audio.stopping or self.audio.cleanup_retry_required
                        else room.role == "host")
@@ -11591,6 +11592,7 @@ class ApplicationController(QObject):
             self.window.webex_embed.set_launch_status(self.bridge.webex_state)
             self._update_session_hud()
             return
+        self.window.set_legacy_status_chips_enabled(True)
         # A launched process is not the same as a proven Jamulus session.  Keep
         # the "Running" wording out of the UI until participant/RPC truth has
         # arrived; the button can still offer Stop Audio for a live subprocess.

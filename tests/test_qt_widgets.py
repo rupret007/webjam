@@ -1168,6 +1168,43 @@ class TestConductorWindow(unittest.TestCase):
         self.assertFalse(w._status_audio.isHidden())
         self.assertFalse(w._status_bar.isHidden())
 
+    def test_legacy_status_chips_suppressed_while_disabled(self):
+        w = self._window()
+        w.set_legacy_status_chips_enabled(False)
+        w.set_status_video("On")
+        w.set_status_latency("42 ms")
+        self.assertIn("On", w._status_video.text())
+        self.assertIn("42 ms", w._status_latency.text())
+        self.assertTrue(w._status_video.isHidden())
+        self.assertTrue(w._status_latency.isHidden())
+        self.assertFalse(w._status_video.property("status_permanent"))
+        self.assertFalse(w._status_latency.property("status_permanent"))
+        self.assertTrue(w._status_bar.isHidden())
+
+    def test_legacy_status_chips_restore_when_re_enabled(self):
+        w = self._window()
+        w.set_legacy_status_chips_enabled(False)
+        w.set_status_video("On")
+        w.set_status_latency("42 ms")
+        w.set_legacy_status_chips_enabled(True)
+        self.assertFalse(w._status_video.isHidden())
+        self.assertFalse(w._status_latency.isHidden())
+        self.assertTrue(w._status_video.property("status_permanent"))
+        self.assertTrue(w._status_latency.property("status_permanent"))
+        self.assertFalse(w._status_bar.isHidden())
+
+    def test_legacy_status_suppression_leaves_audio_and_recording_alone(self):
+        w = self._window()
+        w.set_legacy_status_chips_enabled(False)
+        w.set_status_audio("Connected")
+        w.set_status_recording(True)
+        w.set_status_video("On")
+        self.assertFalse(w._status_audio.isHidden())
+        self.assertTrue(w._status_audio.property("status_permanent"))
+        self.assertFalse(w._status_recording.isHidden())
+        self.assertTrue(w._status_recording.property("status_permanent"))
+        self.assertTrue(w._status_video.isHidden())
+
     def test_status_chips_layout_without_overlap_when_shown(self):
         w = self._window()
         w.resize(1200, 800)

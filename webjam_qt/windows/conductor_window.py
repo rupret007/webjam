@@ -315,6 +315,7 @@ class ConductorWindow(QMainWindow):
         self._status_bar.addPermanentWidget(self._status_audio)
         self._status_bar.clearMessage()
         self._status_bar.setVisible(False)
+        self._legacy_status_chips_enabled = True
         # Reset any temporary flash_message() color once its timed message
         # clears (QStatusBar emits messageChanged with an empty string).
         self._status_bar.messageChanged.connect(self._on_status_message_changed)
@@ -1094,6 +1095,38 @@ class ConductorWindow(QMainWindow):
         self._set_status_chip_active(self._status_recording, bool(active))
         self._sync_status_bar_visibility()
 
+    def set_legacy_status_chips_enabled(self, enabled: bool) -> None:
+        """Gate video/session chips; Art keeps Conversation and SessionHud as truth."""
+
+        enabled = bool(enabled)
+        if enabled == self._legacy_status_chips_enabled:
+            return
+        self._legacy_status_chips_enabled = enabled
+        if enabled:
+            for setter, widget in (
+                (self.set_status_video, self._status_video),
+                (self.set_status_latency, self._status_latency),
+            ):
+                text = widget.text()
+                if ":" in text:
+                    label = text.split(":", 1)[1].strip()
+                    if label == "—":
+                        label = ""
+                else:
+                    label = text.strip()
+                prefix = "Video" if widget is self._status_video else "Session"
+                setter(label if label else "")
+        else:
+            for widget in (self._status_video, self._status_latency):
+                self._set_status_chip_active(widget, False)
+            self._sync_status_bar_visibility()
+
+    def _legacy_status_chip_suppressed(self, widget: QLabel) -> bool:
+        return not self._legacy_status_chips_enabled and widget in (
+            self._status_video,
+            self._status_latency,
+        )
+
     def _set_status_chip_active(self, widget: QLabel, active: bool) -> None:
         widget.setProperty("status_permanent", bool(active))
         widget.setVisible(bool(active))
@@ -1131,13 +1164,15 @@ class ConductorWindow(QMainWindow):
     def set_status_video(self, text: str) -> None:
         label = str(text or "").strip()
         self._status_video.setText(f"Video: {label}" if label else "Video: —")
-        self._set_status_chip_active(self._status_video, bool(label))
+        show = bool(label) and not self._legacy_status_chip_suppressed(self._status_video)
+        self._set_status_chip_active(self._status_video, show)
         self._sync_status_bar_visibility()
 
     def set_status_latency(self, text: str) -> None:
         label = str(text or "").strip()
         self._status_latency.setText(f"Session: {label}" if label else "Session: —")
-        self._set_status_chip_active(self._status_latency, bool(label))
+        show = bool(label) and not self._legacy_status_chip_suppressed(self._status_latency)
+        self._set_status_chip_active(self._status_latency, show)
         self._sync_status_bar_visibility()
 
     def set_status_routing(self, text: str) -> None:
