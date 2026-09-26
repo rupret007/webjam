@@ -96,7 +96,7 @@ def test_the_host_panel_opens_on_the_no_video_path(host_dialog):
     assert host_dialog.minimumHeight() == 520
     assert host_dialog._headline.text() == "Choose a video to paint along"
     assert host_dialog._status.text() == (
-        "Choose a local video file or a YouTube lesson link. You control playback for the room."
+        "Choose a local video file or a YouTube lesson link. The video stays silent; you control playback."
     )
     assert host_dialog._surface_holder.isHidden() is False
     assert host_dialog._surface_placeholder.text() == (

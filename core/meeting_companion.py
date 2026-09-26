@@ -534,12 +534,12 @@ def art_make_together_activity_detail(
 
     del meeting_service  # overview stays brief and service-agnostic
     next_action = (
-        "Choose Conversation for the external meeting controls."
+        "Choose Conversation to talk or share your screen."
         if conversation_configured
-        else "Choose Set Up Conversation to add an external meeting link."
+        else "Choose Set Up Conversation to add your meeting link."
     )
     return (
-        "Use paper, clay, a model, printer, or your usual app. "
+        "Use paper, clay, a model, printer, or your usual app, or just talk. "
         f"{next_action}"
     )
 

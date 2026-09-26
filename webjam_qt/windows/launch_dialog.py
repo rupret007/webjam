@@ -99,7 +99,7 @@ _CREATOR_LAUNCH_COPY = {
             "Create a local multitrack music project without starting or joining "
             "a live session."
         ),
-        helper="Play live together.",
+        helper="Write songs or play live together.",
         join_title="Join Music.",
         join_subtitle=_JOIN_INVITATION_GUIDANCE,
     ),
@@ -140,12 +140,10 @@ _CREATOR_LAUNCH_COPY = {
         join="Join",
         local="Standalone Art Unavailable",
         host_description=(
-            "Open the room and send one invite. Whoever joins lands in "
-            "whatever you started."
+            "Copy an invite for your guests."
         ),
         join_description=(
-            "Paste the invite you were sent. It carries whatever the host "
-            "started, so there is nothing else to pick."
+            "Paste the host's invite to join their activity."
         ),
         local_description="Standalone art projects are not on this door.",
         helper="Open a room and make something together.",
@@ -163,7 +161,7 @@ if set(_CREATOR_LAUNCH_COPY) != {profile.key for profile in CREATOR_PROFILES}:
 # reachable after Music, never as equal first clicks.
 _FIRST_SCREEN_PROFILE_KEYS = ("art", "music")
 _ART_PROFILE_SUMMARY = "Make art together."
-_MUSIC_PROFILE_SUMMARY = "Play live together."
+_MUSIC_PROFILE_SUMMARY = "Write songs or play live together."
 _START_CARD_HEIGHT = 64
 _PAINT_ALONG_MARK_SIZE = QSize(72, 48)
 
@@ -979,7 +977,7 @@ class LaunchDialog(QDialog):
         helper = copy.helper
         if not host_available:
             helper += " Hosting is available in the macOS app."
-        # The Music card already says "Play live together." Repeating it
+        # The Music card already says "Write songs or play live together." Repeating it
         # under Host is chrome. Art cards already say what they do.
         if first_screen_door:
             helper = "" if host_available else "Hosting is available in the macOS app."
