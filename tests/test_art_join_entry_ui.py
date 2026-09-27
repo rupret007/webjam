@@ -153,6 +153,14 @@ def test_join_keyboard_route_keeps_field_action_and_back_reachable(
     assert dialog.selected_role == ""
 
 
+@pytest.mark.parametrize("profile", ["music", "art", "podcast_voice", "review_rehearsal"])
+def test_pristine_join_page_hides_empty_join_error(join_door, profile):
+    dialog = join_door(profile)
+    assert dialog._join_error.text() == ""
+    assert dialog._join_error.accessibleDescription() == ""
+    assert not dialog._join_error.isVisibleTo(dialog)
+
+
 @pytest.mark.parametrize("profile", ["music", "art"])
 def test_whole_art_invitation_message_joins_without_another_profile_choice(
     join_door, profile

@@ -173,6 +173,7 @@ def test_keyboard_focus_does_not_paint_an_unselected_card_orange(door, qapp, gro
 def test_paste_is_unchecked_and_replacing_it_clears_spoken_errors(door, reset):
     dialog = door()
     dialog.show_join()
+    assert not dialog._join_error.isVisibleTo(dialog)
     assert dialog.accept_invite("not an invitation") is False
     assert dialog._join_error.accessibleDescription()
     if reset == "replace":
@@ -189,6 +190,7 @@ def test_paste_is_unchecked_and_replacing_it_clears_spoken_errors(door, reset):
         assert dialog._invite_input.text() == ""
     assert dialog._join_error.text() == ""
     assert dialog._join_error.accessibleDescription() == ""
+    assert not dialog._join_error.isVisibleTo(dialog)
 
 
 @pytest.mark.parametrize("version", [2, 3])

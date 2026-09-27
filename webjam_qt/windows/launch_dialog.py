@@ -881,6 +881,7 @@ class LaunchDialog(QDialog):
         self._join_error.setAccessibleName("Join error")
         self._join_error.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._join_error.setWordWrap(True)
+        self._join_error.setVisible(False)
         layout.addWidget(self._join_error)
 
         self._join_button_primary = QPushButton()
@@ -1109,6 +1110,7 @@ class LaunchDialog(QDialog):
     def _clear_join_error(self) -> None:
         self._join_error.clear()
         self._join_error.setAccessibleDescription("")
+        self._join_error.setVisible(False)
 
     def _on_invite_text_changed(self, *_args: object) -> None:
         """Describe an unchecked paste without claiming it is a valid invite."""
@@ -1224,6 +1226,7 @@ class LaunchDialog(QDialog):
                 self._invite_input.setText(raw)
             self._join_status.setText("Needs attention")
             self._join_error.setText(str(exc))
+            self._join_error.setVisible(True)
             # The field was disabled during submission. Restore it before
             # returning keyboard focus to the replacement invitation.
             self._restore_submission()
@@ -1282,6 +1285,7 @@ class LaunchDialog(QDialog):
                 f"{message or 'WebJam couldn’t save this choice.'} "
                 "The invitation was cleared. Paste the full invitation again, then choose Join."
             )
+            self._join_error.setVisible(True)
             self._join_status.setText("Needs attention")
             self._announce_error(self._join_error, focus=self._invite_input)
             return False
@@ -1308,6 +1312,7 @@ class LaunchDialog(QDialog):
         self._join_error.setText(
             str(message or "WebJam could not open that invitation.")
         )
+        self._join_error.setVisible(True)
         self._announce_error(self._join_error, focus=self._invite_input)
 
     def take_remote_invitation(self) -> RemoteInvitation | None:
