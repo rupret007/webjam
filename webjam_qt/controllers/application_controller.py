@@ -5986,8 +5986,12 @@ class ApplicationController(QObject):
             )
         elif phase in {"launching_client", "native_sound_setup"}:
             checklist = ApplicationController._host_startup_checklist_fields(phase)
+            guidance = ApplicationController._startup_guidance_override(
+                attempt,
+                self.creator_profile.key,
+            )
             self.window.session_hud.set_state(
-                creator_copy["setup_title"],
+                guidance.title,
                 checklist["plain"],
                 action_text="Bring Jamulus Forward",
                 action_visible=True,
@@ -6051,8 +6055,12 @@ class ApplicationController(QObject):
         elif phase == "invite_ready":
             if role == "host":
                 checklist = ApplicationController._host_startup_checklist_fields(phase)
+                guidance = ApplicationController._startup_guidance_override(
+                    attempt,
+                    self.creator_profile.key,
+                )
                 self.window.session_hud.set_state(
-                    creator_copy["host_ready_title"],
+                    guidance.title,
                     checklist["plain"],
                     invite_available=True,
                     action_text="Copy Invite",

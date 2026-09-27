@@ -18,11 +18,14 @@ from core.host_startup_checklist import (
     format_host_startup_checklist,
 )
 from core.settings import AppSettings
-from tests.support.start_ux import assert_no_banned_first_screen_words, harvest_first_screen
+from tests.support.start_ux import (
+    assert_no_banned_first_screen_words,
+    harvest_first_screen,
+)
 from webjam_qt.controllers.application_controller import ApplicationController
 from webjam_qt.widgets.session_hud import SessionHud
+from webjam_qt.windows.conductor_window import ConductorWindow
 from webjam_qt.windows.launch_dialog import LaunchDialog
-
 
 pytestmark = pytest.mark.requires_local_socket
 
@@ -33,9 +36,6 @@ def qapp():
 
 
 def test_native_sound_setup_hud_shows_three_step_checklist(qapp, tmp_path: Path):
-    from webjam_qt.controllers.application_controller import ApplicationController
-    from webjam_qt.windows.conductor_window import ConductorWindow
-
     settings = AppSettings(config_file=str(tmp_path / "settings.json"))
     window = ConductorWindow(
         mode_entries=ApplicationController.mode_entries(),
@@ -66,15 +66,16 @@ def test_native_sound_setup_hud_shows_three_step_checklist(qapp, tmp_path: Path)
         assert hud._checklist_note.text() == HOST_STARTUP_PROFILE_NOTE
         assert hud._action.isVisibleTo(window)
         assert hud._action.text().replace("&", "") == "Bring Jamulus Forward"
+        expected_message = ApplicationController._startup_checklist_message(
+            "native_sound_setup"
+        )
+        assert controller._last_guidance_display_override.message == expected_message
     finally:
         window.deleteLater()
 
 
 def test_invite_ready_host_marks_step_three_and_copy_invite(qapp, tmp_path: Path):
     settings = AppSettings(config_file=str(tmp_path / "settings.json"))
-    from webjam_qt.controllers.application_controller import ApplicationController
-    from webjam_qt.windows.conductor_window import ConductorWindow
-
     window = ConductorWindow(
         mode_entries=ApplicationController.mode_entries(),
         initial_mode_key="music_jam",
@@ -99,6 +100,8 @@ def test_invite_ready_host_marks_step_three_and_copy_invite(qapp, tmp_path: Path
         assert hud._action.isVisibleTo(window)
         assert len(hud.checklist_lines()) == 3
         assert hud.checklist_lines()[-1].startswith("3.")
+        expected_message = ApplicationController._startup_checklist_message("invite_ready")
+        assert controller._last_guidance_display_override.message == expected_message
     finally:
         window.deleteLater()
 
@@ -134,7 +137,7 @@ def test_non_macos_music_shows_host_reason_on_choice_page(
     try:
         assert dialog.selected_creator_profile_key == "music"
         assert not dialog._host_button.isEnabled()
-        assert dialog._join_button.isEnabled()
+        assert dialog._join_button.isEnabled() is True
         reason = dialog._host_reason
         assert reason.isVisibleTo(dialog._choice_page)
         assert reason.text() == WIN32_MUSIC_HOST_REASON
