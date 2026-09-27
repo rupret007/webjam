@@ -1297,11 +1297,15 @@ def _sanitize_recent_path(value: object) -> Path:
         text = value
     else:
         raise SongProjectStoreError("Recent project path must be text.")
+    try:
+        encoded_size = len(text.encode("utf-8"))
+    except UnicodeEncodeError as exc:
+        raise SongProjectStoreError("Recent project path is not safe.") from exc
     if (
         not text
         or "\x00" in text
         or any(ord(character) < 32 or ord(character) == 127 for character in text)
-        or len(text.encode("utf-8")) > MAX_RECENT_PATH_BYTES
+        or encoded_size > MAX_RECENT_PATH_BYTES
     ):
         raise SongProjectStoreError("Recent project path is not safe.")
     path = Path(text).expanduser()
