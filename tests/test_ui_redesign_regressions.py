@@ -547,10 +547,11 @@ def test_native_jamulus_setup_guidance_fits_at_760_by_600(styled_qapp):
     window = _window()
     window.resize(760, 600)
     detail = (
-        "Choose your interface, input channels, headphones, and buffer in "
-        "Jamulus. WebJam uses a dedicated Jamulus profile for this app and "
-        "leaves your regular Jamulus settings untouched. WebJam will continue "
-        "automatically when the music connection is ready."
+        "Jamulus is the live sound app. Open Settings → Audio/Network Settings "
+        "and choose your instrument or mic input and headphones. "
+        "WebJam uses a dedicated Jamulus profile for this app and leaves your "
+        "regular Jamulus settings untouched. WebJam will continue automatically "
+        "when the music connection is ready."
     )
     window.session_hud.set_state(
         "Set up your sound in Jamulus",

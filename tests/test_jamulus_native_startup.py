@@ -1204,12 +1204,62 @@ def test_native_sound_setup_watches_connection_without_a_completion_click() -> N
 
     call = controller.window.session_hud.set_state.call_args
     assert call.args[0] == "Set up your sound in Jamulus"
+    assert "live sound app" in call.args[1]
+    assert "Settings → Audio/Network Settings" in call.args[1]
+    assert "instrument or mic input" in call.args[1]
+    assert "headphones" in call.args[1]
     assert "automatically" in call.args[1]
     assert "dedicated Jamulus profile" in call.args[1]
     assert "leaves your regular Jamulus settings untouched" in call.args[1]
     assert call.kwargs["action_text"] == "Bring Jamulus Forward"
     assert call.kwargs["action_kind"] == "bring_jamulus"
     assert "secondary_action_text" not in call.kwargs
+    guidance = ApplicationController._startup_guidance_override(
+        controller._startup_attempt,
+        "music",
+    )
+    assert guidance.message == call.args[1]
+    assert guidance.action_label == call.kwargs["action_text"]
+
+
+@pytest.mark.parametrize("role", ("host", "guest"))
+@pytest.mark.parametrize("phase", ("launching_client", "native_sound_setup"))
+def test_music_native_sound_setup_hud_matches_guidance_for_host_and_guest(
+    role: str,
+    phase: str,
+) -> None:
+    controller = _controller(hosting=role == "host")
+    controller.settings.last_creator_profile_key = "music"
+    controller._startup_attempt = {
+        "generation": 1,
+        "role": role,
+        "phase": phase,
+        "native_setup_deadline": 1_000_000_000_000.0,
+    }
+    controller._session_conductor_facts = mock.Mock(
+        return_value=SessionConductorFacts(
+            role=SessionRole.HOST if role == "host" else SessionRole.GUEST
+        )
+    )
+    controller._observe_session_conductor_facts = mock.Mock()
+    controller._focus_initial_hud_action = mock.Mock()
+    controller._persist_startup_attempt = mock.Mock()
+
+    ApplicationController._render_startup_journey(controller)
+
+    hud_detail = controller.window.session_hud.set_state.call_args.args[1]
+    guidance = ApplicationController._startup_guidance_override(
+        controller._startup_attempt,
+        "music",
+    )
+    assert guidance.message == hud_detail
+    assert "Jamulus is the live sound app" in hud_detail
+    assert "Settings → Audio/Network Settings" in hud_detail
+    assert "instrument or mic input" in hud_detail
+    assert "headphones" in hud_detail
+    assert "10 minutes" in hud_detail
+    assert guidance.action_label == "Bring Jamulus Forward"
+    assert guidance.primary_action is SessionPrimaryAction.OPEN_AUDIO_SETTINGS
 
 
 def test_art_conversation_step_is_one_decision() -> None:

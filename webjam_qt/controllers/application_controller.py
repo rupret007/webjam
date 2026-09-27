@@ -5946,6 +5946,26 @@ class ApplicationController(QObject):
             ),
         }
 
+    @staticmethod
+    def _startup_native_sound_setup_message(attempt: dict[str, object]) -> str:
+        """One plain destination for HUD and musician guidance during Jamulus setup."""
+
+        base = (
+            "Jamulus is the live sound app. Open Settings → Audio/Network Settings "
+            "and choose your instrument or mic input and headphones. "
+            "WebJam uses a dedicated Jamulus profile for this app and leaves your "
+            "regular Jamulus settings untouched."
+        )
+        if float(attempt.get("native_setup_deadline", 0.0) or 0.0) > 0.0:
+            return (
+                f"{base} WebJam will wait up to 10 minutes and continue "
+                "automatically when the music connection is ready."
+            )
+        return (
+            f"{base} WebJam will continue automatically when the music "
+            "connection is ready."
+        )
+
     def _render_startup_journey(self) -> None:
         """Project the one current setup step into the always-visible HUD."""
 
@@ -5980,18 +6000,9 @@ class ApplicationController(QObject):
                 action_visible=False,
             )
         elif phase in {"launching_client", "native_sound_setup"}:
-            setup_wait = (
-                "WebJam will wait up to 10 minutes and continue automatically "
-                "when the music connection is ready."
-                if float(attempt.get("native_setup_deadline", 0.0) or 0.0) > 0.0
-                else "WebJam will continue automatically when the music "
-                "connection is ready."
-            )
             self.window.session_hud.set_state(
                 creator_copy["setup_title"],
-                "Choose your interface, input channels, headphones, and buffer "
-                "in Jamulus. WebJam uses a dedicated Jamulus profile for this "
-                "app and leaves your regular Jamulus settings untouched. " + setup_wait,
+                self._startup_native_sound_setup_message(attempt),
                 action_text="Bring Jamulus Forward",
                 action_visible=True,
                 action_kind="bring_jamulus",
@@ -6148,22 +6159,13 @@ class ApplicationController(QObject):
             ),
             "launching_client": GuidanceDisplayOverride(
                 creator_copy["setup_title"],
-                "Choose your interface, input channels, headphones, and buffer "
-                "in Jamulus. WebJam uses a dedicated Jamulus profile for this "
-                "app and leaves your regular Jamulus settings untouched.",
+                ApplicationController._startup_native_sound_setup_message(attempt),
                 SessionPrimaryAction.OPEN_AUDIO_SETTINGS,
                 "Bring Jamulus Forward",
             ),
             "native_sound_setup": GuidanceDisplayOverride(
                 creator_copy["setup_title"],
-                "Choose your interface, input channels, headphones, and buffer "
-                "in Jamulus. WebJam uses a dedicated Jamulus profile for this "
-                "app and leaves your regular Jamulus settings untouched."
-                + (
-                    " WebJam waits up to 10 minutes."
-                    if float(attempt.get("native_setup_deadline", 0.0) or 0.0) > 0.0
-                    else ""
-                ),
+                ApplicationController._startup_native_sound_setup_message(attempt),
                 SessionPrimaryAction.OPEN_AUDIO_SETTINGS,
                 "Bring Jamulus Forward",
             ),
