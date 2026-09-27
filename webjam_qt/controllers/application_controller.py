@@ -103,10 +103,6 @@ from core.session_conductor import (
     derive_session_presentation,
 )
 from core.session_health import SessionHealth
-from core.rehearsal_recap import (
-    RehearsalRecapSnapshot,
-    take_status_label_for_recap,
-)
 from core.session_intelligence import build_session_pulse
 from core.session_lifecycle import SessionLifecycle, SessionLifecyclePhase
 from core.session_transfer_runtime import (
@@ -610,7 +606,6 @@ class ApplicationController(QObject):
         self._last_guidance_display_override = None
         self._last_studio_guidance_facts = None
         self._current_session_pulse = None
-        self._pending_rehearsal_recap: RehearsalRecapSnapshot | None = None
         # The editable title must not steal the first keystroke from the
         # musician-facing action. We move initial focus only once and only
         # while the title still owns it; later intentional title edits stay
@@ -4324,9 +4319,6 @@ class ApplicationController(QObject):
         self.window.session_canvas.save_notes_requested.connect(self._recover_notes)
         self.window.session_canvas.recheck_saved_notes_requested.connect(self._recheck_saved_notes)
         self.window.notes_review_requested.connect(self._review_retained_notes)
-        self.window.rehearsal_recap.open_studio_requested.connect(
-            lambda: self._on_rail_view_changed("takes")
-        )
         self.window.session_canvas.brief_export_requested.connect(
             self._refresh_session_pulse
         )
@@ -4800,7 +4792,6 @@ class ApplicationController(QObject):
     def begin_startup_journey(self) -> bool:
         """Start one non-modal host/join journey without a WebJam device gate."""
 
-        self._hide_rehearsal_recap()
         authorization_generation = self._consume_startup_launch_authorization()
         if (
             getattr(self, "_shutdown", False)
@@ -15958,54 +15949,6 @@ class ApplicationController(QObject):
             self.window.session_strip.current_title(),
             self.window.session_canvas.current_notes(),
         )
-
-    def _capture_rehearsal_recap_before_stop(self) -> None:
-        """Freeze Music pulse and take facts before End/Leave tears session state down."""
-
-        if self.creator_profile.key != "music":
-            self._pending_rehearsal_recap = None
-            return
-        pulse = getattr(self, "_current_session_pulse", None)
-        if pulse is None:
-            try:
-                profile, mode, title, notes = self._session_pulse_context()
-                pulse = build_session_pulse(
-                    mode_key=mode,
-                    creator_profile_key=profile,
-                    title=title,
-                    notes=notes,
-                    participants=self._session_pulse_participants(),
-                )
-            except Exception:  # noqa: BLE001 - recap is optional handoff chrome
-                pulse = None
-        if pulse is None:
-            self._pending_rehearsal_recap = None
-            return
-        duration = int(
-            getattr(self.window.session_strip, "_elapsed_seconds", 0) or 0
-        )
-        facts = self._session_conductor_facts()
-        self._pending_rehearsal_recap = RehearsalRecapSnapshot(
-            duration_seconds=duration,
-            pulse=pulse,
-            take_status=take_status_label_for_recap(facts),
-        )
-
-    def _present_rehearsal_recap_after_stop(self) -> None:
-        snapshot = getattr(self, "_pending_rehearsal_recap", None)
-        self._pending_rehearsal_recap = None
-        panel = getattr(self.window, "rehearsal_recap", None)
-        if snapshot is None or panel is None:
-            if panel is not None:
-                panel.clear_recap()
-            return
-        panel.apply_snapshot(snapshot)
-
-    def _hide_rehearsal_recap(self) -> None:
-        self._pending_rehearsal_recap = None
-        panel = getattr(self.window, "rehearsal_recap", None)
-        if panel is not None:
-            panel.clear_recap()
 
     def _clear_creative_guidance(self) -> None:
         """Retire creative text without changing accepted conductor facts."""

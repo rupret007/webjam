@@ -70,7 +70,6 @@ from webjam_qt.widgets import (
     SongOverlay,
 )
 from webjam_qt.widgets.art_room_overview import ArtRoomOverviewWidget
-from webjam_qt.widgets.rehearsal_recap import RehearsalRecapPanel
 from webjam_qt.widgets.room_help import RoomHelpPanel
 
 
@@ -263,14 +262,11 @@ class ConductorWindow(QMainWindow):
         self.workspace_stack.currentChanged.connect(self._sync_notes_notice)
 
         central = QWidget()
-        self.rehearsal_recap = RehearsalRecapPanel(central)
-        self.rehearsal_recap.hide()
         central_layout = QVBoxLayout(central)
         central_layout.setContentsMargins(0, 0, 0, 0)
         central_layout.setSpacing(0)
         central_layout.addWidget(self.session_strip)
         central_layout.addWidget(self.session_hud)
-        central_layout.addWidget(self.rehearsal_recap)
         central_layout.addWidget(self._notes_notice)
         central_layout.addWidget(body_container, stretch=1)
         central_layout.addWidget(self.session_controls)

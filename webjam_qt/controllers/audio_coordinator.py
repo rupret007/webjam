@@ -387,9 +387,6 @@ class AudioCoordinator:
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        capture_recap = getattr(self._c, "_capture_rehearsal_recap_before_stop", None)
-        if callable(capture_recap) and not art_room:
-            capture_recap()
         self._begin_session_stop(hosting, art_room=art_room)
 
     def _begin_session_stop(
@@ -647,9 +644,6 @@ class AudioCoordinator:
         self._c._reconnect_banner_shown = False
         self._c._rpc_hang_banner_shown = False
         self._c._reconnect_gave_up = False
-        present_recap = getattr(self._c, "_present_rehearsal_recap_after_stop", None)
-        if callable(present_recap):
-            present_recap()
 
     def _stop_session_services(self, hosting: bool) -> None:
         """Stop in data-safe order without freezing the Qt event loop."""
