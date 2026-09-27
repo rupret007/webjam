@@ -1,4 +1,7 @@
-"""Music-family status bar: Video chip only when it carries meeting facts."""
+"""Music-family status bar: Video chip only when it carries meeting facts.
+
+Podcast and Review follow Music's rule; Art keeps the label unchanged.
+"""
 from __future__ import annotations
 
 import os
@@ -28,10 +31,17 @@ def _make_controller(*, profile_key: str = "music") -> tuple[ConductorWindow, Ap
     return window, controller
 
 
-class TestMusicInformativeVideoChip(unittest.TestCase):
+MUSIC_FAMILY_PROFILES = ("music", "podcast_voice", "review_rehearsal")
+
+
+class _InformativeVideoChipCases:
+    """Shared cases; each subclass pins one Music-family creator profile."""
+
+    profile_key = "music"
+
     @classmethod
     def setUpClass(cls):
-        cls.window, cls.controller = _make_controller()
+        cls.window, cls.controller = _make_controller(profile_key=cls.profile_key)
 
     @classmethod
     def tearDownClass(cls):
@@ -40,6 +50,7 @@ class TestMusicInformativeVideoChip(unittest.TestCase):
     def setUp(self):
         c = self.controller
         w = self.window
+        c._apply_creator_profile_key(self.profile_key)
         c.settings.webex_url = ""
         c._session_meeting_url = None
         c.bridge.webex_state = WebexLaunchState.NOT_OPENED.value
@@ -49,6 +60,9 @@ class TestMusicInformativeVideoChip(unittest.TestCase):
         c.audio.cleanup_retry_required = False
         c.audio.ended_by_user = False
         w.set_legacy_status_chips_enabled(True)
+
+    def test_profile_is_pinned(self):
+        self.assertEqual(self.controller.creator_profile.key, self.profile_key)
 
     def test_hides_video_chip_when_not_opened_without_meeting_link(self):
         self.controller._refresh_readiness()
@@ -71,6 +85,62 @@ class TestMusicInformativeVideoChip(unittest.TestCase):
         w = self.window
         self.assertIn("Opened externally", w._status_video.text())
         self.assertFalse(w._status_video.isHidden())
+
+
+class TestMusicInformativeVideoChip(_InformativeVideoChipCases, unittest.TestCase):
+    profile_key = "music"
+
+
+class TestPodcastInformativeVideoChip(_InformativeVideoChipCases, unittest.TestCase):
+    profile_key = "podcast_voice"
+
+
+class TestReviewInformativeVideoChip(_InformativeVideoChipCases, unittest.TestCase):
+    profile_key = "review_rehearsal"
+
+
+class TestArtVideoChipProfile(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.window, cls.controller = _make_controller(profile_key="art")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.controller.shutdown()
+
+    def setUp(self):
+        c = self.controller
+        c._apply_creator_profile_key("art")
+        c.settings.webex_url = ""
+        c._session_meeting_url = None
+        c.bridge.webex_state = WebexLaunchState.NOT_OPENED.value
+        self.window.set_legacy_status_chips_enabled(True)
+
+    def test_art_passes_label_through_without_informative_hiding(self):
+        self.assertEqual(self.controller.creator_profile.key, "art")
+        self.controller._set_status_video(WebexLaunchState.NOT_OPENED.value)
+        w = self.window
+        self.assertIn(WebexLaunchState.NOT_OPENED.value, w._status_video.text())
+        self.assertFalse(w._status_video.isHidden())
+
+    def test_music_to_art_to_music_leaves_no_stale_video_chip(self):
+        c = self.controller
+        w = self.window
+        c._apply_creator_profile_key("music")
+        c._set_status_video("Opened externally")
+        self.assertFalse(w._status_video.isHidden())
+
+        c._apply_creator_profile_key("art")
+        c._set_status_video(WebexLaunchState.NOT_OPENED.value)
+        self.assertIn(WebexLaunchState.NOT_OPENED.value, w._status_video.text())
+        self.assertFalse(w._status_video.isHidden())
+
+        c._apply_creator_profile_key("music")
+        c._set_status_video(WebexLaunchState.NOT_OPENED.value)
+        self.assertNotIn(WebexLaunchState.NOT_OPENED.value, w._status_video.text())
+        self.assertNotIn("Opened externally", w._status_video.text())
+        self.assertTrue(w._status_video.isHidden())
+        self.assertFalse(w._status_video.property("status_permanent"))
 
 
 if __name__ == "__main__":
