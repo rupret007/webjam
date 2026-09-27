@@ -107,9 +107,9 @@ def test_launch_shows_live_and_offline_music_paths(qapp, tmp_path):
     assert set(dialog._workspace_actions) == {"music", "podcast_voice", "review_rehearsal"}
     assert set(dialog._workspace_actions) == {"music", "podcast_voice", "review_rehearsal"}
     assert dialog.selected_creator_profile_key == "music"
-    assert dialog._name_label.isVisibleTo(dialog) is False
-    assert dialog._name_input.isVisibleTo(dialog) is False
-    assert dialog._name_preview.isVisibleTo(dialog) is False
+    assert dialog._name_label.isVisibleTo(dialog) is True
+    assert dialog._name_input.isVisibleTo(dialog) is True
+    assert dialog._name_preview.isVisibleTo(dialog) is True
     assert dialog.showing_choices
     assert not dialog._invite_input.isVisibleTo(dialog)
     dialog.close()
@@ -243,10 +243,12 @@ def test_launch_exposes_exact_jamulus_wrap_preview_without_changing_saved_name(
     qapp.processEvents()
     try:
         assert dialog.selected_creator_profile_key == "music"
-        assert dialog._name_label.isVisibleTo(dialog) is False
-        assert dialog._name_input.isVisibleTo(dialog) is False
-        assert dialog._name_preview.isVisibleTo(dialog) is False
+        assert dialog._name_label.isVisibleTo(dialog) is True
+        assert dialog._name_input.isVisibleTo(dialog) is True
+        assert dialog._name_preview.isVisibleTo(dialog) is True
         assert dialog._name_input.text() == "Jeff Story"
+        assert "Jeff Sto / ry" in dialog._name_preview.text()
+        assert "two lines" in dialog._name_preview.text()
         selector = dialog._creator_profile_selector
         selector.setCurrentIndex(selector.findData("podcast_voice"))
         qapp.processEvents()
@@ -515,8 +517,8 @@ def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     visible_fields = [
         field for field in dialog.findChildren(QLineEdit) if field.isVisibleTo(dialog)
     ]
-    assert visible_fields == [dialog._invite_input]
-    assert dialog._name_input.isVisibleTo(dialog) is False
+    assert set(visible_fields) == {dialog._name_input, dialog._invite_input}
+    assert dialog._name_input.isVisibleTo(dialog) is True
     assert dialog._join_button_primary.text() == "Join"
     assert dialog._join_status.text() == "Paste your invitation"
     assert "never saved" in dialog._join_privacy.text()

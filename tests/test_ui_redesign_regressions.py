@@ -144,9 +144,9 @@ def test_launch_hierarchy_is_one_primary_then_two_clear_alternatives(
         assert dialog._music_profile_card.description() == "Play live together."
         assert dialog._art_profile_card.description() == "Make art together."
         assert dialog._name_input.accessibleName() == "Your name"
-        assert not dialog._name_label.isVisibleTo(dialog)
-        assert not dialog._name_input.isVisibleTo(dialog)
-        assert not dialog._name_preview.isVisibleTo(dialog)
+        assert dialog._name_label.isVisibleTo(dialog)
+        assert dialog._name_input.isVisibleTo(dialog)
+        assert dialog._name_preview.isVisibleTo(dialog)
         assert not dialog._creator_profile_label.isVisibleTo(dialog)
         assert not dialog._creator_profile_selector.isVisibleTo(dialog)
         assert dialog._art_profile_card.isVisibleTo(dialog)
@@ -202,15 +202,19 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
             assert control.isVisibleTo(dialog)
             assert dialog.rect().contains(_rect_in(control, dialog))
         for hidden in (
-            dialog._name_label,
-            dialog._name_input,
-            dialog._name_preview,
             dialog._studio_button,
             dialog._creator_profile_label,
             dialog._creator_profile_selector,
             dialog._choice_subtitle,
         ):
             assert not hidden.isVisibleTo(dialog)
+        for control in (
+            dialog._name_label,
+            dialog._name_input,
+            dialog._name_preview,
+        ):
+            assert control.isVisibleTo(dialog)
+            assert dialog.rect().contains(_rect_in(control, dialog))
         assert dialog._choice_helper.text() == ""
         assert dialog._music_profile_card.description() == "Play live together."
         assert dialog._name_input.accessibleName() == "Your name"
@@ -218,12 +222,12 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
         dialog.show_join()
         styled_qapp.processEvents()
         for control in (
+            dialog._name_input,
             dialog._invite_input,
             dialog._join_button_primary,
         ):
             assert control.isVisibleTo(dialog)
             assert dialog.rect().contains(_rect_in(control, dialog))
-        assert not dialog._name_input.isVisibleTo(dialog)
     finally:
         _destroy(dialog)
 
@@ -291,14 +295,18 @@ def test_windows_launch_name_roles_and_installer_do_not_overlap_at_default_size(
         assert dialog._menu_bar.isVisibleTo(dialog)
         assert dialog.rect().contains(_rect_in(dialog._menu_bar, dialog))
         for hidden in (
-            dialog._name_label,
-            dialog._name_input,
-            dialog._name_preview,
             dialog._studio_button,
             dialog._creator_profile_label,
             dialog._creator_profile_selector,
         ):
             assert not hidden.isVisibleTo(dialog)
+        for control in (
+            dialog._name_label,
+            dialog._name_input,
+            dialog._name_preview,
+        ):
+            assert control.isVisibleTo(dialog)
+            assert dialog.rect().contains(_rect_in(control, dialog))
         assert dialog._name_input.accessibleName() == "Your name"
         assert dialog._music_profile_card.description() == "Play live together."
         art_rect = _rect_in(dialog._art_profile_card, dialog)
@@ -369,9 +377,8 @@ def test_join_keeps_one_name_one_secret_invite_and_one_primary_at_460px(
     dialog.show()
     styled_qapp.processEvents()
     try:
-        # hide_name stays true on Music until a Host/Join name error.
-        # Join is therefore a secret invite and one primary, not a name field.
-        assert not dialog._name_input.isVisibleTo(dialog)
+        # Music Join shows name and a secret invite plus one primary.
+        assert dialog._name_input.isVisibleTo(dialog)
         assert dialog._name_input.accessibleName() == "Your name"
         assert dialog._invite_input.isVisibleTo(dialog)
         assert dialog._join_button_primary.isVisibleTo(dialog)

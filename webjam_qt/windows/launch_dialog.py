@@ -450,6 +450,10 @@ class LaunchDialog(QDialog):
         brand_row.addStretch(1)
         root.addLayout(brand_row)
 
+        self._name_block = QWidget()
+        name_block_layout = QVBoxLayout(self._name_block)
+        name_block_layout.setContentsMargins(0, 0, 0, 0)
+        name_block_layout.setSpacing(Space.XS)
         name_row = QHBoxLayout()
         name_row.setContentsMargins(0, 0, 0, 0)
         name_row.setSpacing(Space.SM)
@@ -463,7 +467,7 @@ class LaunchDialog(QDialog):
         name_label.setBuddy(self._name_input)
         name_row.addWidget(name_label)
         name_row.addWidget(self._name_input, 1)
-        root.addLayout(name_row)
+        name_block_layout.addLayout(name_row)
         # The validation is unchanged; only the words are. The first screen is
         # about what someone is making, so a component does not introduce
         # itself here.
@@ -473,13 +477,14 @@ class LaunchDialog(QDialog):
             plain_words=True,
         )
         self._name_preview.setObjectName("LaunchNamePreview")
-        root.addWidget(self._name_preview)
+        name_block_layout.addWidget(self._name_preview)
         self._name_error = QLabel("")
         self._name_error.setObjectName("LaunchError")
         self._name_error.setAccessibleName("Name error")
         self._name_error.setWordWrap(True)
         self._name_error.setVisible(False)
-        root.addWidget(self._name_error)
+        name_block_layout.addWidget(self._name_error)
+        root.addWidget(self._name_block)
         self._name_input.textChanged.connect(self._clear_name_error)
 
         self._pages = QStackedWidget()
@@ -952,12 +957,20 @@ class LaunchDialog(QDialog):
         self._studio_button.setEnabled(local_available and not self._submitting)
         self._studio_button.setHidden(not local_available)
 
-        # First-screen identity: Art and Music hide the name until validation
-        # fails, so the two equal cards plus Host / Join stay on one screen.
-        hide_name = first_screen_door and not bool(self._name_error.text())
-        self._name_label.setVisible(not hide_name)
-        self._name_input.setVisible(not hide_name)
-        self._name_preview.setVisible(not hide_name)
+        # First-screen identity: Art hides the name until validation fails so
+        # two cards plus Host / Join stay on one screen. Music shows the name
+        # on the door so Host and Join can be filled before submit.
+        hide_name = art_door and not bool(self._name_error.text())
+        show_name = not hide_name
+        join_page = getattr(self, "_join_page", None)
+        on_join = join_page is not None and self._pages.currentWidget() is join_page
+        music_join = music_door and on_join
+        self._sync_name_block_placement(music_join=music_join)
+        self._name_block.setVisible(show_name)
+        self._name_label.setVisible(show_name and not music_join)
+        self._name_input.setVisible(show_name)
+        # Music Join shows the name on the join page; the wrap preview stays on Host.
+        self._name_preview.setVisible(show_name and not music_join)
         self._name_error.setVisible(bool(self._name_error.text()))
 
         # Art and Music are the cards. The combo stays off until someone
@@ -1001,6 +1014,24 @@ class LaunchDialog(QDialog):
             self._join_button_primary.setText(copy.join)
             self._join_button_primary.setAccessibleName(copy.join)
             self._join_button_primary.setAccessibleDescription(copy.join_description)
+
+    def _sync_name_block_placement(self, *, music_join: bool) -> None:
+        """Keep Music's join name on the join page so the door still fits."""
+
+        join_page = getattr(self, "_join_page", None)
+        if join_page is None:
+            return
+        root = self.layout()
+        join_layout = join_page.layout()
+        block = self._name_block
+        if music_join:
+            if block.parent() is not join_page:
+                root.removeWidget(block)
+                join_layout.insertWidget(0, block)
+            return
+        if block.parent() is not self:
+            join_layout.removeWidget(block)
+            root.insertWidget(1, block)
 
     def _set_choice_helper(self, text: str) -> None:
         """Show a helper line only when it has something to say.
@@ -1091,6 +1122,7 @@ class LaunchDialog(QDialog):
         self._clear_join_error()
         self._join_status.setText("Paste your invitation")
         self._pages.setCurrentWidget(self._choice_page)
+        self._apply_creator_profile_presentation()
         # First-screen rooms hide the picker. Host is the next click.
         if (
             self._selected_creator_profile.key in _FIRST_SCREEN_PROFILE_KEYS
@@ -1104,6 +1136,7 @@ class LaunchDialog(QDialog):
         if not self._submitting:
             self._on_invite_text_changed()
         self._pages.setCurrentWidget(self._join_page)
+        self._apply_creator_profile_presentation()
         self._invite_input.setFocus()
 
     def _clear_join_error(self) -> None:
@@ -1369,8 +1402,8 @@ class LaunchDialog(QDialog):
             return validate_jamulus_name(self._name_input.text()).value
         except JamulusNameError as exc:
             self._name_error.setText(str(exc))
-            # Music hides the name on the first screen; a failed Host/Join
-            # still has to show the field so the name can be fixed.
+            # Art hides the name until validation fails; show the field on error
+            # so the name can be fixed.
             self._name_label.setVisible(True)
             self._name_input.setVisible(True)
             self._name_preview.setVisible(True)

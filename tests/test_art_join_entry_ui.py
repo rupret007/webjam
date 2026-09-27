@@ -85,7 +85,14 @@ def test_all_entry_profiles_explain_whole_message_and_conditional_network(
     assert dialog._invite_input.accessibleDescription() == guidance
     assert dialog._invite_input.echoMode() == QLineEdit.EchoMode.Password
     assert dialog._invite_input.hasFocus()
-    assert len(dialog._join_page.findChildren(QLineEdit)) == 1
+    join_inputs = dialog._join_page.findChildren(QLineEdit)
+    if profile == "music":
+        assert {field.objectName() for field in join_inputs} == {
+            "LaunchNameInput",
+            "LaunchInviteInput",
+        }
+    else:
+        assert len(join_inputs) == 1
     assert [
         button.text()
         for button in dialog._join_page.findChildren(QPushButton)
@@ -180,7 +187,8 @@ def test_whole_art_invitation_message_joins_without_another_profile_choice(
 @pytest.mark.parametrize(
     "profile,size",
     [
-        ("music", (460, 480)),
+        # Music Join includes the door name field; it needs a little more height.
+        ("music", (460, 520)),
         ("art", (460, 480)),
         ("music", (620, 520)),
         ("art", (620, 520)),

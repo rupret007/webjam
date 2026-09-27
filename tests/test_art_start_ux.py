@@ -224,6 +224,22 @@ def test_the_first_screen_names_no_component(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
+def test_music_shows_the_name_on_the_door_before_validation_art_hides_it(
+    qapp, tmp_path: Path
+):
+    music = _dialog(tmp_path, profile_key="music")
+    art = _dialog(tmp_path, profile_key="art")
+    try:
+        assert music._name_input.isVisibleTo(music)
+        assert art._name_input.isVisibleTo(art) is False
+        music.show_join()
+        qapp.processEvents()
+        assert music._name_input.isVisibleTo(music)
+    finally:
+        music.deleteLater()
+        art.deleteLater()
+
+
 def test_the_name_field_asks_for_a_name(qapp, tmp_path: Path):
     """It is a person's name, not a component's field, and validation stays."""
 
