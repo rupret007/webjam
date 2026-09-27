@@ -74,8 +74,10 @@ def test_native_sound_setup_hud_shows_three_step_checklist(qapp, tmp_path: Path)
         window.deleteLater()
 
 
-def test_invite_ready_host_marks_step_three_and_copy_invite(qapp, tmp_path: Path):
+@pytest.mark.parametrize("profile_key", ["music", "art", "podcast_voice", "review_rehearsal"])
+def test_invite_ready_host_marks_step_three_and_copy_invite(qapp, tmp_path: Path, profile_key):
     settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    settings.last_creator_profile_key = profile_key
     window = ConductorWindow(
         mode_entries=ApplicationController.mode_entries(),
         initial_mode_key="music_jam",
@@ -88,9 +90,11 @@ def test_invite_ready_host_marks_step_three_and_copy_invite(qapp, tmp_path: Path
         controller._startup_attempt = {
             "generation": 1,
             "role": "host",
-            "phase": "invite_ready",
+            "phase": "native_sound_setup",
             "conductor_token": token,
         }
+        controller._render_startup_journey()
+        controller._startup_attempt["phase"] = "invite_ready"
         controller._render_startup_journey()
         window.show()
         qapp.processEvents()
@@ -99,7 +103,13 @@ def test_invite_ready_host_marks_step_three_and_copy_invite(qapp, tmp_path: Path
         assert hud._action.text().replace("&", "") == "Copy Invite"
         assert hud._action.isVisibleTo(window)
         assert len(hud.checklist_lines()) == 3
-        assert hud.checklist_lines()[-1].startswith("3.")
+        assert hud.checklist_lines()[-1] == "3. Copy the invite. That is the next step."
+        for text in (hud._detail.text(), hud.accessibleDescription()):
+            assert "Copy the invite" in text
+            assert "next step" in text
+            assert "jamulus" not in text.casefold()
+            assert "wait" not in text.casefold()
+        assert not hud._checklist_note.isVisibleTo(window)
         expected_message = ApplicationController._startup_checklist_message("invite_ready")
         assert controller._last_guidance_display_override.message == expected_message
     finally:
