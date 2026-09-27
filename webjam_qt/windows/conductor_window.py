@@ -1114,7 +1114,6 @@ class ConductorWindow(QMainWindow):
                         label = ""
                 else:
                     label = text.strip()
-                prefix = "Video" if widget is self._status_video else "Session"
                 setter(label if label else "")
         else:
             for widget in (self._status_video, self._status_latency):
