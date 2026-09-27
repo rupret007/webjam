@@ -1656,7 +1656,7 @@ def test_retry_after_cleanup_failure_retries_cleanup_without_a_new_owner():
     controller._begin_explicit_startup_journey.assert_not_called()
 
 
-@pytest.mark.parametrize("reason", ["feedback_required", "host_start_failed", "component_open_failed", "connection_failed", "opening_timeout", "setup_timeout", "cleanup_failed", "webjam://private/?token=secret"])
+@pytest.mark.parametrize("reason", ["feedback_required", "host_start_failed", "port_in_use", "component_open_failed", "connection_failed", "opening_timeout", "setup_timeout", "cleanup_failed", "webjam://private/?token=secret"])
 def test_startup_failure_uses_one_bounded_message_and_action(reason):
     from webjam_qt.controllers.application_controller import _STARTUP_FAILURE_COPY
     controller = _controller(hosting=False)
@@ -1669,3 +1669,60 @@ def test_startup_failure_uses_one_bounded_message_and_action(reason):
     if reason in _STARTUP_FAILURE_COPY:
         assert override.message == attempt["failure"] == _STARTUP_FAILURE_COPY[reason]
     assert override.primary_action is (SessionPrimaryAction.CLOSE_SETUP if reason == "cleanup_failed" else SessionPrimaryAction.RETRY_SETUP)
+
+
+def test_rejected_launch_with_port_in_use_uses_busy_session_remedy_not_reinstall() -> None:
+    controller = _controller(hosting=False)
+    controller._startup_generation = 1
+    controller._startup_attempt = {
+        "generation": 1,
+        "role": "guest",
+        "phase": "launching_client",
+        "cancel_event": threading.Event(),
+    }
+    controller.bridge.launch_jamulus = mock.Mock(return_value=False)
+    controller.bridge.jamulus_state = "Port in use"
+    controller._feedback_guard_allows_audio_start = mock.Mock(return_value=True)
+    controller._is_jamulus_running = mock.Mock(return_value=False)
+    controller._schedule_startup_poll = mock.Mock()
+
+    controller._launch_native_jamulus_for_startup(1)
+
+    attempt = controller._startup_attempt
+    assert attempt["phase"] == "failed"
+    assert attempt["failure_reason"] == "port_in_use"
+    assert "Reinstall" not in attempt["failure"]
+    override = ApplicationController._startup_guidance_override(attempt)
+    assert override.primary_action is SessionPrimaryAction.RETRY_SETUP
+    assert override.action_label == "Try Again"
+
+
+@pytest.mark.parametrize(
+    ("jamulus_state", "expected_reason"),
+    [
+        ("Port in use", "port_in_use"),
+        ("Not found", "component_open_failed"),
+        ("Launch failed", "connection_failed"),
+        ("Stopped", "connection_failed"),
+    ],
+)
+def test_startup_poll_maps_terminal_jamulus_state_to_bounded_reason(
+    jamulus_state: str,
+    expected_reason: str,
+) -> None:
+    controller = _controller(hosting=False)
+    controller._startup_attempt = {
+        "generation": 3,
+        "role": "guest",
+        "phase": "native_sound_setup",
+    }
+    controller.bridge.jamulus_state = jamulus_state
+    controller.bridge.native_profile_plan = None
+
+    controller._poll_startup_connection(3)
+
+    attempt = controller._startup_attempt
+    assert attempt["phase"] == "failed"
+    assert attempt["failure_reason"] == expected_reason
+    if expected_reason == "port_in_use":
+        assert "Reinstall" not in attempt["failure"]

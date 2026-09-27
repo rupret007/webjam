@@ -112,6 +112,7 @@ from services.bridge_service import (
     BridgeService,
     JamulusRecoverySnapshot,
     JamulusRpcFreshness,
+    JamulusState,
 )
 from services.macos_process_activation import JamulusForegroundReason
 from storage.repository import WebJamRepository
@@ -269,6 +270,10 @@ def _same_companion_view(left: object, right: object) -> bool:
 _STARTUP_FAILURE_COPY = {
     "host_start_failed": "WebJam couldn't start your private jam. Try again, or close another WebJam window first.",
     "feedback_required": "Connect wired headphones or an audio interface, then choose Try Again. You can also explicitly choose Start Anyway in the feedback warning.",
+    "port_in_use": (
+        "Another WebJam window may still be open, or the last session is still "
+        "closing. Close the other window, wait a moment, then choose Try Again."
+    ),
     "component_open_failed": "WebJam couldn't open Jamulus. Reinstall this WebJam build, then try again.",
     "connection_failed": "Jamulus couldn't open the music connection. Check Jamulus, then try again.",
     "opening_timeout": "Jamulus did not finish opening in time. Check your audio setup, then try again.",
@@ -5029,7 +5034,9 @@ class ApplicationController(QObject):
                 attempt.pop("native_setup_deadline", None)
                 self._fail_startup_journey(
                     generation,
-                    "component_open_failed",
+                    self._startup_failure_reason_for_jamulus_state(
+                        str(getattr(self.bridge, "jamulus_state", "") or "")
+                    ),
                 )
                 return
             launch_snapshot = self._primary_jamulus_recovery_snapshot()
@@ -5069,12 +5076,16 @@ class ApplicationController(QObject):
         phase = str(attempt.get("phase", ""))
         if phase in {"failed", "cancelling", "invite_ready", "live"}:
             return
-        terminal = {"Stopped", "Launch failed", "Not found", "Port in use"}
         state = str(getattr(self.bridge, "jamulus_state", "") or "")
-        if state in terminal:
+        if state in {
+            JamulusState.STOPPED.value,
+            JamulusState.LAUNCH_FAILED.value,
+            JamulusState.NOT_FOUND.value,
+            JamulusState.PORT_IN_USE.value,
+        }:
             self._fail_startup_journey(
                 generation,
-                "connection_failed",
+                self._startup_failure_reason_for_jamulus_state(state),
             )
             return
 
@@ -5563,6 +5574,21 @@ class ApplicationController(QObject):
             return
         self._clear_startup_recovery()
         self._update_session_hud()
+
+    @staticmethod
+    def _startup_failure_reason_for_jamulus_state(state: str) -> str:
+        """Map bridge Jamulus state to a bounded startup failure reason."""
+
+        if state == JamulusState.PORT_IN_USE.value:
+            return "port_in_use"
+        if state == JamulusState.NOT_FOUND.value:
+            return "component_open_failed"
+        if state in {
+            JamulusState.LAUNCH_FAILED.value,
+            JamulusState.STOPPED.value,
+        }:
+            return "connection_failed"
+        return "component_open_failed"
 
     def _fail_startup_journey(
         self,
