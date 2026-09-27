@@ -107,14 +107,14 @@ class LocalApiBridge:
             # retained identity before constructing a replacement.
             self._thread = None
             self._server = None
-        host = (self.host or "").strip().lower()
+        if not isinstance(self.host, str) or not self.host.strip():
+            _LOGGER.warning("LocalApiBridge invalid host: %r", self.host)
+            return False
+        host = self.host.strip().lower()
         if host not in {"127.0.0.1", "localhost", "::1"}:
             _LOGGER.warning(
                 "LocalApiBridge refuses to bind to non-loopback host: %r", self.host
             )
-            return False
-        if not isinstance(self.host, str) or not self.host.strip():
-            _LOGGER.warning("LocalApiBridge invalid host: %r", self.host)
             return False
         try:
             port = int(self.port)

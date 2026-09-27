@@ -95,6 +95,22 @@ class TestLocalApiBridgeLifecycle(unittest.TestCase):
         bridge = LocalApiBridge(get_participants=lambda: [], get_diagnostics=lambda: {}, host="")
         self.assertFalse(bridge.start())
 
+    def test_start_rejects_non_string_host(self):
+        bridge = LocalApiBridge(
+            get_participants=lambda: [],
+            get_diagnostics=lambda: {},
+            host=123,  # type: ignore[arg-type]
+        )
+        self.assertFalse(bridge.start())
+
+    def test_start_rejects_port_out_of_range(self):
+        bridge = LocalApiBridge(
+            get_participants=lambda: [],
+            get_diagnostics=lambda: {},
+            port=0,
+        )
+        self.assertFalse(bridge.start())
+
     def test_start_rejects_invalid_port_type(self):
         bridge = LocalApiBridge(get_participants=lambda: [], get_diagnostics=lambda: {}, port="bad")  # type: ignore[arg-type]
         self.assertFalse(bridge.start())
