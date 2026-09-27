@@ -59,15 +59,31 @@ class TestAtomicWriteText(unittest.TestCase):
             files = sorted(Path(tmp).iterdir())
             self.assertEqual([f.name for f in files], ["out.txt"])
 
-    def test_no_temp_files_left_behind_on_error(self):
-        """If chmod or replace fails, no .tmp file should be left behind."""
+    def test_sync_failure_preserves_target_and_closes_descriptor_only_once(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "out.txt"
-            # Use an invalid mode to force chmod to silently succeed but the
-            # finally block must still clean up if anything goes wrong.
-            atomic_write_text(target, "x")
-            files = sorted(Path(tmp).iterdir())
-            self.assertEqual([f.name for f in files], ["out.txt"])
+            target.write_bytes(b"original")
+            with patch("core.file_io.os.fsync", side_effect=OSError("sync failed")), patch(
+                "core.file_io.os.close", wraps=os.close
+            ) as close:
+                with self.assertRaisesRegex(OSError, "sync failed"):
+                    atomic_write_text(target, "replacement")
+                # The stream owns and closes the descriptor; closing it again
+                # could close an unrelated file opened by another thread.
+                close.assert_not_called()
+            self.assertEqual(target.read_bytes(), b"original")
+            self.assertEqual(list(Path(tmp).iterdir()), [target])
+
+    def test_fdopen_failure_closes_unclaimed_descriptor_and_removes_temp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "out.txt"
+            with patch("core.file_io.os.fdopen", side_effect=OSError("open failed")), patch(
+                "core.file_io.os.close", wraps=os.close
+            ) as close:
+                with self.assertRaisesRegex(OSError, "open failed"):
+                    atomic_write_text(target, "replacement")
+                close.assert_called_once()
+            self.assertEqual(list(Path(tmp).iterdir()), [])
 
     def test_unicode_round_trip(self):
         with tempfile.TemporaryDirectory() as tmp:
