@@ -4244,6 +4244,9 @@ class ApplicationController(QObject):
         self.window.session_hud.secondary_action_requested.connect(
             self._on_conductor_secondary_action_requested
         )
+        self.window.session_hud.musician_identity_change_requested.connect(
+            lambda: self._open_settings_wizard(show_musician_name=True)
+        )
         # Conversation navigation is side-effect free. Only the explicit
         # Join/Open action hands the configured meeting link to the OS.
         self.window.webex_embed.open_meeting_requested.connect(self._on_join_video)
@@ -6118,6 +6121,33 @@ class ApplicationController(QObject):
                 primary_action="start",
             )
         )
+        self._apply_host_handoff_musician_identity()
+
+    def _apply_host_handoff_musician_identity(self) -> None:
+        """Show resolved Jamulus name during host startup handoff only."""
+
+        if self.creator_profile.key != "music":
+            self.window.session_hud.clear_musician_identity()
+            return
+        attempt = getattr(self, "_startup_attempt", None)
+        if attempt is not None:
+            if str(attempt.get("role")) == "host":
+                self.window.session_hud.set_musician_identity(
+                    self.settings.musician_name
+                )
+            else:
+                self.window.session_hud.clear_musician_identity()
+            return
+        hosting = bool(getattr(self.settings, "host_server_enabled", False))
+        if (
+            hosting
+            and self.bridge.jamulus_launch_intended
+            and not self._jamulus_connected
+            and not bool(getattr(self, "_last_observed_invite_available", False))
+        ):
+            self.window.session_hud.set_musician_identity(self.settings.musician_name)
+            return
+        self.window.session_hud.clear_musician_identity()
 
     @staticmethod
     def _startup_guidance_override(
@@ -10205,6 +10235,7 @@ class ApplicationController(QObject):
 
         if bool(getattr(self, "_shutdown_cleanup_pending", False)):
             self._render_shutdown_cleanup_pending()
+            self._apply_host_handoff_musician_identity()
             return
         if getattr(self, "_startup_attempt", None) is not None:
             self._render_startup_journey()
@@ -10244,6 +10275,7 @@ class ApplicationController(QObject):
                 self._render_room_guidance(override)
             else:
                 self._render_session_conductor()
+            self._apply_host_handoff_musician_identity()
             return
         display_override = self._update_session_hud_legacy()
         if (self.creator_profile.key == "music" and self.audio.cleanup_retry_required
@@ -10261,6 +10293,7 @@ class ApplicationController(QObject):
                 action_visible=False, invite_available=False,
             )
             self._render_session_conductor(display_override)
+            self._apply_host_handoff_musician_identity()
             return
         if bool(getattr(self, "_conductor_studio_reviewing", False)):
             # Live-session recovery copy (for example a denied microphone
@@ -10270,6 +10303,7 @@ class ApplicationController(QObject):
             # above so strip/invite side effects remain current.
             display_override = None
         self._render_session_conductor(display_override)
+        self._apply_host_handoff_musician_identity()
 
     def _render_room_guidance(self, override: GuidanceDisplayOverride) -> None:
         self._render_session_conductor(override)
@@ -12636,7 +12670,11 @@ class ApplicationController(QObject):
             self.window.webex_embed.focus_primary_action()
 
     def _open_settings_wizard(
-        self, *, show_keys: bool = False, show_meeting_link: bool = False
+        self,
+        *,
+        show_keys: bool = False,
+        show_meeting_link: bool = False,
+        show_musician_name: bool = False,
     ) -> None:
         from webjam_qt.windows.simple_settings import SimpleSettingsDialog
 
@@ -12667,6 +12705,8 @@ class ApplicationController(QObject):
         )
         if show_meeting_link:
             wizard.show_meeting_link()
+        if show_musician_name:
+            wizard.show_musician_name()
         if show_keys:
             # Somebody arrived here from a feature that wanted a key. Opening
             # on a collapsed section would make them go looking twice.

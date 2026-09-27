@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from webjam_qt.theme.tokens import Space
+from webjam_qt.widgets.musician_identity_line import MusicianIdentityLine
 
 
 class SessionHud(QFrame):
@@ -28,6 +29,7 @@ class SessionHud(QFrame):
     secondary_action_requested = Signal(str)
     invite_requested = Signal()
     retry_requested = Signal()
+    musician_identity_change_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -48,11 +50,21 @@ class SessionHud(QFrame):
         self._detail = QLabel("WebJam is getting the music ready.")
         self._detail.setObjectName("SessionHudDetail")
         self._detail.setWordWrap(True)
+        self._identity_line = MusicianIdentityLine(
+            self,
+            label_object_name="SessionHudIdentityLine",
+            change_object_name="SessionHudIdentityChange",
+        )
+        self._identity_line.setVisible(False)
+        self._identity_line.change_requested.connect(
+            self.musician_identity_change_requested.emit
+        )
         self._input = QLineEdit()
         self._input.setObjectName("SessionHudInput")
         self._input.setVisible(False)
         status_layout.addWidget(self._status)
         status_layout.addWidget(self._detail)
+        status_layout.addWidget(self._identity_line)
         status_layout.addWidget(self._input)
         layout.addLayout(status_layout, 1)
 
@@ -179,6 +191,13 @@ class SessionHud(QFrame):
     def focus_input(self) -> None:
         if self._input.isVisible():
             self._input.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def set_musician_identity(self, name: str) -> None:
+        self._identity_line.set_resolved_name(name)
+        self._identity_line.setVisible(True)
+
+    def clear_musician_identity(self) -> None:
+        self._identity_line.setVisible(False)
 
     def _emit_secondary_action(self) -> None:
         self.secondary_action_requested.emit(self._secondary_action_kind)

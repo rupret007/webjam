@@ -73,6 +73,7 @@ class SimpleSettingsDialog(QDialog):
         self._settings_provider = settings_provider or (lambda: settings)
         self._run_band_check_after_save = False
         self._meeting_link_focus_requested = False
+        self._musician_name_focus_requested = False
         if webex_opener is None:
             from webex_integration import open_webex_meeting
 
@@ -286,10 +287,25 @@ class SimpleSettingsDialog(QDialog):
         if self.isVisible():
             self._focus_meeting_link()
 
+    def show_musician_name(self) -> None:
+        """Open on Your name when someone chose Change from Host or Join."""
+
+        self._musician_name_focus_requested = True
+        if self.isVisible():
+            self._focus_musician_name()
+
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
-        if self._meeting_link_focus_requested:
+        if self._musician_name_focus_requested:
+            self._focus_musician_name()
+        elif self._meeting_link_focus_requested:
             self._focus_meeting_link()
+
+    def _focus_musician_name(self) -> None:
+        self._musician_name_focus_requested = False
+        self._settings_scroll.ensureWidgetVisible(self._name)
+        self._name.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        self._name.selectAll()
 
     def _focus_meeting_link(self) -> None:
         self._meeting_link_focus_requested = False

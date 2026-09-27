@@ -1160,6 +1160,11 @@ QPushButton#QuietAction:focus {
     font-size: ${FONT_SIZE_XS}px;
 }
 
+#LaunchIdentityLine, #SessionHudIdentityLine {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
 #LaunchError {
     color: ${COLOR_TEXT_PRIMARY};
     min-height: 20px;

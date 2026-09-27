@@ -66,6 +66,7 @@ from webjam_qt.invitation_ingress import (
 from webjam_qt.theme.brand import BrandMark
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
+from webjam_qt.widgets.musician_identity_line import MusicianIdentityLine
 
 LOGGER = logging.getLogger("webjam.qt.launch_dialog")
 
@@ -481,6 +482,7 @@ class LaunchDialog(QDialog):
         self._name_error.setVisible(False)
         root.addWidget(self._name_error)
         self._name_input.textChanged.connect(self._clear_name_error)
+        self._name_input.textChanged.connect(self._refresh_join_identity_line)
 
         self._pages = QStackedWidget()
         self._choice_page = self._build_choice_page()
@@ -867,6 +869,10 @@ class LaunchDialog(QDialog):
         self._invite_input.textChanged.connect(self._on_invite_text_changed)
         layout.addWidget(self._invite_input)
 
+        self._join_identity_line = MusicianIdentityLine(page)
+        self._join_identity_line.change_requested.connect(self._open_identity_settings)
+        layout.addWidget(self._join_identity_line)
+
         self._join_privacy = QLabel(
             "Private invitation secrets stay hidden and are never saved in settings or logs."
         )
@@ -1103,8 +1109,24 @@ class LaunchDialog(QDialog):
     def show_join(self) -> None:
         if not self._submitting:
             self._on_invite_text_changed()
+        self._refresh_join_identity_line()
         self._pages.setCurrentWidget(self._join_page)
         self._invite_input.setFocus()
+
+    def _refresh_join_identity_line(self, *_args: object) -> None:
+        self._join_identity_line.set_resolved_name(self._name_input.text())
+
+    def _open_identity_settings(self) -> None:
+        from core.settings import load_settings
+        from webjam_qt.windows.simple_settings import SimpleSettingsDialog
+
+        dialog = SimpleSettingsDialog(self._settings, parent=self)
+        dialog.show_musician_name()
+        if dialog.exec() != SimpleSettingsDialog.DialogCode.Accepted:
+            return
+        self._settings = load_settings(self._settings.config_file)
+        self._name_input.setText(default_musician_name(self._settings))
+        self._refresh_join_identity_line()
 
     def _clear_join_error(self) -> None:
         self._join_error.clear()
