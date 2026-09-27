@@ -491,6 +491,96 @@ def test_empty_join_primary_focuses_invite_and_announces_paste_prompt(
         dialog.deleteLater()
 
 
+def test_empty_join_return_in_invite_field_announces_paste_prompt(
+    qapp, tmp_path: Path
+):
+    dialog = _dialog(tmp_path, "music")
+    try:
+        dialog.show_join()
+        dialog.show()
+        qapp.processEvents()
+        dialog._invite_input.clear()
+        dialog._on_invite_text_changed()
+        dialog._invite_input.setFocus()
+        initial_result = dialog.result()
+        QTest.keyClick(dialog._invite_input, Qt.Key.Key_Return)
+        qapp.processEvents()
+        assert dialog.result() == initial_result
+        assert dialog._invite_input.hasFocus()
+        assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize("whitespace", ["   ", "\t\n", " \t "])
+def test_whitespace_only_invite_stays_blocked_and_empty_join_on_submit(
+    qapp, tmp_path: Path, whitespace: str
+):
+    dialog = _dialog(tmp_path, "music")
+    try:
+        dialog.show_join()
+        dialog.show()
+        qapp.processEvents()
+        dialog._invite_input.setText(whitespace)
+        dialog._on_invite_text_changed()
+        assert dialog._join_button_primary.property("joinBlocked") is True
+        assert dialog._join_status.text() == "Paste your invitation"
+        initial_result = dialog.result()
+        QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
+        qapp.processEvents()
+        assert dialog.result() == initial_result
+        assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._invite_input.hasFocus()
+    finally:
+        dialog.deleteLater()
+
+
+def test_empty_join_prompt_yields_normal_status_once_real_text_is_pasted(
+    qapp, tmp_path: Path
+):
+    dialog = _dialog(tmp_path, "music")
+    try:
+        dialog.show_join()
+        dialog.show()
+        qapp.processEvents()
+        dialog._invite_input.clear()
+        dialog._on_invite_text_changed()
+        QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
+        qapp.processEvents()
+        assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+
+        dialog._invite_input.setText("webjam://invite?v=2&token=test")
+        dialog._on_invite_text_changed()
+        assert dialog._join_status.text() == "Invitation pasted — choose Join"
+        assert dialog._join_button_primary.property("joinBlocked") is False
+
+        dialog._invite_input.clear()
+        dialog._on_invite_text_changed()
+        assert dialog._join_status.text() == "Paste your invitation"
+        assert dialog._join_status.text() != LaunchDialog._EMPTY_JOIN_PROMPT
+    finally:
+        dialog.deleteLater()
+
+
+def test_empty_join_prompt_passes_join_page_banned_word_gate(qapp, tmp_path: Path):
+    assert_no_banned_first_screen_words(LaunchDialog._EMPTY_JOIN_PROMPT.casefold())
+
+    dialog = _dialog(tmp_path, "music")
+    try:
+        dialog.show_join()
+        dialog.show()
+        qapp.processEvents()
+        dialog._invite_input.clear()
+        dialog._on_invite_text_changed()
+        QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
+        qapp.processEvents()
+        spoken = harvest_join_page(dialog)
+        assert LaunchDialog._EMPTY_JOIN_PROMPT.casefold() in spoken
+        assert_no_banned_first_screen_words(spoken)
+    finally:
+        dialog.deleteLater()
+
+
 def test_join_with_paste_still_submits_once(qapp, tmp_path: Path):
     dialog = _dialog(tmp_path, "music")
     accepted: list[str] = []
