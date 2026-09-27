@@ -6,6 +6,14 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+### Studio export recording receipt
+
+- Supported edited Studio exports now include `RECORDING_RECEIPT.md`, a
+  human-readable inventory of saved source tracks in the package, linked from
+  `IMPORT_INSTRUCTIONS.md` and checksummed in `SHA256SUMS.txt`. The receipt
+  states that plan comparison is unavailable and does not reconstruct the
+  original per-source recording plan from a fingerprint or current room state.
+
 > Future work after the unsigned v0.28.3 candidate belongs here. At candidate
 > preparation, GitHub Latest remains v0.28.3 release `394985116`;
 > v0.28.2 remains a stale draft at `a51154e533ce5662ca4b541a866dd9b1954452b1`.

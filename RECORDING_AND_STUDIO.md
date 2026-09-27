@@ -388,7 +388,19 @@ Export publishes one complete folder atomically. Selected tracks receive
 equal-length 24-bit edited stems and aligned-unity original stems, plus a rough
 mix. The package also contains markers/sections CSV, import instructions, the
 exact Studio document, the source take manifest for every rendered take,
-`provenance.json`, and `SHA256SUMS.txt`. Provenance identifies selected tracks,
+`provenance.json`, `RECORDING_RECEIPT.md`, and `SHA256SUMS.txt`.
+
+`RECORDING_RECEIPT.md` is generated only by the supported edited Studio export
+path on macOS and Linux. It is an offline, human-readable inventory of the saved
+source tracks represented in that exact package, their recorded formats, and
+documented limitations. It always states that plan comparison is unavailable
+because the completed manifest does not retain the original per-source recording
+plan. A recording-plan fingerprint alone cannot reconstruct recording
+obligations. The receipt describes this export snapshot only; later source
+arrivals require a new export.
+
+Import instructions link to the receipt so recipients can discover it without a
+separate UI control. Provenance identifies selected tracks,
 source keys and hashes, timeline rate/length, output hashes and clipping counts,
 and records external-editor validation as `NOT RUN` until it is separately
 performed.
