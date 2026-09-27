@@ -11330,23 +11330,15 @@ class ApplicationController(QObject):
         scoped = getattr(self, "_session_meeting_url", None)
         return scoped if scoped is not None else str(getattr(self.settings, "webex_url", "") or "").strip()
 
-    _INFORMATIVE_VIDEO_STATUS_CHIP_PROFILES = frozenset(
-        {"music", "podcast_voice", "review_rehearsal"}
-    )
-
-    def _uses_informative_video_status_chip(self) -> bool:
-        profile = _creator_profile_for_controller(self)
-        return profile.key in self._INFORMATIVE_VIDEO_STATUS_CHIP_PROFILES
-
     def _informative_status_video_label(self, label: str) -> str:
-        from webex_integration import WebexLaunchState
+        from webjam_qt.status_chips import video_chip_label
 
-        text = str(label or "").strip()
-        if not self._uses_informative_video_status_chip():
-            return text
-        if text == WebexLaunchState.NOT_OPENED.value and not self._effective_meeting_url():
-            return ""
-        return text
+        profile = _creator_profile_for_controller(self)
+        return video_chip_label(
+            profile.key,
+            label,
+            has_link=bool(self._effective_meeting_url()),
+        )
 
     def _set_status_video(self, label: str) -> None:
         self.window.set_status_video(self._informative_status_video_label(label))
