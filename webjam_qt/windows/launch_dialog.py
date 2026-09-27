@@ -196,6 +196,24 @@ class _JoinPrimaryButton(QPushButton):
         self._submission_locked = bool(locked)
         self._sync_blocked_presentation()
 
+    def submission_locked(self) -> bool:
+        return self._submission_locked
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() in (
+            Qt.Key.Key_Space,
+            Qt.Key.Key_Return,
+            Qt.Key.Key_Enter,
+        ):
+            if self._submission_locked:
+                event.accept()
+                return
+            if not self._invite_ready:
+                self.clicked.emit()
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
     def isEnabled(self) -> bool:
         if self._submission_locked or not self._invite_ready:
             return False
@@ -1232,10 +1250,22 @@ class LaunchDialog(QDialog):
         self.remote_invitation = None
         self.accept()
 
+    _EMPTY_JOIN_PROMPT = "Paste your invitation to continue"
+
+    def _prompt_empty_join_invite(self) -> None:
+        self._join_status.setText(self._EMPTY_JOIN_PROMPT)
+        self._announce_error(self._join_status, focus=self._invite_input)
+
     def _join(self) -> None:
-        if not self._join_button_primary.isEnabled():
+        primary = self._join_button_primary
+        if primary.submission_locked():
             return
         value = self._invite_input.text()
+        if not value.strip():
+            self._prompt_empty_join_invite()
+            return
+        if not primary.isEnabled():
+            return
         self._invite_input.clear()
         self.accept_invite(value)
 

@@ -14,7 +14,8 @@ from unittest.mock import patch
 
 import pytest
 
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QPushButton
 
 from core.creative_modes import CREATOR_PROFILES, get_creator_profile_by_key
@@ -462,6 +463,53 @@ def test_joining_asks_for_one_invitation_and_nothing_else(qapp, tmp_path: Path):
         for cards in dialog._start_cards.values():
             for card in cards:
                 assert card.isVisibleTo(dialog._join_page) is False
+    finally:
+        dialog.deleteLater()
+
+
+def test_empty_join_primary_focuses_invite_and_announces_paste_prompt(
+    qapp, tmp_path: Path
+):
+    dialog = _dialog(tmp_path, "music")
+    try:
+        dialog.show_join()
+        dialog.show()
+        qapp.processEvents()
+        dialog._invite_input.clear()
+        dialog._on_invite_text_changed()
+        assert dialog._join_button_primary.property("joinBlocked") is True
+        initial_result = dialog.result()
+        QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
+        qapp.processEvents()
+        assert dialog.result() == initial_result
+        assert dialog._invite_input.hasFocus()
+        assert (
+            dialog._join_status.text()
+            == LaunchDialog._EMPTY_JOIN_PROMPT
+        )
+    finally:
+        dialog.deleteLater()
+
+
+def test_join_with_paste_still_submits_once(qapp, tmp_path: Path):
+    dialog = _dialog(tmp_path, "music")
+    accepted: list[str] = []
+
+    def capture(value: str) -> bool:
+        accepted.append(value)
+        return False
+
+    try:
+        dialog.show_join()
+        dialog.show()
+        qapp.processEvents()
+        dialog._invite_input.setText("webjam://invite?v=2&token=test")
+        dialog._on_invite_text_changed()
+        assert dialog._join_button_primary.property("joinBlocked") is False
+        dialog.accept_invite = capture  # type: ignore[method-assign]
+        QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
+        qapp.processEvents()
+        assert len(accepted) == 1
     finally:
         dialog.deleteLater()
 

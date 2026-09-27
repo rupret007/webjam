@@ -4346,7 +4346,7 @@ class ApplicationController(QObject):
         )
         self._apply_mode(mode)
         self.window.set_status_audio("Ready to launch")
-        self.window.set_status_video("Not opened")
+        self._set_status_video("Not opened")
         self.window.set_status_latency("Not connected")
         self.window.set_status_routing("")
         self.session_health.reset_live_truth()
@@ -5516,7 +5516,7 @@ class ApplicationController(QObject):
         self.window.webex_embed.set_service_label(service_name)
         self.window.webex_embed.set_meeting_configured(True)
         if value != previous_url:
-            self.window.set_status_video(WebexLaunchState.NOT_OPENED.value)
+            self._set_status_video(WebexLaunchState.NOT_OPENED.value)
             self.window.webex_embed.set_launch_status(WebexLaunchState.NOT_OPENED.value)
         self.window.session_strip.set_video_configured(True)
         self.window.session_strip.set_video_state(
@@ -11330,6 +11330,27 @@ class ApplicationController(QObject):
         scoped = getattr(self, "_session_meeting_url", None)
         return scoped if scoped is not None else str(getattr(self.settings, "webex_url", "") or "").strip()
 
+    _INFORMATIVE_VIDEO_STATUS_CHIP_PROFILES = frozenset(
+        {"music", "podcast_voice", "review_rehearsal"}
+    )
+
+    def _uses_informative_video_status_chip(self) -> bool:
+        profile = _creator_profile_for_controller(self)
+        return profile.key in self._INFORMATIVE_VIDEO_STATUS_CHIP_PROFILES
+
+    def _informative_status_video_label(self, label: str) -> str:
+        from webex_integration import WebexLaunchState
+
+        text = str(label or "").strip()
+        if not self._uses_informative_video_status_chip():
+            return text
+        if text == WebexLaunchState.NOT_OPENED.value and not self._effective_meeting_url():
+            return ""
+        return text
+
+    def _set_status_video(self, label: str) -> None:
+        self.window.set_status_video(self._informative_status_video_label(label))
+
     def _set_session_meeting_url(self, value: str | None) -> None:
         # Validate before retiring an otherwise usable context. Once accepted,
         # even the same URL can represent a different room's meeting.
@@ -11350,7 +11371,7 @@ class ApplicationController(QObject):
         self.webex.browser_opened = False
         self.webex.last_error = ""
         self.bridge.webex_state = WebexLaunchState.NOT_OPENED.value
-        self.window.set_status_video(WebexLaunchState.NOT_OPENED.value)
+        self._set_status_video(WebexLaunchState.NOT_OPENED.value)
         self.window.session_strip.set_video_state(_meeting_open_action_label(url), enabled=True)
         self.window.session_strip.set_video_configured(bool(url))
         self.window.webex_embed.set_meeting_configured(bool(url))
@@ -11460,7 +11481,7 @@ class ApplicationController(QObject):
         accepted = self.bridge.launch_webex(manual=True, meeting_url=url)
         if not accepted:
             self._record_webex_event("meeting-handoff", "busy")
-            self.window.set_status_video(self.bridge.webex_state)
+            self._set_status_video(self.bridge.webex_state)
             self.window.session_strip.set_video_state(
                 _meeting_open_action_label(url),
                 enabled=True,
@@ -11483,7 +11504,7 @@ class ApplicationController(QObject):
             )
             return
         self._record_webex_event("meeting-handoff", "accepted")
-        self.window.set_status_video("Opening…")
+        self._set_status_video("Opening…")
         self.window.session_strip.set_video_state("Opening…", enabled=False)
         self.window.webex_embed.set_launch_status("Opening…")
 
@@ -11583,7 +11604,7 @@ class ApplicationController(QObject):
             self.window.set_status_server("")
             # Conversation and SessionHud own live truth in Art; legacy status
             # chips would only steal compact Notes height without new facts.
-            self.window.set_status_video("")
+            self._set_status_video("")
             self.window.set_status_latency("")
             self.window.session_strip.set_video_state(
                 _meeting_open_action_label(self._effective_meeting_url()), enabled=True,
@@ -11652,7 +11673,7 @@ class ApplicationController(QObject):
             not bool(self.audio.stopping or self._invite_switch_in_flight)
         )
         self.window.set_status_audio(audio_state)
-        self.window.set_status_video(self.bridge.webex_state)
+        self._set_status_video(self.bridge.webex_state)
         if self.audio.cleanup_retry_required:
             audio_action = (
                 "Try End Session"
@@ -12511,7 +12532,7 @@ class ApplicationController(QObject):
             self.webex.browser_opened = False
             self.webex.last_error = ""
             self.bridge.webex_state = WebexLaunchState.NOT_OPENED.value
-            self.window.set_status_video(WebexLaunchState.NOT_OPENED.value)
+            self._set_status_video(WebexLaunchState.NOT_OPENED.value)
             self.window.session_strip.set_video_state(
                 _meeting_open_action_label(self._effective_meeting_url()),
                 enabled=True,
