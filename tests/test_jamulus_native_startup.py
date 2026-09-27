@@ -1204,9 +1204,14 @@ def test_native_sound_setup_watches_connection_without_a_completion_click() -> N
 
     call = controller.window.session_hud.set_state.call_args
     assert call.args[0] == "Set up your sound in Jamulus"
-    assert "automatically" in call.args[1]
-    assert "dedicated Jamulus profile" in call.args[1]
-    assert "leaves your regular Jamulus settings untouched" in call.args[1]
+    detail_lines = [line for line in call.args[1].splitlines() if line.strip()]
+    assert len(detail_lines) == 3
+    assert detail_lines[0].startswith("1.")
+    assert detail_lines[1].startswith("2.")
+    assert "10 minutes" in detail_lines[1]
+    assert detail_lines[2].startswith("3.")
+    assert call.kwargs["checklist_current_step"] == 2
+    assert call.kwargs["checklist_note"]
     assert call.kwargs["action_text"] == "Bring Jamulus Forward"
     assert call.kwargs["action_kind"] == "bring_jamulus"
     assert "secondary_action_text" not in call.kwargs

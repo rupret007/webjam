@@ -56,6 +56,11 @@ from core.recording_readiness_presentation import (
     local_capture_readiness_detail,
     local_capture_shared_recovery_detail,
 )
+from core.host_startup_checklist import (
+    HOST_STARTUP_PROFILE_NOTE,
+    format_host_startup_checklist,
+    host_startup_checklist_current_step,
+)
 from core.meeting_companion import art_watch_share_sentence, build_invite_message
 from core.musician_guidance import (
     GuidanceDisplayOverride,
@@ -5980,21 +5985,16 @@ class ApplicationController(QObject):
                 action_visible=False,
             )
         elif phase in {"launching_client", "native_sound_setup"}:
-            setup_wait = (
-                "WebJam will wait up to 10 minutes and continue automatically "
-                "when the music connection is ready."
-                if float(attempt.get("native_setup_deadline", 0.0) or 0.0) > 0.0
-                else "WebJam will continue automatically when the music "
-                "connection is ready."
-            )
+            checklist = ApplicationController._host_startup_checklist_fields(phase)
             self.window.session_hud.set_state(
                 creator_copy["setup_title"],
-                "Choose your interface, input channels, headphones, and buffer "
-                "in Jamulus. WebJam uses a dedicated Jamulus profile for this "
-                "app and leaves your regular Jamulus settings untouched. " + setup_wait,
+                checklist["plain"],
                 action_text="Bring Jamulus Forward",
                 action_visible=True,
                 action_kind="bring_jamulus",
+                checklist_current_step=checklist["current_step"],
+                checklist_detail_rich=checklist["rich"],
+                checklist_note=HOST_STARTUP_PROFILE_NOTE,
             )
         elif phase == "verifying_music":
             self.window.session_hud.set_state(
@@ -6050,9 +6050,10 @@ class ApplicationController(QObject):
             )
         elif phase == "invite_ready":
             if role == "host":
+                checklist = ApplicationController._host_startup_checklist_fields(phase)
                 self.window.session_hud.set_state(
                     creator_copy["host_ready_title"],
-                    creator_copy["host_ready_detail"],
+                    checklist["plain"],
                     invite_available=True,
                     action_text="Copy Invite",
                     action_visible=True,
@@ -6061,6 +6062,8 @@ class ApplicationController(QObject):
                     secondary_action_text=enter_label,
                     secondary_action_visible=True,
                     secondary_action_kind="enter_jam",
+                    checklist_current_step=checklist["current_step"],
+                    checklist_detail_rich=checklist["rich"],
                 )
             else:
                 self.window.session_hud.set_state(
@@ -6120,6 +6123,26 @@ class ApplicationController(QObject):
         )
 
     @staticmethod
+    def _host_startup_checklist_fields(phase: str) -> dict[str, object]:
+        current_step = host_startup_checklist_current_step(str(phase))
+        if current_step is None:
+            raise ValueError(f"phase {phase!r} has no host startup checklist")
+        plain, rich = format_host_startup_checklist(current_step)
+        return {
+            "plain": plain,
+            "rich": rich,
+            "current_step": current_step,
+        }
+
+    @staticmethod
+    def _startup_checklist_message(phase: str) -> str:
+        fields = ApplicationController._host_startup_checklist_fields(phase)
+        plain = str(fields["plain"])
+        if phase in {"launching_client", "native_sound_setup"}:
+            return f"{plain}\n\n{HOST_STARTUP_PROFILE_NOTE}"
+        return plain
+
+    @staticmethod
     def _startup_guidance_override(
         attempt: dict[str, object],
         creator_profile_key: object = "music",
@@ -6148,22 +6171,13 @@ class ApplicationController(QObject):
             ),
             "launching_client": GuidanceDisplayOverride(
                 creator_copy["setup_title"],
-                "Choose your interface, input channels, headphones, and buffer "
-                "in Jamulus. WebJam uses a dedicated Jamulus profile for this "
-                "app and leaves your regular Jamulus settings untouched.",
+                ApplicationController._startup_checklist_message("launching_client"),
                 SessionPrimaryAction.OPEN_AUDIO_SETTINGS,
                 "Bring Jamulus Forward",
             ),
             "native_sound_setup": GuidanceDisplayOverride(
                 creator_copy["setup_title"],
-                "Choose your interface, input channels, headphones, and buffer "
-                "in Jamulus. WebJam uses a dedicated Jamulus profile for this "
-                "app and leaves your regular Jamulus settings untouched."
-                + (
-                    " WebJam waits up to 10 minutes."
-                    if float(attempt.get("native_setup_deadline", 0.0) or 0.0) > 0.0
-                    else ""
-                ),
+                ApplicationController._startup_checklist_message("native_sound_setup"),
                 SessionPrimaryAction.OPEN_AUDIO_SETTINGS,
                 "Bring Jamulus Forward",
             ),
@@ -6207,8 +6221,9 @@ class ApplicationController(QObject):
             if role == "host":
                 return GuidanceDisplayOverride(
                     creator_copy["host_ready_title"],
-                    creator_copy["host_ready_detail"],
+                    ApplicationController._startup_checklist_message("invite_ready"),
                     SessionPrimaryAction.COPY_INVITE,
+                    "Copy Invite",
                 )
             return GuidanceDisplayOverride(
                 creator_copy["guest_ready_title"],

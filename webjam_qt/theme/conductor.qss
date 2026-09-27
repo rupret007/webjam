@@ -681,6 +681,11 @@ QSlider:focus {
     font-size: ${FONT_SIZE_SM}px;
 }
 
+#SessionHudChecklistNote {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
 #SessionCanvas {
     background-color: ${COLOR_BG_PANEL};
     border-left: 1px solid ${COLOR_BORDER_SUBTLE};

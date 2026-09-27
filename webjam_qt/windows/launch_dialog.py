@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.host_startup_checklist import WIN32_MUSIC_HOST_REASON
 from core.creative_modes import (
     CREATOR_PROFILES,
     CreatorProfile,
@@ -652,6 +653,12 @@ class LaunchDialog(QDialog):
         self._join_button.clicked.connect(self.show_join)
         self._studio_button.clicked.connect(self._studio)
         layout.addWidget(self._host_button)
+        self._host_reason = QLabel()
+        self._host_reason.setObjectName("LaunchHostReason")
+        self._host_reason.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._host_reason.setWordWrap(True)
+        self._host_reason.setVisible(False)
+        layout.addWidget(self._host_reason)
         layout.addWidget(self._join_button)
         layout.addWidget(self._studio_button)
 
@@ -811,6 +818,18 @@ class LaunchDialog(QDialog):
         return self._selected_creator_profile.start_or_default(
             self.selected_start_key
         )
+
+    def _music_host_unavailable_reason(self) -> str:
+        if self._selected_creator_profile.key != "music":
+            return ""
+        if self._can_host():
+            return ""
+        return WIN32_MUSIC_HOST_REASON
+
+    def _refresh_host_reason(self) -> None:
+        reason = self._music_host_unavailable_reason()
+        self._host_reason.setText(reason)
+        self._host_reason.setVisible(bool(reason))
 
     def _can_host(self) -> bool:
         # Ordinary Art uses the existing Python LAN listener, without the
@@ -982,10 +1001,14 @@ class LaunchDialog(QDialog):
         self._host_button.setAccessibleName(copy.host)
         host_available = self._can_host()
         host_description = copy.host_description
-        if not host_available:
+        music_reason = self._music_host_unavailable_reason()
+        if not host_available and not music_reason:
             host_description += " Hosting is available in the macOS app."
+        elif music_reason:
+            host_description += f" {music_reason}"
         self._host_button.setAccessibleDescription(host_description)
         self._host_button.setEnabled(host_available and not self._submitting)
+        self._refresh_host_reason()
 
         self._join_button.setText(copy.join)
         self._join_button.setAccessibleName(copy.join)
@@ -1031,12 +1054,12 @@ class LaunchDialog(QDialog):
             self._music_profile_card.setVisible(True)
 
         helper = copy.helper
-        if not host_available:
+        if not host_available and not music_reason:
             helper += " Hosting is available in the macOS app."
         # The Music card already says "Write songs or play live together." Repeating it
         # under Host is chrome. Art cards already say what they do.
         if first_screen_door:
-            helper = "" if host_available else "Hosting is available in the macOS app."
+            helper = ""
         self._set_choice_helper(helper)
         if hasattr(self, "_start_cards"):
             self._apply_start_card_visibility()

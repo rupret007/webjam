@@ -34,6 +34,8 @@ class SessionHud(QFrame):
         self.setObjectName("SessionHud")
         self.setAccessibleName("Session readiness")
         self._last_announcement = ""
+        self._last_accessible_description = ""
+        self._checklist_plain = ""
         self._invite_available = False
 
         layout = QHBoxLayout(self)
@@ -48,11 +50,16 @@ class SessionHud(QFrame):
         self._detail = QLabel("WebJam is getting the music ready.")
         self._detail.setObjectName("SessionHudDetail")
         self._detail.setWordWrap(True)
+        self._checklist_note = QLabel()
+        self._checklist_note.setObjectName("SessionHudChecklistNote")
+        self._checklist_note.setWordWrap(True)
+        self._checklist_note.setVisible(False)
         self._input = QLineEdit()
         self._input.setObjectName("SessionHudInput")
         self._input.setVisible(False)
         status_layout.addWidget(self._status)
         status_layout.addWidget(self._detail)
+        status_layout.addWidget(self._checklist_note)
         status_layout.addWidget(self._input)
         layout.addLayout(status_layout, 1)
 
@@ -90,10 +97,29 @@ class SessionHud(QFrame):
         input_placeholder: str = "",
         input_value: str = "",
         input_accessible_name: str = "",
+        checklist_current_step: int | None = None,
+        checklist_detail_rich: str = "",
+        checklist_note: str = "",
     ) -> None:
         retry_was_available = self._action_kind == "retry" and not self._action.isHidden()
         self._status.setText(str(status))
-        self._detail.setText(str(detail))
+        plain_detail = str(detail)
+        if checklist_current_step in {1, 2, 3}:
+            self.setProperty("currentStep", int(checklist_current_step))
+            self._checklist_plain = plain_detail
+            rich = str(checklist_detail_rich or plain_detail)
+            self._detail.setTextFormat(Qt.TextFormat.RichText)
+            self._detail.setText(rich)
+            note = str(checklist_note or "").strip()
+            self._checklist_note.setText(note)
+            self._checklist_note.setVisible(bool(note))
+        else:
+            self.setProperty("currentStep", 0)
+            self._checklist_plain = ""
+            self._detail.setTextFormat(Qt.TextFormat.PlainText)
+            self._detail.setText(plain_detail)
+            self._checklist_note.clear()
+            self._checklist_note.setVisible(False)
         self._invite_available = bool(invite_available)
         self._action_kind = str(action_kind).strip().lower() or "primary"
         default_visible = (
@@ -105,7 +131,7 @@ class SessionHud(QFrame):
         # accidental keyboard mnemonic.  Keep the accessible name unescaped.
         self._action.setText(action_label.replace("&", "&&"))
         self._action.setAccessibleName(action_label)
-        action_description = self._action_description(action_label, str(detail))
+        action_description = self._action_description(action_label, plain_detail)
         self._action.setAccessibleDescription(action_description)
         self._action.setToolTip(action_description)
         self._action.setVisible(visible)
@@ -116,7 +142,7 @@ class SessionHud(QFrame):
         self._secondary_action.setText(secondary_label.replace("&", "&&"))
         self._secondary_action.setAccessibleName(secondary_label)
         self._secondary_action.setAccessibleDescription(
-            f"{secondary_label}. {detail}".strip()
+            f"{secondary_label}. {plain_detail}".strip()
         )
         self._secondary_action.setVisible(
             bool(secondary_action_visible and secondary_label)
@@ -131,11 +157,16 @@ class SessionHud(QFrame):
             str(input_accessible_name or input_placeholder or "Session detail")
         )
         self.setProperty("ready", "true" if ready else "false")
-        self.setAccessibleDescription(f"{status}. {detail}")
+        accessible = f"{status}. {plain_detail}"
+        if checklist_note := str(checklist_note or "").strip():
+            accessible = f"{accessible} {checklist_note}"
+        if accessible != self._last_accessible_description:
+            self.setAccessibleDescription(accessible)
+            self._last_accessible_description = accessible
         style = self.style()
         style.unpolish(self)
         style.polish(self)
-        announcement = f"{status}. {detail}"
+        announcement = accessible
         if announcement != self._last_announcement:
             self._last_announcement = announcement
             event_type = getattr(QtGui, "QAccessibleAnnouncementEvent", None)
@@ -170,6 +201,13 @@ class SessionHud(QFrame):
             self.retry_requested.emit()
         elif self._action_kind == "invite":
             self.invite_requested.emit()
+
+    def checklist_lines(self) -> tuple[str, ...]:
+        """Return numbered checklist lines when the HUD is in checklist mode."""
+
+        return tuple(
+            line for line in self._checklist_plain.splitlines() if line.strip()
+        )
 
     def input_text(self) -> str:
         """Return inline setup text only to the controller that owns it."""
