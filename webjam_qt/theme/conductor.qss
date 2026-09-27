@@ -712,11 +712,24 @@ QLineEdit#CanvasChatInput {
     padding: ${SPACE_SM}px ${SPACE_LG}px;
 }
 
-#SessionPulse, #MusicianGuidance {
+#SessionPulse, #MusicianGuidance, #RehearsalRecap {
     background-color: ${COLOR_BG_CARD};
     border: 1px solid ${COLOR_BORDER_STRONG};
     border-radius: ${RADIUS_MD}px;
     margin: 0 ${SPACE_MD}px;
+}
+
+#RehearsalRecap {
+    border-left: 3px solid ${COLOR_ACCENT_PRIMARY};
+}
+
+#RecapHeader, #RecapSignals {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#RecapDuration, #RecapParticipants, #RecapTakeStatus, #RecapBody {
+    color: ${COLOR_TEXT_PRIMARY};
 }
 
 #MusicianGuidance {
