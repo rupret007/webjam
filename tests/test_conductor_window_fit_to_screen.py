@@ -88,3 +88,23 @@ def test_fit_to_screen_is_idempotent(window) -> None:
 
 def test_fit_shortcut_is_bound(window) -> None:
     assert window._fit_shortcut.key().toString() in {"Ctrl+Shift+F", "Meta+Shift+F"}
+
+
+def test_first_show_fits_then_deferred_pass_is_stable(window, qt_app) -> None:
+    """Startup must claim the layout share once frame chrome has settled."""
+
+    screen = window.screen() or QGuiApplication.primaryScreen()
+    if screen is None:
+        pytest.skip("no screen available on this host")
+    expected = split_screen(screen.availableGeometry())
+    if expected.webjam.isEmpty():
+        pytest.skip("display too small to tile")
+
+    window.show()
+    qt_app.processEvents()
+    assert window._startup_screen_fit_done is True
+
+    before = window.geometry()
+    qt_app.processEvents()
+    assert window.geometry() == before
+    assert window.fit_to_screen().webjam == expected.webjam

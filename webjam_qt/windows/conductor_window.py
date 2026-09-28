@@ -118,6 +118,7 @@ class ConductorWindow(QMainWindow):
         self.finalize_close: Callable[[], bool] | None = None
         self.operator_mode = bool(operator_mode)
         self._reference_studio_only = False
+        self._startup_screen_fit_done = False
 
         # --- Central widgets
         self.session_strip = SessionStrip(
@@ -849,6 +850,16 @@ class ConductorWindow(QMainWindow):
         # once more on its first event-loop turn, then bring it forward.
         QTimer.singleShot(0, place_and_foreground)
         return int(box.exec())
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._startup_screen_fit_done:
+            return
+        self._startup_screen_fit_done = True
+        # Match HelpDialog: frame chrome settles after the first show, so a
+        # deferred pass claims the full layout share on real displays.
+        self.fit_to_screen()
+        QTimer.singleShot(0, self.fit_to_screen)
 
     def fit_to_screen(self):
         """Snap WebJam onto its share of the usable screen.
