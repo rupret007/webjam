@@ -76,6 +76,32 @@ class TestAtomicWriteText(unittest.TestCase):
             atomic_write_text(target, text)
             self.assertEqual(target.read_text(encoding="utf-8"), text)
 
+    def test_failed_sync_preserves_original_without_closing_descriptor_twice(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "out.txt"
+            target.write_text("saved state")
+            with patch("core.file_io.os.fsync", side_effect=OSError("sync failed")), patch(
+                "core.file_io.os.close", wraps=os.close
+            ) as close:
+                with self.assertRaisesRegex(OSError, "sync failed"):
+                    atomic_write_text(target, "replacement")
+                # The file object owns and closes the descriptor, including on
+                # failure. Closing the raw number again can hit a reused fd.
+                close.assert_not_called()
+            self.assertEqual(target.read_text(), "saved state")
+            self.assertEqual(list(Path(tmp).iterdir()), [target])
+
+    def test_failed_fdopen_closes_unclaimed_descriptor_and_removes_temp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "out.txt"
+            with patch("core.file_io.os.fdopen", side_effect=OSError("open failed")), patch(
+                "core.file_io.os.close", wraps=os.close
+            ) as close:
+                with self.assertRaisesRegex(OSError, "open failed"):
+                    atomic_write_text(target, "replacement")
+                close.assert_called_once()
+            self.assertEqual(list(Path(tmp).iterdir()), [])
+
     def test_empty_string_writes_empty_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "empty.txt"

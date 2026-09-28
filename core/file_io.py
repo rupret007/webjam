@@ -87,21 +87,26 @@ def _atomic_write(
     tmp_path = Path(tmp_name)
     try:
         try:
-            with os.fdopen(fd, "wb") as f:
-                if mode is not None and hasattr(os, "fchmod"):
-                    # Apply private permissions to the already-open temporary
-                    # inode.  A path-based chmod after close would leave a
-                    # needless name-swap window before publication.
-                    os.fchmod(f.fileno(), mode)
-                f.write(data)
-                f.flush()
-                os.fsync(f.fileno())
+            stream = os.fdopen(fd, "wb")
         except Exception:
+            # Ownership transfers only when fdopen succeeds.
             try:
                 os.close(fd)
             except OSError:
                 pass
             raise
+        # The stream closes its descriptor even when writing or syncing fails.
+        # Closing the raw fd again could close an unrelated file if another
+        # thread has already reused that descriptor number.
+        with stream as f:
+            if mode is not None and hasattr(os, "fchmod"):
+                # Apply private permissions to the already-open temporary
+                # inode.  A path-based chmod after close would leave a
+                # needless name-swap window before publication.
+                os.fchmod(f.fileno(), mode)
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
 
         if mode is not None and not hasattr(os, "fchmod"):
             os.chmod(tmp_path, mode)
