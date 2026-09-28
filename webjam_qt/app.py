@@ -432,7 +432,9 @@ def _run_app() -> int:
     window.show()
     # Open on the display's own terms instead of a fixed 1440x900 that leaves
     # the desktop showing around a floating window. Cmd+Shift+F re-snaps.
-    window.fit_to_screen()
+    window.fit_to_screen(
+        reserve_meeting_pane=not reference_studio_launch,
+    )
     controller.start_desktop_integrations(
         enable_update_check=not smoke_autostart,
     )

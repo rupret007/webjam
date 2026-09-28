@@ -48,6 +48,20 @@ def test_fit_to_screen_claims_the_layout_share_of_the_display(window) -> None:
     assert applied.webex == expected.webex
 
 
+def test_fit_to_screen_can_use_the_full_display_for_solo_studio(window) -> None:
+    screen = window.screen() or QGuiApplication.primaryScreen()
+    if screen is None:
+        pytest.skip("no screen available on this host")
+    available = screen.availableGeometry()
+    expected = split_screen(available, reserve_meeting_pane=False)
+
+    applied = window.fit_to_screen(reserve_meeting_pane=False)
+
+    assert applied is not None
+    assert applied.webjam == expected.webjam
+    assert applied.places_webex is False
+
+
 def test_fit_to_screen_keeps_the_window_inside_the_usable_area(window) -> None:
     """The title bar must not push the frame off the bottom of the screen."""
 

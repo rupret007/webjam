@@ -51,6 +51,7 @@ def split_screen(
     webjam_fraction: float = DEFAULT_WEBJAM_FRACTION,
     minimum_webjam_width: int = MINIMUM_WEBJAM_WIDTH,
     minimum_webex_width: int = MINIMUM_WEBEX_WIDTH,
+    reserve_meeting_pane: bool = True,
 ) -> SessionLayout:
     """Tile ``available`` into a WebJam pane and a Webex pane.
 
@@ -65,6 +66,11 @@ def split_screen(
     height = available.height()
     top = available.y()
     left = available.x()
+
+    # Offline studio work should open at the full usable area. Live sessions
+    # keep a meeting column unless the display is too small to tile.
+    if not reserve_meeting_pane:
+        return SessionLayout(QRect(left, top, width, height), QRect())
 
     # One pane whenever both cannot be usable at once.  Returning a cramped
     # pair here would be worse than telling the caller to place nothing.

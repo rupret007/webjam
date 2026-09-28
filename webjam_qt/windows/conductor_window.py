@@ -850,7 +850,7 @@ class ConductorWindow(QMainWindow):
         QTimer.singleShot(0, place_and_foreground)
         return int(box.exec())
 
-    def fit_to_screen(self):
+    def fit_to_screen(self, *, reserve_meeting_pane: bool = True):
         """Snap WebJam onto its share of the usable screen.
 
         Returns the :class:`SessionLayout` that was applied, or ``None`` when
@@ -868,7 +868,10 @@ class ConductorWindow(QMainWindow):
         screen = self.screen() or QGuiApplication.primaryScreen()
         if screen is None:
             return None
-        layout = split_screen(screen.availableGeometry())
+        layout = split_screen(
+            screen.availableGeometry(),
+            reserve_meeting_pane=reserve_meeting_pane,
+        )
         target = layout.webjam
         if target.isEmpty():
             return None

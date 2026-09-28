@@ -85,6 +85,15 @@ def test_tiny_display_gives_webjam_everything_and_places_no_meeting() -> None:
     _assert_tiles_exactly(layout, available)
 
 
+def test_solo_work_can_claim_the_full_usable_area() -> None:
+    available = QRect(0, 25, 2560, 1415)
+
+    layout = split_screen(available, reserve_meeting_pane=False)
+
+    assert layout.places_webex is False
+    assert layout.webjam == available
+
+
 def test_empty_available_area_places_nothing() -> None:
     layout = split_screen(QRect())
 
