@@ -629,6 +629,13 @@ Originals**: unity originals and a reference mix may use current trim, fader,
 pan, mute, and solo, but region edits, fades, comps, sections, master processing,
 and attached/repeated take lanes are excluded and stated before export.
 
+Track-package export keeps the recording manifest fixed from loading through
+publication. A loaded schema-v2 take whose manifest is missing cannot fall back
+to a legacy export; a changed, replaced, or removed manifest stops export and
+removes the unfinished package. Reopen the take before retrying. Existing
+destination folders retain their permissions, while new export folders and
+files remain private.
+
 ## Jamulus profile and privacy
 
 On macOS WebJam launches Jamulus with the supported filename-only argument:
