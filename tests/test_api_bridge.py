@@ -162,6 +162,9 @@ class TestLocalApiBridgeEndpoints(unittest.TestCase):
         self.assertFalse(ok(""))
         self.assertFalse(ok(None))
         self.assertFalse(ok("127.0.0.1.evil.com"))
+        self.assertFalse(ok("127.0.0.1, evil.com"))
+        self.assertFalse(ok("127.0.0.1\n"))
+        self.assertFalse(ok("127.0.0.1\t"))
 
     def test_participants_callback_error_returns_500(self):
         def failing_cb():

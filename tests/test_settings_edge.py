@@ -470,10 +470,6 @@ class TestCoerceSettingsData(unittest.TestCase):
         self.assertEqual(data["webex_audio_mode"], "talkback")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestFreshInstallDefaultsAreBlank(unittest.TestCase):
     """The old defaults (private LAN IP 172.24.194.9 + a sandbox Webex link)
     were dead for anyone but the original dev box.  Fresh installs must start
@@ -495,3 +491,7 @@ class TestFreshInstallDefaultsAreBlank(unittest.TestCase):
         failed = {item.name for item in report.items if not item.ok}
         self.assertIn("Jamulus server set", failed)
         self.assertNotIn("Conversation companion", failed)
+
+
+if __name__ == "__main__":
+    unittest.main()

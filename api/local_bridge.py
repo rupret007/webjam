@@ -45,7 +45,13 @@ class LocalApiBridge:
         """
         if not host_header:
             return False
+        if any(ord(char) < 0x20 or ord(char) == 0x7F for char in host_header):
+            return False
+        if "," in host_header:
+            return False
         host = host_header.strip()
+        if not host or any(char in " \t" for char in host):
+            return False
         # Strip the port. Handle bracketed IPv6 ("[::1]:8765") and host:port.
         if host.startswith("["):
             host = host[1:host.index("]")] if "]" in host else host[1:]
