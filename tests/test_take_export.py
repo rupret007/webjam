@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import stat
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -360,6 +363,173 @@ def _reordered_project_take(tmp_path):
         take_id=project.take_id,
     )
     return take, (bass, drums, guitar), (bass_audio, drums_audio, guitar_audio)
+
+
+@pytest.mark.parametrize(
+    "damage", ["missing", "directory", "dangling_symlink", "symlink", "oversized"]
+)
+def test_loaded_project_cannot_fall_back_to_legacy_export(tmp_path, damage):
+    from core import take_export
+
+    original, _tracks, sources = _reordered_project_take(tmp_path)
+    take = load_take(original.path)
+    assert take is not None
+    assert take.manifest_schema_version == 2
+    before = {path: path.read_bytes() for path in sources}
+    manifest = take.path / "webjam-take.json"
+    original_bytes = manifest.read_bytes()
+    manifest.unlink()
+    if damage == "directory":
+        manifest.mkdir()
+    elif damage in {"dangling_symlink", "symlink"}:
+        target = take.path / "other.json"
+        if damage == "symlink":
+            target.write_bytes(original_bytes)
+        try:
+            manifest.symlink_to(target)
+        except OSError:
+            pytest.skip("Symlinks are unavailable on this platform")
+    elif damage == "oversized":
+        with manifest.open("wb") as handle:
+            handle.truncate(take_export._MAX_TAKE_MANIFEST_BYTES + 1)
+    destination = tmp_path / "exports"
+
+    with pytest.raises(TakeExportError, match="manifest"):
+        export_track_package(take, destination_root=destination)
+
+    assert not destination.exists()
+    assert {path: path.read_bytes() for path in sources} == before
+
+
+def test_legacy_export_rejects_a_manifest_created_during_render(tmp_path, monkeypatch):
+    from core import take_export
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    manifest = take.path / "webjam-take.json"
+    manifest_bytes = manifest.read_bytes()
+    manifest.unlink()
+    original_render = take_export._write_aligned_stem
+
+    def publish_manifest_after_render(*args, **kwargs):
+        result = original_render(*args, **kwargs)
+        manifest.write_bytes(manifest_bytes)
+        return result
+
+    monkeypatch.setattr(take_export, "_write_aligned_stem", publish_manifest_after_render)
+    destination = tmp_path / "exports"
+    before = {path: path.read_bytes() for path in sources}
+    with pytest.raises(TakeExportError, match="manifest changed"):
+        export_track_package(take, destination_root=destination)
+
+    assert not list(destination.iterdir())
+    assert manifest.read_bytes() == manifest_bytes
+    assert {path: path.read_bytes() for path in sources} == before
+
+
+@pytest.mark.parametrize("phase", ["load", "render", "publication"])
+@pytest.mark.parametrize("change", ["revise", "remove", "replace_identical"])
+def test_project_export_rejects_manifest_changes_during_export(
+    tmp_path, monkeypatch, phase, change
+):
+    from core import take_export, take_project
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    before = {path: path.read_bytes() for path in sources}
+    manifest = take.path / "webjam-take.json"
+    project = take_project.load_take_project(take.path)
+    changed = False
+
+    def change_manifest():
+        nonlocal changed
+        if changed:
+            return
+        changed = True
+        if change == "revise":
+            take_project.write_take_project(
+                take.path,
+                replace(
+                    project,
+                    revision=project.revision + 1,
+                    status=ProjectStatus.NEEDS_ATTENTION,
+                ),
+            )
+        elif change == "remove":
+            manifest.unlink()
+        else:
+            replacement = take.path / "replacement.json"
+            replacement.write_bytes(manifest.read_bytes())
+            replacement.replace(manifest)
+
+    owner, method = {
+        "load": (take_project, "load_take_project"),
+        "render": (take_export, "_write_project_track"),
+        "publication": (take_export, "_write_checksum_manifest"),
+    }[phase]
+    original_method = getattr(owner, method)
+
+    def change_after_call(*args, **kwargs):
+        result = original_method(*args, **kwargs)
+        change_manifest()
+        return result
+
+    monkeypatch.setattr(owner, method, change_after_call)
+    destination = tmp_path / "exports"
+    with pytest.raises(TakeExportError, match="manifest"):
+        export_track_package(take, destination_root=destination)
+
+    assert changed
+    assert not destination.exists() or not list(destination.iterdir())
+    assert {path: path.read_bytes() for path in sources} == before
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX directory permissions")
+@pytest.mark.parametrize("project_manifest", [False, True])
+@pytest.mark.parametrize("fail", [False, True])
+def test_export_preserves_existing_destination_permissions(
+    tmp_path, monkeypatch, project_manifest, fail
+):
+    from core import take_export
+
+    take, _tracks, _sources = _reordered_project_take(tmp_path)
+    if not project_manifest:
+        (take.path / "webjam-take.json").unlink()
+    destination = tmp_path / "Shared exports"
+    destination.mkdir()
+    destination.chmod(0o750)
+    sentinel = destination / "existing.txt"
+    sentinel.write_text("Existing shared work", encoding="utf-8")
+
+    if fail:
+        def fail_render(*args, **kwargs):
+            raise OSError("disk full")
+
+        method = "_write_project_track" if project_manifest else "_write_aligned_stem"
+        monkeypatch.setattr(take_export, method, fail_render)
+        with pytest.raises(OSError, match="disk full"):
+            export_track_package(take, destination_root=destination)
+        assert list(destination.iterdir()) == [sentinel]
+    else:
+        result = export_track_package(take, destination_root=destination)
+        assert stat.S_IMODE(result.folder.stat().st_mode) == 0o700
+        assert all(
+            stat.S_IMODE(path.stat().st_mode) == 0o600
+            for path in result.folder.iterdir()
+        )
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o750
+    assert sentinel.read_text(encoding="utf-8") == "Existing shared work"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX directory permissions")
+@pytest.mark.parametrize("project_manifest", [False, True])
+def test_new_export_destination_is_private(tmp_path, project_manifest):
+    take, _tracks, _sources = _reordered_project_take(tmp_path)
+    if not project_manifest:
+        (take.path / "webjam-take.json").unlink()
+    destination = tmp_path / "exports"
+
+    export_track_package(take, destination_root=destination)
+
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o700
 
 
 def test_schema2_raw_export_preserves_one_stereo_logical_source(tmp_path):

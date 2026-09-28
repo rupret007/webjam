@@ -201,7 +201,11 @@ def test_arrange_actions_remain_reachable_after_labels_grow_and_reflow(loaded, q
     studio._toggle_selected_crossfade()
     assert studio._region_fades_btn.text() == "No Fades"
     assert studio._crossfade_btn.text() == "No Xfade"
+    # The setup edits arm a 350 ms autosave. Finish that save before observing
+    # reflow so slow layout work cannot be mistaken for a resize-triggered save.
+    assert studio._flush_studio_state()
     owner = studio._studio_controller
+    assert not owner.dirty
     before = (studio._current, owner.document, owner.generation, studio._take_list.currentRow())
     play, stop, flush = Mock(), Mock(), Mock(return_value=True)
     monkeypatch.setattr(studio._player, "play", play)

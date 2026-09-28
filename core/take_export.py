@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -73,6 +74,95 @@ _PEER_VERIFIED_ALIGNMENT_PREFIX = "peer-local-original-verified-alignment/"
 _PEER_ALIGNMENT_MIN_CONFIDENCE = 0.85
 _PEER_ALIGNMENT_MAX_RESIDUAL_MS = 2.0
 _PEER_ALIGNMENT_MIN_ANCHORS = 3
+_MAX_TAKE_MANIFEST_BYTES = 16 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class _TakeManifestSnapshot:
+    identity: tuple[int, int, int, int, int]
+    sha256: str
+
+
+def _manifest_identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        info.st_dev,
+        info.st_ino,
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ctime_ns,
+    )
+
+
+def _snapshot_take_manifest(
+    path: Path, *, required: bool
+) -> _TakeManifestSnapshot | None:
+    """Bind bounded manifest bytes to one regular file before loading/export."""
+    try:
+        info = path.lstat()
+    except FileNotFoundError as exc:
+        if not required:
+            return None
+        raise TakeExportError(
+            "The take project manifest is missing. Reopen the take before export."
+        ) from exc
+    except OSError as exc:
+        raise TakeExportError("The take project manifest could not be verified.") from exc
+    if not stat.S_ISREG(info.st_mode) or info.st_size > _MAX_TAKE_MANIFEST_BYTES:
+        raise TakeExportError("The take project manifest is not a bounded regular file.")
+    identity = _manifest_identity(info)
+    descriptor = -1
+    try:
+        descriptor = os.open(
+            path,
+            os.O_RDONLY
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0)
+            | getattr(os, "O_BINARY", 0),
+        )
+        if _manifest_identity(os.fstat(descriptor)) != identity:
+            raise TakeExportError("The take project manifest changed during export.")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
+            data = handle.read(_MAX_TAKE_MANIFEST_BYTES + 1)
+            if (
+                len(data) > _MAX_TAKE_MANIFEST_BYTES
+                or _manifest_identity(os.fstat(handle.fileno())) != identity
+                or _manifest_identity(path.lstat()) != identity
+            ):
+                raise TakeExportError("The take project manifest changed during export.")
+    except OSError as exc:
+        raise TakeExportError("The take project manifest could not be verified.") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    return _TakeManifestSnapshot(identity, hashlib.sha256(data).hexdigest())
+
+
+def _require_unchanged_take_manifest(
+    take_root: Path, snapshot: _TakeManifestSnapshot | None
+) -> None:
+    current = _snapshot_take_manifest(
+        take_root / "webjam-take.json", required=snapshot is not None
+    )
+    if current != snapshot:
+        raise TakeExportError(
+            "The take project manifest changed during export. Reopen the take and retry."
+        )
+
+
+def _publish_track_package(
+    temporary: Path,
+    destination: Path,
+    take_root: Path,
+    snapshot: _TakeManifestSnapshot | None,
+) -> None:
+    from core.take_project import take_project_manifest_lock
+
+    # Serialize the final check and publication with WebJam's metadata writers.
+    # Rendering stays outside this short lock so recording updates can proceed.
+    with take_project_manifest_lock(take_root):
+        _require_unchanged_take_manifest(take_root, snapshot)
+        temporary.rename(destination)
 
 
 def _safe_name(value: str, fallback: str) -> str:
@@ -732,6 +822,7 @@ def _export_project_track_package(
     chunk_frames: int,
     selected_track_ids: set[str] | None,
     include_processed_stems: bool,
+    manifest_snapshot: _TakeManifestSnapshot,
 ) -> TrackExportResult:
     """Create the evidence-rich schema-v2 track package on one common timeline."""
     from core.take_project import SourceType
@@ -751,8 +842,9 @@ def _export_project_track_package(
         )
     project_rate = int(project.project_sample_rate)
     root = Path(destination_root or (take.path / "Track Exports")).expanduser()
+    # The selected folder may already be shared. Only directories/files that
+    # this export creates receive private permissions.
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(root, 0o700)
     final_folder = _next_export_folder(root)
     temporary = root / f".webjam-export-{uuid.uuid4().hex}"
     temporary.mkdir(mode=0o700)
@@ -1052,7 +1144,7 @@ def _export_project_track_package(
 
         checksums = temporary / "CHECKSUMS.sha256"
         _write_checksum_manifest(temporary, checksums)
-        temporary.rename(final_folder)
+        _publish_track_package(temporary, final_folder, take.path, manifest_snapshot)
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
         raise
@@ -1099,7 +1191,10 @@ def export_track_package(
         raise ValueError("chunk_frames must be at least 1024")
 
     project_manifest = take.path / "webjam-take.json"
-    if project_manifest.is_file():
+    manifest_snapshot = _snapshot_take_manifest(
+        project_manifest, required=take.manifest_schema_version >= 2
+    )
+    if manifest_snapshot is not None:
         from core.take_project import TakeProjectError, load_take_project
 
         try:
@@ -1108,6 +1203,7 @@ def export_track_package(
             raise TakeExportError(
                 f"The take project manifest could not be verified: {exc}"
             ) from exc
+        _require_unchanged_take_manifest(take.path, manifest_snapshot)
         return _export_project_track_package(
             take,
             project,
@@ -1116,6 +1212,7 @@ def export_track_package(
             chunk_frames=chunk_frames,
             selected_track_ids=selected_track_ids,
             include_processed_stems=include_processed_stems,
+            manifest_snapshot=manifest_snapshot,
         )
 
     import soundfile as sf  # type: ignore
@@ -1149,7 +1246,6 @@ def export_track_package(
 
     root = Path(destination_root or (take.path / "Track Exports")).expanduser()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(root, 0o700)
     final_folder = _next_export_folder(root)
     temporary = root / f".webjam-export-{uuid.uuid4().hex}"
     temporary.mkdir(mode=0o700)
@@ -1247,7 +1343,7 @@ def export_track_package(
             encoding="utf-8",
         )
         os.chmod(instructions, 0o600)
-        temporary.rename(final_folder)
+        _publish_track_package(temporary, final_folder, take.path, manifest_snapshot)
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
         raise
