@@ -267,7 +267,7 @@ class SessionCanvas(QFrame):
             label.setTextFormat(Qt.TextFormat.PlainText)
             label.setWordWrap(True)
         guidance_layout = QVBoxLayout(self._guidance)
-        guidance_layout.setContentsMargins(Space.MD, Space.SM, Space.MD, Space.SM)
+        guidance_layout.setContentsMargins(Space.MD, Space.XS, Space.MD, Space.XS)
         guidance_layout.setSpacing(Space.XS)
         guidance_layout.addWidget(guidance_header)
         guidance_layout.addWidget(self._guidance_status)

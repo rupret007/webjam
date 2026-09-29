@@ -29,6 +29,7 @@ from core.session_intelligence import (  # noqa: E402
     SessionPulse,
     build_session_pulse,
 )
+from core.settings import AppSettings  # noqa: E402
 from webjam_qt.controllers.application_controller import (  # noqa: E402
     ApplicationController,
 )
@@ -191,6 +192,54 @@ class TestRehearsalRecapController(unittest.TestCase):
             window.close()
             window.deleteLater()
             _app.processEvents()
+
+    def test_open_studio_button_click_shows_take_review_and_hides_recap(self):
+        """Cover the actual wiring behind the Open Studio button.
+
+        Earlier tests only asserted the button's own enabled/visible state.
+        The button's ``open_studio_requested`` signal is wired in
+        ApplicationController's real ``_connect_signals`` (not on the
+        ``__new__``-built stand-ins used above), so only a fully constructed
+        controller exercises the click actually switching the workspace to
+        the reference studio and dismissing the recap card.
+        """
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = AppSettings(config_file=str(Path(tmpdir) / "settings.json"))
+            window = _conductor_window()
+            controller = ApplicationController(window, settings=settings)
+            try:
+                self.assertEqual(controller.creator_profile.key, "music")
+                controller._current_session_pulse = _sample_pulse()
+                window.session_strip._elapsed_seconds = 615
+                ready_facts = SessionConductorFacts(
+                    take_available=True,
+                    take_path="/tmp/take.wav",
+                    take_validation=TakeValidationState.VALID,
+                )
+                with patch.object(
+                    controller, "_session_conductor_facts", return_value=ready_facts
+                ):
+                    controller._capture_rehearsal_recap_before_stop()
+                controller._present_rehearsal_recap_after_stop()
+                window.show()
+                _app.processEvents()
+                panel = window.rehearsal_recap
+                self.assertTrue(panel.isVisible())
+                self.assertTrue(panel._open_studio_button.isVisibleTo(window))
+                self.assertTrue(panel._open_studio_button.isEnabled())
+
+                panel._open_studio_button.click()
+                _app.processEvents()
+
+                self.assertFalse(panel.isVisible())
+                self.assertIs(
+                    window.workspace_stack.currentWidget(), window.reference_studio
+                )
+            finally:
+                window.close()
+                window.deleteLater()
+                _app.processEvents()
 
     def test_art_present_leaves_recap_hidden(self):
         window = _conductor_window()

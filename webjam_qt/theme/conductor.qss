@@ -1215,7 +1215,13 @@ QLabel#LaunchError, QLabel#LaunchNamePreview[error="true"] {
     background-color: ${COLOR_BG_CARD};
     border: 1px solid ${COLOR_ACCENT_PRIMARY};
     border-radius: ${RADIUS_SM}px;
-    padding: ${SPACE_SM}px ${SPACE_MD}px;
+    /* Vertical padding stays tight (Space.XS, not Space.SM): the fixed-size
+       Join door has no slack once an error callout grows taller, and the
+       extra chrome from this box border/padding previously squeezed
+       LaunchSubtitle below its own wrapped height by a pixel on the
+       longest Podcast/Review copy at an expanded system font
+       (tests/test_art_join_entry_ui.py::test_join_guidance_and_actions_fit_supported_window_sizes). */
+    padding: ${SPACE_XS}px ${SPACE_MD}px;
     min-height: 20px;
     font-size: ${FONT_SIZE_SM}px;
 }
