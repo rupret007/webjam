@@ -203,7 +203,10 @@ def test_lan_canvas_open_checks_expired_observer_before_room_loss_callback(
     owner = room.lan_guest
     panel = _open_canvas_panel(app, qapp)
     assert owner.connection_available
-    owner._clock = lambda: owner._last_seen + 5.0
+    # Use exact timestamps: (63.1 + 5.0) - 63.1 rounds below the expiry
+    # boundary. The fixture disables background polling for this observer.
+    owner._last_seen = 100.0
+    owner._clock = lambda: 105.0
     assert not owner.connection_available
     assert room.state is ArtRoomState.CONNECTED
 

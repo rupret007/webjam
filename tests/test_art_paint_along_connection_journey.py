@@ -327,7 +327,10 @@ def test_lan_paint_along_follow_checks_expired_observer_before_room_loss_callbac
     panel = _open_paint_along(app, qapp)
     loads = tuple(player.loads for player in players)
     assert owner.connection_available
-    owner._clock = lambda: owner._last_seen + 5.0
+    # Use exact timestamps: (63.1 + 5.0) - 63.1 rounds below the expiry
+    # boundary. The fixture disables background polling for this observer.
+    owner._last_seen = 100.0
+    owner._clock = lambda: 105.0
     assert not owner.connection_available
     assert room.state is ArtRoomState.CONNECTED
 
