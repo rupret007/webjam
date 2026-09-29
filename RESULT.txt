@@ -1,0 +1,10 @@
+RESULT PASS
+
+branch: draft/cursor-queue-17-webjam-identity-line-585fec3e
+sha: 2c48dd2d82ea28ad18584b386a283228312628d8
+compare: https://github.com/rupret007/webjam/compare/codex/start-ux-copy-polish...draft/cursor-queue-17-webjam-identity-line-585fec3e
+commit: https://github.com/rupret007/webjam/commit/2c48dd2d82ea28ad18584b386a283228312628d8
+
+tests:
+  /Users/jeffstory/Documents/webjam-pr158-fold/.venv/bin/python -m pytest tests/test_launch_identity_line.py -v  (6 passed)
+  /Users/jeffstory/Documents/webjam-pr158-fold/.venv/bin/python -m pytest tests/test_webex_settings_ui.py::test_settings_opens_on_named_identity_field_not_structural_scroll_area tests/test_host_share_join_flow.py::test_host_handoff_keeps_the_connect_to_wifi_recovery_action -q  (2 passed)
