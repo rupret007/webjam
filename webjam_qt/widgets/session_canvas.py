@@ -787,7 +787,10 @@ class SessionCanvas(QFrame):
             # Keep the draft usable at the compact window floor. The readouts
             # retain all their text; only their interior spacing becomes tighter.
             for readout in (self._guidance, self._pulse):
-                margin = Space.XS if compact else Space.SM
+                # Expanded fonts and multi-workspace recovery can leave the
+                # editor below its native minimum height at 720 x 560. Spend
+                # the compact readouts' vertical padding on the editable draft.
+                margin = 0 if compact else Space.SM
                 readout.layout().setContentsMargins(Space.MD, margin, Space.MD, margin)
                 readout.layout().setSpacing(0 if compact else Space.XS)
         if not self._art_profile:
