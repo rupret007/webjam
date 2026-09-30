@@ -872,6 +872,11 @@ class ApplicationController(QObject):
 
         self._wire_signals()
         self._bootstrap_ui()
+        from webjam_qt.controllers.session_library import SessionLibraryCoordinator
+
+        self.session_library = SessionLibraryCoordinator(self)
+        self.window.session_canvas.notes_changed.connect(self.session_library.changed)
+        self.window.session_strip._title_input.editingFinished.connect(self.session_library.changed)
         self._start_routing_scan()
         # Give the visible shell one event-loop turn before surfacing any
         # interrupted local recording or private evidence checkpoint.  The
@@ -2309,6 +2314,9 @@ class ApplicationController(QObject):
         )
         if canonical == active_key and not owner_changed:
             return
+        library = getattr(self, "session_library", None)
+        if canonical != active_key and library is not None:
+            library.profile_changing()
         with ApplicationController._defer_session_pulse_refresh(self):
             if canonical != active_key:
                 self._chat_profile_generation = (
@@ -4833,6 +4841,9 @@ class ApplicationController(QObject):
         if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
             self._render_remote_fresh_invitation_hud()
             return False
+        library = getattr(self, "session_library", None)
+        if library is not None:
+            library.start_session()
         # The v3 transport has its own authenticated enrollment state. It is
         # intentionally kept out of the LAN/Jamulus-native profile flow.
         if getattr(self, "_remote_invitation", None) is not None:
@@ -13057,6 +13068,9 @@ class ApplicationController(QObject):
             self.window.participant_grid.setVisible(visible)
 
     def _on_rail_view_changed(self, key: str) -> None:
+        if key in {"session_library", "rehearsal_plan"}:
+            self.session_library.show(tab="plan" if key == "rehearsal_plan" else None)
+            return
         if key == "takes" and not self.creator_profile.capabilities.take_review:
             self.window.flash_message(
                 "Completed-take review is unavailable for this creator profile.",
@@ -15857,7 +15871,10 @@ class ApplicationController(QObject):
         timer = getattr(self, "_notes_save_timer", None)
         if timer is not None:
             timer.stop()
-        return self._persistence._save_notes_only()
+        notes_saved = self._persistence._save_notes_only()
+        library = getattr(self, "session_library", None)
+        workspace_saved = library.flush() if library is not None else True
+        return notes_saved and workspace_saved
 
     def _recheck_saved_notes(self, profile: str) -> None:
         """Read an unavailable original without starting a save or changing workspace."""
@@ -15962,6 +15979,9 @@ class ApplicationController(QObject):
     def _capture_rehearsal_recap_before_stop(self) -> None:
         """Freeze Music pulse and take facts before End/Leave tears session state down."""
 
+        library = getattr(self, "session_library", None)
+        if library is not None:
+            library.capture_summary()
         if self.creator_profile.key != "music":
             self._pending_rehearsal_recap = None
             return
@@ -15988,12 +16008,18 @@ class ApplicationController(QObject):
         self._pending_rehearsal_recap = RehearsalRecapSnapshot(
             duration_seconds=duration,
             pulse=pulse,
-            take_status=take_status_label_for_recap(facts),
+            take_status=(library.current_take_status() if library is not None
+                         else take_status_label_for_recap(facts)),
         )
 
     def _present_rehearsal_recap_after_stop(self) -> None:
         snapshot = getattr(self, "_pending_rehearsal_recap", None)
         self._pending_rehearsal_recap = None
+        library = getattr(self, "session_library", None)
+        if library is not None:
+            if snapshot is not None:
+                snapshot = replace(snapshot, take_status=library.current_take_status())
+            library.finish_session()
         panel = getattr(self.window, "rehearsal_recap", None)
         if snapshot is None or panel is None:
             if panel is not None:

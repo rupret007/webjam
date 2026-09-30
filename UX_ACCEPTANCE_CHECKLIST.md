@@ -1,32 +1,32 @@
-# WebJam v0.28.4 source UX acceptance checklist
+# WebJam v0.29.0 source UX acceptance checklist
 
-> This checklist describes current unsigned v0.28.4 source. Immutable
-> unsigned/ad-hoc release `393030220` is GitHub **Latest** for private testing.
-> Annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peels to exact commit `200cac9eb04d01611696cdc147957b36daef257f`; seven
-> packages are covered by `WebJam-v0.28.1-SHA256SUMS.txt`. Older release entries
-> (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags
-> remain. Historical v0.27.1 results remain bound to exact v0.27.1 assets.
-> Every v0.28.1 physical and platform-trust gate is **NOT RUN** and cannot
-> inherit that evidence.
-> Exact v0.28.1 assets are package evidence, but not physical evidence.
-> Host/Join is compatible with the existing exact Jamulus 3.12.2 and 3.12.3
-> records. Use only a checksum-verified release asset for packaged checks.
+> **Source identity:** v0.29.0 unsigned testing candidate.
+> **Current download and publication status:** [GitHub Latest](https://github.com/rupret007/webjam/releases/latest)
+> identifies the published tag, packages, and checksum manifest.
+> **Historical checkpoint, checked 2026-09-29 before the v0.29.0 release round:**
+> [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4), immutable
+> release `396603181`, published `2026-09-25T12:57:13Z`. Annotated tag object
+> `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
+> `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. Its seven packages plus
+> `WebJam-v0.28.4-SHA256SUMS.txt` are the download evidence. Windows is unsigned;
+> macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
+> gates remain **NOT RUN**. A source checkout is not a published package.
 
 ## Owner click gate — current two-card door
 
 **Status: NOT RUN.** This is the one attended first-screen feel check for the
-published unsigned/ad-hoc v0.28.1 package. Source tests prove labels, order,
+published unsigned/ad-hoc v0.28.4 package. Source tests prove labels, order,
 layout, and accessibility; they do not prove that the packaged door feels
 obvious to Jeff. Do not record a result from this checkout or a branch build.
 
 - [ ] Open the immutable
-      [v0.28.1 release](https://github.com/rupret007/webjam/releases/tag/v0.28.1)
-      with release ID `393030220`.
+      [v0.28.4 release](https://github.com/rupret007/webjam/releases/tag/v0.28.4)
+      with release ID `396603181`.
 - [ ] Download the package for this computer plus
-      `WebJam-v0.28.1-SHA256SUMS.txt`, and verify the exact filename and
+      `WebJam-v0.28.4-SHA256SUMS.txt`, and verify the exact filename and
       SHA-256 before opening it.
 - [ ] Launch that checksum-verified package from tag commit
-      `200cac9eb04d01611696cdc147957b36daef257f`, not a checkout or CI artifact.
+      `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`, not a checkout or CI artifact.
 - [ ] Confirm the first screen shows exactly **Art** and **Music** as equal
       creator choices. Podcast & Voice and Review & Rehearsal stay behind the
       smaller **Podcast or review** route rather than competing on this screen.

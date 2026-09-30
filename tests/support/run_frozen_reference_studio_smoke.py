@@ -26,6 +26,7 @@ def main() -> int:
     ) as directory:
         result_path = Path(directory) / "result.txt"
         environment = os.environ.copy()
+        environment["QT_QPA_PLATFORM"] = "offscreen"
         environment["WEBJAM_SMOKE_REFERENCE_STUDIO_RUNTIME"] = "1"
         environment["WEBJAM_SMOKE_REFERENCE_STUDIO_RESULT"] = str(result_path)
         environment.pop("WEBJAM_SMOKE_POCKET_STAGE_RUNTIME", None)

@@ -1,15 +1,57 @@
-# WebJam creator guide — v0.28.4 source
+# WebJam creator guide — v0.29.0 source
 
-> This guide describes current unsigned v0.28.4 source. GitHub **Latest** is the
-> immutable unsigned/ad-hoc v0.28.1 private test release `393030220` from exact
-> tag commit `200cac9eb04d01611696cdc147957b36daef257f`, with seven packages plus
-> `WebJam-v0.28.1-SHA256SUMS.txt`. A later checkout or branch artifact is source
-> evidence, not one of those checksum-bound packages. Older release entries
-> (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags
-> remain. The existing exact Jamulus 3.12.2 and 3.12.3 records are approved
-> through v0.28.4 for Host/Join. Windows remains unsigned; macOS remains ad-hoc
-> signed and unnotarized. No physical, credentialed, signing, or notarization
-> PASS is claimed.
+> **Source identity:** v0.29.0 unsigned testing candidate.
+> **Current download and publication status:** [GitHub Latest](https://github.com/rupret007/webjam/releases/latest)
+> identifies the published tag, packages, and checksum manifest.
+> **Historical checkpoint, checked 2026-09-29 before the v0.29.0 release round:**
+> [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4), immutable
+> release `396603181`, published `2026-09-25T12:57:13Z`. Annotated tag object
+> `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
+> `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. Its seven packages plus
+> `WebJam-v0.28.4-SHA256SUMS.txt` are the download evidence. Windows is unsigned;
+> macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
+> gates remain **NOT RUN**. A source checkout is not a published package.
+
+## Save a session and continue later
+
+In v0.29.0, open **File → Session library…** at launch,
+or **More → Session library…** in a room. Choose the new workspace's profile,
+then **New workspace…** and a title. The **Notes**, **Rehearsal plan**, **Art project**,
+**Summary**, and **Takes** tabs keep the work appropriate to that profile.
+Changes save locally; check the save status and use **Save** before leaving.
+Search finds previous work. **Continue this work** brings its saved context
+back into the app; it does not connect a room or start recording. **Save as
+copy…** makes a separate workspace. Invitations and meeting credentials are
+not a reusable workspace template.
+
+For Music, **More → Session library… → Rehearsal plan** opens the ordered setlist. Add song titles,
+key, tempo, goals, notes, and next steps. **Previous** / **Next** selects a song;
+**Move earlier** / **Move later** changes its order. Selection preserves each
+song's draft and does not restart a recorder. **Song complete** is your own
+progress judgment. **Save plan…** exports the order and goals for reuse;
+**Add saved plan…** appends that plan while keeping this session's notes and
+moments. **Undo remove** restores the most recently removed song.
+
+Type a moment note and choose **Mark moment**, or press **⌘M** on Mac /
+**Ctrl+M** elsewhere while the plan has focus. A confirmed current recording
+position produces a take bookmark; otherwise it stays a plain note. The song
+clock and room timer do not certify recording time. **Open in take** rechecks
+the saved take before navigation; a moved or changed recording needs attention.
+The **Summary** tab and **Export summary…** collect progress and next steps;
+ending a rehearsal retains its recap with the workspace.
+
+For Art, open **More → Session library… → Art project**. Keep a **Project brief**, **Progress**,
+and **Next steps** alongside references added with **Add file…** or **Add
+link…**. **Open reference** is an explicit action; reopening a workspace does
+not launch its links. **Relink…** replaces a missing reference. Select a
+reference, enter a **Lesson position** in seconds, and **Save lesson bookmark**.
+That position is entered by you; it is not a measured room or video timecode.
+Art project records organize local work and do not create an audio recording
+or turn WebJam into a drawing application.
+
+For completed Music or Podcast & Voice takes, follow
+[Review and compare completed takes](#review-and-compare-completed-takes)
+to save favorites and notes, audition A/B, and inspect an export receipt.
 
 ## Follow the current guide
 
@@ -385,7 +427,8 @@ Art has no camera feed and **does not record the session**, so there is no take
 to review afterwards. It has no image generator of its own, no model list, and
 no cloud image service, and no song engine, metronome, or chord detection — it
 reads a musical pulse that something else in the room owns. Your notes stay local to your own computer as in every
-other profile. There is no standalone Art project in this Preview.
+other profile. Use **Session library → Art project** to save your local brief,
+references, progress, and next steps. Continue making artwork with your own tools.
 
 Use **Conversation** for faces, talking, and demonstrations shared in Webex
 or another meeting app beside WebJam. Choose **Join / Open Meeting** to open
@@ -920,7 +963,7 @@ source count. Finalization rechecks those facts and refuses source
 substitution, a changed map, or missing/extra delivery instead of calling the
 take Ready.
 
-Current v0.28.0 source presents that frozen plan in one accessible,
+The v0.29.0 source presents that frozen plan in one accessible,
 path-free **Record Session Readiness** sheet. Every server track, Local
 Original, and Shared Track row shows its source label, exact mono/stereo format,
 required/optional status, readiness, and a bounded meter when available.
@@ -1004,6 +1047,31 @@ and inspect a completed take and its sources, but it cannot mutate the take's
 arrangement or mix, create a Studio sidecar, or export tracks. Art
 does not record a session at all, so it has no take and no Studio.
 
+### Review and compare completed takes
+
+1. Select a completed take in Studio and choose **Review / Compare**. Mark
+   **Favorite take**, enter private notes, and choose **Save review**. These
+   annotations stay with that take and do not change its recordings or mix.
+   If saving fails, your draft remains visible; retry before switching takes
+   or closing the review.
+2. Choose **Set A** for the selected take, select another take in Studio, and
+   choose **Set B**. **Listen A** and **Listen B** explicitly start playback
+   with each take's saved arrangement and mix. Pending edits must save before
+   switching. Auditioning does not edit the arrangement, and a missing or
+   changed take is not replaced by a different recording.
+3. In Music or Podcast & Voice, choose **Export reviewed take** to use Studio's
+   normal export path. **Export receipt…** becomes available only after the
+   package checksums verify. It shows the exact exported sources, settings,
+   destination, and file checksums. A failed or unverified export has no
+   completed receipt; keep the original take and retry. Changing takes or
+   editing the mix or arrangement clears the previous receipt.
+
+The receipt confirms the package bytes at export completion. Listening and
+importing into another editor remain separate checks; WebJam does not open
+or control that editor for you.
+
+### Arrange and export
+
 - Drag a region to move it or drag an edge to trim it. The selected region can
   also be split, duplicated, disabled, or deleted without changing its WAV.
 - Use the timeline ruler, zoom, scroll, snap choices, markers/sections, fades,
@@ -1036,7 +1104,7 @@ and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
 manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
-current v0.28.0 source.
+current source.
 
 For a standalone Podcast & Voice episode, use the 48 kHz Host-mono +
 Guest-stereo preset, record the first pass, add a chapter marker, set a cycle

@@ -1552,7 +1552,12 @@ def test_mixer_drag_is_one_undo_and_separate_drags_remain_separate(tmp_path):
         studio.shutdown()
 
 
-def test_schema2_studio_choices_reopen_and_export_by_durable_track_id(tmp_path):
+def test_schema2_studio_choices_reopen_and_export_by_durable_track_id(tmp_path, monkeypatch):
+    # Rendering is mocked in this routing test; verify real packages separately.
+    monkeypatch.setattr(
+        "webjam_qt.widgets.recording_studio.verify_export_receipt",
+        lambda _path: SimpleNamespace(file_count=0, details="Mock verification"),
+    )
     take_dir, (server_id, local_id) = _schema2_studio_take(tmp_path)
     manifest = take_dir / "webjam-take.json"
     audio = take_dir / "media" / "local.wav"
@@ -1648,7 +1653,12 @@ def test_studio_default_comparison_ignores_revision_only(tmp_path):
     assert _studio_document_differs_from_default(edited, project)
 
 
-def test_unsupported_platform_schema2_exports_explicit_aligned_originals(tmp_path):
+def test_unsupported_platform_schema2_exports_explicit_aligned_originals(tmp_path, monkeypatch):
+    # Rendering is mocked in this routing test; verify real packages separately.
+    monkeypatch.setattr(
+        "webjam_qt.widgets.recording_studio.verify_export_receipt",
+        lambda _path: SimpleNamespace(file_count=0, details="Mock verification"),
+    )
     take_dir, (server_id, local_id) = _schema2_studio_take(tmp_path)
     called = threading.Event()
     result = SimpleNamespace(
@@ -2547,7 +2557,12 @@ def test_review_preview_never_auto_creates_take_lane_sidecar(tmp_path):
         studio.shutdown()
 
 
-def test_repeated_take_lane_comp_audition_export_and_reopen(tmp_path):
+def test_repeated_take_lane_comp_audition_export_and_reopen(tmp_path, monkeypatch):
+    # Rendering is mocked in this routing test; verify real packages separately.
+    monkeypatch.setattr(
+        "webjam_qt.widgets.recording_studio.verify_export_receipt",
+        lambda _path: SimpleNamespace(file_count=0, details="Mock verification"),
+    )
     primary_dir, (destination_track_id, _local_id) = _schema2_studio_take(tmp_path)
     alternate_dir, alternate_track_id = _schema2_repeated_take(
         tmp_path,

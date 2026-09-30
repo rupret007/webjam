@@ -443,7 +443,9 @@ CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
             "link remains optional for conversation. Talk in Conversation · "
             "play in WebJam. To watch a movie or demo together, open "
             "Conversation, choose Join / Open Meeting, then share the WebJam "
-            "window or your demo in that meeting. WebJam does not play the movie."
+            "window or your demo in that meeting. WebJam does not play the movie. "
+            "More → Session library keeps rehearsal plans, song notes, and next steps. "
+            "Moments stay plain notes unless a recording position is confirmed."
         ),
         review_prompts=(
             "What section needs a tighter groove?",
@@ -479,7 +481,9 @@ CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
         quick_help=(
             "Remote speakers use WebJam's audio path for isolated tracks; a "
             "meeting platform is an optional external handoff. "
-            f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+            f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE} "
+            "More → Session library keeps local notes and prior recaps. "
+            "In Studio, Review / Compare keeps private take notes and favorites."
         ),
         review_prompts=(
             "Which edit most improves clarity or pacing?",
@@ -525,7 +529,8 @@ CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
             "Preview supports an external meeting handoff, WebJam-path audio, "
             "reference audio, and local notes. It does not synchronize visual "
             "media, shared notes, or media timecode. "
-            f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+            f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE} "
+            "More → Session library keeps local feedback and next steps."
         ),
         review_prompts=(
             "What moment needs another pass?",
@@ -548,15 +553,16 @@ CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
         default_template="Art (Preview)",
         default_goal="Share a table, talk, and move one piece forward.",
         quick_help=(
-            "Preview opens a room for artists in any medium: talk while you "
-            "paint, draw, sculpt, or build. The host may add a shared canvas, "
-            "painted by Drawpile and only brokered by WebJam, and one local "
-            "video file they have the right to play, which each artist opens "
-            "their own copy of and which follows the host's transport. WebJam "
-            "draws no strokes, ships and downloads no video, and follows "
-            "nothing it cannot prove is the same file. There is no camera "
-            "feed, no recorded take, and no frame-accurate or timecoded "
-            f"review. {MEETING_DIRECT_CAPTURE_BOUNDARY}"
+            "Preview is a room to talk and make. The host may add a shared "
+            "canvas painted by Drawpile or a silent video they have the right "
+            "to play. Each artist "
+            "opens their own copy; only a verified matching file follows the "
+            "host. WebJam draws no strokes; it ships and downloads no video. "
+            "There is no camera feed, no recorded take, or frame-accurate or "
+            "timecoded review. "
+            f"{MEETING_DIRECT_CAPTURE_BOUNDARY} "
+            "More → Session library → Art project keeps local briefs, "
+            "references, manual lesson bookmarks, and next steps."
         ),
         review_prompts=(
             "What did this piece need that you could not see alone?",

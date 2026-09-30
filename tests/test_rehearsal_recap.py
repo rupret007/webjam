@@ -219,9 +219,9 @@ class TestRehearsalRecapController(unittest.TestCase):
                 )
                 with patch.object(
                     controller, "_session_conductor_facts", return_value=ready_facts
-                ):
+                ), patch.object(controller.session_library, "current_take_status", return_value="Ready"):
                     controller._capture_rehearsal_recap_before_stop()
-                controller._present_rehearsal_recap_after_stop()
+                    controller._present_rehearsal_recap_after_stop()
                 window.show()
                 _app.processEvents()
                 panel = window.rehearsal_recap

@@ -1,20 +1,17 @@
-# Developing WebJam v0.28.4
+# Developing WebJam v0.29.0
 
-> **Current source line:** this guide describes v0.28.4 source. GitHub
-> **Latest** is immutable unsigned/ad-hoc private test release `393030220`,
-> published `2026-09-21T14:30:22Z` from annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to
-> exact commit `200cac9eb04d01611696cdc147957b36daef257f`. A checkout or branch artifact remains source
-> evidence, not a substitute for an exact release asset. Older release entries
-> (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags
-> remain. The existing Jamulus 3.12.2 and 3.12.3 compatibility records are
-> explicitly approved through v0.28.4. Live client/server selection and the
-> component-input build gate reuse those exact baked identities; the signed
-> public catalog stays sealed at exact WebJam v0.22.5.
+> **Source identity:** v0.29.0 unsigned testing candidate.
+> **Current download and publication status:** [GitHub Latest](https://github.com/rupret007/webjam/releases/latest)
+> identifies the published tag, packages, and checksum manifest.
+> **Historical checkpoint, checked 2026-09-29 before the v0.29.0 release round:**
+> [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4), immutable
+> release `396603181`, published `2026-09-25T12:57:13Z`. Annotated tag object
+> `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
+> `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. Its seven packages plus
+> `WebJam-v0.28.4-SHA256SUMS.txt` are the download evidence. Windows is unsigned;
+> macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
+> gates remain **NOT RUN**. A source checkout is not a published package.
 
-> **Release boundary:** only the seven exact v0.28.1 package assets and attached
-> `WebJam-v0.28.1-SHA256SUMS.txt` are authoritative for the current download.
-> Every v0.28.1 physical result remains **NOT RUN**; immutable v0.27.1 history
-> stays unchanged.
 
 ## Local setup
 
@@ -230,15 +227,17 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-This checkout's package identity is unsigned `0.28.1`. The exact released
-source is commit `200cac9eb04d01611696cdc147957b36daef257f`, but a checkout is
-not a release package. GitHub Latest is immutable release `393030220` with
-seven packages plus `WebJam-v0.28.1-SHA256SUMS.txt`. Older release entries
-(v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags
-remain. Do not rerun deleted tag workflows, recreate release entries, or create
-a publisher from guessed identities. Do not invent a signed catalog; sealed v3
-still authorizes 0.22.5 only. Windows remains unsigned and macOS remains ad-hoc
-signed and unnotarized.
+This checkout's package identity is unsigned `0.29.0`. Current publication status
+is on [GitHub Latest](https://github.com/rupret007/webjam/releases/latest). At the 2026-09-29
+pre-v0.29.0 checkpoint, Latest was immutable release `396603181` at commit
+`ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`, with seven packages plus
+`WebJam-v0.28.4-SHA256SUMS.txt`. A checkout is not a release package.
+Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted
+by owner; git tags remain. Do not recreate them or invent a signed catalog;
+sealed v3 authorized 0.22.5 only. Follow the current
+[release sequence](docs/DESKTOP_RELEASE_RUNBOOK.md#current-unsigned-testing-release)
+for this authorized candidate. Windows remains unsigned and macOS remains
+ad-hoc signed and unnotarized.
 
 The v0.24.0 tag, asset inventory, checksums, tag CI, and protected promotion
 remain immutable historical release evidence and must not be reused.

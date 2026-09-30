@@ -287,6 +287,7 @@ a = Analysis(
         "webjam_qt.windows.reference_studio_tools",
         "webjam_qt.windows.reference_studio_mixer",
         "services.reference_studio_packaged_smoke",
+        "services.session_workspace_packaged_smoke",
         "services.jamulus_component_packaged_smoke",
         # The conductor is imported at normal startup; the private Test Night
         # ledger and dialog are intentionally imported only when an operator

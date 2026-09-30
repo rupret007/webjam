@@ -56,6 +56,7 @@ from core.take_project import (
     ProjectTrack,
     TakeProject,
 )
+from core.take_receipt import RecordingReceiptError, render_recording_receipt
 
 STUDIO_EXPORT_SCHEMA_VERSION = 1
 DEFAULT_DISK_RESERVE_BYTES = 64 * 1024 * 1024
@@ -2209,6 +2210,13 @@ start. WebJam does not create or alter a `.logicx` project.
 
 External-editor import validation: **NOT RUN**. This package records render
 evidence only and does not claim that an external editor import was tested.
+
+## Recording receipt
+
+See `RECORDING_RECEIPT.md` for a human-readable inventory of the saved source
+tracks represented in this package, their recorded formats, and documented
+limitations. Plan comparison is unavailable in that receipt; it describes this
+export snapshot only.
 """
 
 
@@ -2932,6 +2940,7 @@ def export_studio_arrangement(
         markers_relative = Path("markers-and-sections.csv")
         instructions_relative = Path("IMPORT_INSTRUCTIONS.md")
         provenance_relative = Path("provenance.json")
+        receipt_relative = Path("RECORDING_RECEIPT.md")
         checksums_relative = Path("SHA256SUMS.txt")
         document_relative = Path("studio-document.json")
         source_manifest_relative = _take_manifest_relative(
@@ -3014,6 +3023,18 @@ def export_studio_arrangement(
             provenance_relative,
             json.dumps(provenance, indent=2, sort_keys=True) + "\n",
         )
+        try:
+            receipt_body = render_recording_receipt(
+                project,
+                {
+                    snapshot.take_id: snapshot.project
+                    for snapshot in take_snapshots
+                },
+                provenance,
+            )
+        except RecordingReceiptError as exc:
+            raise StudioExportError(str(exc)) from exc
+        _write_text(package_binding, receipt_relative, receipt_body)
         checksummed_relatives = [
             *audio_relatives,
             markers_relative,
@@ -3021,6 +3042,7 @@ def export_studio_arrangement(
             *(relative for _snapshot, relative in manifest_relatives),
             provenance_relative,
             instructions_relative,
+            receipt_relative,
         ]
         _write_text(
             package_binding,

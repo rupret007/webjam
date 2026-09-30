@@ -361,6 +361,12 @@ def _run_app() -> int:
     reference_studio_launch = bool(
         launch is not None and launch.selected_role == "studio"
     )
+    library_launch = bool(launch is not None and launch.selected_role == "library")
+    if library_launch and isinstance(app, WebJamApplication):
+        # Choosing saved work retires any earlier launch invitation. Only a
+        # subsequent explicit Open Invitation may authorize a live join.
+        app.take_pending_invitation()
+        app.take_pending_invitation_error()
     creator_profile = get_creator_profile_by_key_or_default(
         getattr(settings, "last_creator_profile_key", "music")
     )
@@ -406,10 +412,23 @@ def _run_app() -> int:
     # idempotent guard, but also tie cleanup to Qt's guaranteed quit signal so
     # Jamulus and the local companion service cannot be orphaned.
     app.aboutToQuit.connect(controller.shutdown)
-    if not reference_studio_launch:
+    if not reference_studio_launch and not library_launch:
         # The localhost companion belongs to live-session integrations.
         controller.start_companion_api()
     _apply_launch_session_context(controller, launch)
+    if library_launch:
+        try:
+            saved_workspace = controller.session_library.library.load(launch.selected_workspace_id)
+            continued = controller.session_library.continue_record(saved_workspace)
+            requested_open = getattr(launch, "selected_library_open", None)
+            if continued and requested_open:
+                kind, reference = requested_open
+                if kind == "bookmark":
+                    controller.session_library.open_bookmark(reference)
+                elif kind == "take":
+                    controller.session_library.open_take(reference)
+        except (OSError, ValueError):
+            window.flash_message("Workspace could not be reopened. Use More → Session library to retry.", ms=7000)
     if isinstance(app, WebJamApplication):
 
         def _deliver_live_invite(invitation: Invitation) -> None:
@@ -423,7 +442,7 @@ def _run_app() -> int:
         app.invitation_error.connect(
             lambda message: _show_live_invitation_error(window, message)
         )
-        late_invitation = app.pending_invitation()
+        late_invitation = None if library_launch else app.pending_invitation()
         if late_invitation is not None:
             QTimer.singleShot(
                 0,
@@ -438,16 +457,17 @@ def _run_app() -> int:
     )
     # Host/Join is authorization to begin the non-modal Jamulus-native journey.
     # Reference Studio instead opens offline and does not start Jamulus.
-    QTimer.singleShot(
-        0,
-        controller._on_launch_audio
-        if smoke_autostart
-        else (
-            controller.begin_reference_studio_journey
-            if reference_studio_launch
-            else controller.begin_startup_journey
-        ),
-    )
+    if not library_launch:
+        QTimer.singleShot(
+            0,
+            controller._on_launch_audio
+            if smoke_autostart
+            else (
+                controller.begin_reference_studio_journey
+                if reference_studio_launch
+                else controller.begin_startup_journey
+            ),
+        )
     if smoke_autostart:
         # Frozen-build validation needs to exercise the real desktop lifecycle
         # and then leave through Qt's ordinary quit path. A process signal

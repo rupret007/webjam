@@ -4,13 +4,17 @@ This index is the front door for WebJam's documentation. Start with the
 audience that matches what you are trying to do; the root [README](../README.md)
 keeps the product story and five-minute demo intentionally short.
 
-> **Show baseline, checked 2026-09-24:** published unsigned/ad-hoc
-> [v0.28.3](https://github.com/rupret007/webjam/releases/tag/v0.28.3) is GitHub
-> Latest, release `394985116`, from commit
-> `da16749abc9f87cde127e01ea10a7712e5ce7800`. Verify the selected package with
-> `WebJam-v0.28.3-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
-> and unnotarized. Branch changes and automated checks do not establish
-> physical show readiness. See [the show one-pager](../SHOW_ONEPAGER.md) and [demo script](../DEMO_SCRIPT.md).
+> **Source identity:** v0.29.0 unsigned testing candidate.
+> **Current download and publication status:** [GitHub Latest](https://github.com/rupret007/webjam/releases/latest)
+> identifies the published tag, packages, and checksum manifest.
+> **Historical checkpoint, checked 2026-09-29 before the v0.29.0 release round:**
+> [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4), immutable
+> release `396603181`, published `2026-09-25T12:57:13Z`. Annotated tag object
+> `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
+> `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. Its seven packages plus
+> `WebJam-v0.28.4-SHA256SUMS.txt` are the download evidence. Windows is unsigned;
+> macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
+> gates remain **NOT RUN**. A source checkout is not a published package.
 
 ## Start here
 
@@ -24,6 +28,15 @@ keeps the product story and five-minute demo intentionally short.
 | First-time demo | [First Session](../FIRST_JAM.md) | Follow the shortest profile-first live-session path |
 | Reference Studio user | [Reference Studio guide](REFERENCE_STUDIO_MUSICIAN_GUIDE.md) | Write, arrange, record, and bounce a local project |
 | Developer | [Development guide](../DEVELOPMENT.md) | Set up the repository, preserve ownership boundaries, and run checks |
+
+## Keep working between sessions
+
+v0.29.0 adds **File → Session library…** before a room and
+**More → Session library…** inside it. Save local notes, reuse a Music
+**Rehearsal plan**, or keep an **Art project** with references and next steps.
+**Continue this work** restores its context without starting audio or a room.
+Music moments are plain notes unless a recording position is confirmed.
+See [the saved-work walkthrough](../USER_GUIDE.md#save-a-session-and-continue-later).
 
 ## Product and architecture
 

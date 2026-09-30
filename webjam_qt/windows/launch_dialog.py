@@ -952,6 +952,7 @@ class LaunchDialog(QDialog):
         self._join_error.setAccessibleName("Join error")
         self._join_error.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._join_error.setWordWrap(True)
+        self._join_error.setVisible(False)
         layout.addWidget(self._join_error)
 
         self._join_button_primary = _JoinPrimaryButton()
@@ -1098,6 +1099,9 @@ class LaunchDialog(QDialog):
         self._workspace_actions = {}
         if self._allow_workspace_choices:
             file_menu = self._menu_bar.addMenu("&File")
+            self._session_library_action = file_menu.addAction("Session library…")
+            self._session_library_action.triggered.connect(self._open_session_library)
+            file_menu.addSeparator()
             for key, label in (("music", "New Music Project…"),
                                ("podcast_voice", "Podcast & Voice…"),
                                ("review_rehearsal", "Review & Rehearsal…")):
@@ -1112,6 +1116,47 @@ class LaunchDialog(QDialog):
         self._setup_action = help_menu.addAction("Music setup…")
         self._setup_action.triggered.connect(self._show_music_setup)
         self._setup_action.setEnabled(bool(self._jamulus_installer))
+
+    def _open_session_library(self) -> None:
+        if self._submitting or not self._allow_workspace_choices:
+            return
+        from webjam_qt.controllers.session_library import default_session_library, import_legacy_workspaces
+        from webjam_qt.windows.session_library import SessionLibraryDialog
+
+        library = default_session_library()
+        warnings = import_legacy_workspaces(library)
+        dialog = SessionLibraryDialog(library, self, profile=self.selected_creator_profile_key)
+        self.selected_library_open = None
+
+        def open_in_studio(kind: str, reference: dict) -> None:
+            if dialog.record is None or not dialog.save_current():
+                return
+            self.selected_library_open = (kind, dict(reference))
+            dialog.selected_record = dialog.record
+            dialog.accept()
+
+        dialog.take_open_requested.connect(lambda reference: open_in_studio("take", reference))
+        dialog.bookmark_open_requested.connect(lambda reference: open_in_studio("bookmark", reference))
+        # No live take position exists before the main window owns playback.
+        dialog.bookmark_requested.connect(dialog.rehearsal.add_bookmark)
+        if warnings:
+            dialog.status.setText(" ".join(warnings))
+        dialog.exec()
+        record = dialog.selected_record
+        if record is None:
+            return
+        candidate = deepcopy(self._settings)
+        candidate.last_creator_profile_key = record.profile
+        if not self._persist_role_choice(candidate, save_creator_choice=False):
+            return
+        self.selected_role = "library"
+        self.selected_workspace_id = record.id
+        self.session_name = record.title
+        self.invitation_meeting_url = ""
+        self.band_invite = None
+        self.remote_invitation = None
+        self._invite_input.clear()
+        self.accept()
 
     def _open_workspace(self, key: str) -> None:
         if self._submitting or not self._allow_workspace_choices:
@@ -1186,6 +1231,7 @@ class LaunchDialog(QDialog):
     def _clear_join_error(self) -> None:
         self._join_error.clear()
         self._join_error.setAccessibleDescription("")
+        self._join_error.setVisible(False)
 
     def _on_invite_text_changed(self, *_args: object) -> None:
         """Describe an unchecked paste without claiming it is a valid invite."""
@@ -1325,6 +1371,7 @@ class LaunchDialog(QDialog):
             self._restore_submission(refresh_invite_status=False)
             self._join_status.setText("Needs attention")
             self._join_error.setText(str(exc))
+            self._join_error.setVisible(True)
             self._announce_error(self._join_error, focus=self._invite_input)
             return False
         return self.accept_invitation(
@@ -1380,6 +1427,7 @@ class LaunchDialog(QDialog):
                 f"{message or 'WebJam couldn’t save this choice.'} "
                 "The invitation was cleared. Paste the full invitation again, then choose Join."
             )
+            self._join_error.setVisible(True)
             self._join_status.setText("Needs attention")
             self._announce_error(self._join_error, focus=self._invite_input)
             return False
@@ -1406,6 +1454,7 @@ class LaunchDialog(QDialog):
         self._join_error.setText(
             str(message or "WebJam could not open that invitation.")
         )
+        self._join_error.setVisible(True)
         self._announce_error(self._join_error, focus=self._invite_input)
 
     def take_remote_invitation(self) -> RemoteInvitation | None:

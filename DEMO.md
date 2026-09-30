@@ -6,16 +6,26 @@ Allow two minutes for the door, then another minute to open a Make together
 room and find its Conversation controls. One computer is enough to show that
 next action; a second artist is needed to demonstrate joining and making together.
 
-> **Show baseline, checked 2026-09-24:** published unsigned/ad-hoc
-> [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4) is the unsigned candidate under cut;
-> published Latest remains v0.28.3 (`394985116`) until this candidate publishes, from commit
-> `da16749abc9f87cde127e01ea10a7712e5ce7800`. Verify the selected package with
-> `WebJam-v0.28.4-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
-> and unnotarized. Branch changes and automated checks do not establish
-> physical show readiness. See [the show one-pager](SHOW_ONEPAGER.md) and [demo script](DEMO_SCRIPT.md).
-> This shorter door script stops before Host or Join. Its optional room
-> continuation starts a real local-network Art room, then ends it; it needs
-> no Jamulus, meeting launch, shared canvas, or video file.
+> **Source identity:** v0.29.0 unsigned testing candidate.
+> **Current download and publication status:** [GitHub Latest](https://github.com/rupret007/webjam/releases/latest)
+> identifies the published tag, packages, and checksum manifest.
+> **Historical checkpoint, checked 2026-09-29 before the v0.29.0 release round:**
+> [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4), immutable
+> release `396603181`, published `2026-09-25T12:57:13Z`. Annotated tag object
+> `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
+> `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. Its seven packages plus
+> `WebJam-v0.28.4-SHA256SUMS.txt` are the download evidence. Windows is unsigned;
+> macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
+> gates remain **NOT RUN**. A source checkout is not a published package.
+
+## Keep working between sessions
+
+v0.29.0 adds **File → Session library…** before a room and
+**More → Session library…** inside it. Save local notes, reuse a Music
+**Rehearsal plan**, or keep an **Art project** with references and next steps.
+**Continue this work** restores its context without starting audio or a room.
+Music moments are plain notes unless a recording position is confirmed.
+See [the saved-work walkthrough](USER_GUIDE.md#save-a-session-and-continue-later).
 
 ## Run it
 
@@ -34,7 +44,7 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/test_art_start_ux.
 1. **Launch WebJam.** The first screen shows two workspace cards, side by
    side, with no badge, caveat, or tool name on either card:
    - **Art** — "Make art together."
-   - **Music** — "Play live together."
+   - **Music** — "Write songs or play live together."
 
    Host and Join are also visible. The saved workspace may already be
    selected; Art also shows its two activity cards. Let the workspace cards
@@ -42,10 +52,10 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/test_art_start_ux.
    [docs/MERGE_AND_RELEASE.md](docs/MERGE_AND_RELEASE.md#1-ten-second-ux-gate).
 
 2. **Choose Art.** Two more cards appear:
-   - **Make together** — "Talk and make with your own tools, or share a canvas." Everyone
+   - **Make together** — "Paint, sculpt, 3D print, or just talk." Everyone
      works in their own space; the host can open one shared canvas from
      inside the room if the group wants to draw together.
-   - **Paint along** — "Paint beside a silent video, from a file or lesson link."
+   - **Paint along** — "Follow a silent video from a file or lesson link."
 
    Point out that neither card names Jamulus, Webex, Drawpile, Krita, or any
    other tool — that's enforced by `tests/test_art_start_ux.py`, not a styling
@@ -134,7 +144,7 @@ Showing those choices does not prove video playback or shared meeting media.
 
 Record `git rev-parse HEAD` with your walkthrough notes. This script was
 rechecked against master base
-`da16749abc9f87cde127e01ea10a7712e5ce7800` (v0.28.4). This source check is
+`ce52e9c9302cb3f28510a3e3b0e9edfff8b31111` (v0.28.4 published baseline). This source check is
 separate from the unperformed physical walkthrough.
 If the app disagrees with this file, record its exact wording and the source
 commit. The door and room checks above help locate the mismatch; this source

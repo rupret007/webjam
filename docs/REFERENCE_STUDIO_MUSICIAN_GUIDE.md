@@ -1,18 +1,23 @@
 # Reference Studio creator guide
 
+v0.29.0 source guide; see GitHub Latest below for publication status.
+
 Reference Studio is WebJam's standalone space for writing and rehearsing with
 a backing track. It can open without a WebJam session, Webex, or Jamulus. Its
 local playback and recording choices do not change the device, buffer, mix, or
 connection owned by Jamulus.
 
-> **v0.28.4 source guide.**
-> **Show baseline, checked 2026-09-24:** published unsigned/ad-hoc
-> [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4) is GitHub
-> Latest, release `394985116`, from commit
-> `da16749abc9f87cde127e01ea10a7712e5ce7800`. Verify the selected package with
-> `WebJam-v0.28.4-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
-> and unnotarized. Branch changes and automated checks do not establish
-> physical show readiness. See [the show one-pager](../SHOW_ONEPAGER.md) and [demo script](../DEMO_SCRIPT.md).
+> **Source identity:** v0.29.0 unsigned testing candidate.
+> **Current download and publication status:** [GitHub Latest](https://github.com/rupret007/webjam/releases/latest)
+> identifies the published tag, packages, and checksum manifest.
+> **Historical checkpoint, checked 2026-09-29 before the v0.29.0 release round:**
+> [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4), immutable
+> release `396603181`, published `2026-09-25T12:57:13Z`. Annotated tag object
+> `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
+> `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. Its seven packages plus
+> `WebJam-v0.28.4-SHA256SUMS.txt` are the download evidence. Windows is unsigned;
+> macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
+> gates remain **NOT RUN**. A source checkout is not a published package.
 
 Windows packages are unsigned. Mac packages are ad-hoc signed and unnotarized.
 Automated checks do not prove that a particular interface, driver, speaker, or

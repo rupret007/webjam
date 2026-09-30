@@ -7,14 +7,26 @@
 audibility, shared viewing, or installed-build feel. Fill in the rehearsal
 receipt after running the complete sequence. Preparation is outside the timer.
 
+## Optional v0.29.0 source walkthrough
+
+With a v0.29.0 build, open **File → Session library…**, create a Music
+workspace, add two songs in **Rehearsal plan**, and leave one note per song.
+Close and reopen the library to show the saved drafts. Reuse **Save plan…** /
+**Add saved plan…**, then view **Summary**. On an Art workspace, add a project
+brief and reference, save a manual lesson bookmark, and explicitly choose
+**Open reference**. With two permitted completed takes, demonstrate Studio
+**Review / Compare**, **Set A/B**, and **Listen A/B**, then an export receipt.
+These extra steps are outside the timed 8:45 script and require their own
+rehearsal. They are not features of the published v0.28.4 package.
+
 ## Prepare once, before the audience arrives
 
 - [ ] Select one app/build for the entire show. Record its version and source
-  commit or installed package hash in the receipt. Published baseline is
-  [v0.28.3](https://github.com/rupret007/webjam/releases/tag/v0.28.3); draft source
-  changes are a separate candidate. Finish installation and documented
+  commit or installed package hash in the receipt. [GitHub Latest](https://github.com/rupret007/webjam/releases/latest)
+  records the current published candidate; v0.28.4 is the historical baseline.
+  Finish installation and documented
   platform-trust steps beforehand. No new build publication is part of this run.
-- [ ] Use the sole checkout, `/Users/jeffstory/Documents/webjam`. Verify its
+- [ ] For a source demo, use your checked-out WebJam repository. Verify its
   `.venv` and the handoff command below. For a source presentation, launch with
   `./.venv/bin/python webjam_qt_main.py` from that directory. Each later
   “reopen” means the same command after WebJam exits, or the same installed app.
@@ -99,7 +111,7 @@ than claiming a meeting was joined or shared.
 format. It is not the band performance we just heard.”
 
 ```bash
-cd /Users/jeffstory/Documents/webjam
+# Run from your WebJam repository directory.
 ./.venv/bin/python -m tools.logic_handoff --stub
 ```
 
@@ -178,16 +190,11 @@ Fallbacks used / elapsed time at each transition / remaining issues:
 
 ## Source and review boundary
 
-Navigation was checked against master base
-`da16749abc9f87cde127e01ea10a7712e5ce7800`, using only
-`/Users/jeffstory/Documents/webjam`. No fresh physical rehearsal is claimed.
-The docs PR body owns the final tip SHA, complete local gate, exact-tip hosted
-required-job results, and Karen leftover/security/UX review handoff. This script
-does not certify a different open PR, native companion device feel, or packaging.
+The saved-work walkthrough describes v0.29.0 source. Record the exact app
+version and build identity before presenting it; the selected GitHub release
+owns its package checksums and CI evidence. A source walkthrough does not
+certify a different installed build.
 
-Keep the docs PR **OPEN DRAFT**; after its exact tip reaches hosted green, stop
-for Bob/Karen. **No new publish/tag/Latest until Bob says FINAL BUILD after all
-MATCHED and Bob + Karen QA.** No signing/notarization or Pages; leave #37/#49
-parked. No second WebJam checkout, clone, worktree, or Codex task.
-
-Marker: `WEBJAM_SHOW_WAVE_FINAL_BUILD_20260924`.
+No fresh physical rehearsal is claimed here. Complete the receipt above
+before treating the timed sequence, two-machine audio, Art following, or Logic
+listening as verified. Jeff owns subjective feel and Final Build judgment.

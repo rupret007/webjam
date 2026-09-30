@@ -67,9 +67,9 @@ def _make_bridge():
         },
         component_store_root=isolated_component_store_root(),
     )
-    # Exercise the approved v0.28.4 baked-component boundary. The sealed
+    # Exercise the approved v0.29.0 baked-component boundary. The sealed
     # public catalog remains independently pinned to exact WebJam v0.22.5.
-    bridge._runtime_webjam_version = MagicMock(return_value="0.28.4")
+    bridge._runtime_webjam_version = MagicMock(return_value="0.29.0")
     return bridge
 
 
@@ -866,7 +866,7 @@ class TestFindJamulusFallback(unittest.TestCase):
                 "Jamulus.app/Contents/MacOS/Jamulus"
             ),
         ):
-            self.assertEqual(bridge._runtime_webjam_version(), "0.28.4")
+            self.assertEqual(bridge._runtime_webjam_version(), "0.29.0")
             self.assertEqual(
                 bridge._approved_embedded_runtime_versions(JamulusRole.CLIENT),
                 frozenset({"3.12.2", "3.12.3"}),
@@ -881,9 +881,9 @@ class TestFindJamulusFallback(unittest.TestCase):
 
     def test_future_source_still_rejects_the_bundled_client(self):
         bridge = _make_bridge()
-        # Beyond the approved baked ceiling (0.28.4): future source must still
+        # Beyond the approved baked ceiling (0.29.0): future source must still
         # reject the bundled client until the compatibility range is extended.
-        bridge._runtime_webjam_version = MagicMock(return_value="0.28.5")
+        bridge._runtime_webjam_version = MagicMock(return_value="0.29.1")
         bridge._jamulus_component_target = ComponentTarget.WINDOWS_X64
         with patch(
             "services.bridge_service._bundled_jamulus_candidate",

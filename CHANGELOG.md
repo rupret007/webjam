@@ -6,12 +6,32 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-> Future work after the unsigned v0.28.3 candidate belongs here. At candidate
-> preparation, GitHub Latest remains v0.28.3 release `394985116`;
-> v0.28.2 remains a stale draft at `a51154e533ce5662ca4b541a866dd9b1954452b1`.
-> Every published tag, release, and asset remains immutable historical evidence.
-> Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted
-> by owner; git tags remain.
+Changes after the v0.29.0 source line will be recorded here.
+
+## [0.29.0] — Unsigned testing candidate
+
+> Source identity is **v0.29.0**. For current download and publication status,
+> see [GitHub Latest](https://github.com/rupret007/webjam/releases/latest); a draft is not a published package.
+> Historical checkpoint checked 2026-09-29 before the v0.29.0 release round:
+> immutable v0.28.4 release `396603181` was Latest, published
+> `2026-09-25T12:57:13Z` at `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`, with
+> seven packages plus `WebJam-v0.28.4-SHA256SUMS.txt`. Older release entries
+> (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags remain.
+> Physical, signing, notarization, and Final Build judgments remain **NOT RUN**.
+
+### Continue the work after a session
+
+- Searchable local Session library with profile-specific workspaces, notes,
+  saved recaps, take links, explicit continuation, and exportable summaries.
+- Reusable Music rehearsal plans: ordered songs, key/tempo/goals, per-song
+  notes, progress and next steps, plus keyboard moment notes. Take positions
+  require current verified recording evidence; otherwise moments remain notes.
+- Art projects retain a brief, progress, references, manually entered lesson
+  bookmarks, and next steps. References open only when requested.
+- Studio Review / Compare adds private favorites and notes, explicit A/B
+  audition of saved arrangements, and checksum-verified export receipts.
+- The version and baked Jamulus compatibility ceiling advance to 0.29.0 using
+  unchanged audited 3.12.2/3.12.3 bytes. This is not signed catalog approval.
 
 ### Track export preserves recording evidence and shared folders
 
@@ -51,12 +71,14 @@ All notable improvements and features for the WebJam creator collaboration platf
   and checksum receipt, and distinguishes standalone Music from Preview
   restrictions. Older release details are explicitly historical.
 
-## [0.28.4] — Unsigned/ad-hoc private test release candidate
+## [0.28.4] — Unsigned/ad-hoc private test release (2026-09-25)
 
-> Private unsigned/ad-hoc test candidate on master after Send to Logic (#155).
-> Bumps packaged version from 0.28.3 to 0.28.4. Existing v0.28.3 remains its
-> own immutable published release until this candidate is tagged and published.
-> Physical/signing/notarization remain **NOT RUN**.
+> Published immutable release `396603181` from annotated tag object
+> `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c`, commit
+> `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. Tag CI `36133468143` passed;
+> seven packages plus `WebJam-v0.28.4-SHA256SUMS.txt` identify its bytes.
+> It was GitHub Latest at the 2026-09-29 pre-v0.29.0 checkpoint.
+> Physical/signing remain **NOT RUN**.
 
 ### Added
 - Send to Logic button with adapter for take handoff (#155).

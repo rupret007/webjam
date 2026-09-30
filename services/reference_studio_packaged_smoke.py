@@ -57,6 +57,7 @@ from core.studio_project import (
 )
 from core.studio_renderer import StudioRenderer
 from core.studio_sections import reorder_section
+from services.session_workspace_packaged_smoke import run_session_workspace_smoke
 
 SUCCESS_MARKER = "WebJam Reference Studio frozen-runtime smoke passed"
 _SAMPLE_RATE = 48_000
@@ -565,7 +566,7 @@ def _exercise_reference_studio(root: Path) -> None:
 
 
 def run_frozen_reference_studio_smoke(*, result_path: Path) -> int:
-    """Exercise packaged standalone project behavior without opening Qt."""
+    """Exercise packaged project and Qt saved-work paths without audio hardware."""
 
     with tempfile.TemporaryDirectory(
         prefix="webjam-reference-studio-work-"
@@ -573,6 +574,7 @@ def run_frozen_reference_studio_smoke(*, result_path: Path) -> int:
         root = Path(directory)
         _exercise_reference_studio(root)
         _exercise_packaged_reference_track_mp3(root)
+        run_session_workspace_smoke()
     _write_success_marker(result_path)
     return 0
 

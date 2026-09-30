@@ -1,19 +1,25 @@
-WebJam v0.28.1 unsigned private test package
+WebJam unsigned private test package
 ============================================
 
-PACKAGE BOUNDARY: GitHub Latest is immutable release 393030220, published
-2026-09-21T14:30:22Z from annotated tag object db44247a3ceefb97f4cac6e623deef1bd32648a8 peeling to exact commit
-200cac9eb04d01611696cdc147957b36daef257f. It has seven packages plus WebJam-v0.28.1-SHA256SUMS.txt. Use this
-private test package only when its exact filename and SHA-256 appear in that
-manifest. A checkout or branch build is not a substitute. Older release entries
-(v0.28.0, v0.27.2, Jamulus catalog v1-v3) were deleted by owner; git tags remain.
-The existing exact Jamulus 3.12.2 and 3.12.3 records are approved through v0.28.1
-for live Host/Join.
+PACKAGE BOUNDARY: Read the bundled build metadata for this package's version
+and source identity. Current download and publication status are recorded at
+https://github.com/rupret007/webjam/releases/latest. Use this private test package
+only when its exact filename and SHA-256 match that release's own checksum
+manifest. A checkout or branch build is not a published release.
+
+Historical checkpoint: v0.28.1 release 393030220 was published
+2026-09-21T14:30:22Z from annotated tag object db44247a3ceefb97f4cac6e623deef1bd32648a8,
+commit 200cac9eb04d01611696cdc147957b36daef257f. Its seven packages and
+WebJam-v0.28.1-SHA256SUMS.txt identify only that historical release, not later
+packages. Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1-v3) were
+deleted by owner; git tags remain. In the v0.29.0 source line, the unchanged
+exact Jamulus 3.12.2 and 3.12.3 records are approved through v0.29.0 for live
+Host/Join; this is not signed managed-update authorization.
 Physical audio, hardware, SmartScreen, publisher-signing, and managed-device
 gates remain NOT RUN unless the release evidence names this exact file and
 SHA-256.
 
-Everything below describes the published unsigned private test package. Its
+Everything below describes this unsigned private test package. Its
 exact filename and published SHA-256 still require verification.
 Windows SmartScreen or organizational policy may block it; WebJam does not
 bypass those controls.

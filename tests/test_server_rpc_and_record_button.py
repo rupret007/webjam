@@ -5837,6 +5837,53 @@ class TestRecordButtonWiring(unittest.TestCase):
         self.assertEqual(c.recording.phase.value, "idle")
         self.assertFalse(c._recorder_armed)
 
+    def test_library_completion_requires_the_exact_durable_take_identity(self):
+        from core.take_library import TakeInfo
+        from core.take_project import new_project_id
+
+        c = self.controller
+        for identity in ("missing", "empty", "different", "matching", "needs_attention"):
+            with self.subTest(identity=identity):
+                take_id = new_project_id()
+                c.recording._take_id = take_id
+                c.recording._validation_take_id = take_id
+                c.recording._reset_session_evidence()
+                take_path = Path("/tmp/webjam-library-identity")
+                if identity == "missing":
+                    take = SimpleNamespace(path=take_path)
+                else:
+                    take = TakeInfo(
+                        path=take_path,
+                        name="Library identity",
+                        take_id=(
+                            "" if identity == "empty"
+                            else new_project_id() if identity == "different"
+                            else take_id
+                        ),
+                        validation_status=(
+                            "needs_attention" if identity == "needs_attention"
+                            else "complete"
+                        ),
+                    )
+                result = SimpleNamespace(
+                    ok=True, take=take, errors=(), warnings=(), summary="Saved take",
+                )
+                with (
+                    patch.object(c.window.recording_studio, "on_take_completed"),
+                    patch.object(c, "signal_peer_recording_stopped"),
+                    patch.object(c, "host_peer", SimpleNamespace(active=False)),
+                    patch.object(c.session_library, "recording_completed") as linked,
+                ):
+                    c.recording._show_validation_result(result, take_id=take_id)
+                if identity in {"matching", "needs_attention"}:
+                    linked.assert_called_once_with(
+                        take, validated=identity == "matching",
+                    )
+                else:
+                    linked.assert_not_called()
+                self.assertEqual(c.recording._take_id, "")
+                self.assertEqual(c.recording._validation_take_id, "")
+
     def test_validation_failure_publishes_peer_needs_attention_before_retire(self):
         from core.take_project import new_project_id
 

@@ -29,6 +29,20 @@ SHEET = "Key: A minor\nTempo: 104\n[Verse]\nAm F C G\nDriving through town\n"
 ACCOUNT = [MusicAIWorkflow("1", "Stem Separation", "my-stems", "isolate vocals")]
 
 
+def test_saved_rehearsal_song_drives_existing_song_tools_without_replacing_room_notes(app):
+    controller = _controller(app, notes=SHEET)
+    controller.session_library = SimpleNamespace(song_context=lambda: (
+        "Northbound", "[Chorus]\nDm Bb C\nKey: D minor\nTempo: 108 BPM"))
+    coordinator = SongToolsCoordinator(controller)
+    coordinator._sync_workbench()
+    assert coordinator.workbench.form.title == "Northbound"
+    assert coordinator.workbench.form.key.value == "D minor"
+    assert coordinator.workbench.form.tempo.value == "108"
+    assert coordinator.workbench.section_names() == ("Chorus",)
+    assert controller.window.session_canvas.current_notes() == SHEET
+    controller.window.session_canvas.set_notes.assert_not_called()
+
+
 @pytest.fixture(scope="module")
 def app():
     return QApplication.instance() or QApplication([])

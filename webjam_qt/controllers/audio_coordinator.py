@@ -388,7 +388,7 @@ class AudioCoordinator:
         if reply != QMessageBox.StandardButton.Yes:
             return
         capture_recap = getattr(self._c, "_capture_rehearsal_recap_before_stop", None)
-        if callable(capture_recap) and not art_room:
+        if callable(capture_recap):
             capture_recap()
         self._begin_session_stop(hosting, art_room=art_room)
 

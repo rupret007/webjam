@@ -562,6 +562,16 @@ class SessionStrip(QFrame):
         tools_menu.addAction(conversation_action)
         tools_menu.addSeparator()
         # This session
+        self._session_library_action = QAction("Session library…", tools_menu)
+        self._session_library_action.triggered.connect(
+            lambda: self.tool_requested.emit("session_library")
+        )
+        tools_menu.addAction(self._session_library_action)
+        self._rehearsal_plan_action = QAction("Rehearsal plan / Art project…", tools_menu)
+        self._rehearsal_plan_action.triggered.connect(
+            lambda: self.tool_requested.emit("rehearsal_plan")
+        )
+        tools_menu.addAction(self._rehearsal_plan_action)
         tools_menu.addAction(self._recording_setup_action)
         tools_menu.addAction(self._reference_track_action)
         tools_menu.addAction(self._reference_video_action)
@@ -699,6 +709,10 @@ class SessionStrip(QFrame):
         """Apply live-shell vocabulary without changing native ownership truth."""
 
         profile_key = self._creator_profile_key
+        plan_action = getattr(self, "_rehearsal_plan_action", None)
+        if plan_action is not None:
+            plan_action.setVisible(profile_key in {"music", "art"})
+            plan_action.setText("Art project…" if profile_key == "art" else "Rehearsal plan…")
         if profile_key == "music":
             audio_name = "Start or end the band session"
             audio_tip = (

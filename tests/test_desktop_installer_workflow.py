@@ -71,12 +71,17 @@ def test_current_candidate_identity_cannot_be_confused_with_old_release() -> Non
     match = re.search(r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$', VERSION_SOURCE, re.M)
     assert match is not None
     version = match.group(1)
-    assert version == "0.28.4"
+    assert version == "0.29.0"
     assert version != "0.22.5"  # Immutable historical release.
     assert PROJECT_README.startswith(
         "# WebJam\n\n## Native creator collaboration and multitrack recording"
     )
-    assert f"## [{version}]" in CHANGELOG
+    candidate = CHANGELOG.partition(f"## [{version}]")[2].partition("\n## [")[0]
+    assert f"v{version}" in candidate
+    assert "unsigned testing candidate" in candidate.casefold()
+    assert "https://github.com/rupret007/webjam/releases/latest" in candidate
+    assert "Historical checkpoint" in candidate
+    assert "396603181" in candidate  # Immutable v0.28.4 stays distinct.
     assert "v0.20.0 history must not be moved" in PROJECT_README
     assert "**Reference Studio** is a standalone" in PROJECT_README
     assert re.search(r"Pocket Stage iPhone\s+Setup", PROJECT_README)
@@ -731,7 +736,7 @@ def test_linux_release_names_only_the_intended_ubuntu_target() -> None:
     normalized_linux_readme = " ".join(LINUX_README.split())
     assert "intended target is 64-bit Ubuntu" in normalized_linux_readme
     assert (
-        "22.04; no v0.28.1 Linux build is currently physically certified"
+        "22.04; physical certification requires separate evidence for this exact package"
         in normalized_linux_readme
     )
     assert "Ubuntu 22.04 x64 ZIP" in PROJECT_README
