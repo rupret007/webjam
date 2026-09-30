@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -44,9 +45,13 @@ class SessionLibraryDialog(QDialog):
     bookmark_open_requested = Signal(dict)
     song_selected = Signal(dict)
 
-    def __init__(self, library: SessionLibrary, parent=None, *, profile="music", current_id=""):
+    def __init__(self, library: SessionLibrary, parent=None, *, profile="music", current_id="", pending_records=None):
         super().__init__(parent)
         self.library = library
+        # The coordinator remains the owner of its recovery map. Only the
+        # success signals may settle that map; this dialog edits a snapshot.
+        self.pending_records = dict(pending_records or {})
+        self._initial_current_id = current_id
         self.default_profile = profile
         self.record = None
         self.selected_record = None
@@ -147,6 +152,7 @@ class SessionLibraryDialog(QDialog):
         self.search.textChanged.connect(self.refresh)
         self.history.currentRowChanged.connect(self._select)
         self.refresh()
+        self._initial_current_id = ""
         if current_id:
             self.select_id(current_id)
 
@@ -157,26 +163,49 @@ class SessionLibraryDialog(QDialog):
         self.tabs.addTab(scroll, label)
 
     def refresh(self, _query=None):
+        read_error = ""
         try:
             records = self.library.list(query=self.search.text())
         except (OSError, ValueError) as error:
-            self.status.setText(f"Library could not be read: {error}")
-            return
+            read_error = f"Library could not be read: {error}"
+            if not self.pending_records:
+                self.status.setText(read_error)
+                return
+            records = []
+        # Failed saves in another profile must remain discoverable even if
+        # their original was removed or the on-disk library is unavailable.
+        indexed = {record.id: record for record in records}
+        query = self.search.text().casefold().strip()
+        for pending in self.pending_records.values():
+            content = json.dumps({name: getattr(pending, name) for name in (
+                "title", "notes", "profile", "decisions", "actions", "blockers",
+                "recaps", "take_links", "art", "rehearsal",
+            )}, ensure_ascii=False).casefold()
+            if not query or query in content:
+                indexed[pending.id] = pending
+            else:
+                indexed.pop(pending.id, None)
+        records = sorted(indexed.values(), key=lambda record: (record.updated_at, record.id), reverse=True)
         current_id = self.record.id if self.record else ""
         self.history.blockSignals(True)
         self.history.clear()
         for record in records:
-            item = QListWidgetItem(f"{record.title} · {record.profile.replace('_', ' ')} · {record.updated_at[:10]}")
+            suffix = " · unsaved changes" if record.id in self.pending_records else ""
+            item = QListWidgetItem(f"{record.title} · {record.profile.replace('_', ' ')} · {record.updated_at[:10]}{suffix}")
             item.setData(Qt.ItemDataRole.UserRole, record.id)
             self.history.addItem(item)
             if record.id == current_id:
                 self.history.setCurrentItem(item)
         self.history.blockSignals(False)
         if self.record is None and records:
-            self.history.setCurrentRow(0)
+            initial_row = next((row for row, record in enumerate(records)
+                                if record.id == self._initial_current_id), 0)
+            self.history.setCurrentRow(initial_row)
         self.tabs.setEnabled(self.record is not None)
         self.continue_button.setEnabled(self.record is not None)
-        if self.library.warnings:
+        if read_error:
+            self.status.setText(read_error + " Retained drafts are still available; retry saving or save a separate copy.")
+        elif self.library.warnings:
             self.status.setText("Some records need recovery. " + " ".join(self.library.warnings))
         elif not records and self.record is None:
             self.status.setText("Create a workspace to keep your next session's work.")
@@ -200,7 +229,8 @@ class SessionLibraryDialog(QDialog):
             self.history.blockSignals(False)
             return
         try:
-            record = self.library.load(requested_id)
+            pending = self.pending_records.get(requested_id)
+            record = pending if pending is not None else self.library.load(requested_id)
             # Validate the whole workspace before replacing any current draft.
             from core.art_workspace import normalize_art_workspace
             from core.rehearsal_plan import RehearsalPlan
@@ -223,8 +253,13 @@ class SessionLibraryDialog(QDialog):
             self.tabs.setEnabled(True)
             self.continue_button.setEnabled(True)
             self._render_takes()
-            self._dirty = False
-            self.status.setText("Recovered copy loaded. Save as copy to keep it." if record.recovered else "Saved on this computer.")
+            self._dirty = pending is not None
+            self.status.setText(
+                "Retained changes are not saved. Use Save to retry or Save as copy."
+                if pending is not None else (
+                    "Recovered copy loaded. Save as copy to keep it." if record.recovered else "Saved on this computer."
+                )
+            )
         except (OSError, ValueError) as error:
             self.status.setText(f"Workspace could not be opened: {error}")
             if self.record is not None:
@@ -265,6 +300,7 @@ class SessionLibraryDialog(QDialog):
             self.status.setText(f"Changes are still here but not saved: {error} Use Save to retry or Save as copy.")
             return False
         self._dirty = False
+        self.pending_records.pop(self.record.id, None)
         self.summary.setPlainText(workspace_summary(self.record))
         self.status.setText("Saved on this computer.")
         self.record_saved.emit(self.record)
@@ -297,6 +333,7 @@ class SessionLibraryDialog(QDialog):
                 "recaps", "take_links", "rehearsal", "art", "mode_key")}
             record = self.library.create(edited.profile, title.strip(), **fields)
             self._dirty = False
+            self.pending_records.pop(edited.id, None)
             self.search.clear()
             self.refresh()
             self.select_id(record.id)

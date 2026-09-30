@@ -144,6 +144,73 @@ def test_failed_copy_keeps_draft_and_does_not_acknowledge_recovery(tmp_path, mak
     assert dialog.notes.toPlainText() == "Draft still needs a home"
 
 
+def test_another_profiles_pending_draft_can_be_found_and_preserved_as_copy(tmp_path, make_dialog, monkeypatch):
+    library = SessionLibrary(tmp_path)
+    current = library.create("music", "Current rehearsal")
+    original = library.create("art", "Art original", notes="Old disk notes", art={"version": 1, "brief": "Old disk brief"})
+    pending = replace(original, notes="Unsaved violet shadows", art={
+        "version": 1, "brief": "Retained project brief", "progress": "New brushwork",
+        "next_steps": "Keep this exact Art draft",
+    })
+    library.save(replace(original, notes="External notes on disk"))
+    pending_map = {pending.id: pending}
+    dialog = make_dialog(library, current_id=current.id, pending_records=pending_map)
+    assert dialog.record.id == current.id  # A newer pending row must not steal initial selection.
+    dialog.search.setText("VIOLET")
+    assert dialog.history.count() == 1
+    assert "unsaved" in dialog.history.item(0).text()
+    dialog.select_id(pending.id)
+    assert dialog.record.id == pending.id
+    assert dialog._dirty
+    assert "not saved" in dialog.status.text()
+    assert dialog.notes.toPlainText() == "Unsaved violet shadows"
+    assert dialog.art.brief.toPlainText() == "Retained project brief"
+    assert dialog.art.progress.toPlainText() == "New brushwork"
+    assert not dialog.save_current()
+    copies = []
+    dialog.copy_saved.connect(lambda source, saved: copies.append((source, saved)))
+    monkeypatch.setattr(QInputDialog, "getText", lambda *_args, **_kwargs: ("Retained Art copy", True))
+    _click(dialog, "Save as copy…")
+    copied = library.load(dialog.record.id)
+    assert copied.id != original.id
+    assert copied.profile == "art"
+    assert copied.notes == pending.notes
+    assert copied.art["next_steps"] == "Keep this exact Art draft"
+    assert library.load(original.id).notes == "External notes on disk"
+    assert copies[0][0].id == original.id
+    assert copies[0][1] == copied
+    assert pending_map == {pending.id: pending}  # Only the coordinator settles its recovery map.
+
+
+def test_pending_workspace_remains_recoverable_when_original_was_removed(tmp_path, make_dialog, monkeypatch):
+    library = SessionLibrary(tmp_path)
+    original = library.create("music", "Unavailable original", notes="Old")
+    pending = replace(original, notes="Retain even after original removal")
+    (tmp_path / f"{original.id}.json").unlink()
+    dialog = make_dialog(library, current_id=original.id, pending_records={original.id: pending})
+    assert dialog.history.count() == 1
+    assert dialog._dirty
+    assert dialog.notes.toPlainText() == pending.notes
+    monkeypatch.setattr(QInputDialog, "getText", lambda *_args, **_kwargs: ("Recovered separately", True))
+    _click(dialog, "Save as copy…")
+    assert library.load(dialog.record.id).notes == pending.notes
+
+
+def test_pending_record_retry_settles_only_dialog_snapshot(tmp_path, make_dialog):
+    library = SessionLibrary(tmp_path)
+    original = library.create("music", "Retry", notes="Original")
+    pending = replace(original, notes="Retained retry")
+    external_pending = {pending.id: pending}
+    dialog = make_dialog(library, current_id=pending.id, pending_records=external_pending)
+    saved = []
+    dialog.record_saved.connect(saved.append)
+    assert dialog.save_current()
+    assert len(saved) == 1
+    assert library.load(original.id).notes == "Retained retry"
+    assert original.id not in dialog.pending_records
+    assert external_pending == {pending.id: pending}
+
+
 def test_failed_save_does_not_close_or_continue_with_unsaved_changes(tmp_path, make_dialog):
     library = SessionLibrary(tmp_path)
     original = library.create("art", "Study")
