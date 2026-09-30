@@ -5,9 +5,9 @@ matching its native package. These locks preserve the Python dependency graph
 that is reviewed and tested before signing; `requirements.txt` remains the
 human-maintained application dependency declaration.
 
-Immutable GitHub **Latest** release `393030220` published these dependency
-locks from annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to exact commit `200cac9eb04d01611696cdc147957b36daef257f`.
-Its seven packages are bound by `WebJam-v0.28.1-SHA256SUMS.txt`; a later
+Immutable GitHub **Latest** release `396603181` published these dependency
+locks from annotated tag object `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peeling to exact commit `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`.
+Its seven packages are bound by `WebJam-v0.28.4-SHA256SUMS.txt`; a later
 `master` checkout or branch build must not reuse that manifest as evidence for
 different bytes. Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3)
 were deleted by owner; git tags remain. Every physical, signing, notarization,

@@ -4,12 +4,12 @@
   "version": 1,
   "metadata": {
     "component": {
-      "bom-ref": "pkg:generic/webjam@0.28.4",
+      "bom-ref": "pkg:generic/webjam@0.29.0",
       "group": "rupret007",
       "name": "WebJam",
-      "purl": "pkg:generic/webjam@0.28.4",
+      "purl": "pkg:generic/webjam@0.29.0",
       "type": "application",
-      "version": "0.28.4"
+      "version": "0.29.0"
     },
     "properties": [
       {
@@ -22,7 +22,7 @@
       },
       {
         "name": "webjam:current-source-authorization",
-        "value": "baked-jamulus-records-approved-through-webjam-0.28.4"
+        "value": "baked-jamulus-records-approved-through-webjam-0.29.0"
       },
       {
         "name": "webjam:build-eligibility",

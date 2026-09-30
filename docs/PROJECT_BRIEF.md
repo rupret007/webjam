@@ -1,13 +1,14 @@
 # WebJam project brief
 
-**Review date:** 2026-09-23
-**Status:** published unsigned/ad-hoc v0.28.1 is GitHub Latest release
-`393030220`, published `2026-09-21T14:30:22Z`. Annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8`
-peels to exact commit `200cac9eb04d01611696cdc147957b36daef257f`. Its seven packages are covered by
-`WebJam-v0.28.1-SHA256SUMS.txt`; a checkout or branch artifact is not a package.
-Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by
-owner; git tags remain. Live Jamulus Host/Join reuses the existing exact 3.12.2
-and 3.12.3 records; every v0.28.1 physical/hardware gate is **NOT RUN**.
+**Review date:** 2026-09-29
+**Source:** v0.29.0, unreleased unsigned testing candidate.
+**Published download:** GitHub Latest is immutable v0.28.4 release `396603181`,
+published `2026-09-25T12:57:13Z` from annotated tag object
+`dc494f0450ccc6f690ba7c9768ff4b575fe2da6c`, commit
+`ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. Its seven packages plus
+`WebJam-v0.28.4-SHA256SUMS.txt` identify that download. Physical, signing,
+notarization, and platform-trust gates remain **NOT RUN**. Older release entries
+(v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags remain.
 
 ## Executive summary
 
@@ -86,10 +87,9 @@ the full contract.
 
 ## Verified status
 
-- GitHub Latest is immutable unsigned/ad-hoc v0.28.1 release `393030220` from
-  annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to
-  exact commit `200cac9eb04d01611696cdc147957b36daef257f`, with seven packages
-  plus `WebJam-v0.28.1-SHA256SUMS.txt`.
+- GitHub Latest is immutable unsigned/ad-hoc v0.28.4 release `396603181` from
+  `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. The v0.29.0 source line is
+  unreleased; its new workflows need the same source and package gates.
 - Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted
   by owner; git tags remain. Historical v0.27.1 release `377614785` remains
   historical evidence.
@@ -118,7 +118,7 @@ the full contract.
 
 ## Current product line
 
-Current v0.28.0 source builds on the published v0.27.1 line with an accessible,
+Current v0.29.0 source builds on the published v0.28.4 line with an accessible,
 path-free Record Session Readiness sheet and stable logical-source identity
 from the frozen plan through capture, transfer, manifest, recovery, Studio, and
 exact repeated-take lanes. Every server, host, guest, and Shared Track source is
@@ -137,10 +137,14 @@ services receive friendly labels; generic providers remain neutral and receive
 no native-verification claim. Exact Jamulus correlation, bounded guest
 observation, and fail-closed take/export evidence remain the authority.
 
-This checkout reports unsigned v0.28.3 candidate source including #145–#148
-and #150. The v0.28.2 draft at `a51154e5` is stale; at candidate preparation,
-published GitHub Latest remains v0.28.1 release `393030220`. A checkout or
-branch artifact is not package evidence.
+This candidate adds a local Session library so collaborators can return to
+notes, saved rehearsal plans, Art project references, and prior recaps. Music
+plans retain per-song progress and truthful moment notes. Studio Review /
+Compare supports private favorites/notes, explicit A/B audition, and verified
+export receipts. These organize existing audio and project ownership; they do
+not start a room, recorder, reference, or external application on restoration.
+Published GitHub Latest remains v0.28.4; source is not package evidence.
+
 Familiar DAW interactions are used for clarity and musical flow without copying
 Apple artwork, exact layouts, assets, or trade dress. Physical audibility,
 isolation, alignment, recovery, output, and packaged UX remain **NOT RUN**.
@@ -159,12 +163,12 @@ claimed as implemented in this repository.
 
 1. Read the [root README](../README.md) and [creator guide](../USER_GUIDE.md).
 2. Use the immutable
-   [v0.28.1 GitHub Latest release](https://github.com/rupret007/webjam/releases/tag/v0.28.1)
+   [v0.28.4 GitHub Latest release](https://github.com/rupret007/webjam/releases/tag/v0.28.4)
    for the current downloadable candidate and verify its checksum manifest. Use
    immutable [v0.23.0](https://github.com/rupret007/webjam/releases/tag/v0.23.0)
    only when evaluating that historical baseline.
 3. Confirm Latest resolves to the unsigned/ad-hoc
-   [v0.28.1 release](https://github.com/rupret007/webjam/releases/tag/v0.28.1)
+   [v0.28.4 release](https://github.com/rupret007/webjam/releases/tag/v0.28.4)
    and use only its exact checksum-verified assets; a branch artifact is not a
    release substitute.
 4. Choose a profile first, then exercise Shared Track, the exact-source

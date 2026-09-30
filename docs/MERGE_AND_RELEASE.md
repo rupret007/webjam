@@ -1,33 +1,19 @@
 # Merge and release map
 
-> **Published testing boundary:** GitHub **Latest** is now immutable unsigned/ad-hoc
-> v0.28.1 release `393030220`, published at `2026-09-21T14:30:22Z` from annotated
-> tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to exact commit `200cac9eb04d01611696cdc147957b36daef257f`. The release has
-> seven packages plus `WebJam-v0.28.1-SHA256SUMS.txt`. Post-publish source honesty on this branch is not a substitute for those
-> checksum-bound packages. The existing exact Jamulus 3.12.2 and 3.12.3 records are explicitly
-> approved through v0.28.1, so Host/Join and the required component-input CI are
-> source-eligible. The signed public catalog remains sealed at exact WebJam
-> v0.22.5. Physical/signing remain **NOT RUN**.
->
-> **Historical releases deleted by owner:** Jeff deleted the v0.28.0 release entry
-> (`388045385`), v0.27.2 release entry (`379360694`), and Jamulus catalog releases
-> v1–v3 from the Releases page. Git tags `v0.28.0`, `v0.27.2`, and `v0.27.1` remain
-> in the repository. Do not recreate deleted release entries or mutate immutable
-> v0.28.1 release `393030220`. Do not restack #37 or #49. Do not invent a signed catalog.
-> Do not add a version-specific publisher with invented pins.
+> **Published testing boundary:** GitHub **Latest** is immutable unsigned/ad-hoc
+> v0.28.4 release `396603181`, published `2026-09-25T12:57:13Z`. Annotated tag
+> object `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
+> `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. The seven packages plus
+> `WebJam-v0.28.4-SHA256SUMS.txt` identify the published build.
+> **Current source:** v0.29.0 is unreleased. Jeff authorized this next unsigned
+> testing release once its real gates pass; feel and Final Build remain his.
 
-The record of the finished product land and the honest boundaries that remain.
-#14 (audio core), #15, #16, #19 (Art), and #17 (Music song tools) are all
-already on `master`; #17 merged 2026-08-22 as `5ca6ba5`. There is no open
-product branch.
-
-`master` is the default branch and the only ship target. `main` is a stale,
-non-authoritative mirror and must not be described as synchronized. Master run
-`33317581250` is green on exact release commit `9c6ca3d`; tag run `33327104322`
-is red only at the annotated-tag publisher boundary described above. Neither
-result may be rewritten. A new pull request still must pass this repository's
-own complete suite on its exact head. A gate with no evidence stays **NOT RUN**;
-**NOT RUN** is not a failure claim.
+Earlier product work #14, #15, #16, #17, and #19 is already on `master`;
+#17 merged 2026-08-22. The current release adds saved workspaces, rehearsal
+plans, Art projects, and take review. `master` is the only ship target.
+Historical release entries v0.28.0, v0.27.2, and Jamulus catalog v1–v3 were
+deleted by owner; their git tags remain. Do not recreate them or change their
+historical identities. #37 and #49 stay parked.
 
 ## 1. Ten-second UX gate
 
@@ -50,7 +36,7 @@ Where a test can hold a door it does —
 the first screen makes sense, so the human read happens before the merge.
 The current checksum-bound human read is the **NOT RUN**
 [owner click gate](../UX_ACCEPTANCE_CHECKLIST.md#owner-click-gate-current-two-card-door).
-It uses an exact v0.28.1 release asset and stops before Host or Join, so it
+It uses an exact v0.28.4 release asset and stops before Host or Join, so it
 does not create a room or claim live audio. Every physical gate remains **NOT RUN**.
 
 #19 originally established three Art start cards. Current source combines the
@@ -62,27 +48,20 @@ keep **Host** / **Join** and nothing else after that choice.
 
 ## 2. Land order
 
-The product land is complete. Already on `master`:
-[#14](https://github.com/rupret007/webjam/pull/14)
-`codex/v027-multitrack-proof-lab`, [#15](https://github.com/rupret007/webjam/pull/15),
-[#16](https://github.com/rupret007/webjam/pull/16),
-[#19](https://github.com/rupret007/webjam/pull/19)
-`cursor/art-drawpile-shared-canvas-cd87`, and
-[#17](https://github.com/rupret007/webjam/pull/17)
-`cursor/music-ai-song-tools-in-jam-1eca`, merged 2026-08-22. Jeff merges every
-product PR through the attended button; all five are merged and done. Nothing
-is left to rebase, and nothing is waiting to land.
+Use one current release branch and one PR. Do not merge duplicate paths.
 
-Standing procedure after the completed product land:
+| Step | Action | Gate before it happens |
+| --- | --- | --- |
+| 1 | Keep #37 and #49 parked and preserve historical releases | do not retag, replace, or mutate published evidence |
+| 2 | Prepare source and docs from current `master` | isolated checkout; intended product scope and version agree |
+| 3 | Verify the exact candidate | source checks and all required hosted jobs pass; failures are fixed on a new tip |
+| 4 | Merge the authorized release PR to `master` | one reviewed tip; no force-push |
+| 5 | Annotate the unused version tag at exact master and build it | tag/version/source match; all tag CI gates pass and create a new draft |
+| 6 | Verify and promote the unsigned testing draft | exact inventory, warnings, hashes, current master/tag, and user authorization; reverify immutable public Latest |
 
-| Step | Action | Who | Gate before it happens |
-| --- | --- | --- | --- |
-| 1 | #37 and #49 stay parked | nobody | they are parked outlines, not scheduled work — do not restack, rebase, or "fix" them |
-| 2 | Leave v0.28.1 release `393030220` and remaining git tags alone | nobody | do not retag, replace, or mutate immutable evidence; this honesty PR does not tag or publish; deleted release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) stay deleted |
-| 3 | For any later source-only correction, start from current `master` | Codex | no product code and no release mutation |
-| 4 | Run the complete local suite once on the exact correction head | Codex | red stops; no retry to change a result |
-| 5 | Open one draft PR for Karen | Codex | exact base, files, and verification are recorded |
-| 6 | Stop without merging, tagging, publishing, or altering releases | Codex | Karen and Jeff retain the attended review/merge decision |
+Jeff's authorization for this named round covers the merge and unsigned test
+publication after the gates. It does not supply a physical or Final Build PASS.
+Future work needs its own scope and authorization.
 
 ## 3. Why this order
 
@@ -103,21 +82,22 @@ touch on `master` before the branch that had to be reworked around them.
 
 ## 4. Release round
 
-Jeff named and published the full unsigned v0.28.1 test round from exact
-`200cac9eb04d01611696cdc147957b36daef257f`. Release `393030220` is immutable GitHub **Latest** with seven
-packages plus its checksum manifest. Annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peels to
-that commit. Physical/signing remain **NOT RUN**.
+The published baseline is v0.28.4. Tag CI `36133468143` passed and produced its
+eight-asset draft; immutable release `396603181` became Latest on 2026-09-25.
+The next source version is v0.29.0, currently unreleased.
 
-Jeff deleted older release entries from the Releases page (v0.28.0 `388045385`,
-v0.27.2 `379360694`, and Jamulus catalog v1–v3). Git tags `v0.28.0`, `v0.27.2`,
-and `v0.27.1` remain in the repository. Do not recreate deleted release entries.
+The generic `.github/workflows/publish-latest-release.yml` requires a live
+signed catalog for the exact version. Its `jamulus-components-v3` release was
+deleted by owner; the historical signed catalog only targeted v0.22.5. Do not
+dispatch it or claim catalog approval for this candidate. The baked, unchanged
+Jamulus 3.12.2/3.12.3 records extend through v0.29.0; they are a different policy
+from managed-update signatures.
 
-The generic `.github/workflows/publish-latest-release.yml` still requires a catalog that
-authorizes this exact WebJam version; sealed v3 still targets 0.22.5 only.
-Do not invent that catalog or write a parallel runbook.
-
-A post-publish source-truth draft does not retag, mutate a release, invent a
-signed catalog, or turn later source into released package evidence.
+The tag lane in `ci.yml` creates an unsigned draft after source/package gates.
+For this authorized maintainer round, verify all eight assets and seven
+package checksums, then promote that exact draft and verify public Latest.
+The [desktop runbook](DESKTOP_RELEASE_RUNBOOK.md#current-unsigned-testing-release)
+records the binding and recheck steps. No historical release is replaced.
 
 ### Complete local suite first
 
@@ -175,7 +155,7 @@ These stay **NOT RUN** unless real evidence exists for the exact candidate:
 | `Certify Jamulus/JACK (one hour, manual)` | manual dispatch only (`run_one_hour_certification`) |
 | `Windows Release Trust (windows-x64)`, `macOS Release Trust` | credentialed signing/notarization rehearsals behind `windows_signing_rehearsal` / `macos_signing_rehearsal` |
 | `Jamulus 3.12.3 HEADLESS evidence` | quarantined dispatch-only evidence build |
-| `Publish GitHub Release` | existing tag run `33327104322` failed its annotated-tag check; a docs PR does not rerun or publish |
+| `Publish GitHub Release` | the new v0.29.0 tag has not been built or published |
 | Two-Mac Art room video and Drawpile | two physical machines, real observation |
 | Live Music AI | needs a real service credential |
 | Physical and hardware checklist rows | real musician observation against an exact package |
@@ -208,11 +188,11 @@ of the same change:
 
 ## 6. Who merges
 
-Jeff presses merge, one PR at a time, and only when that step's gate in
-section 2 is met. For any source-only correction, Codex prepares an isolated
-branch, pushes, and reports; Codex does not merge unattended and does not tag,
-publish, or alter a release from that pull request. Rebases go to the branch
-they belong to — no force-push over someone else's product branch.
+Jeff owns release scope, feel, and Final Build judgment. Codex may complete the
+merge and unsigned testing publication explicitly authorized for this named
+round once the gates pass. That authority does not waive failing tests or
+package verification. There is no force-push over someone else's product branch.
+Signing, notarization, spend, and a signed component channel remain separate.
 
 `tests/test_merge_and_release_map.py` keeps the doors, job names, and docs list
 on this page in step with `.github/workflows/ci.yml` and the repository.

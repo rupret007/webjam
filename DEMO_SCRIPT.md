@@ -7,12 +7,23 @@
 audibility, shared viewing, or installed-build feel. Fill in the rehearsal
 receipt after running the complete sequence. Preparation is outside the timer.
 
+## Optional v0.29.0 source walkthrough
+
+With the unreleased candidate, open **File → Session library…**, create a Music
+workspace, add two songs in **Rehearsal plan**, and leave one note per song.
+Close and reopen the library to show the saved drafts. Reuse **Save plan…** /
+**Add saved plan…**, then view **Summary**. On an Art workspace, add a project
+brief and reference, save a manual lesson bookmark, and explicitly choose
+**Open reference**. With two permitted completed takes, demonstrate Studio
+**Review / Compare**, **Set A/B**, and **Listen A/B**, then an export receipt.
+These extra steps are outside the timed 8:45 script and require their own
+rehearsal. They are not features of the published v0.28.4 package.
+
 ## Prepare once, before the audience arrives
 
 - [ ] Select one app/build for the entire show. Record its version and source
   commit or installed package hash in the receipt. Published baseline is
-  [v0.28.3](https://github.com/rupret007/webjam/releases/tag/v0.28.3); draft source
-  changes are a separate candidate. Finish installation and documented
+  [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4); v0.29.0 source changes are an unreleased candidate. Finish installation and documented
   platform-trust steps beforehand. No new build publication is part of this run.
 - [ ] Use the sole checkout, `/Users/jeffstory/Documents/webjam`. Verify its
   `.venv` and the handoff command below. For a source presentation, launch with

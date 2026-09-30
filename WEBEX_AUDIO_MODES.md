@@ -1,14 +1,14 @@
-# Meeting-platform companion guidance — v0.28.4 source
+# Meeting-platform companion guidance — v0.29.0 source
 
-> This document describes current unsigned v0.28.4 source. GitHub **Latest** is
-> immutable unsigned/ad-hoc private test release `393030220`, published from
-> annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to exact commit `200cac9eb04d01611696cdc147957b36daef257f`, with
-> seven packages plus `WebJam-v0.28.1-SHA256SUMS.txt`. Older release entries
-> (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags
-> remain. Every external meeting-app behavior remains a separate physical gate.
-> Unsigned v0.28.1 authorizes the existing exact Jamulus 3.12.2 and 3.12.3
-> records for live audio, but the checkout itself is not a package or physical
-> session result.
+> **Source:** v0.29.0 is an unreleased unsigned testing candidate.
+> **Published download, checked 2026-09-29:** GitHub **Latest** is
+> [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4), immutable
+> release `396603181`, published `2026-09-25T12:57:13Z`. Annotated tag object
+> `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
+> `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. Its seven packages plus
+> `WebJam-v0.28.4-SHA256SUMS.txt` are the download evidence. Windows is unsigned;
+> macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
+> gates remain **NOT RUN**. A source checkout is not a published package.
 
 Any meeting service is optional for talking or video. Jamulus carries the
 music.

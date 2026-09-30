@@ -92,14 +92,14 @@ def _heading_anchors(text: str) -> set[str]:
     return anchors
 
 
-def test_map_records_the_published_round_and_the_parked_leftovers() -> None:
+def test_map_records_authorized_next_release_and_parked_leftovers() -> None:
     positions = [FLAT_MAP_TEXT.index(f"| {step} |") for step in range(1, 7)]
     assert positions == sorted(positions), "the remaining steps must read in order"
     for landed in ("#14", "#15", "#16", "#17", "#19"):
         assert landed in FLAT_MAP_TEXT, landed
     assert "already on `master`" in FLAT_MAP_TEXT
     assert "merged 2026-08-22" in FLAT_MAP_TEXT
-    assert "no open product branch" in FLAT_MAP_TEXT
+    assert "v0.29.0 is unreleased" in FLAT_MAP_TEXT
 
     # #17 merged as `5ca6ba5`; the map must not present it as open work.
     assert "Rebase [#17]" not in FLAT_MAP_TEXT
@@ -111,33 +111,19 @@ def test_map_records_the_published_round_and_the_parked_leftovers() -> None:
     assert "#37 and #49 stay parked" in FLAT_MAP_TEXT
     assert "do not retag, replace, or mutate" in FLAT_MAP_TEXT
 
-    # The published Latest boundary reflects v0.28.1; older releases deleted.
-    assert "Candidate prep boundary:" not in FLAT_MAP_TEXT
-    assert "Published testing boundary:" in FLAT_MAP_TEXT
-    assert "still GitHub Latest until publish" not in FLAT_MAP_TEXT
-    assert "200cac9eb04d01611696cdc147957b36daef257f" in FLAT_MAP_TEXT
-    assert "393030220" in FLAT_MAP_TEXT
-    assert "db44247a3ceefb97f4cac6e623deef1bd32648a8" in FLAT_MAP_TEXT
-    assert "deleted by owner" in FLAT_MAP_TEXT.casefold()
-    assert "annotated tag" in FLAT_MAP_TEXT.casefold()
-    assert "Standing procedure after the completed product land:" in FLAT_MAP_TEXT
-    assert "For any later source-only correction, start from current `master`" in (
-        FLAT_MAP_TEXT
-    )
-    assert "Open one draft PR for Karen" in FLAT_MAP_TEXT
-    assert "Stop without merging, tagging, publishing, or altering releases" in (
-        FLAT_MAP_TEXT
-    )
-    for stale_process_claim in (
-        "This docs-and-tests branch",
-        "What remains in this named round",
-        "The current stop is one post-release truth draft",
-        "this docs PR does not rerun or publish",
-        "Codex prepares this correction branch",
+    # This named round is authorized only after real source and package gates.
+    for marker in (
+        "Published testing boundary:", "396603181",
+        "ce52e9c9302cb3f28510a3e3b0e9edfff8b31111",
+        "dc494f0450ccc6f690ba7c9768ff4b575fe2da6c",
+        "deleted by owner", "Annotated tag", "one reviewed tip",
+        "current master/tag", "seven package checksums",
+        "Jeff's authorization for this named round",
+        "Future work needs its own scope and authorization",
     ):
-        assert stale_process_claim not in FLAT_MAP_TEXT
+        assert marker in FLAT_MAP_TEXT, marker
+    assert "Open one draft PR for Karen" not in FLAT_MAP_TEXT
     assert "No v0.27.2 tag" not in FLAT_MAP_TEXT
-    assert "GitHub **Latest** remains v0.27.1" not in FLAT_MAP_TEXT
 
 
 def test_map_gates_landing_and_release_on_the_ten_second_read() -> None:
@@ -182,11 +168,11 @@ def test_map_gates_landing_and_release_on_the_ten_second_read() -> None:
     assert "#19" in flat_gate and "#15 is not the Art door" in flat_gate
 
 
-def test_map_keeps_the_merge_button_attended() -> None:
-    assert "Karen and Jeff retain the attended review/merge decision" in FLAT_MAP_TEXT
-    assert "Jeff presses merge" in FLAT_MAP_TEXT
-    assert "Codex does not merge unattended" in FLAT_MAP_TEXT
-    assert "does not tag, publish, or alter a release" in FLAT_MAP_TEXT
+def test_map_keeps_authority_scoped_and_gates_intact() -> None:
+    assert "Jeff owns release scope, feel, and Final Build judgment" in FLAT_MAP_TEXT
+    assert "publication explicitly authorized for this named round" in FLAT_MAP_TEXT
+    assert "does not waive failing tests or package verification" in FLAT_MAP_TEXT
+    assert "does not supply a physical or Final Build PASS" in FLAT_MAP_TEXT
     assert "no force-push over someone else's product branch" in FLAT_MAP_TEXT
 
 
@@ -310,9 +296,9 @@ def test_owner_click_gate_is_exact_asset_bound_and_stays_not_run() -> None:
 
     required_identity = (
         "**Status: NOT RUN.**",
-        "release ID `393030220`",
-        "WebJam-v0.28.1-SHA256SUMS.txt",
-        "200cac9eb04d01611696cdc147957b36daef257f",
+        "release ID `396603181`",
+        "WebJam-v0.28.4-SHA256SUMS.txt",
+        "ce52e9c9302cb3f28510a3e3b0e9edfff8b31111",
         "not a checkout or CI artifact",
     )
     for marker in required_identity:

@@ -1,6 +1,11 @@
 # Mobile Art companion (north star locked 2026-09-12)
 
-**Status:** Phase 1 landed on `master` (#118). Published unsigned v0.28.1 is now GitHub **Latest** as release `393030220`. Current `master` tip MATCH after v0.28.1 publish is `200cac9eb04d01611696cdc147957b36daef257f`. Phase 1 Join tip remains `828aef0d399ec6bc56413c60cf2884c730d6909c`. Marker `WEBJAM_MOBILE_ART_SPIKE_CODEX_20260912` is closed. North star and later phases below remain locked. This doc update is honesty polish only — no new native feature pile-on.
+> **Current desktop download, checked 2026-09-29:** GitHub Latest is v0.28.4
+> release `396603181`, commit `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`.
+> Desktop v0.29.0 source is unreleased. This round adds no mobile features;
+> physical touch, signing, and installation remain **NOT RUN**.
+
+**Historical status recorded 2026-09-21:** Phase 1 landed on `master` (#118). Published unsigned v0.28.1 was then GitHub **Latest** as release `393030220`. Recorded `master` tip MATCH after v0.28.1 publish is `200cac9eb04d01611696cdc147957b36daef257f`. Phase 1 Join tip remains `828aef0d399ec6bc56413c60cf2884c730d6909c`. Marker `WEBJAM_MOBILE_ART_SPIKE_CODEX_20260912` is closed. North star and later phases below remain locked. This doc update is honesty polish only — no new native feature pile-on.
 **Recorded:** 2026-09-21
 **Base / tip MATCH:** `origin/master` `200cac9eb04d01611696cdc147957b36daef257f` (v0.28.1 published as Latest; release `393030220`; Phase 1 Join landed at `828aef0d` via #118)
 **Owner:** Jeff owns public Art copy/feel, physical touch, Split View, real Webex media, device handoff, and signing/distribution (still NOT RUN).

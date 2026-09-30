@@ -760,6 +760,33 @@ class ConductorWindow(QMainWindow):
                 f"{reset_shortcut} — Reset every fader to 0 dB<br>"
                 "F11 / Esc — Enter / leave full screen"
             )
+        body += (
+            "<br><br><b>Continue your work</b><br>"
+            "Open <b>More → Session library…</b>, or <b>File → Session library…</b> "
+            "at launch. Search saved workspaces, read <b>Summary</b>, and choose "
+            "<b>Continue this work</b>. Restoring notes does not start a room or recording."
+        )
+        if profile.key == "music":
+            moment_shortcut = "⌘M" if sys.platform == "darwin" else "Ctrl+M"
+            body += (
+                "<br>In <b>Rehearsal plan</b>, order songs and keep each song's notes. "
+                "<b>Save plan…</b> / <b>Add saved plan…</b> reuses the order and goals. "
+                f"<b>Mark moment</b> ({moment_shortcut}) saves a plain note unless a "
+                "recording position is confirmed."
+            )
+        elif profile.key == "art":
+            body += (
+                "<br>In <b>Art project</b>, keep your brief, references, progress, "
+                "and next steps. Lesson bookmark positions are entered by you. "
+                "<b>Open reference</b> opens the selected reference only when requested."
+            )
+        if not self._reference_studio_only and profile.key in {"music", "podcast_voice"}:
+            body += (
+                "<br>For completed takes, Studio's <b>Review / Compare</b> keeps "
+                "favorites and private notes. <b>Set A</b> / <b>Set B</b> then "
+                "<b>Listen A</b> / <b>Listen B</b> auditions saved arrangements. "
+                "<b>Export receipt…</b> appears after package checksums verify."
+            )
         screen = QGuiApplication.screenAt(self.frameGeometry().center())
         if screen is None:
             screen = QGuiApplication.primaryScreen()

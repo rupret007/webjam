@@ -1,12 +1,14 @@
-# First Session — WebJam v0.28.4
+# First Session — WebJam v0.29.0
 
-> **Show baseline, checked 2026-09-24:** published unsigned/ad-hoc
-> [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4) is the unsigned candidate under cut;
-> published Latest remains v0.28.3 (`394985116`) until this candidate publishes, from commit
-> `da16749abc9f87cde127e01ea10a7712e5ce7800`. Verify the selected package with
-> `WebJam-v0.28.4-SHA256SUMS.txt`. Windows is unsigned; macOS is ad-hoc signed
-> and unnotarized. Branch changes and automated checks do not establish
-> physical show readiness. See [the show one-pager](SHOW_ONEPAGER.md) and [demo script](DEMO_SCRIPT.md).
+> **Source:** v0.29.0 is an unreleased unsigned testing candidate.
+> **Published download, checked 2026-09-29:** GitHub **Latest** is
+> [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4), immutable
+> release `396603181`, published `2026-09-25T12:57:13Z`. Annotated tag object
+> `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
+> `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. Its seven packages plus
+> `WebJam-v0.28.4-SHA256SUMS.txt` are the download evidence. Windows is unsigned;
+> macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
+> gates remain **NOT RUN**. A source checkout is not a published package.
 
 Before Host or Join, choose **Art** or **Music**. Those are the equal first
 clicks. Art then offers **Make together** or **Paint along**, then **Host** or
@@ -26,6 +28,15 @@ Everyone can follow there. In **Paint along**, the host chooses
 **Choose process video…** or **YouTube link…** for a silent video inside
 WebJam. **Watch a shared lesson** instead opens Conversation for a separate
 meeting demonstration with sound.
+
+## Keep working between sessions
+
+Unreleased v0.29.0 adds **File → Session library…** before a room and
+**More → Session library…** inside it. Save local notes, reuse a Music
+**Rehearsal plan**, or keep an **Art project** with references and next steps.
+**Continue this work** restores its context without starting audio or a room.
+Music moments are plain notes unless a recording position is confirmed.
+See [the saved-work walkthrough](USER_GUIDE.md#save-a-session-and-continue-later).
 
 ## Start an Art room
 

@@ -1,4 +1,4 @@
-"""v0.28.4 candidate source; published Latest remains v0.28.1 until publish."""
+"""v0.29.0 candidate source; published Latest remains v0.28.4."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def _heading_anchors(text: str) -> set[str]:
     return anchors
 
 
-def test_current_guides_separate_v0280_latest_from_historical_v0272_truthfully() -> None:
+def test_current_guides_separate_v0290_source_from_v0284_latest_truthfully() -> None:
     for relative_path in (
         "README.md",
         "README_SIMPLE.md",
@@ -67,18 +67,19 @@ def test_current_guides_separate_v0280_latest_from_historical_v0272_truthfully()
         "CHANGELOG.md",
     ):
         text = _normalized(relative_path)
-        assert "v0.27.2" in text, relative_path
+        assert "v0.28.4" in text, relative_path
+        assert "396603181" in text, relative_path
         assert "Latest" in text, relative_path
         assert "NOT RUN" in text, relative_path
 
     combined = " ".join(_normalized(path) for path in CURRENT_GUIDES)
     for marker in (
-        "https://github.com/rupret007/webjam/releases/tag/v0.28.1",
-        "393030220",
-        "2026-09-21T14:30:22Z",
-        "WebJam-v0.28.1-SHA256SUMS.txt",
-        "200cac9eb04d01611696cdc147957b36daef257f",
-        "db44247a3ceefb97f4cac6e623deef1bd32648a8",
+        "https://github.com/rupret007/webjam/releases/tag/v0.28.4",
+        "396603181",
+        "2026-09-25T12:57:13Z",
+        "WebJam-v0.28.4-SHA256SUMS.txt",
+        "ce52e9c9302cb3f28510a3e3b0e9edfff8b31111",
+        "dc494f0450ccc6f690ba7c9768ff4b575fe2da6c",
         "deleted by owner",
     ):
         assert marker.casefold() in combined.casefold()
@@ -145,8 +146,8 @@ def test_current_guides_separate_v0280_latest_from_historical_v0272_truthfully()
         assert historical_marker.casefold() in combined.casefold()
 
 
-def test_required_honesty_docs_lock_v0281_latest_and_deleted_historical() -> None:
-    """Jeff-facing pass: v0.28.1 is Latest; older releases deleted by owner."""
+def test_required_honesty_docs_lock_v0284_latest_and_deleted_historical() -> None:
+    """Jeff-facing pass: v0.28.4 is Latest; older releases deleted by owner."""
 
     required = (
         "README.md",
@@ -195,19 +196,19 @@ def test_required_honesty_docs_lock_v0281_latest_and_deleted_historical() -> Non
         text = (ROOT / relative_path).read_text(encoding="utf-8")
         normalized = " ".join(text.split())
         folded = normalized.casefold()
-        assert "v0.28.1" in text, relative_path
-        assert "latest" in folded and "393030220" in text, relative_path
-        assert "200cac9eb04d01611696cdc147957b36daef257f" in text, relative_path
+        assert "v0.28.4" in text, relative_path
+        assert "latest" in folded and "396603181" in text, relative_path
+        assert "ce52e9c9302cb3f28510a3e3b0e9edfff8b31111" in text, relative_path
         assert "seven packages" in folded, relative_path
-        assert "WebJam-v0.28.1-SHA256SUMS.txt" in text, relative_path
+        assert "WebJam-v0.28.4-SHA256SUMS.txt" in text, relative_path
         assert "NOT RUN" in text, relative_path
         assert "deleted" in folded, relative_path
         for claim in forbidden:
             assert claim.casefold() not in folded, (relative_path, claim)
 
 
-def test_demo_and_mobile_docs_match_published_v0281_latest_honesty() -> None:
-    """DEMO/MOBILE keep Latest tip claims honest for v0.28.1 published release."""
+def test_demo_and_mobile_docs_keep_current_and_historical_boundaries() -> None:
+    """DEMO/MOBILE distinguish v0.28.4 Latest from dated v0.28.1 history."""
 
     demo = _normalized("DEMO.md")
     assert "every v0.28.1" in demo.casefold()
@@ -221,6 +222,9 @@ def test_demo_and_mobile_docs_match_published_v0281_latest_honesty() -> None:
     assert "393030220" in mobile
     assert "v0.28.1" in mobile
     assert "v0.28.1 published as latest" in folded
+    assert "Historical status recorded 2026-09-21" in mobile
+    assert "396603181" in mobile
+    assert "Desktop v0.29.0 source is unreleased" in mobile
     assert "tip MATCH:** `origin/master` `828aef0d`".casefold() not in folded
     assert "NOT RUN" in mobile
 

@@ -1,15 +1,51 @@
-# WebJam creator guide — v0.28.4 source
+# WebJam creator guide — v0.29.0 source
 
-> This guide describes current unsigned v0.28.4 source. GitHub **Latest** is the
-> immutable unsigned/ad-hoc v0.28.1 private test release `393030220` from exact
-> tag commit `200cac9eb04d01611696cdc147957b36daef257f`, with seven packages plus
-> `WebJam-v0.28.1-SHA256SUMS.txt`. A later checkout or branch artifact is source
-> evidence, not one of those checksum-bound packages. Older release entries
-> (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags
-> remain. The existing exact Jamulus 3.12.2 and 3.12.3 records are approved
-> through v0.28.4 for Host/Join. Windows remains unsigned; macOS remains ad-hoc
-> signed and unnotarized. No physical, credentialed, signing, or notarization
-> PASS is claimed.
+> **Source:** v0.29.0 is an unreleased unsigned testing candidate.
+> **Published download, checked 2026-09-29:** GitHub **Latest** is
+> [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4), immutable
+> release `396603181`, published `2026-09-25T12:57:13Z`. Annotated tag object
+> `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
+> `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. Its seven packages plus
+> `WebJam-v0.28.4-SHA256SUMS.txt` are the download evidence. Windows is unsigned;
+> macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
+> gates remain **NOT RUN**. A source checkout is not a published package.
+
+## Save a session and continue later
+
+In this unreleased v0.29.0 source, open **File → Session library…** at launch,
+or **More → Session library…** in a room. Use **New workspace…**, choose its
+profile, and give it a title. The **Notes**, **Rehearsal plan**, **Art project**,
+**Summary**, and **Takes** tabs keep the work appropriate to that profile.
+Changes save locally; check the save status and use **Save** before leaving.
+Search finds previous work. **Continue this work** brings its saved context
+back into the app; it does not connect a room or start recording. **Save as
+copy…** makes a separate workspace. Invitations and meeting credentials are
+not a reusable workspace template.
+
+For Music, **More → Session library… → Rehearsal plan** opens the ordered setlist. Add song titles,
+key, tempo, goals, notes, and next steps. **Previous** / **Next** selects a song;
+**Move earlier** / **Move later** changes its order. Selection preserves each
+song's draft and does not restart a recorder. **Song complete** is your own
+progress judgment. **Save plan…** exports the order and goals for reuse;
+**Add saved plan…** appends that plan while keeping this session's notes and
+moments. **Undo remove** restores the most recently removed song.
+
+Type a moment note and choose **Mark moment**, or press **⌘M** on Mac /
+**Ctrl+M** elsewhere while the plan has focus. A confirmed current recording
+position produces a take bookmark; otherwise it stays a plain note. The song
+clock and room timer do not certify recording time. **Open in take** rechecks
+the saved take before navigation; a moved or changed recording needs attention.
+The **Summary** tab and **Export summary…** collect progress and next steps;
+ending a rehearsal retains its recap with the workspace.
+
+For Art, open **More → Session library… → Art project**. Keep a **Project brief**, **Progress**,
+and **Next steps** alongside references added with **Add file…** or **Add
+link…**. **Open reference** is an explicit action; reopening a workspace does
+not launch its links. **Relink…** replaces a missing reference. Select a
+reference, enter a **Lesson position** in seconds, and **Save lesson bookmark**.
+That position is entered by you; it is not a measured room or video timecode.
+Art project records organize local work and do not create an audio recording
+or turn WebJam into a drawing application.
 
 ## Follow the current guide
 

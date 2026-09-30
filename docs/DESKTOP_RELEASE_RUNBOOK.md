@@ -1,5 +1,45 @@
 # Desktop release runbook
 
+## Current unsigned testing release
+
+Source v0.29.0 is unreleased. As checked 2026-09-29, GitHub Latest is immutable
+v0.28.4 release `396603181`, published `2026-09-25T12:57:13Z`; annotated tag
+object `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
+`ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. Tag run `36133468143` passed,
+including all four desktop packages and eight-asset draft creation.
+`WebJam-v0.28.4-SHA256SUMS.txt` contains the seven package hashes. Windows is
+unsigned; Mac packages are ad-hoc signed and unnotarized. Physical and signing
+gates remain **NOT RUN**.
+
+For the owner-authorized v0.29.0 testing round:
+
+1. Merge only the exact green source tip. Update `webjam_qt.__version__`, the
+   baked compatibility ceiling, SBOMs, and current docs together. The existing
+   Jamulus binaries and their hashes remain unchanged.
+2. Create an unused annotated version tag at exact `origin/master`; package
+   version and tag must agree. Keep master stationary while tag CI runs.
+3. Require the entire tag workflow to pass, including independent Art companion
+   checks and all four desktop builds. The tag-only release job refuses an
+   existing release and creates an unsigned draft with seven packages plus
+   `WebJam-v0.29.0-SHA256SUMS.txt`.
+4. Before promotion, bind the tag object/commit, CI run/attempt, draft release ID,
+   body, and each asset's ID/name/size/SHA-256. Verify exactly eight assets, all
+   seven manifest entries, and each downloaded package against both the manifest
+   and GitHub digest. Keep unsigned/ad-hoc warnings and unperformed gates visible.
+5. Recheck tag, master, draft inventory, and body immediately before the single
+   authorized maintainer promotion to non-prerelease Latest. Do not replace
+   bytes. Then inspect public `/releases/latest`, immutable status, the unchanged
+   asset identities, and redownloaded hashes. A draft alone is not completion.
+
+`publish-latest-release.yml` is not the current fallback-only candidate path:
+its required component release now returns 404. Its `release-latest` environment
+requires the repository owner's review, but the earlier catalog proof already
+fails. Do not bypass that workflow's proof and call it passed, fabricate catalog
+pins, or resurrect the deleted catalog. This round's explicit maintainer
+promotion uses the draft's real source and package evidence; it makes no signed
+managed-update claim. Historical instructions below describe their own releases
+and must not be read as current Latest facts.
+
 > **v0.22.5 historical candidate:** the exact eight-asset release is immutable.
 > It is never moved or replaced when a later candidate becomes GitHub Latest.
 
@@ -66,7 +106,7 @@
 > remains.** Every physical, credentialed, signing, notarization, and
 > platform-trust gate remains **NOT RUN**.
 
-> **v0.28.1 published testing boundary (GitHub Latest):** GitHub **Latest** is
+> **v0.28.1 historical published testing boundary:** At publication, GitHub **Latest** was
 > immutable unsigned/ad-hoc release `393030220`, published `2026-09-21T14:30:22Z`
 > from annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to exact commit `200cac9eb04d01611696cdc147957b36daef257f`. It
 > has seven packages plus `WebJam-v0.28.1-SHA256SUMS.txt`. Do **not** dispatch

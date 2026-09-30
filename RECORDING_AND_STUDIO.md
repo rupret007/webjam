@@ -1,16 +1,14 @@
-# Recording and Studio — v0.28.4 source
+# Recording and Studio — v0.29.0 source
 
-> This document describes current unsigned v0.28.4 source. GitHub **Latest** is
-> immutable unsigned/ad-hoc private test release `393030220`, published from
-> annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to exact commit `200cac9eb04d01611696cdc147957b36daef257f`. Its seven
-> packages are covered by `WebJam-v0.28.1-SHA256SUMS.txt`; a checkout is not a
-> package substitute. Live Jamulus recording is source-eligible through the
-> existing exact 3.12.2 and 3.12.3 compatibility records. Standalone local Studio
-> is a separate audio path. Exact v0.28.1 release assets are package evidence,
-> not physical evidence. Older release entries (v0.28.0, v0.27.2, Jamulus catalog
-> v1–v3) were deleted by owner; git tags remain. Every v0.28.1 physical recording,
-> Shared Track audibility/isolation, playback, recovery, long-session, and
-> external-editor gate is **NOT RUN** and cannot inherit prior-release evidence.
+> **Source:** v0.29.0 is an unreleased unsigned testing candidate.
+> **Published download, checked 2026-09-29:** GitHub **Latest** is
+> [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4), immutable
+> release `396603181`, published `2026-09-25T12:57:13Z`. Annotated tag object
+> `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
+> `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. Its seven packages plus
+> `WebJam-v0.28.4-SHA256SUMS.txt` are the download evidence. Windows is unsigned;
+> macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
+> gates remain **NOT RUN**. A source checkout is not a published package.
 
 Music and Podcast & Voice are GA creator profiles with live recording,
 completed-take editing/mixing/export, and standalone local projects. Review &
@@ -24,6 +22,33 @@ on one computer and are never shared, session-synchronized, or media-timecoded.
 WebJam never directly or automatically taps a meeting app, browser, or system
 output. Local Originals capture only the input devices a user explicitly
 selects, so do not route meeting or system audio into those inputs.
+
+## Review two takes and verify an export
+
+In v0.29.0 source, select a completed Music or Podcast & Voice take in Studio
+and choose **Review / Compare**. In **Review and compare takes**, mark
+**Favorite take**, write private review notes, and choose **Save review**.
+These notes are stored separately from the recording manifest, source audio,
+and saved arrangement.
+
+Use **Set A** on one take and **Set B** on another, then **Listen A** / **Listen B**
+to audition their saved arrangements. Pending arrangement and review changes
+must save before switching. A missing or changed comparison source stops the
+action; the app does not substitute a different take. This is an audition aid,
+not an automated judgment of the performance or alignment.
+
+**Export reviewed take** uses the existing export path. **Export receipt…**
+becomes available only after the finished package's checksums verify. The
+receipt identifies the exported sources, settings, destination, and hashes.
+Edited exports include the original recording receipt where available; a
+missing original-plan comparison is stated explicitly. Changing a take or mix,
+or a failed/cancelled export, clears the current receipt. Byte verification does
+not prove physical listening or a successful Logic/other-editor import.
+
+Workspace **Takes** links reopen the intended recording in Studio. Use
+**Locate moved take…** when its folder moved; identity must still match. Music
+bookmarks navigate only with current verified recording evidence. Art lesson
+positions are manual notes attached to references, not recording timestamps.
 
 ## Recording is separate from live audio
 

@@ -30,16 +30,16 @@ support bundles, or unredacted local paths.
 Jamulus, meeting services, Python dependencies, Qt, and operating-system trust systems
 have their own upstream security channels. WebJam-specific orchestration,
 privacy projection, package verification, updater, transport, and lifecycle
-issues belong here. GitHub **Latest** is immutable unsigned/ad-hoc v0.28.1
-private test release `393030220`, published `2026-09-21T14:30:22Z` from
-annotated tag object `db44247a3ceefb97f4cac6e623deef1bd32648a8` peeling to exact commit `200cac9eb04d01611696cdc147957b36daef257f`. A later
+issues belong here. GitHub **Latest** is immutable unsigned/ad-hoc v0.28.4
+private test release `396603181`, published `2026-09-25T12:57:13Z` from
+annotated tag object `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peeling to exact commit `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. A later
 `master` checkout or branch artifact is not that download. Older release entries
 (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags remain.
 Use only an exact checksum-verified release asset. The published release and
 its immutable predecessors share this test-only trust boundary: Windows is unsigned and
 macOS is ad-hoc signed and unnotarized.
 
-The seven exact v0.28.1 package assets and `WebJam-v0.28.1-SHA256SUMS.txt` are
+The seven exact v0.28.4 package assets and `WebJam-v0.28.4-SHA256SUMS.txt` are
 the downloadable evidence. Publication did not create physical certification:
 every physical, hardware, provider, accessibility, signing, notarization, and
 release-decision row remains **NOT RUN**. Historical v0.27.1 and earlier git
