@@ -1125,6 +1125,19 @@ class LaunchDialog(QDialog):
         library = default_session_library()
         warnings = import_legacy_workspaces(library)
         dialog = SessionLibraryDialog(library, self, profile=self.selected_creator_profile_key)
+        self.selected_library_open = None
+
+        def open_in_studio(kind: str, reference: dict) -> None:
+            if dialog.record is None or not dialog.save_current():
+                return
+            self.selected_library_open = (kind, dict(reference))
+            dialog.selected_record = dialog.record
+            dialog.accept()
+
+        dialog.take_open_requested.connect(lambda reference: open_in_studio("take", reference))
+        dialog.bookmark_open_requested.connect(lambda reference: open_in_studio("bookmark", reference))
+        # No live take position exists before the main window owns playback.
+        dialog.bookmark_requested.connect(dialog.rehearsal.add_bookmark)
         if warnings:
             dialog.status.setText(" ".join(warnings))
         dialog.exec()

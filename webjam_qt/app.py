@@ -419,7 +419,14 @@ def _run_app() -> int:
     if library_launch:
         try:
             saved_workspace = controller.session_library.library.load(launch.selected_workspace_id)
-            controller.session_library.continue_record(saved_workspace)
+            continued = controller.session_library.continue_record(saved_workspace)
+            requested_open = getattr(launch, "selected_library_open", None)
+            if continued and requested_open:
+                kind, reference = requested_open
+                if kind == "bookmark":
+                    controller.session_library.open_bookmark(reference)
+                elif kind == "take":
+                    controller.session_library.open_take(reference)
         except (OSError, ValueError):
             window.flash_message("Workspace could not be reopened. Use More → Session library to retry.", ms=7000)
     if isinstance(app, WebJamApplication):

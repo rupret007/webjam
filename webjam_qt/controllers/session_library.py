@@ -128,19 +128,35 @@ class SessionLibraryCoordinator(QObject):
         if not self._applying and self.current is not None:
             self.timer.start()
 
+    def _capture_current_notes(self):
+        """Keep live Notes ahead of editor saves without dropping pending facts."""
+        if self._applying:
+            return
+        if self.current is not None and self.current.profile == self._profile():
+            latest = self._pending.get(self.current.id, self.current)
+            title, mode, notes = self._context()
+            changes = {}
+            if title != self.current.title:
+                changes["title"] = title or latest.title
+            if mode != self.current.mode_key:
+                changes["mode_key"] = mode
+            if notes != self.current.notes or notes == latest.notes:
+                pulse = build_session_pulse(creator_profile_key=self._profile(), title=title, notes=notes)
+                changes.update(notes=notes, decisions=pulse.decisions,
+                    actions=tuple((f"@{a.owner} " if a.owner else "") + a.text for a in pulse.actions),
+                    blockers=pulse.blockers)
+            candidate = replace(latest, **changes)
+            if candidate != self.current or self.current.id in self._pending:
+                self._pending[candidate.id] = candidate
+
     def flush(self) -> bool:
         self.timer.stop()
         if self._applying:
             return True
-        if self.current is not None and self.current.profile == self._profile():
-            title, mode, notes = self._context()
-            pulse = build_session_pulse(creator_profile_key=self._profile(), title=title, notes=notes)
-            candidate = replace(self.current, title=title or self.current.title, mode_key=mode,
-                notes=notes, decisions=pulse.decisions,
-                actions=tuple((f"@{a.owner} " if a.owner else "") + a.text for a in pulse.actions),
-                blockers=pulse.blockers)
-            if candidate != self.current or self.current.id in self._pending:
-                self._pending[candidate.id] = candidate
+        self._capture_current_notes()
+        if (self.dialog is not None and getattr(self.dialog, "_dirty", False)
+                and not self.dialog.save_current()):
+            return False
         for key, record in tuple(self._pending.items()):
             try:
                 saved = self.library.save(record)
@@ -159,6 +175,12 @@ class SessionLibraryCoordinator(QObject):
 
     def show(self, *, tab=None):
         from webjam_qt.windows.session_library import SessionLibraryDialog
+        if self.dialog is not None and self.dialog.isVisible():
+            if tab == "plan":
+                self.dialog.tabs.setCurrentIndex(1 if self._profile() == "music" else 2)
+            self.dialog.raise_()
+            self.dialog.activateWindow()
+            return
         if not self.ensure_current():
             return
         self.flush()
@@ -174,11 +196,19 @@ class SessionLibraryCoordinator(QObject):
         dialog.song_selected.connect(self.song_selected)
         if tab == "plan":
             dialog.tabs.setCurrentIndex(1 if self._profile() == "music" else 2)
-        dialog.exec()
-        selected = dialog.selected_record
-        self.dialog = None
-        if selected is not None:
-            self.continue_record(selected)
+        def finished(_result):
+            selected = dialog.selected_record
+            if self.dialog is dialog:
+                self.dialog = None
+            if selected is not None:
+                self.continue_record(selected)
+            dialog.deleteLater()
+
+        # Keep live Stop/End and Notes reachable even when a disk failure
+        # requires the library editor to retain an unsaved draft.
+        dialog.finished.connect(finished)
+        dialog.setModal(False)
+        dialog.show()
 
     def save_editor_record(self, base, edited):
         """Reconcile the editor before writing, including late take/recap facts.
@@ -186,6 +216,7 @@ class SessionLibraryCoordinator(QObject):
         Only our known in-memory snapshot can advance an editor's disk token.
         The store still rejects external writes we have not read and owned.
         """
+        self._capture_current_notes()
         latest = self._pending.get(base.id)
         if latest is None and self.current is not None and self.current.id == base.id:
             latest = self.current
@@ -215,6 +246,7 @@ class SessionLibraryCoordinator(QObject):
             self._refresh_song_tools()
 
     def _copy_saved(self, previous, copied):
+        self._capture_current_notes()
         pending = self._pending.get(previous.id)
         if pending is not None and not _same_snapshot(pending, previous):
             self._flash("Your separate copy is saved. Newer changes remain with the original workspace; reopen its retained draft to review them.")

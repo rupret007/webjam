@@ -158,6 +158,33 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertEqual(self.coordinator._pending[old.id], late)
         self.assertEqual(self.coordinator.current.take_links[0]["status"], "complete")
 
+    def test_editor_autosave_cannot_overwrite_live_notes_before_canvas_timer(self):
+        self.window.session_canvas.set_notes("Base Notes")
+        self.coordinator.ensure_current()
+        editor = self._editor()
+        editor.notes.setPlainText("Editor draft")
+        self.window.session_canvas.set_notes("Live draft before autosave")
+        self.assertFalse(editor.save_current())
+        self.assertEqual(self.library.load(editor.record.id).notes, "Base Notes")
+        self.assertEqual(self.coordinator._pending[editor.record.id].notes, "Live draft before autosave")
+        self.assertEqual(editor.notes.toPlainText(), "Editor draft")
+
+    def test_separate_copy_keeps_live_notes_typed_before_canvas_timer(self):
+        self.window.session_canvas.set_notes("Base Notes")
+        self.coordinator.ensure_current()
+        original_id = self.coordinator.current.id
+        editor = self._editor()
+        editor.notes.setPlainText("Copied editor draft")
+        self.window.session_canvas.set_notes("Live draft before autosave")
+        with patch.object(QInputDialog, "getText", return_value=("Separate copy", True)):
+            editor._copy()
+        self.assertNotEqual(editor.record.id, original_id)
+        self.assertEqual(self.library.load(editor.record.id).notes, "Copied editor draft")
+        self.assertEqual(self.coordinator.current.id, original_id)
+        self.assertEqual(self.window.session_canvas.current_notes(), "Live draft before autosave")
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(original_id).notes, "Live draft before autosave")
+
     def test_missing_take_path_never_enters_studio(self):
         with patch.object(self.window.recording_studio, "jump_to_bookmark") as jump:
             self.coordinator.open_take({"take_id": "pending", "take_path": ""})
@@ -335,3 +362,25 @@ class TestSessionLibraryCoordinator(TestCase):
         self.coordinator._copy_saved(self.coordinator._pending[source.id], copied)
         self.assertNotIn(source.id, self.coordinator._pending)
         self.assertEqual(self.window.session_canvas.current_notes(), "new")
+
+    def test_library_does_not_block_live_stop_when_a_draft_cannot_save(self):
+        self.coordinator.show()
+        dialog = self.coordinator.dialog
+        self.assertFalse(dialog.isModal())
+        dialog.notes.setPlainText("retain this if disk is full")
+        with patch.object(self.library, "save", side_effect=OSError("full")):
+            dialog.close()
+            _app.processEvents()
+            self.assertTrue(dialog.isVisible())
+            self.assertTrue(self.window.isEnabled())
+            self.assertFalse(dialog.isModal())
+        dialog.close()
+        _app.processEvents()
+
+    def test_quit_flush_includes_editor_changes_before_autosave_timer(self):
+        self.coordinator.show()
+        dialog = self.coordinator.dialog
+        dialog.notes.setPlainText("just typed")
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(dialog.record.id).notes, "just typed")
+        dialog.close()

@@ -257,6 +257,27 @@ def _select_launch_reference(dialog, kind):
     return dialog.rehearsal._open_moment
 
 
+def test_launch_library_mark_moment_saves_plain_note_without_invented_timing(bootstrap):
+    song = make_song("Opening song")
+    record = bootstrap.library.create("music", "First rehearsal",
+        rehearsal=RehearsalPlan(songs=[song], active_song_id=song["id"]).payload())
+
+    def mark_from_door(dialog):
+        dialog.tabs.setCurrentWidget(dialog.rehearsal)
+        dialog.rehearsal._moment_note.setText("Listen for the entrance")
+        dialog.rehearsal._mark.click()
+        mark = dialog.rehearsal.payload()["songs"][0]["bookmarks"][0]
+        assert mark["note"] == "Listen for the entrance"
+        assert mark["position_seconds"] is None
+        assert not mark["take_id"]
+
+    controller = bootstrap.run(record, library_action=mark_from_door)
+    saved = bootstrap.library.load(record.id).rehearsal["songs"][0]["bookmarks"][0]
+    assert saved["note"] == "Listen for the entrance"
+    assert saved["position_seconds"] is None
+    controller.window.recording_studio.jump_to_bookmark.assert_not_called()
+
+
 @pytest.mark.parametrize("kind", ["take", "bookmark"])
 def test_initial_library_open_action_restores_workspace_and_exact_take_without_continue_or_playback(
     bootstrap, tmp_path, kind,
