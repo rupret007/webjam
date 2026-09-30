@@ -1063,6 +1063,13 @@ class SongToolsCoordinator:
         return answer == QMessageBox.StandardButton.Yes
 
     def _sync_workbench(self) -> None:
+        library = getattr(self._c, "session_library", None)
+        context = library.song_context() if library is not None else None
+        if context is not None:
+            title, notes = context
+            self.workbench.set_notes(notes)
+            self.workbench.set_title(title)
+            return
         canvas = getattr(self._c.window, "session_canvas", None)
         if canvas is not None:
             self.workbench.set_notes(canvas.current_notes())

@@ -5148,6 +5148,9 @@ class RecordingCoordinator:
                     self._c.host_peer.host_enrollment.participant_id
                 )
         self._take_id = new_project_id()
+        library = getattr(self._c, "session_library", None)
+        if library is not None:
+            library.recording_started(self._take_id, self._session_id)
         self._begin_recording_diagnostics(self._take_id)
         self._session_title = self._c.window.session_strip.current_title()
         self._reset_session_evidence()
@@ -6694,6 +6697,10 @@ class RecordingCoordinator:
             if result.take is not None and durable_shutdown_publication
             else None
         )
+        library = getattr(self._c, "session_library", None)
+        if (library is not None and result.take is not None and durable_shutdown_publication
+                and completed_take_id and result.take.take_id == completed_take_id):
+            library.recording_completed(result.take, validated=not effective_needs_attention)
         if result.warnings:
             LOGGER.warning(
                 "Take validation completed with %d warning%s.",

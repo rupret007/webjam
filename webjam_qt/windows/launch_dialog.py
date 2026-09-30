@@ -1098,6 +1098,9 @@ class LaunchDialog(QDialog):
         self._workspace_actions = {}
         if self._allow_workspace_choices:
             file_menu = self._menu_bar.addMenu("&File")
+            self._session_library_action = file_menu.addAction("Session library…")
+            self._session_library_action.triggered.connect(self._open_session_library)
+            file_menu.addSeparator()
             for key, label in (("music", "New Music Project…"),
                                ("podcast_voice", "Podcast & Voice…"),
                                ("review_rehearsal", "Review & Rehearsal…")):
@@ -1112,6 +1115,34 @@ class LaunchDialog(QDialog):
         self._setup_action = help_menu.addAction("Music setup…")
         self._setup_action.triggered.connect(self._show_music_setup)
         self._setup_action.setEnabled(bool(self._jamulus_installer))
+
+    def _open_session_library(self) -> None:
+        if self._submitting or not self._allow_workspace_choices:
+            return
+        from webjam_qt.controllers.session_library import default_session_library, import_legacy_workspaces
+        from webjam_qt.windows.session_library import SessionLibraryDialog
+
+        library = default_session_library()
+        warnings = import_legacy_workspaces(library)
+        dialog = SessionLibraryDialog(library, self, profile=self.selected_creator_profile_key)
+        if warnings:
+            dialog.status.setText(" ".join(warnings))
+        dialog.exec()
+        record = dialog.selected_record
+        if record is None:
+            return
+        candidate = deepcopy(self._settings)
+        candidate.last_creator_profile_key = record.profile
+        if not self._persist_role_choice(candidate, save_creator_choice=False):
+            return
+        self.selected_role = "library"
+        self.selected_workspace_id = record.id
+        self.session_name = record.title
+        self.invitation_meeting_url = ""
+        self.band_invite = None
+        self.remote_invitation = None
+        self._invite_input.clear()
+        self.accept()
 
     def _open_workspace(self, key: str) -> None:
         if self._submitting or not self._allow_workspace_choices:
