@@ -2221,20 +2221,24 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
         )
         self.export_finished.emit(False)
 
+    @staticmethod
+    def _take_library_item(take) -> QListWidgetItem:
+        status = "✓" if take.validation_status == "complete" else "•"
+        label = (
+            f"{status} {take.display_name}\n"
+            f"   {take.track_count} tracks · {_fmt_time(take.duration_s)}"
+        )
+        item = QListWidgetItem(label)
+        item.setData(Qt.ItemDataRole.UserRole, str(take.path))
+        return item
+
     def reload(self, select_path: Path | None = None) -> None:
         self._takes = discover_takes(self._takes_dir) if self._takes_dir else []
         self._library.setVisible(bool(self._takes))
         self._take_list.blockSignals(True)
         self._take_list.clear()
         for take in self._takes:
-            status = "✓" if take.validation_status == "complete" else "•"
-            label = (
-                f"{status} {take.display_name}\n"
-                f"   {take.track_count} tracks · {_fmt_time(take.duration_s)}"
-            )
-            item = QListWidgetItem(label)
-            item.setData(Qt.ItemDataRole.UserRole, str(take.path))
-            self._take_list.addItem(item)
+            self._take_list.addItem(self._take_library_item(take))
         self._take_list.blockSignals(False)
         self._refresh_review_labels()
         if select_path is not None:

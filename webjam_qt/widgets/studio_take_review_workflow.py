@@ -101,8 +101,8 @@ class StudioTakeReviewWorkflowMixin:
         """Open this exact local take; never substitute the latest recording."""
         if self._exporting or self._recording or not self._flush_take_review():
             return False
-        requested = Path(path).expanduser().resolve()
         try:
+            requested = Path(path).expanduser().resolve()
             fresh = load_take(requested)
         except (OSError, ValueError):
             return False
@@ -115,13 +115,22 @@ class StudioTakeReviewWorkflowMixin:
             return False
         row = next((index for index, take in enumerate(self._takes)
                     if take.path.expanduser().resolve() == requested), None)
-        if row is None:
-            self._hint.setText("That recording is not in this Studio library. Locate its original folder before opening it.")
+        if not self._flush_studio_state():
             return False
-        self._takes[row] = fresh
         self._take_list.blockSignals(True)
+        if row is None:
+            # An explicit saved-work link can point outside the configured
+            # Takes folder after a move. Add only this freshly loaded take;
+            # never scan its parent or change the recording destination.
+            row = len(self._takes)
+            self._takes.append(fresh)
+            self._take_list.addItem(self._take_library_item(fresh))
+            self._library.setVisible(True)
+        else:
+            self._takes[row] = fresh
         self._take_list.setCurrentRow(row)
         self._take_list.blockSignals(False)
+        self._refresh_review_labels()
         try:
             self._on_take_selected(row)
         except PlaybackError:
