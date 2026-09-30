@@ -1,7 +1,9 @@
 # First Session — WebJam v0.29.0
 
-> **Source:** v0.29.0 is an unreleased unsigned testing candidate.
-> **Published download, checked 2026-09-29:** GitHub **Latest** is
+> **Source identity:** v0.29.0 unsigned testing candidate.
+> **Current download and publication status:** [GitHub Latest](https://github.com/rupret007/webjam/releases/latest)
+> identifies the published tag, packages, and checksum manifest.
+> **Historical checkpoint, checked 2026-09-29 before the v0.29.0 release round:**
 > [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4), immutable
 > release `396603181`, published `2026-09-25T12:57:13Z`. Annotated tag object
 > `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
@@ -31,7 +33,7 @@ meeting demonstration with sound.
 
 ## Keep working between sessions
 
-Unreleased v0.29.0 adds **File → Session library…** before a room and
+v0.29.0 adds **File → Session library…** before a room and
 **More → Session library…** inside it. Save local notes, reuse a Music
 **Rehearsal plan**, or keep an **Art project** with references and next steps.
 **Continue this work** restores its context without starting audio or a room.

@@ -1,8 +1,10 @@
 # WebJam project brief
 
 **Review date:** 2026-09-29
-**Source:** v0.29.0, unreleased unsigned testing candidate.
-**Published download:** GitHub Latest is immutable v0.28.4 release `396603181`,
+**Source identity:** v0.29.0 unsigned testing candidate.
+**Current download and publication status:** [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
+**Historical checkpoint, checked 2026-09-29 before the v0.29.0 release round:**
+immutable v0.28.4 release `396603181` was Latest,
 published `2026-09-25T12:57:13Z` from annotated tag object
 `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c`, commit
 `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. Its seven packages plus
@@ -87,9 +89,10 @@ the full contract.
 
 ## Verified status
 
-- GitHub Latest is immutable unsigned/ad-hoc v0.28.4 release `396603181` from
-  `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. The v0.29.0 source line is
-  unreleased; its new workflows need the same source and package gates.
+- [GitHub Latest](https://github.com/rupret007/webjam/releases/latest) records the current publication status.
+  At the 2026-09-29 pre-v0.29.0 checkpoint, Latest was immutable unsigned/ad-hoc
+  v0.28.4 release `396603181` from `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`.
+  The v0.29.0 source line requires its own source and package evidence.
 - Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted
   by owner; git tags remain. Historical v0.27.1 release `377614785` remains
   historical evidence.
@@ -143,7 +146,7 @@ plans retain per-song progress and truthful moment notes. Studio Review /
 Compare supports private favorites/notes, explicit A/B audition, and verified
 export receipts. These organize existing audio and project ownership; they do
 not start a room, recorder, reference, or external application on restoration.
-Published GitHub Latest remains v0.28.4; source is not package evidence.
+Check GitHub Latest for the published package; source is not package evidence.
 
 Familiar DAW interactions are used for clarity and musical flow without copying
 Apple artwork, exact layouts, assets, or trade dress. Physical audibility,
@@ -162,15 +165,12 @@ claimed as implemented in this repository.
 ## Five-minute evaluation
 
 1. Read the [root README](../README.md) and [creator guide](../USER_GUIDE.md).
-2. Use the immutable
-   [v0.28.4 GitHub Latest release](https://github.com/rupret007/webjam/releases/tag/v0.28.4)
-   for the current downloadable candidate and verify its checksum manifest. Use
+2. Use [GitHub Latest](https://github.com/rupret007/webjam/releases/latest)
+   for the current downloadable candidate and verify that release’s checksum manifest. Use
    immutable [v0.23.0](https://github.com/rupret007/webjam/releases/tag/v0.23.0)
    only when evaluating that historical baseline.
-3. Confirm Latest resolves to the unsigned/ad-hoc
-   [v0.28.4 release](https://github.com/rupret007/webjam/releases/tag/v0.28.4)
-   and use only its exact checksum-verified assets; a branch artifact is not a
-   release substitute.
+3. Record the selected release’s tag and exact package identity. Use only its
+   checksum-verified assets; a branch artifact is not a release substitute.
 4. Choose a profile first, then exercise Shared Track, the exact-source
    readiness sheet, Record Session, finalization, automatic repeated-take
    lanes, and the profile's permitted Studio path with wired headphones and

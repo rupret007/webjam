@@ -1,4 +1,4 @@
-"""v0.29.0 candidate source; published Latest remains v0.28.4."""
+"""v0.29.0 source; current publication status and immutable history stay distinct."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def _heading_anchors(text: str) -> set[str]:
     return anchors
 
 
-def test_current_guides_separate_v0290_source_from_v0284_latest_truthfully() -> None:
+def test_current_guides_separate_source_dynamic_latest_and_historical_checkpoint() -> None:
     for relative_path in (
         "README.md",
         "README_SIMPLE.md",
@@ -70,6 +70,9 @@ def test_current_guides_separate_v0290_source_from_v0284_latest_truthfully() -> 
         assert "v0.28.4" in text, relative_path
         assert "396603181" in text, relative_path
         assert "Latest" in text, relative_path
+        assert "https://github.com/rupret007/webjam/releases/latest" in text, relative_path
+        assert "checkpoint" in text.casefold(), relative_path
+        assert not re.search(r"v0\.29\.0.{0,30}\bunreleased\b", text, re.I), relative_path
         assert "NOT RUN" in text, relative_path
 
     combined = " ".join(_normalized(path) for path in CURRENT_GUIDES)
@@ -146,8 +149,8 @@ def test_current_guides_separate_v0290_source_from_v0284_latest_truthfully() -> 
         assert historical_marker.casefold() in combined.casefold()
 
 
-def test_required_honesty_docs_lock_v0284_latest_and_deleted_historical() -> None:
-    """Jeff-facing pass: v0.28.4 is Latest; older releases deleted by owner."""
+def test_required_honesty_docs_preserve_v0284_checkpoint_and_deleted_history() -> None:
+    """Release history remains fixed when the current Latest pointer changes."""
 
     required = (
         "README.md",
@@ -208,7 +211,7 @@ def test_required_honesty_docs_lock_v0284_latest_and_deleted_historical() -> Non
 
 
 def test_demo_and_mobile_docs_keep_current_and_historical_boundaries() -> None:
-    """DEMO/MOBILE distinguish v0.28.4 Latest from dated v0.28.1 history."""
+    """DEMO/MOBILE preserve dated release history without freezing Latest."""
 
     demo = _normalized("DEMO.md")
     assert "every v0.28.1" in demo.casefold()
@@ -224,7 +227,8 @@ def test_demo_and_mobile_docs_keep_current_and_historical_boundaries() -> None:
     assert "v0.28.1 published as latest" in folded
     assert "Historical status recorded 2026-09-21" in mobile
     assert "396603181" in mobile
-    assert "Desktop v0.29.0 source is unreleased" in mobile
+    assert "Desktop source identity is v0.29.0" in mobile
+    assert "https://github.com/rupret007/webjam/releases/latest" in mobile
     assert "tip MATCH:** `origin/master` `828aef0d`".casefold() not in folded
     assert "NOT RUN" in mobile
 

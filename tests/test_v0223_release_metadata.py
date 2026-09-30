@@ -1,4 +1,4 @@
-"""Unsigned v0.29.0 candidate; GitHub Latest remains published v0.28.4."""
+"""Unsigned v0.29.0 source identity and preserved historical release evidence."""
 
 from __future__ import annotations
 
@@ -176,7 +176,7 @@ def test_payload_reuses_the_approved_v0280_records() -> None:
     assert "assert all(entry.supports_webjam(__version__)" in CI_WORKFLOW
 
 
-def test_current_guides_separate_v0284_latest_from_historical() -> None:
+def test_current_guides_preserve_source_and_historical_identity_markers() -> None:
     expected = {
         "ARCHITECTURE.md": "# WebJam architecture — v0.29.0 source",
         "CHANGELOG.md": (
@@ -208,7 +208,7 @@ def test_current_guides_separate_v0284_latest_from_historical() -> None:
         "docs/JAMULUS_COMPONENT_RELEASE_RUNBOOK.md": (
             "v0.29.0 candidate fallback-only desktop state"
         ),
-        "docs/MERGE_AND_RELEASE.md": "Published testing boundary:",
+        "docs/MERGE_AND_RELEASE.md": "Current download and publication status:",
         "docs/PROJECT_BRIEF.md": "396603181",
         "docs/README.md": "396603181",
         "ios/README.md": "396603181",

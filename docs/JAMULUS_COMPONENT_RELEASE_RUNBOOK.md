@@ -1,9 +1,11 @@
 # Jamulus component catalog release runbook
 
-> **v0.29.0 candidate fallback-only desktop state:** source is unreleased.
+> **v0.29.0 candidate fallback-only desktop state:** publication status is
+> recorded on [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
 > Its unchanged baked Jamulus 3.12.2/3.12.3 compatibility records extend through
 > v0.29.0 and reject v0.29.1. This is not signed managed-update authorization.
-> GitHub Latest is desktop v0.28.4 release `396603181`. The owner deleted the
+> At the 2026-09-29 pre-v0.29.0 checkpoint, Latest was desktop v0.28.4 release
+> `396603181`. The owner deleted the
 > component v1–v3 release entries; their tags and historical signed-catalog
 > evidence do not provide a working download channel. A new signed channel
 > remains separate work. Component publication and physical gates are **NOT RUN**.

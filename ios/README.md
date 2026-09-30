@@ -1,9 +1,11 @@
 # Pocket Stage iPhone app
 
-> **Published desktop:** GitHub Latest is immutable unsigned/ad-hoc v0.28.4,
+> **Current desktop download and publication status:** [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
+> **Historical checkpoint, 2026-09-29 before the v0.29.0 release round:** Latest was
+> immutable unsigned/ad-hoc v0.28.4,
 > release `396603181`, commit `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`.
 > Mac packages include the Pocket Stage Xcode source setup kit, not a signed
-> installable iPhone app. Desktop v0.29.0 source is unreleased. Physical iPhone
+> installable iPhone app. Desktop source identity is v0.29.0. Physical iPhone
 > installation, pairing, and signing remain **NOT RUN**.
 
 This folder also holds the **Art companion** guest app that landed with Phase 1

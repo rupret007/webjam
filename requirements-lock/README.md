@@ -5,7 +5,9 @@ matching its native package. These locks preserve the Python dependency graph
 that is reviewed and tested before signing; `requirements.txt` remains the
 human-maintained application dependency declaration.
 
-Immutable GitHub **Latest** release `396603181` published these dependency
+[GitHub Latest](https://github.com/rupret007/webjam/releases/latest) identifies the current download.
+The immutable v0.28.4 release `396603181`, Latest at the 2026-09-29
+pre-v0.29.0 checkpoint, published these dependency
 locks from annotated tag object `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peeling to exact commit `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`.
 Its seven packages are bound by `WebJam-v0.28.4-SHA256SUMS.txt`; a later
 `master` checkout or branch build must not reuse that manifest as evidence for

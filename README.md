@@ -18,8 +18,10 @@ own systems that remain independent.
 along → Paint along → Record along into Logic. The script includes preparation,
 fallbacks, and an unfilled physical rehearsal receipt.
 
-> **Source:** v0.29.0 is an unreleased unsigned testing candidate.
-> **Published download, checked 2026-09-29:** GitHub **Latest** is
+> **Source identity:** v0.29.0 unsigned testing candidate.
+> **Current download and publication status:** [GitHub Latest](https://github.com/rupret007/webjam/releases/latest)
+> identifies the published tag, packages, and checksum manifest.
+> **Historical checkpoint, checked 2026-09-29 before the v0.29.0 release round:**
 > [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4), immutable
 > release `396603181`, published `2026-09-25T12:57:13Z`. Annotated tag object
 > `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
@@ -28,8 +30,9 @@ fallbacks, and an unfilled physical rehearsal receipt.
 > macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
 > gates remain **NOT RUN**. A source checkout is not a published package.
 
-> **Source boundary:** this checkout reports unsigned v0.29.0, not a published
-> release. Jeff authorized the next testing build; exact source and package
+> **Source boundary:** this checkout reports unsigned v0.29.0. Publication
+> status is recorded on GitHub, not inferred from this version. Jeff authorized
+> this testing release; exact source and package
 > gates must pass before publication. Jeff retains feel and Final Build judgment.
 > The existing Jamulus 3.12.2/3.12.3 records are approved through v0.29.0;
 > the historical signed catalog remains sealed at exact WebJam v0.22.5.
@@ -41,7 +44,7 @@ showing someone the door? See the [two-minute demo script](DEMO.md).
 
 ## Keep working between sessions
 
-Unreleased v0.29.0 adds **File → Session library…** before a room and
+v0.29.0 adds **File → Session library…** before a room and
 **More → Session library…** inside it. Save local notes, reuse a Music
 **Rehearsal plan**, or keep an **Art project** with references and next steps.
 **Continue this work** restores its context without starting audio or a room.
@@ -53,8 +56,8 @@ See [the saved-work walkthrough](USER_GUIDE.md#save-a-session-and-continue-later
 | Area | Current state |
 | --- | --- |
 | Product | Creator-facing desktop conductor around Jamulus, optional external meeting conversation, Studio, Pocket Stage, and Phase 1 native Art companion (source / unsigned simulator) |
-| Published line | Immutable unsigned/ad-hoc v0.28.4 release `396603181`; verify `WebJam-v0.28.4-SHA256SUMS.txt` |
-| Current source line | Unreleased v0.29.0: saved workspaces, rehearsal plans, Art projects, and take review; same baked Jamulus identities through v0.29.0 |
+| Published line | [GitHub Latest](https://github.com/rupret007/webjam/releases/latest); verify the selected release’s own checksum manifest |
+| Current source line | v0.29.0: saved workspaces, rehearsal plans, Art projects, and take review; same baked Jamulus identities through v0.29.0 |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -681,13 +684,16 @@ provider hostnames, credentials, device identifiers, raw paths, or notes.
 
 The published release and a development checkout are different identities.
 Only the exact tag, release assets, checksum manifest, and live GitHub release
-metadata are downloadable evidence. As checked on 2026-09-29, GitHub Latest is
+metadata are downloadable evidence. [GitHub Latest](https://github.com/rupret007/webjam/releases/latest)
+identifies the current published download. Historical checkpoint checked
+2026-09-29 before the v0.29.0 release round: Latest was
 [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4), release ID
 `396603181`, published `2026-09-25T12:57:13Z`. Annotated tag object
 `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
 `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. Tag CI `36133468143` passed and
 created the eight-asset draft. The seven packages are covered by
-`WebJam-v0.28.4-SHA256SUMS.txt`. This v0.29.0 source is unreleased.
+`WebJam-v0.28.4-SHA256SUMS.txt`. The v0.29.0 publication status and its own
+package evidence belong to GitHub Releases.
 
 For the next unsigned testing release, the tag pipeline must produce a green,
 exact-master, annotated-tag draft. Before an authorized maintainer promotes it,

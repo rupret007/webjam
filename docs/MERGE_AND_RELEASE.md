@@ -1,11 +1,12 @@
 # Merge and release map
 
-> **Published testing boundary:** GitHub **Latest** is immutable unsigned/ad-hoc
-> v0.28.4 release `396603181`, published `2026-09-25T12:57:13Z`. Annotated tag
+> **Current download and publication status:** [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
+> **Historical checkpoint, checked 2026-09-29 before the v0.29.0 release round:**
+> immutable unsigned/ad-hoc v0.28.4 release `396603181`, published `2026-09-25T12:57:13Z`. Annotated tag
 > object `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
 > `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. The seven packages plus
 > `WebJam-v0.28.4-SHA256SUMS.txt` identify the published build.
-> **Current source:** v0.29.0 is unreleased. Jeff authorized this next unsigned
+> **Source identity:** v0.29.0. Jeff authorized this unsigned
 > testing release once its real gates pass; feel and Final Build remain his.
 
 Earlier product work #14, #15, #16, #17, and #19 is already on `master`;
@@ -82,9 +83,10 @@ touch on `master` before the branch that had to be reworked around them.
 
 ## 4. Release round
 
-The published baseline is v0.28.4. Tag CI `36133468143` passed and produced its
+The historical published baseline for this round is v0.28.4. Tag CI `36133468143` passed and produced its
 eight-asset draft; immutable release `396603181` became Latest on 2026-09-25.
-The next source version is v0.29.0, currently unreleased.
+The source version for this round is v0.29.0. GitHub Releases records its
+publication status; this document does not infer publication from source.
 
 The generic `.github/workflows/publish-latest-release.yml` requires a live
 signed catalog for the exact version. Its `jamulus-components-v3` release was
@@ -155,7 +157,7 @@ These stay **NOT RUN** unless real evidence exists for the exact candidate:
 | `Certify Jamulus/JACK (one hour, manual)` | manual dispatch only (`run_one_hour_certification`) |
 | `Windows Release Trust (windows-x64)`, `macOS Release Trust` | credentialed signing/notarization rehearsals behind `windows_signing_rehearsal` / `macos_signing_rehearsal` |
 | `Jamulus 3.12.3 HEADLESS evidence` | quarantined dispatch-only evidence build |
-| `Publish GitHub Release` | the new v0.29.0 tag has not been built or published |
+| `Publish GitHub Release` | tag-only draft creation; check the exact tag workflow and GitHub release for its status |
 | Two-Mac Art room video and Drawpile | two physical machines, real observation |
 | Live Music AI | needs a real service credential |
 | Physical and hardware checklist rows | real musician observation against an exact package |

@@ -2,7 +2,9 @@
 
 ## Current unsigned testing release
 
-Source v0.29.0 is unreleased. As checked 2026-09-29, GitHub Latest is immutable
+Source identity is v0.29.0. [GitHub Latest](https://github.com/rupret007/webjam/releases/latest)
+records current download and publication status. Historical checkpoint checked
+2026-09-29 before the v0.29.0 release round: Latest was immutable
 v0.28.4 release `396603181`, published `2026-09-25T12:57:13Z`; annotated tag
 object `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
 `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. Tag run `36133468143` passed,

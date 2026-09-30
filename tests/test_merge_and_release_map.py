@@ -99,7 +99,9 @@ def test_map_records_authorized_next_release_and_parked_leftovers() -> None:
         assert landed in FLAT_MAP_TEXT, landed
     assert "already on `master`" in FLAT_MAP_TEXT
     assert "merged 2026-08-22" in FLAT_MAP_TEXT
-    assert "v0.29.0 is unreleased" in FLAT_MAP_TEXT
+    assert "Source identity:** v0.29.0" in FLAT_MAP_TEXT
+    assert "https://github.com/rupret007/webjam/releases/latest" in FLAT_MAP_TEXT
+    assert "Historical checkpoint" in FLAT_MAP_TEXT
 
     # #17 merged as `5ca6ba5`; the map must not present it as open work.
     assert "Rebase [#17]" not in FLAT_MAP_TEXT
@@ -113,7 +115,7 @@ def test_map_records_authorized_next_release_and_parked_leftovers() -> None:
 
     # This named round is authorized only after real source and package gates.
     for marker in (
-        "Published testing boundary:", "396603181",
+        "Current download and publication status:", "396603181",
         "ce52e9c9302cb3f28510a3e3b0e9edfff8b31111",
         "dc494f0450ccc6f690ba7c9768ff4b575fe2da6c",
         "deleted by owner", "Annotated tag", "one reviewed tip",

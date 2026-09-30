@@ -6,8 +6,14 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-> Source identity is **v0.29.0**, an unreleased unsigned testing candidate.
-> GitHub Latest remains immutable v0.28.4 release `396603181`, published
+Changes after the v0.29.0 source line will be recorded here.
+
+## [0.29.0] — Unsigned testing candidate
+
+> Source identity is **v0.29.0**. For current download and publication status,
+> see [GitHub Latest](https://github.com/rupret007/webjam/releases/latest); a draft is not a published package.
+> Historical checkpoint checked 2026-09-29 before the v0.29.0 release round:
+> immutable v0.28.4 release `396603181` was Latest, published
 > `2026-09-25T12:57:13Z` at `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`, with
 > seven packages plus `WebJam-v0.28.4-SHA256SUMS.txt`. Older release entries
 > (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by owner; git tags remain.
@@ -71,7 +77,8 @@ All notable improvements and features for the WebJam creator collaboration platf
 > `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c`, commit
 > `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. Tag CI `36133468143` passed;
 > seven packages plus `WebJam-v0.28.4-SHA256SUMS.txt` identify its bytes.
-> It is GitHub Latest as checked 2026-09-29. Physical/signing remain **NOT RUN**.
+> It was GitHub Latest at the 2026-09-29 pre-v0.29.0 checkpoint.
+> Physical/signing remain **NOT RUN**.
 
 ### Added
 - Send to Logic button with adapter for take handoff (#155).

@@ -1,7 +1,9 @@
 # Developing WebJam v0.29.0
 
-> **Source:** v0.29.0 is an unreleased unsigned testing candidate.
-> **Published download, checked 2026-09-29:** GitHub **Latest** is
+> **Source identity:** v0.29.0 unsigned testing candidate.
+> **Current download and publication status:** [GitHub Latest](https://github.com/rupret007/webjam/releases/latest)
+> identifies the published tag, packages, and checksum manifest.
+> **Historical checkpoint, checked 2026-09-29 before the v0.29.0 release round:**
 > [v0.28.4](https://github.com/rupret007/webjam/releases/tag/v0.28.4), immutable
 > release `396603181`, published `2026-09-25T12:57:13Z`. Annotated tag object
 > `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peels to
@@ -225,8 +227,9 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-This checkout's package identity is unsigned `0.29.0`, currently unreleased.
-GitHub Latest is immutable release `396603181` at commit
+This checkout's package identity is unsigned `0.29.0`. Current publication status
+is on [GitHub Latest](https://github.com/rupret007/webjam/releases/latest). At the 2026-09-29
+pre-v0.29.0 checkpoint, Latest was immutable release `396603181` at commit
 `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`, with seven packages plus
 `WebJam-v0.28.4-SHA256SUMS.txt`. A checkout is not a release package.
 Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted

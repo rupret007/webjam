@@ -30,7 +30,9 @@ support bundles, or unredacted local paths.
 Jamulus, meeting services, Python dependencies, Qt, and operating-system trust systems
 have their own upstream security channels. WebJam-specific orchestration,
 privacy projection, package verification, updater, transport, and lifecycle
-issues belong here. GitHub **Latest** is immutable unsigned/ad-hoc v0.28.4
+issues belong here. [GitHub Latest](https://github.com/rupret007/webjam/releases/latest) identifies the
+current download. At the 2026-09-29 pre-v0.29.0 checkpoint, Latest was
+immutable unsigned/ad-hoc v0.28.4
 private test release `396603181`, published `2026-09-25T12:57:13Z` from
 annotated tag object `dc494f0450ccc6f690ba7c9768ff4b575fe2da6c` peeling to exact commit `ce52e9c9302cb3f28510a3e3b0e9edfff8b31111`. A later
 `master` checkout or branch artifact is not that download. Older release entries
