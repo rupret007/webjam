@@ -120,7 +120,8 @@ def test_conflict_keeps_draft_blocks_switch_and_can_save_separate_copy(tmp_path,
     assert source.id == first.id
     assert source.revision == first.revision
     assert source._store_token == first._store_token
-    assert source.notes == copy.notes
+    assert source == first  # The recovery acknowledgement binds the loaded snapshot, not edited text.
+    assert source.notes == "Original"
     assert saved == library.load(copy.id)
 
 
@@ -255,6 +256,48 @@ def test_selecting_history_or_takes_never_opens_an_accidental_take(tmp_path, mak
     assert len(opened) == 1
 
 
+def test_pending_take_without_path_cannot_open_or_offer_relink(tmp_path, make_dialog, monkeypatch):
+    library = SessionLibrary(tmp_path)
+    record = library.create("music", "Still recording", take_links=(
+        {"take_id": "pending", "take_path": "", "status": "pending", "title": "Recording requested"},
+    ))
+    dialog = make_dialog(library, current_id=record.id)
+    dialog.takes.setCurrentRow(0)
+    assert "no completed take yet" in dialog.takes.item(0).text()
+    assert "missing" not in dialog.takes.item(0).text()
+    assert not dialog.open_take_button.isEnabled()
+    assert not dialog.relink_take_button.isEnabled()
+    opened = []
+    dialog.take_open_requested.connect(opened.append)
+    asked = []
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *_args, **_kwargs: asked.append(True) or "")
+    dialog._open_take()
+    dialog._relink_take()
+    assert opened == []
+    assert asked == []
+
+
+def test_save_reconciliation_cannot_change_which_take_the_user_selected(tmp_path, make_dialog):
+    library = SessionLibrary(tmp_path)
+    first = {"take_id": "one", "take_path": str(tmp_path / "one"), "title": "One"}
+    second = {"take_id": "two", "take_path": str(tmp_path / "two"), "title": "Two"}
+    record = library.create("music", "Reordered takes", take_links=(first, second))
+
+    def reconcile(_base, edited):
+        return library.save(replace(edited, take_links=(second, first)))
+
+    dialog = make_dialog(library, current_id=record.id, save_record=reconcile)
+    dialog.takes.setCurrentRow(0)
+    dialog.notes.setPlainText("Unsaved editor change")
+    opened = []
+    dialog.take_open_requested.connect(opened.append)
+    dialog._open_take()
+    assert dialog.record.take_links[0] == second
+    assert dialog.takes.item(0).text().startswith("Two")
+    assert dialog.takes.currentRow() == 1
+    assert opened == [first]
+
+
 def test_summary_export_keeps_local_locators_private_and_never_overwrites_original(tmp_path, make_dialog, monkeypatch):
     reference_path = tmp_path / "private.kra"
     reference_path.write_bytes(b"original art project")
@@ -315,3 +358,4 @@ def test_compact_library_keeps_actions_visible_and_art_controls_scrollable(tmp_p
     app.processEvents()
     visible_point = dialog.art.bookmark_note.mapTo(scroll.viewport(), dialog.art.bookmark_note.rect().center())
     assert scroll.viewport().rect().contains(visible_point)
+    assert dialog.tabs.widget(1) is dialog.rehearsal  # The plan already owns its own scroll area.

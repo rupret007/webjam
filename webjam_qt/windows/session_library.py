@@ -1,6 +1,7 @@
 """A searchable local library and editor, available before joining a room."""
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import replace
 import json
 from pathlib import Path
@@ -45,12 +46,15 @@ class SessionLibraryDialog(QDialog):
     bookmark_open_requested = Signal(dict)
     song_selected = Signal(dict)
 
-    def __init__(self, library: SessionLibrary, parent=None, *, profile="music", current_id="", pending_records=None):
+    def __init__(self, library: SessionLibrary, parent=None, *, profile="music", current_id="", pending_records=None,
+                 save_record=None):
         super().__init__(parent)
         self.library = library
         # The coordinator remains the owner of its recovery map. Only the
         # success signals may settle that map; this dialog edits a snapshot.
-        self.pending_records = dict(pending_records or {})
+        self.pending_records = deepcopy(dict(pending_records or {}))
+        self._save_record = save_record
+        self._base_record = None
         self._initial_current_id = current_id
         self.default_profile = profile
         self.record = None
@@ -67,7 +71,7 @@ class SessionLibraryDialog(QDialog):
         outer.addWidget(self.search)
         self.history = QListWidget()
         self.history.setAccessibleName("Saved sessions and Art workspaces")
-        self.history.setMaximumHeight(135)
+        self.history.setMaximumHeight(100)
         outer.addWidget(self.history)
         create_row = QHBoxLayout()
         self.profile = QComboBox()
@@ -100,7 +104,7 @@ class SessionLibraryDialog(QDialog):
         form.addRow("Notes", self.notes)
         self._add_tab(details, "Notes")
         self.rehearsal = RehearsalPlanPanel()
-        self._add_tab(self.rehearsal, "Rehearsal plan")
+        self.tabs.addTab(self.rehearsal, "Rehearsal plan")
         self.art = ArtWorkspacePanel()
         self._add_tab(self.art, "Art project")
         self.summary = QPlainTextEdit()
@@ -112,12 +116,14 @@ class SessionLibraryDialog(QDialog):
         self.takes = QListWidget()
         self.takes.setAccessibleName("Takes linked to this workspace")
         take_layout.addWidget(self.takes)
-        open_take = QPushButton("Open selected take in Studio")
-        open_take.clicked.connect(self._open_take)
-        take_layout.addWidget(open_take)
-        relink_take = QPushButton("Locate moved take…")
-        relink_take.clicked.connect(self._relink_take)
-        take_layout.addWidget(relink_take)
+        self.open_take_button = QPushButton("Open selected take in Studio")
+        self.open_take_button.clicked.connect(self._open_take)
+        take_layout.addWidget(self.open_take_button)
+        self.relink_take_button = QPushButton("Locate moved take…")
+        self.relink_take_button.clicked.connect(self._relink_take)
+        take_layout.addWidget(self.relink_take_button)
+        self.takes.currentRowChanged.connect(self._update_take_actions)
+        self._update_take_actions()
         self.tabs.addTab(take_page, "Takes")
         self.status = QLabel()
         self.status.setTextFormat(Qt.TextFormat.PlainText)
@@ -244,6 +250,7 @@ class SessionLibraryDialog(QDialog):
             self.notes.setPlainText(record.notes)
             self.summary.setPlainText(summary)
             self.record = record
+            self._base_record = deepcopy(record)
             self.history.blockSignals(True)
             self.select_id(record.id)
             self.history.blockSignals(False)
@@ -270,11 +277,32 @@ class SessionLibraryDialog(QDialog):
             self._loading = False
 
     def _render_takes(self):
+        previous = self.takes.currentItem()
+        selected = (previous.data(Qt.ItemDataRole.UserRole)
+                    if previous is not None and getattr(self, "_takes_record_id", None) == self.record.id else None)
+        self._takes_record_id = self.record.id
         self.takes.clear()
         for ref in self.record.take_links:
-            path = Path(ref.get("take_path", ""))
+            path = str(ref.get("take_path", "") or "").strip()
             label = ref.get("title") or ref.get("take_id") or "Take"
-            self.takes.addItem(label + (" — missing; locate it" if not path.is_dir() else ""))
+            if not path:
+                suffix = " — requested or finalizing; no completed take yet"
+            else:
+                suffix = " — missing; locate it" if not Path(path).is_dir() else ""
+            item = QListWidgetItem(label + suffix)
+            item.setData(Qt.ItemDataRole.UserRole, ref.get("take_id"))
+            self.takes.addItem(item)
+            if selected and ref.get("take_id") == selected:
+                self.takes.setCurrentItem(item)
+        self._update_take_actions()
+
+    def _update_take_actions(self, _row=None):
+        row = self.takes.currentRow()
+        available = bool(self.record and self.record.profile != "art"
+                         and 0 <= row < len(self.record.take_links)
+                         and str(self.record.take_links[row].get("take_path", "") or "").strip())
+        self.open_take_button.setEnabled(available)
+        self.relink_take_button.setEnabled(available)
 
     def _changed(self, *_args):
         if not self._loading and self.record is not None:
@@ -295,13 +323,17 @@ class SessionLibraryDialog(QDialog):
         if not self._dirty or self.record is None:
             return True
         try:
-            self.record = self.library.save(self._edited_record())
+            edited = self._edited_record()
+            self.record = (self._save_record(deepcopy(self._base_record), edited)
+                           if self._save_record is not None else self.library.save(edited))
         except (OSError, ValueError) as error:
             self.status.setText(f"Changes are still here but not saved: {error} Use Save to retry or Save as copy.")
             return False
         self._dirty = False
+        self._base_record = deepcopy(self.record)
         self.pending_records.pop(self.record.id, None)
         self.summary.setPlainText(workspace_summary(self.record))
+        self._render_takes()
         self.status.setText("Saved on this computer.")
         self.record_saved.emit(self.record)
         self.refresh()
@@ -328,6 +360,7 @@ class SessionLibraryDialog(QDialog):
         if not accepted or not title.strip():
             return
         try:
+            original = deepcopy(self._base_record)
             edited = self._edited_record()
             fields = {key: getattr(edited, key) for key in ("notes", "decisions", "actions", "blockers",
                 "recaps", "take_links", "rehearsal", "art", "mode_key")}
@@ -337,9 +370,9 @@ class SessionLibraryDialog(QDialog):
             self.search.clear()
             self.refresh()
             self.select_id(record.id)
-            # Include the exact source draft, retaining its original identity
-            # and revision so pending-save recovery can settle only that draft.
-            self.copy_saved.emit(edited, record)
+            # This is the original loaded snapshot, before editor changes or
+            # normalization. Only that exact pending draft may be settled.
+            self.copy_saved.emit(original, record)
         except (OSError, ValueError) as error:
             self.status.setText(f"The separate copy could not be saved: {error}")
 
@@ -351,12 +384,20 @@ class SessionLibraryDialog(QDialog):
 
     def _open_take(self):
         row = self.takes.currentRow()
-        if self.record and 0 <= row < len(self.record.take_links) and self.save_current():
-            self.take_open_requested.emit(dict(self.record.take_links[row]))
+        if (self.record and 0 <= row < len(self.record.take_links)
+                and str(self.record.take_links[row].get("take_path", "") or "").strip()):
+            # Saving may reconcile new take facts and reorder the record's
+            # links. Keep the exact reference chosen before that happens.
+            selected = deepcopy(self.record.take_links[row])
+            if self.save_current():
+                self.take_open_requested.emit(selected)
 
     def _relink_take(self):
         row = self.takes.currentRow()
         if not self.record or not 0 <= row < len(self.record.take_links):
+            return
+        if not str(self.record.take_links[row].get("take_path", "") or "").strip():
+            self.status.setText("This recording has no completed take yet. Wait for it to finish before opening or locating it.")
             return
         path = QFileDialog.getExistingDirectory(self, "Locate the same take")
         if not path:

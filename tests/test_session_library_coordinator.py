@@ -12,13 +12,14 @@ from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QObject  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QInputDialog  # noqa: E402
 from core.creative_modes import get_creator_profile_by_key_or_default  # noqa: E402
 from core.session_library import SessionLibrary  # noqa: E402
 from webjam_qt.controllers.session_library import (  # noqa: E402
     SessionLibraryCoordinator, import_legacy_workspaces,
 )
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
+from webjam_qt.windows.session_library import SessionLibraryDialog  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
@@ -52,14 +53,117 @@ class TestSessionLibraryCoordinator(TestCase):
         self.library = SessionLibrary(self.root / "library")
         self.coordinator = SessionLibraryCoordinator(self.owner, library=self.library)
         self.coordinator._imported = True
+        self.editors = []
 
     def tearDown(self):
         self.coordinator.timer.stop()
+        self.coordinator.dialog = None
+        for editor in self.editors:
+            editor.timer.stop()
+            editor._dirty = False
+            editor.close()
+            editor.deleteLater()
         self.window.close()
         self.window.deleteLater()
         self.owner.deleteLater()
         _app.processEvents()
         self.temp.cleanup()
+
+    def _editor(self):
+        editor = SessionLibraryDialog(self.library, self.window,
+            current_id=self.coordinator.current.id, pending_records=self.coordinator._pending,
+            save_record=self.coordinator.save_editor_record)
+        editor.record_saved.connect(self.coordinator._record_saved)
+        editor.copy_saved.connect(self.coordinator._copy_saved)
+        self.coordinator.dialog = editor
+        self.editors.append(editor)
+        return editor
+
+    def _late_take_and_recap(self, take_id="late-take"):
+        take = SimpleNamespace(take_id=take_id, session_id="recording-session",
+                               path=self.root / "take", display_name="Late completed take")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")), \
+                patch("core.take_review.take_source_identity", return_value="a" * 64):
+            self.coordinator.recording_completed(take, validated=True)
+            self.coordinator.capture_summary()
+            self.coordinator.finish_session()
+        return self.coordinator._pending[self.coordinator.current.id]
+
+    def test_editor_save_merges_late_pending_take_and_recap_before_publication(self):
+        self.coordinator.start_session()
+        self.coordinator.recording_started("late-take", "recording-session")
+        editor = self._editor()
+        original = editor._base_record
+        editor.notes.setPlainText("Decision: use the editor's complete draft")
+        late = self._late_take_and_recap()
+        self.assertEqual(late.revision, original.revision)
+        self.assertEqual(late._store_token, original._store_token)
+        self.assertTrue(editor.save_current())
+        saved = self.library.load(original.id)
+        self.assertEqual(saved.notes, "Decision: use the editor's complete draft")
+        self.assertEqual(saved.take_links[0]["status"], "complete")
+        self.assertEqual(saved.recaps[0]["take_ids"], ["late-take"])
+        self.assertNotIn(saved.id, self.coordinator._pending)
+        self.assertEqual(self.window.session_canvas.current_notes(), saved.notes)
+
+    def test_copy_of_older_pending_snapshot_keeps_newer_take_and_recap_owned(self):
+        self.coordinator.start_session()
+        self.coordinator.recording_started("late-take", "recording-session")
+        self.window.session_canvas.set_notes("Retained original draft")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush())
+        editor = self._editor()
+        base = editor._base_record
+        editor.notes.setPlainText("My separately edited copy")
+        late = self._late_take_and_recap()
+        self.assertEqual(late.revision, base.revision)
+        self.assertEqual(late._store_token, base._store_token)
+        with patch.object(QInputDialog, "getText", return_value=("Separate copy", True)):
+            editor._copy()
+        copied = self.library.load(editor.record.id)
+        self.assertNotEqual(copied.id, base.id)
+        self.assertEqual(copied.notes, "My separately edited copy")
+        self.assertEqual(self.coordinator.current.id, base.id)
+        self.assertEqual(self.coordinator._pending[base.id], late)
+        self.assertEqual(self.window.session_canvas.current_notes(), "Retained original draft")
+        self.assertTrue(self.coordinator.flush())
+        saved_original = self.library.load(base.id)
+        self.assertEqual(saved_original.take_links[0]["status"], "complete")
+        self.assertEqual(saved_original.recaps[0]["take_ids"], ["late-take"])
+        self.assertEqual(saved_original.notes, "Retained original draft")
+
+    def test_competing_notes_stay_in_editor_and_pending_without_a_disk_overwrite(self):
+        self.window.session_canvas.set_notes("Base Notes")
+        self.coordinator.ensure_current()
+        editor = self._editor()
+        editor.notes.setPlainText("Editor Notes")
+        self.window.session_canvas.set_notes("Newer original Notes")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.coordinator.flush()
+        path = self.library.root / f"{editor.record.id}.json"
+        before = path.read_bytes()
+        self.assertFalse(editor.save_current())
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(editor.notes.toPlainText(), "Editor Notes")
+        self.assertTrue(editor._dirty)
+        self.assertEqual(self.coordinator._pending[editor.record.id].notes, "Newer original Notes")
+
+    def test_save_signal_alone_cannot_acknowledge_newer_pending_lifecycle_state(self):
+        self.coordinator.start_session()
+        self.coordinator.recording_started("late-take", "recording-session")
+        old = self.coordinator.current
+        late = self._late_take_and_recap()
+        old_saved = self.library.save(replace(old, notes="Older editor publication"))
+        self.coordinator._record_saved(old_saved)
+        self.assertEqual(self.coordinator._pending[old.id], late)
+        self.assertEqual(self.coordinator.current.take_links[0]["status"], "complete")
+
+    def test_missing_take_path_never_enters_studio(self):
+        with patch.object(self.window.recording_studio, "jump_to_bookmark") as jump:
+            self.coordinator.open_take({"take_id": "pending", "take_path": ""})
+            self.coordinator.open_bookmark({"take_id": "pending", "take_path": ""})
+        jump.assert_not_called()
+        self.owner._on_rail_view_changed.assert_not_called()
 
     def test_explicit_resume_preserves_previous_workspace_without_starting_owners(self):
         self.window.session_canvas.set_notes("old draft")

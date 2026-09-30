@@ -1,6 +1,7 @@
 """Connect saved creative work to the existing session, notes, and take owners."""
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,7 +11,38 @@ from PySide6.QtCore import QObject, QTimer
 
 from core.art_workspace import art_summary
 from core.session_intelligence import build_session_pulse
-from core.session_library import SessionLibrary
+from core.session_library import SessionLibrary, SessionLibraryConflict
+
+
+_EDITABLE_FIELDS = ("title", "mode_key", "notes", "decisions", "actions", "blockers",
+                    "recaps", "take_links", "rehearsal", "art")
+
+
+def _same_snapshot(left, right) -> bool:
+    return bool(left is not None and right is not None and left == right
+                and left._store_token == right._store_token
+                and left.recovered == right.recovered)
+
+
+def _merge_editor_changes(base, edited, latest):
+    """Merge only disjoint known edits; competing content stays with its owners."""
+    if (base is None or any(getattr(base, key) != getattr(edited, key)
+                           or getattr(base, key) != getattr(latest, key)
+                           for key in ("id", "profile", "created_at", "source_key"))):
+        raise SessionLibraryConflict("The workspace editor no longer matches its original snapshot.")
+    changes = {}
+    for name in _EDITABLE_FIELDS:
+        before, draft, current = getattr(base, name), getattr(edited, name), getattr(latest, name)
+        if draft == before:
+            changes[name] = current
+        elif current == before or current == draft:
+            changes[name] = draft
+        else:
+            raise SessionLibraryConflict(
+                f"Workspace {name.replace('_', ' ')} changed while this editor was open. "
+                "Your draft and the newer workspace changes are both retained; save a separate copy."
+            )
+    return replace(latest, **deepcopy(changes))
 
 
 def default_session_library() -> SessionLibrary:
@@ -129,20 +161,11 @@ class SessionLibraryCoordinator(QObject):
         from webjam_qt.windows.session_library import SessionLibraryDialog
         if not self.ensure_current():
             return
-        if not self.flush():
-            # Keep the exact draft available for Save as copy instead of loading
-            # stale disk bytes over it. The dialog's revision check remains live.
-            pending = self._pending.get(self.current.id)
-        else:
-            pending = None
+        self.flush()
         dialog = SessionLibraryDialog(self.library, self._c.window,
-            profile=self._profile(), current_id=self.current.id, pending_records=self._pending)
+            profile=self._profile(), current_id=self.current.id, pending_records=self._pending,
+            save_record=self.save_editor_record)
         self.dialog = dialog
-        if pending is not None:
-            dialog.record = pending
-            dialog.title.setText(pending.title)
-            dialog.notes.setPlainText(pending.notes)
-            dialog._dirty = True
         dialog.record_saved.connect(self._record_saved)
         dialog.copy_saved.connect(self._copy_saved)
         dialog.bookmark_requested.connect(self.mark_moment)
@@ -157,8 +180,30 @@ class SessionLibraryCoordinator(QObject):
         if selected is not None:
             self.continue_record(selected)
 
+    def save_editor_record(self, base, edited):
+        """Reconcile the editor before writing, including late take/recap facts.
+
+        Only our known in-memory snapshot can advance an editor's disk token.
+        The store still rejects external writes we have not read and owned.
+        """
+        latest = self._pending.get(base.id)
+        if latest is None and self.current is not None and self.current.id == base.id:
+            latest = self.current
+        latest = deepcopy(latest or base)
+        merged = _merge_editor_changes(base, edited, latest)
+        saved = self.library.save(merged)
+        if _same_snapshot(self._pending.get(saved.id), latest):
+            self._pending.pop(saved.id, None)
+        self._record_saved(saved)
+        return saved
+
     def _record_saved(self, record):
-        self._pending.pop(record.id, None)
+        pending = self._pending.get(record.id)
+        if pending is not None:
+            if not _same_snapshot(pending, record):
+                self._flash("The editor was saved; newer workspace changes are still retained for retry or a separate copy.")
+                return
+            self._pending.pop(record.id, None)
         if self.current is not None and self.current.id == record.id:
             self.current = record
             self._applying = True
@@ -171,9 +216,15 @@ class SessionLibraryCoordinator(QObject):
 
     def _copy_saved(self, previous, copied):
         pending = self._pending.get(previous.id)
-        if pending is not None and pending.revision == previous.revision and pending._store_token == previous._store_token:
+        if pending is not None and not _same_snapshot(pending, previous):
+            self._flash("Your separate copy is saved. Newer changes remain with the original workspace; reopen its retained draft to review them.")
+            return
+        if pending is not None:
             self._pending.pop(previous.id, None)
         if self.current is not None and previous.id == self.current.id:
+            if pending is None and not _same_snapshot(self.current, previous):
+                self._flash("Your separate copy is saved. The original workspace also has newer changes and remains active.")
+                return
             self.current = copied
             self._record_saved(copied)
 
@@ -339,6 +390,9 @@ class SessionLibraryCoordinator(QObject):
         return ("Ready" if refs[-1].get("validated") else "Needs attention") if refs else None
 
     def open_take(self, ref):
+        if not isinstance(ref.get("take_path"), str) or not ref["take_path"].strip():
+            self._flash("This recording has no completed take yet. Wait for recording and finalization to finish.")
+            return
         if self._profile() == "art":
             self._flash("Switch to this Music workspace before opening its take.")
             return
@@ -368,7 +422,7 @@ class SessionLibraryCoordinator(QObject):
             self.dialog.rehearsal.add_bookmark(note)
 
     def open_bookmark(self, mark):
-        if self._profile() == "art":
+        if self._profile() == "art" or not isinstance(mark.get("take_path"), str) or not mark["take_path"].strip():
             return
         self._c._on_rail_view_changed("takes")
         opened = self._c.window.recording_studio.jump_to_bookmark(mark.get("take_path", ""),
