@@ -15,8 +15,8 @@
 ## Save a session and continue later
 
 In v0.29.0, open **File → Session library…** at launch,
-or **More → Session library…** in a room. Use **New workspace…**, choose its
-profile, and give it a title. The **Notes**, **Rehearsal plan**, **Art project**,
+or **More → Session library…** in a room. Choose the new workspace's profile,
+then **New workspace…** and a title. The **Notes**, **Rehearsal plan**, **Art project**,
 **Summary**, and **Takes** tabs keep the work appropriate to that profile.
 Changes save locally; check the save status and use **Save** before leaving.
 Search finds previous work. **Continue this work** brings its saved context
@@ -48,6 +48,10 @@ reference, enter a **Lesson position** in seconds, and **Save lesson bookmark**.
 That position is entered by you; it is not a measured room or video timecode.
 Art project records organize local work and do not create an audio recording
 or turn WebJam into a drawing application.
+
+For completed Music or Podcast & Voice takes, follow
+[Review and compare completed takes](#review-and-compare-completed-takes)
+to save favorites and notes, audition A/B, and inspect an export receipt.
 
 ## Follow the current guide
 
@@ -959,7 +963,7 @@ source count. Finalization rechecks those facts and refuses source
 substitution, a changed map, or missing/extra delivery instead of calling the
 take Ready.
 
-Current v0.28.0 source presents that frozen plan in one accessible,
+The v0.29.0 source presents that frozen plan in one accessible,
 path-free **Record Session Readiness** sheet. Every server track, Local
 Original, and Shared Track row shows its source label, exact mono/stereo format,
 required/optional status, readiness, and a bounded meter when available.
@@ -1043,6 +1047,31 @@ and inspect a completed take and its sources, but it cannot mutate the take's
 arrangement or mix, create a Studio sidecar, or export tracks. Art
 does not record a session at all, so it has no take and no Studio.
 
+### Review and compare completed takes
+
+1. Select a completed take in Studio and choose **Review / Compare**. Mark
+   **Favorite take**, enter private notes, and choose **Save review**. These
+   annotations stay with that take and do not change its recordings or mix.
+   If saving fails, your draft remains visible; retry before switching takes
+   or closing the review.
+2. Choose **Set A** for the selected take, select another take in Studio, and
+   choose **Set B**. **Listen A** and **Listen B** explicitly start playback
+   with each take's saved arrangement and mix. Pending edits must save before
+   switching. Auditioning does not edit the arrangement, and a missing or
+   changed take is not replaced by a different recording.
+3. In Music or Podcast & Voice, choose **Export reviewed take** to use Studio's
+   normal export path. **Export receipt…** becomes available only after the
+   package checksums verify. It shows the exact exported sources, settings,
+   destination, and file checksums. A failed or unverified export has no
+   completed receipt; keep the original take and retry. Changing takes or
+   editing the mix or arrangement clears the previous receipt.
+
+The receipt confirms the package bytes at export completion. Listening and
+importing into another editor remain separate checks; WebJam does not open
+or control that editor for you.
+
+### Arrange and export
+
 - Drag a region to move it or drag an edge to trim it. The selected region can
   also be split, duplicated, disabled, or deleted without changing its WAV.
 - Use the timeline ruler, zoom, scroll, snap choices, markers/sections, fades,
@@ -1075,7 +1104,7 @@ and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
 manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
-current v0.28.0 source.
+current source.
 
 For a standalone Podcast & Voice episode, use the 48 kHz Host-mono +
 Guest-stereo preset, record the first pass, add a chapter marker, set a cycle
