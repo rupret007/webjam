@@ -6,12 +6,14 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, QRect, Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QFileDialog, QInputDialog, QPushButton, QScrollArea
 
 from core.art_workspace import make_reference, normalize_art_workspace
 from core.session_library import SessionLibrary
 from webjam_qt.windows.session_library import SessionLibraryDialog
+from webjam_qt.theme import load_stylesheet
 
 
 @pytest.fixture(scope="module")
@@ -394,3 +396,56 @@ def test_compact_library_keeps_actions_visible_and_art_controls_scrollable(tmp_p
     visible_point = dialog.art.bookmark_note.mapTo(scroll.viewport(), dialog.art.bookmark_note.rect().center())
     assert scroll.viewport().rect().contains(visible_point)
     assert dialog.tabs.widget(1) is dialog.rehearsal  # The plan already owns its own scroll area.
+
+
+@pytest.mark.parametrize("font_size", [13, 22])
+def test_library_actions_and_art_buttons_fit_after_resizing_and_hidden_tab_activation(
+    tmp_path, make_dialog, app, font_size,
+):
+    library = SessionLibrary(tmp_path)
+    record = library.create("art", "Layout study", notes="Keep the complete draft")
+    dialog = make_dialog(library, current_id=record.id)
+    dialog.setStyleSheet(load_stylesheet() + f"QWidget {{ font-size: {font_size}px; }}")
+    dialog.show()
+    actions = (dialog.new_button, dialog.copy_button, dialog.save_button,
+               dialog.export_button, dialog.continue_button,
+               next(button for button in dialog.findChildren(QPushButton) if button.text() == "Close"))
+    for width, height in ((760, 680), (480, 500), (760, 680)):
+        dialog.tabs.setCurrentIndex(0)
+        dialog.resize(width, height)
+        for _ in range(6):
+            app.processEvents()
+        assert (dialog.width(), dialog.height()) == (width, height)
+        for button in actions:
+            assert button.width() >= button.minimumSizeHint().width(), button.text()
+            bounds = QRect(button.mapTo(dialog, QPoint()), button.size())
+            assert dialog.rect().contains(bounds), button.text()
+        dialog.tabs.setCurrentIndex(2)
+        for _ in range(6):
+            app.processEvents()
+        scroll = dialog.tabs.widget(2)
+        assert scroll.horizontalScrollBar().maximum() == 0
+        assert dialog.art.width() <= scroll.viewport().width()
+        for button in dialog.art.findChildren(QPushButton):
+            scroll.ensureWidgetVisible(button, 0, 0)
+            app.processEvents()
+            assert button.width() >= button.minimumSizeHint().width(), button.text()
+            bounds = QRect(button.mapTo(scroll.viewport(), QPoint()), button.size())
+            assert scroll.viewport().rect().contains(bounds), button.text()
+        assert dialog.notes.toPlainText() == record.notes
+        assert not dialog._dirty
+        assert not dialog.isModal()
+
+
+def test_tab_leaves_workspace_notes_without_changing_the_draft(tmp_path, make_dialog, app):
+    record = SessionLibrary(tmp_path).create("music", "Keyboard editing", notes="Keep every character")
+    dialog = make_dialog(SessionLibrary(tmp_path), current_id=record.id)
+    dialog.show()
+    dialog.activateWindow()
+    dialog.notes.setFocus()
+    app.processEvents()
+    assert dialog.notes.hasFocus()
+    QTest.keyClick(dialog.notes, Qt.Key.Key_Tab)
+    assert not dialog.notes.hasFocus()
+    assert dialog.notes.toPlainText() == record.notes
+    assert not dialog._dirty

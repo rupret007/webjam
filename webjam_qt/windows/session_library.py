@@ -6,9 +6,9 @@ from dataclasses import replace
 import json
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout, QInputDialog,
+    QBoxLayout, QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout, QInputDialog,
     QLabel, QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit, QPushButton,
     QScrollArea, QTabWidget, QVBoxLayout, QWidget,
 )
@@ -61,6 +61,7 @@ class SessionLibraryDialog(QDialog):
         self.selected_record = None
         self._loading = False
         self._dirty = False
+        self._action_rows = []
         self.setWindowTitle("Session library")
         self.resize(760, 680)
         self.setMinimumSize(480, 400)
@@ -81,12 +82,15 @@ class SessionLibraryDialog(QDialog):
         self.profile.setAccessibleName("New workspace profile")
         self.profile.setCurrentIndex(max(0, self.profile.findData(profile)))
         create_row.addWidget(self.profile)
+        create_buttons = QHBoxLayout()
         self.new_button = QPushButton("New workspace…")
         self.new_button.clicked.connect(self._new)
-        create_row.addWidget(self.new_button)
+        create_buttons.addWidget(self.new_button)
         self.copy_button = QPushButton("Save as copy…")
         self.copy_button.clicked.connect(self._copy)
-        create_row.addWidget(self.copy_button)
+        create_buttons.addWidget(self.copy_button)
+        create_row.addLayout(create_buttons)
+        self._action_rows.extend((create_buttons, create_row))
         outer.addLayout(create_row)
         self.tabs = QTabWidget()
         outer.addWidget(self.tabs, 1)
@@ -97,6 +101,7 @@ class SessionLibraryDialog(QDialog):
         self.title.setMaxLength(200)
         self.title.setAccessibleName("Workspace title")
         self.notes = QPlainTextEdit()
+        self.notes.setTabChangesFocus(True)
         self.notes.setAccessibleName("Workspace notes")
         self.notes.setPlaceholderText("Keep notes here. Use Decision: and Action: for the recap.")
         self.notes.setMinimumHeight(150)
@@ -131,18 +136,23 @@ class SessionLibraryDialog(QDialog):
         self.status.setAccessibleName("Library save status")
         outer.addWidget(self.status)
         row = QHBoxLayout()
+        save_actions = QHBoxLayout()
+        continue_actions = QHBoxLayout()
         self.save_button = QPushButton("Save")
         self.save_button.clicked.connect(self.save_current)
-        row.addWidget(self.save_button)
+        save_actions.addWidget(self.save_button)
         self.export_button = QPushButton("Export summary…")
         self.export_button.clicked.connect(self._export)
-        row.addWidget(self.export_button)
+        save_actions.addWidget(self.export_button)
         self.continue_button = QPushButton("Continue this work")
         self.continue_button.clicked.connect(self._continue)
-        row.addWidget(self.continue_button)
+        continue_actions.addWidget(self.continue_button)
         close = QPushButton("Close")
         close.clicked.connect(self.close)
-        row.addWidget(close)
+        continue_actions.addWidget(close)
+        row.addLayout(save_actions)
+        row.addLayout(continue_actions)
+        self._action_rows.extend((save_actions, continue_actions, row))
         outer.addLayout(row)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
@@ -161,6 +171,27 @@ class SessionLibraryDialog(QDialog):
         self._initial_current_id = ""
         if current_id:
             self.select_id(current_id)
+
+    def _sync_action_rows(self):
+        margins = self.layout().contentsMargins()
+        width = self.width() - margins.left() - margins.right()
+        for row in self._action_rows:
+            needed = sum(row.itemAt(index).minimumSize().width()
+                         for index in range(row.count())) + row.spacing() * (row.count() - 1)
+            direction = (QBoxLayout.Direction.TopToBottom if needed > width
+                         else QBoxLayout.Direction.LeftToRight)
+            if row.direction() != direction:
+                row.setDirection(direction)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._sync_action_rows()
+
+    def event(self, event):
+        result = super().event(event)
+        if event.type() == QEvent.Type.LayoutRequest and getattr(self, "_action_rows", None):
+            self._sync_action_rows()
+        return result
 
     def _add_tab(self, widget, label):
         scroll = QScrollArea()

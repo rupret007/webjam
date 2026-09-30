@@ -5,12 +5,15 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QFileDialog, QPushButton
+from PySide6.QtCore import QPoint, QRect, Qt
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QFileDialog, QPushButton, QScrollArea
 
 from core.art_workspace import art_summary, make_reference, normalize_art_workspace, valid_reference_url
 from core.session_library import SessionLibrary
 from webjam_qt.widgets import art_workspace as widget_module
 from webjam_qt.widgets.art_workspace import ArtWorkspacePanel
+from webjam_qt.theme import load_stylesheet
 
 
 @pytest.fixture(scope="module")
@@ -169,3 +172,50 @@ def test_workspace_payload_copy_is_independent_of_saved_record(tmp_path):
     saved = library.save(replace(record, art=updated))
     assert record.art["references"][0]["title"] != "New title"
     assert library.load(saved.id).art["references"][0]["title"] == "New title"
+
+
+@pytest.mark.parametrize("font_size", [13, 22])
+def test_art_actions_reflow_without_horizontal_clipping_or_opening_references(app, monkeypatch, font_size):
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setStyleSheet(load_stylesheet() + f"QWidget {{ font-size: {font_size}px; }}")
+    panel = ArtWorkspacePanel()
+    scroll.setWidget(panel)
+    opened = []
+    monkeypatch.setattr(widget_module.QDesktopServices, "openUrl", lambda url: opened.append(url) or True)
+    panel.add_reference("https://example.com/lesson", kind="url", title="Painting lesson")
+    before = panel.payload()
+    try:
+        scroll.show()
+        for width in (760, 480, 760):
+            scroll.resize(width, 500)
+            for _ in range(6):
+                app.processEvents()
+            assert scroll.width() == width
+            assert scroll.horizontalScrollBar().maximum() == 0
+            for button in panel.findChildren(QPushButton):
+                scroll.ensureWidgetVisible(button, 0, 0)
+                app.processEvents()
+                assert button.width() >= button.minimumSizeHint().width(), button.text()
+                bounds = QRect(button.mapTo(scroll.viewport(), QPoint()), button.size())
+                assert scroll.viewport().rect().contains(bounds), button.text()
+        assert panel.payload() == before
+        assert opened == []
+    finally:
+        scroll.close()
+        scroll.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.parametrize("field", ["brief", "progress", "next_steps"])
+def test_tab_leaves_art_text_editor_without_inserting_a_character(panel, app, field):
+    editor = getattr(panel, field)
+    editor.setPlainText("An unchanged complete draft")
+    panel.show()
+    panel.activateWindow()
+    editor.setFocus()
+    app.processEvents()
+    assert editor.hasFocus()
+    QTest.keyClick(editor, Qt.Key.Key_Tab)
+    assert not editor.hasFocus()
+    assert editor.toPlainText() == "An unchanged complete draft"

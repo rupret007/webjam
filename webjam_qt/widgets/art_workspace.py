@@ -4,11 +4,11 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import uuid4
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
-    QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QInputDialog,
+    QBoxLayout, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QInputDialog,
     QLabel, QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit,
     QPushButton, QVBoxLayout, QWidget,
 )
@@ -22,6 +22,7 @@ class ArtWorkspacePanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._loading = False
+        self._action_rows = []
         self._value = normalize_art_workspace({})
         layout = QVBoxLayout(self)
         hint = QLabel("Keep making with your own tools. References and lesson positions stay local.")
@@ -35,6 +36,7 @@ class ArtWorkspacePanel(QWidget):
         for label, editor in (("Project brief", self.brief), ("Progress", self.progress),
                               ("Next steps", self.next_steps)):
             editor.setAccessibleName(label)
+            editor.setTabChangesFocus(True)
             editor.setMinimumHeight(72)
             editor.setMaximumHeight(140)
             editor.textChanged.connect(self._changed)
@@ -51,12 +53,14 @@ class ArtWorkspacePanel(QWidget):
             button.clicked.connect(callback)
             row.addWidget(button)
         layout.addLayout(row)
+        self._action_rows.append(row)
         row = QHBoxLayout()
         for label, callback in (("Open reference", self._open), ("Remove reference", self._remove)):
             button = QPushButton(label)
             button.clicked.connect(callback)
             row.addWidget(button)
         layout.addLayout(row)
+        self._action_rows.append(row)
         self.bookmarks = QListWidget()
         self.bookmarks.setAccessibleName("Saved lesson bookmarks")
         self.bookmarks.setMinimumHeight(80)
@@ -81,12 +85,52 @@ class ArtWorkspacePanel(QWidget):
             button.clicked.connect(callback)
             row.addWidget(button)
         layout.addLayout(row)
+        self._action_rows.append(row)
+        # Start narrow so a scroll area's initial minimum width cannot prevent
+        # its child from ever receiving a compact resize event.
+        for row in self._action_rows:
+            row.setDirection(QBoxLayout.Direction.TopToBottom)
         self.status = QLabel("Select a reference and enter the position you want to return to.")
         self.status.setWordWrap(True)
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         layout.addWidget(self.status)
         self.references.currentRowChanged.connect(self._reference_status)
         self.bookmarks.currentRowChanged.connect(self._bookmark_selected)
+
+    def _sync_action_rows(self):
+        margins = self.layout().contentsMargins()
+        parent = self.parentWidget()
+        available = min(self.width(), parent.width()) if parent is not None else self.width()
+        width = available - margins.left() - margins.right()
+        for row in self._action_rows:
+            needed = sum(row.itemAt(index).minimumSize().width()
+                         for index in range(row.count())) + row.spacing() * (row.count() - 1)
+            direction = (QBoxLayout.Direction.TopToBottom if needed > width
+                         else QBoxLayout.Direction.LeftToRight)
+            if row.direction() != direction:
+                row.setDirection(direction)
+        # Reflow can shrink the scroll child during the same layout pass.
+        # Lay out against its final width so hidden-tab activation cannot leave
+        # wider child controls clipped inside an otherwise correct viewport.
+        if self.layout().geometry() != self.rect():
+            self.layout().setGeometry(self.rect())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._sync_action_rows()
+
+    def event(self, event):
+        result = super().event(event)
+        if event.type() == QEvent.Type.LayoutRequest and getattr(self, "_action_rows", None):
+            self._sync_action_rows()
+        elif event.type() == QEvent.Type.ParentChange and self.parentWidget() is not None:
+            self.parentWidget().installEventFilter(self)
+        return result
+
+    def eventFilter(self, watched, event):
+        if watched is self.parentWidget() and event.type() == QEvent.Type.Resize:
+            self._sync_action_rows()
+        return super().eventFilter(watched, event)
 
     def load_payload(self, value: dict) -> None:
         normalized = normalize_art_workspace(value)
