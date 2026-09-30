@@ -15,6 +15,7 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication, QPushButton
 
 from core.network_invite import create_invite_link, parse_invite_link
+from core.rehearsal_plan import RehearsalPlan, make_bookmark, make_song
 from core.session_library import SessionLibrary
 from core import settings as settings_module
 from core.settings import AppSettings, load_settings, save_settings
@@ -97,6 +98,9 @@ def bootstrap(qapp, tmp_path, monkeypatch):
 
     def make_controller(window, **kwargs):
         controller = ApplicationController(window, **kwargs)
+        studio = controller.window.recording_studio
+        monkeypatch.setattr(studio._player, "play", Mock(name="play"))
+        monkeypatch.setattr(studio, "jump_to_bookmark", Mock(wraps=studio.jump_to_bookmark))
         controllers.append(controller)
         return controller
 
@@ -104,15 +108,18 @@ def bootstrap(qapp, tmp_path, monkeypatch):
     constructor.mode_entries = ApplicationController.mode_entries
     monkeypatch.setattr(app_module, "ApplicationController", constructor)
 
-    def run(record, *, cancel=False, pending_invitation=None, after_open=None):
+    def run(record, *, cancel=False, pending_invitation=None, after_open=None, library_action=None):
         def choose_record(dialog):
             dialogs.append(dialog)
             dialog.select_id(record.id)
             assert dialog.record.id == record.id
+            if library_action:
+                library_action(dialog)
             if cancel:
                 dialog.reject()
             else:
-                dialog.continue_button.click()
+                if dialog.selected_record is None:
+                    dialog.continue_button.click()
                 assert dialog.selected_record.id == record.id
             return dialog.result()
 
@@ -149,11 +156,13 @@ def bootstrap(qapp, tmp_path, monkeypatch):
             "start_companion_api", "accept_invitation",
         ):
             boundaries[name].assert_not_called()
+        for controller in controllers:
+            controller.window.recording_studio._player.play.assert_not_called()
         return controllers[0] if controllers else None
 
     yield SimpleNamespace(run=run, library=library, settings=settings, loop=loop,
                           constructor=constructor, boundaries=boundaries,
-                          controllers=controllers, dialogs=dialogs)
+                          controllers=controllers, dialogs=dialogs, launchers=launchers)
     for controller in controllers:
         controller.shutdown()
         controller.window.close()
@@ -211,6 +220,101 @@ def test_saved_work_retires_old_pending_invitation_and_error(bootstrap):
     bootstrap.run(record, pending_invitation=invitation, after_open=check)
 
 
+def _linked_launch_workspace(bootstrap, tmp_path):
+    from tests.test_recording_studio import _schema2_studio_take
+
+    takes = tmp_path / "takes"
+    references = []
+    for title in ("Unrelated first row", "Explicitly selected take"):
+        path, _ = _schema2_studio_take(takes)
+        path = path.rename(takes / title)
+        take = load_take(path)
+        references.append({"take_id": take.take_id, "take_path": str(path),
+                           "source_identity": take_source_identity(take), "title": title})
+    # A third, newest take must not be substituted for the explicit link.
+    _schema2_studio_take(takes)
+    bookmarks = [make_bookmark(ref["title"], take_id=ref["take_id"], take_path=ref["take_path"],
+                               source_identity=ref["source_identity"], position_seconds=position,
+                               timing_verified=True)
+                 for ref, position in zip(references, (0.1, 0.625))]
+    song = make_song("Selected rehearsal song", bookmarks=bookmarks)
+    record = bootstrap.library.create(
+        "music", "Selected launch rehearsal", notes="Original notes",
+        take_links=tuple(references),
+        rehearsal=RehearsalPlan(songs=[song], active_song_id=song["id"]).payload(),
+    )
+    bootstrap.library.create("music", "Newer unrelated workspace")
+    return record, references[1], bookmarks[1]
+
+
+def _select_launch_reference(dialog, kind):
+    if kind == "take":
+        dialog.tabs.setCurrentIndex(4)
+        dialog.takes.setCurrentRow(1)
+        return dialog.open_take_button
+    dialog.tabs.setCurrentWidget(dialog.rehearsal)
+    dialog.rehearsal._bookmarks.setCurrentRow(1)
+    return dialog.rehearsal._open_moment
+
+
+@pytest.mark.parametrize("kind", ["take", "bookmark"])
+def test_initial_library_open_action_restores_workspace_and_exact_take_without_continue_or_playback(
+    bootstrap, tmp_path, kind,
+):
+    record, reference, bookmark = _linked_launch_workspace(bootstrap, tmp_path)
+    target = Path(reference["take_path"])
+    manifest_before = (target / "webjam-take.json").read_bytes()
+
+    def open_from_door(dialog):
+        button = _select_launch_reference(dialog, kind)
+        dialog.notes.setPlainText("Decision: keep the edited launch draft")
+        assert dialog.selected_record is None
+        assert button.isEnabled()
+        button.click()
+        # The Open action itself accepts the saved-work entry, before Continue.
+        assert dialog.selected_record.id == record.id
+        assert dialog.result() == dialog.DialogCode.Accepted
+
+    def check(controller):
+        studio = controller.window.recording_studio
+        assert controller.session_library.current.id == record.id
+        assert controller.window.session_canvas.current_notes() == "Decision: keep the edited launch draft"
+        assert studio._current.path == target
+        assert studio.current_take_reference()["take_id"] == reference["take_id"]
+        assert studio.current_take_reference()["source_identity"] == reference["source_identity"]
+        assert studio._player.position_s == pytest.approx(0.625 if kind == "bookmark" else 0)
+        assert not studio._player.is_playing
+        assert not controller.audio.connected
+        assert not controller.recording.is_recording_active
+        assert not controller.host_peer.active
+        assert (target / "webjam-take.json").read_bytes() == manifest_before
+
+    bootstrap.run(record, library_action=open_from_door, after_open=check)
+    assert bootstrap.launchers[0].selected_library_open == (kind, bookmark if kind == "bookmark" else reference)
+    assert bootstrap.library.load(record.id).notes == "Decision: keep the edited launch draft"
+
+
+@pytest.mark.parametrize("kind", ["take", "bookmark"])
+@pytest.mark.parametrize("cancel", [False, True])
+def test_selecting_launch_reference_without_open_does_not_capture_a_studio_request(
+    bootstrap, tmp_path, kind, cancel,
+):
+    record, _reference, _bookmark = _linked_launch_workspace(bootstrap, tmp_path)
+
+    def select_only(dialog):
+        assert _select_launch_reference(dialog, kind).isEnabled()
+
+    def check(controller):
+        assert controller.session_library.current.id == record.id
+        controller.window.recording_studio.jump_to_bookmark.assert_not_called()
+
+    controller = bootstrap.run(record, cancel=cancel, library_action=select_only, after_open=check)
+    assert bootstrap.launchers[0].selected_library_open is None
+    if cancel:
+        assert controller is None
+        bootstrap.constructor.assert_not_called()
+
+
 @pytest.mark.parametrize("damage", [None, "missing_media", "changed_manifest"])
 def test_library_take_action_opens_only_selected_verified_take_in_existing_studio(
     bootstrap, tmp_path, monkeypatch, damage,
@@ -248,8 +352,8 @@ def test_library_take_action_opens_only_selected_verified_take_in_existing_studi
             opened.append(studio._current.path)
             return dialog.result()
 
-        monkeypatch.setattr(SessionLibraryDialog, "exec", open_selected)
         controller.session_library.show()
+        open_selected(controller.session_library.dialog)
         assert opened == [target if damage is None else fallback]
         assert controller.window.recording_studio is studio
         assert not studio._player.is_playing
