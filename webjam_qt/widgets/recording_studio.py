@@ -47,6 +47,7 @@ from core.creative_modes import (
     get_creator_profile_by_key,
     get_creator_profile_by_key_or_default,
 )
+from core.export_receipt import ExportReceipt, ExportReceiptError, verify_export_receipt
 from core.logic_handoff import LogicHandoffError, export_logic_handoff
 from core.logic_handoff_adapter import (
     DEFAULT_BPM,
@@ -99,6 +100,8 @@ from webjam_qt.widgets.studio_arrangement_workflow import (
     _take_requires_studio_document,
 )
 from webjam_qt.widgets.studio_editing import StudioEditingToolbar
+from webjam_qt.widgets.studio_take_review import StudioTakeReviewDialog
+from webjam_qt.widgets.studio_take_review_workflow import StudioTakeReviewWorkflowMixin
 from webjam_qt.widgets.studio_review import (
     TRACK_LANE_HEADER_WIDTH,
     StudioTimelineRuler,
@@ -243,6 +246,7 @@ class _ExportWorkerOutcome:
     published_folder: Path | None = None
     aligned_originals_only: bool = False
     studio_export_attempted: bool = False
+    receipt: ExportReceipt | None = None
 
 
 @dataclass(frozen=True)
@@ -255,7 +259,7 @@ class _PlaybackPreparationOutcome:
     error: PlaybackError | None = None
 
 
-class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
+class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMixin, QWidget):
     """A single in-app home for recording, takes, waveforms, and rough mixes."""
 
     record_requested = Signal()
@@ -293,6 +297,13 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._takes_dir = str(takes_dir or "")
         self._takes: list[TakeInfo] = []
         self._current: TakeInfo | None = None
+        self._review_take = None
+        self._review_slots = {}
+        self._review_dialog = StudioTakeReviewDialog(self, self._flush_take_review)
+        self._review_dialog.save_requested.connect(self._flush_take_review)
+        self._review_dialog.assign_requested.connect(self._assign_review_slot)
+        self._review_dialog.audition_requested.connect(self._audition_review_slot)
+        self._review_dialog.export_requested.connect(self._export_reviewed_take)
         self._live_participants: list = []
         self._live_signature: tuple = ()
         self._recording_sources: tuple[RecordingSourcePresentation, ...] = ()
@@ -525,6 +536,11 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._take_list.setAccessibleName("Studio take library")
         self._take_list.currentRowChanged.connect(self._on_take_selected)
         library_layout.addWidget(self._take_list, 1)
+        self._review_btn = QPushButton("Review / Compare")
+        self._review_btn.setObjectName("GhostButton")
+        self._review_btn.setAccessibleName("Review notes favorites and compare takes")
+        self._review_btn.clicked.connect(self._open_take_review)
+        library_layout.addWidget(self._review_btn)
         self._new_take_btn = QPushButton("＋ New live take")
         self._new_take_btn.setObjectName("GhostButton")
         self._new_take_btn.setAccessibleName("Start a new live take")
@@ -2195,6 +2211,8 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         if not self._exporting:
             return
         self._export_cancel.set()
+        self._review_dialog.set_receipt()
+        self._review_dialog.status.setText("Export canceled because recording is starting. No completed receipt.")
         self._export_generation += 1
         self._restore_export_controls()
         self._hint.setText(
@@ -2218,6 +2236,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             item.setData(Qt.ItemDataRole.UserRole, str(take.path))
             self._take_list.addItem(item)
         self._take_list.blockSignals(False)
+        self._refresh_review_labels()
         if select_path is not None:
             wanted = str(Path(select_path))
             for row in range(self._take_list.count()):
@@ -2931,6 +2950,8 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._render_studio_phase()
 
     def _show_live_session(self) -> None:
+        if not self._flush_take_review():
+            return
         if self._exporting:
             self._hint.setText(
                 "Finish the current export before returning to the live session."
@@ -2947,6 +2968,10 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._cancel_studio_waveforms(clear=True)
         changed_take = self._current is not None or not self._viewing_live
         self._current = None
+        self._review_take = None
+        self._review_dialog.apply_review("Choose a completed take", None)
+        self._review_dialog.set_receipt()
+        self._review_dialog.hide()
         self._studio_state = None
         self._studio_state_take_path = None
         self._studio_state_token = None
@@ -3404,6 +3429,12 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._refresh_export_button()
 
     def _on_take_selected(self, row: int) -> None:
+        if not self._flush_take_review():
+            if self._current in self._takes:
+                self._take_list.blockSignals(True)
+                self._take_list.setCurrentRow(self._takes.index(self._current))
+                self._take_list.blockSignals(False)
+            return
         if self._exporting:
             if self._current is not None:
                 current_path = str(self._current.path)
@@ -3711,12 +3742,15 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 )
             else:
                 self._hint.setText("Take verified and ready to mix or export.")
+        self._load_take_review(take)
         self._emit_guidance_changed()
 
     def _export_tracks(self) -> None:
         """Publish a portable track package without creating an editor project."""
         take = self._current
         if take is None:
+            return
+        if not self._flush_take_review():
             return
         if not self._track_export_allowed():
             self._hint.setText(
@@ -3825,6 +3859,9 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._export_generation += 1
         generation = self._export_generation
         self._exporting = True
+        self._review_dialog.set_receipt()
+        self._review_dialog.status.setText("Export in progress. No completed receipt yet.")
+        self._review_dialog.export_button.setEnabled(False)
         self.export_started.emit()
         self._take_list.setEnabled(False)
         self._live_btn.setEnabled(False)
@@ -3874,12 +3911,14 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                         mix_settings=states,
                         selected_track_ids=selected_track_ids,
                     )
+                receipt = verify_export_receipt(result.folder)
                 outcome = _ExportWorkerOutcome(
                     generation=generation,
                     take_path=take_path,
                     result=result,
                     aligned_originals_only=aligned_originals_only,
                     studio_export_attempted=studio_export_enabled,
+                    receipt=receipt,
                 )
             except Exception as exc:
                 if not cancel_event.is_set():
@@ -3892,6 +3931,8 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                     published_folder=(
                         exc.folder
                         if isinstance(exc, StudioExportPublishedError)
+                        else result.folder
+                        if isinstance(exc, ExportReceiptError)
                         else None
                     ),
                     aligned_originals_only=aligned_originals_only,
@@ -3926,17 +3967,21 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         *,
         aligned_originals_only: bool = False,
         studio_export_attempted: bool = False,
+        receipt: ExportReceipt | None = None,
     ) -> None:
         self._restore_export_controls()
+        self._review_dialog.export_button.setEnabled(self._can_export_current_take())
         if result is None:
+            self._review_dialog.set_receipt()
+            self._review_dialog.status.setText("Export did not complete verification. No verified receipt is available; the recording is unchanged.")
             LOGGER.error("Track export did not complete: %s", error or "unknown error")
             if published_folder is not None:
                 self._reveal_path = published_folder
                 set_labeled_action(self._reveal_btn, "Show Unverified Export")
                 self._reveal_btn.setEnabled(True)
                 self._hint.setText(
-                    "Studio created the export folder, but storage durability could "
-                    "not be confirmed. Verify SHA256SUMS.txt before relying on it. "
+                    "Studio created the export folder, but final verification could "
+                    "not be confirmed. Verify SHA256SUMS.txt (or CHECKSUMS.sha256) before relying on it. "
                     "The original take is safe."
                 )
                 self.export_finished.emit(False)
@@ -3949,6 +3994,11 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             self.export_finished.emit(False)
             return
         self._reveal_path = result.folder
+        self._review_dialog.set_receipt(receipt.details if receipt else "")
+        self._review_dialog.status.setText(
+            f"Export verified: {receipt.file_count} files. Open Export receipt for sources, settings and destination."
+            if receipt else "Export created. No checksum-verification receipt was supplied."
+        )
         self._reveal_btn.setEnabled(True)
         if isinstance(result, StudioExportResult):
             set_labeled_action(self._reveal_btn, "Show Studio Export")
@@ -4012,6 +4062,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 studio_export_attempted=getattr(
                     outcome, "studio_export_attempted", False
                 ),
+                receipt=getattr(outcome, "receipt", None),
             )
 
     def _reveal_current(self) -> None:
@@ -4479,7 +4530,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
 
         if self._waveform_shutdown:
             return True
-        return self._flush_studio_state()
+        return self._flush_take_review() and self._flush_studio_state()
 
     def shutdown(self) -> bool:
         if self._waveform_shutdown:

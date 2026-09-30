@@ -455,9 +455,30 @@ def test_export_is_authoritative_equal_length_and_evidence_complete(
     assert "Any multitrack editor" in instructions
     assert "Logic Pro" in instructions
     assert "NOT RUN" in instructions
+    assert "RECORDING_RECEIPT.md" in instructions
+
+    receipt_path = result.folder / "RECORDING_RECEIPT.md"
+    assert receipt_path.is_file()
+    receipt_text = receipt_path.read_text(encoding="utf-8")
+    assert "Plan comparison unavailable." in receipt_text
+    assert "Not included in this export" in receipt_text
+    assert "Room" in receipt_text
+    for link_target in (
+        "provenance.json",
+        "source-take-manifest.json",
+        "IMPORT_INSTRUCTIONS.md",
+        "SHA256SUMS.txt",
+    ):
+        assert f"]({link_target})" in receipt_text
+        assert (result.folder / link_target).is_file()
 
     checksum_lines = result.checksums.read_text(encoding="utf-8").splitlines()
-    assert len(checksum_lines) == 8
+    assert len(checksum_lines) == 9
+    receipt_checksums = [
+        line for line in checksum_lines if line.endswith("  RECORDING_RECEIPT.md")
+    ]
+    assert len(receipt_checksums) == 1
+    assert receipt_checksums[0].split("  ", 1)[0] == _digest(receipt_path)
     for line in checksum_lines:
         digest, relative = line.split("  ", 1)
         assert _digest(result.folder / relative) == digest
@@ -1929,7 +1950,7 @@ def test_success_closes_every_retained_package_leaf_descriptor(
         disk_reserve_bytes=0,
     )
 
-    assert closed_leaf_counts == [9]
+    assert closed_leaf_counts == [10]
 
 
 def test_cancellation_cleanup_unlinks_dangling_symlink_inside_transaction(
@@ -2197,6 +2218,121 @@ def test_metadata_failure_cleans_the_transaction_folder(
         )
 
     assert not destination.exists() or not tuple(destination.iterdir())
+
+
+def test_recording_receipt_write_failure_cleans_the_transaction_folder(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    take_dir, project, document, _sources = _fixture(tmp_path)
+    destination = tmp_path / "exports"
+    original_write = studio_export._write_text
+
+    def fail_receipt_write(package, path, text):
+        if Path(path).name == "RECORDING_RECEIPT.md":
+            raise OSError("disk failed")
+        original_write(package, path, text)
+
+    monkeypatch.setattr(studio_export, "_write_text", fail_receipt_write)
+
+    with pytest.raises(StudioExportError, match="safely"):
+        export_studio_arrangement(
+            project,
+            document,
+            take_dir,
+            destination_root=destination,
+            block_frames=3,
+            disk_reserve_bytes=0,
+        )
+
+    assert not destination.exists() or not tuple(destination.iterdir())
+
+
+def test_cancellation_after_recording_receipt_write_removes_transaction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    take_dir, project, document, _sources = _fixture(tmp_path)
+    destination = tmp_path / "exports"
+    cancelled = threading.Event()
+    original_write = studio_export._write_text
+
+    def cancel_after_receipt(package, path, text):
+        original_write(package, path, text)
+        if Path(path).name == "RECORDING_RECEIPT.md":
+            cancelled.set()
+
+    monkeypatch.setattr(studio_export, "_write_text", cancel_after_receipt)
+
+    with pytest.raises(StudioExportCancelled, match="cancelled"):
+        export_studio_arrangement(
+            project,
+            document,
+            take_dir,
+            destination_root=destination,
+            block_frames=3,
+            disk_reserve_bytes=0,
+            cancel_event=cancelled,
+        )
+
+    assert not destination.exists() or not tuple(destination.iterdir())
+
+
+def test_mismatched_receipt_inputs_block_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    take_dir, project, document, _sources = _fixture(tmp_path)
+    destination = tmp_path / "exports"
+    original_render = studio_export.render_recording_receipt
+
+    def bad_receipt(primary, contributing, provenance):
+        mutated = dict(provenance)
+        mutated["take_project_revision"] = int(provenance["take_project_revision"]) + 99
+        return original_render(primary, contributing, mutated)
+
+    monkeypatch.setattr(studio_export, "render_recording_receipt", bad_receipt)
+
+    with pytest.raises(StudioExportError, match="take_project_revision"):
+        export_studio_arrangement(
+            project,
+            document,
+            take_dir,
+            destination_root=destination,
+            block_frames=3,
+            disk_reserve_bytes=0,
+        )
+
+    assert not destination.exists() or not tuple(destination.iterdir())
+
+
+def test_export_leaves_source_manifest_and_media_hashes_unchanged(
+    tmp_path: Path,
+) -> None:
+    take_dir, project, document, source_paths = _fixture(tmp_path)
+    manifest = take_dir / "webjam-take.json"
+    state = take_dir / STUDIO_STATE_FILENAME
+    before = {
+        "manifest": _digest(manifest),
+        "state": _digest(state),
+        "sources": tuple(_digest(path) for path in source_paths),
+    }
+
+    export_studio_arrangement(
+        project,
+        document,
+        take_dir,
+        destination_root=tmp_path / "exports",
+        block_frames=3,
+        disk_reserve_bytes=0,
+    )
+
+    after = {
+        "manifest": _digest(manifest),
+        "state": _digest(state),
+        "sources": tuple(_digest(path) for path in source_paths),
+    }
+    assert before == after
 
 
 def test_saved_state_must_exactly_match_the_exported_document(tmp_path: Path) -> None:
@@ -2564,4 +2700,5 @@ def test_post_publish_fsync_failure_reports_the_committed_folder(
 
     assert failure.value.folder == destination / "Studio Export"
     assert failure.value.folder.is_dir()
+    assert (failure.value.folder / "RECORDING_RECEIPT.md").is_file()
     assert not tuple(destination.glob(".webjam-studio-export-*"))

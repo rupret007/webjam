@@ -1343,6 +1343,8 @@ def export_track_package(
             encoding="utf-8",
         )
         os.chmod(instructions, 0o600)
+        checksums = temporary / "CHECKSUMS.sha256"
+        _write_checksum_manifest(temporary, checksums)
         _publish_track_package(temporary, final_folder, take.path, manifest_snapshot)
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
@@ -1356,6 +1358,7 @@ def export_track_package(
         instructions=final_folder / instructions.name,
         samplerate=samplerate,
         frames=total_frames,
+        checksums=final_folder / checksums.name,
     )
 
 
