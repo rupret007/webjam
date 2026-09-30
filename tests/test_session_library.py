@@ -227,6 +227,81 @@ def test_invalid_or_oversized_save_preserves_exact_previous_bytes(tmp_path, payl
     assert path.read_bytes() == before
 
 
+@pytest.mark.parametrize(("field", "entry", "invalid_field"), [
+    ("take_links", {"title": 7, "take_path": None}, "take_path"),
+    ("take_links", {"title": 7, "take_path": ""}, "title"),
+    ("take_links", {"title": "Pending", "take_path": None}, "take_path"),
+    ("take_links", {"take_id": []}, "take_id"),
+    ("take_links", {"source_identity": {}}, "source_identity"),
+    ("recaps", {"take_ids": None}, "take_ids"),
+    ("recaps", {"take_ids": "one-id-is-not-a-list"}, "take_ids"),
+    ("recaps", {"take_ids": [{}]}, "take_ids"),
+    ("recaps", {"take_ids": ["valid", 7]}, "take_ids"),
+])
+def test_malformed_nested_references_reject_create_save_and_load_without_changing_files(
+    tmp_path, field, entry, invalid_field,
+):
+    library = SessionLibrary(tmp_path)
+    record = library.create("music", "Keep this draft", notes="Exact original notes")
+    path = tmp_path / f"{record.id}.json"
+    original = path.read_bytes()
+    payload = {field: (entry,)}
+    for publish in (lambda: library.create("music", "Invalid", **payload),
+                    lambda: library.save(replace(record, **payload))):
+        with pytest.raises(SessionLibraryError) as error:
+            publish()
+        assert f"{field}[0].{invalid_field}" in str(error.value)
+        assert path.read_bytes() == original
+        assert list(tmp_path.glob("*.json")) == [path]
+        assert not list(tmp_path.glob("*.json.bak"))
+
+    corrupted = json.loads(original)
+    corrupted[field] = [entry]
+    damaged = json.dumps(corrupted).encode()
+    path.write_bytes(damaged)
+    with pytest.raises(SessionLibraryError) as error:
+        library.load(record.id)
+    assert f"{field}[0].{invalid_field}" in str(error.value)
+    assert library.list() == []
+    assert f"{field}[0].{invalid_field}" in library.warnings[0]
+    assert "files were preserved" in library.warnings[0]
+    assert path.read_bytes() == damaged
+
+
+def test_optional_legacy_link_fields_and_empty_pending_paths_remain_compatible(tmp_path):
+    library = SessionLibrary(tmp_path)
+    record = library.create("music", "Legacy details", take_links=(
+        {}, {"take_id": "older-take", "path": "/moved/take.wav"},
+        {"take_id": "pending", "take_path": "", "title": "", "status": "pending"},
+        {"take_id": "missing", "take_path": "/missing/take", "extension": {"custom": None}},
+    ), recaps=({}, {"summary": "Older recap without take IDs"}, {"take_ids": []},
+               {"take_ids": ["older-take", "pending"]}))
+    reopened = SessionLibrary(tmp_path).load(record.id)
+    assert reopened == record
+    assert library.save(replace(reopened, notes="New notes")).take_links == record.take_links
+
+
+def test_invalid_nested_primary_uses_backup_and_preserves_damaged_document_on_explicit_save(tmp_path):
+    library = SessionLibrary(tmp_path)
+    original = library.create("music", "Rehearsal", notes="Recover these complete notes")
+    library.save(replace(original, notes="Newer draft"))
+    path = tmp_path / f"{original.id}.json"
+    raw = json.loads(path.read_bytes())
+    raw["take_links"] = [{"title": 7, "take_path": None}]
+    damaged = json.dumps(raw).encode()
+    path.write_bytes(damaged)
+    recovered = library.load(original.id)
+    assert recovered.recovered
+    assert recovered.notes == original.notes
+    assert recovered.take_links == ()
+    assert library.list() == [recovered]
+    assert "backup" in library.warnings[0]
+    assert path.read_bytes() == damaged
+    saved = library.save(replace(recovered, notes="Reviewed recovered notes"))
+    assert library.load(saved.id).notes == "Reviewed recovered notes"
+    assert [item.read_bytes() for item in tmp_path.glob("*.damaged-*")] == [damaged]
+
+
 def test_nested_payload_is_bounded_before_serialization(tmp_path):
     payload = {}
     payload["cycle"] = payload

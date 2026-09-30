@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 
 from core.art_workspace import art_summary
 from core.session_intelligence import build_session_pulse
-from core.session_library import SessionLibrary
+from core.session_library import SessionLibrary, validate_session_record
 from webjam_qt.widgets.art_workspace import ArtWorkspacePanel
 from webjam_qt.widgets.rehearsal_plan import RehearsalPlanPanel
 
@@ -238,6 +238,7 @@ class SessionLibraryDialog(QDialog):
             pending = self.pending_records.get(requested_id)
             record = pending if pending is not None else self.library.load(requested_id)
             # Validate the whole workspace before replacing any current draft.
+            validate_session_record(record)
             from core.art_workspace import normalize_art_workspace
             from core.rehearsal_plan import RehearsalPlan
             rehearsal = RehearsalPlan.from_payload(record.rehearsal).payload()

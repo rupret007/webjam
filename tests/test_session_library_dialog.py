@@ -1,5 +1,6 @@
 """Library workflows retain drafts and require explicit take/open actions."""
 from dataclasses import replace
+import json
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -336,6 +337,40 @@ def test_unreadable_art_record_does_not_partially_replace_current_editor(tmp_pat
     assert dialog.art.brief.toPlainText() == "Current brief"
     assert "could not be opened" in dialog.status.text()
     assert _selected_id(dialog) == current.id
+
+
+@pytest.mark.parametrize("source", ["disk", "pending"])
+@pytest.mark.parametrize(("field", "entry"), [
+    ("take_links", {"title": 7, "take_path": None}),
+    ("recaps", {"take_ids": [{}]}),
+])
+def test_malformed_nested_reference_cannot_partially_replace_current_editor(
+    tmp_path, make_dialog, source, field, entry,
+):
+    library = SessionLibrary(tmp_path)
+    current = library.create("music", "Current rehearsal", notes="Keep these current notes")
+    other = library.create("music", "Malformed workspace", notes="Never partially load me")
+    pending = {other.id: replace(other, **{field: (entry,)})} if source == "pending" else {}
+    dialog = make_dialog(library, current_id=current.id, pending_records=pending)
+    path = tmp_path / f"{other.id}.json"
+    if source == "disk":
+        # The history row was valid when listed; an external edit can corrupt
+        # its nested payload before the user actually selects it.
+        raw = json.loads(path.read_bytes())
+        raw[field] = [entry]
+        path.write_text(json.dumps(raw))
+    unchanged = path.read_bytes()
+    dialog.select_id(other.id)
+    assert dialog.record.id == current.id
+    assert dialog.title.text() == current.title
+    assert dialog.notes.toPlainText() == current.notes
+    assert dialog.takes.count() == 0
+    assert "could not be opened" in dialog.status.text()
+    assert f"{field}[0]" in dialog.status.text()
+    assert _selected_id(dialog) == current.id
+    assert path.read_bytes() == unchanged
+    if source == "pending":
+        assert dialog.pending_records[other.id] == pending[other.id]
 
 
 def test_compact_library_keeps_actions_visible_and_art_controls_scrollable(tmp_path, make_dialog, app):

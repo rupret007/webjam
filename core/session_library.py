@@ -40,6 +40,10 @@ _FIELDS = frozenset((
     "version", "id", "profile", "title", "revision", "created_at", "updated_at",
     *_CONTENT_FIELDS,
 ))
+_TAKE_TEXT_FIELDS = (
+    "take_id", "take_path", "path", "title", "source_identity", "run_id",
+    "recording_session_id", "status",
+)
 
 
 class SessionLibraryError(ValueError):
@@ -179,6 +183,22 @@ def _payload(record: SessionRecord) -> dict:
             raise SessionLibraryError(f"Workspace {name} list is invalid.")
         if any(not isinstance(value, dict) for value in values):
             raise SessionLibraryError(f"Workspace {name} must contain objects.")
+    # Legacy links may omit fields, and pending recordings use an empty path.
+    # Present fields still need their consumer's type: arbitrary JSON here can
+    # otherwise crash labels, path handling, or take-identity set membership.
+    for index, reference in enumerate(record.take_links):
+        for name in _TAKE_TEXT_FIELDS:
+            if name in reference:
+                _text(reference[name], f"Workspace take_links[{index}].{name}", MAX_RECOVERY_DRAFT_BYTES)
+    for index, recap in enumerate(record.recaps):
+        if "take_ids" not in recap:
+            continue
+        take_ids = recap["take_ids"]
+        label = f"Workspace recaps[{index}].take_ids"
+        if not isinstance(take_ids, (list, tuple)) or len(take_ids) > 2000:
+            raise SessionLibraryError(f"{label} must be a list of take identifiers.")
+        for take_id in take_ids:
+            _text(take_id, label, MAX_RECOVERY_DRAFT_BYTES)
     if not isinstance(record.rehearsal, dict) or not isinstance(record.art, dict):
         raise SessionLibraryError("Workspace rehearsal and Art details must be objects.")
     result = {
@@ -199,6 +219,11 @@ def _encode(record: SessionRecord) -> bytes:
     if len(data) > MAX_SESSION_RECORD_BYTES:
         raise SessionLibraryError("Workspace document is too large; nothing was saved.")
     return data
+
+
+def validate_session_record(record: SessionRecord) -> None:
+    """Validate an in-memory recovery snapshot without reading or writing files."""
+    _encode(record)
 
 
 def _pairs(pairs: list[tuple[str, object]]) -> dict:
@@ -453,12 +478,13 @@ class SessionLibrary:
                     if not needle or needle in searchable:
                         records.append(record)
                 except (OSError, SessionLibraryError) as exc:
-                    warnings.append(f"Workspace {session_id} could not be opened ({type(exc).__name__}); its files were preserved.")
+                    reason = str(exc) if isinstance(exc, SessionLibraryError) else type(exc).__name__
+                    warnings.append(f"Workspace {session_id} could not be opened: {reason} Its files were preserved.")
         self.warnings = tuple(warnings)
         return sorted(records, key=lambda record: (record.updated_at, record.id), reverse=True)
 
 
 __all__ = [
     "MAX_SESSION_RECORD_BYTES", "SessionLibrary", "SessionLibraryConflict",
-    "SessionLibraryError", "SessionRecord",
+    "SessionLibraryError", "SessionRecord", "validate_session_record",
 ]
