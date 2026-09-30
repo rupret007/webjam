@@ -42,8 +42,9 @@ not an automated judgment of the performance or alignment.
 **Export reviewed take** uses the existing export path. **Export receipt…**
 becomes available only after the finished package's checksums verify. The
 receipt identifies the exported sources, settings, destination, and hashes.
-Edited exports include the original recording receipt where available; a
-missing original-plan comparison is stated explicitly. Changing a take or mix,
+Edited exports include **RECORDING_RECEIPT.md**, an offline source inventory
+that explicitly states the original capture-plan comparison is unavailable.
+Changing a take or mix,
 or a failed/cancelled export, clears the current receipt. Byte verification does
 not prove physical listening or a successful Logic/other-editor import.
 

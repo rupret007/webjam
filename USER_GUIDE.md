@@ -423,7 +423,8 @@ Art has no camera feed and **does not record the session**, so there is no take
 to review afterwards. It has no image generator of its own, no model list, and
 no cloud image service, and no song engine, metronome, or chord detection — it
 reads a musical pulse that something else in the room owns. Your notes stay local to your own computer as in every
-other profile. There is no standalone Art project in this Preview.
+other profile. Use **Session library → Art project** to save your local brief,
+references, progress, and next steps. Continue making artwork with your own tools.
 
 Use **Conversation** for faces, talking, and demonstrations shared in Webex
 or another meeting app beside WebJam. Choose **Join / Open Meeting** to open
