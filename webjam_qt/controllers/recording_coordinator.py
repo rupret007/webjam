@@ -6698,8 +6698,11 @@ class RecordingCoordinator:
             else None
         )
         library = getattr(self._c, "session_library", None)
+        # Legacy completion views may have only a path. They still finish the
+        # recorder lifecycle, but cannot establish a workspace take identity.
         if (library is not None and result.take is not None and durable_shutdown_publication
-                and completed_take_id and result.take.take_id == completed_take_id):
+                and completed_take_id
+                and getattr(result.take, "take_id", "") == completed_take_id):
             library.recording_completed(result.take, validated=not effective_needs_attention)
         if result.warnings:
             LOGGER.warning(
