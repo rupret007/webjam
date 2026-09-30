@@ -178,7 +178,7 @@ def test_profile_start_and_back_changes_keep_current_art_next_action(door, platf
     assert "Start Paint along as the host" in dialog._host_button.accessibleDescription()
     _select_profile(dialog, "music")
     assert not dialog._host_button.isEnabled()
-    assert "macOS" in dialog._choice_helper.text()
+    assert "macOS" in dialog._host_reason.text()
     dialog.show_join()
     dialog.show_choices()
     assert not dialog._host_button.isEnabled()

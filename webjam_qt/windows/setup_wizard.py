@@ -53,7 +53,7 @@ from core.meeting_link import (
     normalize_meeting_url,
 )
 from core.settings import AppSettings, load_settings
-from webjam_qt.theme.tokens import Color, Font, Space
+from webjam_qt.theme.tokens import Font, Space
 from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
 
 LOGGER = logging.getLogger("webjam.qt.setup_wizard")
@@ -125,11 +125,7 @@ class _WelcomePage(QWizardPage):
         notice.setOpenExternalLinks(True)
         notice.setTextFormat(Qt.TextFormat.RichText)
         notice.setWordWrap(True)
-        notice.setStyleSheet(
-            f"QLabel {{ background: {Color.BG_CARD}; "
-            f"border: 1px solid {Color.ACCENT_PRIMARY}; "
-            "border-radius: 6px; padding: 10px; }"
-        )
+        notice.setObjectName("WizardNotice")
         layout.addWidget(notice)
         layout.addStretch(1)
 

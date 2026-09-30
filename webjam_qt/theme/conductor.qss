@@ -681,6 +681,11 @@ QSlider:focus {
     font-size: ${FONT_SIZE_SM}px;
 }
 
+#SessionHudChecklistNote {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
 #SessionCanvas {
     background-color: ${COLOR_BG_PANEL};
     border-left: 1px solid ${COLOR_BORDER_SUBTLE};
@@ -707,11 +712,24 @@ QLineEdit#CanvasChatInput {
     padding: ${SPACE_SM}px ${SPACE_LG}px;
 }
 
-#SessionPulse, #MusicianGuidance {
+#SessionPulse, #MusicianGuidance, #RehearsalRecap {
     background-color: ${COLOR_BG_CARD};
     border: 1px solid ${COLOR_BORDER_STRONG};
     border-radius: ${RADIUS_MD}px;
     margin: 0 ${SPACE_MD}px;
+}
+
+#RehearsalRecap {
+    border-left: 3px solid ${COLOR_ACCENT_PRIMARY};
+}
+
+#RecapHeader, #RecapSignals {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#RecapDuration, #RecapParticipants, #RecapTakeStatus, #RecapBody {
+    color: ${COLOR_TEXT_PRIMARY};
 }
 
 #MusicianGuidance {
@@ -848,7 +866,15 @@ QPushButton#LaunchPrimary:focus {
     border: 2px solid ${COLOR_TEXT_PRIMARY};
 }
 
-QPushButton#LaunchPrimary:disabled {
+QPushButton#LaunchPrimary:disabled,
+QPushButton#LaunchPrimary[joinBlocked="true"] {
+    background-color: ${COLOR_BG_PANEL};
+    color: ${COLOR_TEXT_MUTED};
+    border-color: ${COLOR_BORDER_SUBTLE};
+}
+
+QPushButton#LaunchPrimary[joinBlocked="true"]:hover,
+QPushButton#LaunchPrimary[joinBlocked="true"]:pressed {
     background-color: ${COLOR_BG_PANEL};
     color: ${COLOR_TEXT_MUTED};
     border-color: ${COLOR_BORDER_SUBTLE};
@@ -872,6 +898,22 @@ QPushButton#LaunchSecondary:hover {
 
 QPushButton#LaunchSecondary:focus {
     border: 2px solid ${COLOR_TEXT_PRIMARY};
+}
+
+QPushButton#LaunchSecondary:pressed {
+    background-color: ${COLOR_BG_PANEL};
+    border-color: ${COLOR_BORDER_STRONG};
+}
+
+QPushButton#LaunchSecondary:disabled {
+    background-color: ${COLOR_BG_PANEL};
+    color: ${COLOR_TEXT_MUTED};
+    border-color: ${COLOR_BORDER_SUBTLE};
+}
+
+QPushButton#LaunchSecondary:disabled:hover {
+    background-color: ${COLOR_BG_PANEL};
+    border-color: ${COLOR_BORDER_SUBTLE};
 }
 
 /* Orange marks the selected profile/activity. Keyboard focus on a different
@@ -1150,8 +1192,16 @@ QPushButton#QuietAction:focus {
 }
 
 #LaunchJoinStatus {
-    color: ${COLOR_TEXT_PRIMARY};
     font-size: ${FONT_SIZE_SM}px;
+}
+
+#LaunchJoinStatus[joinReady="false"] {
+    color: ${COLOR_TEXT_MUTED};
+    font-weight: ${FONT_WEIGHT_NORMAL};
+}
+
+#LaunchJoinStatus[joinReady="true"] {
+    color: ${COLOR_TEXT_PRIMARY};
     font-weight: ${FONT_WEIGHT_SEMIBOLD};
 }
 
@@ -1160,9 +1210,67 @@ QPushButton#QuietAction:focus {
     font-size: ${FONT_SIZE_XS}px;
 }
 
-#LaunchError {
+QLabel#LaunchError, QLabel#LaunchNamePreview[error="true"] {
     color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_SM}px;
+    /* Vertical padding stays tight (Space.XS, not Space.SM): the fixed-size
+       Join door has no slack once an error callout grows taller, and the
+       extra chrome from this box border/padding previously squeezed
+       LaunchSubtitle below its own wrapped height by a pixel on the
+       longest Podcast/Review copy at an expanded system font
+       (tests/test_art_join_entry_ui.py::test_join_guidance_and_actions_fit_supported_window_sizes). */
+    padding: ${SPACE_XS}px ${SPACE_MD}px;
     min-height: 20px;
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#LaunchNameLabel, #LaunchCreatorProfileLabel {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#HelpDialog {
+    background-color: ${COLOR_BG_BASE};
+}
+
+QTextBrowser#HelpBody {
+    background-color: ${COLOR_BG_INPUT};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_MD}px;
+    font-size: ${FONT_SIZE_BASE}px;
+    max-height: ${LAYOUT_HELP_BODY_MAX_HEIGHT}px;
+}
+
+QDialogButtonBox#HelpActions QPushButton {
+    min-width: 120px;
+    min-height: 34px;
+}
+
+QLabel#StatusRecording {
+    color: ${COLOR_ACCENT_RECORD};
+    font-weight: ${FONT_WEIGHT_BOLD};
+    letter-spacing: 1px;
+}
+
+QLabel#StatusAudio,
+QLabel#StatusVideo,
+QLabel#StatusSession {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+    padding: 0 ${SPACE_SM}px;
+}
+
+QLabel#WizardNotice {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_SECONDARY};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_SM}px;
+    padding: ${SPACE_SM}px ${SPACE_MD}px;
     font-size: ${FONT_SIZE_SM}px;
 }
 

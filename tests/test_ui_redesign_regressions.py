@@ -141,7 +141,7 @@ def test_launch_hierarchy_is_one_primary_then_two_clear_alternatives(
         assert dialog._studio_button.isHidden()
         assert not dialog._studio_button.isVisibleTo(dialog)
         assert dialog._choice_helper.text() == ""
-        assert dialog._music_profile_card.description() == "Play live together."
+        assert dialog._music_profile_card.description() == "Write songs or play live together."
         assert dialog._art_profile_card.description() == "Make art together."
         assert dialog._name_input.accessibleName() == "Your name"
         assert not dialog._name_label.isVisibleTo(dialog)
@@ -212,7 +212,7 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
         ):
             assert not hidden.isVisibleTo(dialog)
         assert dialog._choice_helper.text() == ""
-        assert dialog._music_profile_card.description() == "Play live together."
+        assert dialog._music_profile_card.description() == "Write songs or play live together."
         assert dialog._name_input.accessibleName() == "Your name"
 
         dialog.show_join()
@@ -300,7 +300,7 @@ def test_windows_launch_name_roles_and_installer_do_not_overlap_at_default_size(
         ):
             assert not hidden.isVisibleTo(dialog)
         assert dialog._name_input.accessibleName() == "Your name"
-        assert dialog._music_profile_card.description() == "Play live together."
+        assert dialog._music_profile_card.description() == "Write songs or play live together."
         art_rect = _rect_in(dialog._art_profile_card, dialog)
         music_rect = _rect_in(dialog._music_profile_card, dialog)
         assert dialog._art_profile_card.isVisibleTo(dialog)
@@ -546,18 +546,21 @@ def test_main_meeting_controls_fit_without_overlap(styled_qapp, width, height):
 def test_native_jamulus_setup_guidance_fits_at_760_by_600(styled_qapp):
     window = _window()
     window.resize(760, 600)
-    detail = (
-        "Choose your interface, input channels, headphones, and buffer in "
-        "Jamulus. WebJam uses a dedicated Jamulus profile for this app and "
-        "leaves your regular Jamulus settings untouched. WebJam will continue "
-        "automatically when the music connection is ready."
+    from core.host_startup_checklist import (
+        HOST_STARTUP_PROFILE_NOTE,
+        format_host_startup_checklist,
     )
+
+    plain, rich = format_host_startup_checklist(1)
     window.session_hud.set_state(
         "Set up your sound in Jamulus",
-        detail,
+        plain,
         action_text="Bring Jamulus Forward",
         action_visible=True,
         action_kind="bring_jamulus",
+        checklist_current_step=1,
+        checklist_detail_rich=rich,
+        checklist_note=HOST_STARTUP_PROFILE_NOTE,
     )
     window.show()
     styled_qapp.processEvents()
@@ -565,7 +568,7 @@ def test_native_jamulus_setup_guidance_fits_at_760_by_600(styled_qapp):
         hud = window.session_hud
         detail_rect = _rect_in(hud._detail, hud)
         action_rect = _rect_in(hud._action, hud)
-        assert hud._detail.text() == detail
+        assert hud.checklist_lines() == tuple(plain.splitlines())
         assert hud._detail.isVisibleTo(window)
         assert hud._action.isVisibleTo(window)
         assert hud.rect().contains(detail_rect)

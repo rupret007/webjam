@@ -1164,6 +1164,75 @@ class TestConductorWindow(unittest.TestCase):
         w = self._window()
         w.set_status_audio("Connected")
         self.assertIn("Connected", w._status_audio.text())
+        # Offscreen tests keep the window unshown; isHidden() reflects intent.
+        self.assertFalse(w._status_audio.isHidden())
+        self.assertFalse(w._status_bar.isHidden())
+
+    def test_legacy_status_chips_suppressed_while_disabled(self):
+        w = self._window()
+        w.set_legacy_status_chips_enabled(False)
+        w.set_status_video("On")
+        w.set_status_latency("42 ms")
+        self.assertIn("On", w._status_video.text())
+        self.assertIn("42 ms", w._status_latency.text())
+        self.assertTrue(w._status_video.isHidden())
+        self.assertTrue(w._status_latency.isHidden())
+        self.assertFalse(w._status_video.property("status_permanent"))
+        self.assertFalse(w._status_latency.property("status_permanent"))
+        self.assertTrue(w._status_bar.isHidden())
+
+    def test_legacy_status_chips_restore_when_re_enabled(self):
+        w = self._window()
+        w.set_legacy_status_chips_enabled(False)
+        w.set_status_video("On")
+        w.set_status_latency("42 ms")
+        w.set_legacy_status_chips_enabled(True)
+        self.assertFalse(w._status_video.isHidden())
+        self.assertFalse(w._status_latency.isHidden())
+        self.assertTrue(w._status_video.property("status_permanent"))
+        self.assertTrue(w._status_latency.property("status_permanent"))
+        self.assertFalse(w._status_bar.isHidden())
+
+    def test_legacy_status_suppression_leaves_audio_and_recording_alone(self):
+        w = self._window()
+        w.set_legacy_status_chips_enabled(False)
+        w.set_status_audio("Connected")
+        w.set_status_recording(True)
+        w.set_status_video("On")
+        self.assertFalse(w._status_audio.isHidden())
+        self.assertTrue(w._status_audio.property("status_permanent"))
+        self.assertFalse(w._status_recording.isHidden())
+        self.assertTrue(w._status_recording.property("status_permanent"))
+        self.assertTrue(w._status_video.isHidden())
+
+    def test_status_chips_layout_without_overlap_when_shown(self):
+        w = self._window()
+        w.resize(1200, 800)
+        w.show()
+        _qapp().processEvents()
+        try:
+            w.set_status_audio("Connected")
+            w.set_status_video("On")
+            w.set_status_latency("42 ms")
+            _qapp().processEvents()
+            chips = (w._status_audio, w._status_video, w._status_latency)
+            bar_rect = w._status_bar.rect()
+            for chip in chips:
+                geo = chip.geometry()
+                self.assertGreater(geo.width(), 0)
+                self.assertGreater(geo.height(), 0)
+                self.assertGreaterEqual(geo.left(), bar_rect.left())
+                self.assertLessEqual(geo.right(), bar_rect.right())
+                self.assertGreaterEqual(geo.top(), bar_rect.top())
+                self.assertLessEqual(geo.bottom(), bar_rect.bottom())
+            for index, first in enumerate(chips):
+                for second in chips[index + 1 :]:
+                    self.assertFalse(
+                        first.geometry().intersects(second.geometry()),
+                        msg=(first.text(), second.text()),
+                    )
+        finally:
+            w.close()
 
     def test_meeting_controls_are_bottom_aligned_and_end_is_destructive(self):
         w = self._window()

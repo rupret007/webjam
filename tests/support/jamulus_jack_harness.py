@@ -661,23 +661,40 @@ def _free_port(sock_type: int) -> int:
         return int(sock.getsockname()[1])
 
 
+_RESERVE_PORT_MAX_ATTEMPTS = 64
+
+
 def _reserve_ports(kinds: list[int]) -> list[int]:
     """Bind every requested port at once so the kernel cannot recycle one mid-set.
 
     `_free_port` bind-and-close is TOCTOU: a later call can receive the same
     ephemeral port after the earlier socket is closed. Hold the whole set,
     read the numbers, then close.
+
+    Linux keeps separate UDP and TCP port spaces, so ephemeral allocation can
+    return the same integer for different socket kinds. Each harness endpoint
+    needs a distinct number, so keep every bound socket (including duplicates)
+    and retry until the full set is unique.
     """
 
     socks: list[socket.socket] = []
+    ports: list[int] = []
     try:
         for kind in kinds:
-            sock = socket.socket(socket.AF_INET, kind)
-            sock.bind(("127.0.0.1", 0))
-            socks.append(sock)
-        ports = [int(sock.getsockname()[1]) for sock in socks]
-        if len(set(ports)) != len(ports):
-            raise HarnessFailure(f"ephemeral port collision while reserved: {ports}")
+            for _attempt in range(_RESERVE_PORT_MAX_ATTEMPTS):
+                sock = socket.socket(socket.AF_INET, kind)
+                sock.bind(("127.0.0.1", 0))
+                port = int(sock.getsockname()[1])
+                socks.append(sock)
+                if port not in ports:
+                    ports.append(port)
+                    break
+            else:
+                raise HarnessFailure(
+                    f"could not reserve a unique ephemeral port for socket kind "
+                    f"{kind} after {_RESERVE_PORT_MAX_ATTEMPTS} attempts; "
+                    f"ports so far: {ports}"
+                )
         return ports
     finally:
         for sock in socks:

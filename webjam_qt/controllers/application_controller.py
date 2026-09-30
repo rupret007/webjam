@@ -56,6 +56,11 @@ from core.recording_readiness_presentation import (
     local_capture_readiness_detail,
     local_capture_shared_recovery_detail,
 )
+from core.host_startup_checklist import (
+    HOST_STARTUP_PROFILE_NOTE,
+    format_host_startup_checklist,
+    host_startup_checklist_current_step,
+)
 from core.meeting_companion import art_watch_share_sentence, build_invite_message
 from core.musician_guidance import (
     GuidanceDisplayOverride,
@@ -98,6 +103,10 @@ from core.session_conductor import (
     derive_session_presentation,
 )
 from core.session_health import SessionHealth
+from core.rehearsal_recap import (
+    RehearsalRecapSnapshot,
+    take_status_label_for_recap,
+)
 from core.session_intelligence import build_session_pulse
 from core.session_lifecycle import SessionLifecycle, SessionLifecyclePhase
 from core.session_transfer_runtime import (
@@ -601,6 +610,7 @@ class ApplicationController(QObject):
         self._last_guidance_display_override = None
         self._last_studio_guidance_facts = None
         self._current_session_pulse = None
+        self._pending_rehearsal_recap: RehearsalRecapSnapshot | None = None
         # The editable title must not steal the first keystroke from the
         # musician-facing action. We move initial focus only once and only
         # while the title still owns it; later intentional title edits stay
@@ -4314,6 +4324,9 @@ class ApplicationController(QObject):
         self.window.session_canvas.save_notes_requested.connect(self._recover_notes)
         self.window.session_canvas.recheck_saved_notes_requested.connect(self._recheck_saved_notes)
         self.window.notes_review_requested.connect(self._review_retained_notes)
+        self.window.rehearsal_recap.open_studio_requested.connect(
+            lambda: self._on_rail_view_changed("takes")
+        )
         self.window.session_canvas.brief_export_requested.connect(
             self._refresh_session_pulse
         )
@@ -4346,7 +4359,7 @@ class ApplicationController(QObject):
         )
         self._apply_mode(mode)
         self.window.set_status_audio("Ready to launch")
-        self.window.set_status_video("Not opened")
+        self._set_status_video("Not opened")
         self.window.set_status_latency("Not connected")
         self.window.set_status_routing("")
         self.session_health.reset_live_truth()
@@ -4787,6 +4800,7 @@ class ApplicationController(QObject):
     def begin_startup_journey(self) -> bool:
         """Start one non-modal host/join journey without a WebJam device gate."""
 
+        self._hide_rehearsal_recap()
         authorization_generation = self._consume_startup_launch_authorization()
         if (
             getattr(self, "_shutdown", False)
@@ -5516,7 +5530,7 @@ class ApplicationController(QObject):
         self.window.webex_embed.set_service_label(service_name)
         self.window.webex_embed.set_meeting_configured(True)
         if value != previous_url:
-            self.window.set_status_video(WebexLaunchState.NOT_OPENED.value)
+            self._set_status_video(WebexLaunchState.NOT_OPENED.value)
             self.window.webex_embed.set_launch_status(WebexLaunchState.NOT_OPENED.value)
         self.window.session_strip.set_video_configured(True)
         self.window.session_strip.set_video_state(
@@ -5980,21 +5994,20 @@ class ApplicationController(QObject):
                 action_visible=False,
             )
         elif phase in {"launching_client", "native_sound_setup"}:
-            setup_wait = (
-                "WebJam will wait up to 10 minutes and continue automatically "
-                "when the music connection is ready."
-                if float(attempt.get("native_setup_deadline", 0.0) or 0.0) > 0.0
-                else "WebJam will continue automatically when the music "
-                "connection is ready."
+            checklist = ApplicationController._host_startup_checklist_fields(phase)
+            guidance = ApplicationController._startup_guidance_override(
+                attempt,
+                self.creator_profile.key,
             )
             self.window.session_hud.set_state(
-                creator_copy["setup_title"],
-                "Choose your interface, input channels, headphones, and buffer "
-                "in Jamulus. WebJam uses a dedicated Jamulus profile for this "
-                "app and leaves your regular Jamulus settings untouched. " + setup_wait,
+                guidance.title,
+                checklist["plain"],
                 action_text="Bring Jamulus Forward",
                 action_visible=True,
                 action_kind="bring_jamulus",
+                checklist_current_step=checklist["current_step"],
+                checklist_detail_rich=checklist["rich"],
+                checklist_note=HOST_STARTUP_PROFILE_NOTE,
             )
         elif phase == "verifying_music":
             self.window.session_hud.set_state(
@@ -6050,9 +6063,14 @@ class ApplicationController(QObject):
             )
         elif phase == "invite_ready":
             if role == "host":
+                checklist = ApplicationController._host_startup_checklist_fields(phase)
+                guidance = ApplicationController._startup_guidance_override(
+                    attempt,
+                    self.creator_profile.key,
+                )
                 self.window.session_hud.set_state(
-                    creator_copy["host_ready_title"],
-                    creator_copy["host_ready_detail"],
+                    guidance.title,
+                    checklist["plain"],
                     invite_available=True,
                     action_text="Copy Invite",
                     action_visible=True,
@@ -6061,6 +6079,8 @@ class ApplicationController(QObject):
                     secondary_action_text=enter_label,
                     secondary_action_visible=True,
                     secondary_action_kind="enter_jam",
+                    checklist_current_step=checklist["current_step"],
+                    checklist_detail_rich=checklist["rich"],
                 )
             else:
                 self.window.session_hud.set_state(
@@ -6120,6 +6140,26 @@ class ApplicationController(QObject):
         )
 
     @staticmethod
+    def _host_startup_checklist_fields(phase: str) -> dict[str, object]:
+        current_step = host_startup_checklist_current_step(str(phase))
+        if current_step is None:
+            raise ValueError(f"phase {phase!r} has no host startup checklist")
+        plain, rich = format_host_startup_checklist(current_step)
+        return {
+            "plain": plain,
+            "rich": rich,
+            "current_step": current_step,
+        }
+
+    @staticmethod
+    def _startup_checklist_message(phase: str) -> str:
+        fields = ApplicationController._host_startup_checklist_fields(phase)
+        plain = str(fields["plain"])
+        if phase in {"launching_client", "native_sound_setup"}:
+            return f"{plain}\n\n{HOST_STARTUP_PROFILE_NOTE}"
+        return plain
+
+    @staticmethod
     def _startup_guidance_override(
         attempt: dict[str, object],
         creator_profile_key: object = "music",
@@ -6148,22 +6188,13 @@ class ApplicationController(QObject):
             ),
             "launching_client": GuidanceDisplayOverride(
                 creator_copy["setup_title"],
-                "Choose your interface, input channels, headphones, and buffer "
-                "in Jamulus. WebJam uses a dedicated Jamulus profile for this "
-                "app and leaves your regular Jamulus settings untouched.",
+                ApplicationController._startup_checklist_message("launching_client"),
                 SessionPrimaryAction.OPEN_AUDIO_SETTINGS,
                 "Bring Jamulus Forward",
             ),
             "native_sound_setup": GuidanceDisplayOverride(
                 creator_copy["setup_title"],
-                "Choose your interface, input channels, headphones, and buffer "
-                "in Jamulus. WebJam uses a dedicated Jamulus profile for this "
-                "app and leaves your regular Jamulus settings untouched."
-                + (
-                    " WebJam waits up to 10 minutes."
-                    if float(attempt.get("native_setup_deadline", 0.0) or 0.0) > 0.0
-                    else ""
-                ),
+                ApplicationController._startup_checklist_message("native_sound_setup"),
                 SessionPrimaryAction.OPEN_AUDIO_SETTINGS,
                 "Bring Jamulus Forward",
             ),
@@ -6207,8 +6238,9 @@ class ApplicationController(QObject):
             if role == "host":
                 return GuidanceDisplayOverride(
                     creator_copy["host_ready_title"],
-                    creator_copy["host_ready_detail"],
+                    ApplicationController._startup_checklist_message("invite_ready"),
                     SessionPrimaryAction.COPY_INVITE,
+                    "Copy Invite",
                 )
             return GuidanceDisplayOverride(
                 creator_copy["guest_ready_title"],
@@ -11330,6 +11362,19 @@ class ApplicationController(QObject):
         scoped = getattr(self, "_session_meeting_url", None)
         return scoped if scoped is not None else str(getattr(self.settings, "webex_url", "") or "").strip()
 
+    def _informative_status_video_label(self, label: str) -> str:
+        from webjam_qt.status_chips import video_chip_label
+
+        profile = _creator_profile_for_controller(self)
+        return video_chip_label(
+            profile.key,
+            label,
+            has_link=bool(self._effective_meeting_url()),
+        )
+
+    def _set_status_video(self, label: str) -> None:
+        self.window.set_status_video(self._informative_status_video_label(label))
+
     def _set_session_meeting_url(self, value: str | None) -> None:
         # Validate before retiring an otherwise usable context. Once accepted,
         # even the same URL can represent a different room's meeting.
@@ -11350,7 +11395,7 @@ class ApplicationController(QObject):
         self.webex.browser_opened = False
         self.webex.last_error = ""
         self.bridge.webex_state = WebexLaunchState.NOT_OPENED.value
-        self.window.set_status_video(WebexLaunchState.NOT_OPENED.value)
+        self._set_status_video(WebexLaunchState.NOT_OPENED.value)
         self.window.session_strip.set_video_state(_meeting_open_action_label(url), enabled=True)
         self.window.session_strip.set_video_configured(bool(url))
         self.window.webex_embed.set_meeting_configured(bool(url))
@@ -11460,7 +11505,7 @@ class ApplicationController(QObject):
         accepted = self.bridge.launch_webex(manual=True, meeting_url=url)
         if not accepted:
             self._record_webex_event("meeting-handoff", "busy")
-            self.window.set_status_video(self.bridge.webex_state)
+            self._set_status_video(self.bridge.webex_state)
             self.window.session_strip.set_video_state(
                 _meeting_open_action_label(url),
                 enabled=True,
@@ -11483,7 +11528,7 @@ class ApplicationController(QObject):
             )
             return
         self._record_webex_event("meeting-handoff", "accepted")
-        self.window.set_status_video("Opening…")
+        self._set_status_video("Opening…")
         self.window.session_strip.set_video_state("Opening…", enabled=False)
         self.window.webex_embed.set_launch_status("Opening…")
 
@@ -11566,6 +11611,7 @@ class ApplicationController(QObject):
             return
         room = getattr(self, "_room_participant", None)
         if room is not None and (self.creator_profile.key == "art" or self._art_room_active()):
+            self.window.set_legacy_status_chips_enabled(False)
             hosting = (getattr(self.audio, "_stop_hosting", False)
                        if self.audio.stopping or self.audio.cleanup_retry_required
                        else room.role == "host")
@@ -11580,7 +11626,10 @@ class ApplicationController(QObject):
             self.window.session_strip.set_tools_enabled(not self.audio.stopping)
             self.window.set_status_audio("")
             self.window.set_status_server("")
-            self.window.set_status_video(self.bridge.webex_state)
+            # Conversation and SessionHud own live truth in Art; legacy status
+            # chips would only steal compact Notes height without new facts.
+            self._set_status_video("")
+            self.window.set_status_latency("")
             self.window.session_strip.set_video_state(
                 _meeting_open_action_label(self._effective_meeting_url()), enabled=True,
             )
@@ -11588,6 +11637,7 @@ class ApplicationController(QObject):
             self.window.webex_embed.set_launch_status(self.bridge.webex_state)
             self._update_session_hud()
             return
+        self.window.set_legacy_status_chips_enabled(True)
         # A launched process is not the same as a proven Jamulus session.  Keep
         # the "Running" wording out of the UI until participant/RPC truth has
         # arrived; the button can still offer Stop Audio for a live subprocess.
@@ -11647,7 +11697,7 @@ class ApplicationController(QObject):
             not bool(self.audio.stopping or self._invite_switch_in_flight)
         )
         self.window.set_status_audio(audio_state)
-        self.window.set_status_video(self.bridge.webex_state)
+        self._set_status_video(self.bridge.webex_state)
         if self.audio.cleanup_retry_required:
             audio_action = (
                 "Try End Session"
@@ -12506,7 +12556,7 @@ class ApplicationController(QObject):
             self.webex.browser_opened = False
             self.webex.last_error = ""
             self.bridge.webex_state = WebexLaunchState.NOT_OPENED.value
-            self.window.set_status_video(WebexLaunchState.NOT_OPENED.value)
+            self._set_status_video(WebexLaunchState.NOT_OPENED.value)
             self.window.session_strip.set_video_state(
                 _meeting_open_action_label(self._effective_meeting_url()),
                 enabled=True,
@@ -15908,6 +15958,54 @@ class ApplicationController(QObject):
             self.window.session_strip.current_title(),
             self.window.session_canvas.current_notes(),
         )
+
+    def _capture_rehearsal_recap_before_stop(self) -> None:
+        """Freeze Music pulse and take facts before End/Leave tears session state down."""
+
+        if self.creator_profile.key != "music":
+            self._pending_rehearsal_recap = None
+            return
+        pulse = getattr(self, "_current_session_pulse", None)
+        if pulse is None:
+            try:
+                profile, mode, title, notes = self._session_pulse_context()
+                pulse = build_session_pulse(
+                    mode_key=mode,
+                    creator_profile_key=profile,
+                    title=title,
+                    notes=notes,
+                    participants=self._session_pulse_participants(),
+                )
+            except Exception:  # noqa: BLE001 - recap is optional handoff chrome
+                pulse = None
+        if pulse is None:
+            self._pending_rehearsal_recap = None
+            return
+        duration = int(
+            getattr(self.window.session_strip, "_elapsed_seconds", 0) or 0
+        )
+        facts = self._session_conductor_facts()
+        self._pending_rehearsal_recap = RehearsalRecapSnapshot(
+            duration_seconds=duration,
+            pulse=pulse,
+            take_status=take_status_label_for_recap(facts),
+        )
+
+    def _present_rehearsal_recap_after_stop(self) -> None:
+        snapshot = getattr(self, "_pending_rehearsal_recap", None)
+        self._pending_rehearsal_recap = None
+        panel = getattr(self.window, "rehearsal_recap", None)
+        if snapshot is None or panel is None:
+            if panel is not None:
+                panel.clear_recap()
+            return
+        panel.apply_snapshot(snapshot)
+
+    def _hide_rehearsal_recap(self) -> None:
+        self._pending_rehearsal_recap = None
+        panel = getattr(self.window, "rehearsal_recap", None)
+        if panel is not None:
+            panel.clear_recap()
 
     def _clear_creative_guidance(self) -> None:
         """Retire creative text without changing accepted conductor facts."""

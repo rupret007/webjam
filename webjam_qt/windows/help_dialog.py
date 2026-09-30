@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 
 from webjam_qt.controllers.window_layout import centered_window_rect
 from webjam_qt.theme.brand import render_brand_pixmap
+from webjam_qt.theme.tokens import Layout, Space
 
 
 class HelpDialog(QDialog):
@@ -21,15 +22,16 @@ class HelpDialog(QDialog):
 
     def __init__(self, body: str, available_geometry: QRect | None = None) -> None:
         super().__init__()
+        self.setObjectName("HelpDialog")
         self.setWindowTitle("WebJam Help")
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self._available_geometry = QRect(available_geometry) if available_geometry else QRect()
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(Space.XL, Space.XL, Space.XL, Space.LG)
+        layout.setSpacing(Space.MD)
         content = QHBoxLayout()
-        content.setSpacing(16)
+        content.setSpacing(Space.LG)
         self._brand = QLabel()
         self._brand.setObjectName("HelpBrand")
         self._brand.setAccessibleName("WebJam")
@@ -37,6 +39,7 @@ class HelpDialog(QDialog):
         content.addWidget(self._brand, 0, Qt.AlignmentFlag.AlignTop)
 
         self._body = QTextBrowser()
+        self._body.setObjectName("HelpBody")
         self._body.setAccessibleName("Workflow help")
         self._body.setAccessibleDescription(
             "Read-only help. Use the arrow or Page Down keys to scroll."
@@ -44,11 +47,13 @@ class HelpDialog(QDialog):
         self._body.setOpenLinks(False)
         self._body.setOpenExternalLinks(False)
         self._body.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._body.setMaximumHeight(Layout.HELP_BODY_MAX_HEIGHT)
         self._body.setHtml(body)
         content.addWidget(self._body, 1)
         layout.addLayout(content, 1)
 
         self._buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        self._buttons.setObjectName("HelpActions")
         self._buttons.accepted.connect(self.accept)
         self._ok = self._buttons.button(QDialogButtonBox.StandardButton.Ok)
         self._ok.setAccessibleName("Close help")

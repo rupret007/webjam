@@ -83,7 +83,11 @@ class StudioProjectHome(QWidget):
         brand_row.setSpacing(Space.SM)
         brand_row.addStretch(1)
         brand_row.addWidget(BrandMark(28))
-        wordmark = QLabel('Web<span style="color: #BF5700;">Jam</span>')
+        from webjam_qt.theme.tokens import Color
+
+        wordmark = QLabel(
+            f'Web<span style="color: {Color.ACCENT_PRIMARY};">Jam</span>'
+        )
         wordmark.setObjectName("StudioHomeWordmark")
         wordmark.setTextFormat(Qt.TextFormat.RichText)
         wordmark.setAccessibleName("WebJam")

@@ -134,7 +134,7 @@ def test_conversation_button_names_its_next_click_from_the_saved_meeting(hosting
             state=state, hosting=hosting, conversation_configured=True,
         )
         assert f"Choose {needs_setup.conversation_action_label}" in needs_setup.activity_detail
-        assert "external meeting link" in needs_setup.activity_detail
+        assert "add your meeting link" in needs_setup.activity_detail
         assert f"Choose {ready.conversation_action_label}" in ready.activity_detail
         assert "Set Up Conversation" not in ready.activity_detail
         assert needs_setup.conversation_action_label == "Set Up Conversation"

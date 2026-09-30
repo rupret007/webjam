@@ -544,3 +544,19 @@ def test_music_invite_names_meeting_share_for_watching_a_demo():
     assert "own share" in message.text
     assert "play the movie" in message.text
     assert "you do not need it to play" in message.text
+
+
+@pytest.mark.parametrize(
+    "configured,next_action",
+    [
+        (False, "Choose Set Up Conversation to add your meeting link."),
+        (True, "Choose Conversation to talk or share your screen."),
+    ],
+)
+def test_make_together_room_names_the_next_action(configured, next_action):
+    from core.meeting_companion import art_make_together_activity_detail
+
+    assert art_make_together_activity_detail(conversation_configured=configured) == (
+        "Use paper, clay, a model, printer, or your usual app, or just talk. "
+        + next_action
+    )

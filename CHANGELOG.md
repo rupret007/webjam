@@ -13,6 +13,16 @@ All notable improvements and features for the WebJam creator collaboration platf
 > Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted
 > by owner; git tags remain.
 
+### Track export preserves recording evidence and shared folders
+
+- A loaded schema-v2 recording cannot fall back to legacy export when its
+  manifest is missing or unsafe.
+- Export checks that the same recording manifest survives loading and
+  rendering. A changed, replaced, removed, or newly created manifest stops
+  publication and clears the unfinished package so the take can be reopened.
+- Existing export destination folders keep their permissions on success and
+  failure. New package folders and files still receive private permissions.
+
 ### CI: Mac desktop rebuilds the Pocket Stage kit
 
 - Build Desktop (macos-x64) and (macos-arm64) now generate **Pocket Stage iPhone Setup** on the Mac builder after the iOS compile job succeeds. They no longer download `webjam-pocket-stage-ios-setup-${{ github.sha }}`. GitHub can delete that artifact when a sibling pull_request run is cancelled, which failed PR Mac builds while the same-commit push stayed green. The iOS job still compiles Pocket Stage and still uploads the SHA-named kit for candidate binding.

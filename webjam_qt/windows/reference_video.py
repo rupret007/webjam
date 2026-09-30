@@ -41,7 +41,7 @@ from webjam_qt.theme.tokens import Space
 _HOST_EMPTY_HEADLINE = "Choose a video to paint along"
 _GUEST_EMPTY_HEADLINE = "Waiting for a process video"
 _HOST_EMPTY_STATUS = (
-    "Choose a local video file or a YouTube lesson link. You control playback for the room."
+    "Choose a local video file or a YouTube lesson link. The video stays silent; you control playback."
 )
 _EMPTY_SURFACE = "Your silent process video appears here"
 _SYNC_HONESTY = (

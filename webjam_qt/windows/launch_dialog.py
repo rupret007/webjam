@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.host_startup_checklist import WIN32_MUSIC_HOST_REASON
 from core.creative_modes import (
     CREATOR_PROFILES,
     CreatorProfile,
@@ -64,7 +65,7 @@ from webjam_qt.invitation_ingress import (
     parse_invitation_at_ingress,
 )
 from webjam_qt.theme.brand import BrandMark
-from webjam_qt.theme.tokens import Space
+from webjam_qt.theme.tokens import Color, Space
 from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
 
 LOGGER = logging.getLogger("webjam.qt.launch_dialog")
@@ -99,7 +100,7 @@ _CREATOR_LAUNCH_COPY = {
             "Create a local multitrack music project without starting or joining "
             "a live session."
         ),
-        helper="Play live together.",
+        helper="Write songs or play live together.",
         join_title="Join Music.",
         join_subtitle=_JOIN_INVITATION_GUIDANCE,
     ),
@@ -140,12 +141,10 @@ _CREATOR_LAUNCH_COPY = {
         join="Join",
         local="Standalone Art Unavailable",
         host_description=(
-            "Open the room and send one invite. Whoever joins lands in "
-            "whatever you started."
+            "Copy an invite for your guests."
         ),
         join_description=(
-            "Paste the invite you were sent. It carries whatever the host "
-            "started, so there is nothing else to pick."
+            "Paste the host's invite to join their activity."
         ),
         local_description="Standalone art projects are not on this door.",
         helper="Open a room and make something together.",
@@ -163,7 +162,7 @@ if set(_CREATOR_LAUNCH_COPY) != {profile.key for profile in CREATOR_PROFILES}:
 # reachable after Music, never as equal first clicks.
 _FIRST_SCREEN_PROFILE_KEYS = ("art", "music")
 _ART_PROFILE_SUMMARY = "Make art together."
-_MUSIC_PROFILE_SUMMARY = "Play live together."
+_MUSIC_PROFILE_SUMMARY = "Write songs or play live together."
 _START_CARD_HEIGHT = 64
 _PAINT_ALONG_MARK_SIZE = QSize(72, 48)
 
@@ -178,6 +177,58 @@ class _InvitationInput(QLineEdit):
             # leaves the dialog open, so this same key must not reach Back
             # or another button that previously became the dialog default.
             event.accept()
+
+
+class _JoinPrimaryButton(QPushButton):
+    """Join primary that stays keyboard-reachable before an invite is pasted."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._invite_ready = False
+        self._submission_locked = False
+        super().setEnabled(True)
+        self._sync_blocked_presentation()
+
+    def set_invite_ready(self, ready: bool) -> None:
+        self._invite_ready = bool(ready)
+        self._sync_blocked_presentation()
+
+    def set_submission_locked(self, locked: bool) -> None:
+        self._submission_locked = bool(locked)
+        self._sync_blocked_presentation()
+
+    def submission_locked(self) -> bool:
+        return self._submission_locked
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() in (
+            Qt.Key.Key_Space,
+            Qt.Key.Key_Return,
+            Qt.Key.Key_Enter,
+        ):
+            if self._submission_locked:
+                event.accept()
+                return
+            if not self._invite_ready:
+                self.clicked.emit()
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
+    def isEnabled(self) -> bool:
+        if self._submission_locked or not self._invite_ready:
+            return False
+        return super().isEnabled()
+
+    def _sync_blocked_presentation(self) -> None:
+        blocked = self._submission_locked or not self._invite_ready
+        super().setEnabled(True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, blocked)
+        self.setProperty("joinBlocked", blocked)
+        style = self.style()
+        style.unpolish(self)
+        style.polish(self)
+        self.update()
 
 
 class ProfileCard(QCommandLinkButton):
@@ -439,7 +490,9 @@ class LaunchDialog(QDialog):
         brand_row.setSpacing(Space.SM)
         self._logo = BrandMark(30)
         self._logo.setObjectName("LaunchBrandMark")
-        self._wordmark = QLabel('Web<span style="color: #BF5700;">Jam</span>')
+        self._wordmark = QLabel(
+            f'Web<span style="color: {Color.ACCENT_PRIMARY};">Jam</span>'
+        )
         self._wordmark.setObjectName("LaunchLogo")
         self._wordmark.setTextFormat(Qt.TextFormat.RichText)
         self._wordmark.setAccessibleName("WebJam")
@@ -600,6 +653,12 @@ class LaunchDialog(QDialog):
         self._join_button.clicked.connect(self.show_join)
         self._studio_button.clicked.connect(self._studio)
         layout.addWidget(self._host_button)
+        self._host_reason = QLabel()
+        self._host_reason.setObjectName("LaunchHostReason")
+        self._host_reason.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._host_reason.setWordWrap(True)
+        self._host_reason.setVisible(False)
+        layout.addWidget(self._host_reason)
         layout.addWidget(self._join_button)
         layout.addWidget(self._studio_button)
 
@@ -760,6 +819,18 @@ class LaunchDialog(QDialog):
             self.selected_start_key
         )
 
+    def _music_host_unavailable_reason(self) -> str:
+        if self._selected_creator_profile.key != "music":
+            return ""
+        if self._can_host():
+            return ""
+        return WIN32_MUSIC_HOST_REASON
+
+    def _refresh_host_reason(self) -> None:
+        reason = self._music_host_unavailable_reason()
+        self._host_reason.setText(reason)
+        self._host_reason.setVisible(bool(reason))
+
     def _can_host(self) -> bool:
         # Ordinary Art uses the existing Python LAN listener, without the
         # Music engine. An explicit native lab request must keep its existing
@@ -883,10 +954,11 @@ class LaunchDialog(QDialog):
         self._join_error.setWordWrap(True)
         layout.addWidget(self._join_error)
 
-        self._join_button_primary = QPushButton()
+        self._join_button_primary = _JoinPrimaryButton()
         self._join_button_primary.setObjectName("LaunchPrimary")
         self._join_button_primary.setMinimumHeight(48)
         self._join_button_primary.setDefault(True)
+        self._join_button_primary.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._join_button_primary.clicked.connect(self._join)
         layout.addWidget(self._join_button_primary)
         layout.addStretch(2)
@@ -896,6 +968,7 @@ class LaunchDialog(QDialog):
         back.clicked.connect(self.show_choices)
         layout.addWidget(back, 0, Qt.AlignmentFlag.AlignHCenter)
         self._apply_creator_profile_presentation()
+        self._on_invite_text_changed()
         return page
 
     @property
@@ -928,10 +1001,14 @@ class LaunchDialog(QDialog):
         self._host_button.setAccessibleName(copy.host)
         host_available = self._can_host()
         host_description = copy.host_description
-        if not host_available:
+        music_reason = self._music_host_unavailable_reason()
+        if not host_available and not music_reason:
             host_description += " Hosting is available in the macOS app."
+        elif music_reason:
+            host_description += f" {music_reason}"
         self._host_button.setAccessibleDescription(host_description)
         self._host_button.setEnabled(host_available and not self._submitting)
+        self._refresh_host_reason()
 
         self._join_button.setText(copy.join)
         self._join_button.setAccessibleName(copy.join)
@@ -977,12 +1054,12 @@ class LaunchDialog(QDialog):
             self._music_profile_card.setVisible(True)
 
         helper = copy.helper
-        if not host_available:
+        if not host_available and not music_reason:
             helper += " Hosting is available in the macOS app."
-        # The Music card already says "Play live together." Repeating it
+        # The Music card already says "Write songs or play live together." Repeating it
         # under Host is chrome. Art cards already say what they do.
         if first_screen_door:
-            helper = "" if host_available else "Hosting is available in the macOS app."
+            helper = ""
         self._set_choice_helper(helper)
         if hasattr(self, "_start_cards"):
             self._apply_start_card_visibility()
@@ -1117,11 +1194,18 @@ class LaunchDialog(QDialog):
             return
         self.invitation_meeting_url = ""
         self._clear_join_error()
+        has_invite = bool(self._invite_input.text().strip())
         self._join_status.setText(
-            "Invitation pasted — choose Join"
-            if self._invite_input.text().strip()
-            else "Paste your invitation"
+            "Invitation pasted — choose Join" if has_invite else "Paste your invitation"
         )
+        self._join_status.setProperty("joinReady", "true" if has_invite else "false")
+        join_style = self._join_status.style()
+        join_style.unpolish(self._join_status)
+        join_style.polish(self._join_status)
+        if hasattr(self, "_join_button_primary"):
+            self._join_button_primary.set_invite_ready(
+                has_invite and not self._submitting
+            )
 
     def _persist_role_choice(
         self, candidate: AppSettings, *, save_creator_choice: bool = True,
@@ -1189,8 +1273,22 @@ class LaunchDialog(QDialog):
         self.remote_invitation = None
         self.accept()
 
+    _EMPTY_JOIN_PROMPT = "Paste your invitation to continue"
+
+    def _prompt_empty_join_invite(self) -> None:
+        self._join_status.setText(self._EMPTY_JOIN_PROMPT)
+        self._announce_error(self._join_status, focus=self._invite_input)
+
     def _join(self) -> None:
+        primary = self._join_button_primary
+        if primary.submission_locked():
+            return
         value = self._invite_input.text()
+        if not value.strip():
+            self._prompt_empty_join_invite()
+            return
+        if not primary.isEnabled():
+            return
         self._invite_input.clear()
         self.accept_invite(value)
 
@@ -1222,11 +1320,11 @@ class LaunchDialog(QDialog):
             )
             if not contains_private_material:
                 self._invite_input.setText(raw)
+            # Restore controls before showing the error; refreshing invite status
+            # would clear the message we are about to present.
+            self._restore_submission(refresh_invite_status=False)
             self._join_status.setText("Needs attention")
             self._join_error.setText(str(exc))
-            # The field was disabled during submission. Restore it before
-            # returning keyboard focus to the replacement invitation.
-            self._restore_submission()
             self._announce_error(self._join_error, focus=self._invite_input)
             return False
         return self.accept_invitation(
@@ -1338,7 +1436,7 @@ class LaunchDialog(QDialog):
         for action in self._workspace_actions.values():
             action.setEnabled(False)
         self._setup_action.setEnabled(False)
-        self._join_button_primary.setEnabled(False)
+        self._join_button_primary.set_submission_locked(True)
         self._invite_input.setEnabled(False)
         self._creator_profile_selector.setEnabled(False)
         for card in getattr(self, "_profile_cards", {}).values():
@@ -1351,7 +1449,7 @@ class LaunchDialog(QDialog):
         button.setAccessibleName(label)
         return True
 
-    def _restore_submission(self) -> None:
+    def _restore_submission(self, *, refresh_invite_status: bool = True) -> None:
         self._submitting = False
         for action in getattr(self, "_workspace_actions", {}).values():
             action.setEnabled(True)
@@ -1361,8 +1459,13 @@ class LaunchDialog(QDialog):
         self._apply_creator_profile_presentation()
         self._name_input.setEnabled(True)
         if hasattr(self, "_join_button_primary"):
-            self._join_button_primary.setEnabled(True)
+            self._join_button_primary.set_submission_locked(False)
             self._invite_input.setEnabled(True)
+            if refresh_invite_status:
+                self._on_invite_text_changed()
+            else:
+                has_invite = bool(self._invite_input.text().strip())
+                self._join_button_primary.set_invite_ready(has_invite)
 
     def _validated_musician_name(self) -> str | None:
         try:

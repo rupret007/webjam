@@ -80,6 +80,15 @@ class Radius:
     PILL = 999
 
 
+class Layout:
+    # HelpDialog body viewport cap (px). Must fit the longest profile copy
+    # (Art “Paint along…” section) plus footer OK row inside the fixed dialog
+    # on the smallest supported geometry (760×600 with 80px margins in
+    # tests/test_help_dialog.py::test_real_help_fits_scrolls_and_returns_without_changing_work).
+    # Python setMaximumHeight is authoritative; conductor.qss max-height mirrors it.
+    HELP_BODY_MAX_HEIGHT = 260
+
+
 class Font:
     # Inter ships with the app (webjam_qt/theme/fonts, loaded in
     # app._configure_default_font); the rest of the chain is the fallback

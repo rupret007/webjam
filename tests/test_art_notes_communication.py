@@ -357,7 +357,7 @@ def test_communication_fits_real_notes_workspace(qapp, size, save_state):
         compact = panel.height() < 500
         assert panel.layout().contentsMargins().bottom() == (Space.XS if compact else Space.MD)
         for readout in (panel._guidance, panel._pulse):
-            assert readout.layout().contentsMargins().top() == (Space.XS if compact else Space.SM)
+            assert readout.layout().contentsMargins().top() == (0 if compact else Space.SM)
             assert readout.layout().spacing() == (0 if compact else Space.XS)
         panel.set_creator_profile(get_creator_profile_by_key("music"))
         assert panel.layout().contentsMargins().bottom() == Space.MD

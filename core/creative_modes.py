@@ -411,21 +411,21 @@ _ART_STARTS = (
     CreatorStart(
         key="talk_and_make",
         label="Make together",
-        summary="Talk and make with your own tools, or share a canvas.",
+        summary="Paint, sculpt, 3D print, or just talk.",
         detail=(
             "Open one room to talk and make. Everyone can work in their own "
-            "space, or the host can open one shared canvas from inside the "
-            "room when the group wants to draw together."
+            "space. The host can open one shared canvas from inside the room "
+            "when the group wants to draw together."
         ),
     ),
     CreatorStart(
         key="paint_along",
         label="Paint along",
-        summary="Paint beside a silent video, from a file or lesson link.",
+        summary="Follow a silent video from a file or lesson link.",
         detail=(
-            "Start a room, then choose a local video file or a lesson link. "
-            "Paint in your usual app or on paper beside WebJam. "
-            "The video stays silent and follows the host. Talk in your meeting."
+            "Choose a local video file or a lesson link in the room. "
+            "The video stays silent and follows the host. "
+            "Use your own tools. Talk in your meeting."
         ),
         reference_video=True,
     ),
@@ -440,10 +440,10 @@ CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
         default_goal="Lock timing and balance for one complete song run.",
         quick_help=(
             "Use WebJam's live audio path for the music; an external meeting "
-            "link remains optional for conversation. Talk in Webex · play in "
-            "WebJam. To watch a movie or demo together, choose Join / Open "
-            "Meeting or Show Webex App, then in Webex choose Share and pick the "
-            "WebJam window or your demo. WebJam does not play the movie."
+            "link remains optional for conversation. Talk in Conversation · "
+            "play in WebJam. To watch a movie or demo together, open "
+            "Conversation, choose Join / Open Meeting, then share the WebJam "
+            "window or your demo in that meeting. WebJam does not play the movie."
         ),
         review_prompts=(
             "What section needs a tighter groove?",

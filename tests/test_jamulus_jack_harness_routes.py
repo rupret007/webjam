@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import socket
 from dataclasses import dataclass
 from types import SimpleNamespace
 
@@ -15,6 +16,7 @@ from tests.support.jamulus_jack_harness import (
     HarnessUnavailable,
     JackBoundary,
     JamulusJackHarness,
+    _reserve_ports,
     expected_jamulus_version_from_environment,
 )
 
@@ -86,6 +88,61 @@ def _jamulus_ports() -> dict[str, _Port]:
         "output left": _Port("jamulus-output-left"),
         "output right": _Port("jamulus-output-right"),
     }
+
+
+_HARNESS_PORT_KINDS = [
+    socket.SOCK_DGRAM,
+    socket.SOCK_STREAM,
+    socket.SOCK_DGRAM,
+    socket.SOCK_STREAM,
+    socket.SOCK_DGRAM,
+    socket.SOCK_STREAM,
+]
+
+
+def test_reserve_ports_returns_unique_numbers_for_alternating_kinds() -> None:
+    for _ in range(25):
+        ports = _reserve_ports(list(_HARNESS_PORT_KINDS))
+        assert len(ports) == len(_HARNESS_PORT_KINDS)
+        assert len(set(ports)) == len(ports)
+
+
+def test_reserve_ports_retries_cross_protocol_ephemeral_collisions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """UDP/TCP can share one integer; the harness must retry for distinct numbers."""
+    import tests.support.jamulus_jack_harness as harness_module
+
+    assigned = iter([50443, 50443, 54943, 54943, 54944, 55001])
+    real_socket = harness_module.socket.socket
+
+    class _EphemeralCollisionSocket:
+        def __init__(self, family: int, kind: int) -> None:
+            self._sock = real_socket(family, kind)
+            self._reported_port: int | None = None
+
+        def bind(self, addr: tuple[str, int]) -> None:
+            self._sock.bind(addr)
+            self._reported_port = next(assigned)
+
+        def getsockname(self) -> tuple[str, int]:
+            if self._reported_port is not None:
+                return ("127.0.0.1", self._reported_port)
+            return self._sock.getsockname()
+
+        def close(self) -> None:
+            self._sock.close()
+
+    monkeypatch.setattr(harness_module.socket, "socket", _EphemeralCollisionSocket)
+    ports = _reserve_ports(
+        [
+            socket.SOCK_DGRAM,
+            socket.SOCK_STREAM,
+            socket.SOCK_DGRAM,
+            socket.SOCK_STREAM,
+        ]
+    )
+    assert ports == [50443, 54943, 54944, 55001]
 
 
 def test_expected_jamulus_version_defaults_to_3_12_2(
