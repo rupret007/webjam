@@ -153,6 +153,14 @@ def test_join_keyboard_route_keeps_field_action_and_back_reachable(
     assert dialog.selected_role == ""
 
 
+@pytest.mark.parametrize("profile", ["music", "art", "podcast_voice", "review_rehearsal"])
+def test_pristine_join_page_hides_empty_join_error(join_door, profile):
+    dialog = join_door(profile)
+    assert dialog._join_error.text() == ""
+    assert dialog._join_error.accessibleDescription() == ""
+    assert not dialog._join_error.isVisibleTo(dialog)
+
+
 @pytest.mark.parametrize("profile", ["music", "art"])
 def test_whole_art_invitation_message_joins_without_another_profile_choice(
     join_door, profile
@@ -212,6 +220,7 @@ def test_join_guidance_and_actions_fit_supported_window_sizes(
     qapp.processEvents()
     assert (dialog.width(), dialog.height()) == size
     assert dialog.height() + 40 <= 600
+    assert dialog._join_error.isVisibleTo(dialog) == (state == "error")
     labels = [dialog._join_subtitle, dialog._join_error, dialog._join_privacy]
     for label in labels:
         if label.text():
@@ -222,7 +231,7 @@ def test_join_guidance_and_actions_fit_supported_window_sizes(
         dialog._join_status,
         dialog._invite_input,
         dialog._join_privacy,
-        dialog._join_error,
+        *([dialog._join_error] if state == "error" else []),
         dialog._join_button_primary,
         next(
             button
